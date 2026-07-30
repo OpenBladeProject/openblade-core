@@ -271,7 +271,6 @@ public static class Rz09_0528PerformanceShortcutRawHidInput
 {
     private const byte KeyboardReportId = 0x01;
     private const byte PUsage = 0x13;
-    private const ushort PScanCode = 0x19;
 
     public static bool TryCreateTrigger(
         ReadOnlySpan<byte> report,
@@ -307,32 +306,6 @@ public static class Rz09_0528PerformanceShortcutRawHidInput
         return true;
     }
 
-    public static bool TryCreateFunctionPTrigger(
-        ushort makeCode,
-        ushort flags,
-        bool functionKeyPressed,
-        ref bool functionPPressed,
-        out PerformanceShortcutSource source)
-    {
-        source = default;
-        if (makeCode != PScanCode
-            || (flags & ReactiveRawKeyboardInput.ExtendedE1Flag) != 0)
-        {
-            return false;
-        }
-
-        bool functionPNow = functionKeyPressed
-            && (flags & ReactiveRawKeyboardInput.KeyBreakFlag) == 0;
-        bool trigger = functionPNow && !functionPPressed;
-        functionPPressed = functionPNow;
-        if (!trigger)
-        {
-            return false;
-        }
-
-        source = PerformanceShortcutSource.FunctionP;
-        return true;
-    }
 }
 
 public enum RazerBladeInputDeviceKind

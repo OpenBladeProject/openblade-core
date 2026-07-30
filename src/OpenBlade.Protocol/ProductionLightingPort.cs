@@ -86,6 +86,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         SpecialKeyBindingsAccess = admitted
             ? DeviceFeatureAccess.ReadWrite
             : null,
+        WritableSpecialKeySlots = admitted
+            ? SpecialKeySlotSet.All
+            : SpecialKeySlotSet.None,
         LogoLightingModes = admitted
             ? new HashSet<LogoLightingMode>(Enum.GetValues<LogoLightingMode>())
             : new HashSet<LogoLightingMode>(),

@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 31;
+    public const int ProtocolVersion = 32;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -406,6 +406,7 @@ public static class IpcMessageCodec
                 || capabilities.OneShotLaptopControls.Any(value => !Enum.IsDefined(value))
                 || capabilities.SpecialKeyBindingsAccess is { } specialKeyBindingsAccess
                     && !Enum.IsDefined(specialKeyBindingsAccess)
+                || !ValidSpecialKeySlots(capabilities)
                 || capabilities.LampArrayLightingAccess is { } lampArrayLightingAccess
                     && !Enum.IsDefined(lampArrayLightingAccess)
                 || capabilities.OneShotLaptopControls.Distinct().Count()
@@ -448,6 +449,17 @@ public static class IpcMessageCodec
         }
 
         return true;
+    }
+
+    private static bool ValidSpecialKeySlots(DeviceCapabilities capabilities)
+    {
+        SpecialKeySlotSet slots = capabilities.WritableSpecialKeySlots;
+        bool onlyKnownSlots = (slots & ~SpecialKeySlotSet.All) == 0;
+        return onlyKnownSlots
+            && (capabilities.SpecialKeyBindingsAccess ==
+                    DeviceFeatureAccess.ReadWrite
+                ? slots != SpecialKeySlotSet.None
+                : slots == SpecialKeySlotSet.None);
     }
 
     private static InvalidDataException InvalidStatus(string reason) =>

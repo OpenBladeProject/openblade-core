@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "source": {
     "repository": "openblade-captures",
-    "revision": "e5b9e14",
+    "revision": "0b350f0",
     "path": "decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json"
   },
   "device": {
@@ -176,9 +176,9 @@
       "performanceKey": "Captured",
       "m1PageUp": "Captured",
       "m2PageDown": "Captured",
-      "m3GamingMode": "Captured",
-      "m4PerformanceMode": "Captured",
-      "m5MicrophoneMute": "Captured"
+      "m3GamingMode": "ProductionAdmitted",
+      "m4PerformanceMode": "ProductionAdmitted",
+      "m5MicrophoneMute": "ProductionAdmitted"
     },
     "display": {
       "windowsVisibleModes": "ProductionAdmitted",

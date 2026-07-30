@@ -42,7 +42,7 @@ model-independent operating-system APIs.
 | Power-source matrix | Captured, not admitted | Nine exact-device sessions cover barrel AC, USB-C-only, battery, both quiet baselines, and all directed transitions; exact PID 02C6 USB-C reply and independent thermal readback remain missing |
 | Battery charge limit | Admitted | Query, 50/55/60/65/70/75/80-percent setters, protection off, readback, and restoration |
 | Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
-| Keyboard behavior and special keys | Partially admitted | Function-key primary, Gaming mode, startup-animation, and ownership-aware Normal/Driver device-mode setters; special keys pending live decoder validation |
+| Keyboard behavior and special keys | Partially admitted | Function-key primary, Gaming mode, startup-animation, and ownership-aware Normal/Driver device-mode setters; exact PID 02C6 M3/M4/M5 input is live-validated and writable, while M1/M2/Fn+P remain captured and unavailable |
 | Display controls | Admitted | Refresh, DRR, HDR state, and SDR color profiles through Windows APIs |
 | NVIDIA GPU clock offsets | Query validated, writes gated | Driver query succeeded; exact-model Synapse policy is visible in the UI, but writes remain disabled |
 
@@ -1041,10 +1041,10 @@ capability can become `ProductionAdmitted`.
 The shared capability contract now carries `LampArrayLightingAccess`. PID
 `02C6` reports `ObservedOnly`; PID `02E0` and unknown models report no value
 because no exact LampArray evidence exists for them. Diagnostics, the Lighting
-page, the exact production-admission gate, and firmware-smoke schema 4 all
-preserve this state. Strict service IPC advanced from version 28 to 29. This is
-a coordinated install boundary: do not live-patch only the tray or Session
-Agent across it.
+page, the exact production-admission gate, and current firmware-smoke schema 5
+all preserve this state. Current strict service IPC is version 32. This is a
+coordinated install boundary: do not live-patch only the tray or Session Agent
+across it.
 
 The Session Agent now contains the production read-only observation boundary.
 It starts only when the service reports a verified RZ09-0528, the complete
@@ -1213,41 +1213,52 @@ thumbprints, or local paths.
 Synapse exposes the M1–M5 shortcut surface on RZ09-0528, but OpenBlade's older
 Session Agent decoders (`Rz09_0581DefaultLaptopKeyRawHidInput` and
 `Rz09_0581PerformanceShortcutRawHidInput`) remain intentionally scoped to the
-RZ09-0581 / PID `02E0` raw-input path. Exact PID `02C6` captures now establish:
+RZ09-0581 / PID `02E0` raw-input path. Exact PID `02C6` USBPcap captures first
+suggested these identities:
 
 - M1: Fn state plus Page Up usage `01 00 4B`;
 - M2: Fn state plus Page Down usage `01 00 4E`;
 - M3, M4, and M5: `04 0A 03`, `04 0A D3`, and `04 0A D4`;
 - Fn+P: Fn state plus `01 00 13`.
 
-The first M1 session is retained as a corrected Page Up negative control.
-Operator completion-message typing is excluded. Raw sessions remain private;
-the sanitized fixture and annotation are capture commit `29b67f0`.
+Those are capture identities, not automatically usable Windows input events.
+The first M1 session is retained as a corrected ordinary Page Up negative
+control. Operator completion-message typing is excluded and raw sessions remain
+private.
 
-The production code now classifies the exact `MI_01` raw-input path as either
-PID `02E0` or PID `02C6` before interpreting a report. Both models reuse the
-shared Fn-layer state machine only after that identity decision. PID `02C6`
-uses a separate Fn+P decoder and never enters the older D3 dedicated-
-performance-button path: `04 0A D3` is M4 on this laptop. PID `02C6` also does
-not inherit the older model's reactive matrix, direct default-key, function-
-row reconstruction, or keyboard fallback assumptions.
+The decisive production probes established a narrower safe surface:
 
-The capability contract now carries `SpecialKeyBindingsAccess`:
+- Fn+Game, Fn+Performance, and Fn+MicrophoneMute decoded as M3, M4, and M5
+  through the real Session Agent decoder (`040A0300`, `040AD300`, and
+  `040AD400`), with 12 target messages and no identity failures;
+- a separate clean Fn+PageUp, Fn+PageDown, and Fn+P discrimination retry
+  produced only the same generic Fn make/release sequence for all three;
+- ordinary Page Up and Page Down still reached Windows;
+- Game, Performance, and microphone mute without Fn produced zero target Raw
+  Input messages while Synapse was active. Preserve that as a vendor-present
+  zero-input result; it does not distinguish firmware from vendor-stack
+  ownership.
 
-- PID `02E0` production lighting reports `ReadWrite`;
-- PID `02C6` exact lighting reports `ObservedOnly`;
-- unavailable or unadmitted devices report no access value.
+The earlier candidate that reconstructed M1/M2/Fn+P from keyboard scan codes
+was therefore disproven and removed. PID `02C6` must never suppress or
+reinterpret ordinary Page Up, Page Down, or P. It also never enters PID
+`02E0`'s D3 dedicated-performance-button path: `04 0A D3` is M4 here.
 
-The Laptop page only shows editable M1–M5 bindings for `ReadWrite`. On this
-model it instead shows an observed-only information card, preserves any saved
-global bindings, and explains that they remain inactive. The Session Agent can
-parse PID `02C6` reports, but publishing, Page Up/Page Down suppression, and
-Fn+P actions remain gated on `SpecialKeyBindingsAccess == ReadWrite`. The
-current exact capability remains `ObservedOnly`, so UI and runtime still fail
-closed together.
-Diagnostics and firmware smoke retain the access level (schema 3 introduced
-it; schema 4 adds LampArray access), and strict service IPC advanced from
-version 27 to 28 at that checkpoint.
+The capability contract now carries both `SpecialKeyBindingsAccess` and a
+`WritableSpecialKeySlots` bit mask:
+
+- PID `02E0` reports `ReadWrite` with all five slots;
+- exact PID `02C6` reports `ReadWrite` with M3, M4, and M5 only;
+- unavailable, read-only, and observed-only devices carry an empty mask;
+- strict IPC rejects unknown bits, `ReadWrite` with an empty mask, and any
+  non-writable access with writable bits.
+
+The Laptop page keeps all five discoveries visible but enables editors only for
+the admitted slots. M1 and M2 remain visibly unavailable with the generic-report
+explanation. The Session Agent applies the same per-slot gate before publishing
+or suppressing an input. Diagnostics emit a global access value plus five
+per-slot booleans. Firmware-smoke schema 5 records and exact-model-checks the
+mask, and strict service IPC is version 32.
 
 For future evidence collection, use the exact-device probe:
 
@@ -1255,31 +1266,12 @@ For future evidence collection, use the exact-device probe:
 OpenBlade.Capture probe-rz09-0528-02c6-special-keys [seconds] [output-file]
 ```
 
-The next step is a live OpenBlade decoder validation while the exact capability
-remains gated. The exact capture command now feeds MI_01 reports through the
-same public PID 02C6 semantic decoders used by the Session Agent and records
-`DecodedSpecialKey`/`DecodedPerformanceShortcut` lines. It never enables
-special-key actions or suppresses ordinary keys. Confirm every M1–M5 identity,
-ordinary Page Up/Page Down pass-through, Fn+P, and the absence of an M4
-performance-shortcut collision. Keep raw output private, commit only a
-sanitized semantic summary, and only then advance the access level to
-`ReadWrite`.
-
-PID 02C6 M4 needs one additional routing rule: when admitted, its default action
-must go through the typed M4 action executor even when no custom binding exists.
-Otherwise the exact-model branch correctly avoids PID 02E0's D3
-dedicated-performance decoder but silently drops the key. Keep PID 02E0 on its
-existing dedicated-button path; the override is exact-model plus M4 only.
-
-The first live production-decoder pass was deliberately left gated and produced
-a partial negative control:
-
-- M3, M4, and M5 decoded as their exact typed identities;
-- M4 did not collide with the older model's performance-shortcut decoder;
-- ordinary Page Up and Page Down still reached Windows;
-- two operator-correlated Fn+Page Up, Fn+Page Down, and Fn+P retries exposed
-  only `04 0A 00 00` / `04 00 00 00` Fn make/release reports on the target
-  MI_01 stream, with no `01 00 4B`, `01 00 4E`, or `01 00 13` report.
+The capture command feeds MI_01 reports through the same exact PID `02C6`
+semantic decoder used by the Session Agent and records `DecodedSpecialKey`
+lines. Keep raw output private and commit only hash-pinned sanitized semantics.
+Any future M1/M2/Fn+P admission requires a newly distinguishable Windows input
+event plus independent pass-through/suppression validation; the old USBPcap
+identity alone is insufficient.
 
 The retries ran after an independent exact device-mode query returned `Driver`.
 Computer Use then inspected Synapse without saving any assignment: the physical
@@ -1288,22 +1280,9 @@ Hypershift-layer assignment was still `Page Up`. This rules out the two easy
 explanations—wrong modifier and a remapped key—but does not explain why the
 earlier USBPcap oracle saw the `01` reports while Windows Raw Input did not.
 Treat that as a transport/collection discrepancy, not as permission to infer
-the missing events. Keep `SpecialKeyBindingsAccess=ObservedOnly`; do not publish
-or suppress M1, M2, or Fn+P until the production path observes them
-independently.
-
-The Windows transport distinction supplies a concrete next test. USBPcap sees
-report-ID-01 keyboard usages `4B`, `4E`, and `13`, but Windows may expose a
-keyboard top-level collection as `RIM_TYPEKEYBOARD` rather than returning its
-original HID bytes through `RIM_TYPEHID`. OpenBlade now has an exact-PID,
-MI_01-only candidate path that reconstructs M1/M2 from extended Page Up/Page
-Down scan codes `49`/`51` and Fn+P from scan code `19`, while sharing the
-existing Fn and edge-latch state so a platform that exposes both forms cannot
-double-fire. The capture probe reports those translated identities, and the
-production path remains behind `SpecialKeyBindingsAccess`; this is an
-implementation hypothesis until a fresh physical probe observes the events.
-Ordinary Page Up/Page Down must continue to pass through when no override is
-configured.
+the missing events. M3-M5 are independently admitted; do not publish or
+suppress M1, M2, or Fn+P until the production path observes distinguishable
+events independently.
 
 The bounded
 `probe-rz09-0528-02c6-hid-input-access` diagnostic then tested whether a
@@ -1413,11 +1392,11 @@ the USB row dynamically, and an unknown model is reported as unavailable
 instead of being mislabeled. `TestedPlatformCatalog` includes the validated
 RZ09-0528 BIOS `2.02`, EC `1.09`, and MCU `1.9.0.0` tuple.
 
-Firmware-smoke schema 4 resolves the target from the service observation and
+Firmware-smoke schema 5 resolves the target from the service observation and
 uses an exact capability gate per model. RZ09-0528 expects four AC performance
 presets, four fan modes, keyboard Off, seven observed quick effects, all three
-logo modes, three admitted laptop controls, observed-only special keys, and
-observed-only LampArray access.
+logo modes, three admitted laptop controls, partial `ReadWrite` special-key
+access with exactly M3/M4/M5 writable, and observed-only LampArray access.
 Reversible and recovery confirmation tokens are derived from the baseline
 model (`RZ09-0528-MCU-SMOKE` here), and recovery additionally proves the live
 device model matches the baseline before any setter can run.
@@ -1435,7 +1414,8 @@ build if any of these exact-model facts disappears or changes:
   policy as observed-only;
 - the complete Battery and USB-C behavior observations;
 - keyboard Off, all seven observed quick effects, three logo modes, keyboard
-  brightness, observed-only special keys, and observed-only LampArray access;
+  brightness, partial M3/M4/M5 special-key admission, and observed-only
+  LampArray access;
 - startup animation, function-key primary behavior, and Gaming mode.
 
 The gate is independently unit tested to reject dropped discoveries and an
@@ -1543,8 +1523,8 @@ without a packet capture or unique device identifier.
 
 The reversible exact-device run began in Driver mode, applied Normal, confirmed
 Normal through `00/84 0000`, restored Driver, and independently confirmed the
-restored baseline. That evidence admits both `00/04 0000` and `00/04 0300`,
-but it does not admit the PID 02C6 special-key decoder.
+restored baseline. That lifecycle evidence does not by itself admit input
+reports; the later live production probe separately admits only M3-M5.
 
 The production port therefore treats Driver mode as an ownership-aware
 lifecycle:
@@ -1559,9 +1539,10 @@ lifecycle:
 - invalidating the PID 02C6 port closes its HID actor instead of leaking the
   command session.
 
-Keep `SpecialKeyBindingsAccess=ObservedOnly` until M1-M5, Fn+P, and ordinary
-Normal-mode key behavior have all exercised the production decoder. Device-mode
-write admission is not evidence that those report mappings are safe.
+Keep M1, M2, and Fn+P out of `WritableSpecialKeySlots` until they produce
+distinguishable production events and pass ordinary-key suppression tests.
+Device-mode write admission is not evidence that those report mappings are
+safe.
 
 Final validation at the current transactional-identity checkpoint:
 
@@ -1575,24 +1556,24 @@ Final validation at the current transactional-identity checkpoint:
 - documentation commits: `1083340`, `6c3c631`, `c545805`, and public-site
   checkpoint `c38e993`;
 - Release build: 0 warnings and 0 errors;
-- full Release suite: 3,278 tests passed across all ten projects
-  (Display 38, Capture 253, Session 33, Contracts 192, SessionAgent 167,
-  Protocol 1,049, Tray 615, Service 685, Setup 227, FirmwareSmoke 19);
+- full Release suite: 3,337 tests passed across all ten projects
+  (Display 38, Capture 275, Session 33, Contracts 195, SessionAgent 174,
+  Protocol 1,053, Tray 629, Service 687, Setup 233, FirmwareSmoke 20);
 - `dotnet format OpenBlade.slnx --verify-no-changes --no-restore`: clean;
 - Windows PowerShell 5.1 sparse-package identity, publish-payload, and
   installer-authoring suites: all passed;
 - Session Agent identity-probe matrix: exact/missing/mismatched package and
   application identity, approved/unavailable array, redaction, failure
   HRESULT, invalid output, and no-overwrite cases passed;
-- Windows PowerShell 5.1 capture toolkit: all five regression suites passed
-  with `-NonInteractive`;
+- Windows PowerShell 5.1 capture toolkit: all 15 regression suites passed;
 - public documentation: all local links and assets resolved across 11 pages;
 - post-`c19fe0c` non-mutating production probe:
   `ReadyWithAccessFallback`, exact
   4/4/7 battery capability counts, seven observed lighting effects,
-  `SpecialKeyBindingsAccess=ObservedOnly`, all three observed CPU/GPU ranges,
+  `SpecialKeyBindingsAccess=ReadWrite`,
+  `WritableSpecialKeySlots=M3, M4, M5`, all three observed CPU/GPU ranges,
   `LampArrayLightingAccess=ObservedOnly`, two power-source observations,
-  brightness raw 0, idle fan RPM 0/0, startup
+  brightness raw 129 (51 percent), idle fan RPM 2200/1900, startup
   enabled, MCU `1.9.0.0`, full-power 280 W AC, Function Keys primary, Gaming
   mode off, Driver mode, logo Static, no open/query failures, and
   `Success=True`.
@@ -1629,11 +1610,11 @@ validation, privacy boundary, and a Windows PowerShell 5.1 regression test.
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`e5b9e14` CPU-backend-discovery checkpoint its 144 leaves contain:
+`0b350f0` partial-special-key-admission checkpoint its 144 leaves contain:
 
-- 53 `ProductionAdmitted`;
+- 56 `ProductionAdmitted`;
 - 3 `QueryValidated`;
-- 30 `Captured`;
+- 27 `Captured`;
 - 1 `SetterValidated`;
 - 10 `SoftwareOnly`;
 - 3 `Absent`;
@@ -1655,10 +1636,9 @@ The main physical-evidence groups still blocking broader admission are:
   the model's 51-byte collection is query-validated as an 85-lamp Windows
   LampArray, but OpenBlade delegates to Windows instead of registering a
   competing background renderer;
-- exact Normal-mode special-key parity;
-- production validation of the PID `02C6` special-key decoder. M1-M5 and Fn+P
-  reports are captured, including the critical M4 `040AD300` collision with
-  the older PID `02E0` performance-key assumption, but remain observed-only;
+- M1/M2/Fn+P production discrimination and exact Normal-mode parity. M3-M5 are
+  admitted, including the critical PID `02C6` M4 `040AD300` mapping; the
+  generic M1/M2/Fn+P path remains captured and deliberately disabled;
 - cold boot, sign-in, sleep/resume, and device reconnect.
 
 The next agent should rerun the coverage-contract test before and after changing

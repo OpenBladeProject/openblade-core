@@ -556,6 +556,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
         }
 
+        if (args.PropertyName is nameof(MainViewModel.IsSpecialKeyBindingsEditable)
+            or nameof(MainViewModel.SpecialKeyBindingsAccessSummary))
+        {
+            if (dispatcherQueue.HasThreadAccess)
+            {
+                RefreshSpecialKeyBindingAccess();
+            }
+            else
+            {
+                dispatcherQueue.TryEnqueue(RefreshSpecialKeyBindingAccess);
+            }
+        }
+
         if (args.PropertyName is nameof(MainViewModel.LiveReadingsRefreshCadence)
             or nameof(MainViewModel.TrayHoverLabelMode)
             or nameof(MainViewModel.EnabledDashboardTelemetryItems)
@@ -1792,7 +1805,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             foreach (SpecialKeyBindingPreference preference in
                      SpecialKeyBindingDefaults.Normalize(preferences))
             {
-                var binding = new SpecialKeyBindingViewModel(preference);
+                var binding = new SpecialKeyBindingViewModel(
+                    preference,
+                    ViewModel.IsSpecialKeyBindingSlotEditable(preference.Slot));
                 binding.PropertyChanged += OnSpecialKeyBindingChanged;
                 SpecialKeyBindings.Add(binding);
             }
@@ -1800,6 +1815,15 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         finally
         {
             changingSpecialKeyBindings = false;
+        }
+    }
+
+    private void RefreshSpecialKeyBindingAccess()
+    {
+        foreach (SpecialKeyBindingViewModel binding in SpecialKeyBindings)
+        {
+            binding.SetEditable(
+                ViewModel.IsSpecialKeyBindingSlotEditable(binding.Slot));
         }
     }
 

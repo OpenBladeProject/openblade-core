@@ -413,6 +413,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.DeviceCapabilities <Clone>$()
   method OpenBlade.Contracts.FanSpeedRange get_FanSpeedRange()
   method OpenBlade.Contracts.GpuOverclockCapabilities get_GpuOverclock()
+  method OpenBlade.Contracts.SpecialKeySlotSet get_WritableSpecialKeySlots()
   method System.Boolean get_SupportsBatteryProtectionOff()
   method System.Boolean get_SupportsKeyboardBrightness()
   method System.Boolean get_SupportsTemporaryFullCharge()
@@ -445,6 +446,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_SupportsBatteryProtectionOff(System.Boolean value)
   method System.Void set_SupportsKeyboardBrightness(System.Boolean value)
   method System.Void set_SupportsTemporaryFullCharge(System.Boolean value)
+  method System.Void set_WritableSpecialKeySlots(OpenBlade.Contracts.SpecialKeySlotSet value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
@@ -458,6 +460,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property OpenBlade.Contracts.CustomPerformanceCapabilities CustomPerformance { get; init; }
   property OpenBlade.Contracts.FanSpeedRange FanSpeedRange { get; init; }
   property OpenBlade.Contracts.GpuOverclockCapabilities GpuOverclock { get; init; }
+  property OpenBlade.Contracts.SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
   property System.Boolean SupportsTemporaryFullCharge { get; init; }
@@ -1052,7 +1055,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 31
+  field const System.Int32 ProtocolVersion = 32
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1768,6 +1771,15 @@ type sealed class OpenBlade.Contracts.ShutdownOpenBladeRequest
   method static System.Boolean op_Inequality(OpenBlade.Contracts.ShutdownOpenBladeRequest left, OpenBlade.Contracts.ShutdownOpenBladeRequest right)
   method virtual OpenBlade.Contracts.ShutdownOpenBladeRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.ShutdownOpenBladeRequest other)
+type enum OpenBlade.Contracts.SpecialKeySlotSet
+  field System.Int32 value__
+  field const OpenBlade.Contracts.SpecialKeySlotSet All = 31
+  field const OpenBlade.Contracts.SpecialKeySlotSet M1 = 1
+  field const OpenBlade.Contracts.SpecialKeySlotSet M2 = 2
+  field const OpenBlade.Contracts.SpecialKeySlotSet M3 = 4
+  field const OpenBlade.Contracts.SpecialKeySlotSet M4 = 8
+  field const OpenBlade.Contracts.SpecialKeySlotSet M5 = 16
+  field const OpenBlade.Contracts.SpecialKeySlotSet None = 0
 type sealed class OpenBlade.Contracts.SpectrumCyclingLightingParameters
   base OpenBlade.Contracts.LightingEffectParameters
   interface System.IEquatable<OpenBlade.Contracts.SpectrumCyclingLightingParameters>

@@ -130,7 +130,11 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
         && battery.OneShotLaptopControls.SetEquals(LaptopControls)
         && lighting.LightingEffects.SetEquals([LightingEffect.Off])
         && lighting.ObservedLightingEffects.SetEquals(ObservedLightingEffects)
-        && lighting.SpecialKeyBindingsAccess == DeviceFeatureAccess.ObservedOnly
+        && lighting.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
+        && lighting.WritableSpecialKeySlots == (
+            SpecialKeySlotSet.M3
+            | SpecialKeySlotSet.M4
+            | SpecialKeySlotSet.M5)
         && lighting.LampArrayLightingAccess == DeviceFeatureAccess.ObservedOnly
         && lighting.LogoLightingModes.SetEquals(Enum.GetValues<LogoLightingMode>())
         && lighting.SupportsKeyboardBrightness;

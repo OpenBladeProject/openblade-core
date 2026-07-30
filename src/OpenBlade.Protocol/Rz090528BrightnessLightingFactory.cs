@@ -115,7 +115,11 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         SupportsTemporaryFullCharge: false)
     {
         SupportsKeyboardBrightness = true,
-        SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+        SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+        WritableSpecialKeySlots =
+            SpecialKeySlotSet.M3
+            | SpecialKeySlotSet.M4
+            | SpecialKeySlotSet.M5,
         LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
         ObservedLightingEffects = new HashSet<LightingEffect>
         {

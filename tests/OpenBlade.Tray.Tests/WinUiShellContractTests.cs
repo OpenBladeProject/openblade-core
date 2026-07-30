@@ -754,11 +754,19 @@ public sealed class WinUiShellContractTests
         Assert.Contains("GetRawInputHeader", source, StringComparison.Ordinal);
         Assert.Contains("EnsureRawInputBuffer", source, StringComparison.Ordinal);
         Assert.Contains("stackalloc byte[3]", source, StringComparison.Ordinal);
+        Assert.Contains("readSpecialKeyInputAdmitted", source, StringComparison.Ordinal);
         Assert.Contains(
-            "Rz09_0528PerformanceShortcutRawHidInput",
+            "readSpecialKeyInputAdmitted(specialKey)",
             source,
             StringComparison.Ordinal);
-        Assert.Contains("readSpecialKeyInputAdmitted", source, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Rz09_0528PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "VirtualKeyPageUp",
+            source,
+            StringComparison.Ordinal);
         Assert.Contains(
             "!TryGetInputDeviceKind(header.Device",
             source,

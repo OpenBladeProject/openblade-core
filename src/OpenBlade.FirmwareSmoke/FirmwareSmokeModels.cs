@@ -23,6 +23,7 @@ public sealed record FirmwareSmokeCapabilities(
     IReadOnlyList<string> LightingEffects,
     IReadOnlyList<string> ObservedLightingEffects,
     string? SpecialKeyBindingsAccess,
+    string? WritableSpecialKeySlots,
     string? LampArrayLightingAccess,
     IReadOnlyList<int> ChargeLimits,
     bool SupportsBatteryProtectionOff,

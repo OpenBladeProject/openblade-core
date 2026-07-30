@@ -41,6 +41,13 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
                 lighting),
             (battery with { ObservedPowerSourceBehaviors = [] }, lighting),
             (battery, lighting with { SpecialKeyBindingsAccess = null }),
+            (
+                battery,
+                lighting with
+                {
+                    WritableSpecialKeySlots =
+                        SpecialKeySlotSet.M3 | SpecialKeySlotSet.M4,
+                }),
             (battery, lighting with { LampArrayLightingAccess = null }),
             (
                 battery,
@@ -168,7 +175,11 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
             SupportsTemporaryFullCharge: false)
         {
             SupportsKeyboardBrightness = true,
-            SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+            WritableSpecialKeySlots =
+                SpecialKeySlotSet.M3
+                | SpecialKeySlotSet.M4
+                | SpecialKeySlotSet.M5,
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects = new HashSet<LightingEffect>
             {

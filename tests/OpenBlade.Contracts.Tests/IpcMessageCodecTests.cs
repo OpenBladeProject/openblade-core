@@ -318,6 +318,7 @@ public sealed class IpcMessageCodecTests
             SupportsTemporaryFullCharge: false)
         {
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+            WritableSpecialKeySlots = SpecialKeySlotSet.All,
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects = new HashSet<LightingEffect>
             {
@@ -353,7 +354,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(31, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(32, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -362,6 +363,9 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(
             DeviceFeatureAccess.ReadWrite,
             roundTrip.Capabilities.SpecialKeyBindingsAccess);
+        Assert.Equal(
+            SpecialKeySlotSet.All,
+            roundTrip.Capabilities.WritableSpecialKeySlots);
         Assert.Equal(
             DeviceFeatureAccess.ObservedOnly,
             roundTrip.Capabilities.LampArrayLightingAccess);
@@ -517,7 +521,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(31, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(32, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -531,6 +535,32 @@ public sealed class IpcMessageCodecTests
                 Capabilities = DeviceCapabilities.Unavailable() with
                 {
                     SpecialKeyBindingsAccess = (DeviceFeatureAccess)999,
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                new MemoryStream(),
+                frame,
+                CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(DeviceFeatureAccess.ReadWrite, (int)SpecialKeySlotSet.None)]
+    [InlineData(DeviceFeatureAccess.ObservedOnly, (int)SpecialKeySlotSet.M3)]
+    [InlineData(DeviceFeatureAccess.ReadWrite, 32)]
+    public async Task WriteServerFrameAsync_RejectsInconsistentWritableSpecialKeySlots(
+        DeviceFeatureAccess access,
+        int slots)
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    SpecialKeyBindingsAccess = access,
+                    WritableSpecialKeySlots = (SpecialKeySlotSet)slots,
                 },
             });
 

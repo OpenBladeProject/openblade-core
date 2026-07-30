@@ -69,6 +69,18 @@ public enum DeviceFeatureAccess
     ReadWrite,
 }
 
+[Flags]
+public enum SpecialKeySlotSet
+{
+    None = 0,
+    M1 = 1 << 0,
+    M2 = 1 << 1,
+    M3 = 1 << 2,
+    M4 = 1 << 3,
+    M5 = 1 << 4,
+    All = M1 | M2 | M3 | M4 | M5,
+}
+
 public sealed record DeviceNumericRange(
     int Minimum,
     int Maximum,
@@ -158,6 +170,8 @@ public sealed record DeviceCapabilities(
     public GpuOverclockCapabilities? GpuOverclock { get; init; }
 
     public DeviceFeatureAccess? SpecialKeyBindingsAccess { get; init; }
+
+    public SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
 
     public DeviceFeatureAccess? LampArrayLightingAccess { get; init; }
 

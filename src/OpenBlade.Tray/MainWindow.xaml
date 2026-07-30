@@ -2515,7 +2515,7 @@
                                  Visibility="{x:Bind ViewModel.IsSpecialKeyBindingsObservedOnlyVisible, Mode=OneWay}"
                                  Severity="Informational"
                                  IsClosable="False"
-                                 Title="Shortcut keys captured, not yet controllable"
+                                 Title="{x:Bind ViewModel.SpecialKeyBindingsInfoTitle, Mode=OneWay}"
                                  Message="{x:Bind ViewModel.SpecialKeyBindingsAccessSummary, Mode=OneWay}" />
 
                         <StackPanel x:Name="ShortcutKeysSection"
@@ -2534,10 +2534,15 @@
                                                             <ColumnDefinition Width="*" />
                                                             <ColumnDefinition Width="280" />
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBlock Text="{x:Bind SlotLabel}"
-                                                                   Style="{StaticResource CardTitleStyle}"
-                                                                   VerticalAlignment="Center" />
+                                                        <StackPanel Spacing="2"
+                                                                    VerticalAlignment="Center">
+                                                            <TextBlock Text="{x:Bind SlotLabel}"
+                                                                       Style="{StaticResource CardTitleStyle}" />
+                                                            <TextBlock Text="{x:Bind AccessLabel, Mode=OneWay}"
+                                                                       Style="{StaticResource CaptionTextBlockStyle}" />
+                                                        </StackPanel>
                                                         <ComboBox Grid.Column="1"
+                                                                  IsEnabled="{x:Bind IsEditable, Mode=OneWay}"
                                                                   MinWidth="200"
                                                                   HorizontalAlignment="Stretch"
                                                                   VerticalAlignment="Center"
@@ -2559,6 +2564,7 @@
                                                                    VerticalAlignment="Center" />
                                                         <StackPanel Grid.Column="1" Spacing="4">
                                                             <TextBox Text="{x:Bind Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                     IsEnabled="{x:Bind IsEditable, Mode=OneWay}"
                                                                      PlaceholderText="{x:Bind ValuePlaceholder, Mode=OneWay}"
                                                                      MaxLength="2048"
                                                                      AutomationProperties.Name="{x:Bind ValueLabel, Mode=OneWay}" />

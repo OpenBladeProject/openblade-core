@@ -1488,11 +1488,39 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             "Ranges are documented, but writes remain disabled until exact-device setter validation.");
 
     public bool IsSpecialKeyBindingsEditable =>
-        Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite;
+        Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
+        && Capabilities.WritableSpecialKeySlots != SpecialKeySlotSet.None;
 
     public bool IsSpecialKeyBindingsObservedOnlyVisible =>
         Capabilities.SpecialKeyBindingsAccess is
-            DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadOnly;
+            DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadOnly
+        || Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
+            && Capabilities.WritableSpecialKeySlots != SpecialKeySlotSet.All;
+
+    public string SpecialKeyBindingsInfoTitle =>
+        Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
+            ? "Shortcut keys partially available"
+            : "Shortcut keys captured, not yet controllable";
+
+    public bool IsSpecialKeyBindingSlotEditable(SpecialKeySlot slot)
+    {
+        if (Capabilities.SpecialKeyBindingsAccess != DeviceFeatureAccess.ReadWrite)
+        {
+            return false;
+        }
+
+        SpecialKeySlotSet required = slot switch
+        {
+            SpecialKeySlot.M1 => SpecialKeySlotSet.M1,
+            SpecialKeySlot.M2 => SpecialKeySlotSet.M2,
+            SpecialKeySlot.M3 => SpecialKeySlotSet.M3,
+            SpecialKeySlot.M4 => SpecialKeySlotSet.M4,
+            SpecialKeySlot.M5 => SpecialKeySlotSet.M5,
+            _ => SpecialKeySlotSet.None,
+        };
+        return required != SpecialKeySlotSet.None
+            && (Capabilities.WritableSpecialKeySlots & required) != 0;
+    }
 
     public string SpecialKeyBindingsAccessSummary =>
         Capabilities.SpecialKeyBindingsAccess switch
@@ -1504,7 +1532,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             DeviceFeatureAccess.ReadOnly =>
                 "Special-key input reports are recognized, but binding changes are unavailable.",
             DeviceFeatureAccess.ReadWrite =>
-                "Special-key bindings are available.",
+                Capabilities.WritableSpecialKeySlots == SpecialKeySlotSet.All
+                    ? "Special-key bindings are available."
+                    : "M3, M4, and M5 are live-validated and editable. "
+                        + "M1, M2, and Fn+P remain captured but unavailable because "
+                        + "Windows Raw Input exposes the same generic Fn report for all three.",
             _ => UnavailableLabel,
         };
 
@@ -2029,6 +2061,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(GpuClockTuningAccessLabel));
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsSpecialKeyBindingsObservedOnlyVisible));
+            Notify(nameof(SpecialKeyBindingsInfoTitle));
             Notify(nameof(SpecialKeyBindingsAccessSummary));
             Notify(nameof(IsObservedLightingEffectsVisible));
             Notify(nameof(ObservedLightingEffectsSummary));

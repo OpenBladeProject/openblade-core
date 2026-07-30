@@ -1012,6 +1012,8 @@ if (args.Length == 1 && args[0].Equals(
         $"SpecialKeyBindingsAccess=" +
         $"{lighting.Capabilities.SpecialKeyBindingsAccess?.ToString() ?? "Unavailable"}");
     Console.WriteLine(
+        $"WritableSpecialKeySlots={lighting.Capabilities.WritableSpecialKeySlots}");
+    Console.WriteLine(
         $"LampArrayLightingAccess=" +
         $"{lighting.Capabilities.LampArrayLightingAccess?.ToString() ?? "Unavailable"}");
     Console.WriteLine(

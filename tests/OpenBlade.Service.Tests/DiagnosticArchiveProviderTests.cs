@@ -17,7 +17,11 @@ public sealed class DiagnosticArchiveProviderTests
             AlwaysOverrideExternalLightingChanges = true,
             Capabilities = DeviceCapabilities.Unavailable() with
             {
-                SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+                WritableSpecialKeySlots =
+                    SpecialKeySlotSet.M3
+                    | SpecialKeySlotSet.M4
+                    | SpecialKeySlotSet.M5,
                 LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
                 ObservedLightingEffects =
                     new HashSet<LightingEffect>
@@ -103,8 +107,11 @@ public sealed class DiagnosticArchiveProviderTests
             "Static, Spectrum",
             configuration.RootElement.GetProperty("capability.observedLightingEffects").GetString());
         Assert.Equal(
-            DeviceFeatureAccess.ObservedOnly.ToString(),
+            DeviceFeatureAccess.ReadWrite.ToString(),
             configuration.RootElement.GetProperty("capability.specialKeyBindingsAccess").GetString());
+        Assert.Equal(
+            "M3, M4, M5",
+            configuration.RootElement.GetProperty("capability.writableSpecialKeySlots").GetString());
         Assert.Equal(
             DeviceFeatureAccess.ObservedOnly.ToString(),
             configuration.RootElement.GetProperty("capability.lampArrayLightingAccess").GetString());
@@ -116,8 +123,18 @@ public sealed class DiagnosticArchiveProviderTests
             capabilities.RootElement.GetProperty("lighting.Spectrum").GetBoolean());
         Assert.True(
             capabilities.RootElement.GetProperty("laptop.specialKeyBindings.observed").GetBoolean());
-        Assert.False(
+        Assert.True(
             capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write.M1").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write.M2").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write.M3").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write.M4").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write.M5").GetBoolean());
         Assert.True(
             capabilities.RootElement.GetProperty("lighting.lampArray.observed").GetBoolean());
         Assert.False(

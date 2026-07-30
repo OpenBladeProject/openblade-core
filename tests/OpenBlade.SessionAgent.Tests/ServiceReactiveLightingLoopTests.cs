@@ -721,7 +721,7 @@ public sealed class ServiceReactiveLightingLoopTests
         Assert.Equal(
             RazerBladeInputDeviceKind.Unsupported,
             factory.Last!.ReadVerifiedInputDeviceKind());
-        Assert.False(factory.Last.ReadSpecialKeyInputAdmitted());
+        Assert.False(factory.Last.IsSpecialKeyInputAdmitted(SpecialKeySlot.M3));
 
         DeviceCapabilities observed = DeviceCapabilities.Unavailable() with
         {
@@ -740,11 +740,15 @@ public sealed class ServiceReactiveLightingLoopTests
         await WaitUntilAsync(
             () => factory.Last.ReadVerifiedInputDeviceKind()
                     == RazerBladeInputDeviceKind.Rz09_0528);
-        Assert.False(factory.Last.ReadSpecialKeyInputAdmitted());
+        Assert.False(factory.Last.IsSpecialKeyInputAdmitted(SpecialKeySlot.M3));
 
         DeviceCapabilities admitted = DeviceCapabilities.Unavailable() with
         {
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+            WritableSpecialKeySlots =
+                SpecialKeySlotSet.M3
+                | SpecialKeySlotSet.M4
+                | SpecialKeySlotSet.M5,
         };
         client.Publish(Status(LightingRendererOwnershipState.Static) with
         {
@@ -760,7 +764,8 @@ public sealed class ServiceReactiveLightingLoopTests
         await WaitUntilAsync(
             () => factory.Last.ReadVerifiedInputDeviceKind()
                     == RazerBladeInputDeviceKind.Rz09_0528
-                && factory.Last.ReadSpecialKeyInputAdmitted());
+                && factory.Last.IsSpecialKeyInputAdmitted(SpecialKeySlot.M3)
+                && !factory.Last.IsSpecialKeyInputAdmitted(SpecialKeySlot.M1));
 
         client.Publish(Status(LightingRendererOwnershipState.Static) with
         {
@@ -776,7 +781,7 @@ public sealed class ServiceReactiveLightingLoopTests
         await WaitUntilAsync(
             () => factory.Last.ReadVerifiedInputDeviceKind()
                     == RazerBladeInputDeviceKind.Unsupported
-                && !factory.Last.ReadSpecialKeyInputAdmitted());
+                && !factory.Last.IsSpecialKeyInputAdmitted(SpecialKeySlot.M3));
 
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
@@ -1003,7 +1008,7 @@ public sealed class ServiceReactiveLightingLoopTests
         private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
         private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
         private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
-        private readonly Func<bool> readSpecialKeyInputAdmitted;
+        private readonly Func<SpecialKeySlot, bool> isSpecialKeyInputAdmitted;
 
         public RecordingSource(ReactiveKeyboardSourceOptions options)
         {
@@ -1017,7 +1022,7 @@ public sealed class ServiceReactiveLightingLoopTests
             readDriverModeObservation = options.ReadDriverModeObservation;
             readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy;
             readVerifiedInputDeviceKind = options.ReadVerifiedInputDeviceKind;
-            readSpecialKeyInputAdmitted = options.ReadSpecialKeyInputAdmitted;
+            isSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted;
         }
 
         public bool Disposed { get; private set; }
@@ -1055,7 +1060,8 @@ public sealed class ServiceReactiveLightingLoopTests
         public RazerBladeInputDeviceKind ReadVerifiedInputDeviceKind() =>
             readVerifiedInputDeviceKind();
 
-        public bool ReadSpecialKeyInputAdmitted() => readSpecialKeyInputAdmitted();
+        public bool IsSpecialKeyInputAdmitted(SpecialKeySlot slot) =>
+            isSpecialKeyInputAdmitted(slot);
 
         public void Fail(Exception exception) => completion.TrySetException(exception);
 

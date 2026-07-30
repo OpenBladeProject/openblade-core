@@ -285,8 +285,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.True(capabilities.ObservedLightingEffects.SetEquals(
             [LightingEffect.Ripple, LightingEffect.Wheel]));
         Assert.Equal(
-            DeviceFeatureAccess.ObservedOnly,
+            DeviceFeatureAccess.ReadWrite,
             capabilities.SpecialKeyBindingsAccess);
+        Assert.Equal(
+            SpecialKeySlotSet.M3 | SpecialKeySlotSet.M4 | SpecialKeySlotSet.M5,
+            capabilities.WritableSpecialKeySlots);
         Assert.Equal(
             DeviceFeatureAccess.ReadOnly,
             capabilities.LampArrayLightingAccess);
@@ -1348,7 +1351,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             false,
             false)
         {
-            SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+            WritableSpecialKeySlots =
+                SpecialKeySlotSet.M3
+                | SpecialKeySlotSet.M4
+                | SpecialKeySlotSet.M5,
             LampArrayLightingAccess = DeviceFeatureAccess.ReadOnly,
             ObservedLightingEffects =
                 new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
@@ -1377,7 +1384,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             false,
             false)
         {
-            SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+            WritableSpecialKeySlots =
+                SpecialKeySlotSet.M3
+                | SpecialKeySlotSet.M4
+                | SpecialKeySlotSet.M5,
             LampArrayLightingAccess = DeviceFeatureAccess.ReadOnly,
             ObservedLightingEffects =
                 new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },

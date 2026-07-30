@@ -49,8 +49,6 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private const uint WindowMessageSystemKeyDown = 0x0104;
     private const uint WindowMessageSystemKeyUp = 0x0105;
     private const ushort RawKeyboardBreakFlag = 0x0001;
-    private const uint VirtualKeyPageUp = 0x21;
-    private const uint VirtualKeyPageDown = 0x22;
     private const int MaximumRawInputBytes = 64 * 1024;
     private const ushort GenericDesktopUsagePage = 0x0001;
     private const ushort ConsumerUsagePage = 0x000C;
@@ -75,7 +73,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
     private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
     private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
-    private readonly Func<bool> readSpecialKeyInputAdmitted;
+    private readonly Func<SpecialKeySlot, bool> readSpecialKeyInputAdmitted;
     private readonly Rz09_0581FunctionRowInputState functionRowInput = new();
     private readonly GamingModeKeyBlockState gamingModeKeyBlockState = new();
     private readonly LowLevelKeyboardHookHealthTracker hookHealth = new();
@@ -123,8 +121,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             ?? throw new ArgumentNullException(nameof(options.ReadGamingModeKeyPolicy));
         readVerifiedInputDeviceKind = options.ReadVerifiedInputDeviceKind
             ?? throw new ArgumentNullException(nameof(options.ReadVerifiedInputDeviceKind));
-        readSpecialKeyInputAdmitted = options.ReadSpecialKeyInputAdmitted
-            ?? throw new ArgumentNullException(nameof(options.ReadSpecialKeyInputAdmitted));
+        readSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted
+            ?? throw new ArgumentNullException(nameof(options.IsSpecialKeyInputAdmitted));
         messageThread = new Thread(RunMessageWindow)
         {
             IsBackground = true,
@@ -399,16 +397,6 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     return 1;
                 }
             }
-            if ((input.Flags & LowLevelInjectedFlag) == 0
-                && owner.readSpecialKeyInputAdmitted()
-                && owner.performanceFunctionKeyPressed
-                && (input.VirtualKey == VirtualKeyPageUp
-                    && owner.shouldOverrideSpecialKey(SpecialKeySlot.M1)
-                    || input.VirtualKey == VirtualKeyPageDown
-                    && owner.shouldOverrideSpecialKey(SpecialKeySlot.M2)))
-            {
-                return 1;
-            }
         }
 
         return CallNextHookEx(0, code, windowParameter, messageParameter);
@@ -516,31 +504,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         bool keyDown = (keyboard.Flags & RawKeyboardBreakFlag) == 0;
         if (deviceKind == RazerBladeInputDeviceKind.Rz09_0528)
         {
-            bool inputAdmitted = readSpecialKeyInputAdmitted();
-            if (Rz09_0528SpecialKeyRawKeyboardInput.TryCreateTrigger(
-                    keyboard.MakeCode,
-                    keyboard.Flags,
-                    performanceFunctionKeyPressed,
-                    specialKeyPressed,
-                    out SpecialKeySlot specialKey)
-                && inputAdmitted
-                && ShouldOverrideSpecialKey(
-                    deviceKind,
-                    specialKey,
-                    shouldOverrideSpecialKey(specialKey)))
-            {
-                publishSpecialKey(specialKey);
-            }
-            if (Rz09_0528PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
-                    keyboard.MakeCode,
-                    keyboard.Flags,
-                    performanceFunctionKeyPressed,
-                    ref functionPPressed,
-                    out PerformanceShortcutSource exactShortcut)
-                && inputAdmitted)
-            {
-                publishPerformanceShortcut(exactShortcut);
-            }
+            // Live PID 02C6 Raw Input validation proved that M1, M2, and Fn+P
+            // do not expose their report-ID-01 usages here. Ordinary Page Up,
+            // Page Down, and P must therefore remain untouched.
             return;
         }
 
@@ -640,7 +606,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 ref performanceFunctionKeyPressed,
                 specialKeyPressed,
                 out SpecialKeySlot specialKey);
-            bool inputAdmitted = readSpecialKeyInputAdmitted();
+            bool inputAdmitted = specialTriggered
+                && readSpecialKeyInputAdmitted(specialKey);
             bool overrideSpecialKey = inputAdmitted
                 && specialTriggered
                 && ShouldOverrideSpecialKey(
@@ -659,15 +626,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             }
             if (deviceKind == RazerBladeInputDeviceKind.Rz09_0528)
             {
-                if (inputAdmitted
-                    && Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
-                    report[..inspectedBytes],
-                    performanceFunctionKeyPressed,
-                    ref functionPPressed,
-                    out PerformanceShortcutSource exactShortcut))
-                {
-                    publishPerformanceShortcut(exactShortcut);
-                }
+                // The USB capture preserves Fn+P's report-ID-01 usage, but
+                // Windows Raw Input exposes only the same generic Fn pair as
+                // M1 and M2. Do not infer or publish a shortcut from that pair.
                 continue;
             }
             if (Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(

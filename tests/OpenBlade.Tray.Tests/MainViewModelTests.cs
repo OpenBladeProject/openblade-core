@@ -2089,6 +2089,36 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task PartialSpecialKeyAdmission_EnablesOnlyM3ThroughM5()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+                WritableSpecialKeySlots =
+                    SpecialKeySlotSet.M3
+                    | SpecialKeySlotSet.M4
+                    | SpecialKeySlotSet.M5,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsSpecialKeyBindingsEditable);
+
+        Assert.False(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M1));
+        Assert.False(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M2));
+        Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M3));
+        Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M4));
+        Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M5));
+        Assert.True(viewModel.IsSpecialKeyBindingsObservedOnlyVisible);
+        Assert.Contains("M3, M4, and M5", viewModel.SpecialKeyBindingsAccessSummary);
+        Assert.Contains("M1, M2, and Fn+P", viewModel.SpecialKeyBindingsAccessSummary);
+    }
+
+    [Fact]
     public async Task GpuClockTuning_UsesDriverRangesAndSendsTypedCustomOverride()
     {
         var client = new FakeServiceClient();

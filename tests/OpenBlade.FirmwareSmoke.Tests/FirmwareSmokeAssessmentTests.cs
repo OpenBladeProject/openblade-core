@@ -39,7 +39,11 @@ public sealed class FirmwareSmokeAssessmentTests
                     "Wave",
                     "Wheel",
                 ],
-                SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly.ToString(),
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite.ToString(),
+                WritableSpecialKeySlots =
+                    (SpecialKeySlotSet.M3
+                    | SpecialKeySlotSet.M4
+                    | SpecialKeySlotSet.M5).ToString(),
                 LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly.ToString(),
                 OneShotLaptopControls =
                     ["FunctionKeyPrimary", "GamingMode", "StartupAnimation"],
@@ -55,6 +59,11 @@ public sealed class FirmwareSmokeAssessmentTests
         Assert.Equal(
             FirmwareSmokeOutcome.Passed,
             Assert.Single(report.Checks, check => check.Id == "capabilities.special-keys").Outcome);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "capabilities.special-key-slots").Outcome);
         Assert.Equal(
             FirmwareSmokeOutcome.Passed,
             Assert.Single(report.Checks, check => check.Id == "capabilities.lamp-array").Outcome);
@@ -194,6 +203,30 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Fact]
+    public void PostUpdateRejectsChangedWritableSpecialKeySlots()
+    {
+        FirmwareSmokeSnapshot baseline = CreateSnapshot("1.5.0.0");
+        FirmwareSmokeSnapshot current = CreateSnapshot("1.6.0.0") with
+        {
+            Capabilities = baseline.Capabilities with
+            {
+                WritableSpecialKeySlots =
+                    (SpecialKeySlotSet.M3 | SpecialKeySlotSet.M4).ToString(),
+            },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
+            baseline,
+            current,
+            requireMcuChange: true);
+
+        Assert.False(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(report.Checks, check => check.Id == "capabilities.unchanged").Outcome);
+    }
+
+    [Fact]
     public void PostUpdateRejectsChangedLampArrayAccess()
     {
         FirmwareSmokeSnapshot baseline = CreateSnapshot("1.5.0.0");
@@ -307,6 +340,7 @@ public sealed class FirmwareSmokeAssessmentTests
             ],
             [],
             SpecialKeyBindingsAccess: DeviceFeatureAccess.ReadWrite.ToString(),
+            WritableSpecialKeySlots: SpecialKeySlotSet.All.ToString(),
             LampArrayLightingAccess: null,
             [50, 55, 60, 65, 70, 75, 80],
             SupportsBatteryProtectionOff: true,

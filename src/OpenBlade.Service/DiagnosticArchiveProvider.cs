@@ -363,6 +363,18 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.SpecialKeyBindingsAccess is not null;
         result["laptop.specialKeyBindings.write"] =
             capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite;
+        foreach (SpecialKeySlotSet slot in new[]
+        {
+            SpecialKeySlotSet.M1,
+            SpecialKeySlotSet.M2,
+            SpecialKeySlotSet.M3,
+            SpecialKeySlotSet.M4,
+            SpecialKeySlotSet.M5,
+        })
+        {
+            result[$"laptop.specialKeyBindings.write.{slot}"] =
+                (capabilities.WritableSpecialKeySlots & slot) != 0;
+        }
         result["lighting.lampArray.observed"] =
             capabilities.LampArrayLightingAccess is not null;
         result["lighting.lampArray.write"] =
@@ -451,6 +463,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                     .Order()),
             ["capability.specialKeyBindingsAccess"] =
                 capabilities.SpecialKeyBindingsAccess?.ToString() ?? "Unavailable",
+            ["capability.writableSpecialKeySlots"] =
+                capabilities.WritableSpecialKeySlots.ToString(),
             ["capability.lampArrayLightingAccess"] =
                 capabilities.LampArrayLightingAccess?.ToString() ?? "Unavailable",
             ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(

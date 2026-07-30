@@ -20,7 +20,7 @@ public sealed record ReactiveKeyboardSourceOptions(
     Func<KeyboardDriverModeObservation> ReadDriverModeObservation,
     Func<GamingModeKeyPolicy> ReadGamingModeKeyPolicy,
     Func<RazerBladeInputDeviceKind> ReadVerifiedInputDeviceKind,
-    Func<bool> ReadSpecialKeyInputAdmitted);
+    Func<SpecialKeySlot, bool> IsSpecialKeyInputAdmitted);
 
 public interface IReactiveKeyboardSourceFactory
 {
@@ -72,7 +72,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private long driverModeLastConfirmedTimestamp;
     private int gamingModeKeyPolicyBits;
     private int verifiedInputDeviceKind;
-    private int specialKeyInputAdmitted;
+    private int writableSpecialKeySlots;
     private int disposed;
 
     public ServiceReactiveLightingLoop(
@@ -278,7 +278,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     ReadDriverModeObservation: ReadDriverModeObservation,
                     ReadGamingModeKeyPolicy: ReadGamingModeKeyPolicy,
                     ReadVerifiedInputDeviceKind: ReadVerifiedInputDeviceKind,
-                    ReadSpecialKeyInputAdmitted: ReadSpecialKeyInputAdmitted));
+                    IsSpecialKeyInputAdmitted: IsSpecialKeyInputAdmitted));
             if (Volatile.Read(ref disposed) != 0
                 || Interlocked.CompareExchange(ref source, created, null) is not null)
             {
@@ -347,7 +347,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             Interlocked.Exchange(
                 ref verifiedInputDeviceKind,
                 (int)RazerBladeInputDeviceKind.Unsupported);
-            Interlocked.Exchange(ref specialKeyInputAdmitted, 0);
+            Interlocked.Exchange(
+                ref writableSpecialKeySlots,
+                (int)SpecialKeySlotSet.None);
             Interlocked.Exchange(ref functionKeyPrimaryMode, -1);
             SetDriverModeUnknown("The laptop is not currently verified.");
             functionRowActionPump?.ClearPending();
@@ -359,12 +361,14 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 ref verifiedInputDeviceKind,
                 (int)RazerBladeReactiveInputDevice.ClassifyModel(
                     status.Firmware?.ModelNumber));
-            Interlocked.Exchange(
-                ref specialKeyInputAdmitted,
+            SpecialKeySlotSet writableSlots =
                 status.Capabilities?.SpecialKeyBindingsAccess
                     == DeviceFeatureAccess.ReadWrite
-                    ? 1
-                    : 0);
+                    ? status.Capabilities.WritableSpecialKeySlots
+                    : SpecialKeySlotSet.None;
+            Interlocked.Exchange(
+                ref writableSpecialKeySlots,
+                (int)writableSlots);
             // Function-key preference can safely fall back to the active profile.
             // Driver-mode ownership cannot: an unknown firmware readback must
             // pass keys through instead of risking a stale hook decision.
@@ -521,8 +525,21 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private RazerBladeInputDeviceKind ReadVerifiedInputDeviceKind() =>
         (RazerBladeInputDeviceKind)Volatile.Read(ref verifiedInputDeviceKind);
 
-    private bool ReadSpecialKeyInputAdmitted() =>
-        Volatile.Read(ref specialKeyInputAdmitted) != 0;
+    private bool IsSpecialKeyInputAdmitted(SpecialKeySlot slot)
+    {
+        SpecialKeySlotSet required = slot switch
+        {
+            SpecialKeySlot.M1 => SpecialKeySlotSet.M1,
+            SpecialKeySlot.M2 => SpecialKeySlotSet.M2,
+            SpecialKeySlot.M3 => SpecialKeySlotSet.M3,
+            SpecialKeySlot.M4 => SpecialKeySlotSet.M4,
+            SpecialKeySlot.M5 => SpecialKeySlotSet.M5,
+            _ => SpecialKeySlotSet.None,
+        };
+        return required != SpecialKeySlotSet.None
+            && ((SpecialKeySlotSet)Volatile.Read(ref writableSpecialKeySlots)
+                & required) != 0;
+    }
 
     private static bool IsTemporaryDeviceAccessStatus(ServiceStatusSnapshot status) =>
         status.Message.StartsWith("Checking", StringComparison.OrdinalIgnoreCase)

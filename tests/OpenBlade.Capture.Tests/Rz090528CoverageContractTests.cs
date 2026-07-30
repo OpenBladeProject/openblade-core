@@ -36,9 +36,6 @@ public sealed class Rz090528CoverageContractTests
         "specialKeys.functionLayerReports=Captured",
         "specialKeys.m1PageUp=Captured",
         "specialKeys.m2PageDown=Captured",
-        "specialKeys.m3GamingMode=Captured",
-        "specialKeys.m4PerformanceMode=Captured",
-        "specialKeys.m5MicrophoneMute=Captured",
         "specialKeys.performanceKey=Captured",
     ];
 
@@ -70,9 +67,9 @@ public sealed class Rz090528CoverageContractTests
                 group => group.Count(),
                 StringComparer.Ordinal);
 
-        Assert.Equal(53, counts["ProductionAdmitted"]);
+        Assert.Equal(56, counts["ProductionAdmitted"]);
         Assert.Equal(3, counts["QueryValidated"]);
-        Assert.Equal(30, counts["Captured"]);
+        Assert.Equal(27, counts["Captured"]);
         Assert.Equal(1, counts["SetterValidated"]);
         Assert.Equal(10, counts["SoftwareOnly"]);
         Assert.Equal(3, counts["Absent"]);
@@ -88,7 +85,7 @@ public sealed class Rz090528CoverageContractTests
         JsonElement device = root.GetProperty("device");
 
         Assert.Equal("openblade-captures", source.GetProperty("repository").GetString());
-        Assert.Equal("e5b9e14", source.GetProperty("revision").GetString());
+        Assert.Equal("0b350f0", source.GetProperty("revision").GetString());
         Assert.Equal("RZ09-0528", device.GetProperty("modelNumber").GetString());
         Assert.Equal("1532", device.GetProperty("vendorIdHex").GetString());
         Assert.Equal("02C6", device.GetProperty("productIdHex").GetString());
