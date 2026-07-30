@@ -21,6 +21,7 @@ public interface IConnectedCpuPowerServiceProbe : ICpuPowerServiceProbe
 {
     Task<CpuPowerServiceState> QueryAfterConnectedAsync(
         Func<CancellationToken, Task> afterConnected,
+        Action afterSynapseInactive,
         CancellationToken cancellationToken);
 }
 
@@ -94,22 +95,27 @@ internal sealed class WindowsRzAmdOverclockProbe : IConnectedCpuPowerServiceProb
         => await QueryCoreAsync(
             requireSynapseInactiveBeforeLoad: true,
             afterConnected: null,
+            afterSynapseInactive: null,
             cancellationToken).ConfigureAwait(false);
 
     public Task<CpuPowerServiceState> QueryAfterConnectedAsync(
         Func<CancellationToken, Task> afterConnected,
+        Action afterSynapseInactive,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(afterConnected);
+        ArgumentNullException.ThrowIfNull(afterSynapseInactive);
         return QueryCoreAsync(
             requireSynapseInactiveBeforeLoad: false,
             afterConnected,
+            afterSynapseInactive,
             cancellationToken);
     }
 
     private static async Task<CpuPowerServiceState> QueryCoreAsync(
         bool requireSynapseInactiveBeforeLoad,
         Func<CancellationToken, Task>? afterConnected,
+        Action? afterSynapseInactive,
         CancellationToken cancellationToken)
     {
         if (!OperatingSystem.IsWindows()
@@ -154,6 +160,7 @@ internal sealed class WindowsRzAmdOverclockProbe : IConnectedCpuPowerServiceProb
             serverPath,
             externalDllPath,
             afterConnected,
+            afterSynapseInactive,
             cancellationToken);
     }
 
@@ -162,6 +169,7 @@ internal sealed class WindowsRzAmdOverclockProbe : IConnectedCpuPowerServiceProb
         string serverPath,
         string externalDllPath,
         Func<CancellationToken, Task>? afterConnected,
+        Action? afterSynapseInactive,
         CancellationToken cancellationToken)
     {
         nint library = NativeLibrary.Load(clientPath);
@@ -224,6 +232,7 @@ internal sealed class WindowsRzAmdOverclockProbe : IConnectedCpuPowerServiceProb
                 await afterConnected(cancellationToken).ConfigureAwait(false);
             }
             EnsureSynapseInactive();
+            afterSynapseInactive?.Invoke();
             int powerLimit = await QueryValueAsync(
                 getPowerLimit,
                 messages.Reader,
@@ -479,10 +488,19 @@ public static class CpuPowerConnectedLifecycleProbeCommand
 
         output.WriteLine("MutationPolicy=PreconnectThenIsolateGetterOnly");
         output.WriteLine("SetterExportsInvoked=False");
+        bool preconnected = false;
+        bool isolationHandshakeCompleted = false;
+        bool synapseInactiveBeforeGetter = false;
         try
         {
             CpuPowerServiceState state = await probe.QueryAfterConnectedAsync(
-                waitForIsolation,
+                async token =>
+                {
+                    preconnected = true;
+                    await waitForIsolation(token).ConfigureAwait(false);
+                    isolationHandshakeCompleted = true;
+                },
+                () => synapseInactiveBeforeGetter = true,
                 cancellationToken).ConfigureAwait(false);
             if (state.PowerLimitWatts is < 45 or > 95
                 || state.CurveOptimizerValue is < -30 or > 0
@@ -498,6 +516,7 @@ public static class CpuPowerConnectedLifecycleProbeCommand
             output.WriteLine($"CurveOptimizerValue={state.CurveOptimizerValue}");
             output.WriteLine($"CurveOptimizerEnabled={state.CurveOptimizerValue < 0}");
             output.WriteLine("Preconnected=True");
+            output.WriteLine("IsolationHandshakeCompleted=True");
             output.WriteLine("SynapseInactiveBeforeGetter=True");
             output.WriteLine("Success=True");
             return 0;
@@ -515,8 +534,11 @@ public static class CpuPowerConnectedLifecycleProbeCommand
             or TimeoutException)
         {
             output.WriteLine($"Failure={exception.Message}");
-            output.WriteLine("Preconnected=False");
-            output.WriteLine("SynapseInactiveBeforeGetter=False");
+            output.WriteLine($"Preconnected={preconnected}");
+            output.WriteLine(
+                $"IsolationHandshakeCompleted={isolationHandshakeCompleted}");
+            output.WriteLine(
+                $"SynapseInactiveBeforeGetter={synapseInactiveBeforeGetter}");
             output.WriteLine("Success=False");
             return 2;
         }

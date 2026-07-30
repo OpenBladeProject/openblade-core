@@ -781,6 +781,21 @@ Custom performance and model-specific power-control follow-up:
   wrapper test pass. A live run is still required before either value can move
   beyond observed-only. Preserve a timeout, unavailable callback, unexpected
   value, or restoration problem honestly; do not reinterpret it as readback.
+- The first live run at `2026-07-30T01:49:18-07:00` completed preconnection
+  and isolation, and the exact power-limit getter accepted its request. No
+  `GetPowerLimitValue` callback arrived before the ten-second response bound,
+  so the curve-optimizer getter was not issued. No setter export was bound or
+  invoked. The wrapper exited 2, relaunched the same verified Synapse build,
+  and independent post-run reads returned barrel-AC `1111` and keyboard
+  brightness raw 129. This is a restored negative control; both CPU tuning
+  capabilities remain Captured/ObservedOnly.
+- The initial failure output incorrectly printed both lifecycle phase fields
+  as false because its exception handler used constants. The validator now
+  tracks preconnection, completed isolation handshake, and the final
+  Synapse-inactive check independently, including on timeout. Do not rerun the
+  elevated experiment merely to rewrite those private labels: the wrapper's
+  ready/isolation ordering and the accepted-getter timeout establish the
+  phases, and the sanitized annotation preserves the original output hash.
 - OpenBlade must not start `RzDLLService`, initialize its privileged tuning
   driver, or bypass the Synapse-process guard merely to make this probe pass.
   Those are a separate backend-ownership feature requiring explicit lifecycle

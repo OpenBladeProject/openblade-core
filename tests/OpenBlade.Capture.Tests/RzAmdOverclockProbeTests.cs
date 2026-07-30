@@ -102,6 +102,7 @@ public sealed class RzAmdOverclockProbeTests
             output.ToString());
         Assert.Contains("SetterExportsInvoked=False", output.ToString());
         Assert.Contains("Preconnected=True", output.ToString());
+        Assert.Contains("IsolationHandshakeCompleted=True", output.ToString());
         Assert.Contains("SynapseInactiveBeforeGetter=True", output.ToString());
         Assert.Contains("Success=True", output.ToString());
     }
@@ -121,6 +122,9 @@ public sealed class RzAmdOverclockProbeTests
 
         Assert.Equal(2, result);
         Assert.Contains("SetterExportsInvoked=False", output.ToString());
+        Assert.Contains("Preconnected=True", output.ToString());
+        Assert.Contains("IsolationHandshakeCompleted=True", output.ToString());
+        Assert.Contains("SynapseInactiveBeforeGetter=True", output.ToString());
         Assert.Contains("Success=False", output.ToString());
     }
 
@@ -162,10 +166,12 @@ public sealed class RzAmdOverclockProbeTests
 
         public async Task<CpuPowerServiceState> QueryAfterConnectedAsync(
             Func<CancellationToken, Task> afterConnected,
+            Action afterSynapseInactive,
             CancellationToken cancellationToken)
         {
             await afterConnected(cancellationToken);
             CallbackCompletedBeforeResult = true;
+            afterSynapseInactive();
             return state;
         }
     }
