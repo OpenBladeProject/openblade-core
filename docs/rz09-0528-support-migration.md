@@ -651,6 +651,18 @@ Current barrel-AC readback checkpoint:
 - This was read-only and changed no setting. It reconfirms the AC baseline but
   does not advance USB-C or battery readback; those exact destination queries
   still require operator-correlated physical power transitions.
+- Capture commit `6299bf7` prepares the complete retry as
+  `tools\Invoke-Rz090528PowerSourceReadbackMatrix.ps1`. Run it under Windows
+  PowerShell 5.1 from the captures repository. It requires explicit
+  `AC-BASELINE`, `BATTERY`, `USBC`, and `AC-RESTORED` confirmations in that
+  order, checks Windows reports Offline only for battery and Online for both
+  powered states, and refuses to capture during the transition interval. It
+  takes three identical exact-device queries per state, requires `1111` at
+  both barrel-AC endpoints, compares final AC with the baseline, and writes
+  only private hash-pinned output plus a private structured summary. It never
+  changes a setting or process/service state. Because this is a direct
+  exact-HID query rather than USBPcap capture, it does not use a transient USB
+  device address.
 
 Lighting capture follow-up:
 
@@ -809,7 +821,7 @@ Custom performance and model-specific power-control follow-up:
   path/signature, inspects `Process.Modules`, and accepts only the three pinned
   component hashes. Its private JSON records sanitized renderer roles and
   component filenames/hashes; it never stops or starts a process/service and
-  never changes a setting. The 15-script Windows PowerShell 5.1 toolkit,
+  never changes a setting. The 16-script Windows PowerShell 5.1 toolkit,
   including its static regression test, passes.
 - A later non-elevated exploratory snapshot could read the current Synapse
   process modules but found neither CPU DLL in the idle device renderer or
@@ -873,9 +885,10 @@ Power-source behavior contract checkpoint:
   `probe-rz09-0528-02c6-special-keys [seconds] [output-file]`. The older
   `probe-special-keys` command intentionally retains its PID `02E0` target.
   The exact command records raw HID reports and scan codes without translating
-  text or taking ownership of the control interface. Do not add a PID `02C6`
-  decoder until all five operator-correlated press/release reports and default
-  actions are captured.
+  text or taking ownership of the control interface. M3-M5 are now admitted;
+  use any future session only to seek independently distinguishable M1/M2/Fn+P
+  events or Normal-mode parity. Do not restore the disproven scan-code
+  translation and never suppress ordinary Page Up, Page Down, or P.
 
 Deterministic HID failure-safety checkpoint:
 
@@ -1582,7 +1595,7 @@ Final validation at the current transactional-identity checkpoint:
 - Session Agent identity-probe matrix: exact/missing/mismatched package and
   application identity, approved/unavailable array, redaction, failure
   HRESULT, invalid output, and no-overwrite cases passed;
-- Windows PowerShell 5.1 capture toolkit: all 15 regression suites passed;
+- Windows PowerShell 5.1 capture toolkit: all 16 regression suites passed;
 - public documentation: all local links and assets resolved across 11 pages;
 - post-`c19fe0c` non-mutating production probe:
   `ReadyWithAccessFallback`, exact
