@@ -37,6 +37,7 @@ model-independent operating-system APIs.
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
 | Lighting effects and logo | Partially admitted | Keyboard Off and logo Off/Static/Breathing admitted with selector `00`; Spectrum, Static, Starlight, Ripple, Tidal, Wave, and Wheel are explicit observed-only capabilities because their traffic remains non-discriminating |
 | Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Custom, exact CPU/GPU combinations, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power-source setters remain unadmitted |
+| Sensors | Admitted | CPU temperature through the exact `\_SB.PCI0.SBRG.EC0.TZRZ` Windows thermal-zone counter; the unrelated `\_TZ.TZ01` zone is never substituted |
 | Model-specific tuning UI | Observed-only | CPU Power Limit 45-95 W in 1 W steps, CPU Voltage Optimizer -30..-1, and Synapse GPU policy ranges are first-class capabilities. Synapse's CPU backend is identified as RzAMDOverClock/RzDLLService but is not admitted because its refresh lifecycle can write; OpenBlade shows these features without editable controls |
 | Power-source matrix | Captured, not admitted | Nine exact-device sessions cover barrel AC, USB-C-only, battery, both quiet baselines, and all directed transitions; exact PID 02C6 USB-C reply and independent thermal readback remain missing |
 | Battery charge limit | Admitted | Query, 50/55/60/65/70/75/80-percent setters, protection off, readback, and restoration |
@@ -1442,13 +1443,19 @@ model first. Do not replace them with a wildcard or “first thermal zone”
 selection. The conversion remains tenths Kelvin to Celsius with the existing
 0–115°C plausibility bound.
 
+Installed service build `0.1.0+3449fc71` independently published `45°C` after
+upgrade, and the upgraded tray displayed the same value. Capture revision
+`8c92256` records the sanitized read-only counter discovery, live service/tray
+validation, privacy boundary, and a Windows PowerShell 5.1 regression test.
+`sensors.cpuTemperature` is therefore `ProductionAdmitted`.
+
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`6aaf65b` device-mode-admission checkpoint its 143 leaves contain:
+`8c92256` CPU-sensor-admission checkpoint its 144 leaves contain:
 
-- 51 `ProductionAdmitted`;
+- 52 `ProductionAdmitted`;
 - 3 `QueryValidated`;
 - 30 `Captured`;
 - 1 `SetterValidated`;

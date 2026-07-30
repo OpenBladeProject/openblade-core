@@ -40,6 +40,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   assessment, and firmware smoke now derive the RZ09-0528 / PID `02C6` identity
   from the verified model instead of displaying or validating the older
   RZ09-0581 / PID `02E0` target.
+- Added exact RZ09-0528 CPU-temperature support using the model-specific
+  `\_SB.PCI0.SBRG.EC0.TZRZ` Windows thermal-zone counter. OpenBlade retains the
+  earlier RZ09-0581 path as a separate explicit candidate and never substitutes
+  an unrelated thermal zone.
 - Added GitHub release checks to About with Every startup, Daily, Weekly,
   Monthly, and Manual only intervals. Checks run at most once during tray
   startup when due, and available releases open in the user's browser.

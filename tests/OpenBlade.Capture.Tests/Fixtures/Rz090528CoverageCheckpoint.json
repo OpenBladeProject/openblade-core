@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "source": {
     "repository": "openblade-captures",
-    "revision": "6aaf65b",
+    "revision": "8c92256",
     "path": "decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json"
   },
   "device": {
@@ -66,6 +66,9 @@
       "manualCurveWrites": "ProductionAdmitted",
       "manualCurveReadback": "SoftwareOnly",
       "rpmQuery": "ProductionAdmitted"
+    },
+    "sensors": {
+      "cpuTemperature": "ProductionAdmitted"
     },
     "battery": {
       "protectionOff": "ProductionAdmitted",

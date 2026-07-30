@@ -70,7 +70,7 @@ public sealed class Rz090528CoverageContractTests
                 group => group.Count(),
                 StringComparer.Ordinal);
 
-        Assert.Equal(51, counts["ProductionAdmitted"]);
+        Assert.Equal(52, counts["ProductionAdmitted"]);
         Assert.Equal(3, counts["QueryValidated"]);
         Assert.Equal(30, counts["Captured"]);
         Assert.Equal(1, counts["SetterValidated"]);
@@ -88,11 +88,17 @@ public sealed class Rz090528CoverageContractTests
         JsonElement device = root.GetProperty("device");
 
         Assert.Equal("openblade-captures", source.GetProperty("repository").GetString());
-        Assert.Equal("6aaf65b", source.GetProperty("revision").GetString());
+        Assert.Equal("8c92256", source.GetProperty("revision").GetString());
         Assert.Equal("RZ09-0528", device.GetProperty("modelNumber").GetString());
         Assert.Equal("1532", device.GetProperty("vendorIdHex").GetString());
         Assert.Equal("02C6", device.GetProperty("productIdHex").GetString());
         Assert.Equal("2.02", device.GetProperty("bios").GetString());
+        Assert.Equal(
+            "ProductionAdmitted",
+            root.GetProperty("capabilities")
+                .GetProperty("sensors")
+                .GetProperty("cpuTemperature")
+                .GetString());
     }
 
     private static IEnumerable<CoverageItem> Flatten(
