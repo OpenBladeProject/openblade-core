@@ -1718,6 +1718,45 @@ the exact-model capability gate itself passed. Computer Use then confirmed the
 same installed build renders the three CPU/GPU cards, the compact WDL row, an
 enabled Static lid-logo selector, and no M1-M5 explanatory footnote.
 
+## Continuation audit after coverage reconciliation
+
+Capture commit `130eeec` reconciles old narrative notes with the already
+validated three-state power-source matrix and production-admitted Normal/Driver
+device-mode lifecycle. Core commit `a983591` copies that exact capture revision
+into the coverage checkpoint, pins the resulting 144-leaf counts, and updates
+the remaining frontier below.
+
+A fresh read-only installed-product baseline was saved locally under the ignored
+`artifacts/validation/20260730-continuation-audit-baseline` directory:
+
+- `baseline.json` SHA-256
+  `1F47228501B7D43A3EFA86A4216B6B6063331FE0F98E390DAFFCA925B3610B16`;
+- `baseline-report.json` SHA-256
+  `2D0FAA356CF4E9FBC31019337F6E53F6A2414C6B2D4228DE88B6059A21D65E77`;
+- `diagnostics.zip` SHA-256
+  `F3854DB1219690527F3ED85183F8AD1FCAB9FB125C7C069E9E913CF4A8B2F5C9`.
+
+It reproduced 32 passes, one optional sleeping-GPU warning, and the same two
+honest environmental failures: `RazerAppEngine` was present and Performance
+had changed externally. It independently reconfirmed one service, one Session
+Agent, one tray, model `RZ09-0528`, Plugged In, Performance/Automatic, CPU
+45 C, battery protection at 80 percent, startup animation enabled, function
+keys primary, Gaming mode off, Driver device mode, and Static lid logo. No
+hardware mutation or service restart was performed.
+
+Computer Use inspected the installed 828-by-714 window without editing a
+setting. The Laptop cards remained inside the viewport, M1/M2 were disabled
+with their per-row captured-only reason, M3-M5 were available, and there was no
+M1-M5 footer. The Lighting page contained only the compact keyboard WDL row and
+an independently enabled Static lid-logo selector. WDL delegation applies only
+to keyboard effects and brightness; it does not control the lid logo.
+
+The smoke snapshot's `desiredLightingEffect=Off` and renderer ownership `None`
+describe OpenBlade's inactive keyboard renderer while WDL delegation is on.
+They are not physical brightness readback and must not be used to claim the
+keyboard is dark. The latest independent exact-device brightness evidence
+remains the restored Static state with raw 128 before and after service restart.
+
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
