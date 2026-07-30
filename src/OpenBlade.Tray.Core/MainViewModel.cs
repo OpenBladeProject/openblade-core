@@ -1457,7 +1457,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string CpuPowerLimitAccessLabel =>
         FormatFeatureAccess(
             Capabilities.CpuPowerLimit?.Access,
-            "Synapse's RzAMDOverClock service closes with its client lifecycle. OpenBlade has no independently validated service owner, so this remains read-only.");
+            "Synapse uses an AMD kernel driver. OpenBlade does not depend on it, so this stays read-only.");
 
     public bool IsCpuVoltageOptimizerVisible =>
         ActivePowerSource == PowerSource.PluggedIn
@@ -1472,7 +1472,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string CpuVoltageOptimizerAccessLabel =>
         FormatFeatureAccess(
             Capabilities.CpuVoltageOptimizer?.Access,
-            "An RzAMDOverClock getter can make active Synapse reapply its saved value; with Synapse absent, the module closes. OpenBlade keeps this read-only.");
+            "Synapse uses the same AMD kernel driver. OpenBlade keeps this read-only.");
 
     public bool IsGpuOverclockPolicyVisible =>
         ActivePowerSource == PowerSource.PluggedIn

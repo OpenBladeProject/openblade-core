@@ -142,6 +142,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Clarified the RZ09-0528 CPU Power Limit and CPU Voltage Optimizer cards with
+  the exact AMD kernel-driver boundary. The controls remain visible and
+  read-only because OpenBlade does not ship a kernel driver or depend on
+  Synapse-delivered binaries.
 - Fixed graphical-installer upgrades to compare installed versions, pinned the
   Burn upgrade family, added explicit orphaned-marker recovery, and restricted
   installation to Windows 11 version 24H2 x64 to match the tray's declared

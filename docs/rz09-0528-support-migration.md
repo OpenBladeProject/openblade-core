@@ -38,7 +38,7 @@ model-independent operating-system APIs.
 | Lighting effects and logo | Partially admitted | Keyboard Off and logo Off/Static/Breathing admitted with selector `00`; Spectrum, Static, Starlight, Ripple, Tidal, Wave, and Wheel are explicit observed-only capabilities because their traffic remains non-discriminating |
 | Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Custom, exact CPU/GPU combinations, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power-source setters remain unadmitted |
 | Sensors | Admitted | CPU temperature through the exact `\_SB.PCI0.SBRG.EC0.TZRZ` Windows thermal-zone counter; the unrelated `\_TZ.TZ01` zone is never substituted |
-| Model-specific tuning UI | Observed-only | CPU Power Limit 45-95 W in 1 W steps, CPU Voltage Optimizer On/Off plus -30..-1, and GPU Overclock On/Off plus Synapse policy ranges are first-class capabilities. Synapse's CPU backend is identified as RzAMDOverClock/RzDLLService but is not admitted because its refresh lifecycle can write; OpenBlade shows these features without editable controls |
+| Model-specific tuning UI | Observed-only | CPU Power Limit 45-95 W in 1 W steps, CPU Voltage Optimizer On/Off plus -30..-1, and GPU Overclock On/Off plus Synapse policy ranges are first-class capabilities. Synapse's CPU backend ultimately requires a Synapse-delivered AMD kernel driver; OpenBlade shows these features without editable controls or taking that dependency |
 | Power-source matrix | Adapter classification admitted; transition lifecycle partial | Three identical exact reads per stable state establish `1111` barrel AC, `0011` battery, and `0711` USB-C, with matching paired thermal readback and restored AC; three directly traversed transitions are query-validated |
 | Battery charge limit | Admitted | Query, 50/55/60/65/70/75/80-percent setters, protection off, readback, and restoration |
 | Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
@@ -861,6 +861,21 @@ Custom performance and model-specific power-control follow-up:
   Optimizer therefore remain Captured/ObservedOnly. The next implementation
   step is an explicitly designed exact-version backend owner, not another UI
   refresh or a weakened Synapse guard.
+- Read-only PE, INF, signature, and service inspection then traced the exact
+  backend through signed AMD `Platform.dll` and `Device.dll` version
+  `3.0.1.4580` to the demand-start `AMDRyzenMasterDriverV31` kernel driver
+  version `3.1.0.0`. `Platform.dll` exports `SetPPTLimit`, imports
+  `GetDeviceManager`, and `Device.dll` imports `CreateFileW` plus
+  `DeviceIoControl` and names `\\.\AMDRyzenMasterDriverV31`.
+- Static call sites exposed candidate IOCTL values `0x81112F24` and
+  `0x81112FF8`, while printable symbols exposed Strix-family PPT and Curve
+  Optimizer methods. No library was loaded, no driver handle was opened, and
+  no IOCTL was issued. These are unmapped implementation clues, not protocol
+  admission or proof of the selected runtime class.
+- OpenBlade's architecture prohibits shipping a kernel driver or depending on
+  Synapse components. This makes the CPU backend an explicit product-boundary
+  blocker rather than an omitted feature: the two cards remain visible and
+  ObservedOnly, now with concise AMD-driver wording.
 - OpenBlade must not start `RzDLLService`, initialize its privileged tuning
   driver, or bypass the Synapse-process guard merely to make this probe pass.
   Those are a separate backend-ownership feature requiring explicit lifecycle
@@ -1722,9 +1737,10 @@ enabled Static lid-logo selector, and no M1-M5 explanatory footnote.
 
 Capture commit `130eeec` reconciles old narrative notes with the already
 validated three-state power-source matrix and production-admitted Normal/Driver
-device-mode lifecycle. Core commit `a983591` copies that exact capture revision
-into the coverage checkpoint, pins the resulting 144-leaf counts, and updates
-the remaining frontier below.
+device-mode lifecycle. Capture commit `e4f9d7e` then records the exact AMD
+kernel-driver boundary without advancing either CPU capability. The core
+coverage checkpoint now pins that later capture revision, the resulting
+144-leaf counts, and the remaining frontier below.
 
 A fresh read-only installed-product baseline was saved locally under the ignored
 `artifacts/validation/20260730-continuation-audit-baseline` directory:
@@ -1761,7 +1777,7 @@ remains the restored Static state with raw 128 before and after service restart.
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`130eeec` reconciled exact-device admission checkpoint its 144
+`e4f9d7e` driver-boundary checkpoint its 144
 leaves contain:
 
 - 59 `ProductionAdmitted`;

@@ -2035,11 +2035,13 @@ public sealed class MainViewModelTests
                 CustomPerformanceLevel.Medium)));
         Assert.True(viewModel.IsCpuPowerLimitVisible);
         Assert.Equal("45–95 W, 1 W steps", viewModel.CpuPowerLimitRangeLabel);
-        Assert.Contains("RzAMDOverClock service", viewModel.CpuPowerLimitAccessLabel);
+        Assert.Contains("AMD kernel driver", viewModel.CpuPowerLimitAccessLabel);
+        Assert.Contains("does not depend on it", viewModel.CpuPowerLimitAccessLabel);
         Assert.Contains("read-only", viewModel.CpuPowerLimitAccessLabel);
         Assert.True(viewModel.IsCpuVoltageOptimizerVisible);
         Assert.Contains("On/Off", viewModel.CpuVoltageOptimizerRangeLabel);
-        Assert.Contains("getter can make active Synapse reapply", viewModel.CpuVoltageOptimizerAccessLabel);
+        Assert.Contains("same AMD kernel driver", viewModel.CpuVoltageOptimizerAccessLabel);
+        Assert.Contains("read-only", viewModel.CpuVoltageOptimizerAccessLabel);
         Assert.True(viewModel.IsGpuOverclockPolicyVisible);
         Assert.Contains("On/Off captured", viewModel.GpuOverclockPolicyLabel);
         Assert.Contains("core -1000 to 400 MHz", viewModel.GpuOverclockPolicyLabel);
