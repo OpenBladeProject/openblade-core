@@ -224,7 +224,7 @@ Assert-True ($storeContract.architecture -eq 'x64') `
     'The Store submission architecture must remain x64.'
 Assert-True ($storeContract.language -eq 'en-US') `
     'The Store submission language must match the shipped UI resources.'
-Assert-True ($storeContract.installerParameters -eq '/quiet /norestart') `
+Assert-True ($storeContract.installerParameters -eq '/install /quiet /norestart') `
     'The Store must invoke Burn without installer UI or automatic restart.'
 Assert-True ($storeContract.offlineInstaller -eq $true) `
     'The Store submission must remain a self-contained offline installer.'

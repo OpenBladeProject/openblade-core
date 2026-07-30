@@ -160,7 +160,7 @@ payload files before WiX embeds them, then signs the detached Burn engine and
 the final installer.
 
 The same offline installer is prepared for a future Microsoft Store EXE
-listing. Store installs use `/quiet /norestart`; direct downloads retain the
+listing. Store installs use `/install /quiet /norestart`; direct downloads retain the
 graphical UI. See
 [Microsoft Store submission](docs/microsoft-store-submission.md) for the
 checked-in package contract, certification notes, hardware disclosure, and

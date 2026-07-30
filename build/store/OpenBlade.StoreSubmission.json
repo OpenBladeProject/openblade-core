@@ -3,7 +3,7 @@
   "appType": "EXE",
   "architecture": "x64",
   "language": "en-US",
-  "installerParameters": "/quiet /norestart",
+  "installerParameters": "/install /quiet /norestart",
   "offlineInstaller": true,
   "requiresElevation": true,
   "minimumOperatingSystem": "Windows 11 version 24H2 x64 (build 26100 or later)",

@@ -1174,6 +1174,38 @@ Both exact setters are now `SetterValidated`; the validation command still
 reports `productionAdmitted=false`. Review the exact-model capability gate and
 public mutation surface separately before claiming production admission.
 
+## Treat same-version Burn replacement as an ownership transaction
+
+A live same-public-version replacement exposed a bundle/payload ownership bug.
+The new WiX bundle detected `InstalledVersion >= 0.1.0`, skipped its
+`OpenBladeSetup` package, then removed the related old bundle. The old bundle's
+`uninstall --bundle-managed` removed the service and tray while the new bundle
+still registered success. Exit code 0 and an Apps entry were therefore not
+sufficient installation evidence.
+
+Core commit `eaee684` closes both halves of the race:
+
+- `OpenBladeSetup` is considered already present only when the installed
+  version is strictly greater than the incoming version, so an equal-version
+  developer build executes its payload installer;
+- bundle-managed installation records the commit-aware product identity as
+  `InstalledBuild`;
+- a cached older setup executable compares that marker with its own identity
+  and returns success without mutation when Burn invokes its late related-
+  bundle uninstall.
+
+The first transition from a pre-fix bundle must be a clean uninstall followed
+by a clean install, because the old cached setup executable cannot contain the
+new supersession guard. After that boundary, validate an actual equal-version
+replacement and require all of the following: the new bundle log plans an
+`OpenBladeSetup` install, the old bundle's uninstall is a no-op, the ownership
+marker matches the new commit, the service is installed and running, and the
+tray/session processes use that same product version.
+
+Always spell the Store and unattended command as
+`/install /quiet /norestart`. Omitting `/install` leaves the requested Burn
+action ambiguous and is no longer part of the submission contract.
+
 ## Keep user-facing identity and firmware smoke model-specific
 
 Do not use `TargetBladeDevice` for generic service, diagnostics, tray, or
