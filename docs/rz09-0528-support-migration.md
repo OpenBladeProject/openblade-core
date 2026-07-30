@@ -260,7 +260,8 @@ Work through read/query-backed controls before one-shot setters.
    Windows APIs; HDR-on behavior now has a bounded save/readback/restore
    validation and explicitly disables SDR color-profile writes
 8. Conflict, timeout, malformed-response, disconnect, and lifecycle validation
-9. Cold boot, sign-in, service restart, sleep/resume, and reconnect validation
+   — exact service restart is admitted with independent brightness readback
+9. Cold boot, sign-in, sleep/resume, and reconnect validation
 10. AC, USB-C, and battery transition validation — the physical/UI/USBPcap
     matrix is captured; exact PID `02C6` USB-C `07/8C` response and independent
     destination-state readback remain pending
@@ -1536,15 +1537,15 @@ validation, privacy boundary, and a Windows PowerShell 5.1 regression test.
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`8c92256` CPU-sensor-admission checkpoint its 144 leaves contain:
+`32073d8` service-restart-admission checkpoint its 144 leaves contain:
 
-- 52 `ProductionAdmitted`;
+- 53 `ProductionAdmitted`;
 - 3 `QueryValidated`;
 - 30 `Captured`;
 - 1 `SetterValidated`;
 - 10 `SoftwareOnly`;
 - 3 `Absent`;
-- 45 `NotInvestigated`.
+- 44 `NotInvestigated`.
 
 `Rz090528CoverageContractTests` pins both those counts and every
 `Captured`/`QueryValidated`/`SetterValidated` path. Advancing evidence must
@@ -1566,7 +1567,7 @@ The main physical-evidence groups still blocking broader admission are:
 - production validation of the PID `02C6` special-key decoder. M1-M5 and Fn+P
   reports are captured, including the critical M4 `040AD300` collision with
   the older PID `02E0` performance-key assumption, but remain observed-only;
-- cold boot, sign-in, service restart, sleep/resume, and device reconnect.
+- cold boot, sign-in, sleep/resume, and device reconnect.
 
 The next agent should rerun the coverage-contract test before and after changing
 the ledger. A failing frontier is a prompt to represent or admit the new fact,
