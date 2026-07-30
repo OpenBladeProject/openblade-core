@@ -1114,6 +1114,11 @@ capabilities, diagnostics, firmware smoke, and this guide; they do not need
 separate informational banners in the everyday UI. This is presentation
 simplification, not permission to delete model-specific evidence.
 
+WDL owns only the keyboard LampArray. Commit `0f81b53` hides OpenBlade's
+keyboard-effect and keyboard power-policy controls while delegated, but keeps
+the independently admitted lid-logo firmware control available. Do not gate
+the entire Lighting page on keyboard-renderer ownership.
+
 The Session Agent now contains the production read-only observation boundary.
 It starts only when the service reports a verified RZ09-0528, the complete
 tested BIOS `2.02` / EC `1.09` / MCU `1.9.0.0` tuple, and explicit
