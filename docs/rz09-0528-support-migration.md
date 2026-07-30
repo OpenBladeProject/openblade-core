@@ -575,8 +575,9 @@ NVIDIA GPU clock-offset follow-up:
   `validate-rz09-0528-02c6-gpu-clock-offsets
   RZ09-0528:1532:02C6:GPU-OFFSETS:RESTORE` command is the next setter gate.
   It requires the exact host and one exact PID `02C6` protocol collection,
-  refuses to run while either Synapse or the OpenBlade service is active, and
-  rechecks those isolation conditions immediately before the write. It saves
+  refuses to run while Synapse AppEngine, either verified Razer controller
+  service process, or the OpenBlade service is active, and rechecks those
+  isolation conditions immediately before the write. It saves
   both offsets, chooses a one-MHz adjacent value inside the narrower
   exact-model policy for both channels, sets both, independently reads both
   back, and unconditionally restores and verifies the saved pair. Its

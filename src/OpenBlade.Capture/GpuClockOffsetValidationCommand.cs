@@ -41,7 +41,10 @@ internal static class GpuClockOffsetValidationEnvironment
         }
     }
 
-    internal static bool IsSynapseInactive() => HasNoProcess("RazerAppEngine");
+    internal static bool IsSynapseInactive() =>
+        HasNoProcess("RazerAppEngine")
+        && HasNoProcess("GameManagerService3")
+        && HasNoProcess("razer_elevation_service");
 
     internal static bool IsOpenBladeServiceInactive() =>
         HasNoProcess("OpenBlade.Service");
