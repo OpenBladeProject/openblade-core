@@ -1812,14 +1812,6 @@ public sealed class CapabilityPresentationTests
         XElement effectPicker = NamedElement(document, "ComboBox", "LightingEffectPicker");
         XElement controls = NamedElement(document, "ContentControl", "LightingControls");
         XElement infoBar = NamedElement(document, "InfoBar", "LightingUnavailableInfoBar");
-        XElement observedInfoBar = NamedElement(
-            document,
-            "InfoBar",
-            "ObservedLightingEffectsInfoBar");
-        XElement lampArrayInfoBar = NamedElement(
-            document,
-            "InfoBar",
-            "LampArrayLightingAccessInfoBar");
         XElement displayOffToggle = NamedElement(
             document,
             "ToggleSwitch",
@@ -1845,18 +1837,6 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind LightingControlUnavailableMessage, Mode=OneWay}",
             Attribute(infoBar, "Message"));
-        Assert.Equal(
-            "{x:Bind IsObservedLightingEffectsVisible, Mode=OneWay}",
-            Attribute(observedInfoBar, "IsOpen"));
-        Assert.Equal(
-            "{x:Bind ObservedLightingEffectsSummary, Mode=OneWay}",
-            Attribute(observedInfoBar, "Message"));
-        Assert.Equal(
-            "{x:Bind IsLampArrayLightingAccessVisible, Mode=OneWay}",
-            Attribute(lampArrayInfoBar, "IsOpen"));
-        Assert.Equal(
-            "{x:Bind LampArrayLightingAccessSummary, Mode=OneWay}",
-            Attribute(lampArrayInfoBar, "Message"));
         Assert.Equal(
             "{x:Bind AvailableLightingEffectOptions, Mode=OneWay}",
             Attribute(effectPicker, "ItemsSource"));
@@ -1900,6 +1880,14 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("LightingSecondaryColorEditor", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Ambient Awareness screen region", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Choose which part of the display colors the keyboard.", lightingXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Windows Dynamic Lighting interface detected",
+            lightingXaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Quick effects observed in Synapse",
+            lightingXaml,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Audio", lightingXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Fire", lightingXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Ripple", lightingXaml, StringComparison.OrdinalIgnoreCase);

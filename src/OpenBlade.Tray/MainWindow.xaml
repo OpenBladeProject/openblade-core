@@ -1106,63 +1106,47 @@
                                  Severity="Informational"
                                  Title="Lighting controls unavailable"
                                  Message="{x:Bind LightingControlUnavailableMessage, Mode=OneWay}" />
+                        <TextBlock Text="Keyboard"
+                                   Style="{StaticResource SectionHeaderStyle}"
+                                   Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}"
-                                Margin="0,0,0,12"
+                                Margin="0,0,0,10"
                                 Visibility="{x:Bind IsWindowsDynamicLightingAvailable, Mode=OneWay}">
-                            <Grid Padding="16,14">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <TextBlock Text="Let Windows control the keyboard"
-                                           Margin="52,0,0,0"
-                                           TextWrapping="Wrap"
-                                           Style="{StaticResource CardTitleStyle}" />
-                                <TextBlock Grid.Row="1"
-                                           Margin="0,3,0,0"
-                                           Text="OpenBlade stops all keyboard-lighting writes. Choose brightness and effects in Windows Dynamic Lighting."
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                                <HyperlinkButton Grid.Row="2"
-                                                 Content="Open Dynamic Lighting settings"
-                                                 Padding="0,4,0,0"
-                                                 HorizontalAlignment="Left"
-                                                 NavigateUri="ms-settings:personalization-lighting" />
-                                <ToggleSwitch x:Name="WindowsDynamicLightingToggle"
-                                              HorizontalAlignment="Left"
-                                              VerticalAlignment="Top"
-                                              MinWidth="0"
-                                              AutomationProperties.Name="Let Windows Dynamic Lighting control the keyboard"
-                                              OffContent=""
-                                              OnContent=""
-                                              IsOn="{x:Bind UseWindowsDynamicLighting, Mode=OneWay}"
-                                              Toggled="OnWindowsDynamicLightingToggled" />
-                            </Grid>
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Windows Dynamic Lighting"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Use Windows for keyboard effects and brightness."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1"
+                                                Orientation="Horizontal"
+                                                Spacing="10"
+                                                VerticalAlignment="Center">
+                                        <HyperlinkButton Content="Open settings"
+                                                         Padding="4,0"
+                                                         NavigateUri="ms-settings:personalization-lighting" />
+                                        <ToggleSwitch x:Name="WindowsDynamicLightingToggle"
+                                                      MinWidth="0"
+                                                      AutomationProperties.Name="Let Windows Dynamic Lighting control the keyboard"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{x:Bind UseWindowsDynamicLighting, Mode=OneWay}"
+                                                      Toggled="OnWindowsDynamicLightingToggled" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
                         </Border>
                         <ContentControl x:Name="LightingControls"
                                         HorizontalContentAlignment="Stretch"
                                         IsEnabled="{x:Bind CanControlLighting, Mode=OneWay}">
                             <StackPanel x:Name="LightingSectionHost">
                         <StackPanel x:Name="LightingKeyboardSection">
-                        <TextBlock Text="Keyboard"
-                                   Style="{StaticResource SectionHeaderStyle}"
-                                   Margin="0,0,0,10" />
-                        <InfoBar x:Name="LampArrayLightingAccessInfoBar"
-                                 Margin="0,0,0,10"
-                                 IsOpen="{x:Bind IsLampArrayLightingAccessVisible, Mode=OneWay}"
-                                 Visibility="{x:Bind IsLampArrayLightingAccessVisible, Mode=OneWay}"
-                                 IsClosable="False"
-                                 Severity="Informational"
-                                 Title="Windows Dynamic Lighting interface detected"
-                                 Message="{x:Bind LampArrayLightingAccessSummary, Mode=OneWay}" />
-                        <InfoBar x:Name="ObservedLightingEffectsInfoBar"
-                                 Margin="0,0,0,10"
-                                 IsOpen="{x:Bind IsObservedLightingEffectsVisible, Mode=OneWay}"
-                                 Visibility="{x:Bind IsObservedLightingEffectsVisible, Mode=OneWay}"
-                                 IsClosable="False"
-                                 Severity="Informational"
-                                 Title="Quick effects observed in Synapse"
-                                 Message="{x:Bind ObservedLightingEffectsSummary, Mode=OneWay}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsLastRowStyle}">
@@ -2581,9 +2565,6 @@
                                     </ItemsRepeater.ItemTemplate>
                                 </ItemsRepeater>
                             </Border>
-                            <TextBlock Text="M1 through M5 are the Fn-layer actions on Page Up, Page Down, Gaming mode, Power mode, and Microphone mute. Default preserves the laptop's normal behavior."
-                                       Style="{StaticResource SecondaryTextStyle}"
-                                       Margin="2,10,2,0" />
                         </StackPanel>
                         </StackPanel>
                     </StackPanel>

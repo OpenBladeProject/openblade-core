@@ -377,25 +377,39 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void WindowsLightingOwnershipCardKeepsItsToggleInsideTheVisibleGrid()
+    public void WindowsLightingOwnershipUsesCompactSettingsRow()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         int cardStart = xaml.IndexOf(
-            "Text=\"Let Windows control the keyboard\"",
+            "Text=\"Windows Dynamic Lighting\"",
             StringComparison.Ordinal);
         int cardEnd = xaml.IndexOf(
-            "</Border>",
+            "x:Name=\"LightingControls\"",
             cardStart,
             StringComparison.Ordinal);
 
         Assert.True(cardStart >= 0 && cardEnd > cardStart);
         string card = xaml[cardStart..cardEnd];
-        Assert.DoesNotContain("<StackPanel", card, StringComparison.Ordinal);
-        Assert.Contains("TextWrapping=\"Wrap\"", card, StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"Use Windows for keyboard effects and brightness.\"",
+            card,
+            StringComparison.Ordinal);
+        Assert.Contains("Content=\"Open settings\"", card, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"WindowsDynamicLightingToggle\"", card, StringComparison.Ordinal);
-        Assert.Contains("Margin=\"52,0,0,0\"", card, StringComparison.Ordinal);
-        Assert.Contains("HorizontalAlignment=\"Left\"", card, StringComparison.Ordinal);
-        Assert.DoesNotContain("Grid.Column=\"1\"", card, StringComparison.Ordinal);
+        Assert.Contains("Grid.Column=\"1\"", card, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "OpenBlade stops all keyboard-lighting writes",
+            card,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Windows Dynamic Lighting interface detected",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Quick effects observed in Synapse",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("M1 through M5 are", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
