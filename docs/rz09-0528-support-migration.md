@@ -797,11 +797,26 @@ Custom performance and model-specific power-control follow-up:
   ready/isolation ordering and the accepted-getter timeout establish the
   phases, and the sanitized annotation preserves the original output hash.
 - Post-fix verification completed with 3,337 passing Release tests across all
-  ten core projects, a clean `dotnet format --verify-no-changes`, and 14
+  ten core projects, a clean `dotnet format --verify-no-changes`, and 15
   passing Windows PowerShell 5.1 capture-toolkit suites. Core commits
   `e4fba98` and `cda5b0e` contain the validator and corrected phase telemetry;
   capture commits `055e8a0` and `518ffa5` contain the wrapper and sanitized
   negative-control evidence.
+- Capture commit `3c90b6a` adds the next read-only discriminator:
+  `tools\Get-Rz090528CpuTuningModuleOwnership.ps1`. Run it only from elevated
+  Windows PowerShell 5.1 while the exact RZ09-0528 Performance/Custom surface
+  is visibly open. It gates model and BIOS, verifies the installed Synapse
+  path/signature, inspects `Process.Modules`, and accepts only the three pinned
+  component hashes. Its private JSON records sanitized renderer roles and
+  component filenames/hashes; it never stops or starts a process/service and
+  never changes a setting. The 15-script Windows PowerShell 5.1 toolkit,
+  including its static regression test, passes.
+- A later non-elevated exploratory snapshot could read the current Synapse
+  process modules but found neither CPU DLL in the idle device renderer or
+  background roles, and the Synapse UI had no targetable visible window.
+  Treat this only as navigation guidance, not evidence. The elevated inventory
+  still needs the Performance surface open so it can identify which exact
+  renderer or service host owns the backend before any lifecycle design.
 - OpenBlade must not start `RzDLLService`, initialize its privileged tuning
   driver, or bypass the Synapse-process guard merely to make this probe pass.
   Those are a separate backend-ownership feature requiring explicit lifecycle
@@ -1552,12 +1567,14 @@ Final validation at the current transactional-identity checkpoint:
   (sanitized, read-only LampArray geometry probe), `e96b2f2` (production
   read-only Session Agent observer), and `44b06a4` (signed sparse-package
   authoring); `c19fe0c` (`feat(setup): transact background identity`) is the
-  lifecycle checkpoint described above;
+  background-identity checkpoint; `a46555f` adds exact M3-M5 partial
+  admission, `04187fa` adds independent query-only microphone restoration
+  readback, and `35a1a20` preserves arbitrary future partial slot masks;
 - documentation commits: `1083340`, `6c3c631`, `c545805`, and public-site
-  checkpoint `c38e993`;
+  checkpoints `c38e993` and `1f6c86d`;
 - Release build: 0 warnings and 0 errors;
-- full Release suite: 3,337 tests passed across all ten projects
-  (Display 38, Capture 275, Session 33, Contracts 195, SessionAgent 174,
+- full Release suite: 3,341 tests passed across all ten projects
+  (Display 38, Capture 275, Session 33, Contracts 195, SessionAgent 178,
   Protocol 1,053, Tray 629, Service 687, Setup 233, FirmwareSmoke 20);
 - `dotnet format OpenBlade.slnx --verify-no-changes --no-restore`: clean;
 - Windows PowerShell 5.1 sparse-package identity, publish-payload, and
