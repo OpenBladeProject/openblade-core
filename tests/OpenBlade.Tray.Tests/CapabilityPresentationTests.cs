@@ -273,6 +273,7 @@ public sealed class CapabilityPresentationTests
                      "LightingPage",
                      "DisplayPage",
                      "SettingsPage",
+                     "AboutPage",
                  })
         {
             XElement page = NamedElement(document, "ScrollViewer", pageName);
@@ -285,6 +286,9 @@ public sealed class CapabilityPresentationTests
                 page.Elements(),
                 element => element.Name.LocalName == "StackPanel");
             Assert.Equal("28,20,28,28", Attribute(content, "Padding"));
+            Assert.Equal(
+                $"{{Binding ElementName={pageName}, Path=ViewportWidth, Mode=OneWay}}",
+                Attribute(content, "Width"));
         }
     }
 

@@ -1819,7 +1819,9 @@
                             HorizontalScrollBarVisibility="Hidden"
                             VerticalScrollMode="Enabled"
                             VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                    <StackPanel Padding="28,20,28,28"
+                                Width="{Binding ElementName=HomePage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition FromHorizontalOffset="20" />
@@ -2051,7 +2053,9 @@
                             HorizontalScrollBarVisibility="Hidden"
                             VerticalScrollMode="Enabled"
                             VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                    <StackPanel Padding="28,20,28,28"
+                                Width="{Binding ElementName=ProfilesPage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition FromHorizontalOffset="20" />
@@ -2418,7 +2422,9 @@
                             HorizontalScrollBarVisibility="Hidden"
                             VerticalScrollMode="Enabled"
                             VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                    <StackPanel Padding="28,20,28,28"
+                                Width="{Binding ElementName=LaptopPage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition FromHorizontalOffset="20" />
@@ -2584,7 +2590,9 @@
                             HorizontalScrollBarVisibility="Hidden"
                             VerticalScrollMode="Enabled"
                             VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                    <StackPanel Padding="28,20,28,28"
+                                Width="{Binding ElementName=LightingPage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition FromHorizontalOffset="20" />
@@ -2680,7 +2688,9 @@
                             HorizontalScrollBarVisibility="Hidden"
                             VerticalScrollMode="Enabled"
                             VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                    <StackPanel Padding="28,20,28,28"
+                                Width="{Binding ElementName=DisplayPage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition FromHorizontalOffset="20" />
@@ -2774,7 +2784,9 @@
                             HorizontalScrollBarVisibility="Hidden"
                             VerticalScrollMode="Enabled"
                             VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                    <StackPanel Padding="28,20,28,28"
+                                Width="{Binding ElementName=SettingsPage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition FromHorizontalOffset="20" />
@@ -3163,7 +3175,9 @@
                             HorizontalScrollBarVisibility="Hidden"
                             VerticalScrollMode="Enabled"
                             VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                    <StackPanel Padding="28,20,28,28"
+                                Width="{Binding ElementName=AboutPage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition FromHorizontalOffset="20" />
