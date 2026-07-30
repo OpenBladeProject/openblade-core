@@ -12,6 +12,20 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (MicrophoneMuteStateProbeCommand.IsRequested(args))
+        {
+            try
+            {
+                return new MicrophoneMuteStateProbeCommand(
+                    WindowsMicrophoneMuteStateQuery.Query,
+                    Console.Out).Run();
+            }
+            catch
+            {
+                return 2;
+            }
+        }
+
         if (DynamicLightingIdentityProbeCommand.IsRequested(args))
         {
             try

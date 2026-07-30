@@ -85,7 +85,7 @@ public sealed class Rz090528CoverageContractTests
         JsonElement device = root.GetProperty("device");
 
         Assert.Equal("openblade-captures", source.GetProperty("repository").GetString());
-        Assert.Equal("0b350f0", source.GetProperty("revision").GetString());
+        Assert.Equal("b18f127", source.GetProperty("revision").GetString());
         Assert.Equal("RZ09-0528", device.GetProperty("modelNumber").GetString());
         Assert.Equal("1532", device.GetProperty("vendorIdHex").GetString());
         Assert.Equal("02C6", device.GetProperty("productIdHex").GetString());

@@ -1610,7 +1610,8 @@ validation, privacy boundary, and a Windows PowerShell 5.1 regression test.
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`0b350f0` partial-special-key-admission checkpoint its 144 leaves contain:
+`b18f127` partial-special-key-admission and restoration checkpoint its 144
+leaves contain:
 
 - 56 `ProductionAdmitted`;
 - 3 `QueryValidated`;
@@ -1644,3 +1645,11 @@ The main physical-evidence groups still blocking broader admission are:
 The next agent should rerun the coverage-contract test before and after changing
 the ledger. A failing frontier is a prompt to represent or admit the new fact,
 not to weaken the expected set.
+
+The query-only Session Agent command
+`--probe-microphone-mute-state` deduplicates the three default Windows Core
+Audio capture roles, calls only `GetMute`, and emits only endpoint count plus
+Muted/Unmuted/Mixed. It never emits endpoint IDs and contains no `SetMute`
+call. After the physical mute key had been pressed twice, this independent
+readback found one default capture endpoint in the Unmuted state, confirming
+restoration without inferring it from press symmetry.
