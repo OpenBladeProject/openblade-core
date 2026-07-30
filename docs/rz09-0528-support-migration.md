@@ -1722,16 +1722,16 @@ enabled Static lid-logo selector, and no M1-M5 explanatory footnote.
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`b18f127` partial-special-key-admission and restoration checkpoint its 144
+`130eeec` reconciled exact-device admission checkpoint its 144
 leaves contain:
 
-- 56 `ProductionAdmitted`;
-- 3 `QueryValidated`;
-- 27 `Captured`;
+- 59 `ProductionAdmitted`;
+- 8 `QueryValidated`;
+- 21 `Captured`;
 - 1 `SetterValidated`;
 - 10 `SoftwareOnly`;
 - 3 `Absent`;
-- 44 `NotInvestigated`.
+- 42 `NotInvestigated`.
 
 `Rz090528CoverageContractTests` pins both those counts and every
 `Captured`/`QueryValidated`/`SetterValidated` path. Advancing evidence must
@@ -1741,8 +1741,9 @@ current admitted subset still builds.
 
 The main physical-evidence groups still blocking broader admission are:
 
-- independent USB-C and battery performance/readback, including an exact PID
-  `02C6` adapter-class response and thermal readback;
+- source-specific USB-C and battery performance setters plus installed-service
+  lifecycle validation of the already query-validated thermal readbacks; exact
+  PID `02C6` adapter and battery-source responses are production-admitted;
 - CPU Power Limit, CPU Voltage Optimizer, and GPU overclock setters/readback
   through a lifecycle OpenBlade can own without Synapse;
 - quick-effect parameters and effect getter for OpenBlade's native HID path;

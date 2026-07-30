@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "source": {
     "repository": "openblade-captures",
-    "revision": "b18f127",
+    "revision": "130eeec",
     "path": "decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json"
   },
   "device": {
@@ -44,17 +44,17 @@
         "readback": "ProductionAdmitted"
       },
       "usbC": {
-        "powerClasses": "Captured",
+        "powerClasses": "ProductionAdmitted",
         "presetsByPowerClass": "Captured",
         "customCpuLevels": "Absent",
         "customGpuLevels": "Absent",
-        "readback": "NotInvestigated"
+        "readback": "QueryValidated"
       },
       "battery": {
         "presets": "Captured",
         "customCpuLevels": "NotInvestigated",
         "customGpuLevels": "NotInvestigated",
-        "readback": "NotInvestigated"
+        "readback": "QueryValidated"
       }
     },
     "fans": {
@@ -197,14 +197,14 @@
     },
     "power": {
       "fullAc": "ProductionAdmitted",
-      "usbCPowerClasses": "Captured",
-      "battery": "Captured",
+      "usbCPowerClasses": "ProductionAdmitted",
+      "battery": "ProductionAdmitted",
       "acToUsbC": "Captured",
-      "usbCToAc": "Captured",
-      "acToBattery": "Captured",
+      "usbCToAc": "QueryValidated",
+      "acToBattery": "QueryValidated",
       "batteryToAc": "Captured",
       "usbCToBattery": "Captured",
-      "batteryToUsbC": "Captured"
+      "batteryToUsbC": "QueryValidated"
     },
     "conflicts": {
       "vendorControllerPresent": "SetterValidated",

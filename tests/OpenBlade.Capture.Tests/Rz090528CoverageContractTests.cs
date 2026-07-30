@@ -23,15 +23,14 @@ public sealed class Rz090528CoverageContractTests
         "performance.ac.gpuClockOffsets=QueryValidated",
         "performance.ac.gpuOverclockToggle=Captured",
         "performance.battery.presets=Captured",
-        "performance.usbC.powerClasses=Captured",
+        "performance.battery.readback=QueryValidated",
         "performance.usbC.presetsByPowerClass=Captured",
-        "power.acToBattery=Captured",
+        "performance.usbC.readback=QueryValidated",
+        "power.acToBattery=QueryValidated",
         "power.acToUsbC=Captured",
-        "power.battery=Captured",
         "power.batteryToAc=Captured",
-        "power.batteryToUsbC=Captured",
-        "power.usbCPowerClasses=Captured",
-        "power.usbCToAc=Captured",
+        "power.batteryToUsbC=QueryValidated",
+        "power.usbCToAc=QueryValidated",
         "power.usbCToBattery=Captured",
         "specialKeys.functionLayerReports=Captured",
         "specialKeys.m1PageUp=Captured",
@@ -67,13 +66,13 @@ public sealed class Rz090528CoverageContractTests
                 group => group.Count(),
                 StringComparer.Ordinal);
 
-        Assert.Equal(56, counts["ProductionAdmitted"]);
-        Assert.Equal(3, counts["QueryValidated"]);
-        Assert.Equal(27, counts["Captured"]);
+        Assert.Equal(59, counts["ProductionAdmitted"]);
+        Assert.Equal(8, counts["QueryValidated"]);
+        Assert.Equal(21, counts["Captured"]);
         Assert.Equal(1, counts["SetterValidated"]);
         Assert.Equal(10, counts["SoftwareOnly"]);
         Assert.Equal(3, counts["Absent"]);
-        Assert.Equal(44, counts["NotInvestigated"]);
+        Assert.Equal(42, counts["NotInvestigated"]);
     }
 
     [Fact]
@@ -85,7 +84,7 @@ public sealed class Rz090528CoverageContractTests
         JsonElement device = root.GetProperty("device");
 
         Assert.Equal("openblade-captures", source.GetProperty("repository").GetString());
-        Assert.Equal("b18f127", source.GetProperty("revision").GetString());
+        Assert.Equal("130eeec", source.GetProperty("revision").GetString());
         Assert.Equal("RZ09-0528", device.GetProperty("modelNumber").GetString());
         Assert.Equal("1532", device.GetProperty("vendorIdHex").GetString());
         Assert.Equal("02C6", device.GetProperty("productIdHex").GetString());
