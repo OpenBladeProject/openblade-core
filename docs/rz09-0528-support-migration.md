@@ -753,6 +753,34 @@ Custom performance and model-specific power-control follow-up:
   remains registered. It must unregister/terminate and restore Synapse from a
   `finally` path. Do not weaken the existing ordinary query command's
   pre-load Synapse guard to perform this experiment.
+- That bounded validator is now implemented, but it is not production
+  admission. Build `OpenBlade.Capture` in Release, then run
+  `tools\Invoke-Rz090528CpuTuningLifecycleValidation.ps1` from an elevated
+  Windows PowerShell 5.1 process. The wrapper verifies the running
+  `RazerAppEngine.exe` installation path and Razer signature, creates two
+  process-local named events, and starts
+  `query-rz09-0528-02c6-cpu-power-service-preconnected`. The child completes
+  exact-host, exact-version, and exact-hash checks, initializes and registers
+  its callback while Synapse keeps the backend alive, then signals `ready`
+  before binding the experiment to any getter result.
+- After `ready`, the wrapper stops only the process IDs obtained from that
+  verified Synapse path, waits until no `RazerAppEngine` remains, and signals
+  `isolated`. The child rechecks Synapse inactivity immediately before its
+  first getter. It binds the existing power-limit and curve-optimizer getters
+  only; it does not bind or invoke a setter export. The ordinary
+  `query-rz09-0528-02c6-cpu-power-service` path still refuses to load the
+  backend while Synapse is active.
+- The wrapper has bounded waits at preconnection, controller shutdown, query,
+  and restoration. Its `finally` block terminates a stuck child, disposes the
+  handshake, and relaunches the same verified Synapse executable. Private
+  stdout/stderr stay below the ignored exact-device `raw` tree and are
+  represented at the console only by SHA-256 hashes in `state.txt`.
+  Restoration failure exits with code 3 and overrides a successful getter.
+  The wrapper never stops a service and must not be changed to do so.
+- The focused .NET lifecycle tests and the Windows PowerShell 5.1 static
+  wrapper test pass. A live run is still required before either value can move
+  beyond observed-only. Preserve a timeout, unavailable callback, unexpected
+  value, or restoration problem honestly; do not reinterpret it as readback.
 - OpenBlade must not start `RzDLLService`, initialize its privileged tuning
   driver, or bypass the Synapse-process guard merely to make this probe pass.
   Those are a separate backend-ownership feature requiring explicit lifecycle

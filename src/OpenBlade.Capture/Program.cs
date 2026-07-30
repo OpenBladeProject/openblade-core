@@ -1130,6 +1130,22 @@ if (args.Length == 1 && args[0].Equals(
         CancellationToken.None);
 }
 
+if (args.Length == 3 && args[0].Equals(
+    "query-rz09-0528-02c6-cpu-power-service-preconnected",
+    StringComparison.OrdinalIgnoreCase))
+{
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    Console.WriteLine("Backend=RzAMDOverClock/RzDLLService");
+    using var handshake = new CpuPowerNamedEventIsolationHandshake(
+        args[1],
+        args[2]);
+    return await CpuPowerConnectedLifecycleProbeCommand.RunAsync(
+        new WindowsRzAmdOverclockProbe(),
+        handshake.WaitForIsolationAsync,
+        Console.Out,
+        CancellationToken.None);
+}
+
 if (args.Length == 1 && args[0].Equals(
     "query-rz09-0528-02c6-production-performance-fan",
     StringComparison.OrdinalIgnoreCase))
@@ -1568,6 +1584,9 @@ Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-power-source");
 Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-cpu-power-service");
+Console.WriteLine(
+    "  OpenBlade.Capture query-rz09-0528-02c6-cpu-power-service-preconnected " +
+    "<ready-event> <isolated-event>");
 Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-production-performance-fan");
 Console.WriteLine(

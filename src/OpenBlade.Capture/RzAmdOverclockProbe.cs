@@ -17,6 +17,13 @@ public interface ICpuPowerServiceProbe
     Task<CpuPowerServiceState> QueryAsync(CancellationToken cancellationToken);
 }
 
+public interface IConnectedCpuPowerServiceProbe : ICpuPowerServiceProbe
+{
+    Task<CpuPowerServiceState> QueryAfterConnectedAsync(
+        Func<CancellationToken, Task> afterConnected,
+        CancellationToken cancellationToken);
+}
+
 public static class CpuPowerServiceProbeCommand
 {
     public static async Task<int> RunAsync(
@@ -68,7 +75,7 @@ public static class CpuPowerServiceProbeCommand
     }
 }
 
-internal sealed class WindowsRzAmdOverclockProbe : ICpuPowerServiceProbe
+internal sealed class WindowsRzAmdOverclockProbe : IConnectedCpuPowerServiceProbe
 {
     private const string BackendVersion = "1.1.15.0";
     private const string ClientFileName = "RzAMDOverClock_v1.1.15.0.dll";
@@ -84,6 +91,26 @@ internal sealed class WindowsRzAmdOverclockProbe : ICpuPowerServiceProbe
 
     public async Task<CpuPowerServiceState> QueryAsync(
         CancellationToken cancellationToken)
+        => await QueryCoreAsync(
+            requireSynapseInactiveBeforeLoad: true,
+            afterConnected: null,
+            cancellationToken).ConfigureAwait(false);
+
+    public Task<CpuPowerServiceState> QueryAfterConnectedAsync(
+        Func<CancellationToken, Task> afterConnected,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(afterConnected);
+        return QueryCoreAsync(
+            requireSynapseInactiveBeforeLoad: false,
+            afterConnected,
+            cancellationToken);
+    }
+
+    private static async Task<CpuPowerServiceState> QueryCoreAsync(
+        bool requireSynapseInactiveBeforeLoad,
+        Func<CancellationToken, Task>? afterConnected,
+        CancellationToken cancellationToken)
     {
         if (!OperatingSystem.IsWindows()
             || !WindowsHostIdentitySource.IsExactRz090528WindowsHost())
@@ -91,8 +118,10 @@ internal sealed class WindowsRzAmdOverclockProbe : ICpuPowerServiceProbe
             throw new PlatformNotSupportedException(
                 "The read-only CPU power probe is restricted to the exact RZ09-0528 BIOS 2.02 Windows host.");
         }
-
-        EnsureSynapseInactive();
+        if (requireSynapseInactiveBeforeLoad)
+        {
+            EnsureSynapseInactive();
+        }
 
         string serviceDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -124,6 +153,7 @@ internal sealed class WindowsRzAmdOverclockProbe : ICpuPowerServiceProbe
             clientPath,
             serverPath,
             externalDllPath,
+            afterConnected,
             cancellationToken);
     }
 
@@ -131,6 +161,7 @@ internal sealed class WindowsRzAmdOverclockProbe : ICpuPowerServiceProbe
         string clientPath,
         string serverPath,
         string externalDllPath,
+        Func<CancellationToken, Task>? afterConnected,
         CancellationToken cancellationToken)
     {
         nint library = NativeLibrary.Load(clientPath);
@@ -188,6 +219,10 @@ internal sealed class WindowsRzAmdOverclockProbe : ICpuPowerServiceProbe
             }
 
             registered = true;
+            if (afterConnected is not null)
+            {
+                await afterConnected(cancellationToken).ConfigureAwait(false);
+            }
             EnsureSynapseInactive();
             int powerLimit = await QueryValueAsync(
                 getPowerLimit,
@@ -364,4 +399,126 @@ internal sealed class WindowsRzAmdOverclockProbe : ICpuPowerServiceProbe
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void NativeMessageCallback(nint message);
+}
+
+internal sealed class CpuPowerNamedEventIsolationHandshake : IDisposable
+{
+    internal const string EventPrefix = "Local\\OpenBlade.Rz090528.CpuPower.";
+    private static readonly TimeSpan IsolationTimeout = TimeSpan.FromSeconds(60);
+
+    private readonly EventWaitHandle ready;
+    private readonly EventWaitHandle isolated;
+
+    internal CpuPowerNamedEventIsolationHandshake(
+        string readyEventName,
+        string isolatedEventName)
+    {
+        ValidateName(readyEventName, nameof(readyEventName));
+        ValidateName(isolatedEventName, nameof(isolatedEventName));
+        ready = EventWaitHandle.OpenExisting(readyEventName);
+        isolated = EventWaitHandle.OpenExisting(isolatedEventName);
+    }
+
+    internal async Task WaitForIsolationAsync(CancellationToken cancellationToken)
+    {
+        if (!ready.Set())
+        {
+            throw new IOException("The CPU lifecycle ready signal could not be set.");
+        }
+
+        int result = await Task.Run(
+            () => WaitHandle.WaitAny(
+                [isolated, cancellationToken.WaitHandle],
+                IsolationTimeout),
+            CancellationToken.None).ConfigureAwait(false);
+        if (result == WaitHandle.WaitTimeout)
+        {
+            throw new TimeoutException(
+                "Timed out waiting for the CPU lifecycle isolation signal.");
+        }
+        if (result == 1)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new OperationCanceledException(cancellationToken);
+        }
+    }
+
+    public void Dispose()
+    {
+        ready.Dispose();
+        isolated.Dispose();
+    }
+
+    internal static void ValidateName(string value, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || !value.StartsWith(EventPrefix, StringComparison.Ordinal)
+            || value.Length > EventPrefix.Length + 96
+            || value.Any(character =>
+                !char.IsAsciiLetterOrDigit(character)
+                && character is not '\\' and not '.' and not '-'))
+        {
+            throw new ArgumentException(
+                "The CPU lifecycle event name is invalid.",
+                parameterName);
+        }
+    }
+}
+
+public static class CpuPowerConnectedLifecycleProbeCommand
+{
+    public static async Task<int> RunAsync(
+        IConnectedCpuPowerServiceProbe probe,
+        Func<CancellationToken, Task> waitForIsolation,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(probe);
+        ArgumentNullException.ThrowIfNull(waitForIsolation);
+        ArgumentNullException.ThrowIfNull(output);
+
+        output.WriteLine("MutationPolicy=PreconnectThenIsolateGetterOnly");
+        output.WriteLine("SetterExportsInvoked=False");
+        try
+        {
+            CpuPowerServiceState state = await probe.QueryAfterConnectedAsync(
+                waitForIsolation,
+                cancellationToken).ConfigureAwait(false);
+            if (state.PowerLimitWatts is < 45 or > 95
+                || state.CurveOptimizerValue is < -30 or > 0
+                || string.IsNullOrWhiteSpace(state.BackendVersion))
+            {
+                throw new InvalidOperationException(
+                    "The CPU power service returned values outside the exact-device policy.");
+            }
+
+            output.WriteLine("Backend=RzAMDOverClock/RzDLLService");
+            output.WriteLine($"BackendVersion={state.BackendVersion}");
+            output.WriteLine($"PowerLimitWatts={state.PowerLimitWatts}");
+            output.WriteLine($"CurveOptimizerValue={state.CurveOptimizerValue}");
+            output.WriteLine($"CurveOptimizerEnabled={state.CurveOptimizerValue < 0}");
+            output.WriteLine("Preconnected=True");
+            output.WriteLine("SynapseInactiveBeforeGetter=True");
+            output.WriteLine("Success=True");
+            return 0;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+            or DllNotFoundException
+            or EntryPointNotFoundException
+            or FileNotFoundException
+            or InvalidDataException
+            or InvalidOperationException
+            or IOException
+            or JsonException
+            or PlatformNotSupportedException
+            or TimeoutException)
+        {
+            output.WriteLine($"Failure={exception.Message}");
+            output.WriteLine("Preconnected=False");
+            output.WriteLine("SynapseInactiveBeforeGetter=False");
+            output.WriteLine("Success=False");
+            return 2;
+        }
+    }
 }
