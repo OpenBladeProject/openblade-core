@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
+using OpenBlade.Contracts;
+using OpenBlade.Tray;
 
 namespace OpenBlade.Capture;
 
@@ -34,6 +36,7 @@ public sealed class SpecialKeyInputProbe
 
     private readonly TextWriter output;
     private readonly string productIdHex;
+    private readonly Rz090528SpecialKeySemanticDecoder? exactDecoder;
     private readonly string windowClassName = $"OpenBlade.SpecialKeyProbe.{Guid.NewGuid():N}";
     private readonly Dictionary<nint, string?> targetDevicePaths = new();
     private readonly WindowProcedure windowProcedure;
@@ -48,6 +51,9 @@ public sealed class SpecialKeyInputProbe
     {
         this.output = output ?? throw new ArgumentNullException(nameof(output));
         this.productIdHex = NormalizeProductId(productIdHex);
+        exactDecoder = this.productIdHex == "02C6"
+            ? new Rz090528SpecialKeySemanticDecoder()
+            : null;
         windowProcedure = ProcessWindowMessage;
         hookProcedure = ProcessKeyboardHook;
     }
@@ -107,7 +113,10 @@ public sealed class SpecialKeyInputProbe
             }
             output.WriteLine($"ListeningSeconds={duration.TotalSeconds:0}");
             output.WriteLine($"TargetUsb={RazerVendorIdHex}:{productIdHex}");
-            output.WriteLine("Press M1, M2, M3, M4, and M5 once each, in that order.");
+            output.WriteLine(
+                productIdHex == "02C6"
+                    ? "Press M1, M2, M3, M4, M5, Fn+P, Page Up, and Page Down once each, in that order."
+                    : "Press M1, M2, M3, M4, and M5 once each, in that order.");
 
             _ = Task.Delay(duration).ContinueWith(
                 _ => PostMessage(windowHandle, WindowMessageClose, 0, 0),
@@ -276,7 +285,8 @@ public sealed class SpecialKeyInputProbe
             ? "E0"
             : (keyboard.Flags & 0x0004) != 0 ? "E1" : "00";
         output.WriteLine(
-            $"Keyboard Collection={collection};ScanCode={prefix}:{keyboard.MakeCode:X2};State={state}");
+            $"Keyboard Collection={collection};ScanCode={prefix}:{keyboard.MakeCode:X2};" +
+            $"VirtualKey={keyboard.VirtualKey:X2};State={state}");
     }
 
     private void ProcessHid(nint buffer, uint headerSize, uint receivedSize, string collection)
@@ -306,6 +316,19 @@ public sealed class SpecialKeyInputProbe
             var report = new byte[length];
             Marshal.Copy(nint.Add(reports, checked((int)(index * reportSize))), report, 0, length);
             output.WriteLine($"HID Collection={collection};Report={Convert.ToHexString(report)}");
+            if (collection == "MI_01" && exactDecoder is { } decoder)
+            {
+                Rz090528DecodedSpecialKeyInput decoded = decoder.Process(report);
+                if (decoded.SpecialKey is { } specialKey)
+                {
+                    output.WriteLine($"DecodedSpecialKey={specialKey}");
+                }
+                if (decoded.PerformanceShortcut is { } performanceShortcut)
+                {
+                    output.WriteLine(
+                        $"DecodedPerformanceShortcut={performanceShortcut}");
+                }
+            }
         }
     }
 
@@ -589,4 +612,36 @@ public sealed class SpecialKeyInputProbe
         uint command,
         StringBuilder? data,
         ref uint size);
+}
+
+internal readonly record struct Rz090528DecodedSpecialKeyInput(
+    SpecialKeySlot? SpecialKey,
+    PerformanceShortcutSource? PerformanceShortcut);
+
+internal sealed class Rz090528SpecialKeySemanticDecoder
+{
+    private readonly bool[] specialKeyPressed = new bool[5];
+    private bool functionKeyPressed;
+    private bool functionPPressed;
+
+    internal Rz090528DecodedSpecialKeyInput Process(ReadOnlySpan<byte> report)
+    {
+        SpecialKeySlot? specialKey =
+            Rz09_0528SpecialKeyRawHidInput.TryCreateTrigger(
+                report,
+                ref functionKeyPressed,
+                specialKeyPressed,
+                out SpecialKeySlot triggeredSpecialKey)
+                ? triggeredSpecialKey
+                : null;
+        PerformanceShortcutSource? performanceShortcut =
+            Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
+                report,
+                functionKeyPressed,
+                ref functionPPressed,
+                out PerformanceShortcutSource triggeredPerformanceShortcut)
+                ? triggeredPerformanceShortcut
+                : null;
+        return new(specialKey, performanceShortcut);
+    }
 }

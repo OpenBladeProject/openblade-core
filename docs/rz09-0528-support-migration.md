@@ -1141,9 +1141,13 @@ OpenBlade.Capture probe-rz09-0528-02c6-special-keys [seconds] [output-file]
 ```
 
 The next step is a live OpenBlade decoder validation while the exact capability
-is temporarily enabled in a developer build. Confirm every M1–M5 action,
+remains gated. The exact capture command now feeds MI_01 reports through the
+same public PID 02C6 semantic decoders used by the Session Agent and records
+`DecodedSpecialKey`/`DecodedPerformanceShortcut` lines. It never enables
+special-key actions or suppresses ordinary keys. Confirm every M1–M5 identity,
 ordinary Page Up/Page Down pass-through, Fn+P, and the absence of an M4
-performance-shortcut collision. Only then advance the access level to
+performance-shortcut collision. Keep raw output private, commit only a
+sanitized semantic summary, and only then advance the access level to
 `ReadWrite`.
 
 ## Preserve the device-mode negative controls and reversible success
