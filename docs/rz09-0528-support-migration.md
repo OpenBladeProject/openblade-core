@@ -1668,6 +1668,34 @@ upgrade, and the upgraded tray displayed the same value. Capture revision
 validation, privacy boundary, and a Windows PowerShell 5.1 regression test.
 `sensors.cpuTemperature` is therefore `ProductionAdmitted`.
 
+## Preserve factory-only capabilities when a production port opens
+
+Do not validate only `IProductionBatteryPortFactory.Capabilities`. The service
+publishes `IProductionBatteryPort.Capabilities` after it opens the HID session.
+An exact-model factory can therefore pass unit tests while the installed
+service silently loses fields if the factory does not forward every capability
+constructor argument to the opened port.
+
+This happened after the RZ09-0528 CPU/GPU and power-source observations were
+added. The factory advertised them, but the opened port rebuilt an older
+capability set without:
+
+- the seven Custom CPU/GPU combinations;
+- CPU Power Limit and CPU Voltage Optimizer observed-only ranges;
+- GPU Overclock observed-only ranges and toggle metadata; or
+- battery and USB-C behavior observations.
+
+Core commit `a44d969` forwards that complete set into every opened port and adds
+an integration test that compares factory and port values. Firmware-smoke
+schema 6 serializes the same fields, includes them in post-update equality, and
+makes the exact RZ09-0528 values part of its baseline health gate. When adding
+any future model-specific capability, update and test all four surfaces:
+
+1. factory capability construction;
+2. opened-port capability construction;
+3. service/tray presentation; and
+4. firmware-smoke capture plus exact-model comparison.
+
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
