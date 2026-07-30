@@ -596,6 +596,18 @@ NVIDIA GPU clock-offset follow-up:
   operator is present; it uses the same isolated window for one bounded
   60-second PID `02C6` special-key retry and hashes that private output
   separately.
+- The first fully isolated live run saved 0/0, requested the bounded adjacent
+  pair +1/+1, and received no confirmed applied state. Its internal rollback
+  independently read 0/0 again, and the wrapper restored OpenBlade, both Razer
+  services, Synapse, and the approximately 50-percent Static keyboard state.
+  Preserve this as `ReadbackNotConfirmedRestored`: it proves rollback and
+  interlocks, not setter support. Keep `gpuClockOffsets=QueryValidated` and
+  GPU overclock access observed-only.
+- Synapse had GPU Overclock disabled for that run. This is a plausible
+  prerequisite, not a proven cause. The next safe experiment must visibly
+  preserve, enable, and restore that separate toggle before repeating one
+  adjacent offset round trip; never brute-force an undocumented step or infer
+  support from setter return values without independent readback.
 
 Elevated capture follow-up:
 
@@ -1218,6 +1230,13 @@ traffic will be routed to it. The next physical isolation retry must still
 prove whether removing Synapse restores the Raw Input keyboard events; the
 first 60-second isolated attempt received no physical input and is preserved
 as a failed zero-input session.
+
+A second 60-second retry used the same elevated isolation window as the GPU
+validator: Synapse, Razer Elevation Service, Razer Game Manager Service 3, and
+OpenBlade were all inactive. It also received zero Raw Input messages. The
+wrapper restored every controller afterward. Preserve both attempts honestly;
+neither contains a physical key event, so neither advances nor contradicts the
+USBPcap identities and neither permits production actions or suppression.
 
 ## Preserve the device-mode negative controls and reversible success
 
