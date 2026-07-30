@@ -1353,6 +1353,20 @@ if (args.Length > 0 && args[0].Equals(
 }
 
 if (args.Length > 0 && args[0].Equals(
+    "validate-rz09-0528-02c6-device-mode",
+    StringComparison.OrdinalIgnoreCase))
+{
+    IDeviceModeValidationRunner runner =
+        GetterCandidateProbeFactory.CreateDeviceModeValidationRz090528Windows();
+    var command = new DeviceModeValidationCommand(
+        runner.RunAsync,
+        Console.In,
+        Console.Out,
+        target: DeviceModeValidationTarget.Rz090528);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
     "validate-performance-fan",
     StringComparison.OrdinalIgnoreCase))
 {

@@ -57,6 +57,36 @@ public sealed class DeviceModeValidationCommandTests
         Assert.Contains("\"productionAdmitted\": false", writer.ToString());
     }
 
+    [Fact]
+    public async Task RunAsync_UsesExactRz090528Identity()
+    {
+        using var writer = new StringWriter();
+        var command = new DeviceModeValidationCommand(
+            async (confirm, token) =>
+            {
+                bool visualConfirmed = await confirm(token);
+                return Result(visualConfirmed);
+            },
+            new StringReader("YES"),
+            writer,
+            _ => new NoopDisposable(),
+            DeviceModeValidationTarget.Rz090528);
+
+        int exitCode = await command.RunAsync(
+            [
+                "--confirm-target",
+                DeviceModeValidationCommand.Rz090528ExactTargetConfirmation,
+            ],
+            default);
+
+        Assert.Equal(0, exitCode);
+        string output = writer.ToString();
+        Assert.Contains("\"model\": \"RZ09-0528\"", output);
+        Assert.Contains("\"productId\": \"02C6\"", output);
+        Assert.Contains("\"biosVersion\": \"2.02\"", output);
+        Assert.DoesNotContain("02E0", output);
+    }
+
     private static DeviceModeValidationResult Result(bool visualConfirmed) => new(
         "Normal",
         "Driver",

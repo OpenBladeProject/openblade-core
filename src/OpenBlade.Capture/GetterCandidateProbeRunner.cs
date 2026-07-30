@@ -73,6 +73,15 @@ internal static class GetterCandidateProbeFactory
             ExchangeTimeout,
             CleanupTimeout);
 
+    internal static IDeviceModeValidationRunner
+        CreateDeviceModeValidationRz090528Windows() =>
+        new DeviceModeValidationRunner(
+            static () => new ValidationRunContext(),
+            CreateRz090528ActorFactory(ControllerExclusivityPolicy.Strict),
+            TimeProvider.System,
+            ExchangeTimeout,
+            CleanupTimeout);
+
     private static IValidationActorFactory CreateStrictActorFactory()
     {
         var native = new WindowsHidNative();
@@ -98,6 +107,10 @@ internal static class GetterCandidateProbeFactory
     }
 
     private static IValidationActorFactory CreateRz090528AdvisoryActorFactory()
+        => CreateRz090528ActorFactory(ControllerExclusivityPolicy.Advisory);
+
+    private static IValidationActorFactory CreateRz090528ActorFactory(
+        ControllerExclusivityPolicy policy)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -111,7 +124,7 @@ internal static class GetterCandidateProbeFactory
                 WindowsHostIdentitySource.Rz090528Identity),
             guard,
             native,
-            ControllerExclusivityPolicy.Advisory,
+            policy,
             new HidHandleIdentity(
                 VendorId: 0x1532,
                 ProductId: 0x02C6,
@@ -124,7 +137,7 @@ internal static class GetterCandidateProbeFactory
             guard,
             TimeProvider.System,
             ExchangeTimeout,
-            ControllerExclusivityPolicy.Advisory,
+            policy,
             TimeSpan.FromMilliseconds(30));
     }
 }
