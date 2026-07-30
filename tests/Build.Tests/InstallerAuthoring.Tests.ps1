@@ -195,6 +195,7 @@ foreach ($requiredText in @(
         'Assert-OpenBladeInstallerBundle',
         'Write-OpenBladeStoreReadinessReport',
         'Invoke-OpenBladeSigning',
+        '--property:SignOutput=true',
         'OpenBladeSigningThumbprint',
         'VerifyPrivacyPolicy',
         'upgradeProbeVersion',
@@ -202,6 +203,12 @@ foreach ($requiredText in @(
     Assert-True ($publish.IndexOf($requiredText, [StringComparison]::Ordinal) -ge 0) `
         "Publish.ps1 is missing required installer integration '$requiredText'."
 }
+Assert-True (
+    $publish -match (
+        '(?s)if \(\$signingEnabled\)\s*\{\s*' +
+        '\$installerBuildArguments \+= @\(\s*' +
+        '''--property:SignOutput=true''')) `
+    'Signed publishing must opt into the WiX bundle-signing pipeline.'
 
 $storeContractPath = Join-Path $repository 'build\store\OpenBlade.StoreSubmission.json'
 Assert-True (Test-Path -LiteralPath $storeContractPath -PathType Leaf) `

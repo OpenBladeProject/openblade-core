@@ -221,6 +221,7 @@ try {
     )
     if ($signingEnabled) {
         $installerBuildArguments += @(
+            '--property:SignOutput=true',
             "--property:OpenBladeSigningThumbprint=$SigningThumbprint",
             "--property:OpenBladeSignTool=$resolvedSignTool",
             "--property:OpenBladeTimestampUrl=$TimestampUrl"
