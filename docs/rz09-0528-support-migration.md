@@ -1709,6 +1709,15 @@ any future model-specific capability, update and test all four surfaces:
 3. service/tray presentation; and
 4. firmware-smoke capture plus exact-model comparison.
 
+Installed build `0.1.0+1309a6ec` closed this loop on the exact laptop. Schema-6
+firmware smoke reported all seven Custom combinations, all three observed-only
+CPU/GPU policies, and both battery/USB-C behavior observations. Its 32 passes,
+one optional sleeping-GPU warning, and two honest environmental failures
+(Synapse running and an externally changed Performance mode) demonstrate that
+the exact-model capability gate itself passed. Computer Use then confirmed the
+same installed build renders the three CPU/GPU cards, the compact WDL row, an
+enabled Static lid-logo selector, and no M1-M5 explanatory footnote.
+
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
