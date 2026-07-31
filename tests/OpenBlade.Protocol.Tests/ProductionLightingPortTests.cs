@@ -61,7 +61,8 @@ public sealed class ProductionLightingPortTests
     {
         DeviceCapabilities capabilities =
             Rz090528BrightnessLightingPort.CreateCapabilities(
-                matrixEffectsAdmitted: true);
+                staticEffectAdmitted: true,
+                spectrumEffectAdmitted: true);
 
         Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.Equal(
@@ -179,7 +180,7 @@ public sealed class ProductionLightingPortTests
                 new BatteryCommands(),
                 new TemporaryCommands()),
             TimeSpan.FromSeconds(1),
-            matrixEffectsAdmitted: true);
+            staticEffectAdmitted: true);
 
         await port.SetLightingAsync(
             LightingSettingsFactory.Static(new RgbColor(0x47, 0xE1, 0x0C), 50),

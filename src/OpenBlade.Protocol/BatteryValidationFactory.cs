@@ -549,18 +549,26 @@ public static class BatteryValidationFactory
 
     internal static IProductionLightingPortFactory
         CreateWindowsRz090528ProductionLighting()
-        => CreateWindowsRz090528BrightnessLighting(matrixEffectsAdmitted: true);
+        => CreateWindowsRz090528BrightnessLighting(
+            staticEffectAdmitted: true,
+            spectrumEffectAdmitted: false);
 
     internal static IProductionLightingPortFactory
         CreateWindowsRz090528BrightnessLighting()
-        => CreateWindowsRz090528BrightnessLighting(matrixEffectsAdmitted: false);
+        => CreateWindowsRz090528BrightnessLighting(
+            staticEffectAdmitted: false,
+            spectrumEffectAdmitted: false);
 
     internal static IProductionLightingPortFactory
         CreateWindowsRz090528LightingValidation()
-        => CreateWindowsRz090528ProductionLighting();
+        => CreateWindowsRz090528BrightnessLighting(
+            staticEffectAdmitted: true,
+            spectrumEffectAdmitted: true);
 
     private static IProductionLightingPortFactory
-        CreateWindowsRz090528BrightnessLighting(bool matrixEffectsAdmitted)
+        CreateWindowsRz090528BrightnessLighting(
+            bool staticEffectAdmitted,
+            bool spectrumEffectAdmitted)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -593,7 +601,8 @@ public static class BatteryValidationFactory
         return new Rz090528BrightnessLightingFactory(
             static () => new ValidationRunContext(),
             actorFactory,
-            matrixEffectsAdmitted);
+            staticEffectAdmitted,
+            spectrumEffectAdmitted);
     }
 
     public static IBatteryValidationRunFactory CreateWindows()

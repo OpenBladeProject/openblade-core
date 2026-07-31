@@ -14,18 +14,22 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
 
     private readonly Func<ValidationRunContext> createContext;
     private readonly IValidationActorFactory actorFactory;
-    private readonly bool matrixEffectsAdmitted;
+    private readonly bool staticEffectAdmitted;
+    private readonly bool spectrumEffectAdmitted;
 
     internal Rz090528BrightnessLightingFactory(
         Func<ValidationRunContext> createContext,
         IValidationActorFactory actorFactory,
-        bool matrixEffectsAdmitted = false)
+        bool staticEffectAdmitted = false,
+        bool spectrumEffectAdmitted = false)
     {
         this.createContext = createContext;
         this.actorFactory = actorFactory;
-        this.matrixEffectsAdmitted = matrixEffectsAdmitted;
+        this.staticEffectAdmitted = staticEffectAdmitted;
+        this.spectrumEffectAdmitted = spectrumEffectAdmitted;
         Capabilities = Rz090528BrightnessLightingPort.CreateCapabilities(
-            matrixEffectsAdmitted);
+            staticEffectAdmitted,
+            spectrumEffectAdmitted);
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -81,7 +85,8 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
             new Rz090528BrightnessLightingPort(
                 actor,
                 ExchangeTimeout,
-                matrixEffectsAdmitted),
+                staticEffectAdmitted,
+                spectrumEffectAdmitted),
             null);
     }
 }
@@ -109,14 +114,17 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     internal Rz090528BrightnessLightingPort(
         ValidationActor actor,
         TimeSpan exchangeTimeout,
-        bool matrixEffectsAdmitted = false)
+        bool staticEffectAdmitted = false,
+        bool spectrumEffectAdmitted = false)
     {
         this.actor = actor;
         session = new Rz090528CommandSessionGate(
             actor.Session,
             Rz090528CommandSessionGate.Shared);
         this.exchangeTimeout = exchangeTimeout;
-        Capabilities = CreateCapabilities(matrixEffectsAdmitted);
+        Capabilities = CreateCapabilities(
+            staticEffectAdmitted,
+            spectrumEffectAdmitted);
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -133,17 +141,11 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     }
 
     internal static DeviceCapabilities CreateCapabilities(
-        bool matrixEffectsAdmitted = false) => new(
+        bool staticEffectAdmitted = false,
+        bool spectrumEffectAdmitted = false) => new(
         new HashSet<PerformancePreset>(),
         new HashSet<FanMode>(),
-        matrixEffectsAdmitted
-            ? new HashSet<LightingEffect>
-            {
-                LightingEffect.Off,
-                LightingEffect.Spectrum,
-                LightingEffect.Static,
-            }
-            : new HashSet<LightingEffect> { LightingEffect.Off },
+        CreateAdmittedEffects(staticEffectAdmitted, spectrumEffectAdmitted),
         new HashSet<int>(),
         SupportsBatteryProtectionOff: false,
         SupportsTemporaryFullCharge: false)
@@ -155,29 +157,51 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             | SpecialKeySlotSet.M4
             | SpecialKeySlotSet.M5,
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
-            ObservedLightingEffects = new HashSet<LightingEffect>(
-            matrixEffectsAdmitted
-                ?
-                [
-                    LightingEffect.Starlight,
-                    LightingEffect.Ripple,
-                    LightingEffect.Tidal,
-                    LightingEffect.Wave,
-                    LightingEffect.Wheel,
-                ]
-                :
-                [
-                    LightingEffect.Spectrum,
-                    LightingEffect.Static,
-                    LightingEffect.Starlight,
-                    LightingEffect.Ripple,
-                    LightingEffect.Tidal,
-                    LightingEffect.Wave,
-                    LightingEffect.Wheel,
-                ]),
+            ObservedLightingEffects = CreateObservedEffects(
+                staticEffectAdmitted,
+                spectrumEffectAdmitted),
             LogoLightingModes = new HashSet<LogoLightingMode>(
             Enum.GetValues<LogoLightingMode>()),
         };
+
+    private static IReadOnlySet<LightingEffect> CreateAdmittedEffects(
+        bool staticEffectAdmitted,
+        bool spectrumEffectAdmitted)
+    {
+        var effects = new HashSet<LightingEffect> { LightingEffect.Off };
+        if (staticEffectAdmitted)
+        {
+            effects.Add(LightingEffect.Static);
+        }
+        if (spectrumEffectAdmitted)
+        {
+            effects.Add(LightingEffect.Spectrum);
+        }
+        return effects;
+    }
+
+    private static IReadOnlySet<LightingEffect> CreateObservedEffects(
+        bool staticEffectAdmitted,
+        bool spectrumEffectAdmitted)
+    {
+        var effects = new HashSet<LightingEffect>
+        {
+            LightingEffect.Starlight,
+            LightingEffect.Ripple,
+            LightingEffect.Tidal,
+            LightingEffect.Wave,
+            LightingEffect.Wheel,
+        };
+        if (!staticEffectAdmitted)
+        {
+            effects.Add(LightingEffect.Static);
+        }
+        if (!spectrumEffectAdmitted)
+        {
+            effects.Add(LightingEffect.Spectrum);
+        }
+        return effects;
+    }
 
     public async Task EnsureDriverModeAsync(CancellationToken cancellationToken) =>
         _ = await MaintainDriverModeAsync(cancellationToken).ConfigureAwait(false);

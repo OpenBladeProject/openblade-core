@@ -179,7 +179,6 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
             new HashSet<LightingEffect>
             {
                 LightingEffect.Off,
-                LightingEffect.Spectrum,
                 LightingEffect.Static,
             },
             new HashSet<int>(),
@@ -195,6 +194,7 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects = new HashSet<LightingEffect>
             {
+                LightingEffect.Spectrum,
                 LightingEffect.Starlight,
                 LightingEffect.Ripple,
                 LightingEffect.Tidal,

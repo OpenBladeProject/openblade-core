@@ -28,9 +28,10 @@ public sealed class FirmwareSmokeAssessmentTests
             Capabilities = CreateSnapshot("1.9.0.0").Capabilities with
             {
                 PerformancePresets = ["Balanced", "Custom", "Performance", "Silent"],
-                LightingEffects = ["Off", "Spectrum", "Static"],
+                LightingEffects = ["Off", "Static"],
                 ObservedLightingEffects =
                 [
+                    "Spectrum",
                     "Ripple",
                     "Starlight",
                     "Tidal",

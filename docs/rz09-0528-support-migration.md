@@ -35,7 +35,7 @@ model-independent operating-system APIs.
 | Exact host and HID identity | Admitted | Model, BIOS, PID, usage `0001:0002`, and 91-byte feature reports |
 | Keyboard-brightness query | Admitted | `03/83`, arguments `010500` |
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
-| Lighting effects and logo | Partially admitted | Keyboard Off plus exact host-rendered Static and Spectrum are admitted; logo Off/Static/Breathing is admitted with selector `00`. Starlight, Ripple, Tidal, Wave, and Wheel remain explicit observed-only capabilities |
+| Lighting effects and logo | Partially admitted | Keyboard Off plus exact one-shot Static are admitted; Spectrum has an isolated setter validation but its installed continuous renderer faulted and remains observed-only. Logo Off/Static/Breathing is admitted with selector `00`. Starlight, Ripple, Tidal, Wave, and Wheel also remain explicit observed-only capabilities |
 | Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Custom, exact CPU/GPU combinations, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power-source setters remain unadmitted |
 | Sensors | Admitted | CPU temperature through the exact `\_SB.PCI0.SBRG.EC0.TZRZ` Windows thermal-zone counter; the unrelated `\_TZ.TZ01` zone is never substituted |
 | Model-specific tuning UI | Observed-only | CPU Power Limit 45-95 W in 1 W steps, CPU Voltage Optimizer On/Off plus -30..-1, and GPU Overclock On/Off plus Synapse policy ranges are first-class capabilities. Synapse's CPU backend ultimately requires a Synapse-delivered AMD kernel driver; OpenBlade shows these features without editable controls or taking that dependency |
@@ -693,8 +693,9 @@ Lighting capture follow-up:
 - Quick-effect transitions among Spectrum, Static, Starlight, Ripple, Tidal,
   Wave, and Wheel produced only generic Chroma traffic and no reliably
   effect-discriminating payload. At that checkpoint all seven remained
-  captured, not admitted; the later exact row-stream analysis and validator
-  supersede this boundary for Static and Spectrum only.
+  captured, not admitted; the later exact row-stream analysis and installed
+  validation supersede this boundary for Static only. Spectrum gained isolated
+  setter validation, but failed installed continuous-renderer lifecycle.
 - `DeviceCapabilities.ObservedLightingEffects` preserves all seven discoveries
   separately from writable `LightingEffects`. The tray identifies them in an
   informational card, diagnostics emit both writable and observed lighting
@@ -1889,9 +1890,9 @@ JSON explicitly records that matrix readback is unavailable; visual
 confirmation must never be relabeled as GET support.
 
 Run the validation only from a committed exact build with Synapse closed and
-the OpenBlade service stopped. Preserve a failed result honestly. Admit Static
-and Spectrum to the service capability set only after the command succeeds and
-the restored Static 50-percent state is independently confirmed. Windows
+the OpenBlade service stopped. Preserve a failed result honestly. The isolated
+command is a setter gate, not installed lifecycle proof: require the effect to
+survive periodic service observation before production admission. Windows
 Dynamic Lighting must remain a true no-write handoff even after native effects
 are admitted.
 
@@ -1904,8 +1905,11 @@ restoration all confirmed. The private schema-1 artifact SHA-256 is
 `0F93FCAA3F28F9312F53F251031EA7F3AE9E9A468B0B7A14508254F3EA8A69CE`;
 its protocol assembly SHA-256 is
 `985F50E0B8ABB1687D9844FB74AD7A8AC379813C48E28E17C9AAA7AFC239FDD4`.
-Capture commit `ca7f0e9` records the sanitized result and advances only Static
-and Spectrum. The first elevated wrapper attempt is preserved as a no-write
+Capture commit `ca7f0e9` recorded the sanitized isolated result and initially
+advanced Static and Spectrum. Later installed evidence in capture commit
+`9673292` corrects that over-admission: Static remains admitted; Spectrum base
+is `SetterValidated`, while its host color sequence and cadence remain
+`Captured`. The first elevated wrapper attempt is preserved as a no-write
 failure: Windows PowerShell 5.1 lacked `Wait-Service`, after the service had
 stopped but before Synapse isolation or hardware access.
 
@@ -1933,14 +1937,13 @@ Off, Spectrum, and Static. Repeated diagnostic-history entries saying
 `PID 02C6 matrix lighting is not admitted` were calls to deliberately unsupported
 reactive/playback hooks, not the cause of the failure.
 
-The leading cause is a cross-port feature-report race. The exact battery port
-and the new lighting port owned independent HID sessions to the same
+This first Static failure was consistent with a cross-port feature-report race
+and an uncaptured Static keepalive. The exact battery port and the new lighting
+port owned independent HID sessions to the same
 `1532:02C6`, usage `0001:0002`, 91-byte control interface. Their per-port locks
 could therefore overlap complete SetFeature/GetFeature exchanges and consume a
 device-global response intended for the other session. The isolated validator
-stopped the service, so it could not exercise that concurrency. Do not call the
-causal diagnosis confirmed until the corrective build passes the installed
-Static and Spectrum lifecycle checks below.
+stopped the service, so it could not exercise that concurrency.
 
 The corrective design has two parts:
 
@@ -1954,22 +1957,71 @@ The corrective design has two parts:
 
 Do not generalize this gate to another PID without exact transport evidence.
 Do not treat a successful isolated transition as installed lifecycle proof.
-After deploying the corrective build, require Static to remain available for
-at least 30 seconds, run a fresh schema-6 snapshot while Static owns the
-renderer, then exercise Spectrum while periodic battery/thermal observation is
-active and restore Static green 50 percent.
+Corrective build `a6e3b55` passed the Static half of that procedure. Its first
+guarded deployment attempt refused before payload or configuration writes
+because the wrapper expected the wrong serialized Static enum; the failure
+handler stopped the service, and the attempt remains preserved. A fresh
+backup-root retry deployed all 548 allowlisted files at exact version
+`0.1.0+a6e3b55cef07cff6139ccf338429aee9b690bb10`.
+
+Static green 50 percent remained active for at least 104 seconds. The read-only
+schema-6 snapshot reported renderer ownership `Static`, Driver mode true,
+writes unblocked, both fan readings and CPU temperature available, one service,
+one Session Agent, and one tray. It produced 33 passes, one optional sleeping
+GPU warning, and only the pre-existing external Performance change:
+
+- `baseline.json` SHA-256
+  `3E1430C0954AF303ADC796810D27488102DCD48DE391341C04C5F3F66EC6ED4C`;
+- `baseline-report.json` SHA-256
+  `4F60F9C17DDA0775D2AE7F3D45DDF577C1598CBA0523A95590DF5E3EE2E03291`;
+- `diagnostics.zip` SHA-256
+  `566E7AA55F0C2BA9567553F55A1A9CAA8346897FFFC968DE445D47EA2CF8E733`.
+
+Spectrum did not pass. The installed UI accepted Spectrum Cycling at 50
+percent, but within about three seconds all lighting controls became
+unavailable. A read-only snapshot then recorded desired Spectrum, renderer
+ownership `None`, writes blocked, and Driver mode unavailable. Its private
+artifact hashes are:
+
+- `baseline.json`
+  `0B4FA2E7806BDE5619952DC14E06E147D7B9DB94970700271E04687266EEA0F5`;
+- `baseline-report.json`
+  `0CCC0AF8B0D439A503E0332F276A8CB6E46709125EF0748FEA6F232E576A4542`;
+- `diagnostics.zip`
+  `B36E9CE66227EA253E545FDC06E36BE062FED337429EE057E997095B4F73E0B0`.
+
+The combined shared command gate and one-shot Static change resolves the
+installed Static failure, but the evidence does not isolate which change was
+causally necessary. It also does not make continuous Spectrum safe. The exact
+failing row, latch, cadence, or HID response remains unknown because there is
+no matrix getter. Do not mask or retry that failure in production.
+
+A one-time exact-version service restart reapplied the persisted Static green
+50-percent AC profile. The post-restart snapshot returned renderer ownership
+`Static`, Driver mode true, and writes unblocked. Its snapshot/report/diagnostic
+hashes are respectively
+`A6A7D2DC57F521EFB7D610FBB72661B82455806AA115F9CD5EF3C8E700A1B998`,
+`63A6FA62218E4297F5390D750C2C73B6AB5B303F954597245BD5949F0A82BF8B`,
+and `619704BA5EDD29A35E2BF61FB0CA4AF63B764E4185CEDC34E28F2A6522CADD69`.
+Computer Use then reconfirmed enabled controls, Static, 50 percent,
+`#47E10C`, and the neutral lid-logo description.
+
+Production must now expose only Off and Static for PID `02C6`. Keep Spectrum
+in the isolated validator and `ObservedLightingEffects`; its discovery and
+setter evidence must not disappear merely because its continuous renderer is
+not admitted.
 
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`ca7f0e9` matrix-lighting checkpoint its 144
+`9673292` installed matrix-lifecycle checkpoint its 144
 leaves contain:
 
-- 64 `ProductionAdmitted`;
+- 61 `ProductionAdmitted`;
 - 8 `QueryValidated`;
-- 19 `Captured`;
-- 1 `SetterValidated`;
+- 21 `Captured`;
+- 2 `SetterValidated`;
 - 10 `SoftwareOnly`;
 - 3 `Absent`;
 - 39 `NotInvestigated`.
@@ -1987,9 +2039,10 @@ The main physical-evidence groups still blocking broader admission are:
   PID `02C6` adapter and battery-source responses are production-admitted;
 - CPU Power Limit, CPU Voltage Optimizer, and GPU overclock setters/readback
   through a lifecycle OpenBlade can own without Synapse;
-- Starlight, Ripple, Tidal, Wave, and Wheel parameters plus any effect getter
-  for OpenBlade's native HID path. Static and Spectrum are admitted over the
-  six-row control-interface protocol. Separately, the model's 51-byte
+- Spectrum continuous-renderer fault isolation, Starlight, Ripple, Tidal,
+  Wave, and Wheel parameters, plus any effect getter for OpenBlade's native
+  HID path. Static alone is admitted over the six-row control-interface
+  protocol. Separately, the model's 51-byte
   collection is query-validated as an 85-lamp Windows LampArray, but OpenBlade
   delegates to Windows instead of registering a competing background renderer;
 - M1/M2/Fn+P production discrimination and exact Normal-mode parity. M3-M5 are

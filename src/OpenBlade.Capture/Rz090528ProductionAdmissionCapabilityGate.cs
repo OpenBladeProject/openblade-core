@@ -48,6 +48,7 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
     private static readonly IReadOnlySet<LightingEffect> ObservedLightingEffects =
         new HashSet<LightingEffect>
         {
+            LightingEffect.Spectrum,
             LightingEffect.Starlight,
             LightingEffect.Ripple,
             LightingEffect.Tidal,
@@ -129,7 +130,6 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
         && lighting.LightingEffects.SetEquals(
         [
             LightingEffect.Off,
-            LightingEffect.Spectrum,
             LightingEffect.Static,
         ])
         && lighting.ObservedLightingEffects.SetEquals(ObservedLightingEffects)

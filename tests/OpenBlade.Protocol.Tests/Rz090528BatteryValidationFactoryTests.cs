@@ -14,17 +14,34 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.True(factory.Capabilities.LightingEffects.SetEquals(
         [
             LightingEffect.Off,
-            LightingEffect.Spectrum,
             LightingEffect.Static,
         ]));
         Assert.True(factory.Capabilities.ObservedLightingEffects.SetEquals(
         [
+            LightingEffect.Spectrum,
             LightingEffect.Ripple,
             LightingEffect.Starlight,
             LightingEffect.Tidal,
             LightingEffect.Wave,
             LightingEffect.Wheel,
         ]));
+    }
+
+    [Fact]
+    public void IsolatedLightingValidator_RetainsSpectrumForEvidenceCollection()
+    {
+        IProductionLightingPortFactory factory =
+            BatteryValidationFactory.CreateWindowsRz090528LightingValidation();
+
+        Assert.True(factory.Capabilities.LightingEffects.SetEquals(
+        [
+            LightingEffect.Off,
+            LightingEffect.Spectrum,
+            LightingEffect.Static,
+        ]));
+        Assert.DoesNotContain(
+            LightingEffect.Spectrum,
+            factory.Capabilities.ObservedLightingEffects);
     }
 
     [Fact]
