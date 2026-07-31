@@ -277,6 +277,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Restored the shared pointer-over highlight on settings cards without
+  interfering with their nested controls.
 - Constrained every tray page to its vertical ScrollViewer viewport so long
   card messages no longer widen the page and disappear past the right edge at
   compact window sizes.

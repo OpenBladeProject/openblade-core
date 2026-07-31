@@ -9,6 +9,36 @@ namespace OpenBlade.Tray.Tests;
 public sealed class CapabilityPresentationTests
 {
     [Fact]
+    public void MainWindow_SettingsRowsRetainTheSharedPointerOverHighlight()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement style = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsRowStyle");
+
+        Assert.Contains(
+            style.Descendants(),
+            element => Attribute(element, "Property") == "Background"
+                && Attribute(element, "Value") == "Transparent");
+        Assert.Contains(
+            style.Descendants(),
+            element => Attribute(element, "Property")
+                    == "local:SettingsCardPointerVisual.IsEnabled"
+                && Attribute(element, "Value") == "True");
+        Assert.Contains(
+            style.Descendants(),
+            element => Attribute(element, "Property")
+                    == "local:SettingsCardPointerVisual.PointerOverBackground"
+                && Attribute(element, "Value")
+                    == "{ThemeResource SubtleFillColorSecondaryBrush}");
+
+        string behavior = ReadTraySource("SettingsCardPointerVisual.cs");
+        Assert.Contains("border.PointerEntered += OnPointerEntered", behavior);
+        Assert.Contains("border.PointerMoved += OnPointerMoved", behavior);
+        Assert.Contains("border.PointerExited += OnPointerExited", behavior);
+        Assert.Contains("border.ClearValue(Border.BackgroundProperty)", behavior);
+    }
+
+    [Fact]
     public void MainWindow_ShowsUnsavedNavigationBadgesAndStretchesFanCurveSliders()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());

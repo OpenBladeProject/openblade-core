@@ -45,9 +45,13 @@
                 <Setter Property="Padding" Value="0" />
             </Style>
             <Style x:Key="SettingsRowStyle" TargetType="Border">
+                <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="0,0,0,1" />
                 <Setter Property="Padding" Value="16,14" />
+                <Setter Property="local:SettingsCardPointerVisual.IsEnabled" Value="True" />
+                <Setter Property="local:SettingsCardPointerVisual.PointerOverBackground"
+                        Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
             </Style>
             <Style x:Key="SettingsLastRowStyle"
                    TargetType="Border"

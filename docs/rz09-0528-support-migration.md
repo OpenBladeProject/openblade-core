@@ -2473,3 +2473,18 @@ user must know. For partial shortcut-key admission, keep every slot in the
 preference and capability model but render only editable slots; do not show
 disabled M1/M2 rows or a capture-status information bar beside working M3-M5
 controls.
+
+## Preserve the shared settings-card interaction
+
+The 2026 UI treatment includes a subtle pointer-over fill for settings cards.
+Keep that behavior in the shared `SettingsRowStyle`; model-specific pages
+should not have to reimplement it. Settings rows contain live controls, so they
+must remain non-button containers. `SettingsCardPointerVisual` changes only
+the row background and leaves nested buttons, pickers, sliders, and toggles
+independently interactive.
+
+When adding a new primary settings row, use `SettingsRowStyle` (or
+`SettingsLastRowStyle`, which derives from it). Do not replace the shared style
+with a plain `Border`, and do not add per-model pointer handlers. Action-only
+cards may continue using `CardActionButtonTemplate`, whose pointer-over and
+pressed states are intentionally owned by the button itself.
