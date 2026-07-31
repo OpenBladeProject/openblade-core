@@ -256,6 +256,7 @@ public sealed class ProductionLightingPortTests
         Assert.Equal(7, session.Commands.Count(command =>
             command.CommandId is Rz090528MatrixRowProtocol.RowCommandId
                 or Rz090528MatrixRowProtocol.LatchCommandId));
+        Assert.True(session.SubmittedBatchCount >= 1);
         Assert.True(session.SubmittedCommands.Count >= 7);
         Assert.All(
             session.SubmittedCommands,
@@ -1939,6 +1940,8 @@ public sealed class ProductionLightingPortTests
 
         internal ConcurrentQueue<RazerCommandSpec> SubmittedCommands { get; } = [];
 
+        internal int SubmittedBatchCount { get; private set; }
+
         internal Queue<byte> BrightnessQueryOverrides { get; } = [];
 
         internal byte Brightness { get; set; } = initialBrightness;
@@ -2039,6 +2042,25 @@ public sealed class ProductionLightingPortTests
         {
             _ = assignTransactionId();
             SubmittedCommands.Enqueue(command);
+
+            return Task.FromResult(
+                new HidSessionResult<ReadOnlyMemory<byte>>(
+                    ReadOnlyMemory<byte>.Empty,
+                    null));
+        }
+
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitBatchAsync(
+            IReadOnlyList<RazerCommandSpec> commands,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            SubmittedBatchCount++;
+            foreach (RazerCommandSpec command in commands)
+            {
+                _ = assignTransactionId();
+                SubmittedCommands.Enqueue(command);
+            }
 
             return Task.FromResult(
                 new HidSessionResult<ReadOnlyMemory<byte>>(

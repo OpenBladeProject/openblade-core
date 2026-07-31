@@ -25,6 +25,73 @@ public sealed class Rz090528MatrixLightingTests
     }
 
     [Fact]
+    public void FrameConstructor_DefensivelyCopiesCallerSlots()
+    {
+        RgbColor[] source = CreateDistinctSlots();
+        RgbColor original = source[1];
+
+        var frame = new Rz090528MatrixFrame(source.AsSpan());
+        source[1] = new RgbColor(0xFF, 0xFF, 0xFF);
+
+        Assert.Equal(original, frame[1]);
+    }
+
+    [Fact]
+    public void OwnedFramePath_EmitsIdenticalBytesWithoutCopyingAgain()
+    {
+        RgbColor[] source = CreateDistinctSlots();
+        var defensive = new Rz090528MatrixFrame(source.AsSpan());
+        RgbColor[] ownedSlots = (RgbColor[])source.Clone();
+        Rz090528MatrixFrame owned =
+            Rz090528MatrixFrame.FromOwnedSlots(ownedSlots);
+
+        for (int row = 0; row < Rz090528MatrixFrame.RowCount; row++)
+        {
+            Assert.Equal(
+                Rz090528MatrixRowProtocol.EncodeRow(row, defensive),
+                Rz090528MatrixRowProtocol.EncodeRow(row, owned));
+        }
+
+        var replacement = new RgbColor(0xA1, 0xB2, 0xC3);
+        ownedSlots[1] = replacement;
+        Assert.Equal(replacement, owned[1]);
+        Assert.NotEqual(replacement, defensive[1]);
+    }
+
+    [Fact]
+    public void OwnedFramePath_EliminatesSecondSlotArrayAllocation()
+    {
+        const int iterations = 256;
+        RgbColor[][] sources = Enumerable.Range(0, iterations)
+            .Select(_ => new RgbColor[Rz090528MatrixFrame.SlotCount])
+            .ToArray();
+        var frames = new Rz090528MatrixFrame[iterations];
+        _ = new Rz090528MatrixFrame(sources[0].AsSpan());
+        _ = Rz090528MatrixFrame.FromOwnedSlots(sources[0]);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < iterations; index++)
+        {
+            frames[index] = new Rz090528MatrixFrame(sources[index].AsSpan());
+        }
+        long defensiveBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Array.Clear(frames);
+        before = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < iterations; index++)
+        {
+            frames[index] = Rz090528MatrixFrame.FromOwnedSlots(sources[index]);
+        }
+        long ownedBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(
+            defensiveBytes - ownedBytes
+                >= iterations * Rz090528MatrixFrame.SlotCount * 3,
+            $"Defensive={defensiveBytes:N0}; owned={ownedBytes:N0}");
+        GC.KeepAlive(frames);
+    }
+
+    [Fact]
     public void RowCodec_EmitsCapturedFfRowZeroToSixteenHeaderAndRgbOrder()
     {
         var color = new RgbColor(0x47, 0xE1, 0x0C);
@@ -33,8 +100,13 @@ public sealed class Rz090528MatrixLightingTests
         for (int row = 0; row < Rz090528MatrixFrame.RowCount; row++)
         {
             byte[] payload = Rz090528MatrixRowProtocol.EncodeRow(row, frame);
+            byte[] reused = Enumerable.Repeat(
+                (byte)0xA5,
+                Rz090528MatrixRowProtocol.RowPayloadLength).ToArray();
+            Rz090528MatrixRowProtocol.EncodeRow(row, frame, reused);
 
             Assert.Equal(Rz090528MatrixRowProtocol.RowPayloadLength, payload.Length);
+            Assert.Equal(payload, reused);
             Assert.Equal(0xFF, payload[0]);
             Assert.Equal(row, payload[1]);
             Assert.Equal(0x00, payload[2]);
@@ -125,7 +197,49 @@ public sealed class Rz090528MatrixLightingTests
         Assert.Null((await secondExchange).Failure);
     }
 
-    private sealed class BlockingSession : IRazerCommandSession
+    [Fact]
+    public async Task CommandSessionGate_HoldsSharedGateForCompleteSetBatch()
+    {
+        using var gate = new SemaphoreSlim(1, 1);
+        var batchInner = new BlockingSession();
+        var queryInner = new BlockingSession();
+        var batchSession = new Rz090528CommandSessionGate(batchInner, gate);
+        var querySession = new Rz090528CommandSessionGate(queryInner, gate);
+        int assignments = 0;
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> batch =
+            ((IRazerSetFeatureCommandSession)batchSession).SubmitBatchAsync(
+                [
+                    new(0x03, 0x0B, [0xFF, 0x00], 2),
+                    new(0x03, 0x0B, [0xFF, 0x01], 2),
+                    new(0x03, 0x0A, [0x05, 0x00], 2),
+                ],
+                () => TransactionIdAssignment.Valid(
+                    checked((byte)Interlocked.Increment(ref assignments))),
+                TimeSpan.FromSeconds(1),
+                default);
+        await batchInner.Entered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> query =
+            querySession.ExecuteAsync(
+                new(0x03, 0x83, [0x01, 0x05, 0x00], 3),
+                static () => TransactionIdAssignment.Valid(4),
+                TimeSpan.FromSeconds(1),
+                default);
+        await Task.Delay(50);
+        Assert.False(queryInner.Entered.Task.IsCompleted);
+
+        batchInner.Release.TrySetResult();
+        Assert.Null((await batch).Failure);
+        Assert.Equal(3, assignments);
+        await queryInner.Entered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        queryInner.Release.TrySetResult();
+        Assert.Null((await query).Failure);
+    }
+
+    private sealed class BlockingSession :
+        IRazerCommandSession,
+        IRazerSetFeatureCommandSession
     {
         internal TaskCompletionSource Entered { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -150,6 +264,48 @@ public sealed class Rz090528MatrixLightingTests
             return new(new byte[] { 0x01, 0x05, 0x00 }, null);
         }
 
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken) =>
+            ExecuteAsync(
+                command,
+                assignTransactionId,
+                exchangeTimeout,
+                cancellationToken);
+
+        public async Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitBatchAsync(
+            IReadOnlyList<RazerCommandSpec> commands,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            _ = exchangeTimeout;
+            foreach (RazerCommandSpec command in commands)
+            {
+                _ = command;
+                _ = assignTransactionId();
+            }
+
+            Entered.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return new(ReadOnlyMemory<byte>.Empty, null);
+        }
+
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private static RgbColor[] CreateDistinctSlots()
+    {
+        var slots = new RgbColor[Rz090528MatrixFrame.SlotCount];
+        for (int slot = 0; slot < slots.Length; slot++)
+        {
+            slots[slot] = new(
+                checked((byte)slot),
+                checked((byte)(slot + 1)),
+                checked((byte)(slot + 2)));
+        }
+        return slots;
     }
 }

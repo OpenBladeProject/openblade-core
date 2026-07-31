@@ -72,6 +72,12 @@ internal interface IRazerSetFeatureCommandSession
         Func<TransactionIdAssignment> assignTransactionId,
         TimeSpan exchangeTimeout,
         CancellationToken cancellationToken);
+
+    Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitBatchAsync(
+        IReadOnlyList<RazerCommandSpec> commands,
+        Func<TransactionIdAssignment> assignTransactionId,
+        TimeSpan exchangeTimeout,
+        CancellationToken cancellationToken);
 }
 
 internal static class RazerCommandSessionTimeout
@@ -176,6 +182,31 @@ internal sealed class WindowsRazerHidSession :
             cancellationToken,
             expectResponse: false);
 
+    public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitBatchAsync(
+        IReadOnlyList<RazerCommandSpec> commands,
+        Func<TransactionIdAssignment> assignTransactionId,
+        TimeSpan exchangeTimeout,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(assignTransactionId);
+        if (commands.Count == 0)
+        {
+            throw new ArgumentException(
+                "A SET-only command batch must contain at least one command.",
+                nameof(commands));
+        }
+
+        RazerCommandSessionTimeout.Validate(exchangeTimeout);
+        RazerCommandSpec[] snapshot = SnapshotBatch(commands);
+        var item = new WorkItem(
+            snapshot,
+            assignTransactionId,
+            exchangeTimeout,
+            cancellationToken);
+        return Enqueue(item);
+    }
+
     private Task<HidSessionResult<ReadOnlyMemory<byte>>> Enqueue(
         RazerCommandSpec command,
         Func<TransactionIdAssignment> assignTransactionId,
@@ -184,16 +215,7 @@ internal sealed class WindowsRazerHidSession :
         bool expectResponse)
     {
         ArgumentNullException.ThrowIfNull(assignTransactionId);
-        if (command.Arguments.Length > RazerReport.MaximumPayloadLength)
-        {
-            throw new ArgumentOutOfRangeException(nameof(command), "Command arguments cannot exceed 80 bytes.");
-        }
-
-        if (command.ExpectedPayloadLength is < 0 or > RazerReport.MaximumPayloadLength)
-        {
-            throw new ArgumentOutOfRangeException(nameof(command), "Expected payload length must be between 0 and 80 bytes.");
-        }
-
+        ValidateCommand(command);
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
 
         var snapshot = new RazerCommandSpec(
@@ -209,6 +231,11 @@ internal sealed class WindowsRazerHidSession :
             cancellationToken,
             expectResponse);
 
+        return Enqueue(item);
+    }
+
+    private Task<HidSessionResult<ReadOnlyMemory<byte>>> Enqueue(WorkItem item)
+    {
         lock (sync)
         {
             if (state != RazerCommandSessionDisposition.Healthy)
@@ -225,6 +252,54 @@ internal sealed class WindowsRazerHidSession :
         }
 
         return item.Task;
+    }
+
+    private static RazerCommandSpec[] SnapshotBatch(
+        IReadOnlyList<RazerCommandSpec> commands)
+    {
+        int argumentBytes = 0;
+        for (int index = 0; index < commands.Count; index++)
+        {
+            RazerCommandSpec command = commands[index];
+            ValidateCommand(command);
+            argumentBytes = checked(argumentBytes + command.Arguments.Length);
+        }
+
+        byte[] arguments = GC.AllocateUninitializedArray<byte>(argumentBytes);
+        var snapshot = new RazerCommandSpec[commands.Count];
+        int offset = 0;
+        for (int index = 0; index < commands.Count; index++)
+        {
+            RazerCommandSpec command = commands[index];
+            int length = command.Arguments.Length;
+            command.Arguments.Span.CopyTo(arguments.AsSpan(offset, length));
+            snapshot[index] = new(
+                command.ClassId,
+                command.CommandId,
+                arguments.AsMemory(offset, length),
+                command.ExpectedPayloadLength,
+                command.PayloadValidator);
+            offset += length;
+        }
+
+        return snapshot;
+    }
+
+    private static void ValidateCommand(RazerCommandSpec command)
+    {
+        if (command.Arguments.Length > RazerReport.MaximumPayloadLength)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(command),
+                "Command arguments cannot exceed 80 bytes.");
+        }
+
+        if (command.ExpectedPayloadLength is < 0 or > RazerReport.MaximumPayloadLength)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(command),
+                "Expected payload length must be between 0 and 80 bytes.");
+        }
     }
 
     public ValueTask DisposeAsync()
@@ -278,7 +353,12 @@ internal sealed class WindowsRazerHidSession :
                     continue;
                 }
 
-                HidSessionResult<ReadOnlyMemory<byte>> result = await ExecuteClaimedAsync(item).ConfigureAwait(false);
+                HidSessionResult<ReadOnlyMemory<byte>> result =
+                    item.BatchCommands is { } batch
+                        ? await ExecuteSetBatchClaimedAsync(
+                            item,
+                            batch).ConfigureAwait(false)
+                        : await ExecuteClaimedAsync(item).ConfigureAwait(false);
                 item.Complete(result);
 
                 lock (sync)
@@ -580,6 +660,179 @@ internal sealed class WindowsRazerHidSession :
         }
     }
 
+    private async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteSetBatchClaimedAsync(
+        WorkItem item,
+        RazerCommandSpec[] commands)
+    {
+        using var deadline =
+            new CancellationTokenSource(item.ExchangeTimeout, timeProvider);
+        byte[] setBuffer = new byte[FeatureReportLength];
+        bool guardChecked = false;
+        for (int index = 0; index < commands.Length; index++)
+        {
+            TransactionIdAssignment assignment;
+            try
+            {
+                assignment = item.AssignTransactionId();
+            }
+            catch
+            {
+                Poison();
+                return Failure(HidSessionFailureKind.ProtocolFailure);
+            }
+
+            if (assignment
+                == new TransactionIdAssignment(
+                    0,
+                    HidSessionFailureKind.Exhausted))
+            {
+                return Failure(HidSessionFailureKind.Exhausted);
+            }
+
+            if (assignment.TransactionId == 0 || assignment.Failure is not null)
+            {
+                Poison();
+                return Failure(HidSessionFailureKind.ProtocolFailure);
+            }
+
+            HidSessionFailureKind? cancellation = ClassifyCancellation(
+                item.CancellationToken,
+                deadline.Token);
+            if (cancellation is not null)
+            {
+                return Failure(cancellation.Value);
+            }
+
+            if (!guardChecked)
+            {
+                HidSessionResult<ReadOnlyMemory<byte>>? blocked =
+                    CheckStrictExclusivity();
+                if (blocked is not null)
+                {
+                    return blocked.Value;
+                }
+
+                guardChecked = true;
+            }
+
+            cancellation = ClassifyCancellation(
+                item.CancellationToken,
+                deadline.Token);
+            if (cancellation is not null)
+            {
+                return Failure(cancellation.Value);
+            }
+
+            RazerCommandSpec command = commands[index];
+            RazerReport.Encode(
+                assignment.TransactionId,
+                command.ClassId,
+                command.CommandId,
+                command.Arguments.Span,
+                setBuffer.AsSpan(1, RazerReport.ReportLength));
+
+            HidFeatureIoResult setResult;
+            try
+            {
+                setResult = await io.ExecuteAsync(
+                    handle,
+                    IoctlHidSetFeature,
+                    setBuffer,
+                    item.CancellationToken,
+                    deadline.Token).ConfigureAwait(false);
+            }
+            catch
+            {
+                Poison();
+                return DiagnosticFailure(
+                    HidSessionFailureKind.NativeIoFailure,
+                    HidSessionFailurePhase.SetSubmit);
+            }
+
+            if (setResult.Termination == HidFeatureTermination.Completed
+                && setResult.Completion is not { Succeeded: true })
+            {
+                Poison();
+                return DiagnosticFailure(
+                    HidSessionFailureKind.NativeIoFailure,
+                    IoPhase(isSet: true, result: setResult),
+                    setResult.Completion);
+            }
+
+            cancellation = ClassifyIoCancellation(
+                setResult,
+                item.CancellationToken,
+                deadline.Token);
+            if (cancellation is not null)
+            {
+                if (setResult.WasSubmitted)
+                {
+                    Poison();
+                }
+
+                return setResult.WasSubmitted
+                    ? DiagnosticFailure(
+                        cancellation.Value,
+                        HidSessionFailurePhase.SetCompletion,
+                        setResult.Completion)
+                    : Failure(cancellation.Value);
+            }
+
+            if (setResult.Termination != HidFeatureTermination.Completed)
+            {
+                Poison();
+                return DiagnosticFailure(
+                    HidSessionFailureKind.NativeIoFailure,
+                    IoPhase(isSet: true, result: setResult),
+                    setResult.Completion);
+            }
+
+            cancellation = ClassifyCancellation(
+                item.CancellationToken,
+                deadline.Token);
+            if (cancellation is not null)
+            {
+                Poison();
+                return Failure(cancellation.Value);
+            }
+        }
+
+        return new(ReadOnlyMemory<byte>.Empty, null);
+    }
+
+    private HidSessionResult<ReadOnlyMemory<byte>>? CheckStrictExclusivity()
+    {
+        if (exclusivityPolicy != ControllerExclusivityPolicy.Strict)
+        {
+            return null;
+        }
+
+        HardwareAccessDecision decision;
+        try
+        {
+            decision = guard.Check();
+        }
+        catch
+        {
+            return DiagnosticFailure(
+                HidSessionFailureKind.ConflictDetectionFailed,
+                HidSessionFailurePhase.Guard);
+        }
+
+        if (decision.DetectionFailure is not null)
+        {
+            return DiagnosticFailure(
+                HidSessionFailureKind.ConflictDetectionFailed,
+                HidSessionFailurePhase.Guard);
+        }
+
+        return decision.Conflicts.Count != 0
+            ? DiagnosticFailure(
+                HidSessionFailureKind.ConflictBlocked,
+                HidSessionFailurePhase.Guard)
+            : null;
+    }
+
     private static HidSessionFailureKind? ClassifyIoCancellation(
         HidFeatureIoResult result,
         CancellationToken caller,
@@ -690,7 +943,20 @@ internal sealed class WindowsRazerHidSession :
             ExpectResponse = expectResponse;
         }
 
+        internal WorkItem(
+            RazerCommandSpec[] batchCommands,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            BatchCommands = batchCommands;
+            AssignTransactionId = assignTransactionId;
+            ExchangeTimeout = exchangeTimeout;
+            CancellationToken = cancellationToken;
+        }
+
         internal RazerCommandSpec Command { get; }
+        internal RazerCommandSpec[]? BatchCommands { get; }
         internal Func<TransactionIdAssignment> AssignTransactionId { get; }
         internal TimeSpan ExchangeTimeout { get; }
         internal CancellationToken CancellationToken { get; }

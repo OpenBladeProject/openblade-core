@@ -63,5 +63,31 @@ internal sealed class Rz090528CommandSessionGate(
         }
     }
 
+    public async Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitBatchAsync(
+        IReadOnlyList<RazerCommandSpec> commands,
+        Func<TransactionIdAssignment> assignTransactionId,
+        TimeSpan exchangeTimeout,
+        CancellationToken cancellationToken)
+    {
+        if (inner is not IRazerSetFeatureCommandSession submitter)
+        {
+            return new(default, HidSessionFailureKind.ProtocolFailure);
+        }
+
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await submitter.SubmitBatchAsync(
+                commands,
+                assignTransactionId,
+                exchangeTimeout,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

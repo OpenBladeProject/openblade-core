@@ -19,20 +19,23 @@ internal sealed class Rz090528MatrixFrame
 
     internal Rz090528MatrixFrame(ReadOnlySpan<RgbColor> values)
     {
-        if (values.Length != SlotCount)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(values),
-                values.Length,
-                $"An RZ09-0528 matrix frame must contain exactly {SlotCount} RGB slots.");
-        }
-
+        ValidateLength(values.Length, nameof(values));
         slots = values.ToArray();
+    }
+
+    private Rz090528MatrixFrame(RgbColor[] values, TakeOwnership _)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        ValidateLength(values.Length, nameof(values));
+        slots = values;
     }
 
     internal static IReadOnlyList<int> CapturedHoleSlots => CapturedHoles;
 
     internal RgbColor this[int index] => slots[index];
+
+    internal static Rz090528MatrixFrame FromOwnedSlots(RgbColor[] values) =>
+        new(values, default(TakeOwnership));
 
     internal static Rz090528MatrixFrame Uniform(RgbColor color)
     {
@@ -42,7 +45,7 @@ internal sealed class Rz090528MatrixFrame
             values[slot] = HoleMask[slot] ? default : color;
         }
 
-        return new(values);
+        return FromOwnedSlots(values);
     }
 
     internal static bool IsHole(int slot)
@@ -55,6 +58,17 @@ internal sealed class Rz090528MatrixFrame
         return HoleMask[slot];
     }
 
+    private static void ValidateLength(int length, string parameterName)
+    {
+        if (length != SlotCount)
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                length,
+                $"An RZ09-0528 matrix frame must contain exactly {SlotCount} RGB slots.");
+        }
+    }
+
     private static bool[] CreateHoleMask()
     {
         bool[] mask = new bool[SlotCount];
@@ -64,6 +78,10 @@ internal sealed class Rz090528MatrixFrame
         }
 
         return mask;
+    }
+
+    private readonly struct TakeOwnership
+    {
     }
 }
 
@@ -84,28 +102,42 @@ internal static class Rz090528MatrixRowProtocol
 
     internal static byte[] EncodeRow(int row, Rz090528MatrixFrame frame)
     {
+        byte[] payload = new byte[RowPayloadLength];
+        EncodeRow(row, frame, payload);
+        return payload;
+    }
+
+    internal static void EncodeRow(
+        int row,
+        Rz090528MatrixFrame frame,
+        Span<byte> destination)
+    {
         ArgumentNullException.ThrowIfNull(frame);
         if ((uint)row >= Rz090528MatrixFrame.RowCount)
         {
             throw new ArgumentOutOfRangeException(nameof(row));
         }
 
-        byte[] payload = new byte[RowPayloadLength];
-        payload[0] = 0xFF;
-        payload[1] = checked((byte)row);
-        payload[2] = 0x00;
-        payload[3] = Rz090528MatrixFrame.ColumnCount - 1;
+        if (destination.Length != RowPayloadLength)
+        {
+            throw new ArgumentException(
+                $"An RZ09-0528 row destination must contain exactly {RowPayloadLength} bytes.",
+                nameof(destination));
+        }
+
+        destination[0] = 0xFF;
+        destination[1] = checked((byte)row);
+        destination[2] = 0x00;
+        destination[3] = Rz090528MatrixFrame.ColumnCount - 1;
         int firstSlot = row * Rz090528MatrixFrame.ColumnCount;
         for (int column = 0; column < Rz090528MatrixFrame.ColumnCount; column++)
         {
             RgbColor color = frame[firstSlot + column];
             int offset = 4 + (column * 3);
-            payload[offset] = color.Red;
-            payload[offset + 1] = color.Green;
-            payload[offset + 2] = color.Blue;
+            destination[offset] = color.Red;
+            destination[offset + 1] = color.Green;
+            destination[offset + 2] = color.Blue;
         }
-
-        return payload;
     }
 }
 

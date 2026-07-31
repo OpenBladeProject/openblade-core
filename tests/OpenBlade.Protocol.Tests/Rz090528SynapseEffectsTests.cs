@@ -5,6 +5,14 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class Rz090528SynapseEffectsTests
 {
+    private static readonly (double Inner, double Outer)[] RippleReferenceBands =
+    [
+        (0.00, 0.00), (0.00, 1.00), (1.00, 2.24), (1.41, 3.61),
+        (2.83, 4.24), (3.61, 5.39), (4.47, 6.32), (5.83, 7.28),
+        (6.71, 8.25), (7.28, 9.22), (8.25, 10.44), (9.22, 11.40),
+        (10.20, 13.15), (11.18, 13.34), (12.17, 14.32), (14.00, 14.32),
+    ];
+
     [Fact]
     public void FullAdmission_MatchesExactSynapseQuickEffects()
     {
@@ -29,6 +37,27 @@ public sealed class Rz090528SynapseEffectsTests
             LightingEffect.Fire,
         ]));
         Assert.Empty(capabilities.ObservedLightingEffects);
+    }
+
+    [Fact]
+    public void OracleResources_RequireApprovedHashAndExactDevice()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            Rz090528LightingOracleResources.ReadDocument<object>(
+                Rz090528FireOracle.ResourceName,
+                new string('0', 64)));
+        Assert.True(Rz090528LightingOracleResources.IsExactTarget(
+            new Rz090528LightingOracleResources.Target(
+                "RZ09-0528",
+                "1532",
+                "02C6",
+                "2.02")));
+        Assert.False(Rz090528LightingOracleResources.IsExactTarget(
+            new Rz090528LightingOracleResources.Target(
+                "RZ09-0581",
+                "1532",
+                "02E0",
+                "3.01")));
     }
 
     [Theory]
@@ -126,6 +155,35 @@ public sealed class Rz090528SynapseEffectsTests
             Rz090528LightingTiming.IdleKeepaliveInterval,
             effect.GetNextFrameDelay(TimeSpan.FromSeconds(1)));
         Assert.Throws<ArgumentException>(() => effect.Pulse(51, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void Ripple_PrecomputedBandsMatchOriginalDistanceAlgorithm()
+    {
+        var color = new RgbColor(0x47, 0xE1, 0x0C);
+        for (int origin = 0; origin < Rz090528MatrixFrame.SlotCount; origin++)
+        {
+            if (Rz090528MatrixFrame.IsHole(origin))
+            {
+                continue;
+            }
+
+            var effect = new Rz090528RippleEffect(color);
+            effect.Pulse(origin, TimeSpan.Zero);
+            for (int band = 0; band < RippleReferenceBands.Length; band++)
+            {
+                Rz090528MatrixFrame frame = effect.RenderFrame(
+                    TimeSpan.FromMilliseconds(band * 50));
+                for (int slot = 0; slot < Rz090528MatrixFrame.SlotCount; slot++)
+                {
+                    Assert.Equal(
+                        IsInReferenceRippleBand(origin, slot, band)
+                            ? color
+                            : default,
+                        frame[slot]);
+                }
+            }
+        }
     }
 
     [Fact]
@@ -268,6 +326,23 @@ public sealed class Rz090528SynapseEffectsTests
             result[offset + 2] = frame[slot].Blue;
         }
         return result;
+    }
+
+    private static bool IsInReferenceRippleBand(int origin, int slot, int band)
+    {
+        if (Rz090528MatrixFrame.IsHole(slot))
+        {
+            return false;
+        }
+
+        int originRow = origin / Rz090528MatrixFrame.ColumnCount;
+        int originColumn = origin % Rz090528MatrixFrame.ColumnCount;
+        int rowDelta = (slot / Rz090528MatrixFrame.ColumnCount) - originRow;
+        int columnDelta = (slot % Rz090528MatrixFrame.ColumnCount) - originColumn;
+        double distance = Math.Sqrt(
+            (rowDelta * rowDelta) + (columnDelta * columnDelta));
+        (double inner, double outer) = RippleReferenceBands[band];
+        return distance + 1e-9 >= inner && distance <= outer + 1e-9;
     }
 
     private static void AssertHolesBlack(Rz090528MatrixFrame frame)

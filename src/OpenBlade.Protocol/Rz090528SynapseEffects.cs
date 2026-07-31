@@ -1,7 +1,5 @@
-using System.IO.Compression;
-using System.Reflection;
+using System.Numerics;
 using System.Security.Cryptography;
-using System.Text.Json;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
@@ -166,7 +164,7 @@ internal sealed class Rz090528StarlightEffect : IRz090528LightingEffect
                 Rz090528LightingMath.ToByte(intensity * 255.0));
         }
 
-        return new(slots);
+        return Rz090528MatrixFrame.FromOwnedSlots(slots);
     }
 
     private RgbColor ColorForEvent(uint slotHash, long eventIndex)
@@ -232,7 +230,7 @@ internal sealed class Rz090528AmbientAwarenessEffect : IRz090528LightingEffect
                 slots[slot] = default;
             }
         }
-        frame = new(slots);
+        frame = Rz090528MatrixFrame.FromOwnedSlots(slots);
     }
 }
 
@@ -277,7 +275,7 @@ internal sealed class Rz090528AudioMeterEffect(double colorBoost)
                 slots[slot] = default;
             }
         }
-        frame = new(slots);
+        frame = Rz090528MatrixFrame.FromOwnedSlots(slots);
     }
 }
 
@@ -410,7 +408,7 @@ internal sealed class Rz090528ReactiveEffect : IRz090528KeyTriggeredLightingEffe
                 color,
                 Rz090528LightingMath.ToByte(remaining * 255));
         }
-        return new(slots);
+        return Rz090528MatrixFrame.FromOwnedSlots(slots);
     }
 }
 
@@ -436,7 +434,7 @@ internal static class Rz090528FireOracle
     internal const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_FireOracle.json";
     internal const string ApprovedFixtureSha256 =
-        "874C99039C8204950D233EA7ECE6560985CDC6325D576F82D9F12FA841B25128";
+        "75C4E4EF09B11DF94840A79B44A6B3778CEF8F0CD2064030E28EF1A71F0378C7";
     internal const int FrameCount = 171;
     internal static readonly TimeSpan StartupFadeDuration =
         TimeSpan.FromMilliseconds(3500);
@@ -468,21 +466,20 @@ internal static class Rz090528FireOracle
                 fraction);
             slots[slot] = Rz090528LightingMath.Scale(color, startupIntensity);
         }
-        return new(slots);
+        return Rz090528MatrixFrame.FromOwnedSlots(slots);
     }
 
     private static RgbColor[] ReadTemplate()
     {
         FireDocument document =
-            Rz090528TidalOracle.ReadDocument<FireDocument>(
+            Rz090528LightingOracleResources.ReadDocument<FireDocument>(
                 ResourceName,
                 ApprovedFixtureSha256);
         if (document.SchemaVersion != 1
             || document.EvidenceRole != "SanitizedRz090528FireMatrixOracle"
             || document.SourceEvidenceId !=
                 "RZ09-0528-SYNAPSE-FULL-MENU-UPPER-ORACLE-20260730"
-            || document.Target != new Rz090528TidalOracle.OracleTarget(
-                "RZ09-0528", "1532", "02C6", "2.02")
+            || !Rz090528LightingOracleResources.IsExactTarget(document.Target)
             || document.SourceActionId != "fire-select"
             || document.StartupFadeMilliseconds != 3500
             || document.CycleMilliseconds != 8550
@@ -496,7 +493,7 @@ internal static class Rz090528FireOracle
             throw new InvalidOperationException("The RZ09-0528 Fire oracle is invalid.");
         }
 
-        byte[] raw = Rz090528TidalOracle.Inflate(
+        byte[] raw = Rz090528LightingOracleResources.Inflate(
             document.Data,
             document.UncompressedBytes);
         RgbColor[] result = new RgbColor[raw.Length / 3];
@@ -519,7 +516,7 @@ internal static class Rz090528FireOracle
         int SchemaVersion,
         string EvidenceRole,
         string SourceEvidenceId,
-        Rz090528TidalOracle.OracleTarget Target,
+        Rz090528LightingOracleResources.Target Target,
         string SourceActionId,
         int StartupFadeMilliseconds,
         int CycleMilliseconds,
@@ -535,6 +532,7 @@ internal static class Rz090528FireOracle
 
 internal sealed class Rz090528RippleEffect : IRz090528KeyTriggeredLightingEffect
 {
+    private const double DistanceTolerance = 1e-9;
     internal static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(800);
     private static readonly TimeSpan BandInterval = TimeSpan.FromMilliseconds(50);
     private static readonly (double Inner, double Outer)[] Bands =
@@ -544,6 +542,10 @@ internal sealed class Rz090528RippleEffect : IRz090528KeyTriggeredLightingEffect
         (6.71, 8.25), (7.28, 9.22), (8.25, 10.44), (9.22, 11.40),
         (10.20, 13.15), (11.18, 13.34), (12.17, 14.32), (14.00, 14.32),
     ];
+    private static readonly (
+        double MinimumSquared,
+        double MaximumSquared)[] SquaredBandBounds = CreateSquaredBandBounds();
+    private static readonly RippleSlotMask[] BandMasks = CreateBandMasks();
     private readonly RgbColor color;
     private readonly TimeSpan?[] lastPulseAt =
         new TimeSpan?[Rz090528MatrixFrame.SlotCount];
@@ -581,6 +583,8 @@ internal sealed class Rz090528RippleEffect : IRz090528KeyTriggeredLightingEffect
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         RgbColor[] slots = new RgbColor[Rz090528MatrixFrame.SlotCount];
+        ulong lowerSlots = 0;
+        ulong upperSlots = 0;
         for (int origin = 0; origin < lastPulseAt.Length; origin++)
         {
             if (lastPulseAt[origin] is not { } pulseAt || pulseAt > elapsed)
@@ -594,10 +598,49 @@ internal sealed class Rz090528RippleEffect : IRz090528KeyTriggeredLightingEffect
                 continue;
             }
 
-            (double inner, double outer) = Bands[step];
+            RippleSlotMask mask = BandMasks[(origin * Bands.Length) + step];
+            lowerSlots |= mask.Lower;
+            upperSlots |= mask.Upper;
+        }
+
+        ApplyMask(slots, lowerSlots, offset: 0);
+        ApplyMask(slots, upperSlots, offset: 64);
+        return Rz090528MatrixFrame.FromOwnedSlots(slots);
+    }
+
+    private bool HasActivePulse(TimeSpan elapsed) =>
+        lastPulseAt.Any(value =>
+            value is { } at && at <= elapsed && elapsed - at < Duration);
+
+    private static (double MinimumSquared, double MaximumSquared)[]
+        CreateSquaredBandBounds()
+    {
+        var result =
+            new (double MinimumSquared, double MaximumSquared)[Bands.Length];
+        for (int band = 0; band < Bands.Length; band++)
+        {
+            (double inner, double outer) = Bands[band];
+            double minimum = Math.Max(0, inner - DistanceTolerance);
+            double maximum = outer + DistanceTolerance;
+            result[band] = (minimum * minimum, maximum * maximum);
+        }
+        return result;
+    }
+
+    private static RippleSlotMask[] CreateBandMasks()
+    {
+        var result =
+            new RippleSlotMask[Rz090528MatrixFrame.SlotCount * Bands.Length];
+        for (int origin = 0; origin < Rz090528MatrixFrame.SlotCount; origin++)
+        {
+            if (Rz090528MatrixFrame.IsHole(origin))
+            {
+                continue;
+            }
+
             int originRow = origin / Rz090528MatrixFrame.ColumnCount;
             int originColumn = origin % Rz090528MatrixFrame.ColumnCount;
-            for (int slot = 0; slot < slots.Length; slot++)
+            for (int slot = 0; slot < Rz090528MatrixFrame.SlotCount; slot++)
             {
                 if (Rz090528MatrixFrame.IsHole(slot))
                 {
@@ -606,21 +649,54 @@ internal sealed class Rz090528RippleEffect : IRz090528KeyTriggeredLightingEffect
 
                 int rowDelta = (slot / Rz090528MatrixFrame.ColumnCount) - originRow;
                 int columnDelta = (slot % Rz090528MatrixFrame.ColumnCount) - originColumn;
-                double distance = Math.Sqrt(
-                    (rowDelta * rowDelta) + (columnDelta * columnDelta));
-                if (distance + 1e-9 >= inner && distance <= outer + 1e-9)
+                int squaredDistance =
+                    (rowDelta * rowDelta) + (columnDelta * columnDelta);
+                for (int band = 0; band < SquaredBandBounds.Length; band++)
                 {
-                    slots[slot] = color;
+                    (double minimumSquared, double maximumSquared) =
+                        SquaredBandBounds[band];
+                    if (squaredDistance < minimumSquared
+                        || squaredDistance > maximumSquared)
+                    {
+                        continue;
+                    }
+
+                    ref RippleSlotMask mask =
+                        ref result[(origin * Bands.Length) + band];
+                    mask.Add(slot);
                 }
             }
         }
-
-        return new(slots);
+        return result;
     }
 
-    private bool HasActivePulse(TimeSpan elapsed) =>
-        lastPulseAt.Any(value =>
-            value is { } at && at <= elapsed && elapsed - at < Duration);
+    private void ApplyMask(RgbColor[] slots, ulong mask, int offset)
+    {
+        while (mask != 0)
+        {
+            int bit = BitOperations.TrailingZeroCount(mask);
+            slots[offset + bit] = color;
+            mask &= mask - 1;
+        }
+    }
+
+    private struct RippleSlotMask
+    {
+        internal ulong Lower;
+        internal ulong Upper;
+
+        internal void Add(int slot)
+        {
+            if (slot < 64)
+            {
+                Lower |= 1UL << slot;
+            }
+            else
+            {
+                Upper |= 1UL << (slot - 64);
+            }
+        }
+    }
 }
 
 internal sealed class Rz090528TidalEffect : IRz090528LightingEffect
@@ -708,7 +784,7 @@ internal static class Rz090528TidalOracle
     internal const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_TidalOracle.json";
     internal const string ApprovedFixtureSha256 =
-        "492994A0A037AF449F8D834BF5E4D536498291499731BE6117F8DCE9BA2AD452";
+        "B5B5B1DBB4A1292D0C43C06E32E2AAE00834C3095ACAD0C46031536255956A93";
     internal const int FrameCount = 100;
     internal static readonly TimeSpan CycleDuration = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(50);
@@ -741,7 +817,7 @@ internal static class Rz090528TidalOracle
                 Color(template[(upper * slots.Length) + slot], primary, secondary),
                 fraction);
         }
-        return new(slots);
+        return Rz090528MatrixFrame.FromOwnedSlots(slots);
     }
 
     private static RgbColor Color(short value, RgbColor primary, RgbColor secondary) =>
@@ -754,14 +830,15 @@ internal static class Rz090528TidalOracle
 
     private static (short[] Left, short[] Right) ReadTemplates()
     {
-        TidalDocument document = ReadDocument<TidalDocument>(
+        TidalDocument document =
+            Rz090528LightingOracleResources.ReadDocument<TidalDocument>(
             ResourceName,
             ApprovedFixtureSha256);
         if (document.SchemaVersion != 1
             || document.EvidenceRole != "SanitizedRz090528TidalMatrixOracle"
             || document.SourceEvidenceId !=
                 "RZ09-0528-SYNAPSE-QUICK-EFFECTS-ORACLE-20260730"
-            || !ValidTarget(document.Target)
+            || !Rz090528LightingOracleResources.IsExactTarget(document.Target)
             || document.CycleMilliseconds != 5000
             || document.FrameIntervalMilliseconds != 50
             || document.FrameCount != FrameCount
@@ -790,7 +867,8 @@ internal static class Rz090528TidalOracle
             throw new InvalidOperationException("A Tidal oracle template is invalid.");
         }
 
-        byte[] raw = Inflate(template.Data, bytes);
+        byte[] raw =
+            Rz090528LightingOracleResources.Inflate(template.Data, bytes);
         short[] values = new short[raw.Length / 2];
         Buffer.BlockCopy(raw, 0, values, 0, raw.Length);
         for (int index = 0; index < values.Length; index++)
@@ -805,50 +883,11 @@ internal static class Rz090528TidalOracle
         return values;
     }
 
-    internal static T ReadDocument<T>(string resource, string approvedHash)
-    {
-        using Stream stream = typeof(Rz090528TidalOracle).Assembly
-            .GetManifestResourceStream(resource)
-            ?? throw new InvalidOperationException("An RZ09-0528 oracle is missing.");
-        using var memory = new MemoryStream();
-        stream.CopyTo(memory);
-        byte[] bytes = memory.ToArray();
-        if (Convert.ToHexString(SHA256.HashData(bytes)) != approvedHash)
-        {
-            throw new InvalidOperationException("An RZ09-0528 oracle hash is not approved.");
-        }
-
-        return JsonSerializer.Deserialize<T>(
-            bytes,
-            new JsonSerializerOptions(JsonSerializerDefaults.Web)
-            {
-                PropertyNameCaseInsensitive = true,
-                UnmappedMemberHandling =
-                    System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow,
-            }) ?? throw new InvalidOperationException("An RZ09-0528 oracle is malformed.");
-    }
-
-    internal static byte[] Inflate(string data, int expectedBytes)
-    {
-        using var input = new MemoryStream(Convert.FromBase64String(data), false);
-        using var deflate = new DeflateStream(input, CompressionMode.Decompress);
-        byte[] raw = new byte[expectedBytes];
-        deflate.ReadExactly(raw);
-        if (deflate.ReadByte() != -1)
-        {
-            throw new InvalidOperationException("An oracle template has trailing data.");
-        }
-        return raw;
-    }
-
-    private static bool ValidTarget(OracleTarget target) =>
-        target == new OracleTarget("RZ09-0528", "1532", "02C6", "2.02");
-
     private sealed record TidalDocument(
         int SchemaVersion,
         string EvidenceRole,
         string SourceEvidenceId,
-        OracleTarget Target,
+        Rz090528LightingOracleResources.Target Target,
         int CycleMilliseconds,
         int FrameIntervalMilliseconds,
         int FrameCount,
@@ -867,11 +906,6 @@ internal static class Rz090528TidalOracle
         int UncompressedBytes,
         string Data);
 
-    internal sealed record OracleTarget(
-        string ModelNumber,
-        string VendorIdHex,
-        string ProductIdHex,
-        string Bios);
 }
 
 internal static class Rz090528WaveWheelOracle
@@ -879,7 +913,7 @@ internal static class Rz090528WaveWheelOracle
     internal const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_WaveWheelOracle.json";
     internal const string ApprovedFixtureSha256 =
-        "1193D6CC36BFF24706E19A2E5584A04760C68990D3CD194970F83C92988145BD";
+        "4A8345CEF4DEF2706D6D2E0B66F9C2ACD49F9564CBBF7AD5A61416A594435B6D";
     internal const int FrameCount = 25;
     internal static readonly TimeSpan CycleDuration = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(40);
@@ -910,21 +944,20 @@ internal static class Rz090528WaveWheelOracle
                 template[(upper * slots.Length) + slot],
                 fraction);
         }
-        return new(slots);
+        return Rz090528MatrixFrame.FromOwnedSlots(slots);
     }
 
     private static IReadOnlyDictionary<string, RgbColor[]> ReadTemplates()
     {
         WaveWheelDocument document =
-            Rz090528TidalOracle.ReadDocument<WaveWheelDocument>(
+            Rz090528LightingOracleResources.ReadDocument<WaveWheelDocument>(
                 ResourceName,
                 ApprovedFixtureSha256);
         if (document.SchemaVersion != 1
             || document.EvidenceRole != "SanitizedRz090528WaveWheelMatrixOracle"
             || document.SourceEvidenceId !=
                 "RZ09-0528-SYNAPSE-QUICK-EFFECTS-ORACLE-20260730"
-            || document.Target != new Rz090528TidalOracle.OracleTarget(
-                "RZ09-0528", "1532", "02C6", "2.02")
+            || !Rz090528LightingOracleResources.IsExactTarget(document.Target)
             || document.CycleMilliseconds != 1000
             || document.FrameIntervalMilliseconds != 40
             || document.FrameCount != FrameCount
@@ -965,7 +998,8 @@ internal static class Rz090528WaveWheelOracle
             throw new InvalidOperationException("A Wave/Wheel template is invalid.");
         }
 
-        byte[] raw = Rz090528TidalOracle.Inflate(template.Data, bytes);
+        byte[] raw =
+            Rz090528LightingOracleResources.Inflate(template.Data, bytes);
         RgbColor[] values = new RgbColor[raw.Length / 3];
         for (int index = 0; index < values.Length; index++)
         {
@@ -985,7 +1019,7 @@ internal static class Rz090528WaveWheelOracle
         int SchemaVersion,
         string EvidenceRole,
         string SourceEvidenceId,
-        Rz090528TidalOracle.OracleTarget Target,
+        Rz090528LightingOracleResources.Target Target,
         int CycleMilliseconds,
         int FrameIntervalMilliseconds,
         int FrameCount,

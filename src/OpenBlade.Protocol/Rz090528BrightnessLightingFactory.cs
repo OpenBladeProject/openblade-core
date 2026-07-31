@@ -914,6 +914,13 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         CancellationToken cancellationToken,
         bool expectResponse = true)
     {
+        if (!expectResponse)
+        {
+            await SubmitMatrixFrameCoreAsync(frame, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
         for (int row = 0; row < Rz090528MatrixFrame.RowCount; row++)
         {
             byte[] arguments = Rz090528MatrixRowProtocol.EncodeRow(row, frame);
@@ -923,18 +930,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 arguments,
                 arguments.Length,
                 payload => payload.Span.SequenceEqual(arguments));
-            if (expectResponse)
-            {
-                _ = await ExecuteCoreAsync(
-                    command,
-                    write: true,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await SubmitStreamCoreAsync(command, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            _ = await ExecuteCoreAsync(
+                command,
+                write: true,
+                cancellationToken).ConfigureAwait(false);
         }
 
         byte[] latch = Rz090528MatrixRowProtocol.LatchArguments.ToArray();
@@ -944,18 +943,47 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             latch,
             latch.Length,
             payload => payload.Span.SequenceEqual(latch));
-        if (expectResponse)
+        _ = await ExecuteCoreAsync(
+            latchCommand,
+            write: true,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SubmitMatrixFrameCoreAsync(
+        Rz090528MatrixFrame frame,
+        CancellationToken cancellationToken)
+    {
+        const int commandCount = Rz090528MatrixFrame.RowCount + 1;
+        int rowBytes =
+            Rz090528MatrixFrame.RowCount
+            * Rz090528MatrixRowProtocol.RowPayloadLength;
+        int latchBytes = Rz090528MatrixRowProtocol.LatchArguments.Length;
+        byte[] arguments = GC.AllocateUninitializedArray<byte>(
+            rowBytes + latchBytes);
+        var commands = new RazerCommandSpec[commandCount];
+        for (int row = 0; row < Rz090528MatrixFrame.RowCount; row++)
         {
-            _ = await ExecuteCoreAsync(
-                latchCommand,
-                write: true,
-                cancellationToken).ConfigureAwait(false);
+            int offset = row * Rz090528MatrixRowProtocol.RowPayloadLength;
+            Memory<byte> payload = arguments.AsMemory(
+                offset,
+                Rz090528MatrixRowProtocol.RowPayloadLength);
+            Rz090528MatrixRowProtocol.EncodeRow(row, frame, payload.Span);
+            commands[row] = new(
+                Rz090528MatrixRowProtocol.CommandClass,
+                Rz090528MatrixRowProtocol.RowCommandId,
+                payload,
+                payload.Length);
         }
-        else
-        {
-            await SubmitStreamCoreAsync(latchCommand, cancellationToken)
-                .ConfigureAwait(false);
-        }
+
+        Memory<byte> latch = arguments.AsMemory(rowBytes, latchBytes);
+        Rz090528MatrixRowProtocol.LatchArguments.Span.CopyTo(latch.Span);
+        commands[^1] = new(
+            Rz090528MatrixRowProtocol.CommandClass,
+            Rz090528MatrixRowProtocol.LatchCommandId,
+            latch,
+            latch.Length);
+        await SubmitStreamBatchCoreAsync(commands, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private void StartStreamCore(IRz090528LightingEffect effect)
@@ -1544,8 +1572,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             $"failed ({result.Failure}).");
     }
 
-    private async Task SubmitStreamCoreAsync(
-        RazerCommandSpec command,
+    private async Task SubmitStreamBatchCoreAsync(
+        IReadOnlyList<RazerCommandSpec> commands,
         CancellationToken cancellationToken)
     {
         if (session is not IRazerSetFeatureCommandSession submitter)
@@ -1558,8 +1586,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         HidSessionResult<ReadOnlyMemory<byte>> result;
         try
         {
-            result = await submitter.SubmitAsync(
-                command,
+            result = await submitter.SubmitBatchAsync(
+                commands,
                 () => TransactionIdAssignment.Valid(AllocateTransaction()),
                 exchangeTimeout,
                 cancellationToken).ConfigureAwait(false);
@@ -1582,8 +1610,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 : WriteSubmissionState.Indeterminate;
         throw new BladeWriteException(
             state,
-            $"PID 02C6 SET-only stream command {command.ClassId:X2}/{command.CommandId:X2} " +
-            $"failed ({result.Failure}).");
+            $"PID 02C6 SET-only matrix frame failed ({result.Failure}).");
     }
 
     private async Task EnterAsync(CancellationToken cancellationToken)
