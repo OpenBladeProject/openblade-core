@@ -1497,14 +1497,13 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Mode" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="OpenBlade controls the lid logo, even when Windows controls the keyboard."
+                                            <TextBlock Text="Choose the lighting mode for the Razer logo on the lid."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ComboBox Grid.Column="1"
                                                   MinWidth="170"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Laptop logo lighting"
-                                                  AutomationProperties.HelpText="Independent of Windows Dynamic Lighting."
                                                   ItemsSource="{x:Bind AvailableLogoLightingModeOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
                                                   SelectedItem="{x:Bind SelectedLogoLightingModeOption, Mode=TwoWay}"

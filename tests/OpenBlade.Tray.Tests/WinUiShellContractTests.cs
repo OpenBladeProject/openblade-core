@@ -398,10 +398,14 @@ public sealed class WinUiShellContractTests
         Assert.Contains("x:Name=\"WindowsDynamicLightingToggle\"", card, StringComparison.Ordinal);
         Assert.Contains("Grid.Column=\"1\"", card, StringComparison.Ordinal);
         Assert.Contains(
-            "Text=\"OpenBlade controls the lid logo, even when Windows controls the keyboard.\"",
+            "Text=\"Choose the lighting mode for the Razer logo on the lid.\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.DoesNotContain(
+            "OpenBlade controls the lid logo, even when Windows controls the keyboard.",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
             "AutomationProperties.HelpText=\"Independent of Windows Dynamic Lighting.\"",
             xaml,
             StringComparison.Ordinal);

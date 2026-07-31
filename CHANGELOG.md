@@ -24,9 +24,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
   offers an ownership control that delegates keyboard lighting to Windows.
   While delegated, every OpenBlade keyboard-lighting producer is blocked in
   the service and the tray links to Windows lighting settings; OpenBlade does
-  not register a competing background LampArray provider. The independently
-  admitted lid-logo control remains enabled and is labelled as separate from
-  Windows Dynamic Lighting. The Session Agent
+  not register a competing background LampArray provider. The Session Agent
   performs bounded, read-only enumeration
   only after the service verifies the exact tested firmware tuple, and rejects
   any array whose 85-lamp geometry fingerprint differs from captured evidence.
