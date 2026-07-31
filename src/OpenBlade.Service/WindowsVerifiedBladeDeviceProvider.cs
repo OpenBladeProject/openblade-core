@@ -317,6 +317,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                         LogoLightingModes = lighting.Capabilities.LogoLightingModes,
                         SupportsKeyboardBrightness =
                             lighting.Capabilities.SupportsKeyboardBrightness,
+                        SupportsPlaybackMuteIndicator =
+                            lighting.Capabilities.SupportsPlaybackMuteIndicator,
                     };
             }
             finally
@@ -1149,7 +1151,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         public Task SetPlaybackMuteIndicatorAsync(
             bool muted,
             CancellationToken cancellationToken) =>
-            lightingFactory.Capabilities.LightingEffects.Count > 0
+            lightingFactory.Capabilities.SupportsPlaybackMuteIndicator
                 ? ExecuteProductionPlaybackMuteIndicatorAsync(
                     muted,
                     cancellationToken)
@@ -1715,7 +1717,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
-                if (port is null || port.Capabilities.LightingEffects.Count == 0)
+                if (port is null || !port.Capabilities.SupportsPlaybackMuteIndicator)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,

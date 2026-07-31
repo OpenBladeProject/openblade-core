@@ -293,6 +293,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(
             DeviceFeatureAccess.ReadOnly,
             capabilities.LampArrayLightingAccess);
+        Assert.True(capabilities.SupportsPlaybackMuteIndicator);
         Assert.Empty(capabilities.PerformancePresets);
         Assert.Empty(capabilities.FanModes);
         Assert.Empty(capabilities.ChargeLimits);
@@ -1351,6 +1352,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             false,
             false)
         {
+            SupportsPlaybackMuteIndicator = true,
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
             WritableSpecialKeySlots =
                 SpecialKeySlotSet.M3
@@ -1384,6 +1386,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             false,
             false)
         {
+            SupportsPlaybackMuteIndicator = true,
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
             WritableSpecialKeySlots =
                 SpecialKeySlotSet.M3

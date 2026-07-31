@@ -1531,7 +1531,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 "Playback mute indication is blocked while laptop controls are unavailable.");
         }
 
-        if (current.Capabilities?.LightingEffects.Count == 0)
+        if (current.Capabilities?.SupportsPlaybackMuteIndicator != true)
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,

@@ -61,6 +61,7 @@ public sealed class ProductionLightingPortTests
         Assert.Equal(
             SpecialKeySlotSet.All,
             factory.Capabilities.WritableSpecialKeySlots);
+        Assert.True(factory.Capabilities.SupportsPlaybackMuteIndicator);
         Assert.Null(factory.Capabilities.LampArrayLightingAccess);
         Assert.Empty(factory.Capabilities.PerformancePresets);
         Assert.Empty(factory.Capabilities.FanModes);
@@ -79,6 +80,7 @@ public sealed class ProductionLightingPortTests
                 spectrumEffectAdmitted: true);
 
         Assert.True(capabilities.SupportsKeyboardBrightness);
+        Assert.False(capabilities.SupportsPlaybackMuteIndicator);
         Assert.Equal(
             DeviceFeatureAccess.ReadWrite,
             capabilities.SpecialKeyBindingsAccess);

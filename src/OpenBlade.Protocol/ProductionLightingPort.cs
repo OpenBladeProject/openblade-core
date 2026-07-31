@@ -96,6 +96,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         SupportsBatteryProtectionOff: false,
         SupportsTemporaryFullCharge: false)
     {
+        SupportsPlaybackMuteIndicator = admitted,
         SpecialKeyBindingsAccess = admitted
             ? DeviceFeatureAccess.ReadWrite
             : null,

@@ -160,6 +160,8 @@ public sealed record DeviceCapabilities(
 {
     public bool SupportsKeyboardBrightness { get; init; }
 
+    public bool SupportsPlaybackMuteIndicator { get; init; }
+
     public FanSpeedRange? FanSpeedRange { get; init; }
 
     public CustomPerformanceCapabilities? CustomPerformance { get; init; }

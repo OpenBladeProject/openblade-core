@@ -640,6 +640,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
         {
+            SupportsPlaybackMuteIndicator = true,
             LightingEffects = new HashSet<LightingEffect>
             {
                 LightingEffect.Off,
