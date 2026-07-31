@@ -661,32 +661,51 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
     private async Task WriteMatrixFrameCoreAsync(
         Rz090528MatrixFrame frame,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool expectResponse = true)
     {
         for (int row = 0; row < Rz090528MatrixFrame.RowCount; row++)
         {
             byte[] arguments = Rz090528MatrixRowProtocol.EncodeRow(row, frame);
-            _ = await ExecuteCoreAsync(
-                new RazerCommandSpec(
-                    Rz090528MatrixRowProtocol.CommandClass,
-                    Rz090528MatrixRowProtocol.RowCommandId,
-                    arguments,
-                    arguments.Length,
-                    payload => payload.Span.SequenceEqual(arguments)),
-                write: true,
-                cancellationToken).ConfigureAwait(false);
+            var command = new RazerCommandSpec(
+                Rz090528MatrixRowProtocol.CommandClass,
+                Rz090528MatrixRowProtocol.RowCommandId,
+                arguments,
+                arguments.Length,
+                payload => payload.Span.SequenceEqual(arguments));
+            if (expectResponse)
+            {
+                _ = await ExecuteCoreAsync(
+                    command,
+                    write: true,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await SubmitStreamCoreAsync(command, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         byte[] latch = Rz090528MatrixRowProtocol.LatchArguments.ToArray();
-        _ = await ExecuteCoreAsync(
-            new RazerCommandSpec(
-                Rz090528MatrixRowProtocol.CommandClass,
-                Rz090528MatrixRowProtocol.LatchCommandId,
-                latch,
-                latch.Length,
-                payload => payload.Span.SequenceEqual(latch)),
-            write: true,
-            cancellationToken).ConfigureAwait(false);
+        var latchCommand = new RazerCommandSpec(
+            Rz090528MatrixRowProtocol.CommandClass,
+            Rz090528MatrixRowProtocol.LatchCommandId,
+            latch,
+            latch.Length,
+            payload => payload.Span.SequenceEqual(latch));
+        if (expectResponse)
+        {
+            _ = await ExecuteCoreAsync(
+                latchCommand,
+                write: true,
+                cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await SubmitStreamCoreAsync(latchCommand, cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     private void StartStreamCore(IRz090528LightingEffect effect)
@@ -720,7 +739,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                await WriteMatrixFrameCoreAsync(frame, CancellationToken.None)
+                await WriteMatrixFrameCoreAsync(
+                    frame,
+                    CancellationToken.None,
+                    expectResponse: false)
                     .ConfigureAwait(false);
             }
         }
@@ -1241,6 +1263,48 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         throw new BladeWriteException(
             state,
             $"PID 02C6 lighting command {command.ClassId:X2}/{command.CommandId:X2} " +
+            $"failed ({result.Failure}).");
+    }
+
+    private async Task SubmitStreamCoreAsync(
+        RazerCommandSpec command,
+        CancellationToken cancellationToken)
+    {
+        if (session is not IRazerSetFeatureCommandSession submitter)
+        {
+            throw new CapabilityUnavailableException(
+                "PID 02C6 SET-only matrix streaming is unavailable.");
+        }
+
+        await featureIoGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        HidSessionResult<ReadOnlyMemory<byte>> result;
+        try
+        {
+            result = await submitter.SubmitAsync(
+                command,
+                () => TransactionIdAssignment.Valid(AllocateTransaction()),
+                exchangeTimeout,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            featureIoGate.Release();
+        }
+
+        if (result.Failure is null)
+        {
+            return;
+        }
+
+        WriteSubmissionState state = result.Failure is
+            HidSessionFailureKind.QueuedCanceled or
+            HidSessionFailureKind.ConflictBlocked or
+            HidSessionFailureKind.ConflictDetectionFailed
+                ? WriteSubmissionState.KnownNotApplied
+                : WriteSubmissionState.Indeterminate;
+        throw new BladeWriteException(
+            state,
+            $"PID 02C6 SET-only stream command {command.ClassId:X2}/{command.CommandId:X2} " +
             $"failed ({result.Failure}).");
     }
 

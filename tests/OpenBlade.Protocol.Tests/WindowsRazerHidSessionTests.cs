@@ -241,6 +241,29 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Fact]
+    public async Task SubmitAsync_CompletesAfterSetWithoutSettleOrGet()
+    {
+        var time = new ManualTimeProvider();
+        var io = new ScriptedIo(SetSuccess());
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            time: time,
+            featureReportSettleDelay: TimeSpan.FromSeconds(1));
+
+        HidSessionResult<ReadOnlyMemory<byte>> result =
+            await ((IRazerSetFeatureCommandSession)actor).SubmitAsync(
+                new(0x03, 0x0B, [0xFF, 0x00], 2),
+                () => TransactionIdAssignment.Valid(1),
+                Timeout,
+                default);
+
+        Assert.Null(result.Failure);
+        Assert.True(result.Value.IsEmpty);
+        Assert.Equal(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+        Assert.Equal([SetCode], io.Calls.Select(call => call.ControlCode));
+    }
+
+    [Fact]
     public async Task QueuedCancellationRace_QueuedWinnerConsumesNoId()
     {
         var gate = new TaskCompletionSource<HidFeatureIoResult>(TaskCreationOptions.RunContinuationsAsynchronously);

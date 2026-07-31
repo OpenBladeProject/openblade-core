@@ -60,6 +60,20 @@ internal interface IRazerCommandSession : IAsyncDisposable
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Optional SET-only feature-report path for device streams whose captured
+/// transport has no corresponding GET response. Normal commands must continue
+/// to use <see cref="IRazerCommandSession.ExecuteAsync"/>.
+/// </summary>
+internal interface IRazerSetFeatureCommandSession
+{
+    Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitAsync(
+        RazerCommandSpec command,
+        Func<TransactionIdAssignment> assignTransactionId,
+        TimeSpan exchangeTimeout,
+        CancellationToken cancellationToken);
+}
+
 internal static class RazerCommandSessionTimeout
 {
     private static readonly TimeSpan MaximumExchangeTimeout =
@@ -78,7 +92,9 @@ internal static class RazerCommandSessionTimeout
     }
 }
 
-internal sealed class WindowsRazerHidSession : IRazerCommandSession
+internal sealed class WindowsRazerHidSession :
+    IRazerCommandSession,
+    IRazerSetFeatureCommandSession
 {
     private const uint IoctlHidSetFeature = 0x000B0191;
     private const uint IoctlHidGetFeature = 0x000B0192;
@@ -140,7 +156,32 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
         RazerCommandSpec command,
         Func<TransactionIdAssignment> assignTransactionId,
         TimeSpan exchangeTimeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        Enqueue(
+            command,
+            assignTransactionId,
+            exchangeTimeout,
+            cancellationToken,
+            expectResponse: true);
+
+    public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitAsync(
+        RazerCommandSpec command,
+        Func<TransactionIdAssignment> assignTransactionId,
+        TimeSpan exchangeTimeout,
+        CancellationToken cancellationToken) =>
+        Enqueue(
+            command,
+            assignTransactionId,
+            exchangeTimeout,
+            cancellationToken,
+            expectResponse: false);
+
+    private Task<HidSessionResult<ReadOnlyMemory<byte>>> Enqueue(
+        RazerCommandSpec command,
+        Func<TransactionIdAssignment> assignTransactionId,
+        TimeSpan exchangeTimeout,
+        CancellationToken cancellationToken,
+        bool expectResponse)
     {
         ArgumentNullException.ThrowIfNull(assignTransactionId);
         if (command.Arguments.Length > RazerReport.MaximumPayloadLength)
@@ -161,7 +202,12 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
             command.Arguments.ToArray(),
             command.ExpectedPayloadLength,
             command.PayloadValidator);
-        var item = new WorkItem(snapshot, assignTransactionId, exchangeTimeout, cancellationToken);
+        var item = new WorkItem(
+            snapshot,
+            assignTransactionId,
+            exchangeTimeout,
+            cancellationToken,
+            expectResponse);
 
         lock (sync)
         {
@@ -404,6 +450,11 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
             return Failure(cancellation.Value);
         }
 
+        if (!item.ExpectResponse)
+        {
+            return new(ReadOnlyMemory<byte>.Empty, null);
+        }
+
         if (featureReportSettleDelay > TimeSpan.Zero)
         {
             using var settleCancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -629,18 +680,21 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
             RazerCommandSpec command,
             Func<TransactionIdAssignment> assignTransactionId,
             TimeSpan exchangeTimeout,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool expectResponse)
         {
             Command = command;
             AssignTransactionId = assignTransactionId;
             ExchangeTimeout = exchangeTimeout;
             CancellationToken = cancellationToken;
+            ExpectResponse = expectResponse;
         }
 
         internal RazerCommandSpec Command { get; }
         internal Func<TransactionIdAssignment> AssignTransactionId { get; }
         internal TimeSpan ExchangeTimeout { get; }
         internal CancellationToken CancellationToken { get; }
+        internal bool ExpectResponse { get; }
         internal Task<HidSessionResult<ReadOnlyMemory<byte>>> Task => completion.Task;
 
         internal void RegisterQueuedCancellation()

@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
@@ -210,6 +211,46 @@ public sealed class ProductionLightingPortTests
         Assert.Equal(
             (0x03, 0x0A, "0500"),
             CommandTuple(session.Commands.Last()));
+    }
+
+    [Fact]
+    public async Task Rz090528Spectrum_AcknowledgesFirstFrameThenStreamsSetOnlyFrames()
+    {
+        var session = new LightingSession(initialBrightness: 128);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            staticEffectAdmitted: true,
+            spectrumEffectAdmitted: true);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(50),
+            default);
+
+        for (int attempt = 0;
+            attempt < 100 && session.SubmittedCommands.Count < 7;
+            attempt++)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.Equal(LightingRendererOwnershipState.Spectrum, port.OwnershipState);
+        Assert.Equal(7, session.Commands.Count(command =>
+            command.CommandId is Rz090528MatrixRowProtocol.RowCommandId
+                or Rz090528MatrixRowProtocol.LatchCommandId));
+        Assert.True(session.SubmittedCommands.Count >= 7);
+        Assert.All(
+            session.SubmittedCommands,
+            command => Assert.Equal(
+                Rz090528MatrixRowProtocol.CommandClass,
+                command.ClassId));
+        Assert.Contains(
+            session.SubmittedCommands,
+            command => command.CommandId
+                == Rz090528MatrixRowProtocol.LatchCommandId);
     }
 
     [Fact]
@@ -1794,9 +1835,13 @@ public sealed class ProductionLightingPortTests
             command.CommandId,
             Convert.ToHexString(command.Arguments.Span));
 
-    private sealed class LightingSession(byte initialBrightness) : IRazerCommandSession
+    private sealed class LightingSession(byte initialBrightness) :
+        IRazerCommandSession,
+        IRazerSetFeatureCommandSession
     {
         internal List<RazerCommandSpec> Commands { get; } = [];
+
+        internal ConcurrentQueue<RazerCommandSpec> SubmittedCommands { get; } = [];
 
         internal Queue<byte> BrightnessQueryOverrides { get; } = [];
 
@@ -1888,6 +1933,21 @@ public sealed class ProductionLightingPortTests
             }
             return Task.FromResult(
                 new HidSessionResult<ReadOnlyMemory<byte>>(response, null));
+        }
+
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            _ = assignTransactionId();
+            SubmittedCommands.Enqueue(command);
+
+            return Task.FromResult(
+                new HidSessionResult<ReadOnlyMemory<byte>>(
+                    ReadOnlyMemory<byte>.Empty,
+                    null));
         }
 
         public ValueTask DisposeAsync()
