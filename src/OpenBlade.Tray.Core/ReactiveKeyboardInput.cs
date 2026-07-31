@@ -271,18 +271,6 @@ public static class ReactiveRawKeyboardInput
     public const ushort ExtendedE1Flag = 0x0004;
 
     public static bool TryCreatePulses(
-        ushort makeCode,
-        ushort flags,
-        out ReactiveKeyPulse primary,
-        out ReactiveKeyPulse? secondary)
-        => TryCreatePulses(
-            RazerBladeInputDeviceKind.Rz09_0581,
-            makeCode,
-            flags,
-            out primary,
-            out secondary);
-
-    public static bool TryCreatePulses(
         RazerBladeInputDeviceKind deviceKind,
         ushort makeCode,
         ushort flags,

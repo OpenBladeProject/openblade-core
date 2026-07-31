@@ -105,6 +105,7 @@ public sealed class ReactiveKeyboardInputTests
     public void RawInput_EmitsOnlySupportedKeyMakeEvents()
     {
         Assert.True(ReactiveRawKeyboardInput.TryCreatePulses(
+            RazerBladeInputDeviceKind.Rz09_0581,
             0x10,
             flags: 0,
             out ReactiveKeyPulse primary,
@@ -113,21 +114,25 @@ public sealed class ReactiveKeyboardInputTests
         Assert.Null(secondary);
 
         Assert.False(ReactiveRawKeyboardInput.TryCreatePulses(
+            RazerBladeInputDeviceKind.Rz09_0581,
             0x10,
             ReactiveRawKeyboardInput.KeyBreakFlag,
             out _,
             out _));
         Assert.False(ReactiveRawKeyboardInput.TryCreatePulses(
+            RazerBladeInputDeviceKind.Rz09_0581,
             0x10,
             ReactiveRawKeyboardInput.ExtendedE0Flag,
             out _,
             out _));
         Assert.False(ReactiveRawKeyboardInput.TryCreatePulses(
+            RazerBladeInputDeviceKind.Rz09_0581,
             0x10,
             ReactiveRawKeyboardInput.ExtendedE1Flag,
             out _,
             out _));
         Assert.False(ReactiveRawKeyboardInput.TryCreatePulses(
+            RazerBladeInputDeviceKind.Rz09_0581,
             0,
             flags: 0,
             out _,
