@@ -2428,6 +2428,14 @@ remained Static `47E10C` at 50 percent, the logo remained Static, Windows
 Dynamic Lighting remained off, and the user's `Function keys` mode remained
 selected.
 
+The operator then physically exercised the requested Fn+F1 mute, Fn+F2 volume
+down, and Fn+F3 volume up checks on installed ProductVersion
+`0.1.0+d4b58cf6af0e0bf76282b83f45eb020565d210e7` and confirmed that the media
+keys worked. No setting was changed for this acceptance pass. The sanitized
+installed lifecycle record is
+`annotations/2026-07-30-rz09-0528-openblade-media-row-regression.json` in the
+capture repository.
+
 Before extending function-row translation to another model, require that
 model's own Fn-state evidence and add it to the explicit support predicate.
 Do not broaden the gate to every Razer device merely because the standard
