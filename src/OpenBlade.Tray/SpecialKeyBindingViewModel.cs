@@ -75,12 +75,8 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
             }
             isEditable = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(AccessLabel));
         }
     }
-
-    public string AccessLabel =>
-        IsEditable ? "Available" : "Captured only; input is not distinguishable";
 
     public void SetEditable(bool value) => IsEditable = value;
 

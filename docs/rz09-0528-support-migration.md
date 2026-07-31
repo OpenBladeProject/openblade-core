@@ -2464,3 +2464,12 @@ This is not permission to forget a newly discovered feature. Preserve it in
 the device model and evidence immediately; expose it in the primary UI only
 when it becomes functional or when its read-only state is genuinely useful to
 the user.
+
+Apply the same restraint to actionable controls. The Laptop page uses concise
+labels and values without subtitles that explain familiar concepts such as
+power mode, fan mode, charge limit, Gaming mode, or startup animation. Retain
+text only when it communicates an operating constraint or safety behavior the
+user must know. For partial shortcut-key admission, keep every slot in the
+preference and capability model but render only editable slots; do not show
+disabled M1/M2 rows or a capture-status information bar beside working M3-M5
+controls.

@@ -399,8 +399,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Balance speed, power use, and noise."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal"
@@ -431,8 +429,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="CPU" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Choose the processor power level for Custom mode."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <ComboBox x:Name="DashboardCustomCpuSelector"
                                               Grid.Column="1"
@@ -448,19 +444,6 @@
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{Binding IsObservedPowerSourceBehaviorVisible}">
-                                <StackPanel Spacing="3">
-                                    <TextBlock Text="{Binding ObservedPowerSourceBehaviorTitle}"
-                                               Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="{Binding ObservedPowerSourceBehaviorSummary}"
-                                               MaxWidth="620"
-                                               TextWrapping="Wrap"
-                                               Style="{StaticResource SecondaryTextStyle}"
-                                               AutomationProperties.Name="Captured power-source behavior" />
-                                </StackPanel>
-                            </Border>
-                            <Border Style="{StaticResource SettingsSubcardStyle}"
-                                    Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -469,8 +452,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="GPU" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Choose the graphics power level for Custom mode."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <ComboBox x:Name="DashboardCustomGpuSelector"
                                               Grid.Column="1"
@@ -495,8 +476,6 @@
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="GPU core clock offset"
                                                    Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Adjust the GPU core clock relative to its default."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Width="320"
@@ -532,8 +511,6 @@
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="GPU memory clock offset"
                                                    Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Adjust the GPU memory clock relative to its default."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Width="320"
@@ -579,8 +556,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Automatic is recommended for everyday use."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal"
@@ -615,8 +590,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Fan speed" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Set both fans to a fixed speed."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Spacing="4">
                                         <TextBlock HorizontalAlignment="Right"
@@ -649,12 +622,10 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Use the hotter sensor for both fans"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Keeps both fans together when either processor is hot."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Use the hotter sensor for both fans"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                    </StackPanel>
                                         <ToggleSwitch Grid.Column="1"
                                                       MinWidth="0"
                                                       OffContent=""
@@ -765,8 +736,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Battery protection" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Limit charging to help preserve battery health."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
@@ -792,8 +761,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Choose the maximum charge level while protection is on."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Spacing="4"
@@ -833,8 +800,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Temporary full charge" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Charge to 100%, then restore the limit after unplugging."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
@@ -870,8 +835,6 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Function key behavior" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Set whether F1 through F12 or media actions work without holding Fn."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                             <Border x:Name="FunctionKeyFirmwareLoadingSlot"
@@ -911,8 +874,6 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Turn Gaming mode on or off."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                             <Border x:Name="GamingModeFirmwareLoadingSlot"
@@ -947,8 +908,6 @@
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Block the Windows key"
                                                        Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Prevent the Start menu from opening while Gaming mode is on."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ToggleSwitch Grid.Column="1"
                                                       HorizontalAlignment="Right"
@@ -972,8 +931,6 @@
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Block Alt+Tab"
                                                        Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Prevent switching to another app while Gaming mode is on."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ToggleSwitch Grid.Column="1"
                                                       HorizontalAlignment="Right"
@@ -1007,8 +964,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Set whether the keyboard animation plays when the laptop starts."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <Border x:Name="StartupAnimationFirmwareLoadingSlot"
@@ -2466,14 +2421,6 @@
                                         ContentTemplate="{StaticResource DashboardStartupAnimationCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
 
-                        <InfoBar x:Name="SpecialKeyBindingsObservedOnlyInfoBar"
-                                 IsOpen="{x:Bind ViewModel.IsSpecialKeyBindingsObservedOnlyVisible, Mode=OneWay}"
-                                 Visibility="{x:Bind ViewModel.IsSpecialKeyBindingsObservedOnlyVisible, Mode=OneWay}"
-                                 Severity="Informational"
-                                 IsClosable="False"
-                                 Title="{x:Bind ViewModel.SpecialKeyBindingsInfoTitle, Mode=OneWay}"
-                                 Message="{x:Bind ViewModel.SpecialKeyBindingsAccessSummary, Mode=OneWay}" />
-
                         <StackPanel x:Name="ShortcutKeysSection"
                                     Visibility="{x:Bind ViewModel.IsSpecialKeyBindingsEditable, Mode=OneWay}">
                             <TextBlock Text="Shortcut keys"
@@ -2483,7 +2430,8 @@
                                 <ItemsRepeater ItemsSource="{x:Bind SpecialKeyBindings, Mode=OneWay}">
                                     <ItemsRepeater.ItemTemplate>
                                         <DataTemplate x:DataType="local:SpecialKeyBindingViewModel">
-                                            <Border Style="{StaticResource SettingsRowStyle}">
+                                            <Border Style="{StaticResource SettingsRowStyle}"
+                                                    Visibility="{x:Bind IsEditable, Mode=OneWay}">
                                                 <StackPanel Spacing="12">
                                                     <Grid ColumnSpacing="20">
                                                         <Grid.ColumnDefinitions>
@@ -2494,8 +2442,6 @@
                                                                     VerticalAlignment="Center">
                                                             <TextBlock Text="{x:Bind SlotLabel}"
                                                                        Style="{StaticResource CardTitleStyle}" />
-                                                            <TextBlock Text="{x:Bind AccessLabel, Mode=OneWay}"
-                                                                       Style="{StaticResource CaptionTextBlockStyle}" />
                                                         </StackPanel>
                                                         <ComboBox Grid.Column="1"
                                                                   IsEnabled="{x:Bind IsEditable, Mode=OneWay}"

@@ -793,7 +793,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsCustomPerformanceVisible));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanEditGpuClockTuning));
-            NotifyObservedPowerSourceBehavior();
             Notify(nameof(ActiveSavedDisplayProfile));
             Notify(nameof(SaveToActiveProfileLabel));
             NotifyGamingModeKeyPolicy();
@@ -1449,17 +1448,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
         && Capabilities.WritableSpecialKeySlots != SpecialKeySlotSet.None;
 
-    public bool IsSpecialKeyBindingsObservedOnlyVisible =>
-        Capabilities.SpecialKeyBindingsAccess is
-            DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadOnly
-        || Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
-            && Capabilities.WritableSpecialKeySlots != SpecialKeySlotSet.All;
-
-    public string SpecialKeyBindingsInfoTitle =>
-        Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
-            ? "Shortcut keys partially available"
-            : "Shortcut keys captured, not yet controllable";
-
     public bool IsSpecialKeyBindingSlotEditable(SpecialKeySlot slot)
     {
         if (Capabilities.SpecialKeyBindingsAccess != DeviceFeatureAccess.ReadWrite)
@@ -1478,47 +1466,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         };
         return required != SpecialKeySlotSet.None
             && (Capabilities.WritableSpecialKeySlots & required) != 0;
-    }
-
-    public string SpecialKeyBindingsAccessSummary =>
-        Capabilities.SpecialKeyBindingsAccess switch
-        {
-            DeviceFeatureAccess.ObservedOnly =>
-                "Synapse exposes M1 through M5 on this exact model, but PID 02C6 input reports "
-                + "have not been mapped and independently validated. Saved bindings stay inactive "
-                + "until exact-device captures admit the decoder.",
-            DeviceFeatureAccess.ReadOnly =>
-                "Special-key input reports are recognized, but binding changes are unavailable.",
-            DeviceFeatureAccess.ReadWrite =>
-                Capabilities.WritableSpecialKeySlots == SpecialKeySlotSet.All
-                    ? "Special-key bindings are available."
-                    : Capabilities.WritableSpecialKeySlots
-                        == (SpecialKeySlotSet.M3
-                            | SpecialKeySlotSet.M4
-                            | SpecialKeySlotSet.M5)
-                        ? "M3, M4, and M5 are live-validated and editable. "
-                            + "M1, M2, and Fn+P remain captured but unavailable because "
-                            + "Windows Raw Input exposes the same generic Fn report for all three."
-                        : $"{FormatSpecialKeySlots(Capabilities.WritableSpecialKeySlots)} "
-                            + "are editable. Other shortcut slots remain unavailable until "
-                            + "their exact input reports are independently validated.",
-            _ => UnavailableLabel,
-        };
-
-    private static string FormatSpecialKeySlots(SpecialKeySlotSet slots)
-    {
-        string[] names = Enum.GetValues<SpecialKeySlotSet>()
-            .Where(slot => slot is not (SpecialKeySlotSet.None or SpecialKeySlotSet.All)
-                && (slots & slot) != 0)
-            .Select(static slot => slot.ToString())
-            .ToArray();
-        return names.Length switch
-        {
-            0 => "No shortcut slots",
-            1 => names[0],
-            2 => $"{names[0]} and {names[1]}",
-            _ => $"{string.Join(", ", names[..^1])}, and {names[^1]}",
-        };
     }
 
     public bool IsObservedLightingEffectsVisible =>
@@ -1556,47 +1503,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     + "Their captures did not reveal an effect-specific PID 02C6 payload, "
                     + "so OpenBlade keeps them separate from the writable effect picker.";
         }
-    }
-
-    public bool IsObservedPowerSourceBehaviorVisible =>
-        ActiveObservedPowerSourceBehavior is { IsWellFormed: true };
-
-    public string ObservedPowerSourceBehaviorTitle => ActivePowerSource switch
-    {
-        PowerSource.Battery => "Captured battery behavior",
-        PowerSource.UsbC => "Captured USB-C behavior",
-        _ => "Captured power-source behavior",
-    };
-
-    public string ObservedPowerSourceBehaviorSummary
-    {
-        get
-        {
-            PowerSourceBehaviorObservation? observation =
-                ActiveObservedPowerSourceBehavior;
-            if (observation is not { IsWellFormed: true })
-            {
-                return UnavailableLabel;
-            }
-
-            string warning = observation.InadequatePowerWarningVisible == true
-                ? " Synapse showed its inadequate-power warning."
-                : string.Empty;
-            return $"Synapse selected {PerformancePresetPresentation.Label(observation.SelectedPerformance)} with {FanModePresentation.Label(observation.SelectedFans)} fans. "
-                + $"Fixed fan control, Performance, and Custom were unavailable.{warning} "
-                + "This is captured UI evidence only; OpenBlade does not expose a write path without exact-device readback.";
-        }
-    }
-
-    private PowerSourceBehaviorObservation? ActiveObservedPowerSourceBehavior =>
-        Capabilities.ObservedPowerSourceBehaviors.FirstOrDefault(
-            observation => observation.Source == ActivePowerSource);
-
-    private void NotifyObservedPowerSourceBehavior()
-    {
-        Notify(nameof(IsObservedPowerSourceBehaviorVisible));
-        Notify(nameof(ObservedPowerSourceBehaviorTitle));
-        Notify(nameof(ObservedPowerSourceBehaviorSummary));
     }
 
     public GpuClockOffsetCapabilities? GpuClockOffsetCapabilities
@@ -2032,16 +1938,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SupportsGamingMode));
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(IsSpecialKeyBindingsEditable));
-            Notify(nameof(IsSpecialKeyBindingsObservedOnlyVisible));
-            Notify(nameof(SpecialKeyBindingsInfoTitle));
-            Notify(nameof(SpecialKeyBindingsAccessSummary));
             Notify(nameof(IsObservedLightingEffectsVisible));
             Notify(nameof(ObservedLightingEffectsSummary));
             Notify(nameof(IsLampArrayLightingAccessVisible));
             Notify(nameof(LampArrayLightingAccessSummary));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
             Notify(nameof(CanControlLighting));
-            NotifyObservedPowerSourceBehavior();
             NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();
         }

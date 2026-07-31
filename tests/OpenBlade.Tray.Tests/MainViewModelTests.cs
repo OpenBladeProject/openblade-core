@@ -2050,9 +2050,6 @@ public sealed class MainViewModelTests
         Assert.Equal(400, viewModel.Capabilities.GpuOverclock?.CoreOffsetMegahertz.Maximum);
         Assert.False(viewModel.CanEditGpuClockTuning);
         Assert.False(viewModel.IsSpecialKeyBindingsEditable);
-        Assert.True(viewModel.IsSpecialKeyBindingsObservedOnlyVisible);
-        Assert.Contains("PID 02C6 input reports", viewModel.SpecialKeyBindingsAccessSummary);
-        Assert.Contains("Saved bindings stay inactive", viewModel.SpecialKeyBindingsAccessSummary);
         Assert.True(viewModel.IsLampArrayLightingAccessVisible);
         Assert.Contains("exact 85-lamp keyboard array", viewModel.LampArrayLightingAccessSummary);
         Assert.Contains(
@@ -2064,8 +2061,6 @@ public sealed class MainViewModelTests
         Assert.Contains(
             "separate from the writable effect picker",
             viewModel.ObservedLightingEffectsSummary);
-        Assert.False(viewModel.IsObservedPowerSourceBehaviorVisible);
-
         client.Publish(baseline with
         {
             Revision = baseline.Revision + 1,
@@ -2085,12 +2080,13 @@ public sealed class MainViewModelTests
                 ],
             },
         });
-        await WaitUntilAsync(() => viewModel.IsObservedPowerSourceBehaviorVisible);
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
 
-        Assert.Equal("Captured USB-C behavior", viewModel.ObservedPowerSourceBehaviorTitle);
-        Assert.Contains("Synapse selected Balanced", viewModel.ObservedPowerSourceBehaviorSummary);
-        Assert.Contains("inadequate-power warning", viewModel.ObservedPowerSourceBehaviorSummary);
-        Assert.Contains("does not expose a write path", viewModel.ObservedPowerSourceBehaviorSummary);
+        PowerSourceBehaviorObservation observation = Assert.Single(
+            viewModel.Capabilities.ObservedPowerSourceBehaviors);
+        Assert.Equal(PowerSource.UsbC, observation.Source);
+        Assert.Equal(PerformancePreset.Balanced, observation.SelectedPerformance);
+        Assert.True(observation.InadequatePowerWarningVisible);
     }
 
     [Fact]
@@ -2118,9 +2114,6 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M3));
         Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M4));
         Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M5));
-        Assert.True(viewModel.IsSpecialKeyBindingsObservedOnlyVisible);
-        Assert.Contains("M3, M4, and M5", viewModel.SpecialKeyBindingsAccessSummary);
-        Assert.Contains("M1, M2, and Fn+P", viewModel.SpecialKeyBindingsAccessSummary);
 
         client.Publish(baseline with
         {
@@ -2132,16 +2125,11 @@ public sealed class MainViewModelTests
             },
         });
         await WaitUntilAsync(() =>
-            viewModel.SpecialKeyBindingsAccessSummary.StartsWith(
-                "M4 ",
-                StringComparison.Ordinal));
+            !viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M3)
+            && viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M4));
 
         Assert.False(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M3));
         Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M4));
-        Assert.DoesNotContain(
-            "M3, M4, and M5",
-            viewModel.SpecialKeyBindingsAccessSummary,
-            StringComparison.Ordinal);
     }
 
     [Fact]

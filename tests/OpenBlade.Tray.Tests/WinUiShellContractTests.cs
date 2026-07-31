@@ -751,7 +751,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(8, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
+        Assert.Equal(7, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
@@ -1331,6 +1331,18 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Shortcut keys\"", xaml, StringComparison.Ordinal);
         Assert.Contains(
             "ItemsSource=\"{x:Bind SpecialKeyBindings, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Visibility=\"{x:Bind IsEditable, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "SpecialKeyBindingsObservedOnlyInfoBar",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Text=\"{x:Bind AccessLabel, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(

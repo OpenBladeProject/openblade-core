@@ -556,8 +556,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
         }
 
-        if (args.PropertyName is nameof(MainViewModel.IsSpecialKeyBindingsEditable)
-            or nameof(MainViewModel.SpecialKeyBindingsAccessSummary))
+        if (args.PropertyName == nameof(MainViewModel.IsSpecialKeyBindingsEditable))
         {
             if (dispatcherQueue.HasThreadAccess)
             {

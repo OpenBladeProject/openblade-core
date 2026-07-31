@@ -61,17 +61,13 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(22, animated.Length);
+        Assert.Equal(21, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsCustomPerformanceVisible",
-                StringComparison.Ordinal) is true);
-        Assert.Contains(animated, element =>
-            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
-                "IsObservedPowerSourceBehaviorVisible",
                 StringComparison.Ordinal) is true);
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
@@ -123,6 +119,22 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "GPU clock tuning");
         Assert.DoesNotContain("Not available in OpenBlade yet", xaml, StringComparison.Ordinal);
+        foreach (string redundantDescription in new[]
+        {
+            "Balance speed, power use, and noise.",
+            "Automatic is recommended for everyday use.",
+            "Limit charging to help preserve battery health.",
+            "Choose the maximum charge level while protection is on.",
+            "Charge to 100%, then restore the limit after unplugging.",
+            "Set whether F1 through F12 or media actions work without holding Fn.",
+            "Turn Gaming mode on or off.",
+            "Prevent the Start menu from opening while Gaming mode is on.",
+            "Prevent switching to another app while Gaming mode is on.",
+            "Set whether the keyboard animation plays when the laptop starts.",
+        })
+        {
+            Assert.DoesNotContain(redundantDescription, xaml, StringComparison.Ordinal);
+        }
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Performance");
@@ -1934,20 +1946,22 @@ public sealed class CapabilityPresentationTests
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
         XElement section = NamedElement(document, "StackPanel", "ShortcutKeysSection");
-        XElement infoBar = NamedElement(
-            document,
-            "InfoBar",
-            "SpecialKeyBindingsObservedOnlyInfoBar");
+        XElement itemTemplate = section.Descendants().Single(element =>
+            element.Name.LocalName == "DataTemplate"
+            && Attribute(element, "DataType") == "local:SpecialKeyBindingViewModel");
+        XElement row = itemTemplate.Descendants().First(element =>
+            element.Name.LocalName == "Border");
 
         Assert.Equal(
             "{x:Bind ViewModel.IsSpecialKeyBindingsEditable, Mode=OneWay}",
             Attribute(section, "Visibility"));
         Assert.Equal(
-            "{x:Bind ViewModel.IsSpecialKeyBindingsObservedOnlyVisible, Mode=OneWay}",
-            Attribute(infoBar, "IsOpen"));
-        Assert.Equal(
-            "{x:Bind ViewModel.SpecialKeyBindingsAccessSummary, Mode=OneWay}",
-            Attribute(infoBar, "Message"));
+            "{x:Bind IsEditable, Mode=OneWay}",
+            Attribute(row, "Visibility"));
+        Assert.DoesNotContain(document.Descendants(), element =>
+            Attribute(element, "Name") == "SpecialKeyBindingsObservedOnlyInfoBar");
+        Assert.DoesNotContain(document.Descendants(), element =>
+            Attribute(element, "Text") == "{x:Bind AccessLabel, Mode=OneWay}");
     }
 
     private static string ReadMainWindowXaml() => ReadTraySource("MainWindow.xaml");
