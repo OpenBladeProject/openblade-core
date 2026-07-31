@@ -41,6 +41,23 @@ public static class FirmwareSmokeAssessment
 
     private static readonly string[] ExpectedLogoModes = ["Breathing", "Off", "Static"];
 
+    private static readonly string[] ExpectedRz090528LightingEffects =
+    [
+        "AmbientAwareness",
+        "AudioMeter",
+        "Breathing",
+        "Fire",
+        "Off",
+        "Reactive",
+        "Ripple",
+        "Spectrum",
+        "Starlight",
+        "Static",
+        "Tidal",
+        "Wave",
+        "Wheel",
+    ];
+
     private static readonly string[] ExpectedLaptopControls =
     [
         "FunctionKeyPrimary",
@@ -63,7 +80,7 @@ public static class FirmwareSmokeAssessment
     private static readonly FirmwareSmokeCapabilityExpectation Rz090528Expectation = new(
         ["Balanced", "Custom", "Performance", "Silent"],
         ExpectedFanModes,
-        ["Off", "Static"],
+        ExpectedRz090528LightingEffects,
         ExpectedChargeLimits,
         ExpectedLogoModes,
         ["FunctionKeyPrimary", "GamingMode", "StartupAnimation"],

@@ -28,16 +28,23 @@ public sealed class FirmwareSmokeAssessmentTests
             Capabilities = CreateSnapshot("1.9.0.0").Capabilities with
             {
                 PerformancePresets = ["Balanced", "Custom", "Performance", "Silent"],
-                LightingEffects = ["Off", "Static"],
-                ObservedLightingEffects =
+                LightingEffects =
                 [
-                    "Spectrum",
+                    "AmbientAwareness",
+                    "AudioMeter",
+                    "Breathing",
+                    "Fire",
+                    "Off",
+                    "Reactive",
                     "Ripple",
+                    "Spectrum",
                     "Starlight",
+                    "Static",
                     "Tidal",
                     "Wave",
                     "Wheel",
                 ],
+                ObservedLightingEffects = [],
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite.ToString(),
                 WritableSpecialKeySlots =
                     (SpecialKeySlotSet.M3

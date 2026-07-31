@@ -2373,3 +2373,17 @@ Before changing these statuses, future agents must run both the Windows
 PowerShell 5.1 capture suite and `Rz090528CoverageContractTests`, preserve the
 historical failed Spectrum annotation, and validate any newly discovered model
 feature as a first-class capability instead of dropping it from the UI.
+
+The first post-admission read-only FirmwareSmoke baseline correctly reported
+all thirteen admitted effects but exposed a stale assessment expectation that
+still allowed only Off and Static. The snapshot itself was healthy; the
+assessment failed only that old capability assertion plus the pre-existing
+external Performance drift. The exact RZ09-0528 expectation now lists all
+thirteen effects without changing the RZ09-0581 gate. After that correction,
+the read-only baseline produced 33 passes, one optional sleeping-GPU warning,
+and only the known external Performance-drift failure. It reconfirmed exact
+model and firmware, writes unblocked, Static renderer ownership, Driver mode,
+full AC, both fan readings, CPU temperature, one service, one Session Agent,
+one tray, and exact installed ProductVersion on all three binaries. The
+snapshot, report, diagnostics, and their hashes remain in the ignored
+`artifacts/.live-validation/full-5466d9c/final-baseline-2` tree.
