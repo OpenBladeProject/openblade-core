@@ -48,8 +48,6 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
     private static readonly IReadOnlySet<LightingEffect> ObservedLightingEffects =
         new HashSet<LightingEffect>
         {
-            LightingEffect.Spectrum,
-            LightingEffect.Static,
             LightingEffect.Starlight,
             LightingEffect.Ripple,
             LightingEffect.Tidal,
@@ -128,7 +126,12 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
         && battery.SupportsBatteryProtectionOff
         && battery.SupportsTemporaryFullCharge
         && battery.OneShotLaptopControls.SetEquals(LaptopControls)
-        && lighting.LightingEffects.SetEquals([LightingEffect.Off])
+        && lighting.LightingEffects.SetEquals(
+        [
+            LightingEffect.Off,
+            LightingEffect.Spectrum,
+            LightingEffect.Static,
+        ])
         && lighting.ObservedLightingEffects.SetEquals(ObservedLightingEffects)
         && lighting.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
         && lighting.WritableSpecialKeySlots == (

@@ -543,8 +543,12 @@ public static class BatteryValidationFactory
     internal static IProductionLightingPortFactory
         CreateWindowsProductionLightingForService() =>
         WindowsHostIdentitySource.IsExactRz090528WindowsHost()
-            ? CreateWindowsRz090528BrightnessLighting()
+            ? CreateWindowsRz090528ProductionLighting()
             : ProductionLightingFactory.CreateWindows();
+
+    internal static IProductionLightingPortFactory
+        CreateWindowsRz090528ProductionLighting()
+        => CreateWindowsRz090528BrightnessLighting(matrixEffectsAdmitted: true);
 
     internal static IProductionLightingPortFactory
         CreateWindowsRz090528BrightnessLighting()
@@ -552,7 +556,7 @@ public static class BatteryValidationFactory
 
     internal static IProductionLightingPortFactory
         CreateWindowsRz090528LightingValidation()
-        => CreateWindowsRz090528BrightnessLighting(matrixEffectsAdmitted: true);
+        => CreateWindowsRz090528ProductionLighting();
 
     private static IProductionLightingPortFactory
         CreateWindowsRz090528BrightnessLighting(bool matrixEffectsAdmitted)

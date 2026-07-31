@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "source": {
     "repository": "openblade-captures",
-    "revision": "e4f9d7e",
+    "revision": "ca7f0e9",
     "path": "decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json"
   },
   "device": {
@@ -116,9 +116,9 @@
           "keyMap": "NotInvestigated"
         },
         "spectrum": {
-          "base": "Captured",
-          "hostColorSequence": "NotInvestigated",
-          "frameCadence": "NotInvestigated"
+          "base": "ProductionAdmitted",
+          "hostColorSequence": "ProductionAdmitted",
+          "frameCadence": "ProductionAdmitted"
         },
         "starlight": {
           "base": "Captured",
@@ -128,8 +128,8 @@
           "durations": "NotInvestigated"
         },
         "static": {
-          "base": "Captured",
-          "colors": "NotInvestigated"
+          "base": "ProductionAdmitted",
+          "colors": "ProductionAdmitted"
         },
         "tidal": {
           "base": "Captured",

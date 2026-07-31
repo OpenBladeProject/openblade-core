@@ -16,10 +16,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
   function-key primary behavior, and Gaming mode. Model-specific CPU Power
   Limit, CPU Voltage Optimizer, and GPU-overclock policy ranges are surfaced as
   observed-only capabilities until safe backends and exact readback are
-  validated. Synapse's Spectrum Cycling, Static, Starlight, Ripple, Tidal,
-  Wave, and Wheel quick effects are likewise retained as observed-only
-  exact-model capabilities while the writable effect picker remains limited
-  to independently validated commands. Windows Dynamic Lighting also exposes
+  validated. Exact PID `02C6` Static and Spectrum are host-rendered over the
+  independently captured six-row, 17-column `03/0B` transport and were admitted
+  only after a committed exact-build round trip acknowledged every transition,
+  independently read brightness, visually confirmed both effects, and restored
+  Static at 50 percent. Starlight, Ripple, Tidal, Wave, and Wheel remain
+  observed-only exact-model capabilities until their parameters and write paths
+  receive the same validation. Windows Dynamic Lighting also exposes
   the exact keyboard as an 85-lamp, virtual-key-aware LampArray. OpenBlade
   offers an ownership control that delegates keyboard lighting to Windows.
   While delegated, every OpenBlade keyboard-lighting producer is blocked in

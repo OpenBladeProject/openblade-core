@@ -53,6 +53,13 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
                 battery,
                 lighting with
                 {
+                    LightingEffects =
+                        new HashSet<LightingEffect> { LightingEffect.Off },
+                }),
+            (
+                battery,
+                lighting with
+                {
                     ObservedLightingEffects =
                         new HashSet<LightingEffect> { LightingEffect.Static },
                 }),
@@ -169,7 +176,12 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
         var lighting = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
             new HashSet<FanMode>(),
-            new HashSet<LightingEffect> { LightingEffect.Off },
+            new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Spectrum,
+                LightingEffect.Static,
+            },
             new HashSet<int>(),
             SupportsBatteryProtectionOff: false,
             SupportsTemporaryFullCharge: false)
@@ -183,8 +195,6 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects = new HashSet<LightingEffect>
             {
-                LightingEffect.Spectrum,
-                LightingEffect.Static,
                 LightingEffect.Starlight,
                 LightingEffect.Ripple,
                 LightingEffect.Tidal,

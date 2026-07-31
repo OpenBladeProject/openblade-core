@@ -35,7 +35,7 @@ model-independent operating-system APIs.
 | Exact host and HID identity | Admitted | Model, BIOS, PID, usage `0001:0002`, and 91-byte feature reports |
 | Keyboard-brightness query | Admitted | `03/83`, arguments `010500` |
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
-| Lighting effects and logo | Partially admitted | Keyboard Off and logo Off/Static/Breathing admitted with selector `00`; Spectrum, Static, Starlight, Ripple, Tidal, Wave, and Wheel are explicit observed-only capabilities because their traffic remains non-discriminating |
+| Lighting effects and logo | Partially admitted | Keyboard Off plus exact host-rendered Static and Spectrum are admitted; logo Off/Static/Breathing is admitted with selector `00`. Starlight, Ripple, Tidal, Wave, and Wheel remain explicit observed-only capabilities |
 | Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Custom, exact CPU/GPU combinations, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power-source setters remain unadmitted |
 | Sensors | Admitted | CPU temperature through the exact `\_SB.PCI0.SBRG.EC0.TZRZ` Windows thermal-zone counter; the unrelated `\_TZ.TZ01` zone is never substituted |
 | Model-specific tuning UI | Observed-only | CPU Power Limit 45-95 W in 1 W steps, CPU Voltage Optimizer On/Off plus -30..-1, and GPU Overclock On/Off plus Synapse policy ranges are first-class capabilities. Synapse's CPU backend ultimately requires a Synapse-delivered AMD kernel driver; OpenBlade shows these features without editable controls or taking that dependency |
@@ -692,7 +692,9 @@ Lighting capture follow-up:
   production-admitted; no animated keyboard effect is implied.
 - Quick-effect transitions among Spectrum, Static, Starlight, Ripple, Tidal,
   Wave, and Wheel produced only generic Chroma traffic and no reliably
-  effect-discriminating payload. They remain captured, not admitted.
+  effect-discriminating payload. At that checkpoint all seven remained
+  captured, not admitted; the later exact row-stream analysis and validator
+  supersede this boundary for Static and Spectrum only.
 - `DeviceCapabilities.ObservedLightingEffects` preserves all seven discoveries
   separately from writable `LightingEffects`. The tray identifies them in an
   informational card, diagnostics emit both writable and observed lighting
@@ -1893,20 +1895,34 @@ the restored Static 50-percent state is independently confirmed. Windows
 Dynamic Lighting must remain a true no-write handoff even after native effects
 are admitted.
 
+Committed validator build `0f86522` completed that gate on the exact laptop.
+The `03/0B`/`03/0A` session acknowledged Static green and Spectrum at raw
+brightness 128, the independent brightness query returned 128 after both
+transitions, and the operator confirmed each visible effect. Cleanup restored
+Static green 50 percent, with raw 128, Static renderer ownership, and visual
+restoration all confirmed. The private schema-1 artifact SHA-256 is
+`0F93FCAA3F28F9312F53F251031EA7F3AE9E9A468B0B7A14508254F3EA8A69CE`;
+its protocol assembly SHA-256 is
+`985F50E0B8ABB1687D9844FB74AD7A8AC379813C48E28E17C9AAA7AFC239FDD4`.
+Capture commit `ca7f0e9` records the sanitized result and advances only Static
+and Spectrum. The first elevated wrapper attempt is preserved as a no-write
+failure: Windows PowerShell 5.1 lacked `Wait-Service`, after the service had
+stopped but before Synapse isolation or hardware access.
+
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`e4f9d7e` driver-boundary checkpoint its 144
+`ca7f0e9` matrix-lighting checkpoint its 144
 leaves contain:
 
-- 59 `ProductionAdmitted`;
+- 64 `ProductionAdmitted`;
 - 8 `QueryValidated`;
-- 21 `Captured`;
+- 19 `Captured`;
 - 1 `SetterValidated`;
 - 10 `SoftwareOnly`;
 - 3 `Absent`;
-- 42 `NotInvestigated`.
+- 39 `NotInvestigated`.
 
 `Rz090528CoverageContractTests` pins both those counts and every
 `Captured`/`QueryValidated`/`SetterValidated` path. Advancing evidence must
@@ -1921,10 +1937,11 @@ The main physical-evidence groups still blocking broader admission are:
   PID `02C6` adapter and battery-source responses are production-admitted;
 - CPU Power Limit, CPU Voltage Optimizer, and GPU overclock setters/readback
   through a lifecycle OpenBlade can own without Synapse;
-- quick-effect parameters and effect getter for OpenBlade's native HID path;
-  the model's 51-byte collection is query-validated as an 85-lamp Windows
-  LampArray, but OpenBlade delegates to Windows instead of registering a
-  competing background renderer;
+- Starlight, Ripple, Tidal, Wave, and Wheel parameters plus any effect getter
+  for OpenBlade's native HID path. Static and Spectrum are admitted over the
+  six-row control-interface protocol. Separately, the model's 51-byte
+  collection is query-validated as an 85-lamp Windows LampArray, but OpenBlade
+  delegates to Windows instead of registering a competing background renderer;
 - M1/M2/Fn+P production discrimination and exact Normal-mode parity. M3-M5 are
   admitted, including the critical PID `02C6` M4 `040AD300` mapping; the
   generic M1/M2/Fn+P path remains captured and deliberately disabled;

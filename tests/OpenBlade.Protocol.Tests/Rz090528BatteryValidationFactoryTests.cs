@@ -6,6 +6,28 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class Rz090528BatteryValidationFactoryTests
 {
     [Fact]
+    public void ProductionLightingFactory_AdmitsOnlyValidatedExactMatrixEffects()
+    {
+        IProductionLightingPortFactory factory =
+            BatteryValidationFactory.CreateWindowsRz090528ProductionLighting();
+
+        Assert.True(factory.Capabilities.LightingEffects.SetEquals(
+        [
+            LightingEffect.Off,
+            LightingEffect.Spectrum,
+            LightingEffect.Static,
+        ]));
+        Assert.True(factory.Capabilities.ObservedLightingEffects.SetEquals(
+        [
+            LightingEffect.Ripple,
+            LightingEffect.Starlight,
+            LightingEffect.Tidal,
+            LightingEffect.Wave,
+            LightingEffect.Wheel,
+        ]));
+    }
+
+    [Fact]
     public void ProductionFactory_AdmitsCapturedPerformanceBatteryAndTemporaryFullCharge()
     {
         IProductionBatteryPortFactory factory =

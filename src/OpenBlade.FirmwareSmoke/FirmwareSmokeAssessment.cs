@@ -63,7 +63,7 @@ public static class FirmwareSmokeAssessment
     private static readonly FirmwareSmokeCapabilityExpectation Rz090528Expectation = new(
         ["Balanced", "Custom", "Performance", "Silent"],
         ExpectedFanModes,
-        ["Off"],
+        ["Off", "Spectrum", "Static"],
         ExpectedChargeLimits,
         ExpectedLogoModes,
         ["FunctionKeyPrimary", "GamingMode", "StartupAnimation"],
