@@ -25,7 +25,8 @@ Keyboard brightness, the 50-to-80-percent battery-limit ladder, battery
 protection off, temporary full charge, all four AC performance presets
 including exact-model Custom CPU/GPU combinations, Automatic/fixed/maximum
 fan control, startup animation, function-key primary
-mode, and Gaming mode are admitted hardware controls for this model. Exact
+mode, Gaming mode, and every visible Synapse keyboard-effect base are admitted
+hardware controls for this model. Exact
 read-only support also covers fan RPM, device mode, MCU version, and the
 current adapter-power class. Windows display controls are admitted through
 model-independent operating-system APIs.
@@ -35,7 +36,7 @@ model-independent operating-system APIs.
 | Exact host and HID identity | Admitted | Model, BIOS, PID, usage `0001:0002`, and 91-byte feature reports |
 | Keyboard-brightness query | Admitted | `03/83`, arguments `010500` |
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
-| Lighting effects and logo | Partially admitted | Keyboard Off plus exact one-shot Static are admitted; Spectrum has an isolated setter validation but its installed continuous renderer faulted and remains observed-only. Logo Off/Static/Breathing is admitted with selector `00`. Starlight, Ripple, Tidal, Wave, and Wheel also remain explicit observed-only capabilities |
+| Lighting effects and logo | Effect bases admitted; parameters partial | Keyboard Off plus Ambient Awareness, Audio Meter, Breathing, Fire, Reactive, Ripple, Spectrum Cycling, Starlight, Static, Tidal, Wave, and Wheel are production-admitted on the exact installed build. Logo Off/Static/Breathing is admitted with selector `00`. Effect-specific parameter combinations retain their individual captured status; no matrix/effect getter is inferred |
 | Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Custom, exact CPU/GPU combinations, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power-source setters remain unadmitted |
 | Sensors | Admitted | CPU temperature through the exact `\_SB.PCI0.SBRG.EC0.TZRZ` Windows thermal-zone counter; the unrelated `\_TZ.TZ01` zone is never substituted |
 | Model-specific tuning UI | Observed-only | CPU Power Limit 45-95 W in 1 W steps, CPU Voltage Optimizer On/Off plus -30..-1, and GPU Overclock On/Off plus Synapse policy ranges are first-class capabilities. Synapse's CPU backend ultimately requires a Synapse-delivered AMD kernel driver; OpenBlade shows these features without editable controls or taking that dependency |
@@ -2044,17 +2045,17 @@ failure. Its private artifact hashes are:
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
-The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`9673292` installed matrix-lifecycle checkpoint its 144
+The sanitized schema-2 coverage ledger is the completion source of truth. At
+capture revision `c1a551d` its 144
 leaves contain:
 
-- 61 `ProductionAdmitted`;
+- 72 `ProductionAdmitted`;
 - 8 `QueryValidated`;
-- 21 `Captured`;
-- 2 `SetterValidated`;
+- 41 `Captured`;
+- 1 `SetterValidated`;
 - 10 `SoftwareOnly`;
-- 3 `Absent`;
-- 39 `NotInvestigated`.
+- 5 `Absent`;
+- 10 `NotInvestigated`.
 
 `Rz090528CoverageContractTests` pins both those counts and every
 `Captured`/`QueryValidated`/`SetterValidated` path. Advancing evidence must
@@ -2069,10 +2070,10 @@ The main physical-evidence groups still blocking broader admission are:
   PID `02C6` adapter and battery-source responses are production-admitted;
 - CPU Power Limit, CPU Voltage Optimizer, and GPU overclock setters/readback
   through a lifecycle OpenBlade can own without Synapse;
-- Spectrum continuous-renderer fault isolation, Starlight, Ripple, Tidal,
-  Wave, and Wheel parameters, plus any effect getter for OpenBlade's native
-  HID path. Static alone is admitted over the six-row control-interface
-  protocol. Separately, the model's 51-byte
+- effect-specific parameter combinations, full installed spatial coverage of
+  the Reactive/Ripple key map, and any effect getter for OpenBlade's native
+  HID path. All visible effect bases are admitted over the exact six-row
+  control-interface protocol. Separately, the model's 51-byte
   collection is query-validated as an 85-lamp Windows LampArray, but OpenBlade
   delegates to Windows instead of registering a competing background renderer;
 - M1/M2/Fn+P production discrimination and exact Normal-mode parity. M3-M5 are
@@ -2294,3 +2295,81 @@ Future agents should rerun
 before changing the map. A future model must get its own LampArray projection
 and at least one physical spatial-origin cross-check. Similar-looking layouts
 are not evidence that slot ownership is interchangeable.
+
+## Admit every visible effect base on the installed exact build
+
+Core revision `5466d9cd641b6875ed618e46d364f223d419fc2f` was published
+self-contained for Service, Session Agent, and tray, merged into one 548-file
+allowlisted payload, and installed with the guarded Windows PowerShell 5.1
+deployment wrapper. The first UAC attempt was cancelled before the elevated
+child started; it produced no report, backup, service stop, or installed-file
+change. The successful retry installed exact ProductVersion
+`0.1.0+5466d9cd641b6875ed618e46d364f223d419fc2f` on all three executables.
+Private deployment and installed-binary hashes stay under the ignored
+`artifacts/.live-validation/full-5466d9c` directory and are not copied into the
+sanitized evidence.
+
+Synapse was absent throughout the installed renderer pass. Computer Use
+verified the 828-by-714 OpenBlade window with no horizontal card overflow, the
+concise Windows Dynamic Lighting row, no M1-M5 footnote, the neutral logo
+description, and the exact menu:
+
+- Off;
+- Ambient Awareness;
+- Audio Meter;
+- Breathing;
+- Fire;
+- Reactive;
+- Ripple;
+- Spectrum Cycling;
+- Starlight;
+- Static;
+- Tidal;
+- Wave;
+- Wheel.
+
+Off was not selected because the operator needs visible key legends and its
+production path was already admitted. Every other effect base applied without
+disabling the UI or faulting the installed service. Defaults exercised during
+this pass were Ambient Awareness Full screen, Audio Meter Color Boost 1,
+Breathing Single, Reactive Medium, Starlight Single/Medium, Tidal fixed colors
+and Inward, Wave Rightward, and Wheel Clockwise. This admits each effect base,
+not every parameter combination.
+
+The historical Spectrum failure remains preserved in
+`2026-07-30-rz09-0528-openblade-matrix-lighting-lifecycle.json`. The corrected
+PID `02C6` writer is SET-only for its six `03/0B` rows plus `03/0A 0500`
+latch. On the fixed installed build, Spectrum remained active for 12 seconds,
+beyond the earlier approximately three-second failure window. The UI stayed
+responsive, the service stayed Running, and exactly one Session Agent and tray
+remained present with zero Synapse processes.
+
+Reactive and Ripple were both set to green at 50 percent. The operator pressed
+physical `J` and confirmed that Reactive lit only the origin key and that
+Ripple began at `J` and spread across the keyboard. This closes the installed
+Session Agent delivery check for that independently captured slot-59 oracle.
+It does not promote every projected key or fabricate matrix readback.
+
+The pass finished by selecting Static, restoring color `47E10C` at 50 percent,
+keeping the logo Static, and saving that state to the AC profile. The final
+installed process/version check reported a Running service, one Session Agent,
+one tray, zero Synapse processes, and the exact `5466d9c` ProductVersion on all
+three binaries.
+
+Capture revision `c1a551d` commits the sanitized lifecycle annotation
+`annotations/2026-07-30-rz09-0528-openblade-full-lighting-lifecycle.json`,
+advances the twelve non-Off effect `base` leaves to `ProductionAdmitted`, and
+keeps the following boundaries explicit:
+
+- effect parameters remain `Captured` unless their own installed round trip
+  exists;
+- the remainder of the Reactive/Ripple key map remains `Captured`;
+- Breathing and Ripple duration controls remain `Absent`, matching Synapse;
+- `effectGetter` remains `NotInvestigated`;
+- matrix-interface discovery remains `Absent`;
+- visual confirmation and installed lifecycle never become firmware readback.
+
+Before changing these statuses, future agents must run both the Windows
+PowerShell 5.1 capture suite and `Rz090528CoverageContractTests`, preserve the
+historical failed Spectrum annotation, and validate any newly discovered model
+feature as a first-class capability instead of dropping it from the UI.

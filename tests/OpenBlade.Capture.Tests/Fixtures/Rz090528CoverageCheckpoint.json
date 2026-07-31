@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "source": {
     "repository": "openblade-captures",
-    "revision": "c5fec75",
+    "revision": "c1a551d",
     "path": "decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json"
   },
   "device": {
@@ -86,17 +86,17 @@
       "brightnessQuery": "ProductionAdmitted",
       "effects": {
         "ambientAwareness": {
-          "base": "Captured",
+          "base": "ProductionAdmitted",
           "screenRegions": "Captured",
           "matrixFormat": "Captured",
           "frameCadence": "Captured"
         },
         "audioMeter": {
-          "base": "Captured",
+          "base": "ProductionAdmitted",
           "colorBoost": "Captured"
         },
         "breathing": {
-          "base": "Captured",
+          "base": "ProductionAdmitted",
           "singleColor": "Captured",
           "dualColor": "Captured",
           "randomColor": "Captured",
@@ -108,27 +108,27 @@
           "frameCadence": "NotInvestigated"
         },
         "reactive": {
-          "base": "Captured",
+          "base": "ProductionAdmitted",
           "colors": "Captured",
           "durations": "Captured",
           "keyMap": "Captured"
         },
         "fire": {
-          "base": "Captured"
+          "base": "ProductionAdmitted"
         },
         "ripple": {
-          "base": "Captured",
+          "base": "ProductionAdmitted",
           "colors": "Captured",
           "durations": "Absent",
           "keyMap": "Captured"
         },
         "spectrum": {
-          "base": "SetterValidated",
+          "base": "ProductionAdmitted",
           "hostColorSequence": "Captured",
           "frameCadence": "Captured"
         },
         "starlight": {
-          "base": "Captured",
+          "base": "ProductionAdmitted",
           "singleColor": "Captured",
           "dualColor": "Captured",
           "randomColor": "Captured",
@@ -139,7 +139,7 @@
           "colors": "ProductionAdmitted"
         },
         "tidal": {
-          "base": "Captured",
+          "base": "ProductionAdmitted",
           "primaryColor": "Captured",
           "secondaryColor": "Captured",
           "randomColor": "Captured",
@@ -147,12 +147,12 @@
           "outwardDirection": "Captured"
         },
         "wave": {
-          "base": "Captured",
+          "base": "ProductionAdmitted",
           "leftDirection": "Captured",
           "rightDirection": "Captured"
         },
         "wheel": {
-          "base": "Captured",
+          "base": "ProductionAdmitted",
           "leftDirection": "Captured",
           "rightDirection": "Captured"
         }
