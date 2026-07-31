@@ -1363,6 +1363,39 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task WindowsDynamicLightingMode_RestoresRendererWhenPersistenceFails()
+    {
+        bool failPersistence = false;
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            (_, _) => failPersistence
+                ? Task.FromException(new IOException("Synthetic persistence failure."))
+                : Task.CompletedTask);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        failPersistence = true;
+
+        IOException failure = await Assert.ThrowsAsync<IOException>(
+            () => context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None));
+
+        Assert.Contains("Synthetic persistence failure", failure.Message);
+        Assert.Equal(1, context.Provider.InvalidationCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Device.LightingRendererOwnership);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Equal(
+            KeyboardLightingControlMode.OpenBlade,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+    }
+
+    [Fact]
     public async Task Restart_RestoresPersistedLastKnownLighting()
     {
         TestContext original = await CreateOwnedStaticLightingContextAsync();
@@ -5143,7 +5176,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         return context;
     }
 
-    private async Task<TestContext> CreateOwnedStaticLightingContextAsync()
+    private async Task<TestContext> CreateOwnedStaticLightingContextAsync(
+        Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
+            transactionBoundary = null)
     {
         LightingSettings lighting = LightingSettingsFactory.Static(
             new RgbColor(0, 128, 255),
@@ -5158,7 +5193,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         };
         TestContext context = CreateContext(
             providerAvailable: true,
-            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities));
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities),
+            transactionBoundary: transactionBoundary);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             LightingEffects = capabilities.LightingEffects,
