@@ -2050,17 +2050,6 @@ public sealed class MainViewModelTests
         Assert.Equal(400, viewModel.Capabilities.GpuOverclock?.CoreOffsetMegahertz.Maximum);
         Assert.False(viewModel.CanEditGpuClockTuning);
         Assert.False(viewModel.IsSpecialKeyBindingsEditable);
-        Assert.True(viewModel.IsLampArrayLightingAccessVisible);
-        Assert.Contains("exact 85-lamp keyboard array", viewModel.LampArrayLightingAccessSummary);
-        Assert.Contains(
-            "delegate the keyboard to Windows",
-            viewModel.LampArrayLightingAccessSummary);
-        Assert.True(viewModel.IsObservedLightingEffectsVisible);
-        Assert.Contains("Spectrum Cycling", viewModel.ObservedLightingEffectsSummary);
-        Assert.Contains("Wheel", viewModel.ObservedLightingEffectsSummary);
-        Assert.Contains(
-            "separate from the writable effect picker",
-            viewModel.ObservedLightingEffectsSummary);
         client.Publish(baseline with
         {
             Revision = baseline.Revision + 1,

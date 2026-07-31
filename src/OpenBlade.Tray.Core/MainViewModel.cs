@@ -1468,43 +1468,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && (Capabilities.WritableSpecialKeySlots & required) != 0;
     }
 
-    public bool IsObservedLightingEffectsVisible =>
-        Capabilities.ObservedLightingEffects.Any(Enum.IsDefined);
-
-    public bool IsLampArrayLightingAccessVisible =>
-        Capabilities.LampArrayLightingAccess is not null;
-
-    public string LampArrayLightingAccessSummary =>
-        Capabilities.LampArrayLightingAccess switch
-        {
-            DeviceFeatureAccess.ObservedOnly =>
-                "Windows Dynamic Lighting exposes an exact 85-lamp keyboard array. "
-                + "You can delegate the keyboard to Windows; OpenBlade then suppresses all keyboard-lighting writes.",
-            DeviceFeatureAccess.ReadOnly =>
-                "Windows Dynamic Lighting exposes the keyboard array, but lighting writes "
-                + "are unavailable.",
-            DeviceFeatureAccess.ReadWrite =>
-                "Windows Dynamic Lighting can own the keyboard while OpenBlade stays out of the lighting path.",
-            _ => UnavailableLabel,
-        };
-
-    public string ObservedLightingEffectsSummary
-    {
-        get
-        {
-            string[] labels = Capabilities.ObservedLightingEffects
-                .Where(Enum.IsDefined)
-                .Select(effect => CreateLightingEffectOption(effect).Label)
-                .Order(StringComparer.CurrentCultureIgnoreCase)
-                .ToArray();
-            return labels.Length == 0
-                ? UnavailableLabel
-                : $"Synapse exposes {string.Join(", ", labels)} on this exact model. "
-                    + "Their captures did not reveal an effect-specific PID 02C6 payload, "
-                    + "so OpenBlade keeps them separate from the writable effect picker.";
-        }
-    }
-
     public GpuClockOffsetCapabilities? GpuClockOffsetCapabilities
     {
         get => gpuClockOffsetCapabilities;
@@ -1938,10 +1901,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SupportsGamingMode));
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(IsSpecialKeyBindingsEditable));
-            Notify(nameof(IsObservedLightingEffectsVisible));
-            Notify(nameof(ObservedLightingEffectsSummary));
-            Notify(nameof(IsLampArrayLightingAccessVisible));
-            Notify(nameof(LampArrayLightingAccessSummary));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
             Notify(nameof(CanControlLighting));
             NotifyGamingModeKeyPolicy();
