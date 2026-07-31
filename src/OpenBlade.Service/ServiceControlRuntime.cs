@@ -1081,11 +1081,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "Windows Dynamic Lighting is not available for this keyboard.");
             }
 
+            bool delegateToWindows =
+                mode == KeyboardLightingControlMode.WindowsDynamicLighting;
             if (preferences.KeyboardLightingControlMode == mode)
             {
+                if (delegateToWindows)
+                {
+                    // Reassert the ownership boundary even when the persisted
+                    // preference already says Windows owns lighting. This
+                    // recovers safely from a previously interrupted transition
+                    // or an unexpectedly live renderer.
+                    await InvalidateLightingRendererCoreAsync(
+                        preserveForLifecycleRestore: false,
+                        token).ConfigureAwait(false);
+                }
+
                 return new ControlOperationResult(
                     ControlOperationStatus.Stored,
-                    mode == KeyboardLightingControlMode.WindowsDynamicLighting
+                    delegateToWindows
                         ? "Keyboard lighting is already delegated to Windows."
                         : "OpenBlade already controls keyboard lighting.");
             }
@@ -1094,15 +1107,46 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 KeyboardLightingControlMode = mode,
                 AlwaysOverrideExternalLightingChanges =
-                    mode == KeyboardLightingControlMode.WindowsDynamicLighting
+                    delegateToWindows
                         ? false
                         : preferences.AlwaysOverrideExternalLightingChanges,
             };
-            await store.SaveConfigurationAsync(Automation.Profiles, staged, token)
-                .ConfigureAwait(false);
+            if (delegateToWindows)
+            {
+                // Stop the live renderer before persisting or publishing the
+                // delegation. Keeping a lifecycle restore candidate lets us
+                // put the renderer back if persistence fails.
+                await InvalidateLightingRendererCoreAsync(
+                    preserveForLifecycleRestore: true,
+                    token).ConfigureAwait(false);
+            }
+
+            try
+            {
+                await store.SaveConfigurationAsync(Automation.Profiles, staged, token)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception saveException) when (delegateToWindows)
+            {
+                try
+                {
+                    _ = await RestoreLightingRendererCoreAsync(CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception restoreException)
+                {
+                    throw new AggregateException(
+                        "The lighting-control preference could not be saved and the previous renderer could not be restored.",
+                        saveException,
+                        restoreException);
+                }
+
+                throw;
+            }
+
             preferences = staged;
 
-            if (mode == KeyboardLightingControlMode.WindowsDynamicLighting)
+            if (delegateToWindows)
             {
                 pendingLightingRestore = null;
                 pendingLightingRestoreFromLifecycle = false;
@@ -1111,7 +1155,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 lightingSuppressions.Clear();
             }
 
-            string message = mode == KeyboardLightingControlMode.WindowsDynamicLighting
+            string message = delegateToWindows
                 ? "Keyboard lighting was delegated to Windows Dynamic Lighting. OpenBlade will not write keyboard lighting."
                 : "OpenBlade keyboard lighting control is enabled. No lighting change was applied.";
             PublishIfChanged(GetStatus() with

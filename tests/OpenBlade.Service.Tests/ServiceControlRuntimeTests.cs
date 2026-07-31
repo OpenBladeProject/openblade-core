@@ -1304,6 +1304,64 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task WindowsDynamicLightingMode_InvalidatesOwnedRendererBeforeDelegating()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult delegated =
+            await context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, delegated.Status);
+        Assert.Equal(1, context.Provider.InvalidationCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Device.LightingRendererOwnership);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Equal(
+            KeyboardLightingControlMode.WindowsDynamicLighting,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+    }
+
+    [Fact]
+    public async Task WindowsDynamicLightingMode_DoesNotDelegateWhenRendererInvalidationFails()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.InvalidationFailure =
+            new InvalidOperationException("Synthetic invalidation failure.");
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None));
+
+        Assert.Contains("Synthetic invalidation failure", failure.Message);
+        Assert.Equal(
+            KeyboardLightingControlMode.OpenBlade,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(
+            KeyboardLightingControlMode.OpenBlade,
+            saved.Preferences.KeyboardLightingControlMode);
+    }
+
+    [Fact]
     public async Task Restart_RestoresPersistedLastKnownLighting()
     {
         TestContext original = await CreateOwnedStaticLightingContextAsync();
