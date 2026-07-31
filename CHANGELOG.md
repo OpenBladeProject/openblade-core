@@ -277,6 +277,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Removed the redundant Windows Dynamic Lighting settings link from its
+  ownership row.
 - Hid Gaming mode key-blocking options while Gaming mode is off.
 - Restored the shared pointer-over highlight on settings cards without
   interfering with their nested controls.

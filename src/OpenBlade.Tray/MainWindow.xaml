@@ -1025,21 +1025,15 @@
                                         <TextBlock Text="Use Windows for keyboard effects and brightness."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <StackPanel Grid.Column="1"
-                                                Orientation="Horizontal"
-                                                Spacing="10"
-                                                VerticalAlignment="Center">
-                                        <HyperlinkButton Content="Open settings"
-                                                         Padding="4,0"
-                                                         NavigateUri="ms-settings:personalization-lighting" />
-                                        <ToggleSwitch x:Name="WindowsDynamicLightingToggle"
-                                                      MinWidth="0"
-                                                      AutomationProperties.Name="Let Windows Dynamic Lighting control the keyboard"
-                                                      OffContent=""
-                                                      OnContent=""
-                                                      IsOn="{x:Bind UseWindowsDynamicLighting, Mode=OneWay}"
-                                                      Toggled="OnWindowsDynamicLightingToggled" />
-                                    </StackPanel>
+                                    <ToggleSwitch x:Name="WindowsDynamicLightingToggle"
+                                                  Grid.Column="1"
+                                                  MinWidth="0"
+                                                  VerticalAlignment="Center"
+                                                  AutomationProperties.Name="Let Windows Dynamic Lighting control the keyboard"
+                                                  OffContent=""
+                                                  OnContent=""
+                                                  IsOn="{x:Bind UseWindowsDynamicLighting, Mode=OneWay}"
+                                                  Toggled="OnWindowsDynamicLightingToggled" />
                                 </Grid>
                             </Border>
                         </Border>

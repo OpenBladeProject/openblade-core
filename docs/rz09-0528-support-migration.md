@@ -1107,8 +1107,8 @@ The supported integration is explicit delegation:
 2. persist the ownership choice in the service configuration;
 3. gate every OpenBlade keyboard-lighting write at the service boundary;
 4. exclude lighting from automatic power/profile transitions while delegated;
-5. leave the current visible state unchanged when ownership changes and route
-   the user to Windows Dynamic Lighting settings for brightness and effects.
+5. leave the current visible state unchanged when ownership changes; users
+   manage delegated brightness and effects through Windows.
 
 The unpackaged background probe reported `IsAvailable=false`. Treat that as the
 current integration boundary, not as device absence. Signed identity
@@ -1126,8 +1126,10 @@ coordinated install boundary: do not live-patch only the tray or Session Agent
 across it.
 
 Keep the normal-user Lighting page aligned with the standard Blade layout.
-Commit `f4a7a7a` represents Windows ownership as one ordinary Keyboard settings
-row with a toggle and an **Open settings** link. The exact LampArray geometry,
+Commit `f4a7a7a` first represented Windows ownership as one ordinary Keyboard
+settings row with a toggle and an **Open settings** link. The link was later
+removed as redundant; the ownership toggle is the only action in this row.
+The exact LampArray geometry,
 transport boundary, and Synapse-only observed effects remain available through
 capabilities, diagnostics, firmware smoke, and this guide; they do not need
 separate informational banners in the everyday UI. This is presentation
@@ -1533,21 +1535,17 @@ mode itself preserves the current visible lighting; returning to OpenBlade
 also performs no immediate write. The next explicit OpenBlade action establishes
 new intent.
 
-The tray presents the ownership toggle beside a link to
-`ms-settings:personalization-lighting`, disables OpenBlade keyboard controls
-while delegated, and explains that Windows owns brightness and effects. The
+The tray presents only the ownership toggle, disables OpenBlade keyboard
+controls while delegated, and explains that Windows owns brightness and
+effects. The
 illuminated lid logo remains a separately labelled firmware endpoint because
 it is not part of the observed keyboard LampArray; do not couple a logo-only
 action to a hidden keyboard write.
 
-Keep the ownership card's title, description, settings link, and toggle as
-direct children of a Grid, but anchor the toggle to the left edge and offset the
-title beside it. Both the original vertical StackPanel and a star/auto
-two-column Grid allowed the long description to measure wider than the page,
-leaving the toggle loaded in the accessibility tree but clipped beyond the
-visible window. Commits `addebe7` and `ca45ac9` preserve both failed live
-iterations and the final left-edge fix; the shell-contract regression now
-rejects a right-column toggle.
+Keep the ownership card concise: title and description on the left, toggle on
+the right, and no settings link. Earlier commits `addebe7` and `ca45ac9`
+preserve failed compact-width iterations for historical reference; retain the
+shell-contract coverage that keeps the remaining toggle visible.
 
 The ownership card exposed a broader WinUI measurement trap at compact window
 sizes. Disabling horizontal scrolling does not by itself constrain a vertical

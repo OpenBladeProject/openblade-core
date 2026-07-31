@@ -394,7 +394,11 @@ public sealed class WinUiShellContractTests
             "Text=\"Use Windows for keyboard effects and brightness.\"",
             card,
             StringComparison.Ordinal);
-        Assert.Contains("Content=\"Open settings\"", card, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"Open settings\"", card, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "NavigateUri=\"ms-settings:personalization-lighting\"",
+            card,
+            StringComparison.Ordinal);
         Assert.Contains("x:Name=\"WindowsDynamicLightingToggle\"", card, StringComparison.Ordinal);
         Assert.Contains("Grid.Column=\"1\"", card, StringComparison.Ordinal);
         Assert.Contains(
