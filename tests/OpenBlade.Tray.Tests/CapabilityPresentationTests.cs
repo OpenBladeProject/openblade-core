@@ -91,7 +91,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(21, animated.Length);
+        Assert.Equal(23, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -107,6 +107,16 @@ public sealed class CapabilityPresentationTests
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsManualFanCurveVisible",
                 StringComparison.Ordinal) is true);
+        XElement[] gamingModePolicies = animated
+            .Where(element => element.Descendants().Any(descendant =>
+                Attribute(descendant, "AutomationProperties.Name") is
+                    "Block the Windows key in Gaming mode"
+                    or "Block Alt+Tab in Gaming mode"))
+            .ToArray();
+        Assert.Equal(2, gamingModePolicies.Length);
+        Assert.All(gamingModePolicies, element => Assert.Equal(
+            "{x:Bind GamingModeToggleIsOn, Mode=OneWay}",
+            Attribute(element, "AnimatedVisibility.IsVisible")));
 
         XElement export = Assert.Single(document.Descendants(), element =>
             Attribute(element, "AutomationProperties.Name") == "Export profiles to JSON");

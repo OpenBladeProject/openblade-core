@@ -903,7 +903,8 @@
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsSubcardStyle}"
-                                        Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -926,7 +927,8 @@
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsLastSubcardStyle}"
-                                        Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />

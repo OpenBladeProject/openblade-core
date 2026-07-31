@@ -2488,3 +2488,8 @@ When adding a new primary settings row, use `SettingsRowStyle` (or
 with a plain `Border`, and do not add per-model pointer handlers. Action-only
 cards may continue using `CardActionButtonTemplate`, whose pointer-over and
 pressed states are intentionally owned by the button itself.
+
+Dependent settings should not remain visible when their parent feature is off.
+The Gaming mode key-blocking cards bind their animated visibility directly to
+the confirmed Gaming mode toggle state. Keep the stored per-profile policies
+intact while hidden so turning Gaming mode back on restores the user's choices.
