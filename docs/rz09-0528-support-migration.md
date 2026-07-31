@@ -2236,3 +2236,61 @@ template for future agents: retain raw hashes privately, commit only
 non-identifying protocol facts and reusable fixtures, and never silently drop
 a newly discovered model-specific feature because one remaining admission gate
 is unresolved.
+
+## Close the Reactive and Ripple physical-key gate
+
+The follow-up physical-key session
+`20260730-reactive-ripple-physical-j-oracle` completed gracefully through its
+stop sentinel after a fresh address-3 verification on `\\.\USBPcap2`. Windows
+PowerShell 5.1 decoded 5,796 transactions. The exact analyzer reconstructed 816
+complete frames from 4,896 `03/0B` rows and 821 `03/0A 0500` latches, with zero
+checksum failures and five honestly discarded incomplete row sets. The raw
+PCAP, decoded transactions, operator timestamps, analysis, and hashes remain
+ignored/private.
+
+The operator pressed physical `J` while Synapse was set to Reactive green at
+Short, Medium, and Long. The following typed response produced the independently
+recognizable `J,D,O,N,E,Enter` slot sequence `59,55,44,76,38,66`, so the `J`
+origin is not inferred from the screen. Slot 59 stayed active for approximately
+404, 1,403, and 1,879 ms respectively, preserving the expected
+Short < Medium < Long ordering. A physical `J` under Ripple began as one
+full-green slot 59 and its 17-frame episode traversed all 86 active matrix
+slots. Synapse exposes no Ripple duration control, so that coverage leaf is
+`Absent`, not `NotInvestigated`.
+
+The operator separately reported that every effect looked visually correct.
+Record that as visual confirmation only. It is useful installed-behavior
+evidence, but it is not a matrix GET, effect getter, or independent firmware
+readback. Static green, brightness 50 percent, and Static logo were visibly
+restored before the capture stopped.
+
+The read-only PID `02C6` LampArray probe supplies the rest of the ordinary-key
+geometry without borrowing PID `02E0` ownership. Its 85 lamp indices project
+row-for-row into the independently captured 6x17 matrix. The physical `J`
+oracle cross-checks LampArray index 53 to matrix slot 59. This projection also
+exposes a critical product difference: Right Alt is LampArray index 77 and
+matrix slot 91 on RZ09-0528. Slot 94 belongs to unmapped LampArray index 78;
+the RZ09-0581 Right Alt slot must not be reused. Insert, Page Up, and Page Down
+are present at exact slots 14, 33, and 50. The six LampArray indices with no
+virtual-key ownership remain unclaimed.
+
+Core commit `1380d7b` implements a separate `Rz09_0528ReactiveKeyMap` and routes
+PID `02C6` RAWKEYBOARD make events through it. The existing RZ09-0581 table is
+unchanged and is not a fallback. Break events, E1 packets, unsupported devices,
+Print Screen, Space, Right Windows, and the six unmapped exact-device lamps are
+dropped. This prevents the special-key ambiguity around M1, M2, and Fn+P from
+changing ordinary Page Up, Page Down, or P behavior.
+
+The committed sanitized sources are:
+
+- `decoded/rz09-0528-pid-02c6-bios-2.02-reactive-ripple-physical-j.json`;
+- `annotations/2026-07-30-rz09-0528-reactive-ripple-physical-j-oracle.json`;
+- the expanded read-only LampArray projection in
+  `decoded/rz09-0528-pid-02c6-bios-2.02-lamp-array.json`.
+
+Future agents should rerun
+`Analyze-Rz090528ReactiveRipplePhysicalKeyOracle.ps1` under Windows PowerShell
+5.1 when auditing the private session, and run the matching regression test
+before changing the map. A future model must get its own LampArray projection
+and at least one physical spatial-origin cross-check. Similar-looking layouts
+are not evidence that slot ownership is interchangeable.
