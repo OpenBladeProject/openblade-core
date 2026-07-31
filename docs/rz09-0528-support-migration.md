@@ -2011,6 +2011,36 @@ in the isolated validator and `ObservedLightingEffects`; its discovery and
 setter evidence must not disappear merely because its continuous renderer is
 not admitted.
 
+Final production build `06d01ea` implements that boundary. A guarded
+Windows PowerShell 5.1 deployment installed all 548 allowlisted files at exact
+version `0.1.0+06d01eaa0bb721075cedfd38748884025a09dfe7`, preserved the
+predeployment Static green 50-percent profile, created a rollback backup, and
+left exactly one service, one Session Agent, and one tray. The elevated child
+did not launch user-session processes. The private deployment-report SHA-256
+is `D43B7D3412B98D2CFDB7A189881FD052516B34FC600B5E53BFFABAB5FDF025C4`.
+
+Computer Use then verified the restarted installed tray rather than a
+development build. The Lighting page showed Static, 50 percent, `#47E10C`,
+enabled controls, the compact Windows Dynamic Lighting handoff, and the
+neutral lid-logo description, "Choose the lighting mode for the Razer logo on
+the lid." Opening the effect picker showed exactly Off and Static; it was
+closed without selecting Off. This is UI and installed-service lifecycle
+evidence, not a matrix effect getter or operator visual readback.
+
+The final read-only schema-6 baseline reported exact model `RZ09-0528`, BIOS
+`2.02`, writes unblocked, Driver mode true, renderer ownership Static, the
+full-power AC source, both fans and CPU temperature available, and exact
+installed versions for all three executables. It produced 33 passes, one
+optional sleeping-GPU warning, and only the pre-existing external Performance
+failure. Its private artifact hashes are:
+
+- `baseline.json`:
+  `8554D65AF1953C38B2B7EED2DEE1FC81D4FCE7DA479A7ABDBE5527A3D4E1D765`;
+- `baseline-report.json`:
+  `30AE39770A71ED5971D073F19A734A761ACE8E0A09B9D2D3036901C762445559`;
+- `diagnostics.zip`:
+  `AC3F764B3A9EB779B4B0871796FF5E188BBF14AC0D7877FF6673A71EA3E014A0`.
+
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
