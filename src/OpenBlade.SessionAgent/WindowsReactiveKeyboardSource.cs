@@ -502,13 +502,6 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         RawKeyboard keyboard = Marshal.PtrToStructure<RawKeyboard>(
             nint.Add(buffer, checked((int)headerSize)));
         bool keyDown = (keyboard.Flags & RawKeyboardBreakFlag) == 0;
-        if (deviceKind == RazerBladeInputDeviceKind.Rz09_0528)
-        {
-            // Live PID 02C6 Raw Input validation proved that M1, M2, and Fn+P
-            // do not expose their report-ID-01 usages here. Ordinary Page Up,
-            // Page Down, and P must therefore remain untouched.
-            return;
-        }
 
         bool observedByHook = hookHealth.Consume(
             keyboard.MakeCode,
@@ -542,8 +535,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         {
             publishPerformanceShortcut(shortcut);
         }
-        if (deviceKind != RazerBladeInputDeviceKind.Rz09_0581
-            || !ReactiveRawKeyboardInput.TryCreatePulses(
+        if (!ReactiveRawKeyboardInput.TryCreatePulses(
+            deviceKind,
             keyboard.MakeCode,
             keyboard.Flags,
             out ReactiveKeyPulse primary,

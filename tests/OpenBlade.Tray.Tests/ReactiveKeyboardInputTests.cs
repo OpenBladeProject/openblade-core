@@ -134,6 +134,99 @@ public sealed class ReactiveKeyboardInputTests
             out _));
     }
 
+    [Theory]
+    [InlineData(0x01, 1)]  // Escape
+    [InlineData(0x58, 13)] // F12
+    [InlineData(0x29, 18)] // `
+    [InlineData(0x0E, 32)] // Backspace
+    [InlineData(0x0F, 35)] // Tab
+    [InlineData(0x12, 38)] // E
+    [InlineData(0x18, 44)] // O
+    [InlineData(0x20, 55)] // D
+    [InlineData(0x24, 59)] // J, physical Reactive/Ripple oracle
+    [InlineData(0x1C, 66)] // Enter
+    [InlineData(0x31, 76)] // N
+    [InlineData(0x38, 90)] // Left Alt
+    public void Rz090528Map_UsesExactPid02C6StandardSlots(
+        ushort makeCode,
+        byte expectedSlot)
+    {
+        Assert.True(Rz09_0528ReactiveKeyMap.TryMap(
+            makeCode,
+            isExtended: false,
+            out ReactiveKeyPulse primary,
+            out ReactiveKeyPulse? secondary));
+        Assert.Equal(expectedSlot, primary.MatrixSlot);
+        Assert.Null(secondary);
+    }
+
+    [Theory]
+    [InlineData(0x52, 14)]  // Insert
+    [InlineData(0x53, 15)]  // Delete
+    [InlineData(0x49, 33)]  // Page Up
+    [InlineData(0x51, 50)]  // Page Down
+    [InlineData(0x5B, 88)]  // Left Windows
+    [InlineData(0x38, 91)]  // Right Alt; differs from RZ09-0581
+    [InlineData(0x1D, 96)]  // Right Ctrl
+    [InlineData(0x4B, 97)]  // Left Arrow
+    [InlineData(0x48, 98)]  // Up Arrow
+    [InlineData(0x4D, 99)]  // Right Arrow
+    [InlineData(0x50, 100)] // Down Arrow
+    public void Rz090528Map_UsesExactPid02C6ExtendedSlots(
+        ushort makeCode,
+        byte expectedSlot)
+    {
+        Assert.True(Rz09_0528ReactiveKeyMap.TryMap(
+            makeCode,
+            isExtended: true,
+            out ReactiveKeyPulse primary,
+            out ReactiveKeyPulse? secondary));
+        Assert.Equal(expectedSlot, primary.MatrixSlot);
+        Assert.Null(secondary);
+    }
+
+    [Theory]
+    [InlineData(0x37, true)]  // Print Screen has no PID 02C6 virtual-key lamp.
+    [InlineData(0x39, false)] // Space bar has no PID 02C6 lamp.
+    [InlineData(0x5C, true)]  // Right Windows was not exposed.
+    public void Rz090528Map_DoesNotBorrowUnmappedRz090581Keys(
+        ushort makeCode,
+        bool isExtended)
+    {
+        Assert.False(Rz09_0528ReactiveKeyMap.TryMap(
+            makeCode,
+            isExtended,
+            out _,
+            out _));
+    }
+
+    [Fact]
+    public void RawInput_RoutesThroughTheExactModelMap()
+    {
+        Assert.True(ReactiveRawKeyboardInput.TryCreatePulses(
+            RazerBladeInputDeviceKind.Rz09_0528,
+            0x38,
+            ReactiveRawKeyboardInput.ExtendedE0Flag,
+            out ReactiveKeyPulse rz090528,
+            out _));
+        Assert.Equal(91, rz090528.MatrixSlot);
+
+        Assert.True(ReactiveRawKeyboardInput.TryCreatePulses(
+            RazerBladeInputDeviceKind.Rz09_0581,
+            0x38,
+            ReactiveRawKeyboardInput.ExtendedE0Flag,
+            out ReactiveKeyPulse rz090581,
+            out _));
+        Assert.Equal(94, rz090581.MatrixSlot);
+
+        Assert.False(ReactiveRawKeyboardInput.TryCreatePulses(
+            RazerBladeInputDeviceKind.Unsupported,
+            0x24,
+            flags: 0,
+            out _,
+            out _));
+    }
+
     [Fact]
     public void Pulse_RejectsSlotsOutsideCapturedMatrix()
     {
