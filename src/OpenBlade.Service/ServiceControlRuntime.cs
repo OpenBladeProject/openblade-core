@@ -144,6 +144,9 @@ public interface IServiceControlRuntime
             requestedLiveReadings != LiveReadingSensors.None,
             cancellationToken);
 
+    Task ReconcileStartupProfileAsync(CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
     Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken);
 
     Task RefreshPowerSourceClassificationAsync(CancellationToken cancellationToken) =>
@@ -233,6 +236,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool controllerPresenceObserved;
     private long lastControllerPresenceTimestamp;
     private bool batteryHealthVerificationRetryPending;
+    private bool startupProfileReconciliationPending;
+    private bool startupProfileReconciliationRequested;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -419,6 +424,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             automation = initializedAutomation;
             preferences = configuration.Preferences;
             this.persistentOverrides = persistentOverrides;
+            startupProfileReconciliationPending = true;
+            startupProfileReconciliationRequested = false;
             pendingLightingRestore = initializedAutomation
                 .Resolve(UnknownConfirmedState)
                 .Lighting
@@ -1940,7 +1947,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 allowRecentObservation: canUseReadOnlyFastPath);
             bool changed = powerSource != PowerSource.ExternalUnknown
                 && Automation.ChangePowerSource(powerSource);
-            if (changed)
+            if (startupProfileReconciliationPending
+                && startupProfileReconciliationRequested
+                && powerSource != PowerSource.ExternalUnknown)
+            {
+                await ReconcileStartupProfileCoreAsync(
+                    powerSource,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else if (changed && !startupProfileReconciliationPending)
             {
                 await ApplyFullTransitionAsync(powerSource, cancellationToken);
             }
@@ -1975,6 +1990,37 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     internal Task ObserveAsync(CancellationToken cancellationToken) =>
         ObserveAsync(includeLiveReadings: false, cancellationToken);
+
+    public async Task ReconcileStartupProfileAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            startupProfileReconciliationRequested = true;
+            if (!startupProfileReconciliationPending)
+            {
+                return;
+            }
+
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(
+                cancellationToken).ConfigureAwait(false);
+            RefreshControllerPresenceCore(cancellationToken);
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                return;
+            }
+
+            await ReconcileStartupProfileCoreAsync(
+                powerSource,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
 
     public async Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken)
     {
@@ -3130,7 +3176,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task ApplyFullTransitionAsync(
         PowerSource powerSource,
         CancellationToken token,
-        bool preserveLiveReadings = false)
+        bool preserveLiveReadings = false,
+        bool preserveObservedExternalChanges = true)
     {
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
@@ -3169,6 +3216,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 powerSource,
                 current,
                 cachedConfirmed,
+                preserveObservedExternalChanges,
                 token);
 
         ConfirmedDeviceState? confirmed = cachedConfirmed;
@@ -3212,14 +3260,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PowerSource powerSource,
         ServiceStatusSnapshot current,
         ConfirmedDeviceState? cachedConfirmed,
+        bool preserveObservedExternalChanges,
         CancellationToken token)
     {
         IReadOnlySet<DeviceSubsystem> ResolveAutomaticWriteExclusions(
             ConfirmedDeviceState confirmed)
         {
-            ObserveAutomaticState(confirmed, priorDesired, desired);
+            if (preserveObservedExternalChanges)
+            {
+                ObserveAutomaticState(confirmed, priorDesired, desired);
+            }
+            else
+            {
+                driftTracker.Observe(confirmed);
+            }
             var exclusions = new HashSet<DeviceSubsystem>(
-                GetCoupledAutomaticWriteExclusions());
+                preserveObservedExternalChanges
+                    ? GetCoupledAutomaticWriteExclusions()
+                    : []);
             if (IsKeyboardLightingDelegated)
             {
                 exclusions.Add(DeviceSubsystem.Lighting);
@@ -3665,7 +3723,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 includeLiveReadings,
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            ObserveAutomaticState(observation.Confirmed);
+            if (startupProfileReconciliationPending)
+            {
+                // A first sample has no preceding OpenBlade observation, so it
+                // cannot prove an external change. Establish a baseline; the
+                // startup reconciliation path will then apply saved intent.
+                driftTracker.Observe(observation.Confirmed);
+            }
+            else
+            {
+                ObserveAutomaticState(observation.Confirmed);
+            }
             consecutiveVerifiedAccessFailures = 0;
             fullObservationCompleted = true;
             lastFullObservationTimestamp = Stopwatch.GetTimestamp();
@@ -4009,6 +4077,33 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static bool Requests(
         LiveReadingSensors requested,
         LiveReadingSensors sensor) => (requested & sensor) != 0;
+
+    private void CompleteStartupProfileReconciliation()
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (current.DeviceVerified && !current.WritesBlocked)
+        {
+            startupProfileReconciliationPending = false;
+        }
+    }
+
+    private async Task ReconcileStartupProfileCoreAsync(
+        PowerSource powerSource,
+        CancellationToken cancellationToken)
+    {
+        if (!startupProfileReconciliationPending
+            || powerSource == PowerSource.ExternalUnknown)
+        {
+            return;
+        }
+
+        _ = Automation.ChangePowerSource(powerSource);
+        await ApplyFullTransitionAsync(
+            powerSource,
+            cancellationToken,
+            preserveObservedExternalChanges: false).ConfigureAwait(false);
+        CompleteStartupProfileReconciliation();
+    }
 
     private static async Task<ConfirmedDeviceState> ReadObservedStateAsync(
         IBladeDevice device,

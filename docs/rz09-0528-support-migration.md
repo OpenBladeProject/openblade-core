@@ -232,6 +232,11 @@ Preserve these less-visible invariants:
 - Capability equality and the exact-device admission gate include
   `SupportsPlaybackMuteIndicator`. For PID `02C6` its expected value is
   explicitly false.
+- The first confirmed hardware sample after service startup establishes the
+  drift baseline; it does not prove that another controller changed anything.
+  `ServiceStartupCoordinator` then explicitly reconciles the active saved
+  profile. Only changes observed after that reconciliation are classified as
+  external and allowed to pause automatic writes.
 
 These are software hardening changes. They do not advance a hardware evidence
 leaf unless the sanitized ledger and its contract test are updated separately.

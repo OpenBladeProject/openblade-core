@@ -22,7 +22,13 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
 
         Assert.True(started);
         Assert.Equal(
-            ["Initialize", "Observe", "MaintainDriverMode", "RestoreLighting"],
+            [
+                "Initialize",
+                "Observe",
+                "MaintainDriverMode",
+                "ReconcileStartupProfile",
+                "RestoreLighting",
+            ],
             runtime.Calls);
         Assert.Equal(1, runtime.ObserveCount);
         Assert.True(runtime.ProfileFileExistedDuringInitialize);
@@ -174,6 +180,12 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         public Task MaintainDriverModeAsync(CancellationToken cancellationToken)
         {
             Calls.Add("MaintainDriverMode");
+            return Task.CompletedTask;
+        }
+
+        public Task ReconcileStartupProfileAsync(CancellationToken cancellationToken)
+        {
+            Calls.Add("ReconcileStartupProfile");
             return Task.CompletedTask;
         }
 

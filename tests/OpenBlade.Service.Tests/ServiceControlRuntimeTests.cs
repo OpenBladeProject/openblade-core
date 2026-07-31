@@ -1927,7 +1927,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task FirstObservation_ProfileMismatchIsLatchedWithoutSetters()
+    public async Task FirstObservation_ProfileMismatchEstablishesBaselineWithoutSetters()
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.ConfirmedState = new ConfirmedDeviceState(
@@ -1938,19 +1938,46 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
-        Assert.Equal(
-            [
-                DeviceSubsystem.Performance,
-                DeviceSubsystem.Fans,
-                DeviceSubsystem.Battery,
-                DeviceSubsystem.Lighting,
-            ],
-            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
     [Fact]
-    public async Task FirstObservation_BatteryMismatchIsPreservedOnPowerTransition()
+    public async Task StartupReconciliation_ReappliesSavedProfileWithoutExternalWarning()
+    {
+        TestContext context = CreateWritableContext();
+        PowerProfile saved = context.Runtime.GetStatus().Profiles.PluggedIn;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+
+        await context.Runtime.ReconcileStartupProfileAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot reconciled = context.Runtime.GetStatus();
+        Assert.Empty(reconciled.ExternalChanges);
+        Assert.Equal(saved.Performance, reconciled.ConfirmedState!.Performance);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [DeviceSubsystem.Performance],
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task StartupBaseline_BatteryMismatchIsPreservedBeforeReconciliation()
     {
         TestContext context = CreateWritableContext();
         PowerProfile pluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn;
@@ -1962,9 +1989,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
-        Assert.Equal(
-            [DeviceSubsystem.Battery],
-            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
         context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
 
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
