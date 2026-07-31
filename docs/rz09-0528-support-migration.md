@@ -2387,3 +2387,48 @@ full AC, both fan readings, CPU temperature, one service, one Session Agent,
 one tray, and exact installed ProductVersion on all three binaries. The
 snapshot, report, diagnostics, and their hashes remain in the ignored
 `artifacts/.live-validation/full-5466d9c/final-baseline-2` tree.
+
+## Keep the RZ09-0528 function row active in Driver lighting mode
+
+The first complete installed build exposed a model-admission regression after
+Synapse had been closed: the media actions on the function row no longer
+responded while OpenBlade owned keyboard lighting in Driver mode. The user
+setting itself was not lost. Computer Use showed `Function keys`, meaning bare
+F1 through F12 were primary and the media actions were expected on Fn+F1
+through Fn+F12.
+
+The exact-model HID path was already present. PID `02C6` updates the shared Fn
+state through `RazerBladeSpecialKeyRawHidInput`, but both consumers of that
+state still gated function-row translation to the RZ09-0581 device kind:
+
+- the low-level keyboard-hook translation path; and
+- the Raw Input hook-recovery path.
+
+Do not solve this by classifying PID `02C6` as RZ09-0581 or by copying that
+model's special-key assumptions. Core revision
+`029e7a65d9c819f76a5e3de5f169f69939fd66ef` instead renames the shared
+function-row helper and state, adds an explicit supported-device predicate for
+only RZ09-0581 and RZ09-0528, and keeps unsupported devices excluded. The
+RZ09-0528 special-key report decoder remains exact-device code.
+
+Three attempted console Raw Input probes reported zero total messages. They
+ran outside the interactive desktop path required by the capture helper and
+are therefore retained only as private failed-probe records, not promoted to
+device evidence. Never interpret a zero-message probe from the wrong session
+as proof that a key emits no report.
+
+The fix was published as the same 548-file allowlisted payload shape used by
+the prior full deployment. The guarded Windows PowerShell 5.1 wrapper backed
+up the installed payload and machine configuration, required Synapse to remain
+closed, checked all six required source and installed ProductVersions, and
+completed with exact version
+`0.1.0+029e7a65d9c819f76a5e3de5f169f69939fd66ef`, one Session Agent, and one
+tray process. Post-deployment Computer Use inspection confirmed that lighting
+remained Static `47E10C` at 50 percent, the logo remained Static, Windows
+Dynamic Lighting remained off, and the user's `Function keys` mode remained
+selected.
+
+Before extending function-row translation to another model, require that
+model's own Fn-state evidence and add it to the explicit support predicate.
+Do not broaden the gate to every Razer device merely because the standard
+F1-F12 scan-code map is shared.
