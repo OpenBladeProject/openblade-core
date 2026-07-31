@@ -319,6 +319,8 @@ public enum LightingEffect
     Wheel,
     Ripple,
     AmbientAwareness,
+    AudioMeter,
+    Fire,
 }
 
 public enum AmbientAwarenessRegion
@@ -368,6 +370,8 @@ public enum LightingRendererOwnershipState
     Faulted,
     Ripple,
     AmbientAwareness,
+    AudioMeter,
+    Fire,
 }
 
 public enum KeyboardBrightnessDirection

@@ -113,9 +113,22 @@ internal interface IRz090528LightingEffect
 {
     bool RequiresContinuousRendering { get; }
 
-    TimeSpan NextFrameDelay { get; }
+    TimeSpan GetNextFrameDelay(TimeSpan elapsed);
 
     Rz090528MatrixFrame RenderFrame(TimeSpan elapsed);
+}
+
+internal interface IRz090528KeyTriggeredLightingEffect : IRz090528LightingEffect
+{
+    void Pulse(int slot, TimeSpan at);
+}
+
+internal static class Rz090528LightingTiming
+{
+    internal static readonly TimeSpan AnimatedFrameInterval =
+        TimeSpan.FromMilliseconds(45);
+    internal static readonly TimeSpan IdleKeepaliveInterval =
+        TimeSpan.FromSeconds(5);
 }
 
 internal sealed class Rz090528StaticEffect(RgbColor color) : IRz090528LightingEffect
@@ -123,6 +136,12 @@ internal sealed class Rz090528StaticEffect(RgbColor color) : IRz090528LightingEf
     public bool RequiresContinuousRendering => false;
 
     public TimeSpan NextFrameDelay => Timeout.InfiniteTimeSpan;
+
+    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    {
+        ThrowIfNegative(elapsed);
+        return Timeout.InfiniteTimeSpan;
+    }
 
     public Rz090528MatrixFrame RenderFrame(TimeSpan elapsed)
     {
@@ -146,12 +165,22 @@ internal sealed class Rz090528SpectrumEffect : IRz090528LightingEffect
     // 34.034-second cycle; 30 fps stays below the captured host stream rate.
     internal static readonly TimeSpan CycleDuration =
         TimeSpan.FromMilliseconds(34_034);
-    internal static readonly TimeSpan FrameInterval = TimeSpan.FromTicks(
-        TimeSpan.TicksPerSecond / 30);
+    internal static readonly TimeSpan FrameInterval =
+        Rz090528LightingTiming.AnimatedFrameInterval;
 
     public bool RequiresContinuousRendering => true;
 
     public TimeSpan NextFrameDelay => FrameInterval;
+
+    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    {
+        if (elapsed < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(elapsed));
+        }
+
+        return FrameInterval;
+    }
 
     public Rz090528MatrixFrame RenderFrame(TimeSpan elapsed)
     {

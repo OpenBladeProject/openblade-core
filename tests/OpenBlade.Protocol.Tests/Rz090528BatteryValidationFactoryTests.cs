@@ -6,7 +6,7 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class Rz090528BatteryValidationFactoryTests
 {
     [Fact]
-    public void ProductionLightingFactory_AdmitsOnlyValidatedExactMatrixEffects()
+    public void ProductionLightingFactory_AdmitsCapturedExactSynapseEffects()
     {
         IProductionLightingPortFactory factory =
             BatteryValidationFactory.CreateWindowsRz090528ProductionLighting();
@@ -15,16 +15,19 @@ public sealed class Rz090528BatteryValidationFactoryTests
         [
             LightingEffect.Off,
             LightingEffect.Static,
-        ]));
-        Assert.True(factory.Capabilities.ObservedLightingEffects.SetEquals(
-        [
             LightingEffect.Spectrum,
             LightingEffect.Ripple,
             LightingEffect.Starlight,
             LightingEffect.Tidal,
             LightingEffect.Wave,
             LightingEffect.Wheel,
+            LightingEffect.Breathing,
+            LightingEffect.Reactive,
+            LightingEffect.AmbientAwareness,
+            LightingEffect.AudioMeter,
+            LightingEffect.Fire,
         ]));
+        Assert.Empty(factory.Capabilities.ObservedLightingEffects);
     }
 
     [Fact]
@@ -36,12 +39,20 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.True(factory.Capabilities.LightingEffects.SetEquals(
         [
             LightingEffect.Off,
-            LightingEffect.Spectrum,
             LightingEffect.Static,
-        ]));
-        Assert.DoesNotContain(
             LightingEffect.Spectrum,
-            factory.Capabilities.ObservedLightingEffects);
+            LightingEffect.Ripple,
+            LightingEffect.Starlight,
+            LightingEffect.Tidal,
+            LightingEffect.Wave,
+            LightingEffect.Wheel,
+            LightingEffect.Breathing,
+            LightingEffect.Reactive,
+            LightingEffect.AmbientAwareness,
+            LightingEffect.AudioMeter,
+            LightingEffect.Fire,
+        ]));
+        Assert.Empty(factory.Capabilities.ObservedLightingEffects);
     }
 
     [Fact]

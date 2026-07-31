@@ -42,6 +42,8 @@ public enum StarlightLightingDuration
 [JsonDerivedType(typeof(WheelLightingParameters), "wheel")]
 [JsonDerivedType(typeof(RippleLightingParameters), "ripple")]
 [JsonDerivedType(typeof(AmbientAwarenessLightingParameters), "ambientAwareness")]
+[JsonDerivedType(typeof(AudioMeterLightingParameters), "audioMeter")]
+[JsonDerivedType(typeof(FireLightingParameters), "fire")]
 public abstract record LightingEffectParameters;
 
 public sealed record OffLightingParameters : LightingEffectParameters;
@@ -87,6 +89,11 @@ public sealed record RippleLightingParameters(RgbColor Color)
 
 public sealed record AmbientAwarenessLightingParameters(AmbientAwarenessRegion Region)
     : LightingEffectParameters;
+
+public sealed record AudioMeterLightingParameters(byte ColorBoost)
+    : LightingEffectParameters;
+
+public sealed record FireLightingParameters : LightingEffectParameters;
 
 public static class LightingSettingsFactory
 {
@@ -266,6 +273,24 @@ public static class LightingSettingsFactory
             Parameters = new AmbientAwarenessLightingParameters(region),
         };
 
+    public static LightingSettings AudioMeter(
+        byte colorBoost,
+        byte brightness) => new(
+            LightingEffect.AudioMeter,
+            default,
+            brightness)
+        {
+            Parameters = new AudioMeterLightingParameters(colorBoost),
+        };
+
+    public static LightingSettings Fire(byte brightness) => new(
+        LightingEffect.Fire,
+        default,
+        brightness)
+    {
+        Parameters = new FireLightingParameters(),
+    };
+
     public static LightingSettings NormalizeLegacyOff(LightingSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -340,6 +365,10 @@ public static class LightingSettingsFactory
             AmbientAwarenessLightingParameters ambient => AmbientAwareness(
                 ambient.Region,
                 DefaultVisibleBrightness),
+            AudioMeterLightingParameters audioMeter => AudioMeter(
+                audioMeter.ColorBoost,
+                DefaultVisibleBrightness),
+            FireLightingParameters => Fire(DefaultVisibleBrightness),
             StarlightLightingParameters
             {
                 ColorMode: StarlightColorMode.Dual,
@@ -429,6 +458,11 @@ public static class LightingSettingsValidation
                 settings.Color == parameters.Color,
             (LightingEffect.AmbientAwareness, AmbientAwarenessLightingParameters parameters) =>
                 Enum.IsDefined(parameters.Region) && settings.Color == default,
+            (LightingEffect.AudioMeter, AudioMeterLightingParameters parameters) =>
+                parameters.ColorBoost is >= 1 and <= 10
+                && settings.Color == default,
+            (LightingEffect.Fire, FireLightingParameters) =>
+                settings.Color == default,
             _ => false,
         };
 

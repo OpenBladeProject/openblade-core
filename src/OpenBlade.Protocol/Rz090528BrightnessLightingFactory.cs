@@ -16,20 +16,24 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
     private readonly IValidationActorFactory actorFactory;
     private readonly bool staticEffectAdmitted;
     private readonly bool spectrumEffectAdmitted;
+    private readonly bool allSynapseEffectsAdmitted;
 
     internal Rz090528BrightnessLightingFactory(
         Func<ValidationRunContext> createContext,
         IValidationActorFactory actorFactory,
         bool staticEffectAdmitted = false,
-        bool spectrumEffectAdmitted = false)
+        bool spectrumEffectAdmitted = false,
+        bool allSynapseEffectsAdmitted = false)
     {
         this.createContext = createContext;
         this.actorFactory = actorFactory;
         this.staticEffectAdmitted = staticEffectAdmitted;
         this.spectrumEffectAdmitted = spectrumEffectAdmitted;
+        this.allSynapseEffectsAdmitted = allSynapseEffectsAdmitted;
         Capabilities = Rz090528BrightnessLightingPort.CreateCapabilities(
             staticEffectAdmitted,
-            spectrumEffectAdmitted);
+            spectrumEffectAdmitted,
+            allSynapseEffectsAdmitted);
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -86,7 +90,8 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
                 actor,
                 ExchangeTimeout,
                 staticEffectAdmitted,
-                spectrumEffectAdmitted),
+                spectrumEffectAdmitted,
+                allSynapseEffectsAdmitted),
             null);
     }
 }
@@ -100,6 +105,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     private readonly TimeSpan exchangeTimeout;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly SemaphoreSlim featureIoGate = new(1, 1);
+    private readonly SemaphoreSlim streamWake = new(0, 1);
     private readonly object effectSync = new();
     private IRz090528LightingEffect? activeEffect;
     private LightingSettings? lastDeliveredState;
@@ -115,7 +121,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         ValidationActor actor,
         TimeSpan exchangeTimeout,
         bool staticEffectAdmitted = false,
-        bool spectrumEffectAdmitted = false)
+        bool spectrumEffectAdmitted = false,
+        bool allSynapseEffectsAdmitted = false)
     {
         this.actor = actor;
         session = new Rz090528CommandSessionGate(
@@ -124,7 +131,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         this.exchangeTimeout = exchangeTimeout;
         Capabilities = CreateCapabilities(
             staticEffectAdmitted,
-            spectrumEffectAdmitted);
+            spectrumEffectAdmitted,
+            allSynapseEffectsAdmitted);
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -142,10 +150,14 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
     internal static DeviceCapabilities CreateCapabilities(
         bool staticEffectAdmitted = false,
-        bool spectrumEffectAdmitted = false) => new(
+        bool spectrumEffectAdmitted = false,
+        bool allSynapseEffectsAdmitted = false) => new(
         new HashSet<PerformancePreset>(),
         new HashSet<FanMode>(),
-        CreateAdmittedEffects(staticEffectAdmitted, spectrumEffectAdmitted),
+        CreateAdmittedEffects(
+            staticEffectAdmitted,
+            spectrumEffectAdmitted,
+            allSynapseEffectsAdmitted),
         new HashSet<int>(),
         SupportsBatteryProtectionOff: false,
         SupportsTemporaryFullCharge: false)
@@ -159,16 +171,24 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects = CreateObservedEffects(
                 staticEffectAdmitted,
-                spectrumEffectAdmitted),
+                spectrumEffectAdmitted,
+                allSynapseEffectsAdmitted),
             LogoLightingModes = new HashSet<LogoLightingMode>(
             Enum.GetValues<LogoLightingMode>()),
         };
 
     private static IReadOnlySet<LightingEffect> CreateAdmittedEffects(
         bool staticEffectAdmitted,
-        bool spectrumEffectAdmitted)
+        bool spectrumEffectAdmitted,
+        bool allSynapseEffectsAdmitted)
     {
         var effects = new HashSet<LightingEffect> { LightingEffect.Off };
+        if (allSynapseEffectsAdmitted)
+        {
+            effects.UnionWith(Enum.GetValues<LightingEffect>());
+            return effects;
+        }
+
         if (staticEffectAdmitted)
         {
             effects.Add(LightingEffect.Static);
@@ -182,7 +202,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
     private static IReadOnlySet<LightingEffect> CreateObservedEffects(
         bool staticEffectAdmitted,
-        bool spectrumEffectAdmitted)
+        bool spectrumEffectAdmitted,
+        bool allSynapseEffectsAdmitted)
     {
         var effects = new HashSet<LightingEffect>
         {
@@ -192,6 +213,11 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             LightingEffect.Wave,
             LightingEffect.Wheel,
         };
+        if (allSynapseEffectsAdmitted)
+        {
+            effects.Clear();
+            return effects;
+        }
         if (!staticEffectAdmitted)
         {
             effects.Add(LightingEffect.Static);
@@ -592,13 +618,74 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
     public Task PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
-        CancellationToken cancellationToken) =>
-        Reject(cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (effectSync)
+        {
+            if (activeEffect is not IRz090528KeyTriggeredLightingEffect triggered)
+            {
+                return Task.FromException(new CapabilityUnavailableException(
+                    "PID 02C6 key-triggered lighting is not currently active."));
+            }
 
-    public Task PushAmbientLightingFrameAsync(
+            TimeSpan elapsed = TimeProvider.System.GetElapsedTime(
+                effectStartedTimestamp);
+            triggered.Pulse(pulse.MatrixSlot, elapsed);
+        }
+
+        if (streamWake.CurrentCount == 0)
+        {
+            streamWake.Release();
+        }
+        return Task.CompletedTask;
+    }
+
+    public async Task PushAmbientLightingFrameAsync(
         AmbientLightingFrame frame,
-        CancellationToken cancellationToken) =>
-        Reject(cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        if (!frame.IsWellFormed())
+        {
+            throw new CapabilityUnavailableException(
+                "The PID 02C6 session-rendered lighting frame is invalid.");
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            Rz090528MatrixFrame matrix;
+            lock (effectSync)
+            {
+                switch (activeEffect)
+                {
+                    case Rz090528AmbientAwarenessEffect ambient:
+                        ambient.Update(frame);
+                        matrix = ambient.RenderFrame(TimeProvider.System.GetElapsedTime(
+                            effectStartedTimestamp));
+                        break;
+                    case Rz090528AudioMeterEffect audio:
+                        audio.Update(frame);
+                        matrix = audio.RenderFrame(TimeProvider.System.GetElapsedTime(
+                            effectStartedTimestamp));
+                        break;
+                    default:
+                        throw new CapabilityUnavailableException(
+                            "PID 02C6 session-rendered lighting is not active.");
+                }
+            }
+
+            await WriteMatrixFrameCoreAsync(
+                matrix,
+                cancellationToken,
+                expectResponse: false).ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
 
     public Task SetPlaybackMuteIndicatorAsync(
         bool muted,
@@ -630,6 +717,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             operationGate.Release();
             operationGate.Dispose();
             featureIoGate.Dispose();
+            streamWake.Dispose();
         }
     }
 
@@ -650,14 +738,121 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             SpectrumCyclingLightingParameters
                 when settings.Effect == LightingEffect.Spectrum =>
                 new Rz090528SpectrumEffect(),
+            BreathingLightingParameters
+            {
+                ColorMode: BreathingColorMode.Single,
+                PrimaryColor: { } primary,
+            } when settings.Effect == LightingEffect.Breathing =>
+                new Rz090528BreathingEffect(
+                    BreathingColorMode.Single,
+                    primary,
+                    default),
+            BreathingLightingParameters
+            {
+                ColorMode: BreathingColorMode.Dual,
+                PrimaryColor: { } primary,
+                SecondaryColor: { } secondary,
+            } when settings.Effect == LightingEffect.Breathing =>
+                new Rz090528BreathingEffect(
+                    BreathingColorMode.Dual,
+                    primary,
+                    secondary),
+            BreathingLightingParameters
+            {
+                ColorMode: BreathingColorMode.Random,
+            } when settings.Effect == LightingEffect.Breathing =>
+                new Rz090528BreathingEffect(
+                    BreathingColorMode.Random,
+                    default,
+                    default),
+            ReactiveLightingParameters value
+                when settings.Effect == LightingEffect.Reactive =>
+                new Rz090528ReactiveEffect(
+                    value.Color,
+                    ReactiveDuration(value.Duration)),
+            AmbientAwarenessLightingParameters
+                when settings.Effect == LightingEffect.AmbientAwareness =>
+                new Rz090528AmbientAwarenessEffect(),
+            AudioMeterLightingParameters value
+                when settings.Effect == LightingEffect.AudioMeter =>
+                new Rz090528AudioMeterEffect(value.ColorBoost),
+            FireLightingParameters
+                when settings.Effect == LightingEffect.Fire =>
+                new Rz090528FireEffect(),
+            RippleLightingParameters value
+                when settings.Effect == LightingEffect.Ripple =>
+                new Rz090528RippleEffect(value.Color),
+            TidalLightingParameters value
+                when settings.Effect == LightingEffect.Tidal =>
+                new Rz090528TidalEffect(
+                    value.PrimaryColor,
+                    value.SecondaryColor,
+                    value.RandomColors,
+                    value.Direction),
+            WaveLightingParameters value
+                when settings.Effect == LightingEffect.Wave =>
+                new Rz090528WaveEffect(value.Direction),
+            WheelLightingParameters value
+                when settings.Effect == LightingEffect.Wheel =>
+                new Rz090528WheelEffect(value.Direction),
+            StarlightLightingParameters
+            {
+                ColorMode: StarlightColorMode.Single,
+                PrimaryColor: { } primary,
+            } value when settings.Effect == LightingEffect.Starlight =>
+                new Rz090528StarlightEffect(
+                    value.ColorMode,
+                    primary,
+                    default,
+                    StarlightDuration(value.Duration)),
+            StarlightLightingParameters
+            {
+                ColorMode: StarlightColorMode.Dual,
+                PrimaryColor: { } primary,
+                SecondaryColor: { } secondary,
+            } value when settings.Effect == LightingEffect.Starlight =>
+                new Rz090528StarlightEffect(
+                    value.ColorMode,
+                    primary,
+                    secondary,
+                    StarlightDuration(value.Duration)),
+            StarlightLightingParameters
+            {
+                ColorMode: StarlightColorMode.Random,
+            } value when settings.Effect == LightingEffect.Starlight =>
+                new Rz090528StarlightEffect(
+                    value.ColorMode,
+                    default,
+                    default,
+                    StarlightDuration(value.Duration)),
             null when settings.Effect == LightingEffect.Static =>
                 new Rz090528StaticEffect(settings.Color),
             null when settings.Effect == LightingEffect.Spectrum =>
                 new Rz090528SpectrumEffect(),
+            null when settings.Effect == LightingEffect.Ripple =>
+                new Rz090528RippleEffect(settings.Color),
             _ => throw new CapabilityUnavailableException(
                 "The requested PID 02C6 host-rendered effect is not admitted."),
         };
     }
+
+    internal static TimeSpan StarlightDuration(StarlightLightingDuration duration) =>
+        duration switch
+        {
+            StarlightLightingDuration.Short => TimeSpan.FromMilliseconds(500),
+            StarlightLightingDuration.Medium => TimeSpan.FromMilliseconds(1500),
+            StarlightLightingDuration.Long => TimeSpan.FromMilliseconds(2000),
+            _ => throw new ArgumentOutOfRangeException(nameof(duration)),
+        };
+
+    internal static TimeSpan ReactiveDuration(ReactiveLightingDuration duration) =>
+        duration switch
+        {
+            ReactiveLightingDuration.Short => TimeSpan.FromMilliseconds(500),
+            ReactiveLightingDuration.Medium => TimeSpan.FromMilliseconds(1500),
+            ReactiveLightingDuration.Long => TimeSpan.FromMilliseconds(2000),
+            _ => throw new ArgumentOutOfRangeException(nameof(duration)),
+        };
 
     private async Task WriteMatrixFrameCoreAsync(
         Rz090528MatrixFrame frame,
@@ -710,6 +905,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
     private void StartStreamCore(IRz090528LightingEffect effect)
     {
+        while (streamWake.Wait(0))
+        {
+        }
         var cancellation = new CancellationTokenSource();
         streamCancellation = cancellation;
         streamTask = RunStreamAsync(effect, cancellation.Token);
@@ -723,10 +921,23 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         {
             while (true)
             {
-                await Task.Delay(effect.NextFrameDelay, cancellationToken)
-                    .ConfigureAwait(false);
                 TimeSpan elapsed = TimeProvider.System.GetElapsedTime(
                     effectStartedTimestamp);
+                TimeSpan delay = effect.GetNextFrameDelay(elapsed);
+                using var iterationCancellation =
+                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                Task timer = Task.Delay(delay, iterationCancellation.Token);
+                Task wake = streamWake.WaitAsync(iterationCancellation.Token);
+                Task completed = await Task.WhenAny(timer, wake).ConfigureAwait(false);
+                iterationCancellation.Cancel();
+                if (ReferenceEquals(completed, timer))
+                {
+                    await timer.ConfigureAwait(false);
+                }
+                else
+                {
+                    await wake.ConfigureAwait(false);
+                }
                 Rz090528MatrixFrame frame;
                 lock (effectSync)
                 {
@@ -875,6 +1086,17 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         {
             LightingEffect.Static => LightingRendererOwnershipState.Static,
             LightingEffect.Spectrum => LightingRendererOwnershipState.Spectrum,
+            LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
+            LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
+            LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
+            LightingEffect.Wave => LightingRendererOwnershipState.Wave,
+            LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
+            LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
+            LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
+            LightingEffect.AmbientAwareness =>
+                LightingRendererOwnershipState.AmbientAwareness,
+            LightingEffect.AudioMeter => LightingRendererOwnershipState.AudioMeter,
+            LightingEffect.Fire => LightingRendererOwnershipState.Fire,
             _ => LightingRendererOwnershipState.None,
         };
 

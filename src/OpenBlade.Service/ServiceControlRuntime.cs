@@ -1412,8 +1412,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 "Ambient Awareness is blocked while laptop controls are unavailable.");
         }
 
-        if (current.LightingRendererOwnership !=
-            LightingRendererOwnershipState.AmbientAwareness)
+        if (current.LightingRendererOwnership is not (
+            LightingRendererOwnershipState.AmbientAwareness or
+            LightingRendererOwnershipState.AudioMeter))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,
@@ -4998,7 +4999,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState.Wave or
         LightingRendererOwnershipState.Wheel or
         LightingRendererOwnershipState.Ripple or
-        LightingRendererOwnershipState.AmbientAwareness;
+        LightingRendererOwnershipState.AmbientAwareness or
+        LightingRendererOwnershipState.AudioMeter or
+        LightingRendererOwnershipState.Fire;
 
     private static bool IsKeyTriggeredLightingOwnership(
         LightingRendererOwnershipState ownership) => ownership is
@@ -5020,6 +5023,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
             LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
             LightingEffect.AmbientAwareness => LightingRendererOwnershipState.AmbientAwareness,
+            LightingEffect.AudioMeter => LightingRendererOwnershipState.AudioMeter,
+            LightingEffect.Fire => LightingRendererOwnershipState.Fire,
             _ => LightingRendererOwnershipState.None,
         });
 

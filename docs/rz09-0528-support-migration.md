@@ -2091,3 +2091,91 @@ Muted/Unmuted/Mixed. It never emits endpoint IDs and contains no `SetMute`
 call. After the physical mute key had been pressed twice, this independent
 readback found one default capture endpoint in the Unmuted state, confirming
 restoration without inferring it from press symmetry.
+
+## Supersede the Static-only boundary with the exact Quick Effects oracle
+
+The Static-only boundary above is historical evidence and must remain in this
+guide. A later controller-corrected capture targeted USBPcap address 3 on
+`\\.\USBPcap2`; the earlier address-4 attempt is a negative control and must
+not be treated as target traffic. The successful exact-device oracle exercised
+the complete RZ09-0528 Synapse Quick Effects menu:
+
+- Ripple with a selectable color;
+- Spectrum Cycling;
+- Starlight in single, dual, and random color modes with Short, Medium, and
+  Long durations;
+- Static;
+- Tidal with two colors or random colors and both directions;
+- Wave in both directions;
+- Wheel in both rotations.
+
+Off is an OpenBlade state. The list above was the initially visible lower
+portion of the scrollable menu; the correction below supersedes the mistaken
+inference that it was complete.
+
+The capture decoded 7,822 complete six-row frames with no checksum failures.
+Each frame is six `03/0B` payloads (`FF <row> 00 10 <17 RGB values>`) followed
+by the `03/0A 0500` latch. The critical transport correction is that Synapse
+uses SET-only traffic for continuous frames: it does not issue a GET response
+after every row or latch. The prior OpenBlade implementation waited for an
+acknowledged round trip on every command, stretching a frame to roughly 210
+ms and faulting Spectrum. Core commit `3ab003b` adds an exact-gated SET-only
+submission path for subsequent continuous PID `02C6` frames. The initial
+effect frame and ordinary commands remain acknowledged; this exception must
+not be generalized to other products or command families.
+
+Observed continuous cadence was about 42-45 ms. Exact Tidal evidence was
+sanitized into a 100-phase, 50-ms, five-second oracle with SHA-256
+`492994A0A037AF449F8D834BF5E4D536498291499731BE6117F8DCE9BA2AD452`.
+Wave and Wheel were sanitized into four 25-phase, 40-ms, one-second templates
+with SHA-256
+`1193D6CC36BFF24706E19A2E5584A04760C68990D3CD194970F83C92988145BD`.
+Both fixtures use the non-identifying evidence ID
+`RZ09-0528-SYNAPSE-QUICK-EFFECTS-ORACLE-20260730`; they deliberately omit the
+private PCAP hash, serial number, and transient identifiers.
+
+The exact renderer checkpoint embeds those fixtures, admits the seven menu
+effects plus Off in the production capability set, uses a 45-ms scheduler,
+and preserves the independently derived 6x17 hole mask. Do not claim a matrix
+GET: brightness still has independent `03/83` readback, but effect state is
+owned renderer state plus delivery/lifecycle evidence.
+
+Ripple has one remaining evidence boundary. Synthetic A/J input did not cause
+Synapse to emit a pulse, so it established only idle keepalives. The renderer
+and typed pulse path may be tested in software, but the RZ09-0528 physical
+key-to-slot map must not be copied from RZ09-0581. Capture at least one physical
+normal-key pulse, correlate it to the resulting spatial origin, then admit an
+explicit exact-model map and validate the installed Session Agent path.
+
+## Correct the full scrollable Quick Effects inventory
+
+Computer Use later scrolled to the actual top of the same exact-model menu and
+proved the lower oracle sequence was incomplete. In addition to the effects
+above, RZ09-0528 exposes:
+
+- Ambient Awareness with Full, Left, Top, Right, and Bottom screen regions;
+- Audio Meter with a Color Boost control (observed at its default value 1);
+- Breathing with one color, two colors, or random colors and no duration
+  control;
+- Fire with no effect-specific parameters;
+- Reactive with a color and Short, Medium, or Long duration.
+
+Static green, brightness 50 percent, and Static logo were restored after this
+inspection. Treat this correction as a migration rule: a scrollable vendor menu
+must be inspected at both endpoints before declaring its feature inventory.
+Never remove a model-specific feature simply because an earlier capture script
+started in the middle of the list.
+
+Audio Meter and Fire required new shared contract values rather than being
+folded into an unrelated effect. Audio Meter is rendered by the signed-in
+Session Agent from the default playback endpoint's Core Audio peak meter; only
+a keyboard-sized RGB frame crosses IPC, and the service retains the sole HID
+writer. Fire is a deterministic host-rendered red/yellow procedural animation.
+Ambient Awareness reuses the existing signed-in screen sampler. Breathing and
+Reactive use the same typed parameter semantics as the visible Synapse panels,
+but their PID `02C6` renderers and transport remain exact-model classes.
+
+The Computer Use inventory is UI evidence, not a transport oracle or matrix
+readback. Before final production admission, capture the five newly discovered
+effects on USBPcap address 3, sanitize any reusable templates, validate
+OpenBlade's installed lifecycle, and restore Static green at 50 percent.

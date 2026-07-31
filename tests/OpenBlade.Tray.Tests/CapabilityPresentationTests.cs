@@ -61,7 +61,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(24, animated.Length);
+        Assert.Equal(25, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -1789,6 +1789,21 @@ public sealed class CapabilityPresentationTests
         Assert.True(viewModel.LightingShowsRotationDirection);
         Assert.False(viewModel.LightingShowsPrimaryColor);
 
+        viewModel.LightingEffectEditor = LightingEffect.AudioMeter;
+        viewModel.LightingAudioMeterColorBoostEditor = 4;
+        Assert.Equal(
+            LightingSettingsFactory.AudioMeter(colorBoost: 4, brightness: 64),
+            viewModel.LightingDraft);
+        Assert.True(viewModel.LightingShowsAudioMeterColorBoost);
+        Assert.Equal("Audio Meter", viewModel.SelectedLightingEffectOption?.Label);
+
+        viewModel.LightingEffectEditor = LightingEffect.Fire;
+        Assert.Equal(
+            LightingSettingsFactory.Fire(64),
+            viewModel.LightingDraft);
+        Assert.False(viewModel.LightingShowsAudioMeterColorBoost);
+        Assert.False(viewModel.LightingShowsPrimaryColor);
+
         viewModel.LightingEffectEditor = LightingEffect.Spectrum;
         Assert.Equal(
             LightingSettingsFactory.SpectrumCycling(64),
@@ -1903,8 +1918,8 @@ public sealed class CapabilityPresentationTests
             "Quick effects observed in Synapse",
             lightingXaml,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("Audio", lightingXaml, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Fire", lightingXaml, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Audio Meter color boost", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("LightingShowsAudioMeterColorBoost", lightingXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Ripple", lightingXaml, StringComparison.OrdinalIgnoreCase);
     }
 

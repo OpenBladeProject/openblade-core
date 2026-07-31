@@ -1231,6 +1231,36 @@
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsAudioMeterColorBoost, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="260" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Color boost" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Increase how strongly audio levels drive the keyboard colors."
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="4">
+                                            <TextBlock HorizontalAlignment="Right"
+                                                       Text="{x:Bind LightingAudioMeterColorBoostEditor, Mode=OneWay}"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <Slider Minimum="1"
+                                                    Maximum="10"
+                                                    StepFrequency="1"
+                                                    SmallChange="1"
+                                                    LargeChange="1"
+                                                    IsThumbToolTipEnabled="True"
+                                                    AutomationProperties.Name="Audio Meter color boost"
+                                                    Value="{Binding LightingAudioMeterColorBoostEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsBreathingColorMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>

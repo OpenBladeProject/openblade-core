@@ -12,7 +12,20 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private static readonly TimeSpan MaximumKeyPulsePreAge =
         TimeSpan.FromMilliseconds(75);
     private static readonly IReadOnlySet<LightingEffect> AdmittedEffects =
-        new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>());
+        new HashSet<LightingEffect>(
+        [
+            LightingEffect.Off,
+            LightingEffect.Static,
+            LightingEffect.Spectrum,
+            LightingEffect.Breathing,
+            LightingEffect.Reactive,
+            LightingEffect.Tidal,
+            LightingEffect.Starlight,
+            LightingEffect.Wave,
+            LightingEffect.Wheel,
+            LightingEffect.Ripple,
+            LightingEffect.AmbientAwareness,
+        ]);
 
     private readonly ValidationActor actor;
     private readonly IRazerCommandSession session;

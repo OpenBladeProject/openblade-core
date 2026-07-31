@@ -244,6 +244,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingRotationDirection.Clockwise;
     private AmbientAwarenessRegion lightingAmbientAwarenessRegionEditor =
         AmbientAwarenessRegion.Full;
+    private int lightingAudioMeterColorBoostEditor = 1;
     private LogoLightingMode? logoLightingModeEditor;
     private bool lightingEditorDirty;
     private bool lightingTurnOffWithDisplayEditor;
@@ -3025,6 +3026,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    public int LightingAudioMeterColorBoostEditor
+    {
+        get => lightingAudioMeterColorBoostEditor;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, 1);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 10);
+            SetLightingEditorField(ref lightingAudioMeterColorBoostEditor, value);
+        }
+    }
+
     public AmbientAwarenessRegionOption? SelectedAmbientAwarenessRegionOption
     {
         get => AvailableAmbientAwarenessRegionOptions.FirstOrDefault(
@@ -3121,6 +3133,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool LightingShowsAmbientAwarenessRegion =>
         LightingEffectEditor == LightingEffect.AmbientAwareness;
+
+    public bool LightingShowsAudioMeterColorBoost =>
+        LightingEffectEditor == LightingEffect.AudioMeter;
 
     public LightingSettings LightingDraft => CreateLightingDraft();
 
@@ -4235,6 +4250,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 LightingEffect.Spectrum => "Spectrum Cycling",
                 LightingEffect.AmbientAwareness => "Ambient Awareness",
+                LightingEffect.AudioMeter => "Audio Meter",
                 _ => effect.ToString(),
             });
 
@@ -5638,6 +5654,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ref lightingAmbientAwarenessRegionEditor,
             ambientAwarenessRegion,
             nameof(LightingAmbientAwarenessRegionEditor));
+        int audioMeterColorBoost =
+            value.Parameters is AudioMeterLightingParameters audioMeter
+                ? audioMeter.ColorBoost
+                : 1;
+        SetField(
+            ref lightingAudioMeterColorBoostEditor,
+            audioMeterColorBoost,
+            nameof(LightingAudioMeterColorBoostEditor));
         SetField(
             ref logoLightingModeEditor,
             value.LogoMode,
@@ -6383,6 +6407,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             LightingEffect.Spectrum => "Spectrum Cycling",
             LightingEffect.AmbientAwareness => "Ambient Awareness",
+            LightingEffect.AudioMeter => "Audio Meter",
             _ => lighting.Effect.ToString(),
         };
         string details = lighting.Parameters switch
@@ -6427,6 +6452,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ambient.Region == AmbientAwarenessRegion.Full
                     ? "full screen"
                     : ambient.Region.ToString().ToLowerInvariant(),
+            AudioMeterLightingParameters audioMeter =>
+                $"color boost {audioMeter.ColorBoost}",
             _ when lighting.Effect == LightingEffect.Static => FormatColor(lighting.Color),
             _ => string.Empty,
         };
@@ -6562,6 +6589,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         { Effect: LightingEffect.Off } => "Off",
         { Effect: LightingEffect.Spectrum } => "Spectrum Cycling",
         {
+            Effect: LightingEffect.AudioMeter,
+            Parameters: AudioMeterLightingParameters audioMeter,
+        } => $"Audio Meter, color boost {audioMeter.ColorBoost}",
+        {
             Effect: LightingEffect.AmbientAwareness,
             Parameters: AmbientAwarenessLightingParameters ambient,
         } => ambient.Region == AmbientAwarenessRegion.Full
@@ -6622,7 +6653,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         { Effect: LightingEffect.Spectrum } => "Automatic",
         {
             Effect: LightingEffect.Wave or LightingEffect.Wheel
-                or LightingEffect.AmbientAwareness,
+                or LightingEffect.AmbientAwareness
+                or LightingEffect.AudioMeter
+                or LightingEffect.Fire,
         } => "Automatic",
         {
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
@@ -6775,6 +6808,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             LightingEffect.AmbientAwareness => LightingSettingsFactory.AmbientAwareness(
                 LightingAmbientAwarenessRegionEditor,
                 brightness),
+            LightingEffect.AudioMeter => LightingSettingsFactory.AudioMeter(
+                (byte)LightingAudioMeterColorBoostEditor,
+                brightness),
+            LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
             _ => new LightingSettings(LightingEffectEditor, default, brightness),
         };
         return keyboard with { LogoMode = LogoLightingModeEditor };
@@ -6920,6 +6957,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             LightingEffect.AmbientAwareness => LightingSettingsFactory.AmbientAwareness(
                 AmbientAwarenessRegion.Full,
                 brightness),
+            LightingEffect.AudioMeter => LightingSettingsFactory.AudioMeter(
+                colorBoost: 1,
+                brightness),
+            LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
             _ => new LightingSettings(effect, color, brightness),
         };
     }
@@ -7863,6 +7904,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(SelectedLightingDirectionOption));
         Notify(nameof(LightingShowsRotationDirection));
         Notify(nameof(LightingShowsAmbientAwarenessRegion));
+        Notify(nameof(LightingShowsAudioMeterColorBoost));
     }
 
 }

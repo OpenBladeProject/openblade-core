@@ -267,8 +267,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     }
                 }
 
-                return Volatile.Read(ref lightingPort)?.OwnershipState ==
-                    LightingRendererOwnershipState.AmbientAwareness;
+                return Volatile.Read(ref lightingPort)?.OwnershipState is
+                    LightingRendererOwnershipState.AmbientAwareness or
+                    LightingRendererOwnershipState.AudioMeter;
             }
         }
 
@@ -1137,8 +1138,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         {
             ArgumentNullException.ThrowIfNull(frame);
             return frame.IsWellFormed()
-                && lightingFactory.Capabilities.LightingEffects.Contains(
-                    LightingEffect.AmbientAwareness)
+                && (lightingFactory.Capabilities.LightingEffects.Contains(
+                        LightingEffect.AmbientAwareness)
+                    || lightingFactory.Capabilities.LightingEffects.Contains(
+                        LightingEffect.AudioMeter))
                     ? ExecuteProductionAmbientLightingFrameAsync(frame.Copy(), cancellationToken)
                     : RejectProductionWrite("Ambient Awareness input is not admitted.");
         }
@@ -1579,7 +1582,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             CancellationToken cancellationToken)
         {
             IProductionLightingPort? ownedPort = Volatile.Read(ref lightingPort);
-            if (ownedPort?.OwnershipState == LightingRendererOwnershipState.AmbientAwareness)
+            if (ownedPort?.OwnershipState is
+                LightingRendererOwnershipState.AmbientAwareness or
+                LightingRendererOwnershipState.AudioMeter)
             {
                 try
                 {
@@ -1637,8 +1642,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             {
                 port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
                 if (port is null
-                    || !port.Capabilities.LightingEffects.Contains(
-                        LightingEffect.AmbientAwareness))
+                    || !(port.Capabilities.LightingEffects.Contains(
+                            LightingEffect.AmbientAwareness)
+                        || port.Capabilities.LightingEffects.Contains(
+                            LightingEffect.AudioMeter)))
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,

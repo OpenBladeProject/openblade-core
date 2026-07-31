@@ -9,14 +9,40 @@ public sealed class Rz090528CoverageContractTests
         "conflicts.vendorControllerPresent=SetterValidated",
         "failures.timeout=Captured",
         "failures.transactionMismatch=QueryValidated",
+        "keyboardLighting.effects.ambientAwareness.base=Captured",
+        "keyboardLighting.effects.ambientAwareness.screenRegions=Captured",
+        "keyboardLighting.effects.audioMeter.base=Captured",
+        "keyboardLighting.effects.audioMeter.colorBoost=Captured",
+        "keyboardLighting.effects.breathing.base=Captured",
+        "keyboardLighting.effects.breathing.dualColor=Captured",
+        "keyboardLighting.effects.breathing.randomColor=Captured",
+        "keyboardLighting.effects.breathing.singleColor=Captured",
+        "keyboardLighting.effects.fire.base=Captured",
+        "keyboardLighting.effects.reactive.base=Captured",
+        "keyboardLighting.effects.reactive.colors=Captured",
+        "keyboardLighting.effects.reactive.durations=Captured",
         "keyboardLighting.effects.ripple.base=Captured",
+        "keyboardLighting.effects.ripple.colors=Captured",
         "keyboardLighting.effects.spectrum.base=SetterValidated",
         "keyboardLighting.effects.spectrum.frameCadence=Captured",
         "keyboardLighting.effects.spectrum.hostColorSequence=Captured",
         "keyboardLighting.effects.starlight.base=Captured",
+        "keyboardLighting.effects.starlight.dualColor=Captured",
+        "keyboardLighting.effects.starlight.durations=Captured",
+        "keyboardLighting.effects.starlight.randomColor=Captured",
+        "keyboardLighting.effects.starlight.singleColor=Captured",
         "keyboardLighting.effects.tidal.base=Captured",
+        "keyboardLighting.effects.tidal.inwardDirection=Captured",
+        "keyboardLighting.effects.tidal.outwardDirection=Captured",
+        "keyboardLighting.effects.tidal.primaryColor=Captured",
+        "keyboardLighting.effects.tidal.randomColor=Captured",
+        "keyboardLighting.effects.tidal.secondaryColor=Captured",
         "keyboardLighting.effects.wave.base=Captured",
+        "keyboardLighting.effects.wave.leftDirection=Captured",
+        "keyboardLighting.effects.wave.rightDirection=Captured",
         "keyboardLighting.effects.wheel.base=Captured",
+        "keyboardLighting.effects.wheel.leftDirection=Captured",
+        "keyboardLighting.effects.wheel.rightDirection=Captured",
         "keyboardLighting.lampArrayInterfaceDiscovery=QueryValidated",
         "performance.ac.cpuPowerLimitWatts=Captured",
         "performance.ac.cpuVoltageOptimizer=Captured",
@@ -69,11 +95,11 @@ public sealed class Rz090528CoverageContractTests
 
         Assert.Equal(61, counts["ProductionAdmitted"]);
         Assert.Equal(8, counts["QueryValidated"]);
-        Assert.Equal(21, counts["Captured"]);
+        Assert.Equal(47, counts["Captured"]);
         Assert.Equal(2, counts["SetterValidated"]);
         Assert.Equal(10, counts["SoftwareOnly"]);
-        Assert.Equal(3, counts["Absent"]);
-        Assert.Equal(39, counts["NotInvestigated"]);
+        Assert.Equal(4, counts["Absent"]);
+        Assert.Equal(15, counts["NotInvestigated"]);
     }
 
     [Fact]
@@ -85,7 +111,7 @@ public sealed class Rz090528CoverageContractTests
         JsonElement device = root.GetProperty("device");
 
         Assert.Equal("openblade-captures", source.GetProperty("repository").GetString());
-        Assert.Equal("9673292", source.GetProperty("revision").GetString());
+        Assert.Equal("5755a14", source.GetProperty("revision").GetString());
         Assert.Equal("RZ09-0528", device.GetProperty("modelNumber").GetString());
         Assert.Equal("1532", device.GetProperty("vendorIdHex").GetString());
         Assert.Equal("02C6", device.GetProperty("productIdHex").GetString());

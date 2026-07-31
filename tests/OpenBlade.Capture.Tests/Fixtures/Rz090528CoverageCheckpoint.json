@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "source": {
     "repository": "openblade-captures",
-    "revision": "9673292",
+    "revision": "5755a14",
     "path": "decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json"
   },
   "device": {
@@ -86,17 +86,21 @@
       "brightnessQuery": "ProductionAdmitted",
       "effects": {
         "ambientAwareness": {
-          "base": "NotInvestigated",
-          "screenRegions": "NotInvestigated",
+          "base": "Captured",
+          "screenRegions": "Captured",
           "matrixFormat": "NotInvestigated",
           "frameCadence": "NotInvestigated"
         },
+        "audioMeter": {
+          "base": "Captured",
+          "colorBoost": "Captured"
+        },
         "breathing": {
-          "base": "NotInvestigated",
-          "singleColor": "NotInvestigated",
-          "dualColor": "NotInvestigated",
-          "randomColor": "NotInvestigated",
-          "durations": "NotInvestigated"
+          "base": "Captured",
+          "singleColor": "Captured",
+          "dualColor": "Captured",
+          "randomColor": "Captured",
+          "durations": "Absent"
         },
         "customMatrix": {
           "setupCommand": "NotInvestigated",
@@ -104,14 +108,17 @@
           "frameCadence": "NotInvestigated"
         },
         "reactive": {
-          "base": "NotInvestigated",
-          "colors": "NotInvestigated",
-          "durations": "NotInvestigated",
+          "base": "Captured",
+          "colors": "Captured",
+          "durations": "Captured",
           "keyMap": "NotInvestigated"
+        },
+        "fire": {
+          "base": "Captured"
         },
         "ripple": {
           "base": "Captured",
-          "colors": "NotInvestigated",
+          "colors": "Captured",
           "durations": "NotInvestigated",
           "keyMap": "NotInvestigated"
         },
@@ -122,10 +129,10 @@
         },
         "starlight": {
           "base": "Captured",
-          "singleColor": "NotInvestigated",
-          "dualColor": "NotInvestigated",
-          "randomColor": "NotInvestigated",
-          "durations": "NotInvestigated"
+          "singleColor": "Captured",
+          "dualColor": "Captured",
+          "randomColor": "Captured",
+          "durations": "Captured"
         },
         "static": {
           "base": "ProductionAdmitted",
@@ -133,21 +140,21 @@
         },
         "tidal": {
           "base": "Captured",
-          "primaryColor": "NotInvestigated",
-          "secondaryColor": "NotInvestigated",
-          "randomColor": "NotInvestigated",
-          "inwardDirection": "NotInvestigated",
-          "outwardDirection": "NotInvestigated"
+          "primaryColor": "Captured",
+          "secondaryColor": "Captured",
+          "randomColor": "Captured",
+          "inwardDirection": "Captured",
+          "outwardDirection": "Captured"
         },
         "wave": {
           "base": "Captured",
-          "leftDirection": "NotInvestigated",
-          "rightDirection": "NotInvestigated"
+          "leftDirection": "Captured",
+          "rightDirection": "Captured"
         },
         "wheel": {
           "base": "Captured",
-          "leftDirection": "NotInvestigated",
-          "rightDirection": "NotInvestigated"
+          "leftDirection": "Captured",
+          "rightDirection": "Captured"
         }
       },
       "effectGetter": "NotInvestigated",

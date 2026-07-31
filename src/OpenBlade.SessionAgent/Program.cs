@@ -188,6 +188,14 @@ internal static class Program
                         "OpenBlade Ambient Awareness failed: {0}",
                         exception.Message),
                     statusWatcher: statusFeed);
+                await using var audioMeterServiceClient = new ServiceClient();
+                await using var audioMeter = new ServiceAudioMeterLightingLoop(
+                    audioMeterServiceClient,
+                    WindowsAudioMeterLightingSamplerFactory.Instance,
+                    exception => System.Diagnostics.Trace.TraceWarning(
+                        "OpenBlade Audio Meter failed: {0}",
+                        exception.Message),
+                    statusWatcher: statusFeed);
                 await using var lightingIdleServiceClient = new ServiceClient();
                 var lightingIdlePolicy = new ServiceLightingIdlePolicyLoop(
                     lightingIdleServiceClient,
@@ -221,6 +229,7 @@ internal static class Program
                 Task automationTask = automation.RunAsync(lifetime.Token);
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
                 Task ambientTask = ambient.RunAsync(lifetime.Token);
+                Task audioMeterTask = audioMeter.RunAsync(lifetime.Token);
                 Task lightingIdleTask = lightingIdlePolicy.RunAsync(lifetime.Token);
                 Task playbackMuteTask = playbackMuteIndicator.RunAsync(lifetime.Token);
                 Task lampArrayObservationTask =
@@ -232,6 +241,7 @@ internal static class Program
                     automationTask,
                     reactiveTask,
                     ambientTask,
+                    audioMeterTask,
                     lightingIdleTask,
                     playbackMuteTask,
                     lampArrayObservationTask).ConfigureAwait(false);
@@ -252,6 +262,7 @@ internal static class Program
                             automationTask,
                             reactiveTask,
                             ambientTask,
+                            audioMeterTask,
                             lightingIdleTask,
                             playbackMuteTask,
                             lampArrayObservationTask)

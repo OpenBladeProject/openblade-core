@@ -277,7 +277,19 @@ internal static class ProductionLightingEvidenceSource
                 transactionId,
                 $"{knownColor.Red:X2}{knownColor.Green:X2}{knownColor.Blue:X2}",
                 Convert.ToHexString(SHA256.HashData(knownReport))),
-            Enum.GetValues<LightingEffect>());
+            [
+                LightingEffect.Off,
+                LightingEffect.Static,
+                LightingEffect.Spectrum,
+                LightingEffect.Breathing,
+                LightingEffect.Reactive,
+                LightingEffect.Tidal,
+                LightingEffect.Starlight,
+                LightingEffect.Wave,
+                LightingEffect.Wheel,
+                LightingEffect.Ripple,
+                LightingEffect.AmbientAwareness,
+            ]);
     }
 
     internal static bool SemanticAdmissionMatches(

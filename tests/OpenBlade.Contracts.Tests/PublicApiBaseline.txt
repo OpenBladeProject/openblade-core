@@ -90,6 +90,22 @@ type sealed class OpenBlade.Contracts.ApplyOneShotLaptopControlRequest
   method virtual OpenBlade.Contracts.ApplyOneShotLaptopControlRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.ApplyOneShotLaptopControlRequest other)
   property OpenBlade.Contracts.ApplyOneShotLaptopControl Value { get; init; }
+type sealed class OpenBlade.Contracts.AudioMeterLightingParameters
+  base OpenBlade.Contracts.LightingEffectParameters
+  interface System.IEquatable<OpenBlade.Contracts.AudioMeterLightingParameters>
+  ctor (System.Byte ColorBoost)
+  method System.Byte get_ColorBoost()
+  method System.Void Deconstruct(out System.Byte ColorBoost)
+  method System.Void set_ColorBoost(System.Byte value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.LightingEffectParameters other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.AudioMeterLightingParameters left, OpenBlade.Contracts.AudioMeterLightingParameters right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.AudioMeterLightingParameters left, OpenBlade.Contracts.AudioMeterLightingParameters right)
+  method virtual OpenBlade.Contracts.AudioMeterLightingParameters <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.AudioMeterLightingParameters other)
+  property System.Byte ColorBoost { get; init; }
 type sealed class OpenBlade.Contracts.BatteryHealthStatus
   interface System.IEquatable<OpenBlade.Contracts.BatteryHealthStatus>
   ctor (System.Int32 DesignCapacityMilliwattHours, System.Int32 FullChargeCapacityMilliwattHours)
@@ -633,6 +649,18 @@ type sealed class OpenBlade.Contracts.FanSpeedRange
   property System.Int32 MaximumRpm { get; init; }
   property System.Int32 MinimumRpm { get; init; }
   property System.Int32 StepRpm { get; init; }
+type sealed class OpenBlade.Contracts.FireLightingParameters
+  base OpenBlade.Contracts.LightingEffectParameters
+  interface System.IEquatable<OpenBlade.Contracts.FireLightingParameters>
+  ctor ()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.LightingEffectParameters other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.FireLightingParameters left, OpenBlade.Contracts.FireLightingParameters right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.FireLightingParameters left, OpenBlade.Contracts.FireLightingParameters right)
+  method virtual OpenBlade.Contracts.FireLightingParameters <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.FireLightingParameters other)
 type sealed class OpenBlade.Contracts.FirmwareVersions
   interface System.IEquatable<OpenBlade.Contracts.FirmwareVersions>
   ctor (System.String BiosVersion, System.String EcVersion, System.String McuVersion, System.String VbiosVersion, System.String ModelNumber = "Unavailable")
@@ -835,7 +863,9 @@ type enum OpenBlade.Contracts.LightingDirection
 type enum OpenBlade.Contracts.LightingEffect
   field System.Int32 value__
   field const OpenBlade.Contracts.LightingEffect AmbientAwareness = 10
+  field const OpenBlade.Contracts.LightingEffect AudioMeter = 11
   field const OpenBlade.Contracts.LightingEffect Breathing = 3
+  field const OpenBlade.Contracts.LightingEffect Fire = 12
   field const OpenBlade.Contracts.LightingEffect Off = 0
   field const OpenBlade.Contracts.LightingEffect Reactive = 4
   field const OpenBlade.Contracts.LightingEffect Ripple = 9
@@ -873,8 +903,10 @@ type sealed class OpenBlade.Contracts.LightingPowerPolicy
 type enum OpenBlade.Contracts.LightingRendererOwnershipState
   field System.Int32 value__
   field const OpenBlade.Contracts.LightingRendererOwnershipState AmbientAwareness = 11
+  field const OpenBlade.Contracts.LightingRendererOwnershipState AudioMeter = 12
   field const OpenBlade.Contracts.LightingRendererOwnershipState Breathing = 3
   field const OpenBlade.Contracts.LightingRendererOwnershipState Faulted = 9
+  field const OpenBlade.Contracts.LightingRendererOwnershipState Fire = 13
   field const OpenBlade.Contracts.LightingRendererOwnershipState None = 0
   field const OpenBlade.Contracts.LightingRendererOwnershipState Reactive = 4
   field const OpenBlade.Contracts.LightingRendererOwnershipState Ripple = 10
@@ -917,9 +949,11 @@ type sealed class OpenBlade.Contracts.LightingSettings
 type static class OpenBlade.Contracts.LightingSettingsFactory
   field const System.Byte DefaultVisibleBrightness = 100
   method static OpenBlade.Contracts.LightingSettings AmbientAwareness(OpenBlade.Contracts.AmbientAwarenessRegion region, System.Byte brightness)
+  method static OpenBlade.Contracts.LightingSettings AudioMeter(System.Byte colorBoost, System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings BreathingDual(OpenBlade.Contracts.RgbColor primaryColor, OpenBlade.Contracts.RgbColor secondaryColor, System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings BreathingRandom(System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings BreathingSingle(OpenBlade.Contracts.RgbColor color, System.Byte brightness)
+  method static OpenBlade.Contracts.LightingSettings Fire(System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings NormalizeLegacyInvisibleEffect(OpenBlade.Contracts.LightingSettings settings)
   method static OpenBlade.Contracts.LightingSettings NormalizeLegacyOff(OpenBlade.Contracts.LightingSettings settings)
   method static OpenBlade.Contracts.LightingSettings Off()

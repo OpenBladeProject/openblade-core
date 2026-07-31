@@ -232,6 +232,10 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
             LightingEffect.AmbientAwareness => LightingSettingsFactory.AmbientAwareness(
                 AmbientAwarenessRegion.Full,
                 brightness),
+            LightingEffect.AudioMeter => LightingSettingsFactory.AudioMeter(
+                colorBoost: 1,
+                brightness),
+            LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
             _ => throw new InvalidOperationException("The lighting effect is unsupported."),
         };
         return next with { LogoMode = current.LogoMode };

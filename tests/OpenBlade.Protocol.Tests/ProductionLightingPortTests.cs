@@ -40,7 +40,20 @@ public sealed class ProductionLightingPortTests
         Assert.Null(typeof(ProductionLightingOracleCaptureEvidence).GetProperty("Applied"));
         Assert.Null(typeof(ProductionLightingOracleCaptureEvidence).GetProperty("Restored"));
         Assert.Equal(
-            Enum.GetValues<LightingEffect>().Order(),
+            new[]
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+                LightingEffect.Spectrum,
+                LightingEffect.Breathing,
+                LightingEffect.Reactive,
+                LightingEffect.Tidal,
+                LightingEffect.Starlight,
+                LightingEffect.Wave,
+                LightingEffect.Wheel,
+                LightingEffect.Ripple,
+                LightingEffect.AmbientAwareness,
+            }.Order(),
             factory.Capabilities.LightingEffects.Order());
         Assert.Equal(
             DeviceFeatureAccess.ReadWrite,
