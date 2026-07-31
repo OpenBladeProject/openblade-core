@@ -269,6 +269,45 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task Rz090528Reactive_PulseWakeRendersWithPostWakeTime()
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 128);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            allSynapseEffectsAdmitted: true,
+            timeProvider: time);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                brightness: 50,
+                ReactiveLightingDuration.Medium),
+            default);
+
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(59), default);
+        for (int attempt = 0;
+            attempt < 100 && session.SubmittedCommands.Count < 7;
+            attempt++)
+        {
+            await Task.Delay(10);
+        }
+
+        RazerCommandSpec row = Assert.Single(session.SubmittedCommands, command =>
+                command.CommandId == Rz090528MatrixRowProtocol.RowCommandId
+                && command.Arguments.Span[1] == 3);
+        int column = 59 % Rz090528MatrixFrame.ColumnCount;
+        int colorOffset = 4 + (column * 3);
+        Assert.Equal(0, row.Arguments.Span[colorOffset]);
+        Assert.NotEqual(0, row.Arguments.Span[colorOffset + 1]);
+        Assert.Equal(0, row.Arguments.Span[colorOffset + 2]);
+    }
+
+    [Fact]
     public async Task Rz090528ReadDriverMode_UsesQueryOnly()
     {
         var session = new LightingSession(initialBrightness: 0)
@@ -2135,6 +2174,10 @@ public sealed class ProductionLightingPortTests
         private readonly List<Timer> timers = [];
 
         public override DateTimeOffset GetUtcNow() => now;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => now.Ticks;
 
         public override ITimer CreateTimer(
             TimerCallback callback,

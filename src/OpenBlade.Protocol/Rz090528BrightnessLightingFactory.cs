@@ -107,6 +107,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     private readonly SemaphoreSlim featureIoGate = new(1, 1);
     private readonly SemaphoreSlim streamWake = new(0, 1);
     private readonly object effectSync = new();
+    private readonly TimeProvider timeProvider;
     private IRz090528LightingEffect? activeEffect;
     private LightingSettings? lastDeliveredState;
     private CancellationTokenSource? streamCancellation;
@@ -122,13 +123,15 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         TimeSpan exchangeTimeout,
         bool staticEffectAdmitted = false,
         bool spectrumEffectAdmitted = false,
-        bool allSynapseEffectsAdmitted = false)
+        bool allSynapseEffectsAdmitted = false,
+        TimeProvider? timeProvider = null)
     {
         this.actor = actor;
         session = new Rz090528CommandSessionGate(
             actor.Session,
             Rz090528CommandSessionGate.Shared);
         this.exchangeTimeout = exchangeTimeout;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
         Capabilities = CreateCapabilities(
             staticEffectAdmitted,
             spectrumEffectAdmitted,
@@ -476,7 +479,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 else
                 {
                     IRz090528LightingEffect effect = CreateEffect(settings);
-                    effectStartedTimestamp = TimeProvider.System.GetTimestamp();
+                    effectStartedTimestamp = timeProvider.GetTimestamp();
                     await WriteMatrixFrameCoreAsync(
                         effect.RenderFrame(TimeSpan.Zero),
                         cancellationToken).ConfigureAwait(false);
@@ -629,7 +632,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                     "PID 02C6 key-triggered lighting is not currently active."));
             }
 
-            TimeSpan elapsed = TimeProvider.System.GetElapsedTime(
+            TimeSpan elapsed = timeProvider.GetElapsedTime(
                 effectStartedTimestamp);
             triggered.Pulse(pulse.MatrixSlot, elapsed);
         }
@@ -662,12 +665,12 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 {
                     case Rz090528AmbientAwarenessEffect ambient:
                         ambient.Update(frame);
-                        matrix = ambient.RenderFrame(TimeProvider.System.GetElapsedTime(
+                        matrix = ambient.RenderFrame(timeProvider.GetElapsedTime(
                             effectStartedTimestamp));
                         break;
                     case Rz090528AudioMeterEffect audio:
                         audio.Update(frame);
-                        matrix = audio.RenderFrame(TimeProvider.System.GetElapsedTime(
+                        matrix = audio.RenderFrame(timeProvider.GetElapsedTime(
                             effectStartedTimestamp));
                         break;
                     default:
@@ -921,7 +924,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         {
             while (true)
             {
-                TimeSpan elapsed = TimeProvider.System.GetElapsedTime(
+                TimeSpan elapsed = timeProvider.GetElapsedTime(
                     effectStartedTimestamp);
                 TimeSpan delay = effect.GetNextFrameDelay(elapsed);
                 using var iterationCancellation =
@@ -938,6 +941,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 {
                     await wake.ConfigureAwait(false);
                 }
+                elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
                 Rz090528MatrixFrame frame;
                 lock (effectSync)
                 {
@@ -1038,7 +1042,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
         try
         {
-            TimeSpan elapsed = TimeProvider.System.GetElapsedTime(
+            TimeSpan elapsed = timeProvider.GetElapsedTime(
                 previous.StartedTimestamp);
             await WriteMatrixFrameCoreAsync(
                 previous.Effect.RenderFrame(elapsed),
