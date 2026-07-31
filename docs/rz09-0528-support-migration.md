@@ -212,6 +212,27 @@ The maintainability audit produced these high-level fixes:
 - the tray keeps capability-dependent controls concise and restores the shared
   card interaction behavior.
 
+Preserve these less-visible invariants:
+
+- PID `02C6` matrix frames submit six rows and the latch as one ordered,
+  non-interleavable SET-only batch. Keep the shared gate, deadline, transaction
+  ordering, reusable report buffer, failure poisoning, and no-GET behavior.
+- LampArray geometry fingerprints are cached until the enumerated device set
+  changes. A periodic observation must not rebuild all lamp geometry when the
+  same devices remain present.
+- A failed WDL preference save is not safely rolled back unless the previous
+  renderer actually resumes. Report both persistence and rollback failures.
+- `FanMode.Maximum` uses the legacy `5400` sentinel in saved settings, even
+  though this model's independently selectable fixed range ends at `5000`
+  RPM. Accept the sentinel only when the profile mode is explicitly Maximum;
+  continue rejecting a literal Fixed `5400` request.
+- Bounded renderer cleanup succeeds only when the close task completed
+  successfully. A faulted task is not a successful drain, even when its
+  exception was observed by the pending-disposal helper.
+- Capability equality and the exact-device admission gate include
+  `SupportsPlaybackMuteIndicator`. For PID `02C6` its expected value is
+  explicitly false.
+
 These are software hardening changes. They do not advance a hardware evidence
 leaf unless the sanitized ledger and its contract test are updated separately.
 
