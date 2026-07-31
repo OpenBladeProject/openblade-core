@@ -9,7 +9,6 @@ namespace OpenBlade.SessionAgent;
 /// </summary>
 public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
 {
-    private static readonly TimeSpan KeepaliveInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(1);
 
     private readonly IServiceClient serviceClient;
@@ -17,6 +16,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
     private readonly IAmbientScreenSamplerFactory samplerFactory;
     private readonly Action<Exception>? errorHandler;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
+    private readonly TimeProvider timeProvider;
     private readonly object stateSync = new();
     private CancellationTokenSource? rendererCancellation;
     private Task? rendererTask;
@@ -28,7 +28,8 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         IAmbientScreenSamplerFactory samplerFactory,
         Action<Exception>? errorHandler = null,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
-        IServiceStatusWatcher? statusWatcher = null)
+        IServiceStatusWatcher? statusWatcher = null,
+        TimeProvider? timeProvider = null)
     {
         this.serviceClient = serviceClient
             ?? throw new ArgumentNullException(nameof(serviceClient));
@@ -37,6 +38,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         this.statusWatcher = statusWatcher ?? serviceClient;
         this.errorHandler = errorHandler;
         this.delay = delay ?? Task.Delay;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -162,18 +164,15 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         using IAmbientScreenSampler sampler = samplerFactory.Create();
-        IReadOnlyList<RgbColor>? previous = null;
-        var cadence = new AmbientFrameCadence();
-        DateTimeOffset lastSent = DateTimeOffset.MinValue;
+        var cadence = new SessionLightingFrameCadence(timeProvider);
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 AmbientLightingFrame frame = sampler.Capture(region);
-                DateTimeOffset now = DateTimeOffset.UtcNow;
-                bool changed = previous is null || !FramesEqual(frame.Slots, previous);
-                if (changed || now - lastSent >= KeepaliveInterval)
+                SessionLightingFrameDecision decision = cadence.Evaluate(frame);
+                if (decision.ShouldSend)
                 {
                     ControlOperationResult result = await serviceClient
                         .PushAmbientLightingFrameAsync(frame, cancellationToken)
@@ -183,11 +182,10 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                         throw new InvalidOperationException(result.Message);
                     }
 
-                    previous = frame.Slots;
-                    lastSent = now;
+                    cadence.RecordSent(frame);
                 }
 
-                await delay(cadence.RecordFrame(changed), cancellationToken)
+                await delay(decision.NextInterval, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -213,6 +211,63 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         }
     }
 
+}
+
+internal readonly record struct SessionLightingFrameDecision(
+    bool ShouldSend,
+    TimeSpan NextInterval);
+
+internal sealed class SessionLightingFrameCadence(TimeProvider timeProvider)
+{
+    // Match the matrix renderer's proven 30 FPS cadence while the sampled
+    // colors are changing. After roughly half a second without a change,
+    // reduce captures to 5 FPS; the next changed sample immediately restores
+    // the active cadence.
+    internal const int StaticFrameThreshold = 15;
+    internal static readonly TimeSpan KeepaliveInterval = TimeSpan.FromSeconds(5);
+    internal static readonly TimeSpan ActiveInterval = TimeSpan.FromTicks(
+        TimeSpan.TicksPerSecond / 30);
+    internal static readonly TimeSpan StaticInterval = TimeSpan.FromMilliseconds(200);
+
+    private readonly TimeProvider timeProvider =
+        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    private IReadOnlyList<RgbColor>? lastSentFrame;
+    private DateTimeOffset? lastSentAt;
+    private int unchangedFrames;
+
+    internal SessionLightingFrameDecision Evaluate(AmbientLightingFrame frame)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        bool changed = lastSentFrame is null
+            || !FramesEqual(frame.Slots, lastSentFrame);
+        TimeSpan nextInterval;
+        if (changed)
+        {
+            unchangedFrames = 0;
+            nextInterval = ActiveInterval;
+        }
+        else
+        {
+            unchangedFrames = Math.Min(StaticFrameThreshold, unchangedFrames + 1);
+            nextInterval = unchangedFrames >= StaticFrameThreshold
+                ? StaticInterval
+                : ActiveInterval;
+        }
+
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        bool shouldSend = changed
+            || lastSentAt is null
+            || now - lastSentAt >= KeepaliveInterval;
+        return new(shouldSend, nextInterval);
+    }
+
+    internal void RecordSent(AmbientLightingFrame frame)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        lastSentFrame = frame.Slots;
+        lastSentAt = timeProvider.GetUtcNow();
+    }
+
     private static bool FramesEqual(
         IReadOnlyList<RgbColor> left,
         IReadOnlyList<RgbColor> right)
@@ -231,33 +286,5 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         }
 
         return true;
-    }
-}
-
-internal sealed class AmbientFrameCadence
-{
-    // Match the matrix renderer's proven 30 FPS cadence while the sampled
-    // colors are changing. After roughly half a second without a change,
-    // reduce captures to 5 FPS; the next changed sample immediately restores
-    // the active cadence.
-    internal const int StaticFrameThreshold = 15;
-    internal static readonly TimeSpan ActiveInterval = TimeSpan.FromTicks(
-        TimeSpan.TicksPerSecond / 30);
-    internal static readonly TimeSpan StaticInterval = TimeSpan.FromMilliseconds(200);
-
-    private int unchangedFrames;
-
-    internal TimeSpan RecordFrame(bool changed)
-    {
-        if (changed)
-        {
-            unchangedFrames = 0;
-            return ActiveInterval;
-        }
-
-        unchangedFrames = Math.Min(StaticFrameThreshold, unchangedFrames + 1);
-        return unchangedFrames >= StaticFrameThreshold
-            ? StaticInterval
-            : ActiveInterval;
     }
 }

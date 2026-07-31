@@ -174,13 +174,13 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
 
 public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
 {
-    private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(45);
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(1);
     private readonly IServiceClient serviceClient;
     private readonly IServiceStatusWatcher statusWatcher;
     private readonly IAudioMeterLightingSamplerFactory samplerFactory;
     private readonly Action<Exception>? errorHandler;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
+    private readonly TimeProvider timeProvider;
     private CancellationTokenSource? rendererCancellation;
     private Task? rendererTask;
     private double? activeBoost;
@@ -191,7 +191,8 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
         IAudioMeterLightingSamplerFactory samplerFactory,
         Action<Exception>? errorHandler = null,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
-        IServiceStatusWatcher? statusWatcher = null)
+        IServiceStatusWatcher? statusWatcher = null,
+        TimeProvider? timeProvider = null)
     {
         this.serviceClient = serviceClient
             ?? throw new ArgumentNullException(nameof(serviceClient));
@@ -200,6 +201,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
         this.statusWatcher = statusWatcher ?? serviceClient;
         this.errorHandler = errorHandler;
         this.delay = delay ?? Task.Delay;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -276,36 +278,95 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
 
     private async Task RenderAsync(double boost, CancellationToken cancellationToken)
     {
-        using IAudioMeterLightingSampler sampler = samplerFactory.Create();
-        while (true)
+        IAudioMeterLightingSampler? sampler = null;
+        var cadence = new SessionLightingFrameCadence(timeProvider);
+        try
         {
-            try
+            while (true)
             {
-                AmbientLightingFrame frame = sampler.Capture(boost);
-                ControlOperationResult result = await serviceClient
-                    .PushAmbientLightingFrameAsync(frame, cancellationToken)
-                    .ConfigureAwait(false);
-                if (result.Status != ControlOperationStatus.Applied)
-                {
-                    throw new InvalidOperationException(result.Message);
-                }
-                await delay(FrameInterval, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
+                AmbientLightingFrame frame;
                 try
                 {
-                    errorHandler?.Invoke(exception);
+                    sampler ??= samplerFactory.Create();
+                    frame = sampler.Capture(boost);
                 }
-                catch
+                catch (OperationCanceledException) when (
+                    cancellationToken.IsCancellationRequested)
                 {
+                    throw;
                 }
-                await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
+                catch (Exception exception)
+                {
+                    ResetSampler(ref sampler);
+                    ReportFailure(exception);
+                    await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                try
+                {
+                    SessionLightingFrameDecision decision = cadence.Evaluate(frame);
+                    if (decision.ShouldSend)
+                    {
+                        ControlOperationResult result = await serviceClient
+                            .PushAmbientLightingFrameAsync(frame, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (result.Status != ControlOperationStatus.Applied)
+                        {
+                            throw new InvalidOperationException(result.Message);
+                        }
+
+                        cadence.RecordSent(frame);
+                    }
+
+                    await delay(decision.NextInterval, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (
+                    cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    ReportFailure(exception);
+                    await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
+                }
             }
+        }
+        finally
+        {
+            ResetSampler(ref sampler);
+        }
+    }
+
+    private void ResetSampler(ref IAudioMeterLightingSampler? sampler)
+    {
+        IAudioMeterLightingSampler? previous = sampler;
+        sampler = null;
+        if (previous is null)
+        {
+            return;
+        }
+
+        try
+        {
+            previous.Dispose();
+        }
+        catch (Exception exception)
+        {
+            ReportFailure(exception);
+        }
+    }
+
+    private void ReportFailure(Exception exception)
+    {
+        try
+        {
+            errorHandler?.Invoke(exception);
+        }
+        catch
+        {
         }
     }
 }
