@@ -74,7 +74,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
     private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
     private readonly Func<SpecialKeySlot, bool> readSpecialKeyInputAdmitted;
-    private readonly Rz09_0581FunctionRowInputState functionRowInput = new();
+    private readonly RazerBladeFunctionRowInputState functionRowInput = new();
     private readonly GamingModeKeyBlockState gamingModeKeyBlockState = new();
     private readonly LowLevelKeyboardHookHealthTracker hookHealth = new();
     private readonly string windowClassName = $"OpenBlade.Reactive.{Guid.NewGuid():N}";
@@ -380,8 +380,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 {
                     return 1;
                 }
-                if (owner.readVerifiedInputDeviceKind()
-                        == RazerBladeInputDeviceKind.Rz09_0581
+                if (RazerBladeFunctionRowMediaInput.SupportsDevice(
+                        owner.readVerifiedInputDeviceKind())
                     && owner.functionRowInput.Process(
                     input.ScanCode,
                     keyDown,
@@ -508,9 +508,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             keyDown,
             Stopwatch.GetTimestamp(),
             HookObservationMaximumAge);
-        if (deviceKind == RazerBladeInputDeviceKind.Rz09_0581
+        if (RazerBladeFunctionRowMediaInput.SupportsDevice(deviceKind)
             && !observedByHook
-            && Rz09_0581FunctionRowMediaInput.TryOverride(
+            && RazerBladeFunctionRowMediaInput.TryOverride(
                 keyboard.MakeCode,
                 keyDown,
                 performanceFunctionKeyPressed,

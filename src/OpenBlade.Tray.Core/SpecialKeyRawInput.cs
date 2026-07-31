@@ -19,13 +19,18 @@ public enum FunctionRowAction
 }
 
 /// <summary>
-/// Reconstructs the function-row actions that PID 02E0 emits directly in
-/// Normal mode. In Driver mode the keyboard emits ordinary F-key scan codes
-/// for both layers and reports Fn separately, so the session agent must
-/// translate only the layer selected for multimedia behavior.
+/// Reconstructs function-row actions for exact devices that emit ordinary
+/// F-key scan codes for both layers in Driver mode and report Fn separately.
+/// Device support is explicit so a newly admitted model cannot inherit this
+/// behavior from layout similarity alone.
 /// </summary>
-public static class Rz09_0581FunctionRowMediaInput
+public static class RazerBladeFunctionRowMediaInput
 {
+    public static bool SupportsDevice(RazerBladeInputDeviceKind deviceKind) =>
+        deviceKind is
+            RazerBladeInputDeviceKind.Rz09_0581 or
+            RazerBladeInputDeviceKind.Rz09_0528;
+
     public static bool TryOverride(
         uint scanCode,
         bool keyDown,
@@ -84,7 +89,7 @@ public static class Rz09_0581FunctionRowMediaInput
 /// key is held without leaking an orphaned F-key edge into the foreground app.
 /// One-shot actions ignore auto-repeat; volume and brightness actions repeat.
 /// </summary>
-public sealed class Rz09_0581FunctionRowInputState
+public sealed class RazerBladeFunctionRowInputState
 {
     private readonly Dictionary<uint, FunctionRowAction> suppressedKeys = [];
 
@@ -111,7 +116,7 @@ public sealed class Rz09_0581FunctionRowInputState
             return true;
         }
 
-        if (!Rz09_0581FunctionRowMediaInput.TryOverride(
+        if (!RazerBladeFunctionRowMediaInput.TryOverride(
             scanCode,
             keyDown: true,
             functionKeyPressed,
