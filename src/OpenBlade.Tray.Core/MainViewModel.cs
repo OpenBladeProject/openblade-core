@@ -244,7 +244,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingRotationDirection.Clockwise;
     private AmbientAwarenessRegion lightingAmbientAwarenessRegionEditor =
         AmbientAwarenessRegion.Full;
-    private int lightingAudioMeterColorBoostEditor = 1;
+    private double lightingAudioMeterColorBoostEditor = 1;
     private LogoLightingMode? logoLightingModeEditor;
     private bool lightingEditorDirty;
     private bool lightingTurnOffWithDisplayEditor;
@@ -3026,13 +3026,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public int LightingAudioMeterColorBoostEditor
+    public double LightingAudioMeterColorBoostEditor
     {
         get => lightingAudioMeterColorBoostEditor;
         set
         {
             ArgumentOutOfRangeException.ThrowIfLessThan(value, 1);
-            ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 10);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 4);
+            if (!double.IsFinite(value)
+                || value * 4 != Math.Truncate(value * 4))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
             SetLightingEditorField(ref lightingAudioMeterColorBoostEditor, value);
         }
     }
@@ -5654,7 +5659,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ref lightingAmbientAwarenessRegionEditor,
             ambientAwarenessRegion,
             nameof(LightingAmbientAwarenessRegionEditor));
-        int audioMeterColorBoost =
+        double audioMeterColorBoost =
             value.Parameters is AudioMeterLightingParameters audioMeter
                 ? audioMeter.ColorBoost
                 : 1;
@@ -6809,7 +6814,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 LightingAmbientAwarenessRegionEditor,
                 brightness),
             LightingEffect.AudioMeter => LightingSettingsFactory.AudioMeter(
-                (byte)LightingAudioMeterColorBoostEditor,
+                LightingAudioMeterColorBoostEditor,
                 brightness),
             LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
             _ => new LightingSettings(LightingEffectEditor, default, brightness),

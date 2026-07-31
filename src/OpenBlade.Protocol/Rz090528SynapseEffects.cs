@@ -236,12 +236,15 @@ internal sealed class Rz090528AmbientAwarenessEffect : IRz090528LightingEffect
     }
 }
 
-internal sealed class Rz090528AudioMeterEffect(byte colorBoost)
+internal sealed class Rz090528AudioMeterEffect(double colorBoost)
     : IRz090528LightingEffect
 {
     private Rz090528MatrixFrame frame = Rz090528MatrixFrame.Uniform(default);
 
-    internal byte ColorBoost { get; } = colorBoost is >= 1 and <= 10
+    internal double ColorBoost { get; } =
+        double.IsFinite(colorBoost)
+        && colorBoost is >= 1 and <= 4
+        && colorBoost * 4 == Math.Truncate(colorBoost * 4)
         ? colorBoost
         : throw new ArgumentOutOfRangeException(nameof(colorBoost));
 
@@ -281,6 +284,8 @@ internal sealed class Rz090528AudioMeterEffect(byte colorBoost)
 internal sealed class Rz090528BreathingEffect : IRz090528LightingEffect
 {
     internal static readonly TimeSpan CycleDuration = TimeSpan.FromSeconds(7);
+    internal static readonly TimeSpan FadeDuration = TimeSpan.FromSeconds(2);
+    internal static readonly TimeSpan FullDuration = TimeSpan.FromSeconds(1.5);
     private readonly BreathingColorMode mode;
     private readonly RgbColor primary;
     private readonly RgbColor secondary;
@@ -312,14 +317,20 @@ internal sealed class Rz090528BreathingEffect : IRz090528LightingEffect
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         long cycle = elapsed.Ticks / CycleDuration.Ticks;
-        double phase = (elapsed.Ticks % CycleDuration.Ticks) /
-            (double)CycleDuration.Ticks;
+        TimeSpan phase =
+            TimeSpan.FromTicks(elapsed.Ticks % CycleDuration.Ticks);
         byte intensity = phase switch
         {
-            < 0.25 => 0,
-            < 0.50 => Rz090528LightingMath.ToByte((phase - 0.25) * 4 * 255),
-            < 0.75 => 255,
-            _ => Rz090528LightingMath.ToByte((1 - phase) * 4 * 255),
+            { } value when value < FadeDuration =>
+                Rz090528LightingMath.ToByte(
+                    value.TotalMilliseconds /
+                    FadeDuration.TotalMilliseconds * 255),
+            { } value when value < FadeDuration + FullDuration => 255,
+            { } value when value < (FadeDuration * 2) + FullDuration =>
+                Rz090528LightingMath.ToByte(
+                    (1 - ((value - FadeDuration - FullDuration).TotalMilliseconds /
+                        FadeDuration.TotalMilliseconds)) * 255),
+            _ => 0,
         };
         RgbColor color = mode switch
         {
@@ -416,51 +427,110 @@ internal sealed class Rz090528FireEffect : IRz090528LightingEffect
     public Rz090528MatrixFrame RenderFrame(TimeSpan elapsed)
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
-        long frameIndex = elapsed.Ticks /
-            Rz090528LightingTiming.AnimatedFrameInterval.Ticks;
+        return Rz090528FireOracle.Render(elapsed);
+    }
+}
+
+internal static class Rz090528FireOracle
+{
+    internal const string ResourceName =
+        "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_FireOracle.json";
+    internal const string ApprovedFixtureSha256 =
+        "874C99039C8204950D233EA7ECE6560985CDC6325D576F82D9F12FA841B25128";
+    internal const int FrameCount = 171;
+    internal static readonly TimeSpan StartupFadeDuration =
+        TimeSpan.FromMilliseconds(3500);
+    internal static readonly TimeSpan CycleDuration =
+        TimeSpan.FromMilliseconds(8550);
+    private static readonly TimeSpan FrameInterval =
+        TimeSpan.FromMilliseconds(50);
+    private static readonly Lazy<RgbColor[]> Template = new(ReadTemplate);
+
+    internal static Rz090528MatrixFrame Render(TimeSpan elapsed)
+    {
+        Rz090528LightingMath.ThrowIfNegative(elapsed);
+        double position = (elapsed.Ticks % CycleDuration.Ticks) /
+            (double)FrameInterval.Ticks;
+        int lower = (int)Math.Floor(position);
+        int upper = (lower + 1) % FrameCount;
+        double fraction = position - lower;
+        double startupScale = Math.Min(
+            1,
+            elapsed.TotalMilliseconds / StartupFadeDuration.TotalMilliseconds);
+        byte startupIntensity =
+            Rz090528LightingMath.ToByte(startupScale * 255);
         RgbColor[] slots = new RgbColor[Rz090528MatrixFrame.SlotCount];
         for (int slot = 0; slot < slots.Length; slot++)
         {
-            if (Rz090528MatrixFrame.IsHole(slot))
-            {
-                continue;
-            }
-            int row = slot / Rz090528MatrixFrame.ColumnCount;
-            int column = slot % Rz090528MatrixFrame.ColumnCount;
-            uint noise = FireMix(unchecked(
-                (uint)(frameIndex * 0x9E3779B9L)
-                ^ (uint)(column * 0x85EBCA6B)
-                ^ (uint)(row * 0xC2B2AE35)));
-            double baseHeat = 1.0 - (row / (double)Rz090528MatrixFrame.RowCount);
-            double flicker = 0.55 + ((noise & 0xFFFF) / 65535.0 * 0.45);
-            double heat = Math.Clamp(baseHeat * flicker, 0, 1);
-            slots[slot] = heat switch
-            {
-                < 0.33 => new(
-                    Rz090528LightingMath.ToByte(heat * 3 * 180),
-                    0,
-                    0),
-                < 0.72 => new(
-                    255,
-                    Rz090528LightingMath.ToByte((heat - 0.33) / 0.39 * 150),
-                    0),
-                _ => new(
-                    255,
-                    Rz090528LightingMath.ToByte(150 + ((heat - 0.72) / 0.28 * 105)),
-                    Rz090528LightingMath.ToByte((heat - 0.72) / 0.28 * 40)),
-            };
+            RgbColor color = Rz090528LightingMath.Interpolate(
+                Template.Value[(lower * slots.Length) + slot],
+                Template.Value[(upper * slots.Length) + slot],
+                fraction);
+            slots[slot] = Rz090528LightingMath.Scale(color, startupIntensity);
         }
         return new(slots);
     }
 
-    private static uint FireMix(uint value)
+    private static RgbColor[] ReadTemplate()
     {
-        value ^= value >> 16;
-        value *= 0x7FEB352Du;
-        value ^= value >> 15;
-        value *= 0x846CA68Bu;
-        return value ^ (value >> 16);
+        FireDocument document =
+            Rz090528TidalOracle.ReadDocument<FireDocument>(
+                ResourceName,
+                ApprovedFixtureSha256);
+        if (document.SchemaVersion != 1
+            || document.EvidenceRole != "SanitizedRz090528FireMatrixOracle"
+            || document.SourceEvidenceId !=
+                "RZ09-0528-SYNAPSE-FULL-MENU-UPPER-ORACLE-20260730"
+            || document.Target != new Rz090528TidalOracle.OracleTarget(
+                "RZ09-0528", "1532", "02C6", "2.02")
+            || document.SourceActionId != "fire-select"
+            || document.StartupFadeMilliseconds != 3500
+            || document.CycleMilliseconds != 8550
+            || document.FrameIntervalMilliseconds != 50
+            || document.FrameCount != FrameCount
+            || document.SlotCount != Rz090528MatrixFrame.SlotCount
+            || document.Encoding != "deflate-base64-rgb24"
+            || document.UncompressedBytes !=
+                FrameCount * Rz090528MatrixFrame.SlotCount * 3)
+        {
+            throw new InvalidOperationException("The RZ09-0528 Fire oracle is invalid.");
+        }
+
+        byte[] raw = Rz090528TidalOracle.Inflate(
+            document.Data,
+            document.UncompressedBytes);
+        RgbColor[] result = new RgbColor[raw.Length / 3];
+        for (int index = 0; index < result.Length; index++)
+        {
+            int offset = index * 3;
+            result[index] = new(raw[offset], raw[offset + 1], raw[offset + 2]);
+            int slot = index % Rz090528MatrixFrame.SlotCount;
+            if (Rz090528MatrixFrame.IsHole(slot) != (result[index] == default)
+                || result[index].Blue != 0)
+            {
+                throw new InvalidOperationException(
+                    "An RZ09-0528 Fire oracle slot is invalid.");
+            }
+        }
+        return result;
     }
+
+    private sealed record FireDocument(
+        int SchemaVersion,
+        string EvidenceRole,
+        string SourceEvidenceId,
+        Rz090528TidalOracle.OracleTarget Target,
+        string SourceActionId,
+        int StartupFadeMilliseconds,
+        int CycleMilliseconds,
+        int FrameIntervalMilliseconds,
+        int FrameCount,
+        int SlotCount,
+        int FirstSourceFrame,
+        int LastSourceFrame,
+        string Encoding,
+        int UncompressedBytes,
+        string Data);
 }
 
 internal sealed class Rz090528RippleEffect : IRz090528KeyTriggeredLightingEffect

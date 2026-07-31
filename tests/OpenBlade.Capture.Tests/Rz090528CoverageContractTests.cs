@@ -10,6 +10,8 @@ public sealed class Rz090528CoverageContractTests
         "failures.timeout=Captured",
         "failures.transactionMismatch=QueryValidated",
         "keyboardLighting.effects.ambientAwareness.base=Captured",
+        "keyboardLighting.effects.ambientAwareness.frameCadence=Captured",
+        "keyboardLighting.effects.ambientAwareness.matrixFormat=Captured",
         "keyboardLighting.effects.ambientAwareness.screenRegions=Captured",
         "keyboardLighting.effects.audioMeter.base=Captured",
         "keyboardLighting.effects.audioMeter.colorBoost=Captured",
@@ -95,11 +97,11 @@ public sealed class Rz090528CoverageContractTests
 
         Assert.Equal(61, counts["ProductionAdmitted"]);
         Assert.Equal(8, counts["QueryValidated"]);
-        Assert.Equal(47, counts["Captured"]);
+        Assert.Equal(49, counts["Captured"]);
         Assert.Equal(2, counts["SetterValidated"]);
         Assert.Equal(10, counts["SoftwareOnly"]);
         Assert.Equal(4, counts["Absent"]);
-        Assert.Equal(15, counts["NotInvestigated"]);
+        Assert.Equal(13, counts["NotInvestigated"]);
     }
 
     [Fact]
@@ -111,7 +113,7 @@ public sealed class Rz090528CoverageContractTests
         JsonElement device = root.GetProperty("device");
 
         Assert.Equal("openblade-captures", source.GetProperty("repository").GetString());
-        Assert.Equal("5755a14", source.GetProperty("revision").GetString());
+        Assert.Equal("57d1e69", source.GetProperty("revision").GetString());
         Assert.Equal("RZ09-0528", device.GetProperty("modelNumber").GetString());
         Assert.Equal("1532", device.GetProperty("vendorIdHex").GetString());
         Assert.Equal("02C6", device.GetProperty("productIdHex").GetString());

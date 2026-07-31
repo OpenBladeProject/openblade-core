@@ -90,7 +90,7 @@ public sealed record RippleLightingParameters(RgbColor Color)
 public sealed record AmbientAwarenessLightingParameters(AmbientAwarenessRegion Region)
     : LightingEffectParameters;
 
-public sealed record AudioMeterLightingParameters(byte ColorBoost)
+public sealed record AudioMeterLightingParameters(double ColorBoost)
     : LightingEffectParameters;
 
 public sealed record FireLightingParameters : LightingEffectParameters;
@@ -274,7 +274,7 @@ public static class LightingSettingsFactory
         };
 
     public static LightingSettings AudioMeter(
-        byte colorBoost,
+        double colorBoost,
         byte brightness) => new(
             LightingEffect.AudioMeter,
             default,
@@ -459,7 +459,9 @@ public static class LightingSettingsValidation
             (LightingEffect.AmbientAwareness, AmbientAwarenessLightingParameters parameters) =>
                 Enum.IsDefined(parameters.Region) && settings.Color == default,
             (LightingEffect.AudioMeter, AudioMeterLightingParameters parameters) =>
-                parameters.ColorBoost is >= 1 and <= 10
+                double.IsFinite(parameters.ColorBoost)
+                && parameters.ColorBoost is >= 1 and <= 4
+                && parameters.ColorBoost * 4 == Math.Truncate(parameters.ColorBoost * 4)
                 && settings.Color == default,
             (LightingEffect.Fire, FireLightingParameters) =>
                 settings.Color == default,

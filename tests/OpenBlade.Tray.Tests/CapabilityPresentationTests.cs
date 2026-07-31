@@ -1790,9 +1790,9 @@ public sealed class CapabilityPresentationTests
         Assert.False(viewModel.LightingShowsPrimaryColor);
 
         viewModel.LightingEffectEditor = LightingEffect.AudioMeter;
-        viewModel.LightingAudioMeterColorBoostEditor = 4;
+        viewModel.LightingAudioMeterColorBoostEditor = 1.25;
         Assert.Equal(
-            LightingSettingsFactory.AudioMeter(colorBoost: 4, brightness: 64),
+            LightingSettingsFactory.AudioMeter(colorBoost: 1.25, brightness: 64),
             viewModel.LightingDraft);
         Assert.True(viewModel.LightingShowsAudioMeterColorBoost);
         Assert.Equal("Audio Meter", viewModel.SelectedLightingEffectOption?.Label);

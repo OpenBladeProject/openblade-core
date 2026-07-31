@@ -1248,13 +1248,13 @@
                                                        Text="{x:Bind LightingAudioMeterColorBoostEditor, Mode=OneWay}"
                                                        Style="{StaticResource CardTitleStyle}" />
                                             <Slider Minimum="1"
-                                                    Maximum="10"
-                                                    StepFrequency="1"
-                                                    SmallChange="1"
+                                                    Maximum="4"
+                                                    StepFrequency="0.25"
+                                                    SmallChange="0.25"
                                                     LargeChange="1"
                                                     IsThumbToolTipEnabled="True"
                                                     AutomationProperties.Name="Audio Meter color boost"
-                                                    Value="{Binding LightingAudioMeterColorBoostEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                                                    Value="{x:Bind LightingAudioMeterColorBoostEditor, Mode=TwoWay}" />
                                         </StackPanel>
                                     </Grid>
                                 </Border>

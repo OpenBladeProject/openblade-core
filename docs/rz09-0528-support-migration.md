@@ -2179,3 +2179,60 @@ The Computer Use inventory is UI evidence, not a transport oracle or matrix
 readback. Before final production admission, capture the five newly discovered
 effects on USBPcap address 3, sanitize any reusable templates, validate
 OpenBlade's installed lifecycle, and restore Static green at 50 percent.
+
+## Decode the upper-effect oracle before installed validation
+
+Capture revision `c5fa12d` completes the missing transport oracle. Its private
+session verified transient address 3 immediately before capture, targeted only
+`\\.\USBPcap2`, stopped through the sentinel, and completed gracefully rather
+than timing out. Windows PowerShell 5.1 decoded 17,067 transactions. The
+analyzer reconstructed 2,425 complete frames from 14,550 `03/0B` rows and
+2,452 `03/0A 0500` latches, with zero checksum failures and no incomplete tail.
+Static green, keyboard brightness 50 percent, and Static logo were visibly
+restored afterward. Raw PCAPs and their hashes remain ignored/private.
+
+The five Ambient Awareness regions all use the same exact 102-slot, 86-active
+SET-only matrix stream. Their median frame intervals were about 42.6-45.8 ms.
+Coverage revision `57d1e69` therefore advances only Ambient Awareness
+`matrixFormat` and `frameCadence` to `Captured`; it does not claim a matrix GET
+or production lifecycle.
+
+Audio Meter's visible Color Boost control is exactly 1 through 4, inclusive,
+in 0.25 steps; the default is 1. The shared contract uses a finite
+quarter-step `double`, not a byte and not the earlier guessed 1-10 range.
+The signed-in Session Agent still samples the default playback endpoint while
+the service remains the sole HID writer. A quiet interval may produce no
+matrix frames, so UI confirmation of a Color Boost change is parameter
+evidence, not firmware readback.
+
+Breathing is uniform across every active slot. The captured seven-second
+shape is approximately two seconds rising, 1.5 seconds full, two seconds
+falling, and 1.5 seconds off. The renderer now starts at the beginning of the
+rise when selected instead of inserting an initial dark quarter-cycle. Dual
+mode alternates colors between cycles, and random mode selects captured-palette
+colors; Synapse exposes no duration control on this model.
+
+Fire was not safely representable by the initial generic red/yellow noise
+function: the captured spatial profile is bottom-hot, while that implementation
+was vertically inverted. The sanitized 171-frame steady-state oracle has
+50-ms phases, an 8.55-second loop, a 3.5-second startup fade, and SHA-256
+`874C99039C8204950D233EA7ECE6560985CDC6325D576F82D9F12FA841B25128`.
+It contains no PCAP hash or unique identifier. Core embeds this exact-target
+fixture and rejects a changed hash, target, slot mask, timing, or unexpected
+blue channel.
+
+The Reactive Short window is a negative control only: no operator-confirmed
+physical key was pressed, and Synapse emitted 41 black keepalives at roughly
+five-second spacing. Do not infer a key map from it. Reactive and Ripple must
+not become functional on PID `02C6` by reusing the RZ09-0581 map. Obtain an
+operator-correlated physical normal-key pulse or derive and validate an
+independent exact-model map before enabling the installed input path.
+
+The private evidence hashes are recorded beside the ignored capture. The
+sanitized annotation is
+`annotations/2026-07-30-rz09-0528-full-menu-upper-effects-oracle.json` in
+`openblade-captures`; it intentionally omits those hashes. This split is the
+template for future agents: retain raw hashes privately, commit only
+non-identifying protocol facts and reusable fixtures, and never silently drop
+a newly discovered model-specific feature because one remaining admission gate
+is unresolved.

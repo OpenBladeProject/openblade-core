@@ -93,10 +93,10 @@ type sealed class OpenBlade.Contracts.ApplyOneShotLaptopControlRequest
 type sealed class OpenBlade.Contracts.AudioMeterLightingParameters
   base OpenBlade.Contracts.LightingEffectParameters
   interface System.IEquatable<OpenBlade.Contracts.AudioMeterLightingParameters>
-  ctor (System.Byte ColorBoost)
-  method System.Byte get_ColorBoost()
-  method System.Void Deconstruct(out System.Byte ColorBoost)
-  method System.Void set_ColorBoost(System.Byte value)
+  ctor (System.Double ColorBoost)
+  method System.Double get_ColorBoost()
+  method System.Void Deconstruct(out System.Double ColorBoost)
+  method System.Void set_ColorBoost(System.Double value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
@@ -105,7 +105,7 @@ type sealed class OpenBlade.Contracts.AudioMeterLightingParameters
   method static System.Boolean op_Inequality(OpenBlade.Contracts.AudioMeterLightingParameters left, OpenBlade.Contracts.AudioMeterLightingParameters right)
   method virtual OpenBlade.Contracts.AudioMeterLightingParameters <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.AudioMeterLightingParameters other)
-  property System.Byte ColorBoost { get; init; }
+  property System.Double ColorBoost { get; init; }
 type sealed class OpenBlade.Contracts.BatteryHealthStatus
   interface System.IEquatable<OpenBlade.Contracts.BatteryHealthStatus>
   ctor (System.Int32 DesignCapacityMilliwattHours, System.Int32 FullChargeCapacityMilliwattHours)
@@ -949,7 +949,7 @@ type sealed class OpenBlade.Contracts.LightingSettings
 type static class OpenBlade.Contracts.LightingSettingsFactory
   field const System.Byte DefaultVisibleBrightness = 100
   method static OpenBlade.Contracts.LightingSettings AmbientAwareness(OpenBlade.Contracts.AmbientAwarenessRegion region, System.Byte brightness)
-  method static OpenBlade.Contracts.LightingSettings AudioMeter(System.Byte colorBoost, System.Byte brightness)
+  method static OpenBlade.Contracts.LightingSettings AudioMeter(System.Double colorBoost, System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings BreathingDual(OpenBlade.Contracts.RgbColor primaryColor, OpenBlade.Contracts.RgbColor secondaryColor, System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings BreathingRandom(System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings BreathingSingle(OpenBlade.Contracts.RgbColor color, System.Byte brightness)

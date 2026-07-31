@@ -27,7 +27,7 @@ public sealed class ServiceAudioMeterLightingLoopTests
         AmbientLightingFrame normal =
             WindowsAudioMeterLightingSampler.RenderFrame(0.1f, colorBoost: 1);
         AmbientLightingFrame boosted =
-            WindowsAudioMeterLightingSampler.RenderFrame(0.1f, colorBoost: 5);
+            WindowsAudioMeterLightingSampler.RenderFrame(0.1f, colorBoost: 1.25);
 
         Assert.True(
             boosted.Slots.Count(color => color != default)
@@ -38,8 +38,9 @@ public sealed class ServiceAudioMeterLightingLoopTests
     [InlineData(-0.1f, 1)]
     [InlineData(1.1f, 1)]
     [InlineData(0.5f, 0)]
-    [InlineData(0.5f, 11)]
-    public void RenderFrame_RejectsInvalidInputs(float peak, byte boost)
+    [InlineData(0.5f, 4.25)]
+    [InlineData(0.5f, 1.1)]
+    public void RenderFrame_RejectsInvalidInputs(float peak, double boost)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             WindowsAudioMeterLightingSampler.RenderFrame(peak, boost));

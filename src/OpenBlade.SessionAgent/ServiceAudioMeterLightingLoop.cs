@@ -6,7 +6,7 @@ namespace OpenBlade.SessionAgent;
 
 public interface IAudioMeterLightingSampler : IDisposable
 {
-    AmbientLightingFrame Capture(byte colorBoost);
+    AmbientLightingFrame Capture(double colorBoost);
 }
 
 public interface IAudioMeterLightingSamplerFactory
@@ -59,10 +59,12 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
         meter = (IAudioMeterInformation)activated;
     }
 
-    public AmbientLightingFrame Capture(byte colorBoost)
+    public AmbientLightingFrame Capture(double colorBoost)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-        if (colorBoost is < 1 or > 10)
+        if (!double.IsFinite(colorBoost)
+            || colorBoost is < 1 or > 4
+            || colorBoost * 4 != Math.Truncate(colorBoost * 4))
         {
             throw new ArgumentOutOfRangeException(nameof(colorBoost));
         }
@@ -71,13 +73,15 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
         return RenderFrame(peak, colorBoost);
     }
 
-    internal static AmbientLightingFrame RenderFrame(float peak, byte colorBoost)
+    internal static AmbientLightingFrame RenderFrame(float peak, double colorBoost)
     {
         if (float.IsNaN(peak) || peak is < 0 or > 1)
         {
             throw new ArgumentOutOfRangeException(nameof(peak));
         }
-        if (colorBoost is < 1 or > 10)
+        if (!double.IsFinite(colorBoost)
+            || colorBoost is < 1 or > 4
+            || colorBoost * 4 != Math.Truncate(colorBoost * 4))
         {
             throw new ArgumentOutOfRangeException(nameof(colorBoost));
         }
@@ -179,7 +183,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private CancellationTokenSource? rendererCancellation;
     private Task? rendererTask;
-    private byte? activeBoost;
+    private double? activeBoost;
     private int disposed;
 
     public ServiceAudioMeterLightingLoop(
@@ -207,7 +211,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                 .WithCancellation(cancellationToken)
                 .ConfigureAwait(false))
             {
-                byte? boost = update switch
+                double? boost = update switch
                 {
                     ServiceWatchUpdate.Connected connected
                         when connected.Status.LightingRendererOwnership ==
@@ -234,7 +238,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
         }
     }
 
-    private async Task SetBoostAsync(byte? boost, CancellationToken cancellationToken)
+    private async Task SetBoostAsync(double? boost, CancellationToken cancellationToken)
     {
         if (activeBoost == boost
             && (boost is null || rendererTask is { IsCompleted: false }))
@@ -270,7 +274,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
         activeBoost = boost;
     }
 
-    private async Task RenderAsync(byte boost, CancellationToken cancellationToken)
+    private async Task RenderAsync(double boost, CancellationToken cancellationToken)
     {
         using IAudioMeterLightingSampler sampler = samplerFactory.Create();
         while (true)

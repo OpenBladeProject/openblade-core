@@ -156,6 +156,32 @@ public sealed class Rz090528SynapseEffectsTests
     }
 
     [Fact]
+    public void Breathing_UsesCapturedTwoSecondRiseAndSevenSecondCycle()
+    {
+        var effect = new Rz090528BreathingEffect(
+            BreathingColorMode.Dual,
+            new RgbColor(0, 255, 0),
+            new RgbColor(128, 0, 255));
+
+        Assert.Equal(default, effect.RenderFrame(TimeSpan.Zero)[53]);
+        Assert.Equal(
+            new RgbColor(0, 128, 0),
+            effect.RenderFrame(TimeSpan.FromSeconds(1))[53]);
+        Assert.Equal(
+            new RgbColor(0, 255, 0),
+            effect.RenderFrame(TimeSpan.FromSeconds(2))[53]);
+        Assert.Equal(
+            new RgbColor(0, 128, 0),
+            effect.RenderFrame(TimeSpan.FromSeconds(4.5))[53]);
+        Assert.Equal(
+            default,
+            effect.RenderFrame(TimeSpan.FromSeconds(5.5))[53]);
+        Assert.Equal(
+            new RgbColor(128, 0, 255),
+            effect.RenderFrame(TimeSpan.FromSeconds(9))[53]);
+    }
+
+    [Fact]
     public void Reactive_PulsesAndFadesAnExactSlot()
     {
         var effect = new Rz090528ReactiveEffect(
@@ -191,28 +217,44 @@ public sealed class Rz090528SynapseEffectsTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new Rz090528AudioMeterEffect(0));
-        var effect = new Rz090528AudioMeterEffect(3);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new Rz090528AudioMeterEffect(1.1));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new Rz090528AudioMeterEffect(4.25));
+        var effect = new Rz090528AudioMeterEffect(1.25);
         RgbColor[] slots = new RgbColor[AmbientLightingFrame.SlotCount];
         slots[53] = new RgbColor(255, 128, 0);
         effect.Update(new AmbientLightingFrame(slots));
 
-        Assert.Equal(3, effect.ColorBoost);
+        Assert.Equal(1.25, effect.ColorBoost);
         Assert.Equal(new RgbColor(255, 128, 0), effect.RenderFrame(TimeSpan.Zero)[53]);
     }
 
     [Fact]
-    public void Fire_IsDeterministicPerFrameAndPreservesHoles()
+    public void Fire_UsesCapturedBottomHotOracleAndPreservesHoles()
     {
         var effect = new Rz090528FireEffect();
-        TimeSpan at = TimeSpan.FromMilliseconds(450);
+        TimeSpan at = TimeSpan.FromSeconds(4);
         Rz090528MatrixFrame first = effect.RenderFrame(at);
         Rz090528MatrixFrame repeated = effect.RenderFrame(at);
+        Rz090528MatrixFrame cycled = effect.RenderFrame(
+            at + Rz090528FireOracle.CycleDuration);
 
         Assert.Equal(FrameBytes(first), FrameBytes(repeated));
+        Assert.Equal(FrameBytes(first), FrameBytes(cycled));
         AssertHolesBlack(first);
-        Assert.Contains(
-            Enumerable.Range(0, Rz090528MatrixFrame.SlotCount),
-            slot => first[slot] != default);
+        Assert.All(
+            Enumerable.Range(0, Rz090528MatrixFrame.SlotCount)
+                .Where(slot => !Rz090528MatrixFrame.IsHole(slot)),
+            slot =>
+            {
+                Assert.NotEqual(default, first[slot]);
+                Assert.Equal(0, first[slot].Blue);
+            });
+        Assert.True(RowAverageRed(first, 5) > RowAverageRed(first, 0));
+        Assert.Equal(
+            default,
+            effect.RenderFrame(TimeSpan.Zero)[53]);
     }
 
     private static byte[] FrameBytes(Rz090528MatrixFrame frame)
@@ -234,5 +276,13 @@ public sealed class Rz090528SynapseEffectsTests
         {
             Assert.Equal(default, frame[slot]);
         }
+    }
+
+    private static double RowAverageRed(Rz090528MatrixFrame frame, int row)
+    {
+        int start = row * Rz090528MatrixFrame.ColumnCount;
+        return Enumerable.Range(start, Rz090528MatrixFrame.ColumnCount)
+            .Where(slot => !Rz090528MatrixFrame.IsHole(slot))
+            .Average(slot => frame[slot].Red);
     }
 }

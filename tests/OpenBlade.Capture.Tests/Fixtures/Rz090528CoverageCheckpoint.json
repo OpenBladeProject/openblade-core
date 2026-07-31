@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "source": {
     "repository": "openblade-captures",
-    "revision": "5755a14",
+    "revision": "57d1e69",
     "path": "decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json"
   },
   "device": {
@@ -88,8 +88,8 @@
         "ambientAwareness": {
           "base": "Captured",
           "screenRegions": "Captured",
-          "matrixFormat": "NotInvestigated",
-          "frameCadence": "NotInvestigated"
+          "matrixFormat": "Captured",
+          "frameCadence": "Captured"
         },
         "audioMeter": {
           "base": "Captured",

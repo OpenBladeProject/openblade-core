@@ -35,6 +35,9 @@
     <EmbeddedResource
       Include="Fixtures\Rz09_0528_02c6_2_02_WaveWheelOracle.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_WaveWheelOracle.json" />
+    <EmbeddedResource
+      Include="Fixtures\Rz09_0528_02c6_2_02_FireOracle.json"
+      LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_FireOracle.json" />
   </ItemGroup>
 
 </Project>
