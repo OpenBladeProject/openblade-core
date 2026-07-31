@@ -42,6 +42,7 @@ internal static class ServiceComposition
             CreateProductionLightingFactory());
         services.AddSingleton(provider =>
             CreateProfileSetValidator(
+                provider.GetRequiredService<IProductionBatteryPortFactory>(),
                 provider.GetRequiredService<IProductionLightingPortFactory>()));
         services.AddSingleton<IFanRpmQueryRunFactory>(_ =>
             BatteryValidationFactory.CreateWindowsFanRpmForService());
@@ -109,10 +110,13 @@ internal static class ServiceComposition
     }
 
     internal static ProfileSetValidator CreateProfileSetValidator(
+        IProductionBatteryPortFactory batteryFactory,
         IProductionLightingPortFactory lightingFactory)
     {
+        ArgumentNullException.ThrowIfNull(batteryFactory);
         ArgumentNullException.ThrowIfNull(lightingFactory);
-        return ProfileSetValidator.CreateForLightingCapabilities(
+        return ProfileSetValidator.CreateForDeviceCapabilities(
+            batteryFactory.Capabilities,
             lightingFactory.Capabilities);
     }
 }

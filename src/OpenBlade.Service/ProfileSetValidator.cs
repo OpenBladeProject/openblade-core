@@ -11,14 +11,20 @@ public sealed class ProfileValidationPolicy
     public ProfileValidationPolicy(
         IReadOnlySet<PerformanceFanCombination> supportedPerformanceFanCombinations,
         IReadOnlySet<LightingEffect> supportedLightingEffects,
-        CustomPerformanceCapabilities? customPerformance = null)
+        CustomPerformanceCapabilities? customPerformance = null,
+        FanSpeedRange? fanSpeedRange = null)
     {
         ArgumentNullException.ThrowIfNull(supportedPerformanceFanCombinations);
         ArgumentNullException.ThrowIfNull(supportedLightingEffects);
         SupportedPerformanceFanCombinations =
             new HashSet<PerformanceFanCombination>(supportedPerformanceFanCombinations);
         SupportedLightingEffects = new HashSet<LightingEffect>(supportedLightingEffects);
-        CustomPerformance = customPerformance;
+        CustomPerformance = customPerformance is null
+            ? null
+            : new CustomPerformanceCapabilities(
+                new HashSet<CustomPerformanceCombination>(
+                    customPerformance.AllowedCombinations));
+        FanSpeedRange = fanSpeedRange;
     }
 
     public IReadOnlySet<PerformanceFanCombination> SupportedPerformanceFanCombinations { get; }
@@ -26,6 +32,8 @@ public sealed class ProfileValidationPolicy
     public IReadOnlySet<LightingEffect> SupportedLightingEffects { get; }
 
     public CustomPerformanceCapabilities? CustomPerformance { get; }
+
+    public FanSpeedRange? FanSpeedRange { get; }
 
     public static ProfileValidationPolicy CreateUnverifiedSafeDefaults() => new(
         new HashSet<PerformanceFanCombination>
@@ -42,21 +50,24 @@ public sealed class ProfileValidationPolicy
         },
         new HashSet<LightingEffect> { LightingEffect.Off });
 
-    public static ProfileValidationPolicy CreateForLightingCapabilities(
-        DeviceCapabilities capabilities)
+    public static ProfileValidationPolicy CreateForDeviceCapabilities(
+        DeviceCapabilities batteryCapabilities,
+        DeviceCapabilities lightingCapabilities)
     {
-        ArgumentNullException.ThrowIfNull(capabilities);
+        ArgumentNullException.ThrowIfNull(batteryCapabilities);
+        ArgumentNullException.ThrowIfNull(lightingCapabilities);
         ProfileValidationPolicy safeDefaults = CreateUnverifiedSafeDefaults();
         var supportedLightingEffects = new HashSet<LightingEffect>
         {
             LightingEffect.Off,
         };
         supportedLightingEffects.UnionWith(
-            capabilities.LightingEffects.Where(Enum.IsDefined));
+            lightingCapabilities.LightingEffects.Where(Enum.IsDefined));
         return new ProfileValidationPolicy(
             safeDefaults.SupportedPerformanceFanCombinations,
             supportedLightingEffects,
-            capabilities.CustomPerformance);
+            batteryCapabilities.CustomPerformance,
+            batteryCapabilities.FanSpeedRange);
     }
 }
 
@@ -69,9 +80,20 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
     public static ProfileSetValidator CreateUnverifiedSafeDefaults() =>
         new(ProfileValidationPolicy.CreateUnverifiedSafeDefaults());
 
+    public static ProfileSetValidator CreateForDeviceCapabilities(
+        DeviceCapabilities capabilities) =>
+        CreateForDeviceCapabilities(capabilities, capabilities);
+
     public static ProfileSetValidator CreateForLightingCapabilities(
         DeviceCapabilities capabilities) =>
-        new(ProfileValidationPolicy.CreateForLightingCapabilities(capabilities));
+        CreateForDeviceCapabilities(capabilities);
+
+    public static ProfileSetValidator CreateForDeviceCapabilities(
+        DeviceCapabilities batteryCapabilities,
+        DeviceCapabilities lightingCapabilities) =>
+        new(ProfileValidationPolicy.CreateForDeviceCapabilities(
+            batteryCapabilities,
+            lightingCapabilities));
 
     public void Validate(ProfileSet profiles)
     {
@@ -208,7 +230,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
     }
 
-    private static void ValidateFanControl(PowerProfile profile, string name)
+    private void ValidateFanControl(PowerProfile profile, string name)
     {
         FanControlSettings settings = profile.FanControl
             ?? FanControlSettings.FromLegacy(profile.Fans);
@@ -218,6 +240,25 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
                 && settings.FixedSpeedRpm == FanControlSettings.MaximumSpeedRpm))
         {
             throw Invalid($"The {name} fan settings do not match the selected fan mode.");
+        }
+
+        if (validationPolicy.FanSpeedRange is not { } range)
+        {
+            return;
+        }
+
+        bool supported = settings.Mode switch
+        {
+            FanMode.Fixed => range.Supports(settings.FixedSpeedRpm),
+            FanMode.ManualCurve => settings.ManualCurve.Cpu
+                    .Concat(settings.ManualCurve.Gpu)
+                    .All(point => range.Supports(point.SpeedRpm)),
+            _ => true,
+        };
+        if (!supported)
+        {
+            throw Invalid(
+                $"The {name} fan settings contain a speed outside the device range.");
         }
     }
 

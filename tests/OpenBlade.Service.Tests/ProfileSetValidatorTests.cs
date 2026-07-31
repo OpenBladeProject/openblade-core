@@ -293,6 +293,54 @@ public sealed class ProfileSetValidatorTests
     }
 
     [Fact]
+    public void Validate_RejectsFixedFanSpeedAboveDeviceRange()
+    {
+        ProfileSet profiles = WithPluggedInFixedFanSpeed(5400);
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            CreateValidator(
+                fanSpeedRange: new FanSpeedRange(2000, 5000, 100))
+                .Validate(profiles));
+
+        Assert.Contains("outside the device range", exception.Message);
+    }
+
+    [Fact]
+    public void Validate_AcceptsFixedFanSpeedAtDeviceMaximum()
+    {
+        ProfileSet profiles = WithPluggedInFixedFanSpeed(5000);
+
+        CreateValidator(
+            fanSpeedRange: new FanSpeedRange(2000, 5000, 100))
+            .Validate(profiles);
+    }
+
+    [Fact]
+    public void Validate_RejectsCustomPerformanceCombinationOutsideDevicePolicy()
+    {
+        ProfileSet profiles = WithPluggedInCustomPerformance(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium);
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            CreateValidator(customPerformance: Rz090528CustomPerformance())
+                .Validate(profiles));
+
+        Assert.Contains("not supported by this device", exception.Message);
+    }
+
+    [Fact]
+    public void Validate_AcceptsCustomPerformanceCombinationInDevicePolicy()
+    {
+        ProfileSet profiles = WithPluggedInCustomPerformance(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Low);
+
+        CreateValidator(customPerformance: Rz090528CustomPerformance())
+            .Validate(profiles);
+    }
+
+    [Fact]
     public void ValidatePreferences_RejectsMissingPreferences()
     {
         Assert.Throws<ArgumentNullException>(() =>
@@ -308,15 +356,64 @@ public sealed class ProfileSetValidatorTests
             },
         };
 
+    private static ProfileSet WithPluggedInFixedFanSpeed(int speedRpm)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        return defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Fans = FanMode.Fixed,
+                FanControl = new FanControlSettings(
+                    FanMode.Fixed,
+                    speedRpm,
+                    ManualFanCurve.Default),
+            },
+        };
+    }
+
+    private static ProfileSet WithPluggedInCustomPerformance(
+        CustomPerformanceLevel cpu,
+        CustomPerformanceLevel gpu)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        return defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = new CustomPerformanceSettings(cpu, gpu),
+            },
+        };
+    }
+
+    private static CustomPerformanceCapabilities Rz090528CustomPerformance() => new(
+        new HashSet<CustomPerformanceCombination>
+        {
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium),
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.High),
+            new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low),
+            new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Medium),
+            new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High),
+            new(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
+        });
+
     private static ProfileSetValidator CreateValidator(
         IReadOnlySet<PerformanceFanCombination>? combinations = null,
-        IReadOnlySet<LightingEffect>? lightingEffects = null) => new(new ProfileValidationPolicy(
+        IReadOnlySet<LightingEffect>? lightingEffects = null,
+        CustomPerformanceCapabilities? customPerformance = null,
+        FanSpeedRange? fanSpeedRange = null) => new(new ProfileValidationPolicy(
             combinations ?? new HashSet<PerformanceFanCombination>
             {
                 new(PerformancePreset.Balanced, FanMode.Automatic),
+                new(PerformancePreset.Balanced, FanMode.Fixed),
+                new(PerformancePreset.Custom, FanMode.Automatic),
                 new(PerformancePreset.Silent, FanMode.Automatic),
                 new(PerformancePreset.BatterySaver, FanMode.Automatic),
                 new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
             },
-            lightingEffects ?? new HashSet<LightingEffect> { LightingEffect.Off }));
+            lightingEffects ?? new HashSet<LightingEffect> { LightingEffect.Off },
+            customPerformance,
+            fanSpeedRange));
 }
