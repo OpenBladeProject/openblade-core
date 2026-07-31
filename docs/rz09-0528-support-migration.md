@@ -1793,6 +1793,63 @@ executables stayed unchanged, and leaves all long-lived launches to the
 unelevated parent. Run it only while an operator can see and approve UAC, then
 require its success report before inspecting the restarted app.
 
+### Successful tray-only installed validation
+
+After the operator returned, the same guarded wrapper completed successfully.
+Its report identifies source revision `ff7debc` and product version
+`0.1.0+ff7debccc146ca8c10e94d1b6b7ef7093a9c1ca7`. It deployed only the six
+reviewed tray payload files, left the installed service and Session Agent at
+`0.1.0+1309a6ece77e2e20ea7dd64ee68eb35424d05cb1`, and confirmed their
+pre-deployment SHA-256 values remained:
+
+- `OpenBlade.Service.exe`:
+  `33B3F6BA11722414199A87B80BDAEB2A485C8A006957417E96F1FC3FF0469D70`;
+- `OpenBlade.SessionAgent.exe`:
+  `CAC07DDEA9B562800EECF15629BA3BCC7851EEDAE9615B983015B1DB2E10AA6F`.
+
+The elevated child launched no long-lived process. The unelevated parent
+restarted exactly one Session Agent and one tray. The private deployment-report
+SHA-256 is
+`1D0F653CE1851C3E7E488A0B23E577BB96746E5B613CA8D7E3BABCBBF47EE17C`.
+
+Computer Use discarded every pre-restart handle, selected the one newly
+returned OpenBlade window, and inspected the installed build without changing
+a setting. At 828 by 714:
+
+- the model-specific CPU power, CPU voltage optimizer, and GPU-overclock cards
+  fit horizontally and use the concise AMD-driver boundary text;
+- the lower Laptop page shows M1/M2 disabled with their per-row captured-only
+  reason, M3-M5 available, and no M1-M5 footer;
+- the Lighting page contains one compact WDL keyboard row and an enabled
+  Static lid-logo picker whose visible and accessibility text states that it
+  is independent of Windows Dynamic Lighting.
+
+A new read-only schema-6 baseline under the ignored
+`artifacts/validation/20260730-installed-ff7debc-baseline` directory produced
+the same honest environmental assessment as the pre-install baseline: 32
+passes, one optional sleeping-GPU warning, and two failures for
+`RazerAppEngine` plus an externally changed Performance mode. It verified the
+exact RZ09-0528, BIOS 2.02, EC 1.09, MCU 1.9.0.0, one service, one Session
+Agent, one tray, full AC, Performance/Automatic, charge limit 80, temporary
+full charge off, startup animation on, Function Keys primary, Gaming mode off,
+Driver mode, Static lid logo, observed-only LampArray access, and exactly
+M3/M4/M5 writable. Its artifact hashes are:
+
+- `baseline.json`:
+  `589BF889DB5A7391D3CA8D628557B8A51EEE24E3549D6A73B6EB95BEAFA3136E`;
+- `baseline-report.json`:
+  `61B31F94A6EFC2C887DE5EE5BF35A79BA9DD27F14132500AC258D0E77BBF01A6`;
+- `diagnostics.zip`:
+  `DE95005869EB0347372E08DD1254ACF48EC26057E6931DA66BC57FF093A68D79`.
+
+The exact read-only brightness query returned raw 129, decoded as 51 percent,
+with no open, protocol, or validation failure. This is the current near-50
+percent brightness requested by the operator; it does not prove the keyboard
+effect. The subsequent read-only production-admission probe returned
+`ReadyWithAccessFallback`, all capability gates and readbacks passed, the
+adapter was `FullPower280W`, and `Success=True`. No setter ran during either
+check.
+
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
