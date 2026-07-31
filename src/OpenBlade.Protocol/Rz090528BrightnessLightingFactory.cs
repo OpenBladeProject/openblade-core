@@ -14,14 +14,18 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
 
     private readonly Func<ValidationRunContext> createContext;
     private readonly IValidationActorFactory actorFactory;
+    private readonly bool matrixEffectsAdmitted;
 
     internal Rz090528BrightnessLightingFactory(
         Func<ValidationRunContext> createContext,
-        IValidationActorFactory actorFactory)
+        IValidationActorFactory actorFactory,
+        bool matrixEffectsAdmitted = false)
     {
         this.createContext = createContext;
         this.actorFactory = actorFactory;
-        Capabilities = Rz090528BrightnessLightingPort.CreateCapabilities();
+        this.matrixEffectsAdmitted = matrixEffectsAdmitted;
+        Capabilities = Rz090528BrightnessLightingPort.CreateCapabilities(
+            matrixEffectsAdmitted);
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -74,7 +78,10 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
         }
 
         return new(
-            new Rz090528BrightnessLightingPort(actor, ExchangeTimeout),
+            new Rz090528BrightnessLightingPort(
+                actor,
+                ExchangeTimeout,
+                matrixEffectsAdmitted),
             null);
     }
 }
@@ -87,53 +94,88 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     private readonly IRazerCommandSession session;
     private readonly TimeSpan exchangeTimeout;
     private readonly SemaphoreSlim operationGate = new(1, 1);
+    private readonly SemaphoreSlim featureIoGate = new(1, 1);
+    private readonly object effectSync = new();
+    private IRz090528LightingEffect? activeEffect;
+    private LightingSettings? lastDeliveredState;
+    private CancellationTokenSource? streamCancellation;
+    private Task? streamTask;
+    private long effectStartedTimestamp;
+    private LightingRendererOwnershipState ownershipState;
     private int nextTransaction = 1;
     private bool ownsDriverMode;
     private int disposed;
 
     internal Rz090528BrightnessLightingPort(
         ValidationActor actor,
-        TimeSpan exchangeTimeout)
+        TimeSpan exchangeTimeout,
+        bool matrixEffectsAdmitted = false)
     {
         this.actor = actor;
         session = actor.Session;
         this.exchangeTimeout = exchangeTimeout;
-        Capabilities = CreateCapabilities();
+        Capabilities = CreateCapabilities(matrixEffectsAdmitted);
     }
 
     public DeviceCapabilities Capabilities { get; }
 
-    public LightingRendererOwnershipState OwnershipState =>
-        LightingRendererOwnershipState.None;
+    public LightingRendererOwnershipState OwnershipState
+    {
+        get
+        {
+            lock (effectSync)
+            {
+                return ownershipState;
+            }
+        }
+    }
 
-    internal static DeviceCapabilities CreateCapabilities() => new(
+    internal static DeviceCapabilities CreateCapabilities(
+        bool matrixEffectsAdmitted = false) => new(
         new HashSet<PerformancePreset>(),
         new HashSet<FanMode>(),
-        new HashSet<LightingEffect> { LightingEffect.Off },
+        matrixEffectsAdmitted
+            ? new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Spectrum,
+                LightingEffect.Static,
+            }
+            : new HashSet<LightingEffect> { LightingEffect.Off },
         new HashSet<int>(),
         SupportsBatteryProtectionOff: false,
         SupportsTemporaryFullCharge: false)
-    {
-        SupportsKeyboardBrightness = true,
-        SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
-        WritableSpecialKeySlots =
+        {
+            SupportsKeyboardBrightness = true,
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+            WritableSpecialKeySlots =
             SpecialKeySlotSet.M3
             | SpecialKeySlotSet.M4
             | SpecialKeySlotSet.M5,
-        LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
-        ObservedLightingEffects = new HashSet<LightingEffect>
-        {
-            LightingEffect.Spectrum,
-            LightingEffect.Static,
-            LightingEffect.Starlight,
-            LightingEffect.Ripple,
-            LightingEffect.Tidal,
-            LightingEffect.Wave,
-            LightingEffect.Wheel,
-        },
-        LogoLightingModes = new HashSet<LogoLightingMode>(
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+            ObservedLightingEffects = new HashSet<LightingEffect>(
+            matrixEffectsAdmitted
+                ?
+                [
+                    LightingEffect.Starlight,
+                    LightingEffect.Ripple,
+                    LightingEffect.Tidal,
+                    LightingEffect.Wave,
+                    LightingEffect.Wheel,
+                ]
+                :
+                [
+                    LightingEffect.Spectrum,
+                    LightingEffect.Static,
+                    LightingEffect.Starlight,
+                    LightingEffect.Ripple,
+                    LightingEffect.Tidal,
+                    LightingEffect.Wave,
+                    LightingEffect.Wheel,
+                ]),
+            LogoLightingModes = new HashSet<LogoLightingMode>(
             Enum.GetValues<LogoLightingMode>()),
-    };
+        };
 
     public async Task EnsureDriverModeAsync(CancellationToken cancellationToken) =>
         _ = await MaintainDriverModeAsync(cancellationToken).ConfigureAwait(false);
@@ -238,7 +280,14 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         try
         {
             byte raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
-            return raw == 0 ? LightingSettingsFactory.Off() : null;
+            if (raw != 0)
+            {
+                return null;
+            }
+
+            await StopStreamCoreAsync().ConfigureAwait(false);
+            ClearOwnedEffectCore(LightingSettingsFactory.Off());
+            return LightingSettingsFactory.Off();
         }
         finally
         {
@@ -291,12 +340,12 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         ArgumentNullException.ThrowIfNull(settings);
         settings = LightingSettingsFactory.NormalizeLegacyOff(settings);
         if (!LightingSettingsValidation.IsWellFormed(settings)
-            || settings.Effect != LightingEffect.Off
+            || !Capabilities.LightingEffects.Contains(settings.Effect)
             || settings.LogoMode is { } logoMode
                 && !Capabilities.LogoLightingModes.Contains(logoMode))
         {
             throw new CapabilityUnavailableException(
-                "PID 02C6 admits keyboard Off and exact logo modes only.");
+                "The requested PID 02C6 lighting setting is not admitted.");
         }
 
         await EnterAsync(cancellationToken).ConfigureAwait(false);
@@ -307,17 +356,86 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             LogoLightingMode? baselineLogo = settings.LogoMode is null
                 ? null
                 : await QueryLogoCoreAsync(cancellationToken).ConfigureAwait(false);
-            try
+            byte requestedRaw = LightingBrightnessProtocol.PercentToRaw(
+                settings.Brightness);
+            (IRz090528LightingEffect? Effect, LightingSettings? Settings,
+                long StartedTimestamp, LightingRendererOwnershipState Ownership) previous =
+                CaptureOwnedEffectCore();
+
+            if (CanRetainRenderer(previous.Settings, settings))
             {
-                if (baselineRaw != 0)
+                try
                 {
-                    await SetRawCoreAsync(0, cancellationToken).ConfigureAwait(false);
-                    if (await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false) != 0)
+                    if (baselineRaw != requestedRaw)
+                    {
+                        await SetAndConfirmRawCoreAsync(
+                            requestedRaw,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+
+                    if (settings.LogoMode is { } retainedLogo
+                        && retainedLogo != baselineLogo)
+                    {
+                        await SetLogoCoreAsync(retainedLogo, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    lock (effectSync)
+                    {
+                        lastDeliveredState = settings;
+                    }
+
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    bool brightnessRestored = baselineRaw == requestedRaw
+                        || await TryRestoreCoreAsync(baselineRaw).ConfigureAwait(false);
+                    bool logoRestored = baselineLogo is null
+                        || settings.LogoMode == baselineLogo
+                        || await TryRestoreLogoCoreAsync(baselineLogo.Value)
+                            .ConfigureAwait(false);
+                    if (!brightnessRestored || !logoRestored)
                     {
                         throw new BladeWriteException(
                             WriteSubmissionState.Indeterminate,
-                            "PID 02C6 keyboard Off did not match independent readback.");
+                            "PID 02C6 lighting update failed and restoration was not confirmed.",
+                            exception);
                     }
+
+                    throw;
+                }
+            }
+
+            await StopStreamCoreAsync().ConfigureAwait(false);
+            try
+            {
+                if (baselineRaw != requestedRaw)
+                {
+                    await SetAndConfirmRawCoreAsync(
+                        requestedRaw,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                if (settings.Effect == LightingEffect.Off)
+                {
+                    ClearOwnedEffectCore(settings);
+                }
+                else
+                {
+                    IRz090528LightingEffect effect = CreateEffect(settings);
+                    effectStartedTimestamp = TimeProvider.System.GetTimestamp();
+                    await WriteMatrixFrameCoreAsync(
+                        effect.RenderFrame(TimeSpan.Zero),
+                        cancellationToken).ConfigureAwait(false);
+                    lock (effectSync)
+                    {
+                        activeEffect = effect;
+                        lastDeliveredState = settings;
+                    }
+
+                    SetOwnership(OwnershipFor(settings.Effect));
+                    StartStreamCore(effect);
                 }
 
                 if (settings.LogoMode is { } requestedLogo
@@ -329,17 +447,27 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             }
             catch (Exception exception)
             {
-                bool brightnessRestored = baselineRaw == 0
+                bool brightnessRestored = baselineRaw == requestedRaw
                     || await TryRestoreCoreAsync(baselineRaw).ConfigureAwait(false);
+                bool rendererRestored = previous.Effect is not null
+                    && await TryRestoreOwnedEffectCoreAsync(previous)
+                        .ConfigureAwait(false);
                 bool logoRestored = baselineLogo is null
                     || settings.LogoMode == baselineLogo
                     || await TryRestoreLogoCoreAsync(baselineLogo.Value)
                         .ConfigureAwait(false);
-                if (!brightnessRestored || !logoRestored)
+                if (previous.Effect is null || !rendererRestored)
+                {
+                    ClearOwnedEffectCore(settings: null);
+                }
+
+                if (!brightnessRestored
+                    || !logoRestored
+                    || previous.Effect is not null && !rendererRestored)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.Indeterminate,
-                        "PID 02C6 lighting update failed and restoration was not confirmed.",
+                        "PID 02C6 lighting update failed and the previous state was not fully restored.",
                         exception);
                 }
 
@@ -464,6 +592,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         await operationGate.WaitAsync().ConfigureAwait(false);
         try
         {
+            await StopStreamCoreAsync().ConfigureAwait(false);
             await TryRestoreOwnedDeviceModeCoreAsync().ConfigureAwait(false);
             await actor.DisposeAsync().ConfigureAwait(false);
         }
@@ -471,6 +600,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         {
             operationGate.Release();
             operationGate.Dispose();
+            featureIoGate.Dispose();
         }
     }
 
@@ -479,6 +609,232 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromException(new CapabilityUnavailableException(
             "PID 02C6 matrix lighting is not admitted."));
+    }
+
+    private static IRz090528LightingEffect CreateEffect(LightingSettings settings)
+    {
+        return settings.Parameters switch
+        {
+            StaticLightingParameters staticParameters
+                when settings.Effect == LightingEffect.Static =>
+                new Rz090528StaticEffect(staticParameters.Color),
+            SpectrumCyclingLightingParameters
+                when settings.Effect == LightingEffect.Spectrum =>
+                new Rz090528SpectrumEffect(),
+            null when settings.Effect == LightingEffect.Static =>
+                new Rz090528StaticEffect(settings.Color),
+            null when settings.Effect == LightingEffect.Spectrum =>
+                new Rz090528SpectrumEffect(),
+            _ => throw new CapabilityUnavailableException(
+                "The requested PID 02C6 host-rendered effect is not admitted."),
+        };
+    }
+
+    private async Task WriteMatrixFrameCoreAsync(
+        Rz090528MatrixFrame frame,
+        CancellationToken cancellationToken)
+    {
+        for (int row = 0; row < Rz090528MatrixFrame.RowCount; row++)
+        {
+            byte[] arguments = Rz090528MatrixRowProtocol.EncodeRow(row, frame);
+            _ = await ExecuteCoreAsync(
+                new RazerCommandSpec(
+                    Rz090528MatrixRowProtocol.CommandClass,
+                    Rz090528MatrixRowProtocol.RowCommandId,
+                    arguments,
+                    arguments.Length,
+                    payload => payload.Span.SequenceEqual(arguments)),
+                write: true,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        byte[] latch = Rz090528MatrixRowProtocol.LatchArguments.ToArray();
+        _ = await ExecuteCoreAsync(
+            new RazerCommandSpec(
+                Rz090528MatrixRowProtocol.CommandClass,
+                Rz090528MatrixRowProtocol.LatchCommandId,
+                latch,
+                latch.Length,
+                payload => payload.Span.SequenceEqual(latch)),
+            write: true,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private void StartStreamCore(IRz090528LightingEffect effect)
+    {
+        var cancellation = new CancellationTokenSource();
+        streamCancellation = cancellation;
+        streamTask = RunStreamAsync(effect, cancellation.Token);
+    }
+
+    private async Task RunStreamAsync(
+        IRz090528LightingEffect effect,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(effect.NextFrameDelay, cancellationToken)
+                    .ConfigureAwait(false);
+                TimeSpan elapsed = TimeProvider.System.GetElapsedTime(
+                    effectStartedTimestamp);
+                Rz090528MatrixFrame frame;
+                lock (effectSync)
+                {
+                    if (!ReferenceEquals(activeEffect, effect))
+                    {
+                        return;
+                    }
+
+                    frame = effect.RenderFrame(elapsed);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                await WriteMatrixFrameCoreAsync(frame, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            lock (effectSync)
+            {
+                if (ReferenceEquals(activeEffect, effect))
+                {
+                    activeEffect = null;
+                    lastDeliveredState = null;
+                    ownershipState = LightingRendererOwnershipState.Faulted;
+                }
+            }
+        }
+    }
+
+    private async Task StopStreamCoreAsync()
+    {
+        CancellationTokenSource? cancellation = streamCancellation;
+        Task? running = streamTask;
+        streamCancellation = null;
+        streamTask = null;
+        if (cancellation is null)
+        {
+            return;
+        }
+
+        cancellation.Cancel();
+        try
+        {
+            if (running is not null)
+            {
+                await running.ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            cancellation.Dispose();
+        }
+    }
+
+    private (
+        IRz090528LightingEffect? Effect,
+        LightingSettings? Settings,
+        long StartedTimestamp,
+        LightingRendererOwnershipState Ownership) CaptureOwnedEffectCore()
+    {
+        lock (effectSync)
+        {
+            return (
+                activeEffect,
+                lastDeliveredState,
+                effectStartedTimestamp,
+                ownershipState);
+        }
+    }
+
+    private static bool CanRetainRenderer(
+        LightingSettings? previous,
+        LightingSettings requested) =>
+        previous is not null
+        && previous.Effect != LightingEffect.Off
+        && previous.Effect == requested.Effect
+        && previous.Color == requested.Color
+        && Equals(previous.Parameters, requested.Parameters);
+
+    private async Task<bool> TryRestoreOwnedEffectCoreAsync(
+        (
+            IRz090528LightingEffect? Effect,
+            LightingSettings? Settings,
+            long StartedTimestamp,
+            LightingRendererOwnershipState Ownership) previous)
+    {
+        if (previous.Effect is null || previous.Settings is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            TimeSpan elapsed = TimeProvider.System.GetElapsedTime(
+                previous.StartedTimestamp);
+            await WriteMatrixFrameCoreAsync(
+                previous.Effect.RenderFrame(elapsed),
+                CancellationToken.None).ConfigureAwait(false);
+            lock (effectSync)
+            {
+                activeEffect = previous.Effect;
+                lastDeliveredState = previous.Settings;
+                effectStartedTimestamp = previous.StartedTimestamp;
+                ownershipState = previous.Ownership;
+            }
+
+            StartStreamCore(previous.Effect);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void ClearOwnedEffectCore(LightingSettings? settings)
+    {
+        lock (effectSync)
+        {
+            activeEffect = null;
+            lastDeliveredState = settings;
+            ownershipState = LightingRendererOwnershipState.None;
+        }
+    }
+
+    private void SetOwnership(LightingRendererOwnershipState ownership)
+    {
+        lock (effectSync)
+        {
+            ownershipState = ownership;
+        }
+    }
+
+    private static LightingRendererOwnershipState OwnershipFor(
+        LightingEffect effect) => effect switch
+        {
+            LightingEffect.Static => LightingRendererOwnershipState.Static,
+            LightingEffect.Spectrum => LightingRendererOwnershipState.Spectrum,
+            _ => LightingRendererOwnershipState.None,
+        };
+
+    private async Task SetAndConfirmRawCoreAsync(
+        byte raw,
+        CancellationToken cancellationToken)
+    {
+        await SetRawCoreAsync(raw, cancellationToken).ConfigureAwait(false);
+        if (await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false) != raw)
+        {
+            throw new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "PID 02C6 brightness did not match independent readback.");
+        }
     }
 
     private async Task SetAndVerifyCoreAsync(
@@ -805,11 +1161,21 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         bool write,
         CancellationToken cancellationToken)
     {
-        HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
-            command,
-            () => TransactionIdAssignment.Valid(AllocateTransaction()),
-            exchangeTimeout,
-            cancellationToken).ConfigureAwait(false);
+        await featureIoGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        HidSessionResult<ReadOnlyMemory<byte>> result;
+        try
+        {
+            result = await session.ExecuteAsync(
+                command,
+                () => TransactionIdAssignment.Valid(AllocateTransaction()),
+                exchangeTimeout,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            featureIoGate.Release();
+        }
+
         if (result.Failure is null)
         {
             return result.Value;
@@ -821,7 +1187,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             {
                 throw new BladeWriteException(
                     WriteSubmissionState.Indeterminate,
-                    "PID 02C6 brightness write was canceled after its session opened.");
+                    "PID 02C6 lighting write was canceled after its session opened.");
             }
 
             throw new OperationCanceledException(cancellationToken);
@@ -842,7 +1208,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 : WriteSubmissionState.Indeterminate;
         throw new BladeWriteException(
             state,
-            $"PID 02C6 brightness write failed ({result.Failure}).");
+            $"PID 02C6 lighting command {command.ClassId:X2}/{command.CommandId:X2} " +
+            $"failed ({result.Failure}).");
     }
 
     private async Task EnterAsync(CancellationToken cancellationToken)

@@ -1468,6 +1468,16 @@ if (args.Length > 0 && args[0].Equals(
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length > 0 && args[0].Equals(
+    "validate-rz09-0528-02c6-lighting",
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = Rz090528LightingValidationCommand.CreateWindows(
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
 if (args.Length > 0 && args[0].Equals("probe-battery-sequence", StringComparison.OrdinalIgnoreCase))
 {
     var session = new BatteryQuerySequenceSession(
@@ -1610,6 +1620,9 @@ Console.WriteLine(
     "  OpenBlade.Capture validate-lighting --confirm-target " +
     LightingValidationCommand.ExactTargetConfirmation +
     " --brightness <1-100>");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0528-02c6-lighting --confirm-target " +
+    Rz090528LightingValidationCommand.ExactTargetConfirmation);
 Console.WriteLine("  OpenBlade.Capture probe-battery-sequence");
 Console.WriteLine("  OpenBlade.Capture validate-battery <off|50|55|60|65|70|75|80>");
 Console.WriteLine("  OpenBlade.Capture validate-protection-off");

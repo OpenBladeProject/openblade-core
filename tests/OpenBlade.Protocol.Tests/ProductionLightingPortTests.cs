@@ -57,10 +57,11 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public void Rz090528Capabilities_AdmitKeyboardOffBrightnessAndLogoAndExposeObservedQuickEffects()
+    public void Rz090528ValidationCapabilities_AdmitCapturedRowEffectsBrightnessAndLogo()
     {
         DeviceCapabilities capabilities =
-            Rz090528BrightnessLightingPort.CreateCapabilities();
+            Rz090528BrightnessLightingPort.CreateCapabilities(
+                matrixEffectsAdmitted: true);
 
         Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.Equal(
@@ -74,11 +75,14 @@ public sealed class ProductionLightingPortTests
         Assert.Equal(
             DeviceFeatureAccess.ObservedOnly,
             capabilities.LampArrayLightingAccess);
-        Assert.Equal([LightingEffect.Off], capabilities.LightingEffects);
-        Assert.True(capabilities.ObservedLightingEffects.SetEquals(
+        Assert.True(capabilities.LightingEffects.SetEquals(
         [
+            LightingEffect.Off,
             LightingEffect.Spectrum,
             LightingEffect.Static,
+        ]));
+        Assert.True(capabilities.ObservedLightingEffects.SetEquals(
+        [
             LightingEffect.Starlight,
             LightingEffect.Ripple,
             LightingEffect.Tidal,
@@ -92,6 +96,17 @@ public sealed class ProductionLightingPortTests
         Assert.Empty(capabilities.ChargeLimits);
         Assert.False(capabilities.SupportsBatteryProtectionOff);
         Assert.False(capabilities.SupportsTemporaryFullCharge);
+    }
+
+    [Fact]
+    public void Rz090528ProductionCapabilities_KeepUnvalidatedMatrixEffectsObservedOnly()
+    {
+        DeviceCapabilities capabilities =
+            Rz090528BrightnessLightingPort.CreateCapabilities();
+
+        Assert.Equal([LightingEffect.Off], capabilities.LightingEffects);
+        Assert.Contains(LightingEffect.Static, capabilities.ObservedLightingEffects);
+        Assert.Contains(LightingEffect.Spectrum, capabilities.ObservedLightingEffects);
     }
 
     [Fact]
@@ -152,6 +167,45 @@ public sealed class ProductionLightingPortTests
                 command.ClassId == 0x03
                 && command.CommandId is 0x80 or 0x82),
             command => Assert.Equal(0x00, command.Arguments.Span[0]));
+    }
+
+    [Fact]
+    public async Task Rz090528Static_UsesSixCapturedRowsThenLatchAndOwnsRenderer()
+    {
+        var session = new LightingSession(initialBrightness: 0);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            matrixEffectsAdmitted: true);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(0x47, 0xE1, 0x0C), 50),
+            default);
+
+        Assert.Equal(128, session.Brightness);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        RazerCommandSpec[] rows = session.Commands
+            .Where(command =>
+                command.ClassId == Rz090528MatrixRowProtocol.CommandClass
+                && command.CommandId == Rz090528MatrixRowProtocol.RowCommandId)
+            .ToArray();
+        Assert.Equal(Rz090528MatrixFrame.RowCount, rows.Length);
+        Assert.Equal(
+            Enumerable.Range(0, Rz090528MatrixFrame.RowCount),
+            rows.Select(command => (int)command.Arguments.Span[1]));
+        Assert.All(rows, command =>
+        {
+            Assert.Equal(Rz090528MatrixRowProtocol.RowPayloadLength, command.Arguments.Length);
+            Assert.Equal(0xFF, command.Arguments.Span[0]);
+            Assert.Equal(0x00, command.Arguments.Span[2]);
+            Assert.Equal(0x10, command.Arguments.Span[3]);
+        });
+        Assert.Equal(
+            (0x03, 0x0A, "0500"),
+            CommandTuple(session.Commands.Last()));
     }
 
     [Fact]
@@ -1807,6 +1861,7 @@ public sealed class ProductionLightingPortTests
                 (0x00, 0x84) => Transition84Response
                     ?? DeviceModeProtocol.CreateSetArguments(DeviceMode),
                 (0x03, 0x0A) => [0x05, 0x00],
+                (0x03, 0x0B) => command.Arguments.ToArray(),
                 _ => throw new InvalidOperationException(),
             };
             if (command.PayloadValidator?.Invoke(response) == false)

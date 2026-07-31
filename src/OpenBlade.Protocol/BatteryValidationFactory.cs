@@ -548,6 +548,14 @@ public static class BatteryValidationFactory
 
     internal static IProductionLightingPortFactory
         CreateWindowsRz090528BrightnessLighting()
+        => CreateWindowsRz090528BrightnessLighting(matrixEffectsAdmitted: false);
+
+    internal static IProductionLightingPortFactory
+        CreateWindowsRz090528LightingValidation()
+        => CreateWindowsRz090528BrightnessLighting(matrixEffectsAdmitted: true);
+
+    private static IProductionLightingPortFactory
+        CreateWindowsRz090528BrightnessLighting(bool matrixEffectsAdmitted)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -579,7 +587,8 @@ public static class BatteryValidationFactory
             Rz090528BrightnessFeatureReportSettleDelay);
         return new Rz090528BrightnessLightingFactory(
             static () => new ValidationRunContext(),
-            actorFactory);
+            actorFactory,
+            matrixEffectsAdmitted);
     }
 
     public static IBatteryValidationRunFactory CreateWindows()

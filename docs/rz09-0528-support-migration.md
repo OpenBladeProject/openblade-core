@@ -1850,6 +1850,49 @@ effect. The subsequent read-only production-admission probe returned
 adapter was `FullPower280W`, and `Success=True`. No setter ran during either
 check.
 
+## PID 02C6 native keyboard-effect admission
+
+The exact Synapse navigation trace with sanitized raw-capture SHA-256
+`8521047904B9A122EE3B36F703F8352B7C0D714BC10F50B6C10527CFDF4D1F17`
+contains native host-rendered keyboard traffic in addition to the separately
+observed Windows LampArray interface. Do not conflate those two transports.
+The USB trace contains 5,060 `03/0B` row writes and 844 `03/0A` latches. Each
+frame is six 55-byte row payloads followed by latch arguments `0500`:
+
+- row payload header: `FF <row 0-5> 00 10`;
+- payload body: 17 RGB triplets in protocol slot order;
+- exact independently derived PID `02C6` holes:
+  `0,17,31,34,48,51,64,65,68,70,81,82,85,89,92,93`;
+- protocol shape: 102 slots, 86 non-hole slots;
+- observed Spectrum timing: 843 row-zero samples over about 35.031 seconds,
+  with linear hue unwrapping estimating a 34.034-second cycle.
+
+The 85 lamps reported by Windows LampArray are a different interface and are
+not evidence that one of the 102 protocol slots should be deleted. The hole
+set happens to equal the older PID `02E0` set, but it was derived independently
+from PID `02C6`; reuse neither the older report envelope nor its effect
+oracles.
+
+The implementation keeps production capabilities at keyboard `Off` while a
+developer-only exact-target validator opts into Static and Spectrum. This
+split is deliberate: captured Synapse traffic proves the write shape but does
+not prove that the production `SetFeature`/`GetFeature` session accepts and
+echoes `03/0B` on this firmware. The validator requires exact confirmation
+`RZ09-0528:1532:02C6:2.02`, refuses to run while the OpenBlade service is
+active, enters Driver mode with independent mode readback, applies Static
+green 50 percent and Spectrum 50 percent, independently queries brightness
+after each transition, records renderer ownership and operator visual
+confirmation, and restores Static green 50 percent on every exit path. Its
+JSON explicitly records that matrix readback is unavailable; visual
+confirmation must never be relabeled as GET support.
+
+Run the validation only from a committed exact build with Synapse closed and
+the OpenBlade service stopped. Preserve a failed result honestly. Admit Static
+and Spectrum to the service capability set only after the command succeeds and
+the restored Static 50-percent state is independently confirmed. Windows
+Dynamic Lighting must remain a true no-write handoff even after native effects
+are admitted.
+
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
