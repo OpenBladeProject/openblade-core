@@ -9,11 +9,12 @@ namespace OpenBlade.Tray.Tests;
 public sealed class CapabilityPresentationTests
 {
     [Fact]
-    public void MainWindow_SettingsRowsRetainTheSharedPointerOverHighlight()
+    public void MainWindow_SettingsRowsConfigureTheSharedPointerOverHighlight()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
         XElement style = Assert.Single(document.Descendants(), element =>
             Attribute(element, "Key") == "SettingsRowStyle");
+        Assert.Equal("Border", Attribute(style, "TargetType"));
 
         Assert.Contains(
             style.Descendants(),
@@ -31,11 +32,11 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "Value")
                     == "{ThemeResource SubtleFillColorSecondaryBrush}");
 
-        string behavior = ReadTraySource("SettingsCardPointerVisual.cs");
-        Assert.Contains("border.PointerEntered += OnPointerEntered", behavior);
-        Assert.Contains("border.PointerMoved += OnPointerMoved", behavior);
-        Assert.Contains("border.PointerExited += OnPointerExited", behavior);
-        Assert.Contains("border.ClearValue(Border.BackgroundProperty)", behavior);
+        XElement lastRowStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsLastRowStyle");
+        Assert.Equal(
+            "{StaticResource SettingsRowStyle}",
+            Attribute(lastRowStyle, "BasedOn"));
     }
 
     [Fact]
