@@ -61,17 +61,13 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(25, animated.Length);
+        Assert.Equal(22, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsCustomPerformanceVisible",
-                StringComparison.Ordinal) is true);
-        Assert.Contains(animated, element =>
-            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
-                "IsCpuPowerLimitVisible",
                 StringComparison.Ordinal) is true);
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
@@ -117,20 +113,16 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Power mode");
-        Assert.Contains(document.Descendants(), element =>
+        Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text")
-                == "Controls how much power the processor can use.");
-        Assert.Contains(document.Descendants(), element =>
+            && Attribute(element, "Text") == "CPU power limit");
+        Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text")
-                == "May lower CPU temperatures and power use.");
-        Assert.Contains(document.Descendants(), element =>
+            && Attribute(element, "Text") == "CPU voltage optimization");
+        Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text")
-                == "Adjusts graphics performance by changing core and memory speeds.");
-        Assert.DoesNotContain("AMD kernel driver", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("exact-device setter validation", xaml, StringComparison.Ordinal);
+            && Attribute(element, "Text") == "GPU clock tuning");
+        Assert.DoesNotContain("Not available in OpenBlade yet", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Performance");

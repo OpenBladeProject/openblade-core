@@ -793,9 +793,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsCustomPerformanceVisible));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanEditGpuClockTuning));
-            Notify(nameof(IsCpuPowerLimitVisible));
-            Notify(nameof(IsCpuVoltageOptimizerVisible));
-            Notify(nameof(IsGpuOverclockPolicyVisible));
             NotifyObservedPowerSourceBehavior();
             Notify(nameof(ActiveSavedDisplayProfile));
             Notify(nameof(SaveToActiveProfileLabel));
@@ -1448,51 +1445,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IsCustomPerformanceVisible
         && GpuClockOffsetCapabilities?.IsWellFormed == true;
 
-    public bool IsCpuPowerLimitVisible =>
-        ActivePowerSource == PowerSource.PluggedIn
-        && Capabilities.CpuPowerLimit?.IsWellFormed == true;
-
-    public string CpuPowerLimitRangeLabel =>
-        FormatObservedRangeSummary(Capabilities.CpuPowerLimit?.Watts, "W");
-
-    public string CpuPowerLimitAccessLabel =>
-        FormatTuningAvailability(Capabilities.CpuPowerLimit?.Access);
-
-    public bool IsCpuVoltageOptimizerVisible =>
-        ActivePowerSource == PowerSource.PluggedIn
-        && Capabilities.CpuVoltageOptimizer?.IsWellFormed == true;
-
-    public string CpuVoltageOptimizerRangeLabel =>
-        Capabilities.CpuVoltageOptimizer is { } optimizer
-            ? (optimizer.SupportsEnableDisable ? "Off or " : string.Empty)
-                + $"levels {optimizer.Value.Minimum} to {optimizer.Value.Maximum}"
-            : UnavailableLabel;
-
-    public string CpuVoltageOptimizerAccessLabel =>
-        FormatTuningAvailability(Capabilities.CpuVoltageOptimizer?.Access);
-
-    public bool IsGpuOverclockPolicyVisible =>
-        ActivePowerSource == PowerSource.PluggedIn
-        && Capabilities.GpuOverclock?.IsWellFormed == true;
-
-    public string GpuOverclockPolicyLabel
-    {
-        get
-        {
-            GpuOverclockCapabilities? policy = Capabilities.GpuOverclock;
-            return policy?.IsWellFormed == true
-                ? $"Core {FormatSigned(policy.CoreOffsetMegahertz.Minimum)} to "
-                    + $"{FormatSigned(policy.CoreOffsetMegahertz.Maximum)} MHz"
-                    + $"{Environment.NewLine}Memory "
-                    + $"{FormatSigned(policy.MemoryOffsetMegahertz.Minimum)} to "
-                    + $"{FormatSigned(policy.MemoryOffsetMegahertz.Maximum)} MHz"
-                : UnavailableLabel;
-        }
-    }
-
-    public string GpuClockTuningAccessLabel =>
-        FormatTuningAvailability(Capabilities.GpuOverclock?.Access);
-
     public bool IsSpecialKeyBindingsEditable =>
         Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
         && Capabilities.WritableSpecialKeySlots != SpecialKeySlotSet.None;
@@ -2079,15 +2031,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SupportsFunctionKeyPrimary));
             Notify(nameof(SupportsGamingMode));
             Notify(nameof(CanEditGpuClockTuning));
-            Notify(nameof(IsCpuPowerLimitVisible));
-            Notify(nameof(CpuPowerLimitRangeLabel));
-            Notify(nameof(CpuPowerLimitAccessLabel));
-            Notify(nameof(IsCpuVoltageOptimizerVisible));
-            Notify(nameof(CpuVoltageOptimizerRangeLabel));
-            Notify(nameof(CpuVoltageOptimizerAccessLabel));
-            Notify(nameof(IsGpuOverclockPolicyVisible));
-            Notify(nameof(GpuOverclockPolicyLabel));
-            Notify(nameof(GpuClockTuningAccessLabel));
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsSpecialKeyBindingsObservedOnlyVisible));
             Notify(nameof(SpecialKeyBindingsInfoTitle));
@@ -3524,28 +3467,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : ", step not yet validated";
         return $"{range.Minimum}–{range.Maximum}{suffix}{step}";
     }
-
-    private static string FormatObservedRangeSummary(DeviceNumericRange? range, string unit)
-    {
-        if (range?.IsWellFormed != true)
-        {
-            return UnavailableLabel;
-        }
-
-        string suffix = string.IsNullOrEmpty(unit) ? string.Empty : $" {unit}";
-        return $"{range.Minimum}–{range.Maximum}{suffix}";
-    }
-
-    private static string FormatTuningAvailability(DeviceFeatureAccess? access) => access switch
-    {
-        DeviceFeatureAccess.ReadWrite => "Available",
-        DeviceFeatureAccess.ReadOnly => "View only",
-        DeviceFeatureAccess.ObservedOnly => "Not available in OpenBlade yet",
-        _ => UnavailableLabel,
-    };
-
-    private static string FormatSigned(int value) =>
-        value > 0 ? $"+{value}" : value.ToString(CultureInfo.InvariantCulture);
 
     private static string FormatFeatureAccess(
         DeviceFeatureAccess? access,

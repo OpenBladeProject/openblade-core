@@ -2433,31 +2433,26 @@ model's own Fn-state evidence and add it to the explicit support predicate.
 Do not broaden the gate to every Razer device merely because the standard
 F1-F12 scan-code map is shared.
 
-## Present discovered tuning as settings, not capture notes
+## Keep discovery evidence out of the settings UI
 
 The first RZ09-0528 tuning summary exposed protocol-development language
-directly on the Laptop page: Synapse driver ownership, captured-policy
-qualifiers, and exact-device setter-validation status. That information is
-important to maintainers but does not tell a user what a setting does or
-whether they can use it.
+directly on the Laptop page. A follow-up changed it to friendlier descriptions
+and `Not available in OpenBlade yet`, but those rows still occupied the normal
+settings surface without giving the user an action.
 
-Keep every newly discovered capability visible, but give it the same hierarchy
-as an ordinary setting:
+The final rule is simpler: if a capability is not usable in OpenBlade and the
+user does not need its state to make a decision, do not show it on the settings
+page. Do not add explanatory text to justify a non-actionable row. Users of
+advanced tuning already understand the controls they choose to use.
 
-- a familiar name;
-- one sentence explaining its effect;
-- a compact useful range; and
-- a plain availability state.
+CPU power limit, CPU voltage optimization, and GPU clock tuning therefore
+remain first-class exact-device capabilities in the contracts, coverage data,
+tests, and this migration guide, including their captured ranges and admission
+boundaries. Their observed-only summaries are absent from the Laptop page.
+When a setter is independently validated and admitted, add the real control
+with concise labels and only the information needed to operate it.
 
-For this model, CPU power limit is described as controlling processor power,
-CPU voltage optimization as potentially lowering temperature and power use,
-and GPU clock tuning as changing core and memory speeds. Their captured ranges
-remain visible, while each observed-only feature says `Not available in
-OpenBlade yet`. The main UI no longer mentions kernel drivers, packet-capture
-status, or setter-validation terminology.
-
-Do not delete a feature from the UI merely because its setter is not admitted.
-Do not make an observed-only row look editable either. Keep the backend,
-provenance, and admission boundary in this guide and sanitized evidence; keep
-the primary page focused on what the feature means to the person using the
-laptop.
+This is not permission to forget a newly discovered feature. Preserve it in
+the device model and evidence immediately; expose it in the primary UI only
+when it becomes functional or when its read-only state is genuinely useful to
+the user.

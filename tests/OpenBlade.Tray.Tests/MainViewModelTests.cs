@@ -2033,20 +2033,21 @@ public sealed class MainViewModelTests
             new CustomPerformanceSettings(
                 CustomPerformanceLevel.High,
                 CustomPerformanceLevel.Medium)));
-        Assert.True(viewModel.IsCpuPowerLimitVisible);
-        Assert.Equal("45–95 W", viewModel.CpuPowerLimitRangeLabel);
-        Assert.Equal("Not available in OpenBlade yet", viewModel.CpuPowerLimitAccessLabel);
-        Assert.True(viewModel.IsCpuVoltageOptimizerVisible);
-        Assert.Equal("Off or levels -30 to -1", viewModel.CpuVoltageOptimizerRangeLabel);
         Assert.Equal(
-            "Not available in OpenBlade yet",
-            viewModel.CpuVoltageOptimizerAccessLabel);
-        Assert.True(viewModel.IsGpuOverclockPolicyVisible);
-        Assert.Contains("Core -1000 to +400 MHz", viewModel.GpuOverclockPolicyLabel);
-        Assert.Contains("Memory -1000 to +3000 MHz", viewModel.GpuOverclockPolicyLabel);
+            DeviceFeatureAccess.ObservedOnly,
+            viewModel.Capabilities.CpuPowerLimit?.Access);
+        Assert.Equal(45, viewModel.Capabilities.CpuPowerLimit?.Watts.Minimum);
+        Assert.Equal(95, viewModel.Capabilities.CpuPowerLimit?.Watts.Maximum);
         Assert.Equal(
-            "Not available in OpenBlade yet",
-            viewModel.GpuClockTuningAccessLabel);
+            DeviceFeatureAccess.ObservedOnly,
+            viewModel.Capabilities.CpuVoltageOptimizer?.Access);
+        Assert.Equal(-30, viewModel.Capabilities.CpuVoltageOptimizer?.Value.Minimum);
+        Assert.Equal(-1, viewModel.Capabilities.CpuVoltageOptimizer?.Value.Maximum);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            viewModel.Capabilities.GpuOverclock?.Access);
+        Assert.Equal(-1000, viewModel.Capabilities.GpuOverclock?.CoreOffsetMegahertz.Minimum);
+        Assert.Equal(400, viewModel.Capabilities.GpuOverclock?.CoreOffsetMegahertz.Maximum);
         Assert.False(viewModel.CanEditGpuClockTuning);
         Assert.False(viewModel.IsSpecialKeyBindingsEditable);
         Assert.True(viewModel.IsSpecialKeyBindingsObservedOnlyVisible);
