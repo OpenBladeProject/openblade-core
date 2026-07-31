@@ -1909,6 +1909,56 @@ and Spectrum. The first elevated wrapper attempt is preserved as a no-write
 failure: Windows PowerShell 5.1 lacked `Wait-Service`, after the service had
 stopped but before Synapse isolation or hardware access.
 
+### Installed matrix-renderer concurrency fault
+
+The first full installed build exposed a lifecycle failure that the isolated
+validator could not exercise. Static green 50 percent applied successfully,
+the UI showed exactly Off, Spectrum Cycling, and Static, and the profile save
+completed. Several seconds later the tray reported that lighting controls were
+unavailable. Preserve this as a real failed installed validation, not as an
+operator or UI error.
+
+A fresh read-only schema-6 snapshot in the ignored
+`artifacts/.live-validation/full-315432c/fault-snapshot-1` directory recorded:
+
+- exact model and admitted effects still correct;
+- `desiredLightingEffect=Static`, but renderer ownership `None`;
+- production writes blocked;
+- Driver-mode readback unavailable; and
+- both firmware fan readings plus the firmware CPU-temperature reading
+  unavailable.
+
+The service was still running and the exact capability surface still advertised
+Off, Spectrum, and Static. Repeated diagnostic-history entries saying
+`PID 02C6 matrix lighting is not admitted` were calls to deliberately unsupported
+reactive/playback hooks, not the cause of the failure.
+
+The leading cause is a cross-port feature-report race. The exact battery port
+and the new lighting port owned independent HID sessions to the same
+`1532:02C6`, usage `0001:0002`, 91-byte control interface. Their per-port locks
+could therefore overlap complete SetFeature/GetFeature exchanges and consume a
+device-global response intended for the other session. The isolated validator
+stopped the service, so it could not exercise that concurrency. Do not call the
+causal diagnosis confirmed until the corrective build passes the installed
+Static and Spectrum lifecycle checks below.
+
+The corrective design has two parts:
+
+1. wrap every exact PID 02C6 battery and lighting command session in one
+   process-wide exchange gate, held across the complete SetFeature/GetFeature
+   transaction; and
+2. render Static as the captured six-row frame plus latch once. The capture
+   proves a stable Static frame but does not prove or require a five-second
+   Static keepalive. Only Spectrum keeps a continuous renderer, and every frame
+   passes through the same cross-port gate as service readbacks.
+
+Do not generalize this gate to another PID without exact transport evidence.
+Do not treat a successful isolated transition as installed lifecycle proof.
+After deploying the corrective build, require Static to remain available for
+at least 30 seconds, run a fresh schema-6 snapshot while Static owns the
+renderer, then exercise Spectrum while periodic battery/thermal observation is
+active and restore Static green 50 percent.
+
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.

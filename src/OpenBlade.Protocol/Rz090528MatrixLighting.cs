@@ -111,6 +111,8 @@ internal static class Rz090528MatrixRowProtocol
 
 internal interface IRz090528LightingEffect
 {
+    bool RequiresContinuousRendering { get; }
+
     TimeSpan NextFrameDelay { get; }
 
     Rz090528MatrixFrame RenderFrame(TimeSpan elapsed);
@@ -118,9 +120,9 @@ internal interface IRz090528LightingEffect
 
 internal sealed class Rz090528StaticEffect(RgbColor color) : IRz090528LightingEffect
 {
-    internal static readonly TimeSpan KeepaliveInterval = TimeSpan.FromSeconds(5);
+    public bool RequiresContinuousRendering => false;
 
-    public TimeSpan NextFrameDelay => KeepaliveInterval;
+    public TimeSpan NextFrameDelay => Timeout.InfiniteTimeSpan;
 
     public Rz090528MatrixFrame RenderFrame(TimeSpan elapsed)
     {
@@ -146,6 +148,8 @@ internal sealed class Rz090528SpectrumEffect : IRz090528LightingEffect
         TimeSpan.FromMilliseconds(34_034);
     internal static readonly TimeSpan FrameInterval = TimeSpan.FromTicks(
         TimeSpan.TicksPerSecond / 30);
+
+    public bool RequiresContinuousRendering => true;
 
     public TimeSpan NextFrameDelay => FrameInterval;
 

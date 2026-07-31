@@ -112,7 +112,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         bool matrixEffectsAdmitted = false)
     {
         this.actor = actor;
-        session = actor.Session;
+        session = new Rz090528CommandSessionGate(
+            actor.Session,
+            Rz090528CommandSessionGate.Shared);
         this.exchangeTimeout = exchangeTimeout;
         Capabilities = CreateCapabilities(matrixEffectsAdmitted);
     }
@@ -435,7 +437,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                     }
 
                     SetOwnership(OwnershipFor(settings.Effect));
-                    StartStreamCore(effect);
+                    if (effect.RequiresContinuousRendering)
+                    {
+                        StartStreamCore(effect);
+                    }
                 }
 
                 if (settings.LogoMode is { } requestedLogo
@@ -789,7 +794,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 ownershipState = previous.Ownership;
             }
 
-            StartStreamCore(previous.Effect);
+            if (previous.Effect.RequiresContinuousRendering)
+            {
+                StartStreamCore(previous.Effect);
+            }
             return true;
         }
         catch

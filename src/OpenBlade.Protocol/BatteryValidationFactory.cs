@@ -524,7 +524,8 @@ public static class BatteryValidationFactory
             {
                 AdapterPowerState.UsbCPower100W,
                 AdapterPowerState.FullPower280W,
-            });
+            },
+            Rz090528CommandSessionGate.Shared);
     }
 
     internal static ProductionBatteryReadEvidence

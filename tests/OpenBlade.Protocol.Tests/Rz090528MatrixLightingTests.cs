@@ -58,6 +58,7 @@ public sealed class Rz090528MatrixLightingTests
     {
         var effect = new Rz090528SpectrumEffect();
 
+        Assert.True(effect.RequiresContinuousRendering);
         Assert.Equal(
             new RgbColor(0xFF, 0x00, 0x00),
             effect.RenderFrame(TimeSpan.Zero)[1]);
@@ -73,5 +74,82 @@ public sealed class Rz090528MatrixLightingTests
         Assert.Equal(
             new RgbColor(0xFF, 0x00, 0x00),
             effect.RenderFrame(Rz090528SpectrumEffect.CycleDuration)[1]);
+    }
+
+    [Fact]
+    public void Static_IsAOneShotFrameWithoutAnUncapturedKeepalive()
+    {
+        var effect = new Rz090528StaticEffect(new RgbColor(0x47, 0xE1, 0x0C));
+        Rz090528MatrixFrame initial = effect.RenderFrame(TimeSpan.Zero);
+        Rz090528MatrixFrame later = effect.RenderFrame(TimeSpan.FromHours(1));
+
+        Assert.False(effect.RequiresContinuousRendering);
+        Assert.Equal(Timeout.InfiniteTimeSpan, effect.NextFrameDelay);
+        for (int slot = 0; slot < Rz090528MatrixFrame.SlotCount; slot++)
+        {
+            Assert.Equal(initial[slot], later[slot]);
+        }
+    }
+
+    [Fact]
+    public async Task CommandSessionGate_SerializesIndependentPid02C6Sessions()
+    {
+        using var gate = new SemaphoreSlim(1, 1);
+        var first = new BlockingSession();
+        var second = new BlockingSession();
+        var firstSession = new Rz090528CommandSessionGate(first, gate);
+        var secondSession = new Rz090528CommandSessionGate(second, gate);
+        RazerCommandSpec command = new(0x03, 0x83, [0x01, 0x05, 0x00], 3);
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> firstExchange =
+            firstSession.ExecuteAsync(
+                command,
+                static () => TransactionIdAssignment.Valid(1),
+                TimeSpan.FromSeconds(1),
+                default);
+        await first.Entered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> secondExchange =
+            secondSession.ExecuteAsync(
+                command,
+                static () => TransactionIdAssignment.Valid(1),
+                TimeSpan.FromSeconds(1),
+                default);
+        await Task.Delay(50);
+        Assert.False(second.Entered.Task.IsCompleted);
+
+        first.Release.TrySetResult();
+        Assert.Null((await firstExchange).Failure);
+        await second.Entered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        second.Release.TrySetResult();
+        Assert.Null((await secondExchange).Failure);
+    }
+
+    private sealed class BlockingSession : IRazerCommandSession
+    {
+        internal TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource Release { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public RazerCommandSessionDisposition Disposition =>
+            RazerCommandSessionDisposition.Healthy;
+
+        public async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            _ = command;
+            _ = assignTransactionId();
+            _ = exchangeTimeout;
+            Entered.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return new(new byte[] { 0x01, 0x05, 0x00 }, null);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

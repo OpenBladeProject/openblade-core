@@ -187,6 +187,9 @@ public sealed class ProductionLightingPortTests
 
         Assert.Equal(128, session.Brightness);
         Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        Assert.Null(typeof(Rz090528BrightnessLightingPort)
+            .GetField("streamTask", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
         RazerCommandSpec[] rows = session.Commands
             .Where(command =>
                 command.ClassId == Rz090528MatrixRowProtocol.CommandClass

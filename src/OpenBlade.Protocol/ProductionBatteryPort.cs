@@ -131,9 +131,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
-        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null)
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
+        SemaphoreSlim? sharedCommandGate = null)
         : this(
-            actor.Session,
+            sharedCommandGate is null
+                ? actor.Session
+                : new Rz090528CommandSessionGate(actor.Session, sharedCommandGate),
             actor,
             catalog,
             readEvidence,

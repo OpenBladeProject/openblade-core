@@ -25,6 +25,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private readonly GpuOverclockCapabilities? gpuOverclockCapabilities;
     private readonly IReadOnlyList<PowerSourceBehaviorObservation> observedPowerSourceBehaviors;
     private readonly IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates;
+    private readonly SemaphoreSlim? sharedCommandGate;
 
     internal ProductionBatteryFactory(
         DeviceCommandCatalog catalog,
@@ -42,7 +43,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
         IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
-        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null)
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null,
+        SemaphoreSlim? sharedCommandGate = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.readEvidence = readEvidence ?? throw new ArgumentNullException(nameof(readEvidence));
@@ -77,6 +79,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         this.admittedAdapterPowerStates = admittedAdapterPowerStates is null
             ? null
             : new HashSet<AdapterPowerState>(admittedAdapterPowerStates);
+        this.sharedCommandGate = sharedCommandGate;
         Capabilities = ProductionBatteryPort.CreateCapabilities(
             catalog,
             readEvidence,
@@ -181,7 +184,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 cpuPowerLimitCapabilities,
                 cpuVoltageOptimizerCapabilities,
                 gpuOverclockCapabilities,
-                observedPowerSourceBehaviors),
+                observedPowerSourceBehaviors,
+                sharedCommandGate),
             null);
     }
 
