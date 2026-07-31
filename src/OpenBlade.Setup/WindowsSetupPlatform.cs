@@ -93,7 +93,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         bool startMenuShortcutExisted = fileOperations.FileExists(paths.StartMenuFile);
         bool uninstallShortcutExisted = fileOperations.FileExists(paths.UninstallStartMenuFile);
         bool uninstallRegistrationExisted = uninstallRegistration.Exists();
-        bool bundleOwnershipExisted = bundleOwnershipRegistration.Exists();
+        BundleOwnershipIdentity? bundleOwnership =
+            bundleOwnershipRegistration.Capture();
         bool dynamicLightingIdentityRegistered =
             await dynamicLightingIdentityRegistration.IsRegisteredAsync(
                 paths.InstallDirectory,
@@ -107,9 +108,13 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 startMenuShortcutExisted,
                 uninstallShortcutExisted,
                 uninstallRegistrationExisted),
-            bundleOwnershipExisted,
+            bundleOwnership is not null,
             dynamicLightingIdentityRegistered,
-            !bundleOwnershipExisted || bundleOwnershipRegistration.IsOwnedByCurrentBuild());
+            bundleOwnership is null
+                || bundleOwnershipRegistration.IsOwnedByCurrentBuild(bundleOwnership))
+        {
+            BundleOwnership = bundleOwnership,
+        };
     }
 
     public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
@@ -367,6 +372,15 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         cancellationToken.ThrowIfCancellationRequested();
         bundleOwnershipRegistration.Install();
+        return Task.CompletedTask;
+    }
+
+    public Task RestoreBundleOwnershipAsync(
+        BundleOwnershipIdentity ownership,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        bundleOwnershipRegistration.Restore(ownership);
         return Task.CompletedTask;
     }
 

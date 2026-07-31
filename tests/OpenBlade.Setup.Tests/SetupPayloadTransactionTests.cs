@@ -1010,6 +1010,9 @@ public sealed class SetupPayloadTransactionTests
         public Task InstallUninstallRegistrationAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task InstallBundleOwnershipAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RestoreBundleOwnershipAsync(
+            BundleOwnershipIdentity ownership,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken) => throw new NotSupportedException();

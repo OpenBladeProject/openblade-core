@@ -67,6 +67,74 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
+    public async Task Install_BundleManagedCancellationAfterOwnershipRegistration_RestoresOldBuildOwnership()
+    {
+        const string oldBuild = "0.1.0+oldbuild";
+        const string newBuild = "0.2.0+newbuild";
+        var oldOwnership = new BundleOwnershipIdentity(
+            "WiX Burn",
+            "0.1.0",
+            oldBuild);
+        using CancellationTokenSource cancellation = new();
+        RecordingSetupPlatform platform = new()
+        {
+            CurrentBuildIdentity = newBuild,
+            InitialBundleOwnership = oldOwnership,
+            ServiceExists = true,
+            Transaction = new RecordingPayloadTransaction(
+                hadExistingInstall: true,
+                cancelOnCommit: cancellation),
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => new SetupCommandRunner(platform).RunAsync(
+                ["install", "--bundle-managed"],
+                cancellation.Token));
+
+        Assert.Contains("bundle-ownership-install", platform.Operations);
+        Assert.Contains("payload-rollback", platform.Operations);
+        Assert.Equal(oldOwnership, platform.CurrentBundleOwnership);
+        Assert.Equal(
+            "bundle-ownership-restore",
+            platform.Operations[^1]);
+
+        platform.CurrentBuildIdentity = oldBuild;
+        int uninstallExitCode = await new SetupCommandRunner(platform).RunAsync(
+            ["uninstall", "--bundle-managed"],
+            CancellationToken.None);
+
+        Assert.Equal(0, uninstallExitCode);
+        Assert.Contains("binaries-remove", platform.Operations);
+        Assert.Null(platform.CurrentBundleOwnership);
+    }
+
+    [Fact]
+    public async Task Install_BundleManagedOwnershipWithoutRestorableSnapshot_FailsBeforeMutation()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            BundleOwnershipExisted = true,
+            OmitBundleOwnershipSnapshot = true,
+            ServiceExists = true,
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
+        };
+
+        InvalidOperationException failure =
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => new SetupCommandRunner(platform).RunAsync(
+                    ["install", "--bundle-managed"],
+                    CancellationToken.None));
+
+        Assert.Contains(
+            "could not be captured safely",
+            failure.Message,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            ["payload-stage", "lifecycle-capture", "payload-rollback"],
+            platform.Operations);
+    }
+
+    [Fact]
     public async Task Install_StandaloneCommandRejectsBundleManagedInstallationBeforeMutation()
     {
         RecordingSetupPlatform platform = new()
@@ -642,7 +710,7 @@ public sealed class SetupCommandRunnerTests
         Assert.Equal("binaries-remove failed", failure.Message);
         AssertEndsWith(
             platform.Operations,
-            ["bundle-ownership-remove", "binaries-remove", "bundle-ownership-install"]);
+            ["bundle-ownership-remove", "binaries-remove", "bundle-ownership-restore"]);
     }
 
     [Fact]
@@ -690,7 +758,7 @@ public sealed class SetupCommandRunnerTests
 
         AssertEndsWith(
             platform.Operations,
-            ["bundle-ownership-remove", "binaries-remove", "bundle-ownership-install"]);
+            ["bundle-ownership-remove", "binaries-remove", "bundle-ownership-restore"]);
     }
 
     [Fact]
@@ -746,7 +814,10 @@ public sealed class SetupCommandRunnerTests
         public bool UninstallRegistrationExisted { get; init; }
         public bool BundleOwnershipExisted { get; init; }
         public bool BundleOwnershipMatchesCurrentBuild { get; init; } = true;
+        public BundleOwnershipIdentity? InitialBundleOwnership { get; init; }
+        public bool OmitBundleOwnershipSnapshot { get; init; }
         public bool DynamicLightingIdentityRegistered { get; init; }
+        public string CurrentBuildIdentity { get; set; } = "0.1.0+current";
         public string? FailurePoint { get; set; }
         public CancellationTokenSource? Cancellation { get; init; }
         public Exception? UninstallerFailure { get; init; }
@@ -757,12 +828,14 @@ public sealed class SetupCommandRunnerTests
         private bool trayShortcutPresent;
         private bool sessionAgentShortcutPresent;
         private bool startMenuShortcutPresent;
+        private BundleOwnershipIdentity? bundleOwnership;
 
         public bool ServiceRegistered => serviceRegistered;
         public bool ServiceRunning => serviceRunning;
         public bool TrayShortcutPresent => trayShortcutPresent;
         public bool SessionAgentShortcutPresent => sessionAgentShortcutPresent;
         public bool StartMenuShortcutPresent => startMenuShortcutPresent;
+        public BundleOwnershipIdentity? CurrentBundleOwnership => bundleOwnership;
 
         public string CurrentUserSid => "S-1-5-21-test";
 
@@ -793,9 +866,20 @@ public sealed class SetupCommandRunnerTests
                 trayShortcutPresent = TrayShortcutExisted;
                 sessionAgentShortcutPresent = SessionAgentShortcutExisted;
                 startMenuShortcutPresent = StartMenuShortcutExisted;
+                bundleOwnership = InitialBundleOwnership
+                    ?? (BundleOwnershipExisted
+                        ? new BundleOwnershipIdentity(
+                            "WiX Burn",
+                            "0.1.0",
+                            BundleOwnershipMatchesCurrentBuild
+                                ? CurrentBuildIdentity
+                                : "0.1.0+different")
+                        : null);
                 lifecycleInitialized = true;
             }
 
+            BundleOwnershipIdentity? capturedOwnership =
+                OmitBundleOwnershipSnapshot ? null : bundleOwnership;
             return Task.FromResult(new SetupInstallLifecycleState(
                 new(serviceRegistered, serviceRunning),
                 new(
@@ -804,9 +888,16 @@ public sealed class SetupCommandRunnerTests
                     startMenuShortcutPresent,
                     UninstallShortcutExisted,
                     UninstallRegistrationExisted),
-                BundleOwnershipExisted,
+                bundleOwnership is not null,
                 DynamicLightingIdentityRegistered,
-                BundleOwnershipMatchesCurrentBuild));
+                bundleOwnership is null
+                    || string.Equals(
+                        bundleOwnership.InstalledBuild,
+                        CurrentBuildIdentity,
+                        StringComparison.Ordinal))
+            {
+                BundleOwnership = capturedOwnership,
+            });
         }
 
         public Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
@@ -899,10 +990,26 @@ public sealed class SetupCommandRunnerTests
             AddAsync("uninstall-registration-install", cancellationToken);
         public Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken) =>
             AddAsync("uninstall-registration-remove", cancellationToken);
-        public Task InstallBundleOwnershipAsync(CancellationToken cancellationToken) =>
-            AddAsync("bundle-ownership-install", cancellationToken);
-        public Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken) =>
-            AddAsync("bundle-ownership-remove", cancellationToken);
+        public async Task InstallBundleOwnershipAsync(CancellationToken cancellationToken)
+        {
+            await AddAsync("bundle-ownership-install", cancellationToken);
+            bundleOwnership = new BundleOwnershipIdentity(
+                "WiX Burn",
+                "0.1.0",
+                CurrentBuildIdentity);
+        }
+        public async Task RestoreBundleOwnershipAsync(
+            BundleOwnershipIdentity ownership,
+            CancellationToken cancellationToken)
+        {
+            await AddAsync("bundle-ownership-restore", cancellationToken);
+            bundleOwnership = ownership;
+        }
+        public async Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken)
+        {
+            await AddAsync("bundle-ownership-remove", cancellationToken);
+            bundleOwnership = null;
+        }
         public Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
             AddAsync("dynamic-lighting-install", cancellationToken);
         public Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
@@ -945,7 +1052,8 @@ public sealed class SetupCommandRunnerTests
         bool hadExistingInstall,
         Exception? rollbackFailure = null,
         string? commitWarning = null,
-        Exception? disposeCleanupFailure = null) : ISetupPayloadTransaction
+        Exception? disposeCleanupFailure = null,
+        CancellationTokenSource? cancelOnCommit = null) : ISetupPayloadTransaction
     {
         public List<string> Operations { private get; set; } = [];
         public bool HadExistingInstall => hadExistingInstall;
@@ -963,6 +1071,12 @@ public sealed class SetupCommandRunnerTests
         public Task CommitAsync(CancellationToken cancellationToken)
         {
             Operations.Add("payload-commit");
+            if (cancelOnCommit is not null)
+            {
+                cancelOnCommit.Cancel();
+                return Task.FromCanceled(cancelOnCommit.Token);
+            }
+
             IsActivated = false;
             return Task.CompletedTask;
         }

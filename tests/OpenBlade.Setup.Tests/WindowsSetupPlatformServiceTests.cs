@@ -485,6 +485,7 @@ public sealed class WindowsSetupPlatformServiceTests
         Assert.True(state.Startup.UninstallRegistrationExisted);
         Assert.True(state.BundleOwnershipExisted);
         Assert.False(state.BundleOwnershipMatchesCurrentBuild);
+        Assert.Equal(bundleOwnership.Ownership, state.BundleOwnership);
     }
 
     [Fact]
@@ -495,9 +496,13 @@ public sealed class WindowsSetupPlatformServiceTests
             bundleOwnershipRegistration: bundleOwnership);
 
         await platform.InstallBundleOwnershipAsync(CancellationToken.None);
+        await platform.RestoreBundleOwnershipAsync(
+            bundleOwnership.Ownership,
+            CancellationToken.None);
         await platform.RemoveBundleOwnershipAsync(CancellationToken.None);
 
         Assert.Equal(1, bundleOwnership.Installs);
+        Assert.Equal([bundleOwnership.Ownership], bundleOwnership.Restores);
         Assert.Equal(1, bundleOwnership.Removals);
     }
 
@@ -721,12 +726,21 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         public bool EntryExists { get; init; }
         public bool OwnedByCurrentBuild { get; init; } = true;
+        public BundleOwnershipIdentity Ownership { get; init; } = new(
+            "WiX Burn",
+            "0.1.0",
+            "0.1.0+captured");
         public int Installs { get; private set; }
+        public List<BundleOwnershipIdentity> Restores { get; } = [];
         public int Removals { get; private set; }
 
-        public bool Exists() => EntryExists;
-        public bool IsOwnedByCurrentBuild() => OwnedByCurrentBuild;
+        public BundleOwnershipIdentity? Capture() =>
+            EntryExists ? Ownership : null;
+        public bool IsOwnedByCurrentBuild(BundleOwnershipIdentity ownership) =>
+            OwnedByCurrentBuild;
         public void Install() => Installs++;
+        public void Restore(BundleOwnershipIdentity ownership) =>
+            Restores.Add(ownership);
         public void Remove() => Removals++;
     }
 
