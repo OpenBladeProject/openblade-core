@@ -1002,25 +1002,23 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     {
         try
         {
+            TimeSpan elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
+            TimeSpan nextFrameAt = elapsed + effect.GetNextFrameDelay(elapsed);
             while (true)
             {
-                TimeSpan elapsed = timeProvider.GetElapsedTime(
-                    effectStartedTimestamp);
-                TimeSpan delay = effect.GetNextFrameDelay(elapsed);
-                using var iterationCancellation =
-                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                Task timer = Task.Delay(delay, iterationCancellation.Token);
-                Task wake = streamWake.WaitAsync(iterationCancellation.Token);
-                Task completed = await Task.WhenAny(timer, wake).ConfigureAwait(false);
-                iterationCancellation.Cancel();
-                if (ReferenceEquals(completed, timer))
+                elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
+                TimeSpan remaining = nextFrameAt - elapsed;
+                bool woke = remaining > TimeSpan.Zero
+                    && await WaitForStreamWakeOrDelayAsync(
+                        remaining,
+                        cancellationToken).ConfigureAwait(false);
+                if (woke)
                 {
-                    await timer.ConfigureAwait(false);
+                    // Key-triggered effects wake this single writer. Present the
+                    // pulse immediately, then resume the 30 Hz deadline sequence.
+                    nextFrameAt = timeProvider.GetElapsedTime(effectStartedTimestamp);
                 }
-                else
-                {
-                    await wake.ConfigureAwait(false);
-                }
+
                 elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
                 Rz090528MatrixFrame frame;
                 lock (effectSync)
@@ -1039,6 +1037,13 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                     CancellationToken.None,
                     expectResponse: false)
                     .ConfigureAwait(false);
+
+                TimeSpan observedAfterWrite = timeProvider.GetElapsedTime(
+                    effectStartedTimestamp);
+                nextFrameAt = AdvanceFrameDeadline(
+                    effect,
+                    nextFrameAt,
+                    observedAfterWrite);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1056,6 +1061,44 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 }
             }
         }
+    }
+
+    internal static TimeSpan AdvanceFrameDeadline(
+        IRz090528LightingEffect effect,
+        TimeSpan currentDeadline,
+        TimeSpan observedAfterWrite)
+    {
+        ArgumentNullException.ThrowIfNull(effect);
+        if (currentDeadline < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(currentDeadline));
+        }
+        if (observedAfterWrite < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(observedAfterWrite));
+        }
+
+        TimeSpan cursor = currentDeadline;
+        while (cursor <= observedAfterWrite)
+        {
+            cursor += effect.GetNextFrameDelay(cursor);
+        }
+
+        return cursor;
+    }
+
+    private async Task<bool> WaitForStreamWakeOrDelayAsync(
+        TimeSpan delay,
+        CancellationToken cancellationToken)
+    {
+        using var iterationCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task timer = Task.Delay(delay, timeProvider, iterationCancellation.Token);
+        Task wake = streamWake.WaitAsync(iterationCancellation.Token);
+        Task completed = await Task.WhenAny(timer, wake).ConfigureAwait(false);
+        iterationCancellation.Cancel();
+        await completed.ConfigureAwait(false);
+        return ReferenceEquals(completed, wake);
     }
 
     private async Task StopStreamCoreAsync()

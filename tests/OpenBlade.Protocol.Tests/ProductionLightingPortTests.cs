@@ -1442,6 +1442,19 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public void Rz090528FrameDeadline_AdvancesFromScheduleAndSkipsMissedFrames()
+    {
+        var effect = new Rz090528SpectrumEffect();
+
+        TimeSpan next = Rz090528BrightnessLightingPort.AdvanceFrameDeadline(
+            effect,
+            currentDeadline: Rz090528LightingTiming.AnimatedFrameInterval,
+            observedAfterWrite: TimeSpan.FromMilliseconds(82));
+
+        Assert.Equal(Rz090528LightingTiming.AnimatedFrameInterval * 3, next);
+    }
+
+    [Fact]
     public async Task AmbientAwareness_WritesOnlyTheTypedSessionSampleWhileOwned()
     {
         var session = new LightingSession(initialBrightness: 0xFF);

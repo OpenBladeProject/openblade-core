@@ -14,6 +14,18 @@ public sealed class Rz090528SynapseEffectsTests
     ];
 
     [Fact]
+    public void AnimatedEffects_PresentAtThirtyFramesPerSecond()
+    {
+        Assert.Equal(
+            TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 30),
+            Rz090528LightingTiming.AnimatedFrameInterval);
+        Assert.Equal(
+            30,
+            1 / Rz090528LightingTiming.AnimatedFrameInterval.TotalSeconds,
+            precision: 3);
+    }
+
+    [Fact]
     public void FullAdmission_MatchesExactSynapseQuickEffects()
     {
         DeviceCapabilities capabilities =
@@ -121,6 +133,51 @@ public sealed class Rz090528SynapseEffectsTests
                 effect,
                 direction,
                 TimeSpan.FromMilliseconds(1317))));
+    }
+
+    [Fact]
+    public void CapturedOracleEffects_InterpolateAtThirtyFpsPresentationTimes()
+    {
+        TimeSpan presentationTime = Rz090528LightingTiming.AnimatedFrameInterval;
+        TimeSpan fireSourceFrame = TimeSpan.FromSeconds(4);
+
+        AssertInterpolatedFrame(
+            Rz090528FireOracle.Render(fireSourceFrame),
+            Rz090528FireOracle.Render(
+                fireSourceFrame + TimeSpan.FromMilliseconds(50)),
+            Rz090528FireOracle.Render(fireSourceFrame + presentationTime),
+            presentationTime.TotalMilliseconds / 50);
+        AssertInterpolatedFrame(
+            Rz090528TidalOracle.Render(
+                LightingDirection.Leftward,
+                TimeSpan.Zero,
+                new RgbColor(0, 255, 0),
+                new RgbColor(0, 0, 255)),
+            Rz090528TidalOracle.Render(
+                LightingDirection.Leftward,
+                TimeSpan.FromMilliseconds(50),
+                new RgbColor(0, 255, 0),
+                new RgbColor(0, 0, 255)),
+            Rz090528TidalOracle.Render(
+                LightingDirection.Leftward,
+                presentationTime,
+                new RgbColor(0, 255, 0),
+                new RgbColor(0, 0, 255)),
+            presentationTime.TotalMilliseconds / 50);
+        AssertInterpolatedFrame(
+            Rz090528WaveWheelOracle.Render(
+                "Wave",
+                "Leftward",
+                TimeSpan.Zero),
+            Rz090528WaveWheelOracle.Render(
+                "Wave",
+                "Leftward",
+                TimeSpan.FromMilliseconds(40)),
+            Rz090528WaveWheelOracle.Render(
+                "Wave",
+                "Leftward",
+                presentationTime),
+            presentationTime.TotalMilliseconds / 40);
     }
 
     [Fact]
@@ -326,6 +383,23 @@ public sealed class Rz090528SynapseEffectsTests
             result[offset + 2] = frame[slot].Blue;
         }
         return result;
+    }
+
+    private static void AssertInterpolatedFrame(
+        Rz090528MatrixFrame lower,
+        Rz090528MatrixFrame upper,
+        Rz090528MatrixFrame actual,
+        double fraction)
+    {
+        for (int slot = 0; slot < Rz090528MatrixFrame.SlotCount; slot++)
+        {
+            Assert.Equal(
+                Rz090528LightingMath.Interpolate(
+                    lower[slot],
+                    upper[slot],
+                    fraction),
+                actual[slot]);
+        }
     }
 
     private static bool IsInReferenceRippleBand(int origin, int slot, int band)

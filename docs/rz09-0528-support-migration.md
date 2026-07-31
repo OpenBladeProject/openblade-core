@@ -206,8 +206,11 @@ The maintainability audit produced these high-level fixes:
   duplicated by the decoder;
 - lighting ownership calls require explicit clients, and WDL delegation stops
   the active renderer first;
-- host-rendered lighting uses bounded cadence and renderer cleanup, idle audio
-  frames are suppressed, and pulse scheduling wakes against current time;
+- host-rendered lighting presents animated PID `02C6` effects at 30 FPS from
+  monotonic deadlines, skips missed deadlines instead of bursting, and
+  interpolates captured 40/50 ms oracle samples at presentation time; idle
+  audio frames remain suppressed and pulse scheduling wakes against current
+  time;
 - the playback-mute indicator is gated by an explicit exact-device capability;
 - the tray keeps capability-dependent controls concise and restores the shared
   card interaction behavior.

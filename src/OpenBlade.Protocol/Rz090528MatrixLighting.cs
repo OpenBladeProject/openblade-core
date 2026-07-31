@@ -157,8 +157,11 @@ internal interface IRz090528KeyTriggeredLightingEffect : IRz090528LightingEffect
 
 internal static class Rz090528LightingTiming
 {
-    internal static readonly TimeSpan AnimatedFrameInterval =
-        TimeSpan.FromMilliseconds(45);
+    // Present every host-rendered animation at 30 FPS. Captured effects whose
+    // source samples are 40 or 50 ms apart interpolate between those samples
+    // at the presentation timestamp.
+    internal static readonly TimeSpan AnimatedFrameInterval = TimeSpan.FromTicks(
+        TimeSpan.TicksPerSecond / 30);
     internal static readonly TimeSpan IdleKeepaliveInterval =
         TimeSpan.FromSeconds(5);
 }
