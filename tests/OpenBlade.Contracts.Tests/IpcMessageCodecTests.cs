@@ -485,6 +485,76 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task ReadServerFrameAsync_RejectsMalformedCustomPerformanceCapabilities()
+    {
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            JsonObject customPerformance = Assert.IsType<JsonObject>(
+                capabilities[nameof(DeviceCapabilities.CustomPerformance)]);
+            customPerformance[
+                nameof(CustomPerformanceCapabilities.AllowedCombinations)] = null;
+        });
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsMalformedCpuPowerLimitCapabilities()
+    {
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            JsonObject cpuPowerLimit = Assert.IsType<JsonObject>(
+                capabilities[nameof(DeviceCapabilities.CpuPowerLimit)]);
+            JsonObject watts = Assert.IsType<JsonObject>(
+                cpuPowerLimit[nameof(CpuPowerLimitCapabilities.Watts)]);
+            watts[nameof(DeviceNumericRange.Minimum)] = 0;
+        });
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsMalformedCpuVoltageOptimizerCapabilities()
+    {
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            JsonObject cpuVoltageOptimizer = Assert.IsType<JsonObject>(
+                capabilities[nameof(DeviceCapabilities.CpuVoltageOptimizer)]);
+            JsonObject value = Assert.IsType<JsonObject>(
+                cpuVoltageOptimizer[nameof(CpuVoltageOptimizerCapabilities.Value)]);
+            value[nameof(DeviceNumericRange.Step)] = 0;
+        });
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsMalformedGpuOverclockCapabilities()
+    {
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            JsonObject gpuOverclock = Assert.IsType<JsonObject>(
+                capabilities[nameof(DeviceCapabilities.GpuOverclock)]);
+            JsonObject memoryOffset = Assert.IsType<JsonObject>(
+                gpuOverclock[
+                    nameof(GpuOverclockCapabilities.MemoryOffsetMegahertz)]);
+            memoryOffset[nameof(DeviceNumericRange.Minimum)] = 3_001;
+        });
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsUnknownKeyboardLightingControlMode()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
+        JsonObject status = Assert.IsType<JsonObject>(
+            root[nameof(ServiceStatusEvent.Status)]);
+        status[nameof(ServiceStatusSnapshot.KeyboardLightingControlMode)] = 999;
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ReadServerFrameAsync_RejectsDuplicateObservedPowerSourceBehaviors()
     {
         var observation = new PowerSourceBehaviorObservation(
@@ -1316,6 +1386,52 @@ public sealed class IpcMessageCodecTests
             Firmware: null,
             ServiceVersion: "0.1.0-test",
             KeyboardDriverModeActive: true);
+    }
+
+    private static async Task AssertMalformedNestedCapabilityRejectedAsync(
+        Action<JsonObject> mutateCapabilities)
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            CustomPerformance = new CustomPerformanceCapabilities(
+                new HashSet<CustomPerformanceCombination>
+                {
+                    new(
+                        CustomPerformanceLevel.Medium,
+                        CustomPerformanceLevel.High),
+                }),
+            CpuPowerLimit = new CpuPowerLimitCapabilities(
+                new DeviceNumericRange(45, 95, 1),
+                DeviceFeatureAccess.ReadOnly),
+            CpuVoltageOptimizer = new CpuVoltageOptimizerCapabilities(
+                new DeviceNumericRange(-30, -1, 1),
+                DeviceFeatureAccess.ReadOnly)
+            {
+                SupportsEnableDisable = true,
+            },
+            GpuOverclock = new GpuOverclockCapabilities(
+                new DeviceNumericRange(-1_000, 400, null),
+                new DeviceNumericRange(-1_000, 3_000, null),
+                DeviceFeatureAccess.ObservedOnly)
+            {
+                SupportsEnableDisable = true,
+            },
+        };
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with { Capabilities = capabilities });
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
+        JsonObject status = Assert.IsType<JsonObject>(
+            root[nameof(ServiceStatusEvent.Status)]);
+        JsonObject serializedCapabilities = Assert.IsType<JsonObject>(
+            status[nameof(ServiceStatusSnapshot.Capabilities)]);
+        mutateCapabilities(serializedCapabilities);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
     }
 
     private static void AssertStatusEqual(

@@ -369,6 +369,11 @@ public static class IpcMessageCodec
             throw InvalidStatus("lighting-renderer ownership is unknown");
         }
 
+        if (!Enum.IsDefined(status.KeyboardLightingControlMode))
+        {
+            throw InvalidStatus("keyboard-lighting control mode is unknown");
+        }
+
         if (status.FunctionKeyPrimary is { } functionKeyPrimary
             && !Enum.IsDefined(functionKeyPrimary))
         {
@@ -394,33 +399,7 @@ public static class IpcMessageCodec
             throw InvalidStatus("lighting-suppression collection is malformed");
         }
 
-        if (status.Capabilities is { } capabilities
-            && (capabilities.PerformancePresets is null
-                || capabilities.FanModes is null
-                || capabilities.LightingEffects is null
-                || capabilities.ObservedLightingEffects is null
-                || capabilities.ChargeLimits is null
-                || capabilities.OneShotLaptopControls is null
-                || capabilities.ObservedPowerSourceBehaviors is null
-                || capabilities.ObservedLightingEffects.Any(value => !Enum.IsDefined(value))
-                || capabilities.OneShotLaptopControls.Any(value => !Enum.IsDefined(value))
-                || capabilities.SpecialKeyBindingsAccess is { } specialKeyBindingsAccess
-                    && !Enum.IsDefined(specialKeyBindingsAccess)
-                || !ValidSpecialKeySlots(capabilities)
-                || capabilities.LampArrayLightingAccess is { } lampArrayLightingAccess
-                    && !Enum.IsDefined(lampArrayLightingAccess)
-                || capabilities.OneShotLaptopControls.Distinct().Count()
-                    != capabilities.OneShotLaptopControls.Count
-                || capabilities.ObservedPowerSourceBehaviors.Any(
-                    value => value is null || !value.IsWellFormed)
-                || capabilities.ObservedPowerSourceBehaviors
-                    .Select(value => value.Source)
-                    .Distinct()
-                    .Count() != capabilities.ObservedPowerSourceBehaviors.Count
-                || capabilities.FanSpeedRange is { IsWellFormed: false }
-                || capabilities.FanModes.Any(IsManualFanMode)
-                    && capabilities.FanSpeedRange is null
-                || !ValidChargeLimits(capabilities.ChargeLimits)))
+        if (status.Capabilities is { IsWellFormed: false })
         {
             throw InvalidStatus("capability collections are malformed");
         }
@@ -449,17 +428,6 @@ public static class IpcMessageCodec
         }
 
         return true;
-    }
-
-    private static bool ValidSpecialKeySlots(DeviceCapabilities capabilities)
-    {
-        SpecialKeySlotSet slots = capabilities.WritableSpecialKeySlots;
-        bool onlyKnownSlots = (slots & ~SpecialKeySlotSet.All) == 0;
-        return onlyKnownSlots
-            && (capabilities.SpecialKeyBindingsAccess ==
-                    DeviceFeatureAccess.ReadWrite
-                ? slots != SpecialKeySlotSet.None
-                : slots == SpecialKeySlotSet.None);
     }
 
     private static InvalidDataException InvalidStatus(string reason) =>
@@ -505,17 +473,6 @@ public static class IpcMessageCodec
         options.Converters.Add(new ReadOnlySetJsonConverterFactory());
         return options;
     }
-
-    private static bool ValidChargeLimits(IEnumerable<int> limits)
-    {
-        int[] values = limits.ToArray();
-        return values.Length <= 7
-            && values.Distinct().Count() == values.Length
-            && values.All(value => value is >= 50 and <= 80 && value % 5 == 0);
-    }
-
-    private static bool IsManualFanMode(FanMode mode) =>
-        mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum;
 
     private sealed class BatteryPolicyJsonConverter : JsonConverter<BatteryPolicy>
     {
@@ -646,7 +603,7 @@ public static class IpcMessageCodec
             IReadOnlySet<int> value,
             JsonSerializerOptions options)
         {
-            if (!ValidChargeLimits(value))
+            if (!DeviceCapabilities.AreChargeLimitsWellFormed(value))
             {
                 throw new JsonException("Charge limits are invalid.");
             }

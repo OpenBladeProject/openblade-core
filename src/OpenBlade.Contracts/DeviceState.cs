@@ -58,7 +58,8 @@ public sealed record CustomPerformanceCapabilities(
         && AllowedCombinations.All(combination => combination is not null && combination.IsWellFormed);
 
     public bool Supports(CustomPerformanceSettings? settings) =>
-        CustomPerformanceSettings.IsWellFormed(settings)
+        IsWellFormed
+        && CustomPerformanceSettings.IsWellFormed(settings)
         && AllowedCombinations.Contains(new(settings!.Cpu, settings.Gpu));
 }
 
@@ -190,6 +191,46 @@ public sealed record DeviceCapabilities(
     public IReadOnlySet<OneShotLaptopControl> OneShotLaptopControls { get; init; } =
         new HashSet<OneShotLaptopControl>();
 
+    internal bool IsWellFormed =>
+        IsValidEnumSet(PerformancePresets)
+        && IsValidEnumSet(FanModes)
+        && IsValidEnumSet(LightingEffects)
+        && AreChargeLimitsWellFormed(ChargeLimits)
+        && (FanSpeedRange is null || FanSpeedRange.IsWellFormed)
+        && (!FanModes.Any(IsManualFanMode) || FanSpeedRange is not null)
+        && (CustomPerformance is null || CustomPerformance.IsWellFormed)
+        && (CpuPowerLimit is null || CpuPowerLimit.IsWellFormed)
+        && (CpuVoltageOptimizer is null || CpuVoltageOptimizer.IsWellFormed)
+        && (GpuOverclock is null || GpuOverclock.IsWellFormed)
+        && (SpecialKeyBindingsAccess is null
+            || Enum.IsDefined(SpecialKeyBindingsAccess.Value))
+        && HasValidSpecialKeySlots()
+        && (LampArrayLightingAccess is null
+            || Enum.IsDefined(LampArrayLightingAccess.Value))
+        && IsValidEnumSet(ObservedLightingEffects)
+        && IsValidEnumSet(LogoLightingModes)
+        && IsValidEnumSet(OneShotLaptopControls)
+        && ObservedPowerSourceBehaviors is not null
+        && ObservedPowerSourceBehaviors.All(
+            observation => observation is not null && observation.IsWellFormed)
+        && ObservedPowerSourceBehaviors
+            .Select(observation => observation.Source)
+            .Distinct()
+            .Count() == ObservedPowerSourceBehaviors.Count;
+
+    internal static bool AreChargeLimitsWellFormed(IEnumerable<int>? limits)
+    {
+        if (limits is null)
+        {
+            return false;
+        }
+
+        int[] values = limits.ToArray();
+        return values.Length <= 7
+            && values.Distinct().Count() == values.Length
+            && values.All(value => value is >= 50 and <= 80 && value % 5 == 0);
+    }
+
     public static DeviceCapabilities Unavailable() => new(
         new HashSet<PerformancePreset>(),
         new HashSet<FanMode>(),
@@ -209,6 +250,24 @@ public sealed record DeviceCapabilities(
         SupportsKeyboardBrightness = true,
         FanSpeedRange = FanSpeedRange.Standard,
     };
+
+    private bool HasValidSpecialKeySlots()
+    {
+        bool onlyKnownSlots =
+            (WritableSpecialKeySlots & ~SpecialKeySlotSet.All) == 0;
+        return onlyKnownSlots
+            && (SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
+                ? WritableSpecialKeySlots != SpecialKeySlotSet.None
+                : WritableSpecialKeySlots == SpecialKeySlotSet.None);
+    }
+
+    private static bool IsManualFanMode(FanMode mode) =>
+        mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum;
+
+    private static bool IsValidEnumSet<TEnum>(IReadOnlySet<TEnum>? values)
+        where TEnum : struct, Enum =>
+        values is not null
+        && values.All(Enum.IsDefined);
 }
 
 public sealed record ConfirmedDeviceState(
