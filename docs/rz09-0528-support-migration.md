@@ -2432,3 +2432,32 @@ Before extending function-row translation to another model, require that
 model's own Fn-state evidence and add it to the explicit support predicate.
 Do not broaden the gate to every Razer device merely because the standard
 F1-F12 scan-code map is shared.
+
+## Present discovered tuning as settings, not capture notes
+
+The first RZ09-0528 tuning summary exposed protocol-development language
+directly on the Laptop page: Synapse driver ownership, captured-policy
+qualifiers, and exact-device setter-validation status. That information is
+important to maintainers but does not tell a user what a setting does or
+whether they can use it.
+
+Keep every newly discovered capability visible, but give it the same hierarchy
+as an ordinary setting:
+
+- a familiar name;
+- one sentence explaining its effect;
+- a compact useful range; and
+- a plain availability state.
+
+For this model, CPU power limit is described as controlling processor power,
+CPU voltage optimization as potentially lowering temperature and power use,
+and GPU clock tuning as changing core and memory speeds. Their captured ranges
+remain visible, while each observed-only feature says `Not available in
+OpenBlade yet`. The main UI no longer mentions kernel drivers, packet-capture
+status, or setter-validation terminology.
+
+Do not delete a feature from the UI merely because its setter is not admitted.
+Do not make an observed-only row look editable either. Keep the backend,
+provenance, and admission boundary in this guide and sanitized evidence; keep
+the primary page focused on what the feature means to the person using the
+laptop.

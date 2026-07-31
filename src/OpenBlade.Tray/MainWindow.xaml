@@ -457,16 +457,23 @@
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="CPU power limit"
                                                    Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="{Binding CpuPowerLimitAccessLabel}"
+                                        <TextBlock Text="Controls how much power the processor can use."
                                                    MaxWidth="520"
                                                    TextWrapping="Wrap"
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <TextBlock Grid.Column="1"
-                                               Text="{Binding CpuPowerLimitRangeLabel}"
-                                               VerticalAlignment="Center"
-                                               Style="{StaticResource CardTitleStyle}"
-                                               AutomationProperties.Name="CPU power limit discovered range" />
+                                    <StackPanel Grid.Column="1"
+                                                Spacing="3"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding CpuPowerLimitRangeLabel}"
+                                                   HorizontalAlignment="Right"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   AutomationProperties.Name="CPU power limit range" />
+                                        <TextBlock Text="{Binding CpuPowerLimitAccessLabel}"
+                                                   HorizontalAlignment="Right"
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
@@ -478,33 +485,58 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="CPU voltage optimizer"
+                                        <TextBlock Text="CPU voltage optimization"
                                                    Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="{Binding CpuVoltageOptimizerAccessLabel}"
+                                        <TextBlock Text="May lower CPU temperatures and power use."
                                                    MaxWidth="520"
                                                    TextWrapping="Wrap"
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <TextBlock Grid.Column="1"
-                                               Text="{Binding CpuVoltageOptimizerRangeLabel}"
-                                               VerticalAlignment="Center"
-                                               Style="{StaticResource CardTitleStyle}"
-                                               AutomationProperties.Name="CPU voltage optimizer discovered range" />
+                                    <StackPanel Grid.Column="1"
+                                                Spacing="3"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding CpuVoltageOptimizerRangeLabel}"
+                                                   HorizontalAlignment="Right"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   AutomationProperties.Name="CPU voltage optimization range" />
+                                        <TextBlock Text="{Binding CpuVoltageOptimizerAccessLabel}"
+                                                   HorizontalAlignment="Right"
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuOverclockPolicyVisible}">
-                                <StackPanel Spacing="3">
-                                    <TextBlock Text="GPU overclock policy"
-                                               Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="{Binding GpuOverclockPolicyLabel}"
-                                               TextWrapping="Wrap"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                    <TextBlock Text="{Binding GpuClockTuningAccessLabel}"
-                                               TextWrapping="Wrap"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                </StackPanel>
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="GPU clock tuning"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Adjusts graphics performance by changing core and memory speeds."
+                                                   MaxWidth="520"
+                                                   TextWrapping="Wrap"
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1"
+                                                Spacing="3"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding GpuOverclockPolicyLabel}"
+                                                   HorizontalAlignment="Right"
+                                                   TextAlignment="Right"
+                                                   TextWrapping="Wrap"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   AutomationProperties.Name="GPU clock tuning ranges" />
+                                        <TextBlock Text="{Binding GpuClockTuningAccessLabel}"
+                                                   HorizontalAlignment="Right"
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="Collapsed"

@@ -2034,17 +2034,19 @@ public sealed class MainViewModelTests
                 CustomPerformanceLevel.High,
                 CustomPerformanceLevel.Medium)));
         Assert.True(viewModel.IsCpuPowerLimitVisible);
-        Assert.Equal("45–95 W, 1 W steps", viewModel.CpuPowerLimitRangeLabel);
-        Assert.Contains("AMD kernel driver", viewModel.CpuPowerLimitAccessLabel);
-        Assert.Contains("does not depend on it", viewModel.CpuPowerLimitAccessLabel);
-        Assert.Contains("read-only", viewModel.CpuPowerLimitAccessLabel);
+        Assert.Equal("45–95 W", viewModel.CpuPowerLimitRangeLabel);
+        Assert.Equal("Not available in OpenBlade yet", viewModel.CpuPowerLimitAccessLabel);
         Assert.True(viewModel.IsCpuVoltageOptimizerVisible);
-        Assert.Contains("On/Off", viewModel.CpuVoltageOptimizerRangeLabel);
-        Assert.Contains("same AMD kernel driver", viewModel.CpuVoltageOptimizerAccessLabel);
-        Assert.Contains("read-only", viewModel.CpuVoltageOptimizerAccessLabel);
+        Assert.Equal("Off or levels -30 to -1", viewModel.CpuVoltageOptimizerRangeLabel);
+        Assert.Equal(
+            "Not available in OpenBlade yet",
+            viewModel.CpuVoltageOptimizerAccessLabel);
         Assert.True(viewModel.IsGpuOverclockPolicyVisible);
-        Assert.Contains("On/Off captured", viewModel.GpuOverclockPolicyLabel);
-        Assert.Contains("core -1000 to 400 MHz", viewModel.GpuOverclockPolicyLabel);
+        Assert.Contains("Core -1000 to +400 MHz", viewModel.GpuOverclockPolicyLabel);
+        Assert.Contains("Memory -1000 to +3000 MHz", viewModel.GpuOverclockPolicyLabel);
+        Assert.Equal(
+            "Not available in OpenBlade yet",
+            viewModel.GpuClockTuningAccessLabel);
         Assert.False(viewModel.CanEditGpuClockTuning);
         Assert.False(viewModel.IsSpecialKeyBindingsEditable);
         Assert.True(viewModel.IsSpecialKeyBindingsObservedOnlyVisible);

@@ -117,6 +117,20 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Power mode");
+        Assert.Contains(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text")
+                == "Controls how much power the processor can use.");
+        Assert.Contains(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text")
+                == "May lower CPU temperatures and power use.");
+        Assert.Contains(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text")
+                == "Adjusts graphics performance by changing core and memory speeds.");
+        Assert.DoesNotContain("AMD kernel driver", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("exact-device setter validation", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Performance");

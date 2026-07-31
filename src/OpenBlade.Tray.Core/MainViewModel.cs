@@ -1453,12 +1453,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && Capabilities.CpuPowerLimit?.IsWellFormed == true;
 
     public string CpuPowerLimitRangeLabel =>
-        FormatObservedRange(Capabilities.CpuPowerLimit?.Watts, "W");
+        FormatObservedRangeSummary(Capabilities.CpuPowerLimit?.Watts, "W");
 
     public string CpuPowerLimitAccessLabel =>
-        FormatFeatureAccess(
-            Capabilities.CpuPowerLimit?.Access,
-            "Synapse uses an AMD kernel driver. OpenBlade does not depend on it, so this stays read-only.");
+        FormatTuningAvailability(Capabilities.CpuPowerLimit?.Access);
 
     public bool IsCpuVoltageOptimizerVisible =>
         ActivePowerSource == PowerSource.PluggedIn
@@ -1466,14 +1464,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string CpuVoltageOptimizerRangeLabel =>
         Capabilities.CpuVoltageOptimizer is { } optimizer
-            ? $"{FormatObservedRange(optimizer.Value, string.Empty)}"
-                + (optimizer.SupportsEnableDisable ? "; On/Off" : string.Empty)
+            ? (optimizer.SupportsEnableDisable ? "Off or " : string.Empty)
+                + $"levels {optimizer.Value.Minimum} to {optimizer.Value.Maximum}"
             : UnavailableLabel;
 
     public string CpuVoltageOptimizerAccessLabel =>
-        FormatFeatureAccess(
-            Capabilities.CpuVoltageOptimizer?.Access,
-            "Synapse uses the same AMD kernel driver. OpenBlade keeps this read-only.");
+        FormatTuningAvailability(Capabilities.CpuVoltageOptimizer?.Access);
 
     public bool IsGpuOverclockPolicyVisible =>
         ActivePowerSource == PowerSource.PluggedIn
@@ -1485,16 +1481,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             GpuOverclockCapabilities? policy = Capabilities.GpuOverclock;
             return policy?.IsWellFormed == true
-                ? $"{(policy.SupportsEnableDisable ? "On/Off captured. " : string.Empty)}"
-                    + $"Synapse policy: core {policy.CoreOffsetMegahertz.Minimum} to {policy.CoreOffsetMegahertz.Maximum} MHz; memory {policy.MemoryOffsetMegahertz.Minimum} to {policy.MemoryOffsetMegahertz.Maximum} MHz."
+                ? $"Core {FormatSigned(policy.CoreOffsetMegahertz.Minimum)} to "
+                    + $"{FormatSigned(policy.CoreOffsetMegahertz.Maximum)} MHz"
+                    + $"{Environment.NewLine}Memory "
+                    + $"{FormatSigned(policy.MemoryOffsetMegahertz.Minimum)} to "
+                    + $"{FormatSigned(policy.MemoryOffsetMegahertz.Maximum)} MHz"
                 : UnavailableLabel;
         }
     }
 
     public string GpuClockTuningAccessLabel =>
-        FormatFeatureAccess(
-            Capabilities.GpuOverclock?.Access,
-            "Ranges are documented, but writes remain disabled until exact-device setter validation.");
+        FormatTuningAvailability(Capabilities.GpuOverclock?.Access);
 
     public bool IsSpecialKeyBindingsEditable =>
         Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
@@ -3527,6 +3524,28 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : ", step not yet validated";
         return $"{range.Minimum}–{range.Maximum}{suffix}{step}";
     }
+
+    private static string FormatObservedRangeSummary(DeviceNumericRange? range, string unit)
+    {
+        if (range?.IsWellFormed != true)
+        {
+            return UnavailableLabel;
+        }
+
+        string suffix = string.IsNullOrEmpty(unit) ? string.Empty : $" {unit}";
+        return $"{range.Minimum}–{range.Maximum}{suffix}";
+    }
+
+    private static string FormatTuningAvailability(DeviceFeatureAccess? access) => access switch
+    {
+        DeviceFeatureAccess.ReadWrite => "Available",
+        DeviceFeatureAccess.ReadOnly => "View only",
+        DeviceFeatureAccess.ObservedOnly => "Not available in OpenBlade yet",
+        _ => UnavailableLabel,
+    };
+
+    private static string FormatSigned(int value) =>
+        value > 0 ? $"+{value}" : value.ToString(CultureInfo.InvariantCulture);
 
     private static string FormatFeatureAccess(
         DeviceFeatureAccess? access,
