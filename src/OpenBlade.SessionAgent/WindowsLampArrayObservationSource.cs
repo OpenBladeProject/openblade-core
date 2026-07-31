@@ -24,12 +24,75 @@ internal sealed record LampArrayVirtualKeyFingerprint(
     string Key,
     IReadOnlyList<int> Indices);
 
+internal sealed class LampArrayGeometryFingerprintCache
+{
+    private readonly object sync = new();
+    private readonly HashSet<string> deviceIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> fingerprints =
+        new(StringComparer.Ordinal);
+
+    internal void SynchronizeDeviceSet(IEnumerable<string> currentDeviceIds)
+    {
+        ArgumentNullException.ThrowIfNull(currentDeviceIds);
+        var next = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string deviceId in currentDeviceIds)
+        {
+            if (string.IsNullOrWhiteSpace(deviceId))
+            {
+                throw new ArgumentException(
+                    "LampArray device identifiers must be nonempty.",
+                    nameof(currentDeviceIds));
+            }
+
+            next.Add(deviceId);
+        }
+
+        lock (sync)
+        {
+            if (deviceIds.SetEquals(next))
+            {
+                return;
+            }
+
+            deviceIds.Clear();
+            deviceIds.UnionWith(next);
+            fingerprints.Clear();
+        }
+    }
+
+    internal string GetOrCreate(
+        string deviceId,
+        Func<string> fingerprintFactory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deviceId);
+        ArgumentNullException.ThrowIfNull(fingerprintFactory);
+        lock (sync)
+        {
+            if (!deviceIds.Contains(deviceId))
+            {
+                throw new InvalidOperationException(
+                    "LampArray geometry was requested outside the current device set.");
+            }
+
+            if (fingerprints.TryGetValue(deviceId, out string? fingerprint))
+            {
+                return fingerprint;
+            }
+
+            fingerprint = fingerprintFactory();
+            fingerprints.Add(deviceId, fingerprint);
+            return fingerprint;
+        }
+    }
+}
+
 internal sealed class WindowsLampArrayObservationSource : ILampArrayObservationSource
 {
     private const ushort TargetVendorId = 0x1532;
     private const ushort TargetProductId = 0x02C6;
     private static readonly TimeSpan EnumerationTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(10);
+    private readonly LampArrayGeometryFingerprintCache geometryCache = new();
 
     public async Task<LampArrayObservation> ObserveAsync(
         CancellationToken cancellationToken)
@@ -43,7 +106,8 @@ internal sealed class WindowsLampArrayObservationSource : ILampArrayObservationS
             IReadOnlyList<DeviceInformation> devices = await EnumerateAsync(
                     observationToken)
                 .ConfigureAwait(false);
-            var exact = new List<LampArray>();
+            geometryCache.SynchronizeDeviceSet(devices.Select(device => device.Id));
+            var exact = new List<(string DeviceId, LampArray LampArray)>();
             int openFailures = 0;
             foreach (DeviceInformation device in devices)
             {
@@ -57,7 +121,7 @@ internal sealed class WindowsLampArrayObservationSource : ILampArrayObservationS
                         && lampArray.HardwareVendorId == TargetVendorId
                         && lampArray.HardwareProductId == TargetProductId)
                     {
-                        exact.Add(lampArray);
+                        exact.Add((device.Id, lampArray));
                     }
                 }
                 catch (OperationCanceledException) when (
@@ -96,7 +160,7 @@ internal sealed class WindowsLampArrayObservationSource : ILampArrayObservationS
                     GeometrySha256: null);
             }
 
-            LampArray first = exact[0];
+            (string firstDeviceId, LampArray first) = exact[0];
             return new(
                 devices.Count,
                 exact.Count,
@@ -107,7 +171,9 @@ internal sealed class WindowsLampArrayObservationSource : ILampArrayObservationS
                 first.IsAvailable,
                 first.SupportsVirtualKeys,
                 checked((long)(first.MinUpdateInterval.TotalMilliseconds * 1000)),
-                ComputeGeometrySha256(first));
+                geometryCache.GetOrCreate(
+                    firstDeviceId,
+                    () => ComputeGeometrySha256(first)));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
