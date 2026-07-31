@@ -441,6 +441,48 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task Rz090528DisposeWithinDeadline_RetainsStalledCleanup()
+    {
+        var time = new ManualTimeProvider();
+        var registry = new PendingDisposalRegistry();
+        var session = new LightingSession(initialBrightness: 0);
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            timeProvider: time,
+            cleanupDrainTimeout: TimeSpan.FromSeconds(1),
+            pendingDisposals: registry);
+        var gate = Assert.IsType<SemaphoreSlim>(
+            typeof(Rz090528BrightnessLightingPort)
+                .GetField(
+                    "operationGate",
+                    BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(port));
+        await gate.WaitAsync();
+
+        Task<bool> disposal = port.DisposeWithinCleanupDeadlineAsync();
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.False(await disposal);
+        Assert.Equal(1, registry.Count);
+        Assert.NotEqual(
+            RazerCommandSessionDisposition.FullyDisposed,
+            session.Disposition);
+
+        gate.Release();
+        await registry.WhenEmptyAsync().WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(0, registry.Count);
+        Assert.Equal(
+            RazerCommandSessionDisposition.FullyDisposed,
+            session.Disposition);
+        Assert.True(await port.DisposeWithinCleanupDeadlineAsync());
+    }
+
+    [Fact]
     public async Task DriverModeLifecycle_AcquiresVerifiedModeAndRestoresOwnedBaseline()
     {
         var session = new LightingSession(initialBrightness: 0xC5)

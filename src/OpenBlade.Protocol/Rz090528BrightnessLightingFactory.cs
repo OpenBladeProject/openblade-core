@@ -11,9 +11,14 @@ internal sealed record BrightnessRoundTripResult(
 internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPortFactory
 {
     private static readonly TimeSpan ExchangeTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan DefaultCleanupDrainTimeout =
+        TimeSpan.FromSeconds(5);
 
     private readonly Func<ValidationRunContext> createContext;
     private readonly IValidationActorFactory actorFactory;
+    private readonly TimeProvider timeProvider;
+    private readonly TimeSpan cleanupDrainTimeout;
+    private readonly PendingDisposalRegistry pendingDisposals;
     private readonly bool staticEffectAdmitted;
     private readonly bool spectrumEffectAdmitted;
     private readonly bool allSynapseEffectsAdmitted;
@@ -23,13 +28,21 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
         IValidationActorFactory actorFactory,
         bool staticEffectAdmitted = false,
         bool spectrumEffectAdmitted = false,
-        bool allSynapseEffectsAdmitted = false)
+        bool allSynapseEffectsAdmitted = false,
+        TimeProvider? timeProvider = null,
+        TimeSpan? cleanupDrainTimeout = null,
+        PendingDisposalRegistry? pendingDisposals = null)
     {
         this.createContext = createContext;
         this.actorFactory = actorFactory;
         this.staticEffectAdmitted = staticEffectAdmitted;
         this.spectrumEffectAdmitted = spectrumEffectAdmitted;
         this.allSynapseEffectsAdmitted = allSynapseEffectsAdmitted;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.cleanupDrainTimeout =
+            cleanupDrainTimeout ?? DefaultCleanupDrainTimeout;
+        RazerCommandSessionTimeout.Validate(this.cleanupDrainTimeout);
+        this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
         Capabilities = Rz090528BrightnessLightingPort.CreateCapabilities(
             staticEffectAdmitted,
             spectrumEffectAdmitted,
@@ -91,7 +104,10 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
                 ExchangeTimeout,
                 staticEffectAdmitted,
                 spectrumEffectAdmitted,
-                allSynapseEffectsAdmitted),
+                allSynapseEffectsAdmitted,
+                timeProvider,
+                cleanupDrainTimeout,
+                pendingDisposals),
             null);
     }
 }
@@ -107,7 +123,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     private readonly SemaphoreSlim featureIoGate = new(1, 1);
     private readonly SemaphoreSlim streamWake = new(0, 1);
     private readonly object effectSync = new();
+    private readonly object lifecycleSync = new();
     private readonly TimeProvider timeProvider;
+    private readonly TimeSpan cleanupDrainTimeout;
+    private readonly PendingDisposalRegistry pendingDisposals;
     private IRz090528LightingEffect? activeEffect;
     private LightingSettings? lastDeliveredState;
     private CancellationTokenSource? streamCancellation;
@@ -116,6 +135,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     private LightingRendererOwnershipState ownershipState;
     private int nextTransaction = 1;
     private bool ownsDriverMode;
+    private bool closing;
+    private Task<LightingRendererOwnershipState>? closeTask;
     private int disposed;
 
     internal Rz090528BrightnessLightingPort(
@@ -124,7 +145,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         bool staticEffectAdmitted = false,
         bool spectrumEffectAdmitted = false,
         bool allSynapseEffectsAdmitted = false,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        TimeSpan? cleanupDrainTimeout = null,
+        PendingDisposalRegistry? pendingDisposals = null)
     {
         this.actor = actor;
         session = new Rz090528CommandSessionGate(
@@ -132,6 +155,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             Rz090528CommandSessionGate.Shared);
         this.exchangeTimeout = exchangeTimeout;
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.cleanupDrainTimeout =
+            cleanupDrainTimeout ?? TimeSpan.FromSeconds(5);
+        RazerCommandSessionTimeout.Validate(this.cleanupDrainTimeout);
+        this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
         Capabilities = CreateCapabilities(
             staticEffectAdmitted,
             spectrumEffectAdmitted,
@@ -695,32 +722,57 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         CancellationToken cancellationToken) =>
         Reject(cancellationToken);
 
-    public async Task<LightingRendererOwnershipState> InvalidateAsync()
+    public Task<LightingRendererOwnershipState> InvalidateAsync() => CloseAsync();
+
+    public ValueTask DisposeAsync() => new(CloseAsync());
+
+    public async Task<bool> DisposeWithinCleanupDeadlineAsync()
     {
-        await DisposeAsync().ConfigureAwait(false);
-        return LightingRendererOwnershipState.None;
+        Task<LightingRendererOwnershipState> closingTask = CloseAsync();
+        await BoundedValidationActorDisposal.DisposeAsync(
+            this,
+            timeProvider,
+            cleanupDrainTimeout,
+            pendingDisposals).ConfigureAwait(false);
+        return closingTask.IsCompleted;
     }
 
-    public async ValueTask DisposeAsync()
+    private Task<LightingRendererOwnershipState> CloseAsync()
     {
-        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        lock (lifecycleSync)
         {
-            return;
+            closing = true;
+            return closeTask ??= CloseCoreAsync();
         }
+    }
 
+    private async Task<LightingRendererOwnershipState> CloseCoreAsync()
+    {
         await operationGate.WaitAsync().ConfigureAwait(false);
         try
         {
             await StopStreamCoreAsync().ConfigureAwait(false);
+            LightingRendererOwnershipState observed = OwnershipState;
+            lock (effectSync)
+            {
+                activeEffect = null;
+                lastDeliveredState = null;
+                ownershipState = LightingRendererOwnershipState.None;
+            }
             await TryRestoreOwnedDeviceModeCoreAsync().ConfigureAwait(false);
             await actor.DisposeAsync().ConfigureAwait(false);
+            featureIoGate.Dispose();
+            streamWake.Dispose();
+            lock (lifecycleSync)
+            {
+                Volatile.Write(ref disposed, 1);
+            }
+
+            return observed;
         }
         finally
         {
             operationGate.Release();
-            operationGate.Dispose();
-            featureIoGate.Dispose();
-            streamWake.Dispose();
         }
     }
 
@@ -1536,16 +1588,21 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
     private async Task EnterAsync(CancellationToken cancellationToken)
     {
-        if (Volatile.Read(ref disposed) != 0)
+        lock (lifecycleSync)
         {
-            throw new ObjectDisposedException(nameof(Rz090528BrightnessLightingPort));
+            ObjectDisposedException.ThrowIf(
+                closing || Volatile.Read(ref disposed) != 0,
+                this);
         }
 
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        if (Volatile.Read(ref disposed) != 0)
+        lock (lifecycleSync)
         {
-            operationGate.Release();
-            throw new ObjectDisposedException(nameof(Rz090528BrightnessLightingPort));
+            if (closing || Volatile.Read(ref disposed) != 0)
+            {
+                operationGate.Release();
+                throw new ObjectDisposedException(GetType().Name);
+            }
         }
     }
 
