@@ -484,6 +484,28 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task Rz090528DisposeWithinDeadline_ReturnsFalseWhenCleanupFaults()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DisposeFailure = new IOException("Synthetic close failure."),
+        };
+        var registry = new PendingDisposalRegistry();
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            pendingDisposals: registry);
+
+        bool drained = await port.DisposeWithinCleanupDeadlineAsync();
+
+        Assert.False(drained);
+        Assert.Equal(0, registry.Count);
+    }
+
+    [Fact]
     public async Task DriverModeLifecycle_AcquiresVerifiedModeAndRestoresOwnedBaseline()
     {
         var session = new LightingSession(initialBrightness: 0xC5)
@@ -1692,6 +1714,26 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task DisposeWithinCleanupDeadline_ReturnsFalseWhenTheCloseFaults()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF)
+        {
+            DisposeFailure = new IOException("Synthetic close failure."),
+        };
+        var registry = new PendingDisposalRegistry();
+        var port = CreatePort(
+            session,
+            new MatrixWriter(),
+            admitted: true,
+            pendingDisposals: registry);
+
+        bool drained = await port.DisposeWithinCleanupDeadlineAsync();
+
+        Assert.False(drained);
+        Assert.Equal(0, registry.Count);
+    }
+
+    [Fact]
     public async Task DisposeWithinCleanupDeadline_IsIdempotentAcrossRepeatCalls()
     {
         var time = new ManualTimeProvider();
@@ -1958,6 +2000,8 @@ public sealed class ProductionLightingPortTests
 
         internal byte[]? Transition84Response { get; set; }
 
+        internal Exception? DisposeFailure { get; init; }
+
         internal RazerDeviceMode DeviceMode { get; set; } = RazerDeviceMode.Driver;
 
         public RazerCommandSessionDisposition Disposition { get; private set; } =
@@ -2071,7 +2115,9 @@ public sealed class ProductionLightingPortTests
         public ValueTask DisposeAsync()
         {
             Disposition = RazerCommandSessionDisposition.FullyDisposed;
-            return ValueTask.CompletedTask;
+            return DisposeFailure is null
+                ? ValueTask.CompletedTask
+                : ValueTask.FromException(DisposeFailure);
         }
 
         private byte[] SetBrightness(ReadOnlySpan<byte> arguments)

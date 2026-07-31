@@ -140,5 +140,6 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
             | SpecialKeySlotSet.M5)
         && lighting.LampArrayLightingAccess == DeviceFeatureAccess.ObservedOnly
         && lighting.LogoLightingModes.SetEquals(Enum.GetValues<LogoLightingMode>())
-        && lighting.SupportsKeyboardBrightness;
+        && lighting.SupportsKeyboardBrightness
+        && !lighting.SupportsPlaybackMuteIndicator;
 }

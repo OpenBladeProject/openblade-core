@@ -734,7 +734,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             timeProvider,
             cleanupDrainTimeout,
             pendingDisposals).ConfigureAwait(false);
-        return closingTask.IsCompleted;
+        return closingTask.IsCompletedSuccessfully;
     }
 
     private Task<LightingRendererOwnershipState> CloseAsync()

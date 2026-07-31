@@ -316,6 +316,31 @@ public sealed class ProfileSetValidatorTests
     }
 
     [Fact]
+    public void Validate_AcceptsMaximumFanModeWithDeviceSpecificFixedRange()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Fans = FanMode.Maximum,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        };
+        ProfileSetValidator validator = CreateValidator(
+            combinations: new HashSet<PerformanceFanCombination>
+            {
+                new(PerformancePreset.Balanced, FanMode.Maximum),
+                new(PerformancePreset.Balanced, FanMode.Automatic),
+                new(PerformancePreset.BatterySaver, FanMode.Automatic),
+                new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
+            },
+            fanSpeedRange: new FanSpeedRange(2000, 5000, 100));
+
+        validator.Validate(profiles);
+    }
+
+    [Fact]
     public void Validate_RejectsCustomPerformanceCombinationOutsideDevicePolicy()
     {
         ProfileSet profiles = WithPluggedInCustomPerformance(

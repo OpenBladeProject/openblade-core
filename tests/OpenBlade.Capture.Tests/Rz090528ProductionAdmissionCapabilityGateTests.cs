@@ -63,6 +63,12 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
                     ObservedLightingEffects =
                         new HashSet<LightingEffect> { LightingEffect.Static },
                 }),
+            (
+                battery,
+                lighting with
+                {
+                    SupportsPlaybackMuteIndicator = true,
+                }),
         };
 
         Assert.All(

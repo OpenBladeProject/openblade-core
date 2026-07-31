@@ -1130,8 +1130,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 try
                 {
-                    _ = await RestoreLightingRendererCoreAsync(CancellationToken.None)
-                        .ConfigureAwait(false);
+                    bool restored = await RestoreLightingRendererCoreAsync(
+                        CancellationToken.None).ConfigureAwait(false);
+                    if (!restored)
+                    {
+                        throw new InvalidOperationException(
+                            "The previous lighting renderer could not be restored.");
+                    }
                 }
                 catch (Exception restoreException)
                 {
@@ -5120,6 +5125,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
+            && left.SupportsPlaybackMuteIndicator
+                == right.SupportsPlaybackMuteIndicator
             && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
             && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
 

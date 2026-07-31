@@ -555,7 +555,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             timeProvider,
             cleanupDrainTimeout,
             pendingDisposals).ConfigureAwait(false);
-        return closingTask.IsCompleted;
+        return closingTask.IsCompletedSuccessfully;
     }
 
     public async Task EnsureDriverModeAsync(CancellationToken cancellationToken) =>

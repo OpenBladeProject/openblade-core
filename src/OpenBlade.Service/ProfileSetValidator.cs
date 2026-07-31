@@ -234,10 +234,11 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
     {
         FanControlSettings settings = profile.FanControl
             ?? FanControlSettings.FromLegacy(profile.Fans);
+        bool legacyMaximum = profile.Fans == FanMode.Maximum
+            && settings.Mode == FanMode.Fixed
+            && settings.FixedSpeedRpm == FanControlSettings.MaximumSpeedRpm;
         if (settings.Mode != profile.Fans
-            && !(profile.Fans == FanMode.Maximum
-                && settings.Mode == FanMode.Fixed
-                && settings.FixedSpeedRpm == FanControlSettings.MaximumSpeedRpm))
+            && !legacyMaximum)
         {
             throw Invalid($"The {name} fan settings do not match the selected fan mode.");
         }
@@ -249,7 +250,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 
         bool supported = settings.Mode switch
         {
-            FanMode.Fixed => range.Supports(settings.FixedSpeedRpm),
+            FanMode.Fixed => legacyMaximum || range.Supports(settings.FixedSpeedRpm),
             FanMode.ManualCurve => settings.ManualCurve.Cpu
                     .Concat(settings.ManualCurve.Gpu)
                     .All(point => range.Supports(point.SpeedRpm)),

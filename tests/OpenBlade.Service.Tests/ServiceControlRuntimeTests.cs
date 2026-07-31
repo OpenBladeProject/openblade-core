@@ -367,6 +367,36 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Observe_PublishesPlaybackMuteIndicatorCapabilityChange()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsPlaybackMuteIndicator = false,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        long revision = context.Runtime.GetStatus().Revision;
+        int publications = context.Hub.Published.Count;
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            SupportsPlaybackMuteIndicator = true,
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(revision + 1, status.Revision);
+        Assert.Equal(publications + 1, context.Hub.Published.Count);
+        Assert.True(status.Capabilities!.SupportsPlaybackMuteIndicator);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
     public async Task ReactivePulse_RequiresOwnedReactiveRendererWithoutEffectReadback()
     {
         ProfileSetValidator validator = ProfileSetValidator.CreateForLightingCapabilities(
@@ -1393,6 +1423,52 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             KeyboardLightingControlMode.OpenBlade,
             context.Runtime.GetStatus().KeyboardLightingControlMode);
+    }
+
+    [Fact]
+    public async Task WindowsDynamicLightingMode_ReportsFailedPersistenceAndRollback()
+    {
+        bool failPersistence = false;
+        TestContext? context = null;
+        context = await CreateOwnedStaticLightingContextAsync(
+            (_, _) =>
+            {
+                if (!failPersistence)
+                {
+                    return Task.CompletedTask;
+                }
+
+                context!.Provider.Available = false;
+                return Task.FromException(
+                    new IOException("Synthetic persistence failure."));
+            });
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        failPersistence = true;
+
+        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(
+            () => context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None));
+
+        Assert.Collection(
+            failure.InnerExceptions,
+            exception => Assert.Contains(
+                "Synthetic persistence failure",
+                exception.Message),
+            exception => Assert.Contains(
+                "previous lighting renderer could not be restored",
+                exception.Message,
+                StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(
+            KeyboardLightingControlMode.OpenBlade,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
     [Fact]

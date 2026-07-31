@@ -3395,6 +3395,42 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task PlaybackMuteIndicatorCapabilityOnlyStatus_RefreshesCapabilities()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false) with
+        {
+            Revision = 10,
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            {
+                SupportsPlaybackMuteIndicator = false,
+            },
+        };
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        Assert.False(viewModel.Capabilities.SupportsPlaybackMuteIndicator);
+
+        client.Publish(baseline with
+        {
+            Revision = 11,
+            Capabilities = baseline.Capabilities! with
+            {
+                SupportsPlaybackMuteIndicator = true,
+            },
+        });
+        await WaitUntilAsync(
+            () => viewModel.Capabilities.SupportsPlaybackMuteIndicator);
+
+        Assert.True(viewModel.Capabilities.SupportsPlaybackMuteIndicator);
+    }
+
+    [Fact]
     public async Task HiddenDashboard_DoesNotRebuildTelemetryPresentation()
     {
         var client = new FakeServiceClient();
