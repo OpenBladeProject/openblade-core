@@ -281,8 +281,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   ownership row.
 - Hid Gaming mode key-blocking options while Gaming mode is off.
 - Restored the shared pointer-over highlight on settings cards without
-  interfering with their nested controls, and clear stale highlights after
-  scrolling, pointer cancellation, or pointer-capture changes.
+  interfering with their nested controls, apply it to expandable Settings
+  rows, and clear stale highlights after scrolling, pointer cancellation, or
+  pointer-capture changes.
 - Constrained every tray page to its vertical ScrollViewer viewport so long
   card messages no longer widen the page and disappear past the right edge at
   compact window sizes.

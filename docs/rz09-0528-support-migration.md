@@ -177,7 +177,8 @@ owns unrelated logo controls.
 - Keep update checks and release settings under Settings, not About.
 - Preserve the shared card hover and focus behavior. Pointer cancellation,
   capture loss, scrolling, and entry into a different row must clear any stale
-  card highlight.
+  card highlight. Apply the same full-row hover surface to expandable Settings
+  headers; the stock WinUI Expander only highlights its chevron.
 - Keep model-specific ranges and valid combinations in capability data, not
   duplicated UI constants.
 - Do not add explanatory footnotes for normal key behavior.

@@ -54,6 +54,43 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_SettingsExpanderHeadersUseTheSharedHoverHighlight()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement style = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "Style"
+            && Attribute(element, "Key") == "SettingsExpanderHeaderStyle");
+
+        Assert.Equal("Border", Attribute(style, "TargetType"));
+        Assert.Contains(style.Elements(), setter =>
+            Attribute(setter, "Property")
+                == "local:SettingsCardPointerVisual.IsEnabled"
+            && Attribute(setter, "Value") == "True");
+        Assert.Contains(style.Elements(), setter =>
+            Attribute(setter, "Property")
+                == "local:SettingsCardPointerVisual.PointerOverBackground"
+            && Attribute(setter, "Value")
+                == "{ThemeResource SubtleFillColorSecondaryBrush}");
+
+        foreach (string name in new[]
+                 {
+                     "NavigationMenuExpander",
+                     "TaskbarHoverLabelExpander",
+                 })
+        {
+            XElement expander = NamedElement(document, "Expander", name);
+            XElement header = Assert.Single(
+                expander.Elements()
+                    .Where(element => element.Name.LocalName == "Expander.Header")
+                    .SelectMany(element => element.Elements()));
+            Assert.Equal("Border", header.Name.LocalName);
+            Assert.Equal(
+                "{StaticResource SettingsExpanderHeaderStyle}",
+                Attribute(header, "Style"));
+        }
+    }
+
+    [Fact]
     public void MainWindow_ShowsUnsavedNavigationBadgesAndStretchesFanCurveSliders()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());

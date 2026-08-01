@@ -111,6 +111,13 @@
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
+            <Style x:Key="SettingsExpanderHeaderStyle" TargetType="Border">
+                <Setter Property="Margin" Value="-16,0,-60,0" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="local:SettingsCardPointerVisual.IsEnabled" Value="True" />
+                <Setter Property="local:SettingsCardPointerVisual.PointerOverBackground"
+                        Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+            </Style>
             <SolidColorBrush x:Key="ExpanderChevronPointerOverBackground"
                              Color="Transparent" />
             <SolidColorBrush x:Key="ExpanderChevronPressedBackground"
@@ -2935,12 +2942,14 @@
                                         <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
                                     </Expander.Resources>
                                     <Expander.Header>
-                                        <StackPanel Spacing="3" Margin="0,14">
-                                            <TextBlock Text="Navigation menu"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Choose the order of pages in the left menu."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
+                                        <Border Style="{StaticResource SettingsExpanderHeaderStyle}">
+                                            <StackPanel Spacing="3" Margin="16,14,60,14">
+                                                <TextBlock Text="Navigation menu"
+                                                           Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock Text="Choose the order of pages in the left menu."
+                                                           Style="{StaticResource SecondaryTextStyle}" />
+                                            </StackPanel>
+                                        </Border>
                                     </Expander.Header>
                                     <Border Style="{StaticResource SettingsSubcardStyle}">
                                         <StackPanel Spacing="8">
@@ -2971,11 +2980,13 @@
                                     <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
                                 </Expander.Resources>
                                 <Expander.Header>
-                                    <StackPanel Spacing="3" Margin="0,14">
-                                        <TextBlock Text="Taskbar hover label" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Choose whether to show the app name, profile, and live details when you point at the tray icon."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
+                                    <Border Style="{StaticResource SettingsExpanderHeaderStyle}">
+                                        <StackPanel Spacing="3" Margin="16,14,60,14">
+                                            <TextBlock Text="Taskbar hover label" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Choose whether to show the app name, profile, and live details when you point at the tray icon."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                    </Border>
                                 </Expander.Header>
                                 <Border Style="{StaticResource SettingsLastSubcardStyle}">
                                     <StackPanel Spacing="8">
