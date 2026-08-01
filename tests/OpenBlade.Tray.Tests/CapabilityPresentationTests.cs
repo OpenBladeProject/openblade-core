@@ -40,6 +40,20 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void SettingsCardPointerVisual_ClearsInterruptedAndPreviousHighlights()
+    {
+        string behavior = ReadTraySource("SettingsCardPointerVisual.cs");
+
+        Assert.Contains("UIElement.PointerCanceledEvent", behavior);
+        Assert.Contains("UIElement.PointerCaptureLostEvent", behavior);
+        Assert.Contains("UIElement.PointerWheelChangedEvent", behavior);
+        Assert.Equal(3, behavior.Split("handledEventsToo: true").Length - 1);
+        Assert.Equal(3, behavior.Split("border.RemoveHandler(").Length - 1);
+        Assert.Contains("pointerOverBorder?.TryGetTarget", behavior);
+        Assert.Contains("RestoreBackground(previous)", behavior);
+    }
+
+    [Fact]
     public void MainWindow_ShowsUnsavedNavigationBadgesAndStretchesFanCurveSliders()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());

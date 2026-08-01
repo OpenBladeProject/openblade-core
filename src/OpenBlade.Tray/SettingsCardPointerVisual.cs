@@ -11,6 +11,10 @@ namespace OpenBlade.Tray;
 /// </summary>
 public static class SettingsCardPointerVisual
 {
+    private static readonly PointerEventHandler PointerTerminatedHandler =
+        OnPointerTerminated;
+    private static WeakReference<Border>? pointerOverBorder;
+
     public static readonly DependencyProperty IsEnabledProperty =
         DependencyProperty.RegisterAttached(
             "IsEnabled",
@@ -53,6 +57,18 @@ public static class SettingsCardPointerVisual
             border.PointerEntered += OnPointerEntered;
             border.PointerMoved += OnPointerMoved;
             border.PointerExited += OnPointerExited;
+            border.AddHandler(
+                UIElement.PointerCanceledEvent,
+                PointerTerminatedHandler,
+                handledEventsToo: true);
+            border.AddHandler(
+                UIElement.PointerCaptureLostEvent,
+                PointerTerminatedHandler,
+                handledEventsToo: true);
+            border.AddHandler(
+                UIElement.PointerWheelChangedEvent,
+                PointerTerminatedHandler,
+                handledEventsToo: true);
             border.Unloaded += OnUnloaded;
             return;
         }
@@ -60,6 +76,15 @@ public static class SettingsCardPointerVisual
         border.PointerEntered -= OnPointerEntered;
         border.PointerMoved -= OnPointerMoved;
         border.PointerExited -= OnPointerExited;
+        border.RemoveHandler(
+            UIElement.PointerCanceledEvent,
+            PointerTerminatedHandler);
+        border.RemoveHandler(
+            UIElement.PointerCaptureLostEvent,
+            PointerTerminatedHandler);
+        border.RemoveHandler(
+            UIElement.PointerWheelChangedEvent,
+            PointerTerminatedHandler);
         border.Unloaded -= OnUnloaded;
         RestoreBackground(border);
     }
@@ -78,6 +103,16 @@ public static class SettingsCardPointerVisual
         object sender,
         PointerRoutedEventArgs args) =>
         UpdateBackground(sender as Border, args);
+
+    private static void OnPointerTerminated(
+        object sender,
+        PointerRoutedEventArgs args)
+    {
+        if (sender is Border border)
+        {
+            RestoreBackground(border);
+        }
+    }
 
     private static void OnUnloaded(object sender, RoutedEventArgs args)
     {
@@ -107,7 +142,14 @@ public static class SettingsCardPointerVisual
         Brush? background = GetPointerOverBackground(border);
         if (isPointerOver && background is not null)
         {
+            if (pointerOverBorder?.TryGetTarget(out Border? previous) == true
+                && !ReferenceEquals(previous, border))
+            {
+                RestoreBackground(previous);
+            }
+
             border.Background = background;
+            pointerOverBorder = new WeakReference<Border>(border);
         }
         else
         {
@@ -115,6 +157,13 @@ public static class SettingsCardPointerVisual
         }
     }
 
-    private static void RestoreBackground(Border border) =>
+    private static void RestoreBackground(Border border)
+    {
         border.ClearValue(Border.BackgroundProperty);
+        if (pointerOverBorder?.TryGetTarget(out Border? current) != true
+            || ReferenceEquals(current, border))
+        {
+            pointerOverBorder = null;
+        }
+    }
 }

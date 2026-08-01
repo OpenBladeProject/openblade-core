@@ -175,7 +175,9 @@ owns unrelated logo controls.
 - Keep read-only or unavailable implementation details out of the normal
   control surface.
 - Keep update checks and release settings under Settings, not About.
-- Preserve the shared card hover and focus behavior.
+- Preserve the shared card hover and focus behavior. Pointer cancellation,
+  capture loss, scrolling, and entry into a different row must clear any stale
+  card highlight.
 - Keep model-specific ranges and valid combinations in capability data, not
   duplicated UI constants.
 - Do not add explanatory footnotes for normal key behavior.
