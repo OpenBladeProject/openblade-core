@@ -27,9 +27,12 @@ public enum PageSectionKind
     LightingPowerSaving,
     SettingsBehavior,
     SettingsAppearance,
+    SettingsUpdates,
     SettingsShutdown,
     AboutOverview,
     AboutVersions,
+    // Retained so existing string-enum preferences can migrate to
+    // SettingsUpdates without invalidating the complete preference file.
     AboutUpdates,
     AboutDeviceInformation,
     AboutSupport,
@@ -161,6 +164,11 @@ public static class PageLayoutPreferenceDefaults
             "Configure theme, accent color, navigation, and tray text."),
         new(
             CustomizablePageKind.Settings,
+            PageSectionKind.SettingsUpdates,
+            "Updates",
+            "Choose when OpenBlade checks GitHub for new releases."),
+        new(
+            CustomizablePageKind.Settings,
             PageSectionKind.SettingsShutdown,
             "Shutdown",
             "Stop OpenBlade until Windows restarts."),
@@ -174,11 +182,6 @@ public static class PageLayoutPreferenceDefaults
             PageSectionKind.AboutVersions,
             "Versions",
             "Show the installed app and service versions."),
-        new(
-            CustomizablePageKind.About,
-            PageSectionKind.AboutUpdates,
-            "Updates",
-            "Choose when OpenBlade checks GitHub for new releases."),
         new(
             CustomizablePageKind.About,
             PageSectionKind.AboutDeviceInformation,
@@ -225,14 +228,43 @@ public static class PageLayoutPreferenceDefaults
             }
         }
 
+        bool hasCurrentUpdatesPreference =
+            sourceByPage.TryGetValue(
+                CustomizablePageKind.Settings,
+                out PageLayoutPreference? settingsLayout)
+            && settingsLayout.Sections.Any(section =>
+                section.Kind == PageSectionKind.SettingsUpdates);
+        bool? legacyUpdatesVisibility = sourceByPage.TryGetValue(
+                CustomizablePageKind.About,
+                out PageLayoutPreference? aboutLayout)
+            ? aboutLayout.Sections
+                .FirstOrDefault(section =>
+                    section.Kind == PageSectionKind.AboutUpdates)
+                ?.IsVisible
+            : null;
+
         return Enum.GetValues<CustomizablePageKind>()
-            .Select(page => new PageLayoutPreference(
-                page,
-                NormalizePage(
+            .Select(page =>
+            {
+                IReadOnlyList<PageSectionPreference> sections = NormalizePage(
                     page,
                     sourceByPage.TryGetValue(page, out PageLayoutPreference? layout)
                         ? layout.Sections
-                        : null)))
+                        : null);
+                if (page == CustomizablePageKind.Settings
+                    && !hasCurrentUpdatesPreference
+                    && legacyUpdatesVisibility is { } isVisible)
+                {
+                    sections = sections
+                        .Select(section =>
+                            section.Kind == PageSectionKind.SettingsUpdates
+                                ? section with { IsVisible = isVisible }
+                                : section)
+                        .ToArray();
+                }
+
+                return new PageLayoutPreference(page, sections);
+            })
             .ToArray();
     }
 

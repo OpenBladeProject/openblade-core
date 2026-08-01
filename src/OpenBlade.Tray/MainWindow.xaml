@@ -3037,6 +3037,69 @@
                         </Border>
                         </StackPanel>
 
+                        <StackPanel x:Name="SettingsUpdatesSection">
+                        <TextBlock Text="Updates" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Check interval"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="After you choose an interval, OpenBlade checks GitHub at startup when that interval is due."
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1"
+                                                  MinWidth="160"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Update check interval"
+                                                  ItemsSource="{x:Bind UpdateViewModel.IntervalOptions, Mode=OneWay}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedItem="{x:Bind UpdateViewModel.SelectedIntervalOption, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind UpdateViewModel.SelectedIntervalOption, Mode=OneWay}" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Latest release"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind UpdateViewModel.StatusText, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1"
+                                                    Orientation="Horizontal"
+                                                    Spacing="8"
+                                                    VerticalAlignment="Center">
+                                            <ProgressRing Width="20"
+                                                          Height="20"
+                                                          IsActive="{x:Bind UpdateViewModel.IsChecking, Mode=OneWay}"
+                                                          Visibility="{x:Bind UpdateViewModel.IsChecking, Mode=OneWay}"
+                                                          AutomationProperties.Name="Checking GitHub for updates" />
+                                            <HyperlinkButton Content="View release"
+                                                             NavigateUri="{x:Bind UpdateViewModel.ReleasePageUri, Mode=OneWay}"
+                                                             Visibility="{x:Bind UpdateViewModel.HasReleasePage, Mode=OneWay}"
+                                                             AutomationProperties.Name="View available OpenBlade release" />
+                                            <Button Content="Check now"
+                                                    Command="{x:Bind UpdateViewModel.CheckForUpdatesCommand}"
+                                                    AutomationProperties.Name="Check GitHub for OpenBlade updates" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                        </StackPanel>
+
                         <StackPanel x:Name="SettingsShutdownSection">
                         <TextBlock Text="Shutdown" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
@@ -3158,69 +3221,6 @@
                                                    Text="{x:Bind ViewModel.AboutServiceVersionStatus, Mode=OneWay}"
                                                    Style="{StaticResource TroubleshootingValueStyle}"
                                                    AutomationProperties.Name="OpenBlade service version" />
-                                    </Grid>
-                                </Border>
-                            </StackPanel>
-                        </Border>
-                        </StackPanel>
-
-                        <StackPanel x:Name="AboutUpdatesSection">
-                        <TextBlock Text="Updates" Style="{StaticResource SectionHeaderStyle}" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Check interval"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="After you choose an interval, OpenBlade checks GitHub at startup when that interval is due."
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       TextWrapping="Wrap" />
-                                        </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="160"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Update check interval"
-                                                  ItemsSource="{x:Bind UpdateViewModel.IntervalOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind UpdateViewModel.SelectedIntervalOption, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind UpdateViewModel.SelectedIntervalOption, Mode=OneWay}" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Latest release"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind UpdateViewModel.StatusText, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       TextWrapping="Wrap" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1"
-                                                    Orientation="Horizontal"
-                                                    Spacing="8"
-                                                    VerticalAlignment="Center">
-                                            <ProgressRing Width="20"
-                                                          Height="20"
-                                                          IsActive="{x:Bind UpdateViewModel.IsChecking, Mode=OneWay}"
-                                                          Visibility="{x:Bind UpdateViewModel.IsChecking, Mode=OneWay}"
-                                                          AutomationProperties.Name="Checking GitHub for updates" />
-                                            <HyperlinkButton Content="View release"
-                                                             NavigateUri="{x:Bind UpdateViewModel.ReleasePageUri, Mode=OneWay}"
-                                                             Visibility="{x:Bind UpdateViewModel.HasReleasePage, Mode=OneWay}"
-                                                             AutomationProperties.Name="View available OpenBlade release" />
-                                            <Button Content="Check now"
-                                                    Command="{x:Bind UpdateViewModel.CheckForUpdatesCommand}"
-                                                    AutomationProperties.Name="Check GitHub for OpenBlade updates" />
-                                        </StackPanel>
                                     </Grid>
                                 </Border>
                             </StackPanel>

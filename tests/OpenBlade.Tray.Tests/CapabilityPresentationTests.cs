@@ -399,11 +399,11 @@ public sealed class CapabilityPresentationTests
         XElement about = NamedElement(document, "ScrollViewer", "AboutPage");
 
         Assert.Equal(
-            3,
+            4,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            6,
+            7,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -412,7 +412,7 @@ public sealed class CapabilityPresentationTests
                 element.Name.LocalName == "Expander"
                 && Attribute(element, "IsExpanded") == "False"));
         Assert.Equal(
-            2,
+            3,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
 
@@ -470,6 +470,7 @@ public sealed class CapabilityPresentationTests
                  {
                      "Live readings refresh interval",
                      "App theme",
+                     "Update check interval",
                  })
         {
             XElement picker = Assert.Single(settings.Descendants(), element =>
@@ -677,6 +678,10 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Text") is "Versions" or "Laptop" or "Firmware");
         XElement settingsPage = NamedElement(document, "ScrollViewer", "SettingsPage");
         XElement aboutPage = NamedElement(document, "ScrollViewer", "AboutPage");
+        XElement settingsUpdates = NamedElement(
+            document,
+            "StackPanel",
+            "SettingsUpdatesSection");
         XElement aboutVersions = NamedElement(document, "StackPanel", "AboutVersionsSection");
         XElement aboutNavigation = NamedElement(document, "NavigationViewItem", "AboutNavigationItem");
         Assert.Equal("about", Attribute(aboutNavigation, "Tag"));
@@ -688,7 +693,6 @@ public sealed class CapabilityPresentationTests
         foreach (string section in new[]
                  {
                      "Versions",
-                     "Updates",
                      "Device information",
                      "Support",
                      "Troubleshooting",
@@ -698,6 +702,12 @@ public sealed class CapabilityPresentationTests
                 element.Name.LocalName == "TextBlock"
                 && Attribute(element, "Text") == section);
         }
+        Assert.Contains(settingsUpdates.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Updates");
+        Assert.DoesNotContain(aboutPage.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Updates");
         Assert.Contains("ViewModel.AboutUiVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutSessionAgentVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutServiceVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);

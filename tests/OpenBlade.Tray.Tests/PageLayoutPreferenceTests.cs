@@ -107,6 +107,7 @@ public sealed class PageLayoutPreferenceTests
                     PageSectionKind.SettingsShutdown,
                     PageSectionKind.SettingsAppearance,
                     PageSectionKind.SettingsBehavior,
+                    PageSectionKind.SettingsUpdates,
                 ],
                 settings.Sections.Select(section => section.Kind));
             Assert.False(settings.Sections[0].IsVisible);
@@ -162,11 +163,11 @@ public sealed class PageLayoutPreferenceTests
                      "SettingsSectionHost",
                      "SettingsBehaviorSection",
                      "SettingsAppearanceSection",
+                     "SettingsUpdatesSection",
                      "SettingsShutdownSection",
                      "AboutSectionHost",
                      "AboutOverviewSection",
                      "AboutVersionsSection",
-                     "AboutUpdatesSection",
                      "AboutDeviceInformationSection",
                      "AboutSupportSection",
                      "AboutTroubleshootingSection",
@@ -185,6 +186,37 @@ public sealed class PageLayoutPreferenceTests
         Assert.Contains("RefreshPageSections(page);", window, StringComparison.Ordinal);
         Assert.Contains("host.Children.Move(", window, StringComparison.Ordinal);
         Assert.DoesNotContain("PageLayoutRestartRequested", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LegacyAboutUpdatesPreferenceMigratesToSettings()
+    {
+        PageLayoutPreference[] source =
+        [
+            new(
+                CustomizablePageKind.Settings,
+                [new(PageSectionKind.SettingsBehavior, true)]),
+            new(
+                CustomizablePageKind.About,
+                [
+                    new(PageSectionKind.AboutUpdates, false),
+                    new(PageSectionKind.AboutOverview, true),
+                ]),
+        ];
+
+        IReadOnlyList<PageLayoutPreference> normalized =
+            PageLayoutPreferenceDefaults.Normalize(source);
+        PageSectionPreference updates = normalized
+            .Single(layout => layout.Page == CustomizablePageKind.Settings)
+            .Sections
+            .Single(section => section.Kind == PageSectionKind.SettingsUpdates);
+        PageLayoutPreference about = normalized
+            .Single(layout => layout.Page == CustomizablePageKind.About);
+
+        Assert.False(updates.IsVisible);
+        Assert.DoesNotContain(
+            about.Sections,
+            section => section.Kind == PageSectionKind.AboutUpdates);
     }
 
     private static string FindRepositoryRoot()

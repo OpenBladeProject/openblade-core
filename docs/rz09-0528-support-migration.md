@@ -174,6 +174,7 @@ owns unrelated logo controls.
 - Hide dependent Gaming policies while Gaming mode is off.
 - Keep read-only or unavailable implementation details out of the normal
   control surface.
+- Keep update checks and release settings under Settings, not About.
 - Preserve the shared card hover and focus behavior.
 - Keep model-specific ranges and valid combinations in capability data, not
   duplicated UI constants.

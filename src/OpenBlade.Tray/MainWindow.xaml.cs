@@ -891,7 +891,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             Title = "Check for OpenBlade updates?",
             Content = "OpenBlade can check GitHub for a new release once per day when "
                 + "the tray starts. The check sends no hardware state, profiles, "
-                + "settings, or diagnostics. You can change this later in About.",
+                + "settings, or diagnostics. You can change this later in Settings.",
             PrimaryButtonText = "Use daily checks",
             CloseButtonText = "Manual only",
             DefaultButton = ContentDialogButton.Primary,
@@ -2919,14 +2919,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             SettingsBehaviorSection;
         pageSectionPresentations[PageSectionKind.SettingsAppearance] =
             SettingsAppearanceSection;
+        pageSectionPresentations[PageSectionKind.SettingsUpdates] =
+            SettingsUpdatesSection;
         pageSectionPresentations[PageSectionKind.SettingsShutdown] =
             SettingsShutdownSection;
         pageSectionPresentations[PageSectionKind.AboutOverview] =
             AboutOverviewSection;
         pageSectionPresentations[PageSectionKind.AboutVersions] =
             AboutVersionsSection;
-        pageSectionPresentations[PageSectionKind.AboutUpdates] =
-            AboutUpdatesSection;
         pageSectionPresentations[PageSectionKind.AboutDeviceInformation] =
             AboutDeviceInformationSection;
         pageSectionPresentations[PageSectionKind.AboutSupport] =
