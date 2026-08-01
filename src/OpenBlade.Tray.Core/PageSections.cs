@@ -232,12 +232,12 @@ public static class PageLayoutPreferenceDefaults
             sourceByPage.TryGetValue(
                 CustomizablePageKind.Settings,
                 out PageLayoutPreference? settingsLayout)
-            && settingsLayout.Sections.Any(section =>
-                section.Kind == PageSectionKind.SettingsUpdates);
+            && settingsLayout.Sections?.Any(section =>
+                section.Kind == PageSectionKind.SettingsUpdates) == true;
         bool? legacyUpdatesVisibility = sourceByPage.TryGetValue(
                 CustomizablePageKind.About,
                 out PageLayoutPreference? aboutLayout)
-            ? aboutLayout.Sections
+            ? aboutLayout.Sections?
                 .FirstOrDefault(section =>
                     section.Kind == PageSectionKind.AboutUpdates)
                 ?.IsVisible
@@ -252,15 +252,21 @@ public static class PageLayoutPreferenceDefaults
                         ? layout.Sections
                         : null);
                 if (page == CustomizablePageKind.Settings
-                    && !hasCurrentUpdatesPreference
-                    && legacyUpdatesVisibility is { } isVisible)
+                    && !hasCurrentUpdatesPreference)
                 {
-                    sections = sections
-                        .Select(section =>
-                            section.Kind == PageSectionKind.SettingsUpdates
-                                ? section with { IsVisible = isVisible }
-                                : section)
-                        .ToArray();
+                    var migrated = sections.ToList();
+                    int updatesIndex = migrated.FindIndex(section =>
+                        section.Kind == PageSectionKind.SettingsUpdates);
+                    PageSectionPreference updates = migrated[updatesIndex];
+                    migrated.RemoveAt(updatesIndex);
+                    int shutdownIndex = migrated.FindIndex(section =>
+                        section.Kind == PageSectionKind.SettingsShutdown);
+                    migrated.Insert(
+                        shutdownIndex >= 0 ? shutdownIndex : migrated.Count,
+                        legacyUpdatesVisibility is { } isVisible
+                            ? updates with { IsVisible = isVisible }
+                            : updates);
+                    sections = migrated;
                 }
 
                 return new PageLayoutPreference(page, sections);

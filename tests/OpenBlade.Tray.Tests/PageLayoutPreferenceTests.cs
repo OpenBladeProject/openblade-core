@@ -104,13 +104,13 @@ public sealed class PageLayoutPreferenceTests
                 .Single(layout => layout.Page == CustomizablePageKind.Settings);
             Assert.Equal(
                 [
+                    PageSectionKind.SettingsUpdates,
                     PageSectionKind.SettingsShutdown,
                     PageSectionKind.SettingsAppearance,
                     PageSectionKind.SettingsBehavior,
-                    PageSectionKind.SettingsUpdates,
                 ],
                 settings.Sections.Select(section => section.Kind));
-            Assert.False(settings.Sections[0].IsVisible);
+            Assert.False(settings.Sections[1].IsVisible);
 
             PageLayoutPreference about = reloaded.EffectivePageLayouts
                 .Single(layout => layout.Page == CustomizablePageKind.About);
@@ -214,6 +214,17 @@ public sealed class PageLayoutPreferenceTests
             .Single(layout => layout.Page == CustomizablePageKind.About);
 
         Assert.False(updates.IsVisible);
+        Assert.Equal(
+            [
+                PageSectionKind.SettingsBehavior,
+                PageSectionKind.SettingsAppearance,
+                PageSectionKind.SettingsUpdates,
+                PageSectionKind.SettingsShutdown,
+            ],
+            normalized
+                .Single(layout => layout.Page == CustomizablePageKind.Settings)
+                .Sections
+                .Select(section => section.Kind));
         Assert.DoesNotContain(
             about.Sections,
             section => section.Kind == PageSectionKind.AboutUpdates);
