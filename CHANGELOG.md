@@ -277,6 +277,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept Audio Meter renderer shutdown serialized with disposal, constrained
+  manual fan curves to each laptop's reported RPM range, and made PID `02C6`
+  reactive-key pulses safe during concurrent input and lighting-port shutdown.
 - Removed the redundant Windows Dynamic Lighting settings link from its
   ownership row.
 - Hid Gaming mode key-blocking options while Gaming mode is off.

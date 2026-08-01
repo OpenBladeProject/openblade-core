@@ -309,6 +309,68 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task Rz090528ReactivePulse_DoesNotWaitBehindFirmwareOperationGate()
+    {
+        var session = new LightingSession(initialBrightness: 128);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            allSynapseEffectsAdmitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                brightness: 50,
+                ReactiveLightingDuration.Medium),
+            default);
+        SemaphoreSlim gate = Rz090528OperationGate(port);
+        await gate.WaitAsync();
+        try
+        {
+            await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(59), default)
+                .WaitAsync(TimeSpan.FromMilliseconds(250));
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    [Fact]
+    public async Task Rz090528ReactivePulse_IsRejectedAfterCloseStarts()
+    {
+        var session = new LightingSession(initialBrightness: 128);
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            allSynapseEffectsAdmitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                brightness: 50,
+                ReactiveLightingDuration.Medium),
+            default);
+        SemaphoreSlim gate = Rz090528OperationGate(port);
+        await gate.WaitAsync();
+        Task closing = port.DisposeAsync().AsTask();
+        try
+        {
+            await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+                port.PulseReactiveKeyAsync(new ReactiveKeyPulse(59), default));
+        }
+        finally
+        {
+            gate.Release();
+        }
+        await closing;
+    }
+
+    [Fact]
     public async Task Rz090528ReadDriverMode_UsesQueryOnly()
     {
         var session = new LightingSession(initialBrightness: 0)
@@ -1455,6 +1517,16 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public void Rz090528FrameDeadline_RejectsNonPositiveEffectDelay()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            Rz090528BrightnessLightingPort.AdvanceFrameDeadline(
+                new NonAdvancingRz090528Effect(),
+                currentDeadline: TimeSpan.Zero,
+                observedAfterWrite: TimeSpan.Zero));
+    }
+
+    [Fact]
     public async Task AmbientAwareness_WritesOnlyTheTypedSessionSampleWhileOwned()
     {
         var session = new LightingSession(initialBrightness: 0xFF);
@@ -1980,6 +2052,22 @@ public sealed class ProductionLightingPortTests
         Assert.IsType<SemaphoreSlim>(typeof(ProductionLightingPort)
             .GetField("operationGate", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(port));
+
+    private static SemaphoreSlim Rz090528OperationGate(
+        Rz090528BrightnessLightingPort port) =>
+        Assert.IsType<SemaphoreSlim>(typeof(Rz090528BrightnessLightingPort)
+            .GetField("operationGate", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
+
+    private sealed class NonAdvancingRz090528Effect : IRz090528LightingEffect
+    {
+        public bool RequiresContinuousRendering => true;
+
+        public TimeSpan GetNextFrameDelay(TimeSpan elapsed) => TimeSpan.Zero;
+
+        public Rz090528MatrixFrame RenderFrame(TimeSpan elapsed) =>
+            Rz090528MatrixFrame.Uniform(default);
+    }
 
     private static (int ClassId, int CommandId, string Arguments) CommandTuple(
         RazerCommandSpec command) => (

@@ -181,6 +181,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
     private readonly Action<Exception>? errorHandler;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private readonly TimeProvider timeProvider;
+    private readonly SemaphoreSlim rendererStateGate = new(1, 1);
     private CancellationTokenSource? rendererCancellation;
     private Task? rendererTask;
     private double? activeBoost;
@@ -242,38 +243,46 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
 
     private async Task SetBoostAsync(double? boost, CancellationToken cancellationToken)
     {
-        if (activeBoost == boost
-            && (boost is null || rendererTask is { IsCompleted: false }))
+        await rendererStateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            return;
-        }
-
-        CancellationTokenSource? previousCancellation = rendererCancellation;
-        Task? previousTask = rendererTask;
-        rendererCancellation = null;
-        rendererTask = null;
-        activeBoost = null;
-        previousCancellation?.Cancel();
-        if (previousTask is not null)
-        {
-            try
+            if (activeBoost == boost
+                && (boost is null || rendererTask is { IsCompleted: false }))
             {
-                await previousTask.ConfigureAwait(false);
+                return;
             }
-            catch (OperationCanceledException)
-            {
-            }
-        }
-        previousCancellation?.Dispose();
-        if (boost is null || Volatile.Read(ref disposed) != 0)
-        {
-            return;
-        }
 
-        var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        rendererCancellation = linked;
-        rendererTask = RenderAsync(boost.Value, linked.Token);
-        activeBoost = boost;
+            CancellationTokenSource? previousCancellation = rendererCancellation;
+            Task? previousTask = rendererTask;
+            rendererCancellation = null;
+            rendererTask = null;
+            activeBoost = null;
+            previousCancellation?.Cancel();
+            if (previousTask is not null)
+            {
+                try
+                {
+                    await previousTask.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+            previousCancellation?.Dispose();
+            if (boost is null || Volatile.Read(ref disposed) != 0)
+            {
+                return;
+            }
+
+            var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            rendererCancellation = linked;
+            rendererTask = RenderAsync(boost.Value, linked.Token);
+            activeBoost = boost;
+        }
+        finally
+        {
+            rendererStateGate.Release();
+        }
     }
 
     private async Task RenderAsync(double boost, CancellationToken cancellationToken)

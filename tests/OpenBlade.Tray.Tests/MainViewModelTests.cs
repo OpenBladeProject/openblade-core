@@ -4507,6 +4507,34 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task DeviceFanRangeConstrainsLoadedAndEditedManualCurvePoints()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5000, 100),
+        };
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities));
+        await WaitUntilAsync(() => viewModel.FixedFanSpeedMaximumRpm == 5000);
+
+        Assert.All(
+            viewModel.CpuFanCurveEditorPoints.Concat(
+                viewModel.GpuFanCurveEditorPoints),
+            point => Assert.InRange(point.SpeedRpm, 2000, 5000));
+
+        FanCurveEditorPoint last = viewModel.CpuFanCurveEditorPoints[^1];
+        viewModel.UpdateFanCurvePoint(last, 5400);
+
+        Assert.Equal(5000, viewModel.CpuFanCurveEditorPoints[^1].SpeedRpm);
+        Assert.Equal(5000, viewModel.CurrentFanControlSettings.ManualCurve.Cpu[^1].SpeedRpm);
+    }
+
+    [Fact]
     public async Task ThermalCommands_BlockPerformanceWhenMaximumIsEffectiveButNotConfirmed()
     {
         var client = new FakeServiceClient();

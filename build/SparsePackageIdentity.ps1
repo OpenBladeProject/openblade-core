@@ -63,18 +63,18 @@ function Get-OpenBladeSigningCertificate {
         throw 'The OpenBlade signing certificate thumbprint must contain exactly 40 hexadecimal characters.'
     }
 
-    $matches = @()
+    $certificates = @()
     foreach ($store in @('Cert:\CurrentUser\My', 'Cert:\LocalMachine\My')) {
         $candidate = Join-Path $store $normalized
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            $matches += Get-Item -LiteralPath $candidate
+            $certificates += Get-Item -LiteralPath $candidate
         }
     }
-    if ($matches.Count -eq 0) {
+    if ($certificates.Count -eq 0) {
         throw "The OpenBlade signing certificate was not found: $normalized"
     }
 
-    $certificate = $matches[0]
+    $certificate = $certificates[0]
     if (-not $certificate.HasPrivateKey) {
         throw 'The OpenBlade signing certificate does not have an accessible private key.'
     }

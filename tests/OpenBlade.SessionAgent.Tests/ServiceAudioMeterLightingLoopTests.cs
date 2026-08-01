@@ -184,6 +184,33 @@ public sealed class ServiceAudioMeterLightingLoopTests
         Assert.True(sampler.Disposed);
     }
 
+    [Fact]
+    public async Task DisposeWaitsForConcurrentRendererShutdown()
+    {
+        var sampler = new ConstantSampler(Frame(1));
+        var client = new WatchClient();
+        client.BlockNextRequest();
+        var loop = new ServiceAudioMeterLightingLoop(
+            client,
+            new SequenceSamplerFactory(() => sampler),
+            statusWatcher: client);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.PublishConnected();
+        await client.RequestStarted.Task.WaitAsync(cancellation.Token);
+        client.PublishReconnecting();
+        await client.RequestCancellationObserved.Task.WaitAsync(cancellation.Token);
+
+        Task disposal = loop.DisposeAsync().AsTask();
+        Assert.False(disposal.IsCompleted);
+
+        client.ReleaseBlockedRequest();
+        await disposal.WaitAsync(cancellation.Token);
+        await CancelAndAwaitAsync(cancellation, running);
+        Assert.True(sampler.Disposed);
+    }
+
     private static async Task CancelAndAwaitAsync(
         CancellationTokenSource cancellation,
         Task running)
@@ -213,9 +240,30 @@ public sealed class ServiceAudioMeterLightingLoopTests
         private readonly Channel<AmbientLightingFrame> requests =
             Channel.CreateUnbounded<AmbientLightingFrame>();
         private readonly ConcurrentQueue<ControlOperationResult> results = new();
+        private TaskCompletionSource? blockedRequestRelease;
+        private int blockNextRequest;
+
+        internal TaskCompletionSource RequestStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource RequestCancellationObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal void PublishConnected() =>
             updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(Status()));
+
+        internal void PublishReconnecting() =>
+            updates.Writer.TryWrite(new ServiceWatchUpdate.Reconnecting());
+
+        internal void BlockNextRequest()
+        {
+            blockedRequestRelease = new(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref blockNextRequest, 1);
+        }
+
+        internal void ReleaseBlockedRequest() =>
+            blockedRequestRelease?.TrySetResult();
 
         internal void EnqueueResult(ControlOperationResult result) =>
             results.Enqueue(result);
@@ -237,15 +285,23 @@ public sealed class ServiceAudioMeterLightingLoopTests
             }
         }
 
-        public override Task<ControlOperationResult> PushAmbientLightingFrameAsync(
+        public override async Task<ControlOperationResult> PushAmbientLightingFrameAsync(
             AmbientLightingFrame frame,
             CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             requests.Writer.TryWrite(frame);
-            return Task.FromResult(results.TryDequeue(out ControlOperationResult? result)
+            if (Interlocked.Exchange(ref blockNextRequest, 0) != 0)
+            {
+                RequestStarted.TrySetResult();
+                using CancellationTokenRegistration registration = token.Register(
+                    () => RequestCancellationObserved.TrySetResult());
+                await blockedRequestRelease!.Task.ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
+            }
+            return results.TryDequeue(out ControlOperationResult? result)
                 ? result
-                : new ControlOperationResult(ControlOperationStatus.Applied, "Applied"));
+                : new ControlOperationResult(ControlOperationStatus.Applied, "Applied");
         }
     }
 

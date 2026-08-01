@@ -213,7 +213,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly object initializationGate = new();
     private readonly object statusPublishGate = new();
     private ProfileAutomationState? automation;
-    private BatteryAutomationPreferences preferences =
+    private volatile BatteryAutomationPreferences preferences =
         new(ProtectionEnabled: true);
     private PersistentOverrideState persistentOverrides = PersistentOverrideState.Empty;
     private readonly ConfirmedStateDriftTracker driftTracker = new();

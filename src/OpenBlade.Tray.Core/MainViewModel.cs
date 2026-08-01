@@ -1762,14 +1762,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     "The fan-curve point does not belong to the active editor.",
                     nameof(point));
         int index = source.ToList().IndexOf(point);
+        FanSpeedRange range = ActiveFanSpeedRange;
         int minimum = index == 0
-            ? FanControlSettings.MinimumSpeedRpm
+            ? range.MinimumRpm
             : source[index - 1].SpeedRpm;
         int maximum = index == source.Count - 1
-            ? FanControlSettings.MaximumSpeedRpm
+            ? range.MaximumRpm
             : source[index + 1].SpeedRpm;
         point.SpeedRpm = Math.Clamp(
-            FanControlSettings.QuantizeSpeed(speedRpm),
+            range.Quantize(speedRpm),
             minimum,
             maximum);
         if (ReferenceEquals(source, CpuFanCurveEditorPoints))
@@ -7563,19 +7564,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void LoadFanControlEditor(FanControlSettings value)
     {
+        FanSpeedRange range = ActiveFanSpeedRange;
         SetField(
             ref fixedFanSpeedRpm,
-            ActiveFanSpeedRange.Quantize(value.FixedSpeedRpm),
+            range.Quantize(value.FixedSpeedRpm),
             nameof(FixedFanSpeedRpm));
         SetField(
             ref useHigherFanTemperature,
             value.ManualCurve.UseHigherTemperatureForBoth,
             nameof(UseHigherFanTemperature));
         cpuFanCurveEditorPoints = value.ManualCurve.Cpu
-            .Select(point => new FanCurveEditorPoint(point))
+            .Select(point => new FanCurveEditorPoint(new FanCurvePoint(
+                point.TemperatureCelsius,
+                range.Quantize(point.SpeedRpm))))
             .ToArray();
         gpuFanCurveEditorPoints = value.ManualCurve.Gpu
-            .Select(point => new FanCurveEditorPoint(point))
+            .Select(point => new FanCurveEditorPoint(new FanCurvePoint(
+                point.TemperatureCelsius,
+                range.Quantize(point.SpeedRpm))))
             .ToArray();
         Notify(nameof(CpuFanCurveEditorPoints));
         Notify(nameof(GpuFanCurveEditorPoints));

@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using OpenBlade.Contracts;
 
@@ -6,11 +7,13 @@ namespace OpenBlade.Protocol;
 
 internal static class Rz090528LightingMath
 {
-    internal static void ThrowIfNegative(TimeSpan value)
+    internal static void ThrowIfNegative(
+        TimeSpan value,
+        [CallerArgumentExpression(nameof(value))] string? parameterName = null)
     {
         if (value < TimeSpan.Zero)
         {
-            throw new ArgumentOutOfRangeException(nameof(value));
+            throw new ArgumentOutOfRangeException(parameterName);
         }
     }
 
@@ -50,7 +53,12 @@ internal static class Rz090528CapturedPalette
     ];
 }
 
-internal sealed class Rz090528RandomColorPairSource
+internal interface IRz090528RandomColorPairSource
+{
+    (RgbColor Primary, RgbColor Secondary) ColorsForCycle(long cycleIndex);
+}
+
+internal sealed class Rz090528RandomColorPairSource : IRz090528RandomColorPairSource
 {
     private readonly byte[] seed;
 
@@ -70,7 +78,7 @@ internal sealed class Rz090528RandomColorPairSource
         this.seed = (byte[])seed.Clone();
     }
 
-    internal (RgbColor Primary, RgbColor Secondary) ColorsForCycle(long cycleIndex)
+    public (RgbColor Primary, RgbColor Secondary) ColorsForCycle(long cycleIndex)
     {
         if (cycleIndex < 0)
         {
@@ -705,14 +713,16 @@ internal sealed class Rz090528TidalEffect : IRz090528LightingEffect
     private readonly RgbColor secondaryColor;
     private readonly bool randomColors;
     private readonly LightingDirection direction;
-    private readonly Rz090528RandomColorPairSource randomColorSource;
+    private readonly IRz090528RandomColorPairSource randomColorSource;
+    private long randomColorCycleIndex = -1;
+    private (RgbColor Primary, RgbColor Secondary) randomColorPair;
 
     internal Rz090528TidalEffect(
         RgbColor primaryColor,
         RgbColor secondaryColor,
         bool randomColors,
         LightingDirection direction,
-        Rz090528RandomColorPairSource? randomColorSource = null)
+        IRz090528RandomColorPairSource? randomColorSource = null)
     {
         if (!Enum.IsDefined(direction))
         {
@@ -723,7 +733,8 @@ internal sealed class Rz090528TidalEffect : IRz090528LightingEffect
         this.secondaryColor = secondaryColor;
         this.randomColors = randomColors;
         this.direction = direction;
-        this.randomColorSource = randomColorSource ?? new();
+        this.randomColorSource = randomColorSource
+            ?? new Rz090528RandomColorPairSource();
     }
 
     public bool RequiresContinuousRendering => true;
@@ -742,7 +753,12 @@ internal sealed class Rz090528TidalEffect : IRz090528LightingEffect
         RgbColor second = secondaryColor;
         if (randomColors)
         {
-            (first, second) = randomColorSource.ColorsForCycle(cycleIndex);
+            if (cycleIndex != randomColorCycleIndex)
+            {
+                randomColorPair = randomColorSource.ColorsForCycle(cycleIndex);
+                randomColorCycleIndex = cycleIndex;
+            }
+            (first, second) = randomColorPair;
         }
 
         return Rz090528TidalOracle.Render(direction, elapsed, first, second);

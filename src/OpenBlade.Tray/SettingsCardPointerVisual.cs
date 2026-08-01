@@ -142,14 +142,20 @@ public static class SettingsCardPointerVisual
         Brush? background = GetPointerOverBackground(border);
         if (isPointerOver && background is not null)
         {
-            if (pointerOverBorder?.TryGetTarget(out Border? previous) == true
-                && !ReferenceEquals(previous, border))
+            Border? previous = null;
+            bool alreadyTracked = pointerOverBorder?.TryGetTarget(
+                out previous) == true
+                && ReferenceEquals(previous, border);
+            if (previous is not null && !alreadyTracked)
             {
                 RestoreBackground(previous);
             }
 
             border.Background = background;
-            pointerOverBorder = new WeakReference<Border>(border);
+            if (!alreadyTracked)
+            {
+                pointerOverBorder = new WeakReference<Border>(border);
+            }
         }
         else
         {

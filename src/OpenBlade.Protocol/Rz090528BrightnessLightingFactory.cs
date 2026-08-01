@@ -651,22 +651,28 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        lock (effectSync)
+        lock (lifecycleSync)
         {
-            if (activeEffect is not IRz090528KeyTriggeredLightingEffect triggered)
+            ObjectDisposedException.ThrowIf(
+                closing || Volatile.Read(ref disposed) != 0,
+                this);
+            lock (effectSync)
             {
-                return Task.FromException(new CapabilityUnavailableException(
-                    "PID 02C6 key-triggered lighting is not currently active."));
+                if (activeEffect is not IRz090528KeyTriggeredLightingEffect triggered)
+                {
+                    return Task.FromException(new CapabilityUnavailableException(
+                        "PID 02C6 key-triggered lighting is not currently active."));
+                }
+
+                TimeSpan elapsed = timeProvider.GetElapsedTime(
+                    effectStartedTimestamp);
+                triggered.Pulse(pulse.MatrixSlot, elapsed);
+
+                if (streamWake.CurrentCount == 0)
+                {
+                    streamWake.Release();
+                }
             }
-
-            TimeSpan elapsed = timeProvider.GetElapsedTime(
-                effectStartedTimestamp);
-            triggered.Pulse(pulse.MatrixSlot, elapsed);
-        }
-
-        if (streamWake.CurrentCount == 0)
-        {
-            streamWake.Release();
         }
         return Task.CompletedTask;
     }
@@ -1081,7 +1087,13 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         TimeSpan cursor = currentDeadline;
         while (cursor <= observedAfterWrite)
         {
-            cursor += effect.GetNextFrameDelay(cursor);
+            TimeSpan delay = effect.GetNextFrameDelay(cursor);
+            if (delay <= TimeSpan.Zero)
+            {
+                throw new InvalidOperationException(
+                    "A continuously rendered PID 02C6 lighting effect returned a non-positive frame delay.");
+            }
+            cursor += delay;
         }
 
         return cursor;
@@ -1394,7 +1406,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
         if (applyFailure is not null)
         {
-            throw applyFailure;
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                .Capture(applyFailure)
+                .Throw();
         }
 
         return new(baselineRaw, targetRaw, appliedRaw, restoredRaw);
@@ -1599,8 +1613,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         if (!write)
         {
             throw result.Failure == HidSessionFailureKind.Timeout
-                ? new TimeoutException("PID 02C6 brightness query timed out.")
-                : new IOException($"PID 02C6 brightness query failed ({result.Failure}).");
+                ? new TimeoutException(
+                    $"PID 02C6 lighting query {command.ClassId:X2}/{command.CommandId:X2} timed out.")
+                : new IOException(
+                    $"PID 02C6 lighting query {command.ClassId:X2}/{command.CommandId:X2} failed ({result.Failure}).");
         }
 
         WriteSubmissionState state = result.Failure is

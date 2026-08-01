@@ -113,6 +113,34 @@ public sealed class Rz090528SynapseEffectsTests
                 blue)));
     }
 
+    [Fact]
+    public void RandomTidalColors_AreDerivedOncePerCycle()
+    {
+        var colors = new RecordingRandomColorPairSource();
+        var effect = new Rz090528TidalEffect(
+            default,
+            default,
+            randomColors: true,
+            LightingDirection.Leftward,
+            colors);
+
+        _ = effect.RenderFrame(TimeSpan.Zero);
+        _ = effect.RenderFrame(TimeSpan.FromSeconds(1));
+        _ = effect.RenderFrame(Rz090528TidalOracle.CycleDuration);
+
+        Assert.Equal([0, 1], colors.Cycles);
+    }
+
+    [Fact]
+    public void NegativeEffectTime_ReportsTheCallerParameterName()
+    {
+        ArgumentOutOfRangeException exception = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new Rz090528SpectrumEffect().RenderFrame(
+                TimeSpan.FromTicks(-1)));
+
+        Assert.Equal("elapsed", exception.ParamName);
+    }
+
     [Theory]
     [InlineData("Wave", "Leftward")]
     [InlineData("Wave", "Rightward")]
@@ -433,5 +461,17 @@ public sealed class Rz090528SynapseEffectsTests
         return Enumerable.Range(start, Rz090528MatrixFrame.ColumnCount)
             .Where(slot => !Rz090528MatrixFrame.IsHole(slot))
             .Average(slot => frame[slot].Red);
+    }
+
+    private sealed class RecordingRandomColorPairSource
+        : IRz090528RandomColorPairSource
+    {
+        internal List<long> Cycles { get; } = [];
+
+        public (RgbColor Primary, RgbColor Secondary) ColorsForCycle(long cycleIndex)
+        {
+            Cycles.Add(cycleIndex);
+            return (new RgbColor(0, 255, 0), new RgbColor(0, 0, 255));
+        }
     }
 }
