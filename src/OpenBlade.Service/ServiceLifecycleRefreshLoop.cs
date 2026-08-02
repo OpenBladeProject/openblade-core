@@ -74,14 +74,6 @@ public sealed class ServiceLifecycleRefreshLoop
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public ServiceLifecycleRefreshLoop(
-        IServiceControlRuntime runtime,
-        IServiceLifecycleEventSource eventSource,
-        ILogger logger)
-        : this(runtime, eventSource, new LowPowerGate(), logger)
-    {
-    }
-
     public async Task RunAsync(CancellationToken stoppingToken)
     {
         try
@@ -97,7 +89,15 @@ public sealed class ServiceLifecycleRefreshLoop
                     switch (trigger)
                     {
                         case ServiceLifecycleTrigger.PowerChanged:
-                            await runtime.HandlePowerSourceChangedAsync(stoppingToken);
+                            if (lowPowerGate.IsActive)
+                            {
+                                logger.LogInformation(
+                                    "Skipping power-source transition while the low-power gate is active.");
+                            }
+                            else
+                            {
+                                await runtime.HandlePowerSourceChangedAsync(stoppingToken);
+                            }
                             break;
                         case ServiceLifecycleTrigger.Suspending:
                             await runtime.PrepareForLowPowerAsync(stoppingToken);
@@ -105,14 +105,14 @@ public sealed class ServiceLifecycleRefreshLoop
                             break;
                         case ServiceLifecycleTrigger.Resumed:
                             await runtime.InvalidateLightingRendererAsync(stoppingToken);
-                            await runtime.HandlePowerSourceChangedAsync(stoppingToken);
                             if (lowPowerGate.IsActive)
                             {
                                 logger.LogInformation(
-                                    "Skipping lighting-renderer restoration after resume while the low-power gate remains active.");
+                                    "Skipping power-source transition and lighting-renderer restoration after resume while the low-power gate remains active.");
                             }
                             else
                             {
+                                await runtime.HandlePowerSourceChangedAsync(stoppingToken);
                                 await runtime.RestoreLightingRendererAsync(stoppingToken);
                             }
                             break;
@@ -129,24 +129,32 @@ public sealed class ServiceLifecycleRefreshLoop
                                 stoppingToken);
                             break;
                         case ServiceLifecycleTrigger.DeviceArrived:
-                            await runtime.ObserveAsync(
-                                includeLiveReadings: false,
-                                stoppingToken);
                             if (lowPowerGate.IsActive)
                             {
                                 logger.LogInformation(
-                                    "Skipping lighting-renderer restoration after device arrival while the low-power gate is active.");
+                                    "Skipping device observation and lighting-renderer restoration after device arrival while the low-power gate is active.");
                             }
                             else
                             {
+                                await runtime.ObserveAsync(
+                                    includeLiveReadings: false,
+                                    stoppingToken);
                                 await runtime.RestoreLightingRendererAsync(stoppingToken);
                             }
                             break;
                         case ServiceLifecycleTrigger.DeviceRemoved:
                             await runtime.InvalidateLightingRendererAsync(stoppingToken);
-                            await runtime.ObserveAsync(
-                                includeLiveReadings: false,
-                                stoppingToken);
+                            if (lowPowerGate.IsActive)
+                            {
+                                logger.LogInformation(
+                                    "Skipping device observation after device removal while the low-power gate is active.");
+                            }
+                            else
+                            {
+                                await runtime.ObserveAsync(
+                                    includeLiveReadings: false,
+                                    stoppingToken);
+                            }
                             break;
                     }
                 }

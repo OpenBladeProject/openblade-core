@@ -278,8 +278,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Hardened keyboard Driver-mode handling around genuine Windows low-power
-  transitions. The service now suppresses periodic and device-arrival
-  reacquisition while low power is active, performs the existing guarded
+  transitions. The service now suppresses write-capable periodic and lifecycle
+  reconciliation while low power is active, performs the existing guarded
   Normal-mode release before renderer invalidation, and records whether both
   model-specific cleanup paths confirmed, skipped, or could not confirm their
   final mode. Ordinary display-off notifications do not release Driver mode.

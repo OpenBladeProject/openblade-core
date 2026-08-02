@@ -21,13 +21,6 @@ public sealed class ServicePeriodicObservationLoop
     {
     }
 
-    public ServicePeriodicObservationLoop(
-        IServiceControlRuntime runtime,
-        ILogger logger)
-        : this(runtime, new LowPowerGate(), logger)
-    {
-    }
-
     internal ServicePeriodicObservationLoop(
         IServiceControlRuntime runtime,
         LowPowerGate lowPowerGate,
@@ -41,19 +34,25 @@ public sealed class ServicePeriodicObservationLoop
         this.delay = delay ?? throw new ArgumentNullException(nameof(delay));
     }
 
-    internal ServicePeriodicObservationLoop(
-        IServiceControlRuntime runtime,
-        ILogger logger,
-        Func<TimeSpan, CancellationToken, Task> delay)
-        : this(runtime, new LowPowerGate(), logger, delay)
-    {
-    }
-
     public async Task RunAsync(CancellationToken stoppingToken)
     {
+        bool lowPowerSkipLogged = false;
         while (!stoppingToken.IsCancellationRequested)
         {
             await delay(ObservationInterval, stoppingToken);
+            if (lowPowerGate.IsActive)
+            {
+                if (!lowPowerSkipLogged)
+                {
+                    logger.LogInformation(
+                        "Skipping periodic power classification, keyboard Driver-mode maintenance, and lighting-renderer restoration while the low-power gate is active.");
+                    lowPowerSkipLogged = true;
+                }
+
+                continue;
+            }
+
+            lowPowerSkipLogged = false;
             if (!await RunStepAsync(
                 runtime.RefreshPowerSourceClassificationAsync,
                 "power-source classification",
@@ -61,29 +60,19 @@ public sealed class ServicePeriodicObservationLoop
             {
                 return;
             }
-            if (lowPowerGate.IsActive)
+            if (!await RunStepAsync(
+                runtime.MaintainDriverModeAsync,
+                "keyboard Driver mode",
+                stoppingToken))
             {
-                logger.LogInformation(
-                    "Skipping periodic keyboard Driver-mode maintenance while the low-power gate is active.");
-                logger.LogInformation(
-                    "Skipping periodic lighting-renderer restoration while the low-power gate is active.");
+                return;
             }
-            else
+            if (!await RunStepAsync(
+                runtime.RestoreLightingRendererAsync,
+                "lighting renderer",
+                stoppingToken))
             {
-                if (!await RunStepAsync(
-                    runtime.MaintainDriverModeAsync,
-                    "keyboard Driver mode",
-                    stoppingToken))
-                {
-                    return;
-                }
-                if (!await RunStepAsync(
-                    runtime.RestoreLightingRendererAsync,
-                    "lighting renderer",
-                    stoppingToken))
-                {
-                    return;
-                }
+                return;
             }
         }
     }

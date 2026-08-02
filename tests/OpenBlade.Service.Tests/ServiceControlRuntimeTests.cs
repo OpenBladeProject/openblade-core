@@ -1629,6 +1629,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new SequenceLifecycleEventSource(
                 ServiceLifecycleTrigger.Suspending,
                 ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -1691,6 +1692,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new SequenceLifecycleEventSource(
                 ServiceLifecycleTrigger.Suspending,
                 ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -1712,6 +1714,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new SequenceLifecycleEventSource(
                 ServiceLifecycleTrigger.DeviceRemoved,
                 ServiceLifecycleTrigger.DeviceArrived),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -1733,6 +1736,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new SequenceLifecycleEventSource(
                 ServiceLifecycleTrigger.Suspending,
                 ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -3133,6 +3137,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var loop = new ServiceLifecycleRefreshLoop(
             context.Runtime,
             new SingleLifecycleEventSource(ServiceLifecycleTrigger.DeviceArrived),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -3153,6 +3158,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var loop = new ServiceLifecycleRefreshLoop(
             context.Runtime,
             new SingleLifecycleEventSource(ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -3177,6 +3183,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var loop = new ServiceLifecycleRefreshLoop(
             context.Runtime,
             new SingleLifecycleEventSource(ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);

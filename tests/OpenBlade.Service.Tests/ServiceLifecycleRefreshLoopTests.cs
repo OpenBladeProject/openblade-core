@@ -45,6 +45,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
         var loop = new ServiceLifecycleRefreshLoop(
             runtime,
             source,
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         InvalidOperationException actual = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -76,6 +77,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
         var loop = new ServiceLifecycleRefreshLoop(
             runtime,
             source,
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
@@ -100,7 +102,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
     }
 
     [Fact]
-    public async Task DeviceArrived_ObservesButSkipsRestoreWhileLowPowerGateIsActive()
+    public async Task DeviceArrived_SkipsObservationAndRestoreWhileLowPowerGateIsActive()
     {
         var source = new FakeLifecycleEventSource();
         var runtime = new RecordingRuntime(failFirstRefresh: false);
@@ -115,12 +117,60 @@ public sealed class ServiceLifecycleRefreshLoopTests
 
         Task running = loop.RunAsync(cancellation.Token);
         source.Publish(ServiceLifecycleTrigger.DeviceArrived);
-        await runtime.FirstRefresh.Task.WaitAsync(cancellation.Token);
+        await source.FirstTriggerProcessed.Task.WaitAsync(cancellation.Token);
         await cancellation.CancelAsync();
         await running;
 
-        Assert.Equal(1, runtime.ObserveCount);
+        Assert.Equal(0, runtime.ObserveCount);
         Assert.Equal(0, runtime.LightingRestoreCount);
+    }
+
+    [Fact]
+    public async Task PowerChanged_SkipsTransitionWhileLowPowerGateIsActive()
+    {
+        var source = new FakeLifecycleEventSource();
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var gate = new LowPowerGate();
+        gate.Enter();
+        var loop = new ServiceLifecycleRefreshLoop(
+            runtime,
+            source,
+            gate,
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        source.Publish(ServiceLifecycleTrigger.PowerChanged);
+        await source.FirstTriggerProcessed.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Equal(0, runtime.PowerSourceChangeCount);
+        Assert.Equal(0, runtime.TotalOperationCount);
+    }
+
+    [Fact]
+    public async Task DeviceRemoved_InvalidatesButSkipsObservationWhileLowPowerGateIsActive()
+    {
+        var source = new FakeLifecycleEventSource();
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var gate = new LowPowerGate();
+        gate.Enter();
+        var loop = new ServiceLifecycleRefreshLoop(
+            runtime,
+            source,
+            gate,
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        source.Publish(ServiceLifecycleTrigger.DeviceRemoved);
+        await source.FirstTriggerProcessed.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Equal(1, runtime.LightingInvalidationCount);
+        Assert.Equal(0, runtime.ObserveCount);
     }
 
     [Fact]
@@ -139,12 +189,12 @@ public sealed class ServiceLifecycleRefreshLoopTests
 
         Task running = loop.RunAsync(cancellation.Token);
         source.Publish(ServiceLifecycleTrigger.Resumed);
-        await runtime.TwoRefreshes.Task.WaitAsync(cancellation.Token);
+        await source.FirstTriggerProcessed.Task.WaitAsync(cancellation.Token);
         await cancellation.CancelAsync();
         await running;
 
         Assert.Equal(1, runtime.LightingInvalidationCount);
-        Assert.Equal(1, runtime.PowerSourceChangeCount);
+        Assert.Equal(0, runtime.PowerSourceChangeCount);
         Assert.Equal(0, runtime.LightingRestoreCount);
     }
 
@@ -156,6 +206,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
         var loop = new ServiceLifecycleRefreshLoop(
             runtime,
             source,
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
@@ -181,6 +232,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
         var loop = new ServiceLifecycleRefreshLoop(
             runtime,
             source,
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
@@ -203,12 +255,23 @@ public sealed class ServiceLifecycleRefreshLoopTests
         private readonly Channel<ServiceLifecycleTrigger> notifications =
             Channel.CreateUnbounded<ServiceLifecycleTrigger>();
 
+        public TaskCompletionSource FirstTriggerProcessed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public void Publish(ServiceLifecycleTrigger trigger) =>
             notifications.Writer.TryWrite(trigger);
 
-        public IAsyncEnumerable<ServiceLifecycleTrigger> WatchAsync(
-            CancellationToken cancellationToken) =>
-            notifications.Reader.ReadAllAsync(cancellationToken);
+        public async IAsyncEnumerable<ServiceLifecycleTrigger> WatchAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
+            CancellationToken cancellationToken)
+        {
+            await foreach (ServiceLifecycleTrigger trigger in
+                notifications.Reader.ReadAllAsync(cancellationToken))
+            {
+                yield return trigger;
+                FirstTriggerProcessed.TrySetResult();
+            }
+        }
     }
 
     private sealed class ThrowingLifecycleEventSource(Exception exception)

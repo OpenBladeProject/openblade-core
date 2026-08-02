@@ -136,6 +136,8 @@ public interface IServiceControlRuntime
         bool enabled,
         CancellationToken token);
 
+    // Observation and power classification can reconcile profiles and recover
+    // lighting. Callers must treat both entry points as write-capable.
     Task ObserveAsync(bool includeLiveReadings, CancellationToken cancellationToken);
 
     Task ObserveAsync(
