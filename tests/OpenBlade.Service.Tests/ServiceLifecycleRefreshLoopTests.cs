@@ -149,6 +149,33 @@ public sealed class ServiceLifecycleRefreshLoopTests
         Assert.Equal(0, runtime.TotalOperationCount);
     }
 
+    [Theory]
+    [InlineData(ServiceLifecycleTrigger.DisplayOff)]
+    [InlineData(ServiceLifecycleTrigger.DisplayOn)]
+    public async Task DisplayTransition_SkipsSuppressionWhileLowPowerGateIsActive(
+        ServiceLifecycleTrigger trigger)
+    {
+        var source = new FakeLifecycleEventSource();
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var gate = new LowPowerGate();
+        gate.Enter();
+        var loop = new ServiceLifecycleRefreshLoop(
+            runtime,
+            source,
+            gate,
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        source.Publish(trigger);
+        await source.FirstTriggerProcessed.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Equal(0, runtime.LightingSuppressionCount);
+        Assert.Equal(0, runtime.TotalOperationCount);
+    }
+
     [Fact]
     public async Task DeviceRemoved_InvalidatesButSkipsObservationWhileLowPowerGateIsActive()
     {

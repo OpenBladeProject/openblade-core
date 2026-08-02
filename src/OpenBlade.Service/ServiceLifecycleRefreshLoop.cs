@@ -117,16 +117,19 @@ public sealed class ServiceLifecycleRefreshLoop
                             }
                             break;
                         case ServiceLifecycleTrigger.DisplayOff:
-                            await runtime.SetLightingSuppressionAsync(
-                                OpenBlade.Contracts.LightingSuppressionReason.DisplayOff,
-                                suppressed: true,
-                                stoppingToken);
-                            break;
                         case ServiceLifecycleTrigger.DisplayOn:
-                            await runtime.SetLightingSuppressionAsync(
-                                OpenBlade.Contracts.LightingSuppressionReason.DisplayOff,
-                                suppressed: false,
-                                stoppingToken);
+                            if (lowPowerGate.IsActive)
+                            {
+                                logger.LogInformation(
+                                    "Skipping display lighting suppression transition while the low-power gate is active.");
+                            }
+                            else
+                            {
+                                await runtime.SetLightingSuppressionAsync(
+                                    OpenBlade.Contracts.LightingSuppressionReason.DisplayOff,
+                                    suppressed: trigger == ServiceLifecycleTrigger.DisplayOff,
+                                    stoppingToken);
+                            }
                             break;
                         case ServiceLifecycleTrigger.DeviceArrived:
                             if (lowPowerGate.IsActive)

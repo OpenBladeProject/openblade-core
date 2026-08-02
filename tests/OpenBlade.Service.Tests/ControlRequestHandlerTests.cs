@@ -163,6 +163,7 @@ public sealed class ControlRequestHandlerTests
                 new NullHub(),
                 provider,
                 new DiagnosticHistory(),
+                new LowPowerGate(),
                 new FixedControllerPresenceMonitor(conflict ? ["RazerAppEngine"] : []));
             runtime.Initialize(configuration, PowerSource.PluggedIn);
             var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());

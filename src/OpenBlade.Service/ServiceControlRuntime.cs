@@ -211,6 +211,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
     private readonly IControllerPresenceMonitor controllerPresenceMonitor;
     private readonly DiagnosticHistory history;
+    private readonly LowPowerGate lowPowerGate;
     private readonly IFirmwareVersionSource firmwareVersionSource;
     private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
     private readonly SemaphoreSlim operationGate = new(1, 1);
@@ -230,6 +231,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool pendingLightingRestoreFromLifecycle;
     private LightingSettings? faultedLightingRecoveryCandidate;
     private readonly HashSet<LightingSuppressionReason> lightingSuppressions = [];
+    private bool lightingSuppressionWritePending;
     private readonly IFanTemperatureSource fanTemperatureSource;
     private int? lastCurveFan1Rpm;
     private int? lastCurveFan2Rpm;
@@ -251,6 +253,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
         DiagnosticHistory history,
+        LowPowerGate lowPowerGate,
         IControllerPresenceMonitor controllerPresenceMonitor)
         : this(
             store,
@@ -259,6 +262,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             subscriptionHub,
             deviceProvider,
             history,
+            lowPowerGate,
             controllerPresenceMonitor,
             UnavailableFirmwareVersionSource.Instance)
     {
@@ -271,6 +275,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
         DiagnosticHistory history,
+        LowPowerGate lowPowerGate,
         IControllerPresenceMonitor controllerPresenceMonitor,
         IFirmwareVersionSource firmwareVersionSource)
         : this(
@@ -280,6 +285,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             subscriptionHub,
             deviceProvider,
             history,
+            lowPowerGate,
             controllerPresenceMonitor,
             firmwareVersionSource,
             static (delay, token) => Task.Delay(delay, token),
@@ -294,6 +300,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
         DiagnosticHistory history,
+        LowPowerGate lowPowerGate,
         IControllerPresenceMonitor controllerPresenceMonitor,
         IFirmwareVersionSource firmwareVersionSource,
         ProfileSetValidator validator)
@@ -304,6 +311,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             subscriptionHub,
             deviceProvider,
             history,
+            lowPowerGate,
             controllerPresenceMonitor,
             firmwareVersionSource,
             static (delay, token) => Task.Delay(delay, token),
@@ -318,6 +326,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
         DiagnosticHistory history,
+        LowPowerGate lowPowerGate,
         IControllerPresenceMonitor controllerPresenceMonitor,
         Func<TimeSpan, CancellationToken, Task> transitionRetryDelay)
         : this(
@@ -327,6 +336,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             subscriptionHub,
             deviceProvider,
             history,
+            lowPowerGate,
             controllerPresenceMonitor,
             UnavailableFirmwareVersionSource.Instance,
             transitionRetryDelay,
@@ -341,6 +351,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
         DiagnosticHistory history,
+        LowPowerGate lowPowerGate,
         IControllerPresenceMonitor controllerPresenceMonitor,
         IFirmwareVersionSource firmwareVersionSource,
         Func<TimeSpan, CancellationToken, Task> transitionRetryDelay)
@@ -351,6 +362,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             subscriptionHub,
             deviceProvider,
             history,
+            lowPowerGate,
             controllerPresenceMonitor,
             firmwareVersionSource,
             transitionRetryDelay,
@@ -365,6 +377,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
         DiagnosticHistory history,
+        LowPowerGate lowPowerGate,
         IControllerPresenceMonitor controllerPresenceMonitor,
         IFirmwareVersionSource firmwareVersionSource,
         Func<TimeSpan, CancellationToken, Task> transitionRetryDelay,
@@ -381,6 +394,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.deviceProvider = deviceProvider
             ?? throw new ArgumentNullException(nameof(deviceProvider));
         this.history = history ?? throw new ArgumentNullException(nameof(history));
+        this.lowPowerGate = lowPowerGate
+            ?? throw new ArgumentNullException(nameof(lowPowerGate));
         this.controllerPresenceMonitor = controllerPresenceMonitor
             ?? throw new ArgumentNullException(nameof(controllerPresenceMonitor));
         this.firmwareVersionSource = firmwareVersionSource
@@ -1284,7 +1299,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             bool alreadySet = lightingSuppressions.Contains(reason);
-            if (alreadySet == suppressed)
+            if (alreadySet == suppressed && !lightingSuppressionWritePending)
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Stored,
@@ -1296,6 +1311,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
                     "The requested lighting power policy is not enabled.");
+            }
+
+            if (lowPowerGate.IsActive)
+            {
+                if (alreadySet != suppressed)
+                {
+                    bool wasSuppressedBeforeDeferred = lightingSuppressions.Count > 0;
+                    UpdateLightingSuppressionState(reason, suppressed);
+                    if (wasSuppressedBeforeDeferred != (lightingSuppressions.Count > 0))
+                    {
+                        lightingSuppressionWritePending = true;
+                    }
+                }
+                const string deferred =
+                    "Lighting power policy state was recorded without a firmware write while the low-power gate is active.";
+                history.RecordSummary(ControlOperationStatus.Stored, deferred);
+                return new ControlOperationResult(ControlOperationStatus.Stored, deferred);
             }
 
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
@@ -1324,21 +1356,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             bool wasSuppressed = lightingSuppressions.Count > 0;
-            if (suppressed)
+            if (alreadySet != suppressed)
             {
-                lightingSuppressions.Add(reason);
-            }
-            else
-            {
-                lightingSuppressions.Remove(reason);
+                UpdateLightingSuppressionState(reason, suppressed);
             }
             bool isSuppressed = lightingSuppressions.Count > 0;
-            PublishIfChanged(GetStatus() with
-            {
-                LightingSuppressions = CurrentLightingSuppressions(),
-            });
 
-            if (wasSuppressed == isSuppressed)
+            if (wasSuppressed == isSuppressed && !lightingSuppressionWritePending)
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Stored,
@@ -1354,6 +1378,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         cancellationToken,
                         forceWrite: true),
                 token).ConfigureAwait(false);
+            if (result.Status == ControlOperationStatus.Applied)
+            {
+                lightingSuppressionWritePending = false;
+            }
             return result.Status == ControlOperationStatus.Applied
                 ? result with
                 {
@@ -4813,6 +4841,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private LightingSuppressionReason[] CurrentLightingSuppressions() =>
         [.. lightingSuppressions.Order()];
+
+    private void UpdateLightingSuppressionState(
+        LightingSuppressionReason reason,
+        bool suppressed)
+    {
+        if (suppressed)
+        {
+            lightingSuppressions.Add(reason);
+        }
+        else
+        {
+            lightingSuppressions.Remove(reason);
+        }
+
+        PublishIfChanged(GetStatus() with
+        {
+            LightingSuppressions = CurrentLightingSuppressions(),
+        });
+    }
 
     private void RemoveDisabledLightingSuppressions()
     {

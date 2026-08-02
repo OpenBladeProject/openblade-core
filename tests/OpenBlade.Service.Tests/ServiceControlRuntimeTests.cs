@@ -1158,6 +1158,95 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task LightingPowerPolicy_LowPowerGateStagesStateWithoutHardwareWrite()
+    {
+        var gate = new LowPowerGate();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            lowPowerGate: gate);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles with
+        {
+            PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(
+                    turnOffWhenDisplayTurnsOff: true,
+                    idleTimeoutMinutes: null),
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        int writesBeforeSuppression = context.Device.LightingSetCalls;
+        gate.Enter();
+
+        ControlOperationResult result = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(writesBeforeSuppression, context.Device.LightingSetCalls);
+        Assert.Equal(
+            [LightingSuppressionReason.DisplayOff],
+            context.Runtime.GetStatus().LightingSuppressions);
+        Assert.Contains("without a firmware write", result.Message, StringComparison.Ordinal);
+
+        gate.Exit();
+        ControlOperationResult resumed = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, resumed.Status);
+        Assert.Equal(writesBeforeSuppression + 1, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
+    }
+
+    [Fact]
+    public async Task LightingPowerPolicy_DeferredUnsuppressionReconcilesAfterGateExit()
+    {
+        var gate = new LowPowerGate();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            lowPowerGate: gate);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles with
+        {
+            PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(
+                    turnOffWhenDisplayTurnsOff: true,
+                    idleTimeoutMinutes: null),
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.DisplayOff,
+            suppressed: true,
+            CancellationToken.None);
+        int writesWhileSuppressed = context.Device.LightingSetCalls;
+        gate.Enter();
+
+        ControlOperationResult deferred = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, deferred.Status);
+        Assert.Equal(writesWhileSuppressed, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
+
+        gate.Exit();
+        ControlOperationResult reconciled = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, reconciled.Status);
+        Assert.Equal(writesWhileSuppressed + 1, context.Device.LightingSetCalls);
+        Assert.NotEqual(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+    }
+
+    [Fact]
     public async Task LightingPowerPolicy_ControllerAdvisoryDoesNotBlockConfiguredSuppression()
     {
         TestContext context = CreateWritableContext(
@@ -5341,7 +5430,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
     private async Task<TestContext> CreateOwnedStaticLightingContextAsync(
         Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
-            transactionBoundary = null)
+            transactionBoundary = null,
+        LowPowerGate? lowPowerGate = null)
     {
         LightingSettings lighting = LightingSettingsFactory.Static(
             new RgbColor(0, 128, 255),
@@ -5357,7 +5447,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         TestContext context = CreateContext(
             providerAvailable: true,
             profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities),
-            transactionBoundary: transactionBoundary);
+            transactionBoundary: transactionBoundary,
+            lowPowerGate: lowPowerGate);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             LightingEffects = capabilities.LightingEffects,
@@ -5506,7 +5597,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         FirmwareVersions? firmwareVersions = null,
         ProfileSetValidator? profileValidator = null,
         IFanTemperatureSource? fanTemperatureSource = null,
-        BatteryHealthStatus? batteryHealth = null)
+        BatteryHealthStatus? batteryHealth = null,
+        LowPowerGate? lowPowerGate = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -5561,6 +5653,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             hub,
             provider,
             history,
+            lowPowerGate ?? new LowPowerGate(),
             monitor,
             firmwareSource,
             transitionRetryDelay ?? (static (delay, token) => Task.Delay(delay, token)),

@@ -286,7 +286,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   reconciliation while low power is active, performs the existing guarded
   Normal-mode release before renderer invalidation, and records whether both
   model-specific cleanup paths confirmed, skipped, or could not confirm their
-  final mode. Ordinary display-off notifications do not release Driver mode.
+  final mode. Display lighting-policy transitions are also gated at both the
+  lifecycle and shared service-runtime boundaries, so Session Agent requests
+  can update logical suppression state without performing firmware writes.
+  Ordinary display-off notifications do not release Driver mode.
 - Kept Audio Meter renderer shutdown serialized with disposal, constrained
   manual fan curves to each laptop's reported RPM range, and made PID `02C6`
   reactive-key pulses safe during concurrent input and lighting-port shutdown.
