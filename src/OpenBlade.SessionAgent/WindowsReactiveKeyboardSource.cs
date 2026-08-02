@@ -387,8 +387,14 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     owner.performanceFunctionKeyPressed,
                     owner.readVerifiedInputDeviceKind(),
                     owner.readSpecialKeyInputAdmitted,
-                    owner.shouldOverrideSpecialKey))
+                    owner.shouldOverrideSpecialKey,
+                    out SpecialKeySlot? triggeredSpecialKey))
                 {
+                    if (triggeredSpecialKey is { } specialKey)
+                    {
+                        owner.specialKeyPressed[(int)specialKey] = true;
+                        owner.publishSpecialKey(specialKey);
+                    }
                     return 1;
                 }
                 if (RazerBladeFunctionRowMediaInput.SupportsDevice(

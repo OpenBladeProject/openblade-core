@@ -28,21 +28,27 @@ public sealed class SpecialKeyKeyboardSuppressionStateTests
                 observed.Add(slot);
                 return true;
             },
-            _ => true));
+            _ => true,
+            out SpecialKeySlot? firstTrigger));
+        Assert.Equal(expectedSlot, firstTrigger);
         Assert.True(state.ShouldSuppress(
             virtualKey,
             keyDown: true,
             functionKeyPressed: false,
             RazerBladeInputDeviceKind.Unsupported,
             _ => false,
-            _ => false));
+            _ => false,
+            out SpecialKeySlot? repeatTrigger));
+        Assert.Null(repeatTrigger);
         Assert.True(state.ShouldSuppress(
             virtualKey,
             keyDown: false,
             functionKeyPressed: false,
             RazerBladeInputDeviceKind.Unsupported,
             _ => false,
-            _ => false));
+            _ => false,
+            out SpecialKeySlot? releaseTrigger));
+        Assert.Null(releaseTrigger);
 
         Assert.Equal([expectedSlot], observed);
         Assert.False(state.ShouldSuppress(
