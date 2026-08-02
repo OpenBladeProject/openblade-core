@@ -47,7 +47,7 @@ internal static class WindowsMicrophoneMuteStateQuery
         object? enumeratorObject = null;
         try
         {
-            enumeratorObject = new MmDeviceEnumerator();
+            enumeratorObject = CoreAudioDeviceEnumerator.Create();
             var enumerator = (IMMDeviceEnumerator)enumeratorObject;
             var deviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var states = new List<bool>();
@@ -103,7 +103,7 @@ internal static class WindowsMicrophoneMuteStateQuery
     {
         if (value is not null && Marshal.IsComObject(value))
         {
-            _ = Marshal.FinalReleaseComObject(value);
+            _ = Marshal.ReleaseComObject(value);
         }
     }
 
@@ -119,12 +119,6 @@ internal static class WindowsMicrophoneMuteStateQuery
         Console,
         Multimedia,
         Communications,
-    }
-
-    [ComImport]
-    [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-    private sealed class MmDeviceEnumerator
-    {
     }
 
     [ComImport]

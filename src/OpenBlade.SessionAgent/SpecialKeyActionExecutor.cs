@@ -357,7 +357,7 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
         var endpoints = new List<DefaultCaptureEndpoint>();
         try
         {
-            enumeratorObject = new MmDeviceEnumerator();
+            enumeratorObject = CoreAudioDeviceEnumerator.Create();
             var enumerator = (IMMDeviceEnumerator)enumeratorObject;
             var deviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (ERole role in DefaultCaptureRoles)
@@ -568,7 +568,7 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
     {
         if (value is not null && Marshal.IsComObject(value))
         {
-            _ = Marshal.FinalReleaseComObject(value);
+            _ = Marshal.ReleaseComObject(value);
         }
     }
 
@@ -636,12 +636,6 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
         object EndpointObject,
         IAudioEndpointVolume Volume,
         bool OriginalMute);
-
-    [ComImport]
-    [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-    private sealed class MmDeviceEnumerator
-    {
-    }
 
     [ComImport]
     [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]

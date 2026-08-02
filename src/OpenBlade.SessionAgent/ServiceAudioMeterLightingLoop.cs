@@ -38,11 +38,7 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
 
     public WindowsAudioMeterLightingSampler()
     {
-        Type enumeratorType = Type.GetTypeFromCLSID(
-            new Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"),
-            throwOnError: true)!;
-        enumeratorObject = Activator.CreateInstance(enumeratorType)
-            ?? throw new InvalidOperationException("Core Audio enumerator is unavailable.");
+        enumeratorObject = CoreAudioDeviceEnumerator.Create();
         var enumerator = (IMMDeviceEnumerator)enumeratorObject;
         Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(
             dataFlow: 0,
@@ -123,9 +119,9 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
         {
             return;
         }
-        _ = Marshal.FinalReleaseComObject(meterObject);
-        _ = Marshal.FinalReleaseComObject(deviceObject);
-        _ = Marshal.FinalReleaseComObject(enumeratorObject);
+        _ = Marshal.ReleaseComObject(meterObject);
+        _ = Marshal.ReleaseComObject(deviceObject);
+        _ = Marshal.ReleaseComObject(enumeratorObject);
     }
 
     [ComImport]

@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed normal M5 microphone mute handling after Session Agent startup so the
+  Windows mute toggle and the key's red indicator use a shared, collision-free
+  Core Audio enumerator activation path.
 - Fixed RZ09-0581 M1 and M2 custom shortcuts so Windows' exact-device Page Up
   and Page Down Raw Input packets trigger the assigned action on every press
   while Fn is held, instead of only suppressing the keys' default behavior.
