@@ -5,6 +5,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed RZ09-0581 M1 and M2 custom shortcuts so Windows' exact-device Page Up
+  and Page Down Raw Input packets trigger the assigned action on every press
+  while Fn is held, instead of only suppressing the keys' default behavior.
+
 ### Added
 
 - Added exact-device keyboard-brightness support for the Razer Blade 16

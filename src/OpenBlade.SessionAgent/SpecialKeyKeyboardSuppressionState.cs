@@ -50,7 +50,7 @@ internal sealed class SpecialKeyKeyboardSuppressionState
         return suppress;
     }
 
-    private static bool TryMap(uint virtualKey, out SpecialKeySlot slot)
+    internal static bool TryMap(uint virtualKey, out SpecialKeySlot slot)
     {
         slot = virtualKey switch
         {

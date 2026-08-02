@@ -546,6 +546,21 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         {
             publishPerformanceShortcut(shortcut);
         }
+        if (SpecialKeyRawKeyboardState.TryCreateTrigger(
+                deviceKind,
+                keyboard.VirtualKey,
+                keyDown,
+                performanceFunctionKeyPressed,
+                specialKeyPressed,
+                out SpecialKeySlot specialKey)
+            && readSpecialKeyInputAdmitted(specialKey)
+            && ShouldOverrideSpecialKey(
+                deviceKind,
+                specialKey,
+                shouldOverrideSpecialKey(specialKey)))
+        {
+            publishSpecialKey(specialKey);
+        }
         if (!ReactiveRawKeyboardInput.TryCreatePulses(
             deviceKind,
             keyboard.MakeCode,
