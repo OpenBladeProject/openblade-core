@@ -60,8 +60,6 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
 
     public IReadOnlyList<SpecialKeyActionOption> AvailableActions => ActionOptions;
 
-    public SpecialKeyBindingViewModel BindingTarget => this;
-
     public string SlotLabel => Slot.ToString();
 
     public bool IsEditable

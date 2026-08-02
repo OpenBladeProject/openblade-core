@@ -277,6 +277,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed shortcut action pickers that changed visually without persisting their
+  new binding. Custom RZ09-0581 M1 and M2 actions now also suppress the paired
+  native Page Up or Page Down edge for the full key press, while Default and
+  unadmitted model paths continue to pass the native key through.
 - Hardened keyboard Driver-mode handling around genuine Windows low-power
   transitions. The service now suppresses write-capable periodic and lifecycle
   reconciliation while low power is active, performs the existing guarded

@@ -1354,10 +1354,10 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "local:SpecialKeyActionSelection.Source=\"{x:Bind BindingTarget}\"",
+            "AutomationProperties.Name=\"{x:Bind SlotLabel}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.DoesNotContain(
+        Assert.Contains(
             "SelectionChanged=\"OnSpecialKeyActionSelectionChanged\"",
             xaml,
             StringComparison.Ordinal);
@@ -1381,17 +1381,13 @@ public sealed class WinUiShellContractTests
             ".Select(binding => binding.ToPreference())",
             window,
             StringComparison.Ordinal);
-        string selection = ReadRepositoryFile(
-            "src",
-            "OpenBlade.Tray",
-            "SpecialKeyActionSelection.cs");
         Assert.Contains(
-            "GetSource(comboBox) is { } binding",
-            selection,
+            "AutomationProperties.GetName(comboBox)",
+            window,
             StringComparison.Ordinal);
         Assert.Contains(
             "binding.SelectedAction = selectedAction;",
-            selection,
+            window,
             StringComparison.Ordinal);
     }
 

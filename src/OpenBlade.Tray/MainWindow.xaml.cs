@@ -1817,6 +1817,31 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
+    private void OnSpecialKeyActionSelectionChanged(
+        object sender,
+        SelectionChangedEventArgs args)
+    {
+        if (changingSpecialKeyBindings
+            || sender is not Microsoft.UI.Xaml.Controls.ComboBox
+            {
+                SelectedItem: SpecialKeyActionOption selectedAction,
+            } comboBox
+            || !Enum.TryParse(
+                AutomationProperties.GetName(comboBox),
+                ignoreCase: true,
+                out SpecialKeySlot slot))
+        {
+            return;
+        }
+
+        SpecialKeyBindingViewModel? binding = SpecialKeyBindings
+            .FirstOrDefault(candidate => candidate.Slot == slot);
+        if (binding is not null && binding.SelectedAction != selectedAction)
+        {
+            binding.SelectedAction = selectedAction;
+        }
+    }
+
     private void RefreshSpecialKeyBindingAccess()
     {
         foreach (SpecialKeyBindingViewModel binding in SpecialKeyBindings)

@@ -75,6 +75,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
     private readonly Func<SpecialKeySlot, bool> readSpecialKeyInputAdmitted;
     private readonly RazerBladeFunctionRowInputState functionRowInput = new();
+    private readonly SpecialKeyKeyboardSuppressionState specialKeyKeyboardInput = new();
     private readonly GamingModeKeyBlockState gamingModeKeyBlockState = new();
     private readonly LowLevelKeyboardHookHealthTracker hookHealth = new();
     private readonly string windowClassName = $"OpenBlade.Reactive.{Guid.NewGuid():N}";
@@ -377,6 +378,16 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     keyDown,
                     owner.readGamingModeKeyPolicy(),
                     altContext: (input.Flags & LowLevelAltDownFlag) != 0))
+                {
+                    return 1;
+                }
+                if (owner.specialKeyKeyboardInput.ShouldSuppress(
+                    input.VirtualKey,
+                    keyDown,
+                    owner.performanceFunctionKeyPressed,
+                    owner.readVerifiedInputDeviceKind(),
+                    owner.readSpecialKeyInputAdmitted,
+                    owner.shouldOverrideSpecialKey))
                 {
                     return 1;
                 }
