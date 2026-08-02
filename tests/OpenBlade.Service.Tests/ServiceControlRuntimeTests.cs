@@ -89,6 +89,61 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PrepareForLowPower_ReleasesDriverModeAndRecordsBoundary()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.DriverModeActive = true;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForLowPowerAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.False(context.Device.DriverModeActive);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+        Assert.Contains("low power", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Detail?.Contains(
+                "Attempting",
+                StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public async Task PrepareForLowPower_RecordsDistinctReleaseFailureWithoutThrowing()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.DriverModeActive = true;
+        context.Device.DriverModeReleaseFailure = new IOException("synthetic release failure");
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForLowPowerAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains("synthetic release failure", result.Message);
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Status == "Failed"
+                && entry.Detail?.Contains("synthetic release failure") == true);
+    }
+
+    [Fact]
+    public async Task InvalidateLightingRenderer_RecordsIndeterminateModeCleanup()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Provider.InvalidationDriverModeRestoreOutcome =
+            DriverModeRestoreOutcome.Indeterminate;
+
+        await context.Runtime.InvalidateLightingRendererAsync(CancellationToken.None);
+
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Status == "Failed"
+                && entry.Detail?.Contains(
+                    "could not confirm",
+                    StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public async Task PrepareForShutdown_DoesNotChangeDriverModeDuringControllerConflict()
     {
         TestContext context = CreateContext(
@@ -5724,6 +5779,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? InvalidationFailure { get; set; }
 
+        public DriverModeRestoreOutcome InvalidationDriverModeRestoreOutcome { get; set; }
+
         public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
         {
             TryGetCount++;
@@ -5753,7 +5810,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             };
         }
 
-        public Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
+        public Task<LightingRendererInvalidationResult> InvalidateLightingRendererAsync(
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -5761,7 +5818,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             if (InvalidationFailure is { } failure)
             {
                 InvalidationFailure = null;
-                return Task.FromException<LightingRendererOwnershipState>(failure);
+                return Task.FromException<LightingRendererInvalidationResult>(failure);
             }
 
             LightingRendererOwnershipState observed =
@@ -5774,7 +5831,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 counting.ConfirmedState = counting.ConfirmedState with { Lighting = null };
             }
 
-            return Task.FromResult(observed);
+            return Task.FromResult(new LightingRendererInvalidationResult(
+                observed,
+                InvalidationDriverModeRestoreOutcome));
         }
     }
 
@@ -5861,6 +5920,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public int DriverModeReadCalls { get; private set; }
 
         public int DriverModeReleaseCalls { get; private set; }
+
+        public Exception? DriverModeReleaseFailure { get; set; }
 
         public int OneShotSetCalls { get; private set; }
 
@@ -5969,6 +6030,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             DriverModeReleaseCalls++;
+            if (DriverModeReleaseFailure is not null)
+            {
+                return Task.FromException<bool?>(DriverModeReleaseFailure);
+            }
             DriverModeActive = false;
             return Task.FromResult<bool?>(false);
         }

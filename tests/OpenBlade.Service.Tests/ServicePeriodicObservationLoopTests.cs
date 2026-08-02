@@ -48,6 +48,44 @@ public sealed class ServicePeriodicObservationLoopTests
         Assert.Equal(1, runtime.RestoreCalls);
     }
 
+    [Fact]
+    public async Task RunAsync_LowPowerGateSkipsMutatingMaintenanceAndResumesAfterExit()
+    {
+        var gate = new LowPowerGate();
+        Assert.True(gate.Enter());
+        using var gatedCancellation = new CancellationTokenSource();
+        var gatedRuntime = new RecordingRuntime(gatedCancellation);
+        var gatedLoop = new ServicePeriodicObservationLoop(
+            gatedRuntime,
+            gate,
+            NullLogger.Instance,
+            (_, _) =>
+            {
+                gatedCancellation.Cancel();
+                return Task.CompletedTask;
+            });
+
+        await gatedLoop.RunAsync(gatedCancellation.Token);
+
+        Assert.Equal(1, gatedRuntime.RefreshCalls);
+        Assert.Equal(0, gatedRuntime.DriverModeMaintenanceCalls);
+        Assert.Equal(0, gatedRuntime.RestoreCalls);
+
+        Assert.True(gate.Exit());
+        using var activeCancellation = new CancellationTokenSource();
+        var activeRuntime = new RecordingRuntime(activeCancellation);
+        var activeLoop = new ServicePeriodicObservationLoop(
+            activeRuntime,
+            gate,
+            NullLogger.Instance,
+            (_, _) => Task.CompletedTask);
+
+        await activeLoop.RunAsync(activeCancellation.Token);
+
+        Assert.Equal(1, activeRuntime.DriverModeMaintenanceCalls);
+        Assert.Equal(1, activeRuntime.RestoreCalls);
+    }
+
     private sealed class RecordingRuntime(CancellationTokenSource cancellation)
         : IServiceControlRuntime
     {

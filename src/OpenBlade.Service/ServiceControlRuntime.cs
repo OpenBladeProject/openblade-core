@@ -163,6 +163,9 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Applied,
                 "Keyboard Driver mode is released."));
 
+    Task<ControlOperationResult> PrepareForLowPowerAsync(
+        CancellationToken cancellationToken) => PrepareForShutdownAsync(cancellationToken);
+
     Task InvalidateLightingRendererAsync(CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
@@ -2303,34 +2306,83 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     public async Task<ControlOperationResult> PrepareForShutdownAsync(
+        CancellationToken cancellationToken) => await ReleaseDriverModeAsync(
+            preserveLightingIntent: false,
+            reasonLabel: "shutdown",
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<ControlOperationResult> PrepareForLowPowerAsync(
+        CancellationToken cancellationToken) => await ReleaseDriverModeAsync(
+            preserveLightingIntent: true,
+            reasonLabel: "low power",
+            cancellationToken).ConfigureAwait(false);
+
+    private async Task<ControlOperationResult> ReleaseDriverModeAsync(
+        bool preserveLightingIntent,
+        string reasonLabel,
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        LightingSettings? preservedLighting = preserveLightingIntent
+            ? pendingLightingRestore
+            : null;
+        bool preservedLifecycleRestore = preserveLightingIntent
+            && pendingLightingRestoreFromLifecycle;
+        try
+        {
+            return await ReleaseDriverModeCoreAsync(reasonLabel, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            if (preserveLightingIntent)
+            {
+                pendingLightingRestore = preservedLighting;
+                pendingLightingRestoreFromLifecycle = preservedLifecycleRestore;
+            }
+
+            operationGate.Release();
+        }
+    }
+
+    private async Task<ControlOperationResult> ReleaseDriverModeCoreAsync(
+        string reasonLabel,
+        CancellationToken cancellationToken)
+    {
+        string boundary = reasonLabel == "shutdown"
+            ? "before shutdown"
+            : $"before {reasonLabel}";
+        history.RecordSummary(
+            ControlOperationStatus.Stored,
+            $"Attempting to release keyboard Driver mode {boundary}.");
         try
         {
             RefreshControllerPresenceCore(cancellationToken);
             ServiceStatusSnapshot current = GetStatus();
             if (current.ControllerDetectionWarning is not null)
             {
-                const string unverified =
-                    "Keyboard Driver mode was left unchanged because other Razer software could not be checked.";
+                string unverified = reasonLabel == "shutdown"
+                    ? "Keyboard Driver mode was left unchanged because other Razer software could not be checked."
+                    : $"Keyboard Driver mode was left unchanged {boundary} because other Razer software could not be checked.";
                 history.RecordSummary(ControlOperationStatus.Stored, unverified);
                 return new ControlOperationResult(ControlOperationStatus.Stored, unverified);
             }
 
             if (current.PotentialControllers.Any(KeyboardDriverModeControllers.Contains))
             {
-                const string retained =
-                    "Keyboard Driver mode was left unchanged because Razer Synapse is active.";
+                string retained = reasonLabel == "shutdown"
+                    ? "Keyboard Driver mode was left unchanged because Razer Synapse is active."
+                    : $"Keyboard Driver mode was left unchanged {boundary} because Razer Synapse is active.";
                 history.RecordSummary(ControlOperationStatus.Stored, retained);
                 return new ControlOperationResult(ControlOperationStatus.Stored, retained);
             }
 
             if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
-                const string unavailable =
-                    "OpenBlade could not verify the laptop before releasing keyboard Driver mode.";
+                string unavailable = reasonLabel == "shutdown"
+                    ? "OpenBlade could not verify the laptop before releasing keyboard Driver mode."
+                    : $"OpenBlade could not verify the laptop while releasing keyboard Driver mode {boundary}.";
                 history.RecordSummary(ControlOperationStatus.Failed, unavailable);
                 return new ControlOperationResult(ControlOperationStatus.Failed, unavailable);
             }
@@ -2346,7 +2398,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             driverModePortRecoveryAttempted = false;
-            const string message = "Keyboard Driver mode was released before shutdown.";
+            string message = $"Keyboard Driver mode was released {boundary}.";
             history.RecordSummary(ControlOperationStatus.Applied, message);
             PublishIfChanged(GetStatus() with
             {
@@ -2365,10 +2417,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 $"Keyboard Driver mode could not be released: {exception.Message}";
             history.RecordSummary(ControlOperationStatus.Failed, failure);
             return new ControlOperationResult(ControlOperationStatus.Failed, failure);
-        }
-        finally
-        {
-            operationGate.Release();
         }
     }
 
@@ -2405,10 +2453,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingSettings? owned = lastOwnedLightingSettings;
             LightingRendererOwnershipState publishedOwnership =
                 GetStatus().LightingRendererOwnership;
-            LightingRendererOwnershipState liveOwnership =
+            LightingRendererInvalidationResult invalidation =
                 await deviceProvider
                     .InvalidateLightingRendererAsync(cancellationToken)
                     .ConfigureAwait(false);
+            LightingRendererOwnershipState liveOwnership = invalidation.Ownership;
+            RecordDriverModeRestoreOutcome(invalidation.DriverModeRestoreOutcome);
 
             // Do not clear the cached ownership until the provider confirms that
             // it reached the live port. A canceled hardware-gate wait leaves the
@@ -2450,6 +2500,31 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 pendingLightingRestore = null;
                 pendingLightingRestoreFromLifecycle = false;
             }
+        }
+    }
+
+    private void RecordDriverModeRestoreOutcome(DriverModeRestoreOutcome outcome)
+    {
+        (ControlOperationStatus status, string? message) = outcome switch
+        {
+            DriverModeRestoreOutcome.NotOwned => (ControlOperationStatus.Stored, null),
+            DriverModeRestoreOutcome.ForeignChange => (
+                ControlOperationStatus.Stored,
+                "Lighting-port cleanup found keyboard Driver mode already changed externally; no mode write was submitted."),
+            DriverModeRestoreOutcome.Released => (
+                ControlOperationStatus.Applied,
+                "Lighting-port cleanup confirmed keyboard Driver mode was released."),
+            DriverModeRestoreOutcome.Indeterminate => (
+                ControlOperationStatus.Failed,
+                "Lighting-port cleanup could not confirm that keyboard Driver mode was released."),
+            DriverModeRestoreOutcome.Failed => (
+                ControlOperationStatus.Failed,
+                "Lighting-port cleanup failed while attempting to release keyboard Driver mode."),
+            _ => throw new ArgumentOutOfRangeException(nameof(outcome)),
+        };
+        if (message is not null)
+        {
+            history.RecordSummary(status, message);
         }
     }
 

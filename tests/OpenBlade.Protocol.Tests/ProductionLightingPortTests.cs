@@ -417,6 +417,7 @@ public sealed class ProductionLightingPortTests
         await port.DisposeAsync();
 
         Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+        Assert.Equal(DriverModeRestoreOutcome.Released, port.DriverModeRestoreOutcome);
         Assert.Equal(
             [
                 (0x00, 0x84, "0000"),
@@ -603,6 +604,83 @@ public sealed class ProductionLightingPortTests
                 (0x00, 0x84, "0000"),
             ],
             session.Commands.Select(CommandTuple).ToArray());
+        Assert.Equal(DriverModeRestoreOutcome.Released, port.DriverModeRestoreOutcome);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DriverModeCleanup_ReadbackMismatchRetainsOwnershipAndReportsIndeterminate(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        (IProductionLightingPort port, MatrixWriter? writer) =
+            CreateDriverModeCleanupPort(session, rz090528);
+        await port.MaintainDriverModeAsync(default);
+        session.DeviceModeQueryOverrides.Enqueue(RazerDeviceMode.Driver);
+        session.DeviceModeQueryOverrides.Enqueue(RazerDeviceMode.Driver);
+
+        await port.DisposeAsync();
+
+        Assert.Equal(DriverModeRestoreOutcome.Indeterminate, port.DriverModeRestoreOutcome);
+        Assert.True(OwnsDriverMode(port));
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, session.Disposition);
+        if (writer is not null)
+        {
+            Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, writer.Disposition);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DriverModeCleanup_QueryFailureRetainsOwnershipAndReportsFailed(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+            FailDeviceModeQueryOnCall = 3,
+        };
+        (IProductionLightingPort port, MatrixWriter? writer) =
+            CreateDriverModeCleanupPort(session, rz090528);
+        await port.MaintainDriverModeAsync(default);
+
+        await port.DisposeAsync();
+
+        Assert.Equal(DriverModeRestoreOutcome.Failed, port.DriverModeRestoreOutcome);
+        Assert.True(OwnsDriverMode(port));
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, session.Disposition);
+        if (writer is not null)
+        {
+            Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, writer.Disposition);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DriverModeCleanup_ForeignChangeSkipsWriteAndReportsOutcome(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        (IProductionLightingPort port, _) = CreateDriverModeCleanupPort(session, rz090528);
+        await port.MaintainDriverModeAsync(default);
+        Assert.Equal(1, session.DeviceModeSetCalls);
+        session.DeviceMode = RazerDeviceMode.Normal;
+
+        await port.DisposeAsync();
+
+        Assert.Equal(DriverModeRestoreOutcome.ForeignChange, port.DriverModeRestoreOutcome);
+        Assert.False(OwnsDriverMode(port));
+        Assert.Equal(1, session.DeviceModeSetCalls);
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, session.Disposition);
     }
 
     [Fact]
@@ -2059,6 +2137,30 @@ public sealed class ProductionLightingPortTests
             .GetField("operationGate", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(port));
 
+    private static (IProductionLightingPort Port, MatrixWriter? Writer)
+        CreateDriverModeCleanupPort(LightingSession session, bool rz090528)
+    {
+        if (rz090528)
+        {
+            return (
+                new Rz090528BrightnessLightingPort(
+                    new ValidationActor(
+                        session,
+                        new BatteryCommands(),
+                        new TemporaryCommands()),
+                    TimeSpan.FromSeconds(1)),
+                null);
+        }
+
+        var writer = new MatrixWriter();
+        return (CreatePort(session, writer, admitted: true), writer);
+    }
+
+    private static bool OwnsDriverMode(IProductionLightingPort port) =>
+        Assert.IsType<bool>(port.GetType()
+            .GetField("ownsDriverMode", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
+
     private sealed class NonAdvancingRz090528Effect : IRz090528LightingEffect
     {
         public bool RequiresContinuousRendering => true;
@@ -2105,6 +2207,14 @@ public sealed class ProductionLightingPortTests
 
         internal RazerDeviceMode DeviceMode { get; set; } = RazerDeviceMode.Driver;
 
+        internal Queue<RazerDeviceMode> DeviceModeQueryOverrides { get; } = [];
+
+        internal int DeviceModeQueryCalls { get; private set; }
+
+        internal int? FailDeviceModeQueryOnCall { get; init; }
+
+        internal int DeviceModeSetCalls { get; private set; }
+
         public RazerCommandSessionDisposition Disposition { get; private set; } =
             RazerCommandSessionDisposition.Healthy;
 
@@ -2135,6 +2245,18 @@ public sealed class ProductionLightingPortTests
                 }
             }
 
+            if ((command.ClassId, command.CommandId) == (0x00, 0x84))
+            {
+                DeviceModeQueryCalls++;
+                if (FailDeviceModeQueryOnCall == DeviceModeQueryCalls)
+                {
+                    return Task.FromResult(
+                        new HidSessionResult<ReadOnlyMemory<byte>>(
+                            default,
+                            HidSessionFailureKind.ProtocolFailure));
+                }
+            }
+
             byte[] response = (command.ClassId, command.CommandId) switch
             {
                 (0x03, 0x83) =>
@@ -2152,7 +2274,10 @@ public sealed class ProductionLightingPortTests
                 (0x00, 0x86) => [0x01, 0x00, 0x00],
                 (0x00, 0x04) => SetDeviceMode(command.Arguments.Span),
                 (0x00, 0x84) => Transition84Response
-                    ?? DeviceModeProtocol.CreateSetArguments(DeviceMode),
+                    ?? DeviceModeProtocol.CreateSetArguments(
+                        DeviceModeQueryOverrides.TryDequeue(out RazerDeviceMode mode)
+                            ? mode
+                            : DeviceMode),
                 (0x03, 0x0A) => [0x05, 0x00],
                 (0x03, 0x0B) => command.Arguments.ToArray(),
                 _ => throw new InvalidOperationException(),
@@ -2246,6 +2371,7 @@ public sealed class ProductionLightingPortTests
                 throw new InvalidOperationException();
             }
 
+            DeviceModeSetCalls++;
             DeviceMode = mode;
             return arguments.ToArray();
         }

@@ -55,20 +55,21 @@ public sealed class ServiceLifecycleRefreshLoopTests
     }
 
     [Theory]
-    [InlineData(ServiceLifecycleTrigger.PowerChanged, 1, 0, 0, 0, 0)]
-    [InlineData(ServiceLifecycleTrigger.Suspending, 0, 0, 1, 0, 0)]
-    [InlineData(ServiceLifecycleTrigger.Resumed, 1, 0, 1, 1, 0)]
-    [InlineData(ServiceLifecycleTrigger.DisplayOff, 0, 0, 0, 0, 1)]
-    [InlineData(ServiceLifecycleTrigger.DisplayOn, 0, 0, 0, 0, 1)]
-    [InlineData(ServiceLifecycleTrigger.DeviceArrived, 0, 1, 0, 1, 0)]
-    [InlineData(ServiceLifecycleTrigger.DeviceRemoved, 0, 1, 1, 0, 0)]
+    [InlineData(ServiceLifecycleTrigger.PowerChanged, 1, 0, 0, 0, 0, 0)]
+    [InlineData(ServiceLifecycleTrigger.Suspending, 0, 0, 1, 0, 0, 1)]
+    [InlineData(ServiceLifecycleTrigger.Resumed, 1, 0, 1, 1, 0, 0)]
+    [InlineData(ServiceLifecycleTrigger.DisplayOff, 0, 0, 0, 0, 1, 0)]
+    [InlineData(ServiceLifecycleTrigger.DisplayOn, 0, 0, 0, 0, 1, 0)]
+    [InlineData(ServiceLifecycleTrigger.DeviceArrived, 0, 1, 0, 1, 0, 0)]
+    [InlineData(ServiceLifecycleTrigger.DeviceRemoved, 0, 1, 1, 0, 0, 0)]
     public async Task Notification_RoutesToExpectedTypedRuntimeOperations(
         ServiceLifecycleTrigger trigger,
         int expectedPowerChanges,
         int expectedObservations,
         int expectedInvalidations,
         int expectedRestores,
-        int expectedSuppressions)
+        int expectedSuppressions,
+        int expectedLowPowerPreparations)
     {
         var source = new FakeLifecycleEventSource();
         var runtime = new RecordingRuntime(failFirstRefresh: false);
@@ -90,11 +91,86 @@ public sealed class ServiceLifecycleRefreshLoopTests
         Assert.Equal(expectedInvalidations, runtime.LightingInvalidationCount);
         Assert.Equal(expectedRestores, runtime.LightingRestoreCount);
         Assert.Equal(expectedSuppressions, runtime.LightingSuppressionCount);
+        Assert.Equal(expectedLowPowerPreparations, runtime.LowPowerPreparationCount);
         Assert.Equal(0, runtime.ControllerPresenceRefreshCount);
         Assert.Equal(
             expectedPowerChanges + expectedObservations + expectedInvalidations
-                + expectedRestores + expectedSuppressions,
+                + expectedRestores + expectedSuppressions + expectedLowPowerPreparations,
             runtime.TotalOperationCount);
+    }
+
+    [Fact]
+    public async Task DeviceArrived_ObservesButSkipsRestoreWhileLowPowerGateIsActive()
+    {
+        var source = new FakeLifecycleEventSource();
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var gate = new LowPowerGate();
+        gate.Enter();
+        var loop = new ServiceLifecycleRefreshLoop(
+            runtime,
+            source,
+            gate,
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        source.Publish(ServiceLifecycleTrigger.DeviceArrived);
+        await runtime.FirstRefresh.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Equal(1, runtime.ObserveCount);
+        Assert.Equal(0, runtime.LightingRestoreCount);
+    }
+
+    [Fact]
+    public async Task Resumed_DoesNotReacquireRendererUntilLowPowerGateClears()
+    {
+        var source = new FakeLifecycleEventSource();
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var gate = new LowPowerGate();
+        gate.Enter();
+        var loop = new ServiceLifecycleRefreshLoop(
+            runtime,
+            source,
+            gate,
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        source.Publish(ServiceLifecycleTrigger.Resumed);
+        await runtime.TwoRefreshes.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Equal(1, runtime.LightingInvalidationCount);
+        Assert.Equal(1, runtime.PowerSourceChangeCount);
+        Assert.Equal(0, runtime.LightingRestoreCount);
+    }
+
+    [Fact]
+    public async Task Suspending_ReleasesDriverModeBeforeRendererInvalidation()
+    {
+        var source = new FakeLifecycleEventSource();
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var loop = new ServiceLifecycleRefreshLoop(
+            runtime,
+            source,
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        source.Publish(ServiceLifecycleTrigger.Suspending);
+        await runtime.TwoRefreshes.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Equal(
+            [
+                RecordingRuntime.Operation.PrepareLowPower,
+                RecordingRuntime.Operation.InvalidateLighting,
+            ],
+            runtime.Operations);
     }
 
     [Fact]
@@ -157,6 +233,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
         private int lightingInvalidationCount;
         private int lightingRestoreCount;
         private int lightingSuppressionCount;
+        private int lowPowerPreparationCount;
         private int totalOperationCount;
 
         public int ControllerPresenceRefreshCount =>
@@ -171,6 +248,10 @@ public sealed class ServiceLifecycleRefreshLoopTests
         public int LightingRestoreCount => Volatile.Read(ref lightingRestoreCount);
 
         public int LightingSuppressionCount => Volatile.Read(ref lightingSuppressionCount);
+
+        public int LowPowerPreparationCount => Volatile.Read(ref lowPowerPreparationCount);
+
+        public List<Operation> Operations { get; } = [];
 
         public int TotalOperationCount => Volatile.Read(ref totalOperationCount);
 
@@ -197,6 +278,14 @@ public sealed class ServiceLifecycleRefreshLoopTests
         public Task RestoreLightingRendererAsync(CancellationToken cancellationToken) =>
             RecordRefreshAsync(Operation.RestoreLighting);
 
+        public async Task<ControlOperationResult> PrepareForLowPowerAsync(
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref lowPowerPreparationCount);
+            await RecordRefreshAsync(Operation.PrepareLowPower);
+            return new ControlOperationResult(ControlOperationStatus.Applied, "Released");
+        }
+
         public Task<ControlOperationResult> SetLightingSuppressionAsync(
             LightingSuppressionReason reason,
             bool suppressed,
@@ -213,6 +302,10 @@ public sealed class ServiceLifecycleRefreshLoopTests
         private async Task RecordRefreshAsync(Operation operation)
         {
             int concurrent = Interlocked.Increment(ref concurrentRefreshes);
+            lock (Operations)
+            {
+                Operations.Add(operation);
+            }
             MaximumConcurrentRefreshes = Math.Max(MaximumConcurrentRefreshes, concurrent);
             switch (operation)
             {
@@ -260,7 +353,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
             }
         }
 
-        private enum Operation
+        public enum Operation
         {
             Observe,
             PowerSourceChange,
@@ -268,6 +361,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
             InvalidateLighting,
             RestoreLighting,
             LightingSuppression,
+            PrepareLowPower,
         }
 
         public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();

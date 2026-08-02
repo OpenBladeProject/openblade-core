@@ -11,6 +11,7 @@ public sealed class Worker(
     PersistentOverrideStore overrideStore,
     IPowerStateProvider powerStateProvider,
     IServiceLifecycleEventSource lifecycleEventSource,
+    LowPowerGate lowPowerGate,
     ILogger<Worker> logger) : BackgroundService
 {
     private const int MaximumPipeClients = NamedPipeControlServer.MaximumServerInstances;
@@ -79,9 +80,14 @@ public sealed class Worker(
             subscriptionHub);
         List<Func<CancellationToken, Task>> operations =
         [
-            token => new ServiceLifecycleRefreshLoop(runtime, lifecycleEventSource, logger)
+            token => new ServiceLifecycleRefreshLoop(
+                runtime,
+                lifecycleEventSource,
+                lowPowerGate,
+                logger)
                 .RunAsync(token),
-            token => new ServicePeriodicObservationLoop(runtime, logger).RunAsync(token),
+            token => new ServicePeriodicObservationLoop(runtime, lowPowerGate, logger)
+                .RunAsync(token),
             token => new ServiceFanCurveLoop(runtime, logger).RunAsync(token),
             .. Enumerable.Range(0, MaximumPipeClients)
                 .Select(_ => new Func<CancellationToken, Task>(

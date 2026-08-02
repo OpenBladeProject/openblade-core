@@ -134,6 +134,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     private long effectStartedTimestamp;
     private LightingRendererOwnershipState ownershipState;
     private int nextTransaction = 1;
+    private int driverModeRestoreOutcome;
     private bool ownsDriverMode;
     private bool closing;
     private Task<LightingRendererOwnershipState>? closeTask;
@@ -177,6 +178,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             }
         }
     }
+
+    public DriverModeRestoreOutcome DriverModeRestoreOutcome =>
+        (DriverModeRestoreOutcome)Volatile.Read(ref driverModeRestoreOutcome);
 
     internal static DeviceCapabilities CreateCapabilities(
         bool staticEffectAdmitted = false,
@@ -1327,6 +1331,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     {
         if (!ownsDriverMode)
         {
+            SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.NotOwned);
             return;
         }
 
@@ -1334,25 +1339,37 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         {
             // Never overwrite a mode another controller already changed.
             if (await QueryDeviceModeCoreAsync(CancellationToken.None).ConfigureAwait(false)
-                == RazerDeviceMode.Driver)
+                != RazerDeviceMode.Driver)
             {
-                await SetDeviceModeCoreAsync(
-                    RazerDeviceMode.Normal,
-                    CancellationToken.None).ConfigureAwait(false);
-                _ = await QueryDeviceModeCoreAsync(CancellationToken.None)
-                    .ConfigureAwait(false);
+                ownsDriverMode = false;
+                SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.ForeignChange);
+                return;
             }
+
+            await SetDeviceModeCoreAsync(
+                RazerDeviceMode.Normal,
+                CancellationToken.None).ConfigureAwait(false);
+            RazerDeviceMode confirmed = await QueryDeviceModeCoreAsync(
+                CancellationToken.None).ConfigureAwait(false);
+            if (confirmed != RazerDeviceMode.Normal)
+            {
+                SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.Indeterminate);
+                return;
+            }
+
+            ownsDriverMode = false;
+            SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.Released);
         }
         catch
         {
             // Closing must still release the HID handle. This bounded cleanup is
             // not retried in a background fight with another controller.
-        }
-        finally
-        {
-            ownsDriverMode = false;
+            SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.Failed);
         }
     }
+
+    private void SetDriverModeRestoreOutcome(DriverModeRestoreOutcome outcome) =>
+        Volatile.Write(ref driverModeRestoreOutcome, (int)outcome);
 
     private async Task<BrightnessRoundTripResult> ValidateRawRoundTripCoreAsync(
         byte baselineRaw,

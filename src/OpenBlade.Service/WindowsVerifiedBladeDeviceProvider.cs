@@ -197,10 +197,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         }
     }
 
-    public Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
+    public Task<LightingRendererInvalidationResult> InvalidateLightingRendererAsync(
         CancellationToken cancellationToken) =>
         Volatile.Read(ref disposed) != 0
-            ? Task.FromResult(LightingRendererOwnershipState.None)
+            ? Task.FromResult(new LightingRendererInvalidationResult(
+                LightingRendererOwnershipState.None,
+                DriverModeRestoreOutcome.NotOwned))
             : device.InvalidateLightingRendererAsync(cancellationToken);
 
     public void Dispose()
@@ -1254,7 +1256,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
-        internal async Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
+        internal async Task<LightingRendererInvalidationResult>
+            InvalidateLightingRendererAsync(
             CancellationToken cancellationToken)
         {
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
@@ -1263,18 +1266,38 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 IProductionLightingPort? current = lightingPort;
                 if (current is null)
                 {
-                    return LightingRendererOwnershipState.None;
+                    return new LightingRendererInvalidationResult(
+                        LightingRendererOwnershipState.None,
+                        DriverModeRestoreOutcome.NotOwned);
                 }
 
                 lightingPort = null;
+                LightingRendererOwnershipState ownership;
                 try
                 {
-                    return await current.InvalidateAsync().ConfigureAwait(false);
+                    ownership = await current.InvalidateAsync().ConfigureAwait(false);
                 }
                 catch
                 {
-                    return LightingRendererOwnershipState.Faulted;
+                    ownership = LightingRendererOwnershipState.Faulted;
                 }
+
+                DriverModeRestoreOutcome outcome = current.DriverModeRestoreOutcome;
+                if (outcome is DriverModeRestoreOutcome.Indeterminate
+                    or DriverModeRestoreOutcome.Failed)
+                {
+                    logger?.LogWarning(
+                        "Lighting-port cleanup reported keyboard Driver-mode restore outcome {Outcome}.",
+                        outcome);
+                }
+                else
+                {
+                    logger?.LogInformation(
+                        "Lighting-port cleanup reported keyboard Driver-mode restore outcome {Outcome}.",
+                        outcome);
+                }
+
+                return new LightingRendererInvalidationResult(ownership, outcome);
             }
             finally
             {

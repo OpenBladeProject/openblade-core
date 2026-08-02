@@ -5,24 +5,48 @@ public sealed class ServicePeriodicObservationLoop
     internal static readonly TimeSpan ObservationInterval = TimeSpan.FromSeconds(15);
 
     private readonly IServiceControlRuntime runtime;
+    private readonly LowPowerGate lowPowerGate;
     private readonly ILogger logger;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
 
     public ServicePeriodicObservationLoop(
         IServiceControlRuntime runtime,
+        LowPowerGate lowPowerGate,
         ILogger logger)
-        : this(runtime, logger, static (interval, token) => Task.Delay(interval, token))
+        : this(
+            runtime,
+            lowPowerGate,
+            logger,
+            static (interval, token) => Task.Delay(interval, token))
     {
+    }
+
+    public ServicePeriodicObservationLoop(
+        IServiceControlRuntime runtime,
+        ILogger logger)
+        : this(runtime, new LowPowerGate(), logger)
+    {
+    }
+
+    internal ServicePeriodicObservationLoop(
+        IServiceControlRuntime runtime,
+        LowPowerGate lowPowerGate,
+        ILogger logger,
+        Func<TimeSpan, CancellationToken, Task> delay)
+    {
+        this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        this.lowPowerGate = lowPowerGate
+            ?? throw new ArgumentNullException(nameof(lowPowerGate));
+        this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        this.delay = delay ?? throw new ArgumentNullException(nameof(delay));
     }
 
     internal ServicePeriodicObservationLoop(
         IServiceControlRuntime runtime,
         ILogger logger,
         Func<TimeSpan, CancellationToken, Task> delay)
+        : this(runtime, new LowPowerGate(), logger, delay)
     {
-        this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
-        this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        this.delay = delay ?? throw new ArgumentNullException(nameof(delay));
     }
 
     public async Task RunAsync(CancellationToken stoppingToken)
@@ -37,19 +61,29 @@ public sealed class ServicePeriodicObservationLoop
             {
                 return;
             }
-            if (!await RunStepAsync(
-                runtime.MaintainDriverModeAsync,
-                "keyboard Driver mode",
-                stoppingToken))
+            if (lowPowerGate.IsActive)
             {
-                return;
+                logger.LogInformation(
+                    "Skipping periodic keyboard Driver-mode maintenance while the low-power gate is active.");
+                logger.LogInformation(
+                    "Skipping periodic lighting-renderer restoration while the low-power gate is active.");
             }
-            if (!await RunStepAsync(
-                runtime.RestoreLightingRendererAsync,
-                "lighting renderer",
-                stoppingToken))
+            else
             {
-                return;
+                if (!await RunStepAsync(
+                    runtime.MaintainDriverModeAsync,
+                    "keyboard Driver mode",
+                    stoppingToken))
+                {
+                    return;
+                }
+                if (!await RunStepAsync(
+                    runtime.RestoreLightingRendererAsync,
+                    "lighting renderer",
+                    stoppingToken))
+                {
+                    return;
+                }
             }
         }
     }

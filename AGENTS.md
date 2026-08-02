@@ -47,12 +47,15 @@ be copied to the other.
 
 1. The service is the sole owner of the laptop control HID handle. It exposes
    typed operations only and serializes all hardware access.
-   It also owns keyboard Driver mode continuously while running: it performs
-   verified read-before-write maintenance and is the only component allowed to
-   change that mode. The Session Agent consumes confirmed status only and must
-   pass function-row keys through whenever Driver-mode status is unknown.
-   During coordinated shutdown, the service restores Normal mode only after its
-   existing identity and competing-controller safety checks pass.
+   It also owns keyboard Driver mode continuously while the laptop is fully
+   active: it performs verified read-before-write maintenance and is the only
+   component allowed to change that mode. At a confirmed low-power boundary it
+   may restore Normal mode only after the existing identity and
+   competing-controller safety checks pass, and it must not reacquire Driver
+   mode until Windows reports that the system is active again. The Session
+   Agent consumes confirmed status only and must pass function-row keys through
+   whenever Driver-mode status is unknown. During coordinated shutdown, the
+   service uses the same guarded Normal-mode release.
    Production lighting admission is owned by the approved embedded oracle and
    the reviewed semantic admission manifest. The manifest compares the actual
    device identity, command contracts, report geometry, layout mask, supported

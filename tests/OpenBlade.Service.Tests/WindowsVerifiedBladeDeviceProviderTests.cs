@@ -652,7 +652,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     [Fact]
     public async Task LightingWriter_IsOpenedOnceKeptAliveAndDisposedWithProvider()
     {
-        var lightingPort = new FakeLightingPort();
+        var lightingPort = new FakeLightingPort
+        {
+            DriverModeRestoreOutcome = DriverModeRestoreOutcome.Released,
+        };
         var lightingFactory = new FakeLightingFactory(lightingPort);
         var provider = new WindowsVerifiedBladeDeviceProvider(
             () => Probe(BatteryValidationProbeClassification.Ready),
@@ -679,9 +682,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal([77], lightingPort.Pulses.Select(pulse => (int)pulse.MatrixSlot));
         Assert.Equal(0, lightingPort.DisposeCount);
 
-        LightingRendererOwnershipState invalidated =
+        LightingRendererInvalidationResult invalidated =
             await provider.InvalidateLightingRendererAsync(default);
-        Assert.Equal(LightingRendererOwnershipState.Reactive, invalidated);
+        Assert.Equal(LightingRendererOwnershipState.Reactive, invalidated.Ownership);
+        Assert.Equal(DriverModeRestoreOutcome.Released, invalidated.DriverModeRestoreOutcome);
         Assert.Equal(1, lightingPort.DisposeCount);
         Assert.Equal(1, lightingFactory.OpenCount);
         Assert.Equal(
@@ -940,10 +944,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             default);
         lightingPort.OwnershipState = LightingRendererOwnershipState.Faulted;
 
-        LightingRendererOwnershipState invalidated =
+        LightingRendererInvalidationResult invalidated =
             await provider.InvalidateLightingRendererAsync(default);
 
-        Assert.Equal(LightingRendererOwnershipState.Faulted, invalidated);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, invalidated.Ownership);
         Assert.Equal(1, lightingPort.DisposeCount);
         Assert.Equal(1, lightingFactory.OpenCount);
         Assert.Equal(
@@ -1398,6 +1402,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         };
 
         public LightingRendererOwnershipState OwnershipState { get; set; }
+
+        public DriverModeRestoreOutcome DriverModeRestoreOutcome { get; set; }
 
         public List<LightingSettings> Writes { get; } = [];
 
