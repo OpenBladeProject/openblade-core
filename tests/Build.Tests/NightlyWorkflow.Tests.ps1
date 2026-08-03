@@ -37,7 +37,6 @@ foreach ($requiredBuildStep in @(
         '-BuildChannel Nightly',
         '-BuildRevision ${{ inputs.build-revision }}',
         '-SourceRevision ''${{ github.sha }}''',
-        'uses: actions/attest@v4',
         'uses: actions/upload-artifact@v4',
         'retention-days: 14',
         'if-no-files-found: error')) {
@@ -55,10 +54,20 @@ Assert-True ($nightly.Contains('channel: Nightly')) `
     'The nightly caller must request the nightly identity.'
 Assert-True ($nightly.Contains('build-revision: ${{ github.run_number }}')) `
     'The nightly revision must use the dedicated workflow run number.'
+Assert-True ($nightly.Contains('needs: build-and-publish')) `
+    'Nightly attestation must wait for the reusable build job.'
+Assert-True ($nightly.Contains('uses: actions/download-artifact@v4')) `
+    'Nightly attestation must download the installer from the build job.'
+Assert-True ($nightly.Contains('uses: actions/attest@v4')) `
+    'The nightly caller must attest the installer provenance.'
 Assert-True ($nightly.Contains('id-token: write')) `
     'Nightly provenance attestation requires OIDC permission.'
 Assert-True ($nightly.Contains('attestations: write')) `
     'Nightly provenance attestation requires attestation permission.'
+Assert-True (-not $build.Contains('id-token: write')) `
+    'The shared build workflow must not elevate stable CI permissions.'
+Assert-True (-not $build.Contains('attestations: write')) `
+    'The shared build workflow must keep stable CI read-only.'
 Assert-True (-not $nightly.Contains('contents: write')) `
     'Nightly artifact builds must not mutate repository contents or releases.'
 

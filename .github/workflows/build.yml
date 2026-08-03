@@ -15,8 +15,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
-  attestations: write
 
 jobs:
   build-and-test:
@@ -114,12 +112,6 @@ jobs:
           -BuildRevision ${{ inputs.build-revision }}
           -SourceRevision '${{ github.sha }}'
           -WorkflowRunId '${{ github.run_id }}.${{ github.run_attempt }}'
-
-      - name: Attest nightly installer provenance
-        if: inputs.channel == 'Nightly'
-        uses: actions/attest@v4
-        with:
-          subject-path: artifacts/win-x64/OpenBlade-Setup.exe
 
       - name: Upload nightly installer
         if: inputs.channel == 'Nightly'

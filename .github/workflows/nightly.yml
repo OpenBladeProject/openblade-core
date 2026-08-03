@@ -20,5 +20,23 @@ jobs:
       build-revision: ${{ github.run_number }}
     permissions:
       contents: read
+
+  attest-installer:
+    needs: build-and-publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
       id-token: write
       attestations: write
+    steps:
+      - name: Download nightly installer
+        uses: actions/download-artifact@v4
+        with:
+          name: >-
+            OpenBlade-nightly-${{ github.run_number }}-attempt-${{ github.run_attempt }}
+          path: artifacts
+
+      - name: Attest nightly installer provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: artifacts/OpenBlade-Setup.exe
