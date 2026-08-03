@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Threading.Channels;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
@@ -1394,6 +1395,120 @@ public sealed class MainViewModelTests
         Assert.Equal(
             "Waiting for the first live-reading check.",
             viewModel.LiveReadingsRefreshToolTip);
+    }
+
+    [Fact]
+    public async Task HiddenTrayObservationUpdatesTooltipWithoutNotifyingXamlPresentation()
+    {
+        var client = new FakeServiceClient();
+        var time = new MutableTimeProvider(
+            new DateTimeOffset(2026, 8, 3, 9, 30, 0, TimeSpan.Zero));
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher(),
+            time);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(true, false) with
+        {
+            Revision = 4,
+            LiveReadings = new LiveReadings(-18_000, 2200, 2100, 46, 51),
+        };
+        var baselineApplied = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnBaselinePropertyChanged(object? sender, PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName == nameof(viewModel.HasLightingProfileActionOpportunity))
+            {
+                baselineApplied.TrySetResult();
+            }
+        }
+        viewModel.PropertyChanged += OnBaselinePropertyChanged;
+        client.Publish(baseline);
+        await baselineApplied.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        viewModel.PropertyChanged -= OnBaselinePropertyChanged;
+        Assert.Equal(baseline.LiveReadings, viewModel.LiveReadings);
+
+        viewModel.SetDashboardTelemetryPresentationActive(false);
+        var changed = new ConcurrentPropertySet();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
+        ServiceStatusSnapshot update = baseline with
+        {
+            Revision = 5,
+            LiveReadings = new LiveReadings(-18_500, 2250, 2150, 47, 52),
+        };
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Task observation = viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        client.PendingObservation.SetResult(update);
+        await observation;
+
+        Assert.Equal(update.LiveReadings, viewModel.LiveReadings);
+        Assert.Contains(nameof(viewModel.TrayHoverLabelText), changed);
+        Assert.DoesNotContain(nameof(viewModel.LiveReadings), changed);
+        Assert.DoesNotContain(nameof(viewModel.LiveReadingsRefreshToolTip), changed);
+        Assert.DoesNotContain(nameof(viewModel.BatteryPowerFlowLabel), changed);
+        Assert.DoesNotContain(nameof(viewModel.Fan1RpmValue), changed);
+        Assert.DoesNotContain(nameof(viewModel.Fan2RpmValue), changed);
+        Assert.DoesNotContain(nameof(viewModel.CpuTemperatureValue), changed);
+        Assert.DoesNotContain(nameof(viewModel.GpuTemperatureValue), changed);
+        Assert.DoesNotContain(nameof(viewModel.VisibleDashboardTelemetryGroups), changed);
+        Assert.NotEqual(
+            "Waiting for the first live-reading check.",
+            viewModel.LiveReadingsRefreshToolTip);
+
+        changed.Clear();
+        viewModel.SetDashboardTelemetryPresentationActive(true);
+
+        Assert.Contains(nameof(viewModel.LiveReadingsRefreshToolTip), changed);
+    }
+
+    [Fact]
+    public async Task HiddenTrayObservationWithMetadataChangePublishesFullPresentation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(true, false) with
+        {
+            Revision = 4,
+            LiveReadings = new LiveReadings(-18_000, 2200, 2100, 46, 51),
+        };
+        var baselineApplied = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnBaselinePropertyChanged(object? sender, PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName == nameof(viewModel.HasLightingProfileActionOpportunity))
+            {
+                baselineApplied.TrySetResult();
+            }
+        }
+        viewModel.PropertyChanged += OnBaselinePropertyChanged;
+        client.Publish(baseline);
+        await baselineApplied.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        viewModel.PropertyChanged -= OnBaselinePropertyChanged;
+
+        viewModel.SetDashboardTelemetryPresentationActive(false);
+        var changed = new ConcurrentPropertySet();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
+        ServiceStatusSnapshot update = baseline with
+        {
+            Revision = 5,
+            DeviceVerified = false,
+            LiveReadings = null,
+        };
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Task observation = viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        client.PendingObservation.SetResult(update);
+        await observation;
+
+        Assert.Null(viewModel.LiveReadings);
+        Assert.Contains(nameof(viewModel.LiveReadings), changed);
+        Assert.Contains(nameof(viewModel.IsServiceUnavailable), changed);
+        Assert.Contains(nameof(viewModel.ControlAccessStatus), changed);
+        Assert.Contains(nameof(viewModel.LiveReadingsRefreshToolTip), changed);
     }
 
     [Fact]

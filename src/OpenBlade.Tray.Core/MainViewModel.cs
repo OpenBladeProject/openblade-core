@@ -2120,18 +2120,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public LiveReadings? LiveReadings
     {
         get => liveReadings;
-        private set
-        {
-            if (EqualityComparer<LiveReadings?>.Default.Equals(liveReadings, value))
-            {
-                return;
-            }
+        private set => SetLiveReadings(value, publishPresentation: true);
+    }
 
-            liveReadings = value;
+    private void SetLiveReadings(
+        LiveReadings? value,
+        bool publishPresentation)
+    {
+        if (EqualityComparer<LiveReadings?>.Default.Equals(liveReadings, value))
+        {
+            return;
+        }
+
+        liveReadings = value;
+        if (publishPresentation)
+        {
             Notify(nameof(LiveReadings));
             NotifyDashboardTelemetryValuesChanged();
-            NotifyTrayHoverLabel();
         }
+        NotifyTrayHoverLabel();
     }
 
     public void SetDashboardTelemetryPresentationActive(bool active)
@@ -2146,6 +2153,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             NotifyDashboardTelemetryValuesChanged();
             Notify(nameof(ShowDashboardLiveReadings));
+            Notify(nameof(LiveReadingsRefreshToolTip));
         }
     }
 
@@ -3601,13 +3609,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             await dispatcher.InvokeAsync(
                 () =>
                 {
-                    bool accepted = ApplyObservedStatus(status, stamp);
+                    bool accepted = ApplyObservedStatus(
+                        status,
+                        stamp,
+                        trayOnly: !includeDashboardReadings);
                     if (accepted
                         && requestedLiveReadings != LiveReadingSensors.None
                         && LiveReadingsEnabled
                         && status.LiveReadings is not null)
                     {
-                        MarkLiveReadingsRefreshed();
+                        MarkLiveReadingsRefreshed(
+                            publishPresentation: includeDashboardReadings);
                     }
                 },
                 cancellationToken);
@@ -3711,8 +3723,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    private void ApplyStatus(ServiceStatusSnapshot status)
+    private void ApplyStatus(
+        ServiceStatusSnapshot status,
+        bool trayOnly = false)
     {
+        if (trayOnly && TryApplyTrayLiveReadingsOnly(status))
+        {
+            return;
+        }
+
         bool wasSuppressed = suppressProfileDifferenceNotifications;
         suppressProfileDifferenceNotifications = true;
         try
@@ -4194,19 +4213,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return requested;
     }
 
-    private void ApplyLiveReadings(ServiceStatusSnapshot status)
+    private void ApplyLiveReadings(
+        ServiceStatusSnapshot status,
+        bool publishPresentation = true)
     {
         if (!LiveReadingsEnabled || !status.DeviceVerified)
         {
-            LiveReadings = null;
+            SetLiveReadings(null, publishPresentation);
             if (!status.DeviceVerified)
             {
-                ClearLiveReadingsRefreshTime();
+                ClearLiveReadingsRefreshTime(publishPresentation);
             }
         }
         else if (status.LiveReadings is not null)
         {
-            LiveReadings = status.LiveReadings;
+            SetLiveReadings(status.LiveReadings, publishPresentation);
         }
     }
 
@@ -4286,25 +4307,50 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private bool ApplyObservedStatus(
         ServiceStatusSnapshot status,
-        ObservationRequestStamp stamp)
+        ObservationRequestStamp stamp,
+        bool trayOnly)
     {
         if (stamp.BeganWithConnectedSubscription
             && stamp.Generation == connectionGeneration)
         {
-            ApplyStatus(status);
+            ApplyStatus(status, trayOnly);
             return true;
         }
 
         return false;
     }
 
-    private void MarkLiveReadingsRefreshed()
+    private bool TryApplyTrayLiveReadingsOnly(ServiceStatusSnapshot status)
     {
-        lastLiveReadingsRefreshAt = timeProvider.GetUtcNow();
-        Notify(nameof(LiveReadingsRefreshToolTip));
+        if (status.Revision < latestAcceptedRevision)
+        {
+            return true;
+        }
+
+        ServiceStatusSnapshot? previousStatus = latestStatus;
+        if (!IsConnected
+            || previousStatus is null
+            || !StatusMetadataEqual(previousStatus, status))
+        {
+            return false;
+        }
+
+        latestAcceptedRevision = status.Revision;
+        latestStatus = status;
+        ApplyLiveReadings(status, publishPresentation: false);
+        return true;
     }
 
-    private void ClearLiveReadingsRefreshTime()
+    private void MarkLiveReadingsRefreshed(bool publishPresentation = true)
+    {
+        lastLiveReadingsRefreshAt = timeProvider.GetUtcNow();
+        if (publishPresentation)
+        {
+            Notify(nameof(LiveReadingsRefreshToolTip));
+        }
+    }
+
+    private void ClearLiveReadingsRefreshTime(bool publishPresentation = true)
     {
         if (lastLiveReadingsRefreshAt is null)
         {
@@ -4312,7 +4358,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         lastLiveReadingsRefreshAt = null;
-        Notify(nameof(LiveReadingsRefreshToolTip));
+        if (publishPresentation)
+        {
+            Notify(nameof(LiveReadingsRefreshToolTip));
+        }
     }
 
     private bool CanSetChargeLimit(int value)

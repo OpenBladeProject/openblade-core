@@ -16,6 +16,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed tray-hover telemetry from waking hidden WinUI presentation work after
+  the tooltip was refreshed. Unchanged service metadata now updates only the
+  tray label until the dashboard becomes visible again.
 - Fixed the RZ09-0581 firmware-smoke capability gate to recognize the admitted
   Audio Meter lighting effect.
 - Fixed app accent changes in Light and Dark modes by keeping both WinUI's
