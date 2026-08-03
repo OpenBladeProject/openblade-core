@@ -182,6 +182,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isChargeLimitOperationInProgress;
     private bool isBatteryProtectionOperationInProgress;
     private bool isFullChargeOperationInProgress;
+    private bool isReapplyChangedSettingsOperationInProgress;
     private bool isStartupAnimationOperationInProgress;
     private bool isFunctionKeyOperationInProgress;
     private bool isGamingModeOperationInProgress;
@@ -967,6 +968,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         private set => SetField(ref externalChangesText, value);
     }
 
+    public bool IsReapplyChangedSettingsOperationInProgress
+    {
+        get => isReapplyChangedSettingsOperationInProgress;
+        private set
+        {
+            if (isReapplyChangedSettingsOperationInProgress == value)
+            {
+                return;
+            }
+            SetField(ref isReapplyChangedSettingsOperationInProgress, value);
+            Notify(nameof(CanReapplyChangedSettings));
+        }
+    }
+
+    public bool CanReapplyChangedSettings => HasExternalChanges
+        && CanControlHardware
+        && HasReapplicableExternalChanges
+        && !IsReapplyChangedSettingsOperationInProgress;
+
+    private bool HasReapplicableExternalChanges =>
+        latestStatus?.ExternalChanges.Any(subsystem =>
+            subsystem != DeviceSubsystem.Lighting
+            || latestStatus.KeyboardLightingControlMode
+                != KeyboardLightingControlMode.WindowsDynamicLighting) == true;
+
     public bool AlwaysOverrideExternalLightingChanges
     {
         get => alwaysOverrideExternalLightingChanges;
@@ -987,6 +1013,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Notify(nameof(IsLightingControlUnavailableNoticeVisible));
                 Notify(nameof(LightingControlUnavailableMessage));
                 Notify(nameof(ShowOpenBladeKeyboardLightingControls));
+                Notify(nameof(CanReapplyChangedSettings));
             }
         }
     }
@@ -1032,6 +1059,27 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         return accepted;
+    }
+
+    public async Task<bool> ReapplyChangedSettingsAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!CanReapplyChangedSettings)
+        {
+            return false;
+        }
+
+        IsReapplyChangedSettingsOperationInProgress = true;
+        try
+        {
+            return await RunOperationAsync(
+                serviceClient.ReapplyChangedSettingsAsync,
+                cancellationToken);
+        }
+        finally
+        {
+            IsReapplyChangedSettingsOperationInProgress = false;
+        }
     }
 
     public bool HasAttention => IsConnected
@@ -7359,6 +7407,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(IsServiceUnavailable));
         Notify(nameof(ControlAccessStatus));
         Notify(nameof(CanRequestHardwareControl));
+        Notify(nameof(CanReapplyChangedSettings));
         Notify(nameof(CanEditPerformance));
         Notify(nameof(CanEditGpuClockTuning));
         Notify(nameof(CanEditFanControl));

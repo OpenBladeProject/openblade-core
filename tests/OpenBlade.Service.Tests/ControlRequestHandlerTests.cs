@@ -33,6 +33,9 @@ public sealed class ControlRequestHandlerTests
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 Enabled: true),
+            new ReapplyChangedSettingsRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid()),
             new SetLightingSuppressionRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -77,7 +80,8 @@ public sealed class ControlRequestHandlerTests
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
             "StepKeyboardBrightness",
-            "SetExternalLightingOverridePolicy", "SetLightingSuppression",
+            "SetExternalLightingOverridePolicy", "ReapplyChangedSettings",
+            "SetLightingSuppression",
             "PulseReactiveKey", "PushAmbientLightingFrame",
             "SetPlaybackMuteIndicator", "SetBatteryPolicy",
             "SetBatteryProtection", "SetFullChargeOverride", "ApplyOneShotLaptopControl",
@@ -294,6 +298,9 @@ public sealed class ControlRequestHandlerTests
             Assert.True(enabled);
             return Record("SetExternalLightingOverridePolicy");
         }
+
+        public Task<ControlOperationResult> ReapplyChangedSettingsAsync(
+            CancellationToken token) => Record("ReapplyChangedSettings");
 
         public Task<ControlOperationResult> SetLightingSuppressionAsync(
             LightingSuppressionReason reason,

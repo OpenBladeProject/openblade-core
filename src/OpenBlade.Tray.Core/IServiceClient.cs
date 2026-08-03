@@ -82,6 +82,8 @@ public interface IServiceClient : IServiceStatusWatcher
         bool enabled,
         CancellationToken token);
 
+    Task<ControlOperationResult> ReapplyChangedSettingsAsync(CancellationToken token);
+
     Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
         bool suppressed,

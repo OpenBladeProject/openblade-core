@@ -183,6 +183,13 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 enabled),
             token);
 
+    public Task<ControlOperationResult> ReapplyChangedSettingsAsync(
+        CancellationToken token) => SendMutationAsync(
+            new ReapplyChangedSettingsRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid()),
+            token);
+
     public Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
         bool suppressed,

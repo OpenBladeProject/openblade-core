@@ -263,6 +263,7 @@ public sealed class ServiceClientTests
                 OverrideLifetime.UntilPowerSourceChange,
                 timeout.Token),
             await client.SetExternalLightingOverridePolicyAsync(true, timeout.Token),
+            await client.ReapplyChangedSettingsAsync(timeout.Token),
             await client.SetLightingSuppressionAsync(
                 LightingSuppressionReason.DisplayOff,
                 suppressed: true,
@@ -307,6 +308,7 @@ public sealed class ServiceClientTests
             },
             request => Assert.True(
                 Assert.IsType<SetExternalLightingOverridePolicyRequest>(request).Enabled),
+            request => Assert.IsType<ReapplyChangedSettingsRequest>(request),
             request =>
             {
                 SetLightingSuppressionRequest suppression =
@@ -330,7 +332,7 @@ public sealed class ServiceClientTests
             },
             request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(15, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(16, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -844,7 +846,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 15; index++)
+        for (int index = 0; index < 16; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);

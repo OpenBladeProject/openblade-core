@@ -1048,6 +1048,57 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ReapplyChangedSettings_IsAvailableOnlyForControllableWarnings()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "OpenBlade reapplied Fans from the current settings."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false) with
+        {
+            ExternalChanges = [DeviceSubsystem.Fans],
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.CanReapplyChangedSettings);
+
+        bool accepted = await viewModel.ReapplyChangedSettingsAsync(
+            CancellationToken.None);
+
+        Assert.True(accepted);
+        Assert.Equal(1, client.ReapplyChangedSettingsCalls);
+        Assert.False(viewModel.IsReapplyChangedSettingsOperationInProgress);
+        Assert.Equal(
+            "OpenBlade reapplied Fans from the current settings.",
+            viewModel.OperationStatusMessage);
+
+        client.Publish(status with { Revision = 2, WritesBlocked = true });
+        await WaitUntilAsync(() => !viewModel.CanReapplyChangedSettings);
+
+        client.Publish(status with
+        {
+            Revision = 3,
+            ExternalChanges = [DeviceSubsystem.Lighting],
+            KeyboardLightingControlMode =
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+        });
+        await WaitUntilAsync(() => viewModel.HasExternalChanges);
+        Assert.False(viewModel.CanReapplyChangedSettings);
+
+        client.Publish(status with
+        {
+            Revision = 4,
+            ExternalChanges = [DeviceSubsystem.Lighting, DeviceSubsystem.Fans],
+            KeyboardLightingControlMode =
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+        });
+        await WaitUntilAsync(() => viewModel.CanReapplyChangedSettings);
+    }
+
+    [Fact]
     public async Task UsbC_InvalidObservedThermalStateKeepsProfileSelectionPresentable()
     {
         var client = new FakeServiceClient();
@@ -5295,6 +5346,7 @@ public sealed class MainViewModelTests
         public FanControlSettings? LastFanControlSettings { get; private set; }
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
         public bool? ExternalLightingOverridePolicy { get; private set; }
+        public int ReapplyChangedSettingsCalls { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
         public bool ShutdownRequested { get; private set; }
@@ -5449,6 +5501,13 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             ExternalLightingOverridePolicy = enabled;
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> ReapplyChangedSettingsAsync(
+            CancellationToken token)
+        {
+            ReapplyChangedSettingsCalls++;
             return MutateAsync(token);
         }
 

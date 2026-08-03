@@ -88,6 +88,12 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "External lighting override policy is unavailable."));
 
+    Task<ControlOperationResult> ReapplyChangedSettingsAsync(
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Changed settings cannot be reapplied."));
+
     Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
         bool suppressed,
@@ -1207,6 +1213,168 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             operationGate.Release();
         }
     }
+
+    public async Task<ControlOperationResult> ReapplyChangedSettingsAsync(
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (driftTracker.ExternalChanges.Count == 0)
+            {
+                const string unchangedMessage =
+                    "No settings changed outside OpenBlade.";
+                history.RecordSummary(ControlOperationStatus.Stored, unchangedMessage);
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    unchangedMessage);
+            }
+
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
+                .ConfigureAwait(false);
+            RefreshControllerPresenceCore(token);
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                const string blockedMessage =
+                    "Changed settings cannot be reapplied until the external power adapter is classified.";
+                history.RecordSummary(ControlOperationStatus.Blocked, blockedMessage);
+                PublishIfChanged(GetStatus() with
+                {
+                    ActivePowerSource = PowerSourceForStatus(powerSource),
+                    WritesBlocked = true,
+                    Message = blockedMessage,
+                });
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    blockedMessage);
+            }
+
+            if (Automation.ChangePowerSource(powerSource))
+            {
+                await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+            }
+
+            DeviceSubsystem[] targets = [.. driftTracker.ExternalChanges];
+            if (targets.Length == 0)
+            {
+                const string reconciledMessage =
+                    "OpenBlade settings already match the current profile and overrides.";
+                history.RecordSummary(ControlOperationStatus.Applied, reconciledMessage);
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    reconciledMessage);
+            }
+
+            DesiredDeviceState desired = ResolveHardwareDesired(
+                GetStatus().ConfirmedState ?? UnknownConfirmedState);
+            if (targets.Contains(DeviceSubsystem.Performance)
+                && targets.Contains(DeviceSubsystem.Fans)
+                && desired.Fans.Value == FanMode.Automatic)
+            {
+                targets =
+                [
+                    DeviceSubsystem.Fans,
+                    .. targets.Where(
+                        subsystem => subsystem != DeviceSubsystem.Fans),
+                ];
+            }
+
+            var results = new List<ControlOperationResult>(targets.Length);
+            foreach (DeviceSubsystem subsystem in targets)
+            {
+                results.Add(await ReapplyChangedSubsystemAsync(
+                    subsystem,
+                    powerSource,
+                    token).ConfigureAwait(false));
+                if (GetStatus().WritesBlocked)
+                {
+                    break;
+                }
+            }
+
+            var remaining = driftTracker.ExternalChanges
+                .Where(subsystem => targets.Contains(subsystem))
+                .ToArray();
+            var reapplied = targets.Except(remaining).ToArray();
+            ControlOperationStatus status = remaining.Length == 0
+                ? ControlOperationStatus.Applied
+                : results.Any(result => result.Status == ControlOperationStatus.Failed)
+                    ? ControlOperationStatus.Failed
+                    : ControlOperationStatus.Blocked;
+            string message = remaining.Length == 0
+                ? $"OpenBlade reapplied {FormatSubsystemList(reapplied)} from the current settings."
+                : reapplied.Length == 0
+                    ? $"OpenBlade could not reapply the changed settings. Still changed: {FormatSubsystemList(remaining)}."
+                    : $"OpenBlade reapplied {FormatSubsystemList(reapplied)}. Still changed: {FormatSubsystemList(remaining)}.";
+            history.RecordSummary(status, message);
+            PublishIfChanged(GetStatus() with
+            {
+                ExternalChanges = driftTracker.ExternalChanges,
+                Message = message,
+            });
+            return new ControlOperationResult(status, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private Task<ControlOperationResult> ReapplyChangedSubsystemAsync(
+        DeviceSubsystem subsystem,
+        PowerSource powerSource,
+        CancellationToken token) => subsystem switch
+        {
+            DeviceSubsystem.Performance => ApplyScopedIntentAsync(
+                subsystem,
+                powerSource,
+                (coordinator, desired, cancellationToken) =>
+                    coordinator.ApplyPerformanceOutcomeAsync(
+                        desired.Performance.Value,
+                        desired.CustomPerformance,
+                        cancellationToken),
+                token),
+            DeviceSubsystem.Fans => ApplyScopedIntentAsync(
+                subsystem,
+                powerSource,
+                (coordinator, desired, cancellationToken) =>
+                    coordinator.ApplyFanControlOutcomeAsync(
+                        desired.FanControl
+                            ?? FanControlSettings.FromLegacy(desired.Fans.Value),
+                        cancellationToken),
+                token),
+            DeviceSubsystem.Battery => ApplyScopedIntentAsync(
+                subsystem,
+                powerSource,
+                (coordinator, desired, cancellationToken) =>
+                    coordinator.ApplyBatteryOutcomeAsync(
+                        desired.Battery,
+                        cancellationToken),
+                token),
+            DeviceSubsystem.Lighting => ApplyScopedIntentAsync(
+                subsystem,
+                powerSource,
+                (coordinator, desired, cancellationToken) =>
+                    coordinator.ApplyLightingOutcomeAsync(
+                        desired.Lighting.Value,
+                        cancellationToken,
+                        forceWrite: true),
+                token),
+            _ => throw new ArgumentOutOfRangeException(nameof(subsystem)),
+        };
+
+    private static string FormatSubsystemList(IEnumerable<DeviceSubsystem> subsystems) =>
+        string.Join(
+            ", ",
+            subsystems.Select(subsystem => subsystem switch
+            {
+                DeviceSubsystem.Performance => "Power mode",
+                DeviceSubsystem.Fans => "Fans",
+                DeviceSubsystem.Battery => "Battery",
+                DeviceSubsystem.Lighting => "Lighting",
+                _ => throw new ArgumentOutOfRangeException(nameof(subsystem)),
+            }));
 
     public async Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
         bool enabled,

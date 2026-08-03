@@ -728,6 +728,34 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void ExternalChangeFlyoutOffersTheScopedManualRecoveryAction()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "MainWindow.xaml.cs");
+
+        Assert.Contains(
+            "AutomationProperties.Name=\"Reapply OpenBlade settings\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IsEnabled=\"{x:Bind ViewModel.CanReapplyChangedSettings, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.HasExternalChanges, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("OnReapplyChangedSettingsClick", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.ReapplyChangedSettingsAsync(CancellationToken.None)",
+            window,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void StableComboBoxSelection_ReplaysTheViewModelAnchorAfterSourceChanges()
     {
         string source = ReadRepositoryFile(

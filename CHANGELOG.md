@@ -34,6 +34,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a **Reapply OpenBlade settings** action for controls changed outside
+  OpenBlade. It resolves the active profile and manual overrides, writes only
+  the affected hardware subsystems, and clears each warning only after
+  confirmed recovery. Service IPC is now version 33.
 - Added daily and manually dispatched nightly installers from committed `main`,
   with the full CI and production-publish gates, ordered upgrade-safe build
   versions, 14-day artifact retention, SHA-256 metadata, and GitHub build

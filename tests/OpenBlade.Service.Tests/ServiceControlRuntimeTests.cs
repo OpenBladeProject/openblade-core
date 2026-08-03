@@ -2182,6 +2182,81 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ReapplyChangedSettings_RestoresOnlyAffectedResolvedOverride()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int[] before = SetterCounts(context.Device);
+
+        ControlOperationResult result = await context.Runtime.ReapplyChangedSettingsAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(PerformancePreset.Performance, context.Device.ConfirmedState.Performance);
+        Assert.Equal(before[0] + 1, context.Device.PerformanceSetCalls);
+        Assert.Equal(before[1], context.Device.FanSetCalls);
+        Assert.Equal(before[2], context.Device.BatterySetCalls);
+        Assert.Equal(before[3], context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            context.Runtime.GetStatus().PerformanceOverride?.Value);
+        Assert.Contains("Power mode", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReapplyChangedSettings_PartialFailureLeavesOnlyUnconfirmedWarning()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.PerformanceFailure = new InvalidOperationException("write rejected");
+
+        ControlOperationResult result = await context.Runtime.ReapplyChangedSettingsAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal([DeviceSubsystem.Performance], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+        Assert.Contains("Fans", result.Message, StringComparison.Ordinal);
+        Assert.Contains("Power mode", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReapplyChangedSettings_WithNoWarningPerformsNoHardwareAccess()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int calls = context.Device.TotalCalls;
+
+        ControlOperationResult result = await context.Runtime.ReapplyChangedSettingsAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(calls, context.Device.TotalCalls);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
     public async Task Observation_BatteryLimitToProtectionOff_UpdatesConfirmedAndWarnsWithoutSetters()
     {
         TestContext context = CreateContext(providerAvailable: true);

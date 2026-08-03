@@ -26,6 +26,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness")]
 [JsonDerivedType(typeof(SetKeyboardLightingControlModeRequest), "setKeyboardLightingControlMode")]
 [JsonDerivedType(typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy")]
+[JsonDerivedType(typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings")]
 [JsonDerivedType(typeof(SetLightingSuppressionRequest), "setLightingSuppression")]
 [JsonDerivedType(typeof(PulseReactiveKeyRequest), "pulseReactiveKey")]
 [JsonDerivedType(typeof(PushAmbientLightingFrameRequest), "pushAmbientLightingFrame")]
@@ -141,6 +142,9 @@ public sealed record SetExternalLightingOverridePolicyRequest(
     int Version,
     Guid RequestId,
     bool Enabled)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ReapplyChangedSettingsRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetLightingSuppressionRequest(

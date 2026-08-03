@@ -1857,6 +1857,20 @@
                                                         <TextBlock Text="{x:Bind ViewModel.AttentionDetails, Mode=OneWay}"
                                                                    Style="{StaticResource SecondaryTextStyle}"
                                                                    TextWrapping="Wrap" />
+                                                        <Button HorizontalAlignment="Left"
+                                                                Margin="0,4,0,0"
+                                                                IsEnabled="{x:Bind ViewModel.CanReapplyChangedSettings, Mode=OneWay}"
+                                                                Visibility="{x:Bind ViewModel.HasExternalChanges, Mode=OneWay}"
+                                                                Click="OnReapplyChangedSettingsClick"
+                                                                AutomationProperties.Name="Reapply OpenBlade settings">
+                                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                                <ProgressRing Width="14"
+                                                                              Height="14"
+                                                                              IsActive="{x:Bind ViewModel.IsReapplyChangedSettingsOperationInProgress, Mode=OneWay}"
+                                                                              Visibility="{x:Bind ViewModel.IsReapplyChangedSettingsOperationInProgress, Mode=OneWay}" />
+                                                                <TextBlock Text="Reapply OpenBlade settings" />
+                                                            </StackPanel>
+                                                        </Button>
                                                     </StackPanel>
                                                 </Flyout>
                                             </Button.Flyout>

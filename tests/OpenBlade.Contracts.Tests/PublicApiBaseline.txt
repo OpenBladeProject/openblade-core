@@ -1092,7 +1092,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 32
+  field const System.Int32 ProtocolVersion = 33
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1370,6 +1370,19 @@ type sealed class OpenBlade.Contracts.ReactiveLightingParameters
   method virtual System.Boolean Equals(OpenBlade.Contracts.ReactiveLightingParameters other)
   property OpenBlade.Contracts.ReactiveLightingDuration Duration { get; init; }
   property OpenBlade.Contracts.RgbColor Color { get; init; }
+type sealed class OpenBlade.Contracts.ReapplyChangedSettingsRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ReapplyChangedSettingsRequest>
+  ctor (System.Int32 Version, System.Guid RequestId)
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ReapplyChangedSettingsRequest left, OpenBlade.Contracts.ReapplyChangedSettingsRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ReapplyChangedSettingsRequest left, OpenBlade.Contracts.ReapplyChangedSettingsRequest right)
+  method virtual OpenBlade.Contracts.ReapplyChangedSettingsRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ReapplyChangedSettingsRequest other)
 type sealed class OpenBlade.Contracts.ResolvedSetting<T>
   interface System.IEquatable<OpenBlade.Contracts.ResolvedSetting<T>>
   ctor (T Value, OpenBlade.Contracts.SettingValueSource Source)
