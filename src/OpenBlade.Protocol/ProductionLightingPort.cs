@@ -25,6 +25,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             LightingEffect.Wheel,
             LightingEffect.Ripple,
             LightingEffect.AmbientAwareness,
+            LightingEffect.AudioMeter,
         ]);
 
     private readonly ValidationActor actor;
@@ -458,14 +459,14 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             Pid02E0MatrixFrame matrixFrame;
             lock (effectSync)
             {
-                if (activeEffect is not Pid02E0AmbientAwarenessEffect ambient)
+                if (activeEffect is not Pid02E0SessionFrameEffect sessionEffect)
                 {
                     throw KnownNotApplied(
-                        "Ambient Awareness input was rejected because its renderer is not active.");
+                        "Session-rendered lighting input was rejected because its renderer is not active.");
                 }
 
-                ambient.Update(frame);
-                matrixFrame = ambient.RenderFrame(
+                sessionEffect.Update(frame);
+                matrixFrame = sessionEffect.RenderFrame(
                     timeProvider.GetElapsedTime(effectStartedTimestamp));
             }
 
@@ -1090,7 +1091,12 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 Color(value.Color),
                 ReactiveFadeDuration(value.Duration)),
             RippleLightingParameters value => new Pid02E0RippleEffect(Color(value.Color)),
-            AmbientAwarenessLightingParameters => new Pid02E0AmbientAwarenessEffect(),
+            AmbientAwarenessLightingParameters
+                when settings.Effect == LightingEffect.AmbientAwareness =>
+                new Pid02E0SessionFrameEffect(),
+            AudioMeterLightingParameters
+                when settings.Effect == LightingEffect.AudioMeter =>
+                new Pid02E0SessionFrameEffect(),
             TidalLightingParameters value => new Pid02E0TidalEffect(
                 Color(value.PrimaryColor),
                 Color(value.SecondaryColor),
@@ -1582,6 +1588,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
             LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
             LightingEffect.AmbientAwareness => LightingRendererOwnershipState.AmbientAwareness,
+            LightingEffect.AudioMeter => LightingRendererOwnershipState.AudioMeter,
             _ => throw new ArgumentOutOfRangeException(nameof(effect)),
         };
 

@@ -53,6 +53,7 @@ public sealed class ProductionLightingPortTests
                 LightingEffect.Wheel,
                 LightingEffect.Ripple,
                 LightingEffect.AmbientAwareness,
+                LightingEffect.AudioMeter,
             }.Order(),
             factory.Capabilities.LightingEffects.Order());
         Assert.Equal(
@@ -1624,6 +1625,29 @@ public sealed class ProductionLightingPortTests
 
         Assert.Equal(
             LightingRendererOwnershipState.AmbientAwareness,
+            port.OwnershipState);
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[19]);
+        Assert.Equal(MatrixRgb.Black, writer.Reports[^1].Frame[0]);
+    }
+
+    [Fact]
+    public async Task AudioMeter_WritesOnlyTheTypedSessionSampleWhileOwned()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.AudioMeter(colorBoost: 1.25, brightness: 100),
+            default);
+        RgbColor[] colors = new RgbColor[AmbientLightingFrame.SlotCount];
+        colors[19] = new RgbColor(0x12, 0x34, 0x56);
+
+        await port.PushAmbientLightingFrameAsync(
+            new AmbientLightingFrame(colors),
+            default);
+
+        Assert.Equal(
+            LightingRendererOwnershipState.AudioMeter,
             port.OwnershipState);
         Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[19]);
         Assert.Equal(MatrixRgb.Black, writer.Reports[^1].Frame[0]);

@@ -77,10 +77,11 @@ internal sealed class Pid02E0SpectrumEffect : IPid02E0LightingEffect
 
 /// <summary>
 /// Holds the latest keyboard-sized color sample supplied by the signed-in
-/// session. The service owns the HID stream; this renderer never captures the
-/// desktop or interprets screen coordinates.
+/// session for host-rendered effects such as Ambient Awareness and Audio
+/// Meter. The service owns the HID stream; this renderer never captures the
+/// desktop, audio, or interprets screen coordinates.
 /// </summary>
-internal sealed class Pid02E0AmbientAwarenessEffect : IPid02E0LightingEffect
+internal sealed class Pid02E0SessionFrameEffect : IPid02E0LightingEffect
 {
     private Pid02E0MatrixFrame frame =
         Pid02E0MatrixLayout.RenderUniform(MatrixRgb.Black);
@@ -103,7 +104,7 @@ internal sealed class Pid02E0AmbientAwarenessEffect : IPid02E0LightingEffect
         if (!value.IsWellFormed())
         {
             throw new ArgumentException(
-                "The Ambient Awareness frame is invalid.",
+                "The session-rendered lighting frame is invalid.",
                 nameof(value));
         }
 

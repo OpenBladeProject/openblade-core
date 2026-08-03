@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added host-rendered Audio Meter keyboard lighting to the Razer Blade 16
+  (2026), `RZ09-0581`.
 - Added exact-device keyboard-brightness support for the Razer Blade 16
   `RZ09-0528`, USB `1532:02C6`, on BIOS `2.02`. Admission is limited to the
   independently captured and reversibly validated device paths: AC presets and
