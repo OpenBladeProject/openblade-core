@@ -2318,6 +2318,47 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ReapplyChangedSettings_ManualFanBlockRetainsBothThermalReasons()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Automatic,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int[] before = SetterCounts(context.Device);
+
+        ControlOperationResult result = await context.Runtime.ReapplyChangedSettingsAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(before, SetterCounts(context.Device));
+        Assert.Contains(
+            "Power mode cannot be reapplied while manual fan control is active",
+            result.Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Fans were not reapplied because OpenBlade kept manual fan control unchanged",
+            result.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ReapplyChangedSettings_WithNoWarningPerformsNoHardwareAccess()
     {
         TestContext context = CreateWritableContext();

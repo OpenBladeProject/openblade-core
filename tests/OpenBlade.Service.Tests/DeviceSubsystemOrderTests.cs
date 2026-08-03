@@ -41,6 +41,16 @@ public sealed class DeviceSubsystemOrderTests
             Desired(fans: FanMode.Automatic)));
     }
 
+    [Theory]
+    [InlineData(FanMode.Automatic, false)]
+    [InlineData(FanMode.Maximum, true)]
+    [InlineData(FanMode.Fixed, true)]
+    [InlineData(FanMode.ManualCurve, true)]
+    public void IsManualFanMode_ClassifiesEveryDefinedFanMode(
+        FanMode mode,
+        bool expected) =>
+        Assert.Equal(expected, DeviceSubsystemOrder.IsManualFanMode(mode));
+
     private static ConfirmedDeviceState Confirmed(FanMode fans) => new(
         PerformancePreset.Balanced,
         fans,

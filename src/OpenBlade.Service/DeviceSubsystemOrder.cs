@@ -37,6 +37,6 @@ internal static class DeviceSubsystemOrder
     public static bool IsThermal(DeviceSubsystem subsystem) => subsystem is
         DeviceSubsystem.Performance or DeviceSubsystem.Fans;
 
-    private static bool IsManualFanMode(FanMode? mode) => mode is
+    internal static bool IsManualFanMode(FanMode? mode) => mode is
         FanMode.Maximum or FanMode.Fixed or FanMode.ManualCurve;
 }

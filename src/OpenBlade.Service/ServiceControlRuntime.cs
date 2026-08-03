@@ -1293,7 +1293,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     // capture evidence and interactive hardware validation.
                     results[subsystem] = new ControlOperationResult(
                         ControlOperationStatus.Blocked,
-                        "Power mode cannot be reapplied while manual fan control is active. Switch fans to Automatic, then reapply.");
+                        subsystem == DeviceSubsystem.Performance
+                            ? "Power mode cannot be reapplied while manual fan control is active. Switch fans to Automatic, then reapply."
+                            : "Fans were not reapplied because OpenBlade kept manual fan control unchanged while Power mode recovery was blocked.");
                     continue;
                 }
 

@@ -106,7 +106,7 @@ public sealed class ControlCoordinator
             state => PerformanceMatches(state, value, customPerformance),
             token => device.SetPerformanceAsync(value, customPerformance, token),
             cancellationToken,
-            state => IsManualFanMode(state.Fans)
+            state => DeviceSubsystemOrder.IsManualFanMode(state.Fans)
                 ? "Performance changes require Automatic fan mode."
                 : null,
             stateAwareSetter: (state, token) =>
@@ -137,19 +137,20 @@ public sealed class ControlCoordinator
             state => FanModeMatches(state.Fans, value.Mode),
             token => device.SetFanControlAsync(value, token),
             cancellationToken,
-            IsManualFanMode(value.Mode)
+            DeviceSubsystemOrder.IsManualFanMode(value.Mode)
                 ? state => IsConfirmedManualFanWriteBaseline(state)
                         ? null
                         : "Fixed and manual fan control require confirmed Balanced Automatic fans to enter manual mode, or an already-confirmed manual fan state."
                 : null,
-            acceptSetterCompletionWithoutReadback: IsManualFanMode(value.Mode),
-            setterCompletionEvidence: IsManualFanMode(value.Mode)
-                ? state => IsManualFanMode(state.Fans)
+            acceptSetterCompletionWithoutReadback:
+                DeviceSubsystemOrder.IsManualFanMode(value.Mode),
+            setterCompletionEvidence: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
+                ? state => DeviceSubsystemOrder.IsManualFanMode(state.Fans)
                 : null,
             // Firmware exposes only Automatic versus manual state. It cannot
             // read back a fixed target or distinguish Fixed, Curve and Maximum,
             // so every explicit manual-mode action must submit its RPM target.
-            forceWrite: IsManualFanMode(value.Mode));
+            forceWrite: DeviceSubsystemOrder.IsManualFanMode(value.Mode));
     }
 
     internal async Task<ScopedApplyOutcome> ApplyFanControlTransitionOutcomeAsync(
@@ -161,8 +162,8 @@ public sealed class ControlCoordinator
         ArgumentNullException.ThrowIfNull(requested);
 
         if (previous.Mode != requested.Mode
-            && IsManualFanMode(previous.Mode)
-            && IsManualFanMode(requested.Mode))
+            && DeviceSubsystemOrder.IsManualFanMode(previous.Mode)
+            && DeviceSubsystemOrder.IsManualFanMode(requested.Mode))
         {
             ScopedApplyOutcome automatic = await ApplyFanControlOutcomeAsync(
                 FanControlSettings.FromLegacy(FanMode.Automatic),
@@ -1234,9 +1235,6 @@ public sealed class ControlCoordinator
         or (PerformancePreset.BatterySaver, FanMode.Automatic)
         or (PerformancePreset.BatteryBalanced, FanMode.Automatic);
 
-    private static bool IsManualFanMode(FanMode? mode) => mode is
-        FanMode.Maximum or FanMode.Fixed or FanMode.ManualCurve;
-
     private static bool IsConfirmedManualFanWriteBaseline(
         ConfirmedDeviceState state) => state.Fans switch
         {
@@ -1249,7 +1247,8 @@ public sealed class ControlCoordinator
     private static bool FanModeMatches(FanMode? confirmed, FanMode desired) =>
         desired == FanMode.Automatic
             ? confirmed == FanMode.Automatic
-            : IsManualFanMode(desired) && IsManualFanMode(confirmed);
+            : DeviceSubsystemOrder.IsManualFanMode(desired)
+                && DeviceSubsystemOrder.IsManualFanMode(confirmed);
 
     private static bool PerformanceMatches(
         ConfirmedDeviceState state,
