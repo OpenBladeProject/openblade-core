@@ -29,6 +29,7 @@ public sealed record UiPreferences(
     string? CustomAccentColor = null,
     IReadOnlyList<SpecialKeyBindingPreference>? SpecialKeyBindings = null,
     IReadOnlyList<PageLayoutPreference>? PageLayouts = null,
+    UpdateChannel UpdateChannel = UpdateChannel.Stable,
     UpdateCheckInterval UpdateCheckInterval = UpdateCheckInterval.Daily,
     bool UpdateCheckPromptShown = false,
     DateTimeOffset? LastSuccessfulUpdateCheckAt = null,
@@ -51,6 +52,7 @@ public sealed record UiPreferences(
         CustomAccentColor: AppAccentColorPreferenceDefaults.RazerGreenHex,
         SpecialKeyBindings: SpecialKeyBindingDefaults.Bindings,
         PageLayouts: PageLayoutPreferenceDefaults.Layouts,
+        UpdateChannel: UpdateChannel.Stable,
         UpdateCheckInterval: UpdateCheckInterval.Daily,
         UpdateCheckPromptShown: false,
         LastSuccessfulUpdateCheckAt: null,
@@ -101,6 +103,11 @@ public sealed record UiPreferences(
         Enum.IsDefined(UpdateCheckInterval)
             ? UpdateCheckInterval
             : UpdateCheckInterval.Daily;
+
+    public UpdateChannel EffectiveUpdateChannel =>
+        Enum.IsDefined(UpdateChannel)
+            ? UpdateChannel
+            : UpdateChannel.Stable;
 }
 
 public sealed class UiPreferenceStore

@@ -124,6 +124,27 @@ public sealed class UpdateCheckViewModelTests
     }
 
     [Fact]
+    public async Task AutomaticOfflineCheckIsContainedAndReportsNonfatalStatus()
+    {
+        var client = new FakeReleaseUpdateClient(
+            new ReleaseUpdateConnectivityException(
+                new HttpRequestException("No network route is available.")));
+        var viewModel = Create(client);
+        Apply(viewModel, promptShown: true, lastSuccessfulCheckAt: null);
+
+        viewModel.StartAutomaticCheck();
+        await viewModel.DisposeAsync();
+
+        Assert.Null(viewModel.LastSuccessfulCheckAt);
+        Assert.Equal(
+            Now.AddMinutes(5),
+            viewModel.RetryAfter);
+        Assert.Equal(
+            "No internet connection. Check your connection and try again.",
+            viewModel.StatusText);
+    }
+
+    [Fact]
     public async Task ManualOnlyStillAllowsCheckNow()
     {
         var client = SuccessfulClient(CurrentRelease);
@@ -294,6 +315,68 @@ public sealed class UpdateCheckViewModelTests
         Assert.Equal(1, preferenceChanges);
     }
 
+    [Fact]
+    public async Task ChoosingNightlyChannelClearsStableCacheBeforeChecking()
+    {
+        var client = SuccessfulClient(
+            new(
+                new Version(1, 0, 0, 42),
+                "v1.0.0-nightly.42",
+                ReleaseUri));
+        await using var viewModel = Create(client);
+        Apply(
+            viewModel,
+            promptShown: true,
+            lastSuccessfulCheckAt: Now,
+            entityTag: "\"stable\"",
+            cachedReleaseTag: "v1.1.0",
+            cachedReleaseUrl: ReleaseUri.AbsoluteUri);
+        int preferenceChanges = 0;
+        viewModel.PreferencesChanged += (_, _) => preferenceChanges++;
+
+        viewModel.SelectedChannelOption = viewModel.ChannelOptions.Single(
+            option => option.Channel == UpdateChannel.Nightly);
+
+        Assert.Equal(UpdateChannel.Nightly, viewModel.Channel);
+        Assert.Null(viewModel.EntityTag);
+        Assert.Null(viewModel.CachedReleaseTag);
+        Assert.Null(viewModel.LastSuccessfulCheckAt);
+        Assert.Equal(1, preferenceChanges);
+
+        await Command(viewModel).ExecuteAsync(null);
+
+        Assert.Equal(UpdateChannel.Nightly, client.LastChannel);
+        Assert.Null(client.LastEntityTag);
+        Assert.True(viewModel.IsUpdateAvailable);
+    }
+
+    [Fact]
+    public async Task ChangingChannelDiscardsAnInFlightResultFromThePreviousChannel()
+    {
+        var client = new ControlledReleaseUpdateClient();
+        await using var viewModel = Create(client);
+        Apply(viewModel, promptShown: true, lastSuccessfulCheckAt: null);
+        Task check = Command(viewModel).ExecuteAsync(null);
+        await client.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        viewModel.SelectedChannelOption = viewModel.ChannelOptions.Single(
+            option => option.Channel == UpdateChannel.Nightly);
+        client.Complete(new(
+            ReleaseUpdateDisposition.PublishedRelease,
+            NewerRelease,
+            "\"stable\""));
+        await check;
+
+        Assert.Equal(UpdateChannel.Nightly, viewModel.Channel);
+        Assert.Null(viewModel.LastSuccessfulCheckAt);
+        Assert.Null(viewModel.EntityTag);
+        Assert.Null(viewModel.CachedReleaseTag);
+        Assert.False(viewModel.IsUpdateAvailable);
+        Assert.Equal(
+            "Updates have not been checked for the Nightly channel.",
+            viewModel.StatusText);
+    }
+
     private static UpdateCheckViewModel Create(IReleaseUpdateClient client) =>
         new(client, "1.0.0+abcdef", new FixedTimeProvider(Now));
 
@@ -303,10 +386,12 @@ public sealed class UpdateCheckViewModelTests
         DateTimeOffset? lastSuccessfulCheckAt,
         UpdateCheckInterval interval = UpdateCheckInterval.Daily,
         DateTimeOffset? retryAfter = null,
+        UpdateChannel channel = UpdateChannel.Stable,
         string? entityTag = null,
         string? cachedReleaseTag = null,
         string? cachedReleaseUrl = null) =>
         viewModel.ApplyPreferences(
+            channel,
             interval,
             promptShown,
             lastSuccessfulCheckAt,
@@ -358,11 +443,15 @@ public sealed class UpdateCheckViewModelTests
 
         public string? LastEntityTag { get; private set; }
 
+        public UpdateChannel? LastChannel { get; private set; }
+
         public Task<ReleaseUpdateResult> GetLatestReleaseAsync(
+            UpdateChannel channel,
             string? entityTag,
             CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref callCount);
+            LastChannel = channel;
             LastEntityTag = entityTag;
             if (exception is not null)
             {
@@ -381,6 +470,7 @@ public sealed class UpdateCheckViewModelTests
         public bool CancellationObserved { get; private set; }
 
         public async Task<ReleaseUpdateResult> GetLatestReleaseAsync(
+            UpdateChannel channel,
             string? entityTag,
             CancellationToken cancellationToken)
         {
@@ -396,5 +486,25 @@ public sealed class UpdateCheckViewModelTests
                 throw;
             }
         }
+    }
+
+    private sealed class ControlledReleaseUpdateClient : IReleaseUpdateClient
+    {
+        private readonly TaskCompletionSource<ReleaseUpdateResult> result =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<ReleaseUpdateResult> GetLatestReleaseAsync(
+            UpdateChannel channel,
+            string? entityTag,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            return result.Task.WaitAsync(cancellationToken);
+        }
+
+        public void Complete(ReleaseUpdateResult value) => result.TrySetResult(value);
     }
 }

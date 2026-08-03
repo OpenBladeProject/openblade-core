@@ -444,6 +444,15 @@ public sealed class WinUiShellContractTests
         Assert.Contains("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
         Assert.Contains("#47E10C", app, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("x:Name=\"SettingsPageHeader\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Update channel\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "ItemsSource=\"{x:Bind UpdateViewModel.ChannelOptions, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectedItem=\"{x:Bind UpdateViewModel.SelectedChannelOption, Mode=TwoWay}\"",
+            xaml,
+            StringComparison.Ordinal);
         Assert.Equal(7, CountOccurrences(xaml, "Margin=\"0,0,0,20\""));
         Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}\"",

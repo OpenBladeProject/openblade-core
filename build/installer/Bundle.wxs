@@ -16,11 +16,17 @@
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication
           Theme="hyperlinkLargeLicense"
+          ThemeFile="OpenBladeTheme.xml"
           LicenseUrl=""
           LogoFile="!(bindpath.BrandAssets)\OpenBlade.png"
           ShowVersion="yes"
           SuppressOptionsUI="yes" />
     </BootstrapperApplication>
+
+    <Variable
+        Name="OpenBladePurgeProfiles"
+        Type="numeric"
+        Value="0" />
 
     <util:RegistrySearch
         Id="OpenBladeBundleOwnershipSearch"
@@ -90,10 +96,13 @@
           InstallArguments="install --bundle-managed"
           RepairArguments="install --bundle-managed"
           UninstallArguments="uninstall --bundle-managed"
-          DetectCondition="OpenBladeInstalledVersion AND OpenBladeInstalledVersion &gt; v$(OpenBladeVersion)"
+          DetectCondition="OpenBladeInstalledVersion AND OpenBladeInstalledVersion &gt;= v$(OpenBladeVersion)"
           PerMachine="yes"
           Cache="keep"
           Vital="yes">
+        <CommandLine
+            Condition="OpenBladePurgeProfiles"
+            UninstallArgument="--purge" />
         <Payloads Include="!(bindpath.OpenBladeBundle)\**">
           <Exclude Files="!(bindpath.OpenBladeBundle)\OpenBlade.Setup.exe" />
         </Payloads>

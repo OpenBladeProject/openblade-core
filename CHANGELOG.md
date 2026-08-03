@@ -16,6 +16,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept manual and automatic update checks nonfatal when the computer is
+  offline, with a clear connectivity status and bounded retry delay.
+- Fixed the graphical uninstaller so it detects a same-version OpenBlade
+  payload and runs the product uninstall before removing its own registration.
 - Fixed tray-hover telemetry from waking hidden WinUI presentation work after
   the tooltip was refreshed. Unchanged service metadata now updates only the
   tray label until the dashboard becomes visible again.
@@ -37,6 +41,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Licensed OpenBlade under the GNU General Public License version 3 or later.
+- Added an uninstall choice to keep saved profiles and settings by default or
+  remove them explicitly from the graphical maintenance screen.
+
 - Added a **Reapply OpenBlade settings** action for controls changed outside
   OpenBlade. It resolves the active profile and manual overrides, writes only
   the affected hardware subsystems, and clears each warning only after
@@ -46,9 +54,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   is now version 33.
 - Added daily and manually dispatched nightly installers from committed `main`,
   with the full CI and production-publish gates, ordered upgrade-safe build
-  versions, 14-day artifact retention, SHA-256 metadata, and optional GitHub
-  build provenance when enabled on a supported repository. Nightlies remain
-  outside the stable in-app update channel.
+  versions, 14-day artifact retention, GitHub prereleases, SHA-256 metadata,
+  and optional GitHub build provenance when enabled on a supported repository.
+  The About page can check either the Stable or Nightly release channel.
 - Added host-rendered Audio Meter keyboard lighting to the Razer Blade 16
   (2026), `RZ09-0581`.
 - Added exact-device keyboard-brightness support for the Razer Blade 16

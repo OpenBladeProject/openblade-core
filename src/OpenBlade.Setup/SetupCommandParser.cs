@@ -50,6 +50,15 @@ public static class SetupCommandParser
             return true;
         }
 
+        if (arguments.Count == 3
+            && string.Equals(arguments[0], "uninstall", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(arguments[1], "--bundle-managed", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(arguments[2], "--purge", StringComparison.OrdinalIgnoreCase))
+        {
+            invocation = new(SetupCommand.UninstallAndPurge, BundleManaged: true);
+            return true;
+        }
+
         if (arguments.Count == 2
             && string.Equals(arguments[0], "uninstall", StringComparison.OrdinalIgnoreCase)
             && string.Equals(

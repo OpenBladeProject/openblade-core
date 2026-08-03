@@ -413,6 +413,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             PageLayoutPreferenceDefaults.Layouts;
         AppAccentColorMode initialAccentColorMode = AppAccentColorMode.RazerGreen;
         string initialCustomAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
+        UpdateChannel initialUpdateChannel = UpdateChannel.Stable;
         UpdateCheckInterval initialUpdateCheckInterval = UpdateCheckInterval.Daily;
         bool initialUpdateCheckPromptShown = false;
         DateTimeOffset? initialLastSuccessfulUpdateCheckAt = null;
@@ -436,6 +437,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialAccentColorMode = preferences.EffectiveAccentColorMode;
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
+            initialUpdateChannel = preferences.EffectiveUpdateChannel;
             initialUpdateCheckInterval = preferences.EffectiveUpdateCheckInterval;
             initialUpdateCheckPromptShown = preferences.UpdateCheckPromptShown;
             initialLastSuccessfulUpdateCheckAt =
@@ -473,6 +475,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
         UpdateViewModel.ApplyPreferences(
+            initialUpdateChannel,
             initialUpdateCheckInterval,
             initialUpdateCheckPromptShown,
             initialLastSuccessfulUpdateCheckAt,
@@ -721,6 +724,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                                 section.IsVisible))
                             .ToArray()))
                     .ToArray(),
+                UpdateChannel: UpdateViewModel.Channel,
                 UpdateCheckInterval: UpdateViewModel.Interval,
                 UpdateCheckPromptShown: !UpdateViewModel.NeedsConsentPrompt,
                 LastSuccessfulUpdateCheckAt: UpdateViewModel.LastSuccessfulCheckAt,
