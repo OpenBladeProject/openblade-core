@@ -124,6 +124,27 @@ public sealed class UpdateCheckViewModelTests
     }
 
     [Fact]
+    public async Task AutomaticOfflineCheckIsContainedAndReportsNonfatalStatus()
+    {
+        var client = new FakeReleaseUpdateClient(
+            new ReleaseUpdateConnectivityException(
+                new HttpRequestException("No network route is available.")));
+        var viewModel = Create(client);
+        Apply(viewModel, promptShown: true, lastSuccessfulCheckAt: null);
+
+        viewModel.StartAutomaticCheck();
+        await viewModel.DisposeAsync();
+
+        Assert.Null(viewModel.LastSuccessfulCheckAt);
+        Assert.Equal(
+            Now.AddMinutes(5),
+            viewModel.RetryAfter);
+        Assert.Equal(
+            "No internet connection. Check your connection and try again.",
+            viewModel.StatusText);
+    }
+
+    [Fact]
     public async Task ManualOnlyStillAllowsCheckNow()
     {
         var client = SuccessfulClient(CurrentRelease);

@@ -16,6 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept manual and automatic update checks nonfatal when the computer is
+  offline, with a clear connectivity status and bounded retry delay.
 - Fixed the graphical uninstaller so it detects a same-version OpenBlade
   payload and runs the product uninstall before removing its own registration.
 - Fixed tray-hover telemetry from waking hidden WinUI presentation work after

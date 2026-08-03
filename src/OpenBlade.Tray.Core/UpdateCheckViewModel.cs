@@ -346,6 +346,16 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
             StatusText = "Update check canceled.";
             throw;
         }
+        catch (ReleaseUpdateConnectivityException exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade update check could not reach GitHub: {0}",
+                exception);
+            retryAfter = timeProvider.GetUtcNow() + FailureRetryDelay;
+            Notify(nameof(RetryAfter));
+            PreferencesChanged?.Invoke(this, EventArgs.Empty);
+            StatusText = "No internet connection. Check your connection and try again.";
+        }
         catch (ReleaseUpdateRateLimitException exception)
         {
             retryAfter = exception.RetryAfter;

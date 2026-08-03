@@ -156,6 +156,22 @@ public sealed class ReleaseUpdateCheckingTests
     }
 
     [Fact]
+    public async Task GitHubClientClassifiesNoConnectivityWithoutLeakingHttpFailure()
+    {
+        using var httpClient = new HttpClient(new OfflineHandler());
+        var client = new GitHubReleaseUpdateClient(httpClient);
+
+        ReleaseUpdateConnectivityException exception =
+            await Assert.ThrowsAsync<ReleaseUpdateConnectivityException>(
+                () => client.GetLatestReleaseAsync(
+                    UpdateChannel.Stable,
+                    null,
+                    CancellationToken.None));
+
+        Assert.IsType<HttpRequestException>(exception.InnerException);
+    }
+
+    [Fact]
     public async Task GitHubClientTreatsNotModifiedAsSuccessfulConditionalCheck()
     {
         using var httpClient = new HttpClient(
@@ -408,5 +424,16 @@ public sealed class ReleaseUpdateCheckingTests
             configureResponse?.Invoke(response);
             return Task.FromResult(response);
         }
+    }
+
+    private sealed class OfflineHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(
+                new HttpRequestException(
+                    HttpRequestError.ConnectionError,
+                    "No network route is available."));
     }
 }

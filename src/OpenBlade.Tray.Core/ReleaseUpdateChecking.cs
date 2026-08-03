@@ -71,6 +71,16 @@ public class ReleaseUpdateRetryException : ReleaseUpdateException
     public DateTimeOffset RetryAfter { get; }
 }
 
+public sealed class ReleaseUpdateConnectivityException : ReleaseUpdateException
+{
+    public ReleaseUpdateConnectivityException(HttpRequestException innerException)
+        : base(
+            "The OpenBlade release check could not reach GitHub.",
+            innerException)
+    {
+    }
+}
+
 public sealed class ReleaseUpdateRateLimitException : ReleaseUpdateRetryException
 {
     public ReleaseUpdateRateLimitException(DateTimeOffset retryAfter)
@@ -357,6 +367,12 @@ public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
         catch (ReleaseUpdateException)
         {
             throw;
+        }
+        catch (HttpRequestException exception) when (
+            exception.HttpRequestError is HttpRequestError.NameResolutionError
+                or HttpRequestError.ConnectionError)
+        {
+            throw new ReleaseUpdateConnectivityException(exception);
         }
         catch (Exception exception) when (
             exception is HttpRequestException
