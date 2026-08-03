@@ -12,10 +12,14 @@ public sealed class FirmwareSmokeAssessmentTests
 
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
 
+        Assert.Contains("AudioMeter", snapshot.Capabilities.LightingEffects);
         Assert.True(report.Succeeded);
         Assert.DoesNotContain(
             report.Checks,
             check => check.Outcome == FirmwareSmokeOutcome.Failed);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(report.Checks, check => check.Id == "capabilities.lighting").Outcome);
     }
 
     [Fact]
@@ -425,6 +429,7 @@ public sealed class FirmwareSmokeAssessmentTests
             ["Automatic", "Fixed", "ManualCurve", "Maximum"],
             [
                 "AmbientAwareness",
+                "AudioMeter",
                 "Breathing",
                 "Off",
                 "Reactive",

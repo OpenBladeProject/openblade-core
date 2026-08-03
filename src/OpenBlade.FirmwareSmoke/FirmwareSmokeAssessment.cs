@@ -25,6 +25,7 @@ public static class FirmwareSmokeAssessment
     private static readonly string[] ExpectedLightingEffects =
     [
         "AmbientAwareness",
+        "AudioMeter",
         "Breathing",
         "Off",
         "Reactive",

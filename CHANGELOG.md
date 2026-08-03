@@ -16,6 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed the RZ09-0581 firmware-smoke capability gate to recognize the admitted
+  Audio Meter lighting effect.
 - Fixed app accent changes in Light and Dark modes by keeping both WinUI's
   live accent brushes and its theme resource dictionaries synchronized.
 - Fixed Ambient Awareness so a failed screen-capture resource is disposed and
