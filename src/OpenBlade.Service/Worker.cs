@@ -1,4 +1,3 @@
-using System.Security.Principal;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
@@ -12,6 +11,7 @@ public sealed class Worker(
     IPowerStateProvider powerStateProvider,
     IServiceLifecycleEventSource lifecycleEventSource,
     LowPowerGate lowPowerGate,
+    IServiceClientContextResolver clientContextResolver,
     ILogger<Worker> logger) : BackgroundService
 {
     private const int MaximumPipeClients = NamedPipeControlServer.MaximumServerInstances;
@@ -66,18 +66,11 @@ public sealed class Worker(
 
     private async Task RunBackgroundAsync(CancellationToken stoppingToken)
     {
-        SecurityIdentifier? authorizedUser = ReadAuthorizedUser();
-        if (authorizedUser is null)
-        {
-            logger.LogCritical("Authorized user SID is missing; the IPC service will not start.");
-            return;
-        }
-
         var server = new NamedPipeControlServer(
             OpenBladeIpc.PipeName,
-            authorizedUser,
             handler,
-            subscriptionHub);
+            subscriptionHub,
+            clientContextResolver);
         List<Func<CancellationToken, Task>> operations =
         [
             token => new ServiceLifecycleRefreshLoop(
@@ -145,18 +138,4 @@ public sealed class Worker(
         }
     }
 
-    private static SecurityIdentifier? ReadAuthorizedUser()
-    {
-        string? configured = Environment.GetEnvironmentVariable("OPENBLADE_USER_SID");
-        string path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "OpenBlade",
-            "authorized-user.sid");
-
-        string? value = !string.IsNullOrWhiteSpace(configured)
-            ? configured
-            : File.Exists(path) ? File.ReadAllText(path).Trim() : null;
-
-        return string.IsNullOrWhiteSpace(value) ? null : new SecurityIdentifier(value);
-    }
 }

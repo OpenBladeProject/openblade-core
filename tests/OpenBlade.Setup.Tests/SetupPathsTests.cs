@@ -11,7 +11,8 @@ public sealed class SetupPathsTests
             @"C:\Program Files",
             @"C:\ProgramData",
             @"C:\Users\jack\AppData\Local",
-            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup");
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup",
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup");
 
         Assert.Equal(@"C:\Program Files\OpenBlade", paths.InstallDirectory);
         Assert.Equal(@"C:\ProgramData\OpenBlade", paths.MachineDataDirectory);
@@ -20,13 +21,16 @@ public sealed class SetupPathsTests
             @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.lnk",
             paths.StartupFile);
         Assert.Equal(
-            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.SessionAgent.lnk",
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.SessionAgent.lnk",
             paths.SessionAgentStartupFile);
         Assert.Equal(
-            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\OpenBlade.lnk",
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.SessionAgent.lnk",
+            paths.LegacySessionAgentStartupFile);
+        Assert.Equal(
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\OpenBlade.lnk",
             paths.StartMenuFile);
         Assert.Equal(
-            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Uninstall OpenBlade.lnk",
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Uninstall OpenBlade.lnk",
             paths.UninstallStartMenuFile);
     }
 

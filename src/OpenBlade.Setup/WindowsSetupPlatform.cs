@@ -89,7 +89,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         SetupServiceState? state = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
         bool trayShortcutExisted = fileOperations.FileExists(paths.StartupFile)
             || fileOperations.FileExists(paths.LegacyStartupFile);
-        bool sessionAgentShortcutExisted = fileOperations.FileExists(paths.SessionAgentStartupFile);
+        bool sessionAgentShortcutExisted = fileOperations.FileExists(paths.SessionAgentStartupFile)
+            || fileOperations.FileExists(paths.LegacySessionAgentStartupFile);
         bool startMenuShortcutExisted = fileOperations.FileExists(paths.StartMenuFile);
         bool uninstallShortcutExisted = fileOperations.FileExists(paths.UninstallStartMenuFile);
         bool uninstallRegistrationExisted = uninstallRegistration.Exists();
@@ -288,18 +289,34 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         string sessionAgentExecutable = Path.Combine(
             paths.InstallDirectory,
             "OpenBlade.SessionAgent.exe");
-        return shortcutWriter.CreateAsync(
+        Task install = shortcutWriter.CreateAsync(
             new ShortcutRequest(
                 paths.SessionAgentStartupFile,
                 sessionAgentExecutable,
                 paths.InstallDirectory),
             cancellationToken);
+        if (!string.Equals(
+                paths.LegacySessionAgentStartupFile,
+                paths.SessionAgentStartupFile,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            fileOperations.DeleteFile(paths.LegacySessionAgentStartupFile);
+        }
+
+        return install;
     }
 
     public Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         fileOperations.DeleteFile(paths.SessionAgentStartupFile);
+        if (!string.Equals(
+                paths.LegacySessionAgentStartupFile,
+                paths.SessionAgentStartupFile,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            fileOperations.DeleteFile(paths.LegacySessionAgentStartupFile);
+        }
         return Task.CompletedTask;
     }
 

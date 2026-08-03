@@ -346,8 +346,16 @@ public sealed class WindowsSetupPlatformServiceTests
 
         await platform.RemoveSessionAgentStartupShortcutAsync(CancellationToken.None);
 
-        string removed = Assert.Single(files.DeletedFiles);
-        Assert.EndsWith("OpenBlade.SessionAgent.lnk", removed, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, files.DeletedFiles.Count);
+        Assert.All(files.DeletedFiles, removed => Assert.EndsWith(
+            "OpenBlade.SessionAgent.lnk",
+            removed,
+            StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            files.DeletedFiles,
+            removed => removed.StartsWith(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup),
+                StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -366,7 +374,7 @@ public sealed class WindowsSetupPlatformServiceTests
         ShortcutRequest request = Assert.Single(shortcutWriter.Requests);
         Assert.Equal(
             Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Programs),
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),
                 "OpenBlade.lnk"),
             request.ShortcutPath);
         Assert.Equal(Path.Combine(installDirectory, "OpenBlade.Tray.exe"), request.TargetPath);
@@ -384,7 +392,7 @@ public sealed class WindowsSetupPlatformServiceTests
         string removed = Assert.Single(files.DeletedFiles);
         Assert.Equal(
             Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Programs),
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),
                 "OpenBlade.lnk"),
             removed);
     }

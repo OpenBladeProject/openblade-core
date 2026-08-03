@@ -56,6 +56,13 @@ The visible tray can exit without stopping profile automation, display
 automation, configured special keys, or interactive lighting. The per-user
 Session Agent keeps those features active.
 
+OpenBlade supports multiple Windows users through one machine-wide service.
+Each user has separate profiles, overrides, display state, and UI preferences.
+Only the currently active interactive Windows session may change the shared
+laptop hardware; Fast User Switching transfers control and disconnects the
+previous session's status stream. Battery and firmware changes still affect
+the physical laptop, regardless of which user requested them.
+
 ## Hardware safety
 
 OpenBlade fails closed when identity, evidence, or state cannot be confirmed.

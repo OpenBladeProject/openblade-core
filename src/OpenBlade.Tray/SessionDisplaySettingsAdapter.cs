@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Diagnostics;
 using System.Security.Principal;
 using OpenBlade.Contracts;
 using OpenBlade.Session;
@@ -17,7 +18,8 @@ internal sealed class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
     {
         SecurityIdentifier userSid = WindowsIdentity.GetCurrent().User
             ?? throw new InvalidOperationException("The current user SID is unavailable.");
-        pipeName = SessionAgentPipeEndpoint.Create(userSid).PipeName;
+        using Process process = Process.GetCurrentProcess();
+        pipeName = SessionAgentPipeEndpoint.Create(userSid, process.SessionId).PipeName;
     }
 
     public Task<DisplaySettingsSnapshot> GetStateAsync(CancellationToken token) =>

@@ -35,7 +35,7 @@ public sealed class SetupCommandRunnerTests
                 "uninstall-shortcut-remove", "uninstall-registration-remove",
                 "service-prepare", "tray-stop", "session-agent-stop",
                 "dynamic-lighting-remove", "payload-activate", "dynamic-lighting-install",
-                "uninstaller-install", "sid:S-1-5-21-test", "service-install",
+                "uninstaller-install", "service-install",
                 "service-health", "agent-shortcut-install", "start-menu-install",
                 "uninstall-shortcut-install", "uninstall-registration-install", "shortcut-install", "payload-commit",
             ],
@@ -238,7 +238,6 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Theory]
-    [InlineData("sid")]
     [InlineData("service-install")]
     [InlineData("service-health")]
     [InlineData("agent-shortcut-install")]
@@ -584,7 +583,7 @@ public sealed class SetupCommandRunnerTests
         RecordingSetupPlatform platform = new()
         {
             ServiceExists = true,
-            FailurePoint = "sid-cancel",
+            FailurePoint = "service-install-cancel",
             Cancellation = cancellation,
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
         };
@@ -928,12 +927,6 @@ public sealed class SetupCommandRunnerTests
                 return Task.FromException(new InvalidOperationException("sid failed"));
             }
 
-            if (FailurePoint == "sid-cancel")
-            {
-                Cancellation!.Cancel();
-                return Task.FromCanceled(Cancellation.Token);
-            }
-
             return Task.CompletedTask;
         }
 
@@ -1042,6 +1035,13 @@ public sealed class SetupCommandRunnerTests
             {
                 FailurePoint = null;
                 return Task.FromException(new InvalidOperationException($"{operation} failed"));
+            }
+
+            if (FailurePoint == $"{operation}-cancel")
+            {
+                FailurePoint = null;
+                Cancellation!.Cancel();
+                return Task.FromCanceled(Cancellation.Token);
             }
 
             return Task.CompletedTask;

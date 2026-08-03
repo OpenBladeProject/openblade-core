@@ -12,9 +12,10 @@ public sealed class NamedPipeControlServer
     private static readonly TimeSpan FrameReadTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan FrameWriteTimeout = TimeSpan.FromSeconds(2);
     private readonly string pipeName;
-    private readonly SecurityIdentifier authorizedUser;
+    private readonly PipeSecurity pipeSecurity;
     private readonly ControlRequestHandler handler;
     private readonly IStatusSubscriptionHub subscriptionHub;
+    private readonly IServiceClientContextResolver clientContextResolver;
     private readonly TimeProvider timeProvider;
     private readonly SemaphoreSlim firstListenerGate = new(1, 1);
     private int firstListenerEstablished;
@@ -29,11 +30,32 @@ public sealed class NamedPipeControlServer
         this.pipeName = string.IsNullOrWhiteSpace(pipeName)
             ? throw new ArgumentException("Pipe name is required.", nameof(pipeName))
             : pipeName;
-        this.authorizedUser = authorizedUser
-            ?? throw new ArgumentNullException(nameof(authorizedUser));
+        pipeSecurity = PipeSecurityFactory.Create(
+            authorizedUser ?? throw new ArgumentNullException(nameof(authorizedUser)));
         this.handler = handler ?? throw new ArgumentNullException(nameof(handler));
         this.subscriptionHub = subscriptionHub
             ?? throw new ArgumentNullException(nameof(subscriptionHub));
+        this.timeProvider = timeProvider ?? TimeProvider.System;
+        clientContextResolver = new FixedServiceClientContextResolver(
+            ServiceClientContext.TrustedTestClient);
+    }
+
+    public NamedPipeControlServer(
+        string pipeName,
+        ControlRequestHandler handler,
+        IStatusSubscriptionHub subscriptionHub,
+        IServiceClientContextResolver clientContextResolver,
+        TimeProvider? timeProvider = null)
+    {
+        this.pipeName = string.IsNullOrWhiteSpace(pipeName)
+            ? throw new ArgumentException("Pipe name is required.", nameof(pipeName))
+            : pipeName;
+        pipeSecurity = PipeSecurityFactory.CreateForInteractiveUsers();
+        this.handler = handler ?? throw new ArgumentNullException(nameof(handler));
+        this.subscriptionHub = subscriptionHub
+            ?? throw new ArgumentNullException(nameof(subscriptionHub));
+        this.clientContextResolver = clientContextResolver
+            ?? throw new ArgumentNullException(nameof(clientContextResolver));
         this.timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -66,7 +88,8 @@ public sealed class NamedPipeControlServer
                 firstListenerGate.Release();
                 ownsFirstListenerGate = false;
             }
-            await ServeConnectionAsync(pipe, cancellationToken);
+            ServiceClientContext client = clientContextResolver.Resolve(pipe);
+            await ServeConnectionAsync(pipe, client, cancellationToken);
         }
         finally
         {
@@ -97,11 +120,20 @@ public sealed class NamedPipeControlServer
             options,
             inBufferSize: 0,
             outBufferSize: 0,
-            PipeSecurityFactory.Create(authorizedUser));
+            pipeSecurity);
     }
 
     public async Task ServeConnectionAsync(
         Stream connection,
+        CancellationToken cancellationToken)
+        => await ServeConnectionAsync(
+            connection,
+            ServiceClientContext.TrustedTestClient,
+            cancellationToken);
+
+    internal async Task ServeConnectionAsync(
+        Stream connection,
+        ServiceClientContext client,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
@@ -129,7 +161,11 @@ public sealed class NamedPipeControlServer
 
                 if (request is SubscribeStatusRequest)
                 {
-                    await ServeSubscriptionAsync(connection, request, cancellationToken);
+                    await ServeSubscriptionAsync(
+                        connection,
+                        request,
+                        client,
+                        cancellationToken);
                     return;
                 }
 
@@ -145,8 +181,16 @@ public sealed class NamedPipeControlServer
                     return;
                 }
 
-                ServiceResponse response = await handler.HandleAsync(request, cancellationToken);
+                ServiceResponse response = await handler.HandleAsync(
+                    request,
+                    client,
+                    cancellationToken);
                 await WriteFrameAsync(connection, response, cancellationToken);
+                if (!response.Success)
+                {
+                    return;
+                }
+
                 if (request is not (PulseReactiveKeyRequest or PushAmbientLightingFrameRequest))
                 {
                     return;
@@ -171,6 +215,7 @@ public sealed class NamedPipeControlServer
     private async Task ServeSubscriptionAsync(
         Stream connection,
         ServiceRequest request,
+        ServiceClientContext client,
         CancellationToken cancellationToken)
     {
         StatusSubscriptionLease lease;
@@ -189,7 +234,10 @@ public sealed class NamedPipeControlServer
 
         await using (lease)
         {
-            ServiceResponse initial = await handler.HandleAsync(request, cancellationToken);
+            ServiceResponse initial = await handler.HandleAsync(
+                request,
+                client,
+                cancellationToken);
             await WriteFrameAsync(connection, initial, cancellationToken);
             long initialRevision = initial.Status?.Revision ?? -1;
 
@@ -199,6 +247,7 @@ public sealed class NamedPipeControlServer
                 connection,
                 lease,
                 initialRevision,
+                client,
                 connectionLifetime.Token);
             Task disconnectTask = MonitorDisconnectAsync(
                 connection,
@@ -237,6 +286,7 @@ public sealed class NamedPipeControlServer
         Stream connection,
         StatusSubscriptionLease lease,
         long initialRevision,
+        ServiceClientContext client,
         CancellationToken cancellationToken)
     {
         await foreach (ServiceStatusSnapshot snapshot in
@@ -247,9 +297,17 @@ public sealed class NamedPipeControlServer
                 continue;
             }
 
+            ServiceStatusSnapshot projected = handler.ProjectStatus(snapshot, client);
+            if (projected.ControlAccess != SessionControlAccess.Active)
+            {
+                return;
+            }
+
             await WriteFrameAsync(
                 connection,
-                new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, snapshot),
+                new ServiceStatusEvent(
+                    OpenBladeIpc.ProtocolVersion,
+                    projected),
                 cancellationToken);
         }
     }
@@ -314,4 +372,10 @@ public sealed class NamedPipeControlServer
         Error: error,
         Status: null,
         Result: null);
+
+    private sealed class FixedServiceClientContextResolver(ServiceClientContext context)
+        : IServiceClientContextResolver
+    {
+        public ServiceClientContext Resolve(NamedPipeServerStream pipe) => context;
+    }
 }

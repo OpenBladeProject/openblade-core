@@ -1,3 +1,4 @@
+using System.Security.Principal;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
@@ -140,6 +141,31 @@ public sealed class ControlRequestHandlerTests
 
         Assert.False(response.Success);
         Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
+        Assert.Empty(runtime.Calls);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RejectsBackgroundSessionWithoutRuntimeDispatch()
+    {
+        var runtime = new RecordingRuntime();
+        var handler = new ControlRequestHandler(
+            runtime,
+            new ThrowingArchiveProvider(),
+            NullServiceShutdownSignal.Instance,
+            new FixedSessionAuthority(4));
+        var client = new ServiceClientContext(
+            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
+            SessionId: 3,
+            IsAdministrator: false,
+            ServiceClientLogonKind.Interactive);
+
+        ServiceResponse response = await handler.HandleAsync(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            client,
+            CancellationToken.None);
+
+        Assert.False(response.Success);
+        Assert.Contains("Another Windows session", response.Error, StringComparison.Ordinal);
         Assert.Empty(runtime.Calls);
     }
 
@@ -380,6 +406,12 @@ public sealed class ControlRequestHandlerTests
             Calls.Add(name);
             return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Stored, "Stored"));
         }
+    }
+
+    private sealed class FixedSessionAuthority(int? sessionId)
+        : IInteractiveSessionAuthority
+    {
+        public int? GetControlSessionId() => sessionId;
     }
 
     private sealed class FixedControllerPresenceMonitor(IReadOnlyList<string> controllers)

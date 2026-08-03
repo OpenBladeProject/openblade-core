@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Security.Principal;
 using OpenBlade.Contracts;
@@ -9,6 +10,9 @@ namespace OpenBlade.SessionAgent;
 
 internal static class Program
 {
+    private const string IdentityRegistrationRelaunchArgument =
+        "--identity-registration-relaunch";
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -47,7 +51,9 @@ internal static class Program
 
         try
         {
-            return RunAsync().GetAwaiter().GetResult();
+            return RunAsync(args.Contains(
+                IdentityRegistrationRelaunchArgument,
+                StringComparer.Ordinal)).GetAwaiter().GetResult();
         }
         catch (Exception exception)
         {
@@ -62,13 +68,15 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunAsync()
+    private static async Task<int> RunAsync(bool identityRegistrationRelaunch)
     {
         SecurityIdentifier userSid = WindowsIdentity.GetCurrent().User
             ?? throw new InvalidOperationException("The current user SID is unavailable.");
-        SessionAgentPipeEndpoint endpoint = SessionAgentPipeEndpoint.Create(userSid);
+        using Process currentProcess = Process.GetCurrentProcess();
+        int sessionId = currentProcess.SessionId;
+        SessionAgentPipeEndpoint endpoint = SessionAgentPipeEndpoint.Create(userSid, sessionId);
         SessionAgentEventEndpoint eventEndpoint =
-            SessionAgentEventEndpoint.Create(userSid);
+            SessionAgentEventEndpoint.Create(userSid, sessionId);
         if (!TryAcquireStartupOwnership(
                 endpoint,
                 userSid,
@@ -83,6 +91,25 @@ internal static class Program
 
         await using SessionAgentPipeOwner acquiredOwner = owner!;
         using IDisposable acquiredTraceLogRegistration = traceLogRegistration!;
+        if (!identityRegistrationRelaunch)
+        {
+            try
+            {
+                if (await new PerUserDynamicLightingRegistration()
+                        .EnsureRegisteredAsync(CancellationToken.None))
+                {
+                    await acquiredOwner.DisposeAsync();
+                    return RelaunchAfterIdentityRegistration();
+                }
+            }
+            catch (Exception exception)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade per-user Dynamic Lighting registration failed: {0}",
+                    exception.Message);
+            }
+        }
+
         using (var lifetime = new CancellationTokenSource())
         using (EventWaitHandle shutdownEvent = CreateShutdownEvent())
         using (var controller = new WindowsDisplaySettingsController())
@@ -288,6 +315,22 @@ internal static class Program
                 }
             }
         }
+    }
+
+    private static int RelaunchAfterIdentityRegistration()
+    {
+        string executablePath = Environment.ProcessPath
+            ?? throw new InvalidOperationException(
+                "The Session Agent executable path is unavailable.");
+        using Process? process = Process.Start(new ProcessStartInfo
+        {
+            FileName = executablePath,
+            Arguments = IdentityRegistrationRelaunchArgument,
+            UseShellExecute = false,
+            WorkingDirectory = AppContext.BaseDirectory,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        });
+        return process is null ? 1 : 0;
     }
 
     internal static bool TryAcquireStartupOwnership(

@@ -3311,6 +3311,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             DeviceVerified: true,
             Capabilities: not null,
+            ControlAccess: SessionControlAccess.Active,
         }
         && (!latestStatus.WritesBlocked || IsRetainedPowerSourceRecheck(latestStatus))
         && !IsCheckingLaptopConnection(latestStatus);
@@ -7265,6 +7266,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static string FormatControlAccessStatus(ServiceStatusSnapshot status)
     {
+        if (status.ControlAccess != SessionControlAccess.Active)
+        {
+            return status.ControlAccess == SessionControlAccess.InactiveSession
+                ? "Another user is controlling OpenBlade"
+                : "Interactive session required";
+        }
+
         if (IsCheckingLaptopConnection(status))
         {
             return "Checking laptop";

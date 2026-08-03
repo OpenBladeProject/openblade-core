@@ -120,7 +120,6 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 {
                     await platform.InstallUninstallerAsync(cancellationToken);
                 }
-                await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
                 await platform.InstallServiceAsync(cancellationToken);
                 await platform.VerifyServiceHealthAsync(cancellationToken);
                 await platform.InstallSessionAgentStartupShortcutAsync(cancellationToken);

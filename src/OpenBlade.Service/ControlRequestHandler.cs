@@ -7,11 +7,16 @@ public sealed class ControlRequestHandler
     private readonly IServiceControlRuntime runtime;
     private readonly IDiagnosticArchiveProvider diagnosticArchiveProvider;
     private readonly IServiceShutdownSignal shutdownSignal;
+    private readonly IInteractiveSessionAuthority sessionAuthority;
 
     public ControlRequestHandler(
         IServiceControlRuntime runtime,
         IDiagnosticArchiveProvider diagnosticArchiveProvider)
-        : this(runtime, diagnosticArchiveProvider, NullServiceShutdownSignal.Instance)
+        : this(
+            runtime,
+            diagnosticArchiveProvider,
+            NullServiceShutdownSignal.Instance,
+            new AllowAllInteractiveSessionAuthority())
     {
     }
 
@@ -19,16 +24,40 @@ public sealed class ControlRequestHandler
         IServiceControlRuntime runtime,
         IDiagnosticArchiveProvider diagnosticArchiveProvider,
         IServiceShutdownSignal shutdownSignal)
+        : this(
+            runtime,
+            diagnosticArchiveProvider,
+            shutdownSignal,
+            new AllowAllInteractiveSessionAuthority())
+    {
+    }
+
+    public ControlRequestHandler(
+        IServiceControlRuntime runtime,
+        IDiagnosticArchiveProvider diagnosticArchiveProvider,
+        IServiceShutdownSignal shutdownSignal,
+        IInteractiveSessionAuthority sessionAuthority)
     {
         this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         this.diagnosticArchiveProvider = diagnosticArchiveProvider
             ?? throw new ArgumentNullException(nameof(diagnosticArchiveProvider));
         this.shutdownSignal = shutdownSignal
             ?? throw new ArgumentNullException(nameof(shutdownSignal));
+        this.sessionAuthority = sessionAuthority
+            ?? throw new ArgumentNullException(nameof(sessionAuthority));
     }
 
     public async Task<ServiceResponse> HandleAsync(
         ServiceRequest request,
+        CancellationToken cancellationToken)
+        => await HandleAsync(
+            request,
+            ServiceClientContext.TrustedTestClient,
+            cancellationToken);
+
+    public async Task<ServiceResponse> HandleAsync(
+        ServiceRequest request,
+        ServiceClientContext client,
         CancellationToken cancellationToken)
     {
         if (request is null)
@@ -46,12 +75,29 @@ public sealed class ControlRequestHandler
             return Failure(Guid.Empty, "IPC request ID is missing.");
         }
 
+        string? rejection = ServiceRequestAccessPolicy.GetRejection(
+            request,
+            client,
+            sessionAuthority);
+        if (rejection is not null)
+        {
+            return Failure(request.RequestId, rejection);
+        }
+
+        if (client.IsInteractive
+            && ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
+                == SessionControlAccess.Active)
+        {
+            await runtime.ActivateUserAsync(client.UserSid, cancellationToken);
+        }
+
         return request switch
         {
-            GetStatusRequest or SubscribeStatusRequest => Status(request.RequestId),
+            GetStatusRequest or SubscribeStatusRequest => Status(request.RequestId, client),
             ObserveStateRequest observe => await ObserveStatusAsync(
                 observe.RequestId,
                 observe.EffectiveLiveReadings,
+                client,
                 cancellationToken),
             UpdateProfilesRequest update => Result(
                 request.RequestId,
@@ -156,20 +202,32 @@ public sealed class ControlRequestHandler
     private async Task<ServiceResponse> ObserveStatusAsync(
         Guid requestId,
         LiveReadingSensors requestedLiveReadings,
+        ServiceClientContext client,
         CancellationToken cancellationToken)
     {
         await runtime.ObserveAsync(requestedLiveReadings, cancellationToken);
-        return Status(requestId);
+        return Status(requestId, client);
     }
 
-    private ServiceResponse Status(Guid requestId) => new(
+    private ServiceResponse Status(Guid requestId, ServiceClientContext client) => new(
         OpenBladeIpc.ProtocolVersion,
         requestId,
         Success: true,
         Error: null,
-        Status: runtime.GetStatus(),
+        Status: ProjectStatus(runtime.GetStatus(), client),
         Result: null,
         Archive: null);
+
+    public ServiceStatusSnapshot ProjectStatus(
+        ServiceStatusSnapshot snapshot,
+        ServiceClientContext client)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return snapshot with
+        {
+            ControlAccess = ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority),
+        };
+    }
 
     private static ServiceResponse Result(Guid requestId, ControlOperationResult result) => new(
         OpenBladeIpc.ProtocolVersion,
@@ -219,4 +277,10 @@ public sealed class ControlRequestHandler
         Status: null,
         Result: null,
         Archive: null);
+
+    private sealed class AllowAllInteractiveSessionAuthority : IInteractiveSessionAuthority
+    {
+        public int? GetControlSessionId() =>
+            ServiceClientContext.TrustedTestClient.SessionId;
+    }
 }
