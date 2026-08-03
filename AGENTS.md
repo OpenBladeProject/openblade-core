@@ -163,6 +163,9 @@ submodules.
 
 Follow [VERSIONING.md](VERSIONING.md). The short form is:
 
+- Name branches for the work, not the agent or vendor. Use purpose prefixes
+  such as `feat/`, `fix/`, `docs/`, `chore/`, or `refactor/`; do not use
+  prefixes such as `codex/` or `claude/`.
 - `Directory.Build.props` is the product-version source of truth.
 - Profile/config schema and IPC protocol versions are independent integers with
   explicit compatibility rules and migrations.
