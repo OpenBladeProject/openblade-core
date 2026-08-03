@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed Ambient Awareness so a failed screen-capture resource is disposed and
+  recreated automatically instead of remaining faulted until the Session Agent
+  restarts or the selected region changes.
 - Fixed normal M5 microphone mute handling after Session Agent startup so the
   Windows mute toggle and the key's red indicator use a shared, collision-free
   Core Audio enumerator activation path.

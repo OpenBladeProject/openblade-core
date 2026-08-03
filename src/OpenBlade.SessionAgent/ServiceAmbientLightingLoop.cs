@@ -17,7 +17,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
     private readonly Action<Exception>? errorHandler;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private readonly TimeProvider timeProvider;
-    private readonly object stateSync = new();
+    private readonly SemaphoreSlim rendererStateGate = new(1, 1);
     private CancellationTokenSource? rendererCancellation;
     private Task? rendererTask;
     private AmbientAwarenessRegion? activeRegion;
@@ -100,9 +100,8 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         AmbientAwarenessRegion? region,
         CancellationToken cancellationToken)
     {
-        CancellationTokenSource? previousCancellation;
-        Task? previousTask;
-        lock (stateSync)
+        await rendererStateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
             if (activeRegion == region
                 && (region is null || rendererTask is { IsCompleted: false }))
@@ -110,93 +109,123 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                 return;
             }
 
-            previousCancellation = rendererCancellation;
-            previousTask = rendererTask;
+            CancellationTokenSource? previousCancellation = rendererCancellation;
+            Task? previousTask = rendererTask;
             rendererCancellation = null;
             rendererTask = null;
             activeRegion = null;
-        }
-
-        previousCancellation?.Cancel();
-        if (previousTask is not null)
-        {
-            try
+            previousCancellation?.Cancel();
+            if (previousTask is not null)
             {
-                await previousTask.ConfigureAwait(false);
+                try
+                {
+                    await previousTask.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
             }
-            catch (OperationCanceledException)
+            previousCancellation?.Dispose();
+            if (region is null || Volatile.Read(ref disposed) != 0)
             {
-            }
-        }
-        previousCancellation?.Dispose();
-
-        if (region is null || Volatile.Read(ref disposed) != 0)
-        {
-            return;
-        }
-
-        var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        Task task = RenderAsync(region.Value, linked.Token);
-        lock (stateSync)
-        {
-            if (Volatile.Read(ref disposed) == 0)
-            {
-                rendererCancellation = linked;
-                rendererTask = task;
-                activeRegion = region;
                 return;
             }
-        }
 
-        linked.Cancel();
-        try
-        {
-            await task.ConfigureAwait(false);
+            var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            rendererCancellation = linked;
+            rendererTask = RenderAsync(region.Value, linked.Token);
+            activeRegion = region;
         }
-        catch (OperationCanceledException)
+        finally
         {
+            rendererStateGate.Release();
         }
-        linked.Dispose();
     }
 
     private async Task RenderAsync(
         AmbientAwarenessRegion region,
         CancellationToken cancellationToken)
     {
-        using IAmbientScreenSampler sampler = samplerFactory.Create();
+        IAmbientScreenSampler? sampler = null;
         var cadence = new SessionLightingFrameCadence(timeProvider);
-        while (true)
+        // Keep sampler ownership parallel with ServiceAudioMeterLightingLoop:
+        // native sampler failures recreate resources, while service failures retain them.
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
+            while (true)
             {
-                AmbientLightingFrame frame = sampler.Capture(region);
-                SessionLightingFrameDecision decision = cadence.Evaluate(frame);
-                if (decision.ShouldSend)
+                AmbientLightingFrame frame;
+                try
                 {
-                    ControlOperationResult result = await serviceClient
-                        .PushAmbientLightingFrameAsync(frame, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (result.Status != ControlOperationStatus.Applied)
-                    {
-                        throw new InvalidOperationException(result.Message);
-                    }
-
-                    cadence.RecordSent(frame);
+                    sampler ??= samplerFactory.Create();
+                    frame = sampler.Capture(region);
+                }
+                catch (OperationCanceledException) when (
+                    cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    ResetSampler(ref sampler);
+                    ReportFailure(exception);
+                    await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
+                    continue;
                 }
 
-                await delay(decision.NextInterval, cancellationToken)
-                    .ConfigureAwait(false);
+                try
+                {
+                    SessionLightingFrameDecision decision = cadence.Evaluate(frame);
+                    if (decision.ShouldSend)
+                    {
+                        ControlOperationResult result = await serviceClient
+                            .PushAmbientLightingFrameAsync(frame, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (result.Status != ControlOperationStatus.Applied)
+                        {
+                            throw new InvalidOperationException(result.Message);
+                        }
+
+                        cadence.RecordSent(frame);
+                    }
+
+                    await delay(decision.NextInterval, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (
+                    cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    ReportFailure(exception);
+                    await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
+                }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                ReportFailure(exception);
-                await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
-            }
+        }
+        finally
+        {
+            ResetSampler(ref sampler);
+        }
+    }
+
+    private void ResetSampler(ref IAmbientScreenSampler? sampler)
+    {
+        IAmbientScreenSampler? previous = sampler;
+        sampler = null;
+        if (previous is null)
+        {
+            return;
+        }
+
+        try
+        {
+            previous.Dispose();
+        }
+        catch (Exception exception)
+        {
+            ReportFailure(exception);
         }
     }
 
@@ -210,7 +239,6 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         {
         }
     }
-
 }
 
 internal readonly record struct SessionLightingFrameDecision(
