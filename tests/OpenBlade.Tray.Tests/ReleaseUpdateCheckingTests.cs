@@ -9,6 +9,8 @@ public sealed class ReleaseUpdateCheckingTests
     [InlineData("v1.2.3", 1, 2, 3, 0)]
     [InlineData("V2.0", 2, 0, 0, 0)]
     [InlineData("0.1.0+abcdef", 0, 1, 0, 0)]
+    [InlineData("v0.1.0-nightly.42", 0, 1, 0, 42)]
+    [InlineData("v0.1.0-nightly.42-attempt.2", 0, 1, 0, 42)]
     [InlineData("3.4.5.6-preview.1", 3, 4, 5, 6)]
     public void ReleaseVersionParsesAndNormalizesComparableTags(
         string tag,
@@ -96,6 +98,7 @@ public sealed class ReleaseUpdateCheckingTests
         var client = new GitHubReleaseUpdateClient(httpClient);
 
         ReleaseUpdateResult result = await client.GetLatestReleaseAsync(
+            UpdateChannel.Stable,
             "\"old-tag\"",
             CancellationToken.None);
 
@@ -116,6 +119,43 @@ public sealed class ReleaseUpdateCheckingTests
     }
 
     [Fact]
+    public async Task GitHubClientSelectsNewestNightlyPrereleaseFromReleaseList()
+    {
+        const string json =
+            """
+            [
+              {
+                "tag_name": "v1.5.0",
+                "html_url": "https://github.com/OSSBlade/openblade-core/releases/tag/v1.5.0",
+                "draft": false,
+                "prerelease": false
+              },
+              {
+                "tag_name": "v1.4.0-nightly.42-attempt.2",
+                "html_url": "https://github.com/OSSBlade/openblade-core/releases/tag/v1.4.0-nightly.42-attempt.2",
+                "draft": false,
+                "prerelease": true
+              }
+            ]
+            """;
+        var handler = new RecordingHandler(HttpStatusCode.OK, json);
+        using var httpClient = new HttpClient(handler);
+        var client = new GitHubReleaseUpdateClient(httpClient);
+
+        ReleaseUpdateResult result = await client.GetLatestReleaseAsync(
+            UpdateChannel.Nightly,
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(ReleaseUpdateDisposition.PublishedRelease, result.Disposition);
+        Assert.Equal(new Version(1, 4, 0, 42), result.Release?.Version);
+        Assert.Equal("v1.4.0-nightly.42-attempt.2", result.Release?.TagName);
+        Assert.Equal(
+            "https://api.github.com/repos/OSSBlade/openblade-core/releases?per_page=20",
+            handler.RequestUri?.AbsoluteUri);
+    }
+
+    [Fact]
     public async Task GitHubClientTreatsNotModifiedAsSuccessfulConditionalCheck()
     {
         using var httpClient = new HttpClient(
@@ -123,6 +163,7 @@ public sealed class ReleaseUpdateCheckingTests
         var client = new GitHubReleaseUpdateClient(httpClient);
 
         ReleaseUpdateResult result = await client.GetLatestReleaseAsync(
+            UpdateChannel.Stable,
             "\"cached\"",
             CancellationToken.None);
 
@@ -145,6 +186,7 @@ public sealed class ReleaseUpdateCheckingTests
         var client = new GitHubReleaseUpdateClient(httpClient);
 
         ReleaseUpdateResult result = await client.GetLatestReleaseAsync(
+            UpdateChannel.Stable,
             null,
             CancellationToken.None);
 
@@ -160,6 +202,7 @@ public sealed class ReleaseUpdateCheckingTests
         var client = new GitHubReleaseUpdateClient(httpClient);
 
         ReleaseUpdateResult result = await client.GetLatestReleaseAsync(
+            UpdateChannel.Stable,
             null,
             CancellationToken.None);
 
@@ -178,7 +221,10 @@ public sealed class ReleaseUpdateCheckingTests
         var client = new GitHubReleaseUpdateClient(httpClient);
 
         await Assert.ThrowsAsync<ReleaseUpdateException>(
-            () => client.GetLatestReleaseAsync(null, CancellationToken.None));
+            () => client.GetLatestReleaseAsync(
+                UpdateChannel.Stable,
+                null,
+                CancellationToken.None));
     }
 
     [Theory]
@@ -192,7 +238,10 @@ public sealed class ReleaseUpdateCheckingTests
         var client = new GitHubReleaseUpdateClient(httpClient);
 
         await Assert.ThrowsAsync<ReleaseUpdateException>(
-            () => client.GetLatestReleaseAsync(null, CancellationToken.None));
+            () => client.GetLatestReleaseAsync(
+                UpdateChannel.Stable,
+                null,
+                CancellationToken.None));
     }
 
     [Fact]
@@ -206,7 +255,10 @@ public sealed class ReleaseUpdateCheckingTests
         var client = new GitHubReleaseUpdateClient(httpClient);
 
         await Assert.ThrowsAsync<ReleaseUpdateException>(
-            () => client.GetLatestReleaseAsync(null, CancellationToken.None));
+            () => client.GetLatestReleaseAsync(
+                UpdateChannel.Stable,
+                null,
+                CancellationToken.None));
     }
 
     [Fact]
@@ -217,7 +269,10 @@ public sealed class ReleaseUpdateCheckingTests
         var client = new GitHubReleaseUpdateClient(httpClient);
 
         await Assert.ThrowsAsync<ReleaseUpdateRetryException>(
-            () => client.GetLatestReleaseAsync(null, CancellationToken.None));
+            () => client.GetLatestReleaseAsync(
+                UpdateChannel.Stable,
+                null,
+                CancellationToken.None));
     }
 
     [Fact]
@@ -235,7 +290,10 @@ public sealed class ReleaseUpdateCheckingTests
 
         ReleaseUpdateRetryException exception =
             await Assert.ThrowsAsync<ReleaseUpdateRetryException>(
-                () => client.GetLatestReleaseAsync(null, CancellationToken.None));
+                () => client.GetLatestReleaseAsync(
+                    UpdateChannel.Stable,
+                    null,
+                    CancellationToken.None));
 
         Assert.InRange(
             exception.RetryAfter,
@@ -261,7 +319,10 @@ public sealed class ReleaseUpdateCheckingTests
 
         ReleaseUpdateRateLimitException exception =
             await Assert.ThrowsAsync<ReleaseUpdateRateLimitException>(
-                () => client.GetLatestReleaseAsync(null, CancellationToken.None));
+                () => client.GetLatestReleaseAsync(
+                    UpdateChannel.Stable,
+                    null,
+                    CancellationToken.None));
 
         Assert.InRange(
             exception.RetryAfter,
@@ -279,7 +340,10 @@ public sealed class ReleaseUpdateCheckingTests
         var client = new GitHubReleaseUpdateClient(httpClient);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => client.GetLatestReleaseAsync(null, cancellation.Token));
+            () => client.GetLatestReleaseAsync(
+                UpdateChannel.Stable,
+                null,
+                cancellation.Token));
     }
 
     private static bool IsDue(

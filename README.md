@@ -170,12 +170,13 @@ remaining external release steps.
 
 The `Nightly` GitHub Actions workflow builds the latest committed `main` every
 day at 09:17 UTC and can also be started manually. It runs the same formatting,
-build, test, authoring, and production-publish gates as CI before retaining the
-installer artifact for 14 days.
+build, test, authoring, and production-publish gates as CI, retains the Actions
+artifact for 14 days, and publishes each successful `main` build as a GitHub
+prerelease with its installer, checksum, and metadata.
 
-Nightlies are test builds, not releases, and are not offered by OpenBlade's
-stable update check. Download the artifact from its successful Actions run and
-verify `OpenBlade-Setup.exe` against the included SHA-256 file. GitHub build
+Nightlies are test builds, not stable releases. They appear on the Releases
+page and are offered only when **Nightly** is selected as the in-app update
+channel. Verify `OpenBlade-Setup.exe` against the included SHA-256 file. GitHub build
 provenance is optional because artifact attestations are not available for
 every repository visibility and billing plan. Maintainers can enable the
 attestation job by setting the `OPENBLADE_ENABLE_ATTESTATIONS` repository

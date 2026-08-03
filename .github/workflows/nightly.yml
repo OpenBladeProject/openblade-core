@@ -21,6 +21,75 @@ jobs:
     permissions:
       contents: read
 
+  publish-nightly-release:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: build-and-publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download nightly installer
+        uses: actions/download-artifact@v4
+        with:
+          name: >-
+            OpenBlade-nightly-${{ github.run_number }}-attempt-${{ github.run_attempt }}
+          path: artifacts
+
+      - name: Prepare nightly release
+        id: release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $metadataPath = 'artifacts/OpenBlade-Nightly.json'
+          $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+          if ($metadata.channel -ne 'nightly' -or
+              $metadata.buildRevision -ne ${{ github.run_number }} -or
+              $metadata.sourceRevision -ne '${{ github.sha }}') {
+            throw 'The nightly release metadata does not match this workflow run.'
+          }
+
+          $tag = "v$($metadata.baseVersion)-nightly.$($metadata.buildRevision)"
+          if ('${{ github.run_attempt }}' -ne '1') {
+            $tag += '-attempt.${{ github.run_attempt }}'
+          }
+
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "title=OpenBlade $($metadata.informationalVersion)" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          $runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          $notes = @(
+            'Automated test build from the latest committed `main`.',
+            '',
+            "- Version: ``$($metadata.informationalVersion)``",
+            "- Source: [$($metadata.sourceRevision.Substring(0, 8))]($($metadata.sourceUrl))",
+            "- Workflow: [run ${{ github.run_id }}]($runUrl)",
+            "- Authenticode: ``$($metadata.installer.authenticodeStatus)``",
+            '',
+            'This is a prerelease and is available only to users who select the Nightly update channel.',
+            'Verify `OpenBlade-Setup.exe` with the attached SHA-256 file before installing.'
+          )
+          [IO.File]::WriteAllLines(
+            'artifacts/OpenBlade-Nightly-Release.md',
+            $notes,
+            [Text.UTF8Encoding]::new($false))
+
+      - name: Publish nightly prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: >-
+          gh release create '${{ steps.release.outputs.tag }}'
+          artifacts/OpenBlade-Setup.exe
+          artifacts/OpenBlade-Setup.exe.sha256
+          artifacts/OpenBlade-Nightly.json
+          --repo '${{ github.repository }}'
+          --target '${{ github.sha }}'
+          --title '${{ steps.release.outputs.title }}'
+          --notes-file artifacts/OpenBlade-Nightly-Release.md
+          --prerelease
+          --latest=false
+
   attest-installer:
     if: ${{ vars.OPENBLADE_ENABLE_ATTESTATIONS == 'true' }}
     needs: build-and-publish

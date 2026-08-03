@@ -26,6 +26,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             TrayHoverLabelMode.ProfileAndPowerFlow,
             preferences.TrayHoverLabelMode);
         Assert.False(preferences.StartMinimized);
+        Assert.Equal(UpdateChannel.Stable, preferences.EffectiveUpdateChannel);
         Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
         Assert.False(preferences.UpdateCheckPromptShown);
         Assert.Null(preferences.LastSuccessfulUpdateCheckAt);
@@ -102,6 +103,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
                     SpecialKeySlot.M4,
                     new SpecialKeyAction(SpecialKeyActionKind.Disabled)),
             ],
+            UpdateChannel: UpdateChannel.Nightly,
             UpdateCheckInterval: UpdateCheckInterval.Monthly,
             UpdateCheckPromptShown: true,
             LastSuccessfulUpdateCheckAt: new DateTimeOffset(
@@ -176,6 +178,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             SpecialKeyActionKind.Disabled,
             reloaded.EffectiveSpecialKeyBindings[(int)SpecialKeySlot.M4].Action.Kind);
+        Assert.Equal(UpdateChannel.Nightly, reloaded.EffectiveUpdateChannel);
         Assert.Equal(UpdateCheckInterval.Monthly, reloaded.EffectiveUpdateCheckInterval);
         Assert.True(reloaded.UpdateCheckPromptShown);
         Assert.Equal(
@@ -223,6 +226,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
             document.RootElement.GetProperty("specialKeyBindings")[0]
                 .GetProperty("slot").GetString());
         Assert.Equal(
+            "Nightly",
+            document.RootElement.GetProperty("updateChannel").GetString());
+        Assert.Equal(
             "Monthly",
             document.RootElement.GetProperty("updateCheckInterval").GetString());
         Assert.Equal(
@@ -247,6 +253,20 @@ public sealed class UiPreferenceStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_InvalidUpdateChannelFallsBackToStable()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(
+            path,
+            """{"theme":"Dark","updateChannel":999}""");
+
+        UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
+
+        Assert.Equal(UpdateChannel.Stable, preferences.EffectiveUpdateChannel);
+    }
+
+    [Fact]
     public async Task LoadAsync_ExistingPreferencesWithoutUpdateKeysRequireConsent()
     {
         Directory.CreateDirectory(directory);
@@ -256,6 +276,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
         UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
 
         Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
+        Assert.Equal(UpdateChannel.Stable, preferences.EffectiveUpdateChannel);
         Assert.False(preferences.UpdateCheckPromptShown);
         Assert.Null(preferences.LastSuccessfulUpdateCheckAt);
     }

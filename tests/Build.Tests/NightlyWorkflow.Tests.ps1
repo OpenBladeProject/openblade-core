@@ -68,11 +68,23 @@ Assert-True ($nightly.Contains('id-token: write')) `
     'Nightly provenance attestation requires OIDC permission.'
 Assert-True ($nightly.Contains('attestations: write')) `
     'Nightly provenance attestation requires attestation permission.'
+foreach ($requiredReleaseContract in @(
+        'publish-nightly-release:',
+        "if: `${{ github.ref == 'refs/heads/main' }}",
+        'contents: write',
+        'gh release create',
+        '--prerelease',
+        '--latest=false',
+        'artifacts/OpenBlade-Setup.exe.sha256',
+        'artifacts/OpenBlade-Nightly.json')) {
+    Assert-True ($nightly.Contains($requiredReleaseContract)) `
+        "Nightly release publishing is missing '$requiredReleaseContract'."
+}
 Assert-True (-not $build.Contains('id-token: write')) `
     'The shared build workflow must not elevate stable CI permissions.'
 Assert-True (-not $build.Contains('attestations: write')) `
     'The shared build workflow must keep stable CI read-only.'
-Assert-True (-not $nightly.Contains('contents: write')) `
-    'Nightly artifact builds must not mutate repository contents or releases.'
+Assert-True (-not $build.Contains('contents: write')) `
+    'The shared build workflow must keep stable CI and product builds read-only.'
 
 Write-Host 'Nightly workflow tests passed.'

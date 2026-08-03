@@ -15,6 +15,7 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
     private readonly CancellationTokenSource lifetime = new();
     private readonly AsyncRelayCommand checkForUpdatesCommand;
     private Task automaticCheckTask = Task.CompletedTask;
+    private UpdateChannel channel = UpdateChannel.Stable;
     private UpdateCheckInterval interval = UpdateCheckInterval.Daily;
     private DateTimeOffset? lastSuccessfulCheckAt;
     private DateTimeOffset? retryAfter;
@@ -52,6 +53,12 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     public event EventHandler? PreferencesChanged;
 
+    public IReadOnlyList<UpdateChannelOption> ChannelOptions { get; } =
+    [
+        new(UpdateChannel.Stable, "Stable"),
+        new(UpdateChannel.Nightly, "Nightly"),
+    ];
+
     public IReadOnlyList<UpdateCheckIntervalOption> IntervalOptions { get; } =
     [
         new(UpdateCheckInterval.EveryStartup, "Every startup"),
@@ -60,6 +67,43 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         new(UpdateCheckInterval.Monthly, "Monthly"),
         new(UpdateCheckInterval.ManualOnly, "Manual only"),
     ];
+
+    public UpdateChannel Channel
+    {
+        get => channel;
+        private set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+            if (channel == value)
+            {
+                return;
+            }
+
+            channel = value;
+            Notify();
+            Notify(nameof(SelectedChannelOption));
+        }
+    }
+
+    public UpdateChannelOption SelectedChannelOption
+    {
+        get => ChannelOptions.Single(option => option.Channel == Channel);
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (value.Channel == Channel)
+            {
+                return;
+            }
+
+            Channel = value.Channel;
+            ResetReleaseStateForChannelChange();
+            PreferencesChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     public UpdateCheckInterval Interval
     {
@@ -152,6 +196,7 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
     public ICommand CheckForUpdatesCommand => checkForUpdatesCommand;
 
     public void ApplyPreferences(
+        UpdateChannel selectedChannel,
         UpdateCheckInterval selectedInterval,
         bool selectedPromptShown,
         DateTimeOffset? selectedLastSuccessfulCheckAt,
@@ -161,6 +206,9 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         string? selectedCachedReleaseUrl)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        Channel = Enum.IsDefined(selectedChannel)
+            ? selectedChannel
+            : UpdateChannel.Stable;
         Interval = Enum.IsDefined(selectedInterval)
             ? selectedInterval
             : UpdateCheckInterval.Daily;
@@ -261,9 +309,16 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
 
         try
         {
+            UpdateChannel checkedChannel = Channel;
             ReleaseUpdateResult result = await releaseClient.GetLatestReleaseAsync(
+                checkedChannel,
                 entityTag,
                 cancellationToken);
+            if (Channel != checkedChannel)
+            {
+                return;
+            }
+
             DateTimeOffset completedAt = timeProvider.GetUtcNow();
             lastSuccessfulCheckAt = completedAt;
             retryAfter = null;
@@ -348,6 +403,19 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         {
             StatusText = "OpenBlade is up to date.";
         }
+    }
+
+    private void ResetReleaseStateForChannelChange()
+    {
+        lastSuccessfulCheckAt = null;
+        retryAfter = null;
+        entityTag = null;
+        cachedRelease = null;
+        IsUpdateAvailable = false;
+        ReleasePageUri = null;
+        StatusText = $"Updates have not been checked for the {Channel} channel.";
+        Notify(nameof(LastSuccessfulCheckAt));
+        Notify(nameof(RetryAfter));
     }
 
     private static string? NormalizeEntityTag(string? value) =>

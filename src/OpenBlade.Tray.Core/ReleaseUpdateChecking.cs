@@ -4,6 +4,16 @@ using System.Text.Json;
 
 namespace OpenBlade.Tray;
 
+public enum UpdateChannel
+{
+    Stable,
+    Nightly,
+}
+
+public sealed record UpdateChannelOption(
+    UpdateChannel Channel,
+    string Label);
+
 public enum UpdateCheckInterval
 {
     ManualOnly,
@@ -37,6 +47,7 @@ public sealed record ReleaseUpdateResult(
 public interface IReleaseUpdateClient
 {
     Task<ReleaseUpdateResult> GetLatestReleaseAsync(
+        UpdateChannel channel,
         string? entityTag,
         CancellationToken cancellationToken);
 }
@@ -86,6 +97,11 @@ public static class ReleaseVersion
             candidate = candidate[1..];
         }
 
+        if (TryParseNightly(candidate.ToString(), out version))
+        {
+            return true;
+        }
+
         int suffix = candidate.IndexOfAny('-', '+');
         if (suffix >= 0)
         {
@@ -102,6 +118,69 @@ public static class ReleaseVersion
             parsed.Minor,
             Math.Max(parsed.Build, 0),
             Math.Max(parsed.Revision, 0));
+        return true;
+    }
+
+    public static bool TryParseNightly(string? value, out Version version)
+    {
+        version = new Version(0, 0, 0, 0);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        ReadOnlySpan<char> candidate = value.Trim();
+        if (candidate.Length > 0 && (candidate[0] is 'v' or 'V'))
+        {
+            candidate = candidate[1..];
+        }
+
+        int metadata = candidate.IndexOf('+');
+        if (metadata >= 0)
+        {
+            candidate = candidate[..metadata];
+        }
+
+        const string nightlyMarker = "-nightly.";
+        int nightly = candidate.IndexOf(
+            nightlyMarker,
+            StringComparison.OrdinalIgnoreCase);
+        if (nightly <= 0)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<char> revision = candidate[(nightly + nightlyMarker.Length)..];
+        const string attemptMarker = "-attempt.";
+        int attempt = revision.IndexOf(
+            attemptMarker,
+            StringComparison.OrdinalIgnoreCase);
+        if (attempt >= 0)
+        {
+            ReadOnlySpan<char> attemptNumber = revision[(attempt + attemptMarker.Length)..];
+            if (!int.TryParse(attemptNumber, out int parsedAttempt) || parsedAttempt <= 0)
+            {
+                return false;
+            }
+
+            revision = revision[..attempt];
+        }
+
+        if (!int.TryParse(revision, out int parsedRevision)
+            || parsedRevision <= 0
+            || parsedRevision > ushort.MaxValue
+            || !Version.TryParse(candidate[..nightly], out Version? parsed)
+            || parsed is null
+            || parsed.Revision > 0)
+        {
+            return false;
+        }
+
+        version = new Version(
+            parsed.Major,
+            parsed.Minor,
+            Math.Max(parsed.Build, 0),
+            parsedRevision);
         return true;
     }
 }
@@ -154,8 +233,10 @@ public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
     public const string ApiVersion = "2022-11-28";
     private const int MaximumResponseBytes = 256 * 1024;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
-    private static readonly Uri LatestReleaseEndpoint = new(
+    private static readonly Uri LatestStableReleaseEndpoint = new(
         "https://api.github.com/repos/OSSBlade/openblade-core/releases/latest");
+    private static readonly Uri NightlyReleasesEndpoint = new(
+        "https://api.github.com/repos/OSSBlade/openblade-core/releases?per_page=20");
     private static readonly HttpClient SharedHttpClient = CreateSharedHttpClient();
     private readonly HttpClient httpClient;
 
@@ -170,14 +251,23 @@ public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
     }
 
     public async Task<ReleaseUpdateResult> GetLatestReleaseAsync(
+        UpdateChannel channel,
         string? entityTag,
         CancellationToken cancellationToken)
     {
+        if (!Enum.IsDefined(channel))
+        {
+            throw new ArgumentOutOfRangeException(nameof(channel));
+        }
+
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(RequestTimeout);
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseEndpoint);
+            Uri endpoint = channel == UpdateChannel.Stable
+                ? LatestStableReleaseEndpoint
+                : NightlyReleasesEndpoint;
+            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
             request.Headers.Accept.Add(
                 new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
             request.Headers.UserAgent.ParseAdd("OpenBlade");
@@ -238,13 +328,10 @@ public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
                 content,
                 cancellationToken: timeout.Token).ConfigureAwait(false);
 
-            JsonElement root = document.RootElement;
-            string tagName = RequiredString(root, "tag_name");
-            bool draft = RequiredBoolean(root, "draft");
-            bool prerelease = RequiredBoolean(root, "prerelease");
-            if (draft
-                || prerelease
-                || !ReleaseVersion.TryParse(tagName, out Version version))
+            ReleaseUpdateInfo? release = channel == UpdateChannel.Stable
+                ? ParseStableRelease(document.RootElement)
+                : ParseNightlyRelease(document.RootElement);
+            if (release is null)
             {
                 return new(
                     ReleaseUpdateDisposition.NoEligibleRelease,
@@ -252,24 +339,9 @@ public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
                     responseTag);
             }
 
-            string releasePage = RequiredString(root, "html_url");
-            if (!Uri.TryCreate(releasePage, UriKind.Absolute, out Uri? releasePageUri)
-                || !string.Equals(
-                    releasePageUri.Scheme,
-                    Uri.UriSchemeHttps,
-                    StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(
-                    releasePageUri.Host,
-                    "github.com",
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidDataException(
-                    "GitHub returned an invalid OpenBlade release page.");
-            }
-
             return new(
                 ReleaseUpdateDisposition.PublishedRelease,
-                new ReleaseUpdateInfo(version, tagName, releasePageUri),
+                release,
                 responseTag);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -297,6 +369,74 @@ public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
                 "The OpenBlade release feed could not be read.",
                 exception);
         }
+    }
+
+    private static ReleaseUpdateInfo? ParseStableRelease(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException(
+                "GitHub returned invalid stable release metadata.");
+        }
+
+        return ParseRelease(root, expectedPrerelease: false, requireNightlyTag: false);
+    }
+
+    private static ReleaseUpdateInfo? ParseNightlyRelease(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException(
+                "GitHub returned invalid nightly release metadata.");
+        }
+
+        foreach (JsonElement candidate in root.EnumerateArray())
+        {
+            ReleaseUpdateInfo? release = ParseRelease(
+                candidate,
+                expectedPrerelease: true,
+                requireNightlyTag: true);
+            if (release is not null)
+            {
+                return release;
+            }
+        }
+
+        return null;
+    }
+
+    private static ReleaseUpdateInfo? ParseRelease(
+        JsonElement root,
+        bool expectedPrerelease,
+        bool requireNightlyTag)
+    {
+        string tagName = RequiredString(root, "tag_name");
+        bool draft = RequiredBoolean(root, "draft");
+        bool prerelease = RequiredBoolean(root, "prerelease");
+        bool parsed = requireNightlyTag
+            ? ReleaseVersion.TryParseNightly(tagName, out Version version)
+            : ReleaseVersion.TryParse(tagName, out version);
+        if (draft || prerelease != expectedPrerelease || !parsed)
+        {
+            return null;
+        }
+
+        string releasePage = RequiredString(root, "html_url");
+        if (!Uri.TryCreate(releasePage, UriKind.Absolute, out Uri? releasePageUri)
+            || !string.Equals(
+                releasePageUri.Scheme,
+                Uri.UriSchemeHttps,
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                releasePageUri.Host,
+                "github.com",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                "GitHub returned an invalid OpenBlade release page.");
+        }
+
+        return new ReleaseUpdateInfo(version, tagName, releasePageUri);
     }
 
     private static DateTimeOffset ResolveRetryAfter(
