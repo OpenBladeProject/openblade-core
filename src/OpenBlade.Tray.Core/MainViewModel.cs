@@ -2127,6 +2127,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LiveReadings? value,
         bool publishPresentation)
     {
+        // Hidden tray refreshes may update this backing value without notifying XAML.
+        // MainWindow.xaml binds only to derived telemetry properties, which are replayed
+        // when SetDashboardTelemetryPresentationActive reactivates the dashboard.
         if (EqualityComparer<LiveReadings?>.Default.Equals(liveReadings, value))
         {
             return;

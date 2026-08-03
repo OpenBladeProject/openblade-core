@@ -60,6 +60,31 @@ public sealed class WindowsProcessorEfficiencyPolicyTests
     }
 
     [Fact]
+    public void CpuSetChangesAreRejectedOutsideDiscoveringThread()
+    {
+        var api = new FakeProcessorPolicyApi(
+            new WindowsCpuSet(1, 0, 0, 0, false, false),
+            new WindowsCpuSet(2, 0, 1, 1, false, false))
+        {
+            CurrentThreadId = 42,
+        };
+        WindowsProcessorEfficiencyPolicy policy =
+            WindowsProcessorEfficiencyPolicy.Discover(api);
+
+        api.CurrentThreadId = 84;
+
+        Assert.False(policy.TryPreferEfficientProcessorsForCurrentThread());
+        Assert.False(policy.TryAllowAllProcessorsForCurrentThread());
+        Assert.Null(api.CurrentThreadCpuSets);
+        Assert.False(api.CurrentThreadCpuSetsCleared);
+
+        api.CurrentThreadId = 42;
+
+        Assert.True(policy.TryPreferEfficientProcessorsForCurrentThread());
+        Assert.True(policy.TryAllowAllProcessorsForCurrentThread());
+    }
+
+    [Fact]
     public void HomogeneousTopologyLeavesWindowsSchedulingAutomatic()
     {
         var api = new FakeProcessorPolicyApi(
@@ -74,6 +99,10 @@ public sealed class WindowsProcessorEfficiencyPolicyTests
         Assert.False(policy.TryAllowAllProcessorsForCurrentThread());
         Assert.Null(api.CurrentThreadCpuSets);
         Assert.False(api.CurrentThreadCpuSetsCleared);
+        Assert.Contains(
+            "EcoQoS is handled independently",
+            policy.Status.Message,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -116,11 +145,15 @@ public sealed class WindowsProcessorEfficiencyPolicyTests
     {
         public bool SetCurrentThreadResult { get; init; } = true;
 
+        public uint CurrentThreadId { get; set; } = 1;
+
         public uint[]? CurrentThreadCpuSets { get; private set; }
 
         public bool CurrentThreadCpuSetsCleared { get; private set; }
 
         public List<bool> EcoQosChanges { get; } = [];
+
+        public uint GetCurrentThreadId() => CurrentThreadId;
 
         public IReadOnlyList<WindowsCpuSet> GetAvailableCpuSets() => cpuSets;
 

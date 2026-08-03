@@ -11,6 +11,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private readonly TrayHoverTelemetryRefreshGate hoverTelemetryRefreshGate = new();
     private readonly Action hoverTelemetryRefreshRequested;
     private readonly WindowsAppNotificationPresenter? notificationPresenter;
+    private long liveReadingsObservationIntervalTicks;
     private Icon? currentIcon;
     private int disposed;
 
@@ -25,6 +26,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         this.themeSource = themeSource ?? throw new ArgumentNullException(nameof(themeSource));
         this.hoverTelemetryRefreshRequested = hoverTelemetryRefreshRequested
             ?? throw new ArgumentNullException(nameof(hoverTelemetryRefreshRequested));
+        liveReadingsObservationIntervalTicks = viewModel.LiveReadingsObservationInterval.Ticks;
 
         menu = BuildTrayMenu(controller);
         TrayMenuItem open = controller.Find("Open");
@@ -95,7 +97,13 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             return;
         }
 
-        if (args.PropertyName == nameof(MainViewModel.TrayHoverLabelText))
+        if (args.PropertyName == nameof(MainViewModel.LiveReadingsObservationInterval))
+        {
+            Interlocked.Exchange(
+                ref liveReadingsObservationIntervalTicks,
+                viewModel.LiveReadingsObservationInterval.Ticks);
+        }
+        else if (args.PropertyName == nameof(MainViewModel.TrayHoverLabelText))
         {
             trayIcon.Text = viewModel.TrayHoverLabelText;
         }
@@ -117,7 +125,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     {
         if (Volatile.Read(ref disposed) == 0
             && hoverTelemetryRefreshGate.TryAcquire(
-                viewModel.LiveReadingsObservationInterval))
+                TimeSpan.FromTicks(Interlocked.Read(
+                    ref liveReadingsObservationIntervalTicks))))
         {
             hoverTelemetryRefreshRequested();
         }

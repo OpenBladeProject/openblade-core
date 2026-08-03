@@ -1254,6 +1254,7 @@ public sealed class WinUiShellContractTests
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         string trayHost = ReadRepositoryFile(
             "src", "OpenBlade.Tray", "WinFormsTrayIconHost.cs");
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveStateAsync", window, StringComparison.Ordinal);
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync", window, StringComparison.Ordinal);
@@ -1271,6 +1272,52 @@ public sealed class WinUiShellContractTests
             mouseMoveHandler,
             StringComparison.Ordinal);
         Assert.True(mouseMoveHandler >= 0 && rateGate > mouseMoveHandler && enqueueRequest > rateGate);
+        int mouseMoveHandlerEnd = trayHost.IndexOf(
+            "private void UpdateTrayIcon()",
+            mouseMoveHandler,
+            StringComparison.Ordinal);
+        string mouseMoveBody = trayHost[mouseMoveHandler..mouseMoveHandlerEnd];
+        Assert.Contains(
+            "Interlocked.Read(",
+            mouseMoveBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "viewModel.LiveReadingsObservationInterval",
+            mouseMoveBody,
+            StringComparison.Ordinal);
+        int propertyChangedHandler = trayHost.IndexOf(
+            "private void OnViewModelPropertyChanged",
+            StringComparison.Ordinal);
+        int propertyChangedHandlerEnd = trayHost.IndexOf(
+            "private void OnTrayIconThemeChanged",
+            propertyChangedHandler,
+            StringComparison.Ordinal);
+        string propertyChangedBody =
+            trayHost[propertyChangedHandler..propertyChangedHandlerEnd];
+        Assert.Contains(
+            "nameof(MainViewModel.LiveReadingsObservationInterval)",
+            propertyChangedBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Interlocked.Exchange(",
+            propertyChangedBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ref liveReadingsObservationIntervalTicks",
+            propertyChangedBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "{x:Bind ViewModel.LiveReadings,",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "{x:Bind ViewModel.LiveReadings}",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "{x:Bind ViewModel.LiveReadings.",
+            xaml,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("AppWindow.Show(true)", app, StringComparison.Ordinal);
         int showMethod = window.IndexOf("public void ShowAndActivate()", StringComparison.Ordinal);
         int start = window.IndexOf("visibleObservationLoop.StartOrWake()", showMethod, StringComparison.Ordinal);

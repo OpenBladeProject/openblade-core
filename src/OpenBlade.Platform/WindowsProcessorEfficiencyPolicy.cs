@@ -12,14 +12,17 @@ public sealed class WindowsProcessorEfficiencyPolicy
 {
     private readonly IWindowsProcessorPolicyApi api;
     private readonly uint[] efficientProcessorIds;
+    private readonly uint ownerThreadId;
 
     private WindowsProcessorEfficiencyPolicy(
         IWindowsProcessorPolicyApi api,
         uint[] efficientProcessorIds,
+        uint ownerThreadId,
         ProcessorEfficiencyPolicyStatus status)
     {
         this.api = api;
         this.efficientProcessorIds = efficientProcessorIds;
+        this.ownerThreadId = ownerThreadId;
         Status = status;
     }
 
@@ -32,14 +35,19 @@ public sealed class WindowsProcessorEfficiencyPolicy
         IWindowsProcessorPolicyApi api)
     {
         ArgumentNullException.ThrowIfNull(api);
+        uint ownerThreadId;
         IReadOnlyList<WindowsCpuSet> available;
         try
         {
+            ownerThreadId = api.GetCurrentThreadId();
             available = api.GetAvailableCpuSets();
         }
         catch (Exception exception)
         {
-            return Unavailable(api, $"Processor topology is unavailable: {exception.Message}");
+            return Unavailable(
+                api,
+                ownerThreadId: 0,
+                $"Processor topology is unavailable: {exception.Message}");
         }
 
         WindowsCpuSet[] processors = available
@@ -49,7 +57,10 @@ public sealed class WindowsProcessorEfficiencyPolicy
             .ToArray();
         if (processors.Length == 0)
         {
-            return Unavailable(api, "Windows reported no CPU sets available to OpenBlade.");
+            return Unavailable(
+                api,
+                ownerThreadId,
+                "Windows reported no CPU sets available to OpenBlade.");
         }
 
         byte minimumEfficiencyClass = processors.Min(cpu => cpu.EfficiencyClass);
@@ -59,11 +70,13 @@ public sealed class WindowsProcessorEfficiencyPolicy
             return new WindowsProcessorEfficiencyPolicy(
                 api,
                 [],
+                ownerThreadId,
                 new ProcessorEfficiencyPolicyStatus(
                     HybridTopologyDetected: false,
                     EfficientLogicalProcessorCount: processors.Length,
                     PerformanceLogicalProcessorCount: 0,
-                    Message: "The processor has one efficiency class; Windows scheduling remains automatic."));
+                    Message: "This processor has one efficiency class, so OpenBlade leaves "
+                        + "thread CPU-set selection unchanged. EcoQoS is handled independently."));
         }
 
         uint[] efficientIds = processors
@@ -75,11 +88,13 @@ public sealed class WindowsProcessorEfficiencyPolicy
         return new WindowsProcessorEfficiencyPolicy(
             api,
             efficientIds,
+            ownerThreadId,
             new ProcessorEfficiencyPolicyStatus(
                 HybridTopologyDetected: true,
                 EfficientLogicalProcessorCount: efficientIds.Length,
                 PerformanceLogicalProcessorCount: performanceCount,
-                Message: "Efficient processors are available for hidden tray work; process scheduling remains automatic."));
+                Message: "Efficient processors are available for hidden tray work. Process CPU "
+                    + "eligibility remains unrestricted, and EcoQoS is handled independently."));
     }
 
     public bool TryPreferEfficientProcessorsForCurrentThread()
@@ -87,6 +102,7 @@ public sealed class WindowsProcessorEfficiencyPolicy
         try
         {
             return Status.HybridTopologyDetected
+                && api.GetCurrentThreadId() == ownerThreadId
                 && api.SetCurrentThreadCpuSets(efficientProcessorIds);
         }
         catch
@@ -100,6 +116,7 @@ public sealed class WindowsProcessorEfficiencyPolicy
         try
         {
             return Status.HybridTopologyDetected
+                && api.GetCurrentThreadId() == ownerThreadId
                 && api.ClearCurrentThreadCpuSets();
         }
         catch
@@ -122,9 +139,11 @@ public sealed class WindowsProcessorEfficiencyPolicy
 
     private static WindowsProcessorEfficiencyPolicy Unavailable(
         IWindowsProcessorPolicyApi api,
+        uint ownerThreadId,
         string message) => new(
             api,
             [],
+            ownerThreadId,
             new ProcessorEfficiencyPolicyStatus(
                 HybridTopologyDetected: false,
                 EfficientLogicalProcessorCount: 0,
@@ -142,6 +161,8 @@ internal readonly record struct WindowsCpuSet(
 
 internal interface IWindowsProcessorPolicyApi
 {
+    uint GetCurrentThreadId();
+
     IReadOnlyList<WindowsCpuSet> GetAvailableCpuSets();
 
     bool SetCurrentThreadCpuSets(uint[] cpuSetIds);
@@ -165,6 +186,8 @@ internal sealed class WindowsProcessorPolicyApi : IWindowsProcessorPolicyApi
     private WindowsProcessorPolicyApi()
     {
     }
+
+    public uint GetCurrentThreadId() => GetCurrentThreadIdNative();
 
     public IReadOnlyList<WindowsCpuSet> GetAvailableCpuSets()
     {
@@ -298,6 +321,9 @@ internal sealed class WindowsProcessorPolicyApi : IWindowsProcessorPolicyApi
 
     [DllImport("kernel32.dll")]
     private static extern nint GetCurrentThread();
+
+    [DllImport("kernel32.dll", EntryPoint = "GetCurrentThreadId")]
+    private static extern uint GetCurrentThreadIdNative();
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
