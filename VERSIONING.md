@@ -33,6 +33,21 @@ files and versions unchanged. The tray-only path is valid only when shared
 Contracts and both IPC protocol versions are unchanged; otherwise publish and
 install all coordinated components together.
 
+### Nightly builds
+
+Nightly builds retain the checked-in three-part `OpenBladeVersion` as their
+stable base. The dedicated nightly workflow adds its monotonic run number as a
+fourth numeric component for the Burn bundle, assembly, file, and installed
+ownership versions. For example, nightly run 42 from base `0.1.0` uses binary
+version `0.1.0.42` and informational version
+`0.1.0-nightly.42+<commit>`. The next stable `0.1.1` normalizes to
+`0.1.1.0` and therefore upgrades every `0.1.0.*` nightly.
+
+Do not edit `OpenBladeVersion` merely to produce a nightly. Nightly identity is
+supplied only by `build/Publish.ps1`, and revision zero remains reserved for
+stable builds. The full Git revision, installer hash, and generated identity
+must accompany every retained nightly artifact.
+
 ## Service IPC
 
 The service IPC protocol version is defined in `IpcMessageCodec`.

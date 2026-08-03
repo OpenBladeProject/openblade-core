@@ -107,10 +107,19 @@ internal sealed class WindowsBundleOwnershipRegistration : IBundleOwnershipRegis
             RegistryValueKind.String);
     }
 
-    internal static string FormatInstalledVersion(Version? version) =>
-        version is null
-            ? "0.0.0"
-            : $"{Math.Max(version.Major, 0)}.{Math.Max(version.Minor, 0)}.{Math.Max(version.Build, 0)}";
+    internal static string FormatInstalledVersion(Version? version)
+    {
+        if (version is null)
+        {
+            return "0.0.0";
+        }
+
+        string baseVersion =
+            $"{Math.Max(version.Major, 0)}.{Math.Max(version.Minor, 0)}.{Math.Max(version.Build, 0)}";
+        return version.Revision > 0
+            ? $"{baseVersion}.{version.Revision}"
+            : baseVersion;
+    }
 
     internal static bool IsOwnedByBuild(string? installedBuild, string currentBuild) =>
         !string.IsNullOrWhiteSpace(installedBuild)
