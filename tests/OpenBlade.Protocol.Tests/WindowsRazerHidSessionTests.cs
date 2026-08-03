@@ -241,6 +241,205 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Fact]
+    public async Task SubmitAsync_CompletesAfterSetWithoutSettleOrGet()
+    {
+        var time = new ManualTimeProvider();
+        var io = new ScriptedIo(SetSuccess());
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            time: time,
+            featureReportSettleDelay: TimeSpan.FromSeconds(1));
+
+        HidSessionResult<ReadOnlyMemory<byte>> result =
+            await ((IRazerSetFeatureCommandSession)actor).SubmitAsync(
+                new(0x03, 0x0B, [0xFF, 0x00], 2),
+                () => TransactionIdAssignment.Valid(1),
+                Timeout,
+                default);
+
+        Assert.Null(result.Failure);
+        Assert.True(result.Value.IsEmpty);
+        Assert.Equal(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+        Assert.Equal([SetCode], io.Calls.Select(call => call.ControlCode));
+    }
+
+    [Fact]
+    public async Task SubmitBatchAsync_UsesOneDeadlineAndBufferInStrictCommandOrder()
+    {
+        var observed = new List<(byte Transaction, byte ClassId, byte CommandId, string Arguments)>();
+        var io = new ScriptedIo(
+            Enumerable.Range(0, 3)
+                .Select(_ =>
+                    (Func<OpenedHidHandle, uint, byte[], CancellationToken,
+                        CancellationToken, Task<HidFeatureIoResult>>)
+                    ((_, _, buffer, _, _) =>
+                    {
+                        int length = buffer[6];
+                        observed.Add((
+                            buffer[2],
+                            buffer[7],
+                            buffer[8],
+                            Convert.ToHexString(buffer.AsSpan(9, length))));
+                        return Task.FromResult(SetSuccessResult());
+                    }))
+                .ToArray());
+        await using WindowsRazerHidSession actor = CreateActor(io);
+        var commands = new RazerCommandSpec[]
+        {
+            new(0x03, 0x0B, [0xFF, 0x00], 2),
+            new(0x03, 0x0B, [0xFF, 0x01], 2),
+            new(0x03, 0x0A, [0x05, 0x00], 2),
+        };
+        int transaction = 0;
+
+        HidSessionResult<ReadOnlyMemory<byte>> result =
+            await ((IRazerSetFeatureCommandSession)actor).SubmitBatchAsync(
+                commands,
+                () => TransactionIdAssignment.Valid(
+                    checked((byte)Interlocked.Increment(ref transaction))),
+                Timeout,
+                default);
+
+        Assert.Null(result.Failure);
+        Assert.True(result.Value.IsEmpty);
+        Assert.Equal(
+            [
+                (1, 0x03, 0x0B, "FF00"),
+                (2, 0x03, 0x0B, "FF01"),
+                (3, 0x03, 0x0A, "0500"),
+            ],
+            observed.Select(value => (
+                (int)value.Transaction,
+                (int)value.ClassId,
+                (int)value.CommandId,
+                value.Arguments)));
+        Assert.Equal([SetCode, SetCode, SetCode], io.Calls.Select(call => call.ControlCode));
+        Assert.All(
+            io.Calls,
+            call => Assert.Equal(io.Calls[0].Deadline, call.Deadline));
+        Assert.All(
+            io.Calls,
+            call => Assert.Same(io.Calls[0].Buffer, call.Buffer));
+        Assert.Equal(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+    }
+
+    [Fact]
+    public async Task SubmitBatchAsync_CancellationAfterFirstWritePoisonsAndDrainsQueue()
+    {
+        using var caller = new CancellationTokenSource();
+        var firstCompletion =
+            new TaskCompletionSource<HidFeatureIoResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo(
+            (_, _, _, _, _) => firstCompletion.Task,
+            SetSuccess());
+        await using WindowsRazerHidSession actor = CreateActor(io);
+        int batchAssignments = 0;
+        int queuedAssignments = 0;
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> batch =
+            ((IRazerSetFeatureCommandSession)actor).SubmitBatchAsync(
+                [
+                    new(0x03, 0x0B, [0xFF, 0x00], 2),
+                    new(0x03, 0x0A, [0x05, 0x00], 2),
+                ],
+                () => TransactionIdAssignment.Valid(
+                    checked((byte)Interlocked.Increment(ref batchAssignments))),
+                Timeout,
+                caller.Token);
+        await io.WaitForCallsAsync(1);
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> queued = actor.SubmitAsync(
+            new(0x03, 0x0B, [0xFF, 0x01], 2),
+            () =>
+            {
+                queuedAssignments++;
+                return TransactionIdAssignment.Valid(3);
+            },
+            Timeout,
+            default);
+
+        caller.Cancel();
+        firstCompletion.SetResult(SetSuccessResult());
+
+        Assert.Equal(HidSessionFailureKind.Canceled, (await batch).Failure);
+        Assert.Equal(HidSessionFailureKind.Poisoned, (await queued).Failure);
+        Assert.Equal(1, batchAssignments);
+        Assert.Equal(0, queuedAssignments);
+        Assert.Single(io.Calls);
+        Assert.Equal(
+            RazerCommandSessionDisposition.FullyDisposed,
+            actor.Disposition);
+    }
+
+    [Fact]
+    public async Task SubmitBatchAsync_FailureStopsBatchAndPoisonsQueuedWork()
+    {
+        var secondCompletion =
+            new TaskCompletionSource<HidFeatureIoResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo(
+            SetSuccess(),
+            (_, _, _, _, _) => secondCompletion.Task,
+            SetSuccess());
+        await using WindowsRazerHidSession actor = CreateActor(io);
+        int transaction = 0;
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> batch =
+            ((IRazerSetFeatureCommandSession)actor).SubmitBatchAsync(
+                [
+                    new(0x03, 0x0B, [0xFF, 0x00], 2),
+                    new(0x03, 0x0B, [0xFF, 0x01], 2),
+                    new(0x03, 0x0A, [0x05, 0x00], 2),
+                ],
+                () => TransactionIdAssignment.Valid(
+                    checked((byte)Interlocked.Increment(ref transaction))),
+                Timeout,
+                default);
+        await io.WaitForCallsAsync(2);
+        int queuedAssignments = 0;
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> queued = actor.SubmitAsync(
+            new(0x03, 0x0B, [0xFF, 0x02], 2),
+            () =>
+            {
+                queuedAssignments++;
+                return TransactionIdAssignment.Valid(4);
+            },
+            Timeout,
+            default);
+        secondCompletion.SetResult(
+            new(
+                new NativeIoCompletion(false, 0, 5),
+                true,
+                HidFeatureTermination.Completed));
+
+        Assert.Equal(
+            HidSessionFailureKind.NativeIoFailure,
+            (await batch).Failure);
+        Assert.Equal(HidSessionFailureKind.Poisoned, (await queued).Failure);
+        Assert.Equal(0, queuedAssignments);
+        Assert.Equal(2, io.Calls.Count);
+        Assert.Equal(
+            RazerCommandSessionDisposition.FullyDisposed,
+            actor.Disposition);
+    }
+
+    [Fact]
+    public async Task SubmitBatchAsync_AdmissionAllocatesLessThanSevenSingles()
+    {
+        _ = await MeasureSetAdmissionAllocationsAsync(batch: false);
+        _ = await MeasureSetAdmissionAllocationsAsync(batch: true);
+
+        long individualBytes =
+            await MeasureSetAdmissionAllocationsAsync(batch: false);
+        long batchBytes =
+            await MeasureSetAdmissionAllocationsAsync(batch: true);
+
+        Assert.True(
+            individualBytes - batchBytes >= 1024,
+            $"Individual={individualBytes:N0}; batch={batchBytes:N0}");
+    }
+
+    [Fact]
     public async Task QueuedCancellationRace_QueuedWinnerConsumesNoId()
     {
         var gate = new TaskCompletionSource<HidFeatureIoResult>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -342,6 +541,10 @@ public sealed class WindowsRazerHidSessionTests
         Assert.Throws<ArgumentOutOfRangeException>(() => { _ = actor.ExecuteAsync(new(1, 1, [], 0), assign, TimeSpan.Zero, default); });
         Assert.Throws<ArgumentOutOfRangeException>(() => { _ = actor.ExecuteAsync(new(1, 1, [], 0), assign, System.Threading.Timeout.InfiniteTimeSpan, default); });
         Assert.Throws<ArgumentNullException>(() => { _ = actor.ExecuteAsync(new(1, 1, [], 0), null!, Timeout, default); });
+        IRazerSetFeatureCommandSession submitter = actor;
+        Assert.Throws<ArgumentNullException>(() => { _ = submitter.SubmitBatchAsync(null!, assign, Timeout, default); });
+        Assert.Throws<ArgumentException>(() => { _ = submitter.SubmitBatchAsync([], assign, Timeout, default); });
+        Assert.Throws<ArgumentOutOfRangeException>(() => { _ = submitter.SubmitBatchAsync([new(1, 1, new byte[81], 0)], assign, Timeout, default); });
         Assert.Equal(0, assignments);
     }
 
@@ -1237,6 +1440,89 @@ public sealed class WindowsRazerHidSessionTests
         await handle.DisposeAsync();
         lease.Dispose();
         Assert.Equal(["bound", "file"], events);
+    }
+
+    private static async Task<long> MeasureSetAdmissionAllocationsAsync(
+        bool batch)
+    {
+        var activeCompletion =
+            new TaskCompletionSource<HidFeatureIoResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var script =
+            new Func<OpenedHidHandle, uint, byte[], CancellationToken,
+                CancellationToken, Task<HidFeatureIoResult>>[8];
+        script[0] = (_, _, _, _, _) => activeCompletion.Task;
+        for (int index = 1; index < script.Length; index++)
+        {
+            script[index] = SetSuccess();
+        }
+
+        var io = new ScriptedIo(script);
+        WindowsRazerHidSession actor = CreateActor(io);
+        try
+        {
+            IRazerSetFeatureCommandSession submitter = actor;
+            Task<HidSessionResult<ReadOnlyMemory<byte>>> active =
+                submitter.SubmitAsync(
+                    new(0x03, 0x0B, [0xFF, 0x00], 2),
+                    static () => TransactionIdAssignment.Valid(1),
+                    Timeout,
+                    default);
+            await io.WaitForCallsAsync(1);
+
+            var commands = new RazerCommandSpec[7];
+            for (int row = 0; row < 6; row++)
+            {
+                byte[] arguments =
+                    new byte[Rz090528MatrixRowProtocol.RowPayloadLength];
+                arguments[0] = 0xFF;
+                arguments[1] = checked((byte)row);
+                commands[row] = new(0x03, 0x0B, arguments, arguments.Length);
+            }
+            commands[^1] = new(0x03, 0x0A, [0x05, 0x00], 2);
+            var queued =
+                new Task<HidSessionResult<ReadOnlyMemory<byte>>>[commands.Length];
+            Func<TransactionIdAssignment> assign =
+                static () => TransactionIdAssignment.Valid(2);
+
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            if (batch)
+            {
+                queued[0] = submitter.SubmitBatchAsync(
+                    commands,
+                    assign,
+                    Timeout,
+                    default);
+            }
+            else
+            {
+                for (int index = 0; index < commands.Length; index++)
+                {
+                    queued[index] = submitter.SubmitAsync(
+                        commands[index],
+                        assign,
+                        Timeout,
+                        default);
+                }
+            }
+            long allocated =
+                GC.GetAllocatedBytesForCurrentThread() - before;
+
+            activeCompletion.SetResult(SetSuccessResult());
+            Assert.Null((await active).Failure);
+            int queuedCount = batch ? 1 : queued.Length;
+            for (int index = 0; index < queuedCount; index++)
+            {
+                Assert.Null((await queued[index]).Failure);
+            }
+
+            return allocated;
+        }
+        finally
+        {
+            activeCompletion.TrySetResult(SetSuccessResult());
+            await actor.DisposeAsync();
+        }
     }
 
     private const uint SetCode = 0x000B0191;

@@ -36,6 +36,7 @@ public sealed class ServiceStartupCoordinator(
         {
             await runtime.ObserveAsync(includeLiveReadings: false, cancellationToken);
             await runtime.MaintainDriverModeAsync(cancellationToken);
+            await runtime.ReconcileStartupProfileAsync(cancellationToken);
             await runtime.RestoreLightingRendererAsync(cancellationToken);
         }
         catch (OperationCanceledException)

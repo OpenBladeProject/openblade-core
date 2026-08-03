@@ -12,8 +12,10 @@ only for a model and firmware combination backed by sanitized, reviewed capture
 evidence. Never copy a command from another model, expose raw firmware commands,
 or weaken exact-device checks to make a feature appear supported.
 
-The current production target is the Razer Blade 16 RZ09-0581, USB
-`1532:02E0`, on Windows 11 x64.
+Production support is exact-device scoped. Current admitted targets include the
+Razer Blade 16 RZ09-0581 (`1532:02E0`) and RZ09-0528 (`1532:02C6`) on their
+documented firmware baselines; neither model's device-specific assumptions may
+be copied to the other.
 
 ## Codebase map
 
@@ -45,12 +47,15 @@ The current production target is the Razer Blade 16 RZ09-0581, USB
 
 1. The service is the sole owner of the laptop control HID handle. It exposes
    typed operations only and serializes all hardware access.
-   It also owns keyboard Driver mode continuously while running: it performs
-   verified read-before-write maintenance and is the only component allowed to
-   change that mode. The Session Agent consumes confirmed status only and must
-   pass function-row keys through whenever Driver-mode status is unknown.
-   During coordinated shutdown, the service restores Normal mode only after its
-   existing identity and competing-controller safety checks pass.
+   It also owns keyboard Driver mode continuously while the laptop is fully
+   active: it performs verified read-before-write maintenance and is the only
+   component allowed to change that mode. At a confirmed low-power boundary it
+   may restore Normal mode only after the existing identity and
+   competing-controller safety checks pass, and it must not reacquire Driver
+   mode until Windows reports that the system is active again. The Session
+   Agent consumes confirmed status only and must pass function-row keys through
+   whenever Driver-mode status is unknown. During coordinated shutdown, the
+   service uses the same guarded Normal-mode release.
    Production lighting admission is owned by the approved embedded oracle and
    the reviewed semantic admission manifest. The manifest compares the actual
    device identity, command contracts, report geometry, layout mask, supported
@@ -80,6 +85,11 @@ The current production target is the Razer Blade 16 RZ09-0581, USB
 8. Do not add abstraction layers, background loops, or broad test matrices
    without a concrete current requirement. Favor the smallest design that
    fully implements the requested behavior and remains understandable.
+9. Never silently drop a feature discovered on a different model. Represent it
+   in the shared capability contract, diagnostics, model documentation, and
+   gated UI even when the only honest access state is `ObservedOnly`. A missing
+   backend or readback blocks mutation; it does not justify hiding the model
+   difference or substituting another model's assumptions.
 
 ### Tray async context
 

@@ -144,9 +144,10 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return await RunNativeAsync(
-                () => DisplayOperationResult.Failure(
+                () => ResolveHdrMutationResult(
+                    enabled,
                     exception.Message,
-                    TryQuerySnapshot(cancellationToken)),
+                    TryQuerySnapshot(CancellationToken.None)),
                 CancellationToken.None).ConfigureAwait(false);
         }
         finally
@@ -154,6 +155,20 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             operationGate.Release();
         }
     }
+
+    internal static DisplayOperationResult ResolveHdrMutationResult(
+        bool requestedEnabled,
+        string failure,
+        DisplaySettingsSnapshot? observedState) =>
+        observedState is
+        {
+            IsAvailable: true,
+            HdrSupported: true,
+            HdrEnabled: var observedEnabled,
+        }
+        && observedEnabled == requestedEnabled
+            ? DisplayOperationResult.Success(observedState)
+            : DisplayOperationResult.Failure(failure, observedState);
 
     public async Task<DisplayOperationResult> SetColorProfileAsync(
         string id,

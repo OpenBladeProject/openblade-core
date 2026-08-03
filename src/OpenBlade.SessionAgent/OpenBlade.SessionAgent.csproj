@@ -10,6 +10,8 @@
     <PublishTrimmed>false</PublishTrimmed>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <OpenBladeSessionAgentManifestSource>$(MSBuildProjectDirectory)\app.manifest</OpenBladeSessionAgentManifestSource>
+    <ApplicationManifest>$(BaseIntermediateOutputPath)$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\OpenBlade.SessionAgent.effective.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.Management" />
@@ -20,4 +22,17 @@
     <ProjectReference Include="..\OpenBlade.Session\OpenBlade.Session.csproj" />
     <ProjectReference Include="..\OpenBlade.Tray.Core\OpenBlade.Tray.Core.csproj" />
   </ItemGroup>
+
+  <Target Name="PrepareOpenBladeSessionAgentManifest"
+          BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(OpenBladeSessionAgentManifestSource)')"
+           Text="The Session Agent manifest source is missing: $(OpenBladeSessionAgentManifestSource)" />
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(ApplicationManifest)'))" />
+    <Copy SourceFiles="$(OpenBladeSessionAgentManifestSource)"
+          DestinationFiles="$(ApplicationManifest)"
+          SkipUnchangedFiles="false" />
+    <Touch Files="$(ApplicationManifest)"
+           AlwaysCreate="false"
+           ForceTouch="true" />
+  </Target>
 </Project>

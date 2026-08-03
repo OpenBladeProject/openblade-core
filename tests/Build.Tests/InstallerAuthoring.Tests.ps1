@@ -61,7 +61,9 @@ Assert-True ($bundle.GetAttribute('ProviderKey') -eq 'OSSBlade.OpenBlade') `
     'The Burn dependency provider key must remain stable across upgrades.'
 Assert-True ($bundle.GetAttribute('Version') -eq '$(OpenBladeVersion)') `
     'The Burn bundle must use the product version source of truth.'
-Assert-True ($bundle.GetAttribute('Condition') -eq 'VersionNT64 >= v10.0.26100') `
+Assert-True (
+    $bundle.GetAttribute('Condition') -eq
+        'VersionNT64 >= v10.0 AND WindowsBuildNumber >= 26100') `
     'The Burn bundle must require Windows 11 version 24H2 x64.'
 
 $standardBa = $bundle.SelectSingleNode(
@@ -96,7 +98,7 @@ $expectedPackageAttributes = [ordered]@{
     InstallArguments = 'install --bundle-managed'
     RepairArguments = 'install --bundle-managed'
     UninstallArguments = 'uninstall --bundle-managed'
-    DetectCondition = 'OpenBladeInstalledVersion AND OpenBladeInstalledVersion >= v$(OpenBladeVersion)'
+    DetectCondition = 'OpenBladeInstalledVersion AND OpenBladeInstalledVersion > v$(OpenBladeVersion)'
     PerMachine = 'yes'
     Cache = 'keep'
     Vital = 'yes'
@@ -195,6 +197,7 @@ foreach ($requiredText in @(
         'Assert-OpenBladeInstallerBundle',
         'Write-OpenBladeStoreReadinessReport',
         'Invoke-OpenBladeSigning',
+        '--property:SignOutput=true',
         'OpenBladeSigningThumbprint',
         'VerifyPrivacyPolicy',
         'upgradeProbeVersion',
@@ -202,6 +205,12 @@ foreach ($requiredText in @(
     Assert-True ($publish.IndexOf($requiredText, [StringComparison]::Ordinal) -ge 0) `
         "Publish.ps1 is missing required installer integration '$requiredText'."
 }
+Assert-True (
+    $publish -match (
+        '(?s)if \(\$signingEnabled\)\s*\{\s*' +
+        '\$installerBuildArguments \+= @\(\s*' +
+        '''--property:SignOutput=true''')) `
+    'Signed publishing must opt into the WiX bundle-signing pipeline.'
 
 $storeContractPath = Join-Path $repository 'build\store\OpenBlade.StoreSubmission.json'
 Assert-True (Test-Path -LiteralPath $storeContractPath -PathType Leaf) `
@@ -215,7 +224,7 @@ Assert-True ($storeContract.architecture -eq 'x64') `
     'The Store submission architecture must remain x64.'
 Assert-True ($storeContract.language -eq 'en-US') `
     'The Store submission language must match the shipped UI resources.'
-Assert-True ($storeContract.installerParameters -eq '/quiet /norestart') `
+Assert-True ($storeContract.installerParameters -eq '/install /quiet /norestart') `
     'The Store must invoke Burn without installer UI or automatic restart.'
 Assert-True ($storeContract.offlineInstaller -eq $true) `
     'The Store submission must remain a self-contained offline installer.'

@@ -17,18 +17,38 @@ internal static class LogoLightingProtocol
     internal const byte BreathingEffect = 0x02;
 
     internal static byte[] QueryArguments() =>
-        [PersistentStorage, LogoLedId, 0x00];
+        QueryArguments(PersistentStorage);
+
+    internal static byte[] QueryArguments(byte storage) =>
+        [storage, LogoLedId, 0x00];
 
     internal static byte[] SetEffectArguments(LogoLightingMode mode) =>
-        [PersistentStorage, LogoLedId, EffectFor(mode)];
+        SetEffectArguments(mode, PersistentStorage);
+
+    internal static byte[] SetEffectArguments(
+        LogoLightingMode mode,
+        byte storage) =>
+        [storage, LogoLedId, EffectFor(mode)];
 
     internal static byte[] SetStateArguments(LogoLightingMode mode) =>
-        [PersistentStorage, LogoLedId, mode == LogoLightingMode.Off ? Disabled : Enabled];
+        SetStateArguments(mode, PersistentStorage);
+
+    internal static byte[] SetStateArguments(
+        LogoLightingMode mode,
+        byte storage) =>
+        [storage, LogoLedId, mode == LogoLightingMode.Off ? Disabled : Enabled];
 
     internal static bool TryDecodeState(ReadOnlySpan<byte> payload, out bool enabled)
+        => TryDecodeState(payload, PersistentStorage, out enabled);
+
+    internal static bool TryDecodeState(
+        ReadOnlySpan<byte> payload,
+        byte storage,
+        out bool enabled)
     {
         enabled = false;
-        if (!TryDecodeValue(payload, out byte value) || value is not (Disabled or Enabled))
+        if (!TryDecodeValue(payload, storage, out byte value)
+            || value is not (Disabled or Enabled))
         {
             return false;
         }
@@ -38,16 +58,33 @@ internal static class LogoLightingProtocol
     }
 
     internal static bool TryDecodeEffect(ReadOnlySpan<byte> payload, out byte effect) =>
-        TryDecodeValue(payload, out effect);
+        TryDecodeEffect(payload, PersistentStorage, out effect);
+
+    internal static bool TryDecodeEffect(
+        ReadOnlySpan<byte> payload,
+        byte storage,
+        out byte effect) =>
+        TryDecodeValue(payload, storage, out effect);
 
     internal static bool TryDecodeMode(
         ReadOnlySpan<byte> statePayload,
         ReadOnlySpan<byte> effectPayload,
         out LogoLightingMode mode)
+        => TryDecodeMode(
+            statePayload,
+            effectPayload,
+            PersistentStorage,
+            out mode);
+
+    internal static bool TryDecodeMode(
+        ReadOnlySpan<byte> statePayload,
+        ReadOnlySpan<byte> effectPayload,
+        byte storage,
+        out LogoLightingMode mode)
     {
         mode = default;
-        if (!TryDecodeState(statePayload, out bool enabled)
-            || !TryDecodeEffect(effectPayload, out byte effect))
+        if (!TryDecodeState(statePayload, storage, out bool enabled)
+            || !TryDecodeEffect(effectPayload, storage, out byte effect))
         {
             return false;
         }
@@ -70,11 +107,14 @@ internal static class LogoLightingProtocol
     internal static bool Matches(ReadOnlySpan<byte> payload, ReadOnlySpan<byte> expected) =>
         payload.SequenceEqual(expected);
 
-    private static bool TryDecodeValue(ReadOnlySpan<byte> payload, out byte value)
+    private static bool TryDecodeValue(
+        ReadOnlySpan<byte> payload,
+        byte storage,
+        out byte value)
     {
         value = 0;
         if (payload.Length != 3
-            || payload[0] != PersistentStorage
+            || payload[0] != storage
             || payload[1] != LogoLedId)
         {
             return false;

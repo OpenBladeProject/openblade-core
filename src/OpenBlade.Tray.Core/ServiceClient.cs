@@ -165,6 +165,15 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 lifetime),
             token);
 
+    public Task<ControlOperationResult> SetKeyboardLightingControlModeAsync(
+        KeyboardLightingControlMode mode,
+        CancellationToken token) => SendMutationAsync(
+            new SetKeyboardLightingControlModeRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                mode),
+            token);
+
     public Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
         bool enabled,
         CancellationToken token) => SendMutationAsync(

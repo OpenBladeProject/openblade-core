@@ -38,6 +38,38 @@ public sealed class DeviceModeValidationRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_AppliesNormalAndRestoresDriverMode()
+    {
+        var session = new DeviceModeSession(RazerDeviceMode.Driver);
+        var runner = CreateRunner(session);
+
+        DeviceModeValidationResult result = await runner.RunAsync(
+            _ => Task.FromResult(true),
+            default);
+
+        Assert.True(result.Success);
+        Assert.Equal("Driver", result.BaselineMode);
+        Assert.Equal("Normal", result.CandidateMode);
+        Assert.Equal("Driver", result.RestoredMode);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0000"),
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(command => (
+                (int)command.ClassId,
+                (int)command.CommandId,
+                Convert.ToHexString(command.Arguments.Span))).ToArray());
+        Assert.Equal(RazerDeviceMode.Driver, session.Mode);
+        Assert.Equal(1, session.DisposeCount);
+    }
+
+    [Fact]
     public async Task RunAsync_RestoresWhenVisualCheckIsRejected()
     {
         var session = new DeviceModeSession();
@@ -73,7 +105,7 @@ public sealed class DeviceModeValidationRunnerTests
     [Fact]
     public async Task RunAsync_ReportsManualRecoveryWhenRestoreFails()
     {
-        var session = new DeviceModeSession { FailNormalSet = true };
+        var session = new DeviceModeSession { FailModeSet = RazerDeviceMode.Normal };
 
         DeviceModeValidationResult result = await CreateRunner(session).RunAsync(
             _ => Task.FromResult(true),
@@ -104,11 +136,12 @@ public sealed class DeviceModeValidationRunnerTests
             ValueTask.FromResult(new HidSessionResult<ValidationActor>(actor, null));
     }
 
-    private sealed class DeviceModeSession : IRazerCommandSession
+    private sealed class DeviceModeSession(
+        RazerDeviceMode initialMode = RazerDeviceMode.Normal) : IRazerCommandSession
     {
         internal List<RazerCommandSpec> Commands { get; } = [];
-        internal RazerDeviceMode Mode { get; private set; } = RazerDeviceMode.Normal;
-        internal bool FailNormalSet { get; set; }
+        internal RazerDeviceMode Mode { get; private set; } = initialMode;
+        internal RazerDeviceMode? FailModeSet { get; set; }
         internal int DisposeCount { get; private set; }
 
         public RazerCommandSessionDisposition Disposition { get; private set; } =
@@ -131,7 +164,7 @@ public sealed class DeviceModeValidationRunnerTests
 
             Assert.Equal((0x00, 0x04), (command.ClassId, command.CommandId));
             var requested = (RazerDeviceMode)command.Arguments.Span[0];
-            if (requested == RazerDeviceMode.Normal && FailNormalSet)
+            if (requested == FailModeSet)
             {
                 return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(
                     default,

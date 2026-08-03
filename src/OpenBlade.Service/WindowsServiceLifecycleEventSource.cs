@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace OpenBlade.Service;
 
@@ -149,6 +150,8 @@ public sealed class WindowsServiceLifecycleEventSource
     private readonly List<ServiceLifecycleTrigger> pendingOrderedTriggers = [];
     private readonly Func<CancellationToken, ValueTask>? beforePendingDrainAsync;
     private readonly Func<long> getTickCount;
+    private readonly LowPowerGate lowPowerGate;
+    private readonly ILogger logger;
     private readonly object resumeDeduplicationSync = new();
     private readonly Channel<bool> signal;
     private readonly IDisposable subscription;
@@ -165,17 +168,39 @@ public sealed class WindowsServiceLifecycleEventSource
     {
     }
 
+    public WindowsServiceLifecycleEventSource(
+        LowPowerGate lowPowerGate,
+        ILogger<WindowsServiceLifecycleEventSource> logger)
+        : this(
+            new NativeWindowsLifecycleNotificationBackend(),
+            lowPowerGate,
+            logger,
+            () => Environment.TickCount64,
+            beforePendingDrainAsync: null)
+    {
+    }
+
     public WindowsServiceLifecycleEventSource(IWindowsLifecycleNotificationBackend backend)
-        : this(backend, () => Environment.TickCount64, beforePendingDrainAsync: null)
+        : this(
+            backend,
+            new LowPowerGate(),
+            NullLogger<WindowsServiceLifecycleEventSource>.Instance,
+            () => Environment.TickCount64,
+            beforePendingDrainAsync: null)
     {
     }
 
     private WindowsServiceLifecycleEventSource(
         IWindowsLifecycleNotificationBackend backend,
+        LowPowerGate lowPowerGate,
+        ILogger logger,
         Func<long> getTickCount,
         Func<CancellationToken, ValueTask>? beforePendingDrainAsync)
     {
         ArgumentNullException.ThrowIfNull(backend);
+        this.lowPowerGate = lowPowerGate
+            ?? throw new ArgumentNullException(nameof(lowPowerGate));
+        this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         this.getTickCount = getTickCount
             ?? throw new ArgumentNullException(nameof(getTickCount));
         this.beforePendingDrainAsync = beforePendingDrainAsync;
@@ -193,6 +218,8 @@ public sealed class WindowsServiceLifecycleEventSource
         Func<CancellationToken, ValueTask> beforePendingDrainAsync)
         : this(
             backend,
+            new LowPowerGate(),
+            NullLogger<WindowsServiceLifecycleEventSource>.Instance,
             () => Environment.TickCount64,
             beforePendingDrainAsync ?? throw new ArgumentNullException(
                 nameof(beforePendingDrainAsync)))
@@ -202,7 +229,26 @@ public sealed class WindowsServiceLifecycleEventSource
     internal WindowsServiceLifecycleEventSource(
         IWindowsLifecycleNotificationBackend backend,
         Func<long> getTickCount)
-        : this(backend, getTickCount, beforePendingDrainAsync: null)
+        : this(
+            backend,
+            new LowPowerGate(),
+            NullLogger<WindowsServiceLifecycleEventSource>.Instance,
+            getTickCount,
+            beforePendingDrainAsync: null)
+    {
+    }
+
+    internal WindowsServiceLifecycleEventSource(
+        IWindowsLifecycleNotificationBackend backend,
+        LowPowerGate lowPowerGate,
+        Func<long>? getTickCount = null,
+        Func<CancellationToken, ValueTask>? beforePendingDrainAsync = null)
+        : this(
+            backend,
+            lowPowerGate,
+            NullLogger<WindowsServiceLifecycleEventSource>.Instance,
+            getTickCount ?? (() => Environment.TickCount64),
+            beforePendingDrainAsync)
     {
     }
 
@@ -299,6 +345,18 @@ public sealed class WindowsServiceLifecycleEventSource
             return;
         }
 
+        if (trigger == ServiceLifecycleTrigger.DisplayOn)
+        {
+            // Deliberately asymmetric: display-off is not a reliable sleep signal,
+            // while display-on proves the system is active and is safe to clear.
+            if (lowPowerGate.Exit())
+            {
+                logger.LogInformation(
+                    "Low-power gate exited after Windows lifecycle notification {Trigger}.",
+                    trigger);
+            }
+        }
+
         if (trigger is ServiceLifecycleTrigger.DisplayOff
             or ServiceLifecycleTrigger.DisplayOn
             or ServiceLifecycleTrigger.DeviceArrived
@@ -311,6 +369,12 @@ public sealed class WindowsServiceLifecycleEventSource
 
         if (trigger == ServiceLifecycleTrigger.Suspending)
         {
+            if (lowPowerGate.Enter())
+            {
+                logger.LogInformation(
+                    "Low-power gate entered after Windows lifecycle notification {Trigger}.",
+                    trigger);
+            }
             lock (resumeDeduplicationSync)
             {
                 hasPublishedResume = false;
@@ -318,6 +382,14 @@ public sealed class WindowsServiceLifecycleEventSource
         }
         else if (trigger == ServiceLifecycleTrigger.Resumed)
         {
+            // Clear before resume deduplication so a suppressed duplicate cannot
+            // leave the level latched after Windows is active again.
+            if (lowPowerGate.Exit())
+            {
+                logger.LogInformation(
+                    "Low-power gate exited after Windows lifecycle notification {Trigger}.",
+                    trigger);
+            }
             lock (resumeDeduplicationSync)
             {
                 long now = getTickCount();

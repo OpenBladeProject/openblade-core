@@ -107,6 +107,37 @@ public sealed class WindowsHostIdentitySourceTests
         });
     }
 
+    [Fact]
+    public void ReadExactIdentity_AcceptsExplicitRz090528Identity()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|SystemProductName"] = "Blade 16 - RZ09-0528";
+        registry.Values[$"{BiosKey}|SystemSKU"] = "RZ09-05289EN4";
+        registry.Values[$"{BiosKey}|BIOSVersion"] = "2.02";
+        registry.Values[$"{SystemInformationKey}|SystemProductName"] =
+            "Blade 16 - RZ09-0528";
+        registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "2.02";
+        var source = new WindowsHostIdentitySource(
+            registry,
+            new FakeWindowsPlatformEvidenceSource(ExactPlatform),
+            new ExpectedHostIdentity(
+                "Razer",
+                "Blade 16 - RZ09-0528",
+                "RZ09-05289EN4",
+                "2.02"));
+
+        HostIdentityReadResult result = source.ReadExactIdentity();
+
+        Assert.Equal(
+            new HostIdentityEvidence(
+                "Razer",
+                "Blade 16 - RZ09-0528",
+                "RZ09-05289EN4",
+                "2.02"),
+            result.Evidence);
+        Assert.Null(result.Failure);
+    }
+
     [Theory]
     [MemberData(nameof(RegistryValues))]
     public void ReadExactIdentity_BlocksEveryMismatchedValue(string location, string wrongValue)

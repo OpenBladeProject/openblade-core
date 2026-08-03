@@ -5,6 +5,19 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class FunctionRowInputTests
 {
+    [Theory]
+    [InlineData(RazerBladeInputDeviceKind.Rz09_0581, true)]
+    [InlineData(RazerBladeInputDeviceKind.Rz09_0528, true)]
+    [InlineData(RazerBladeInputDeviceKind.Unsupported, false)]
+    public void DeviceAdmissionIsExplicit(
+        RazerBladeInputDeviceKind deviceKind,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            RazerBladeFunctionRowMediaInput.SupportsDevice(deviceKind));
+    }
+
     public static TheoryData<uint, FunctionRowAction> ScanCodeMappings =>
         new()
         {
@@ -28,7 +41,7 @@ public sealed class FunctionRowInputTests
         uint scanCode,
         FunctionRowAction expected)
     {
-        bool suppress = Rz09_0581FunctionRowMediaInput.TryOverride(
+        bool suppress = RazerBladeFunctionRowMediaInput.TryOverride(
             scanCode,
             keyDown: true,
             functionKeyPressed: false,
@@ -50,7 +63,7 @@ public sealed class FunctionRowInputTests
         bool functionKeyPressed,
         bool expectedOverride)
     {
-        bool suppress = Rz09_0581FunctionRowMediaInput.TryOverride(
+        bool suppress = RazerBladeFunctionRowMediaInput.TryOverride(
             scanCode: 0x3B,
             keyDown: true,
             functionKeyPressed,
@@ -67,7 +80,7 @@ public sealed class FunctionRowInputTests
     [Fact]
     public void PassesThroughWhenDriverModeIsNotConfirmed()
     {
-        bool suppress = Rz09_0581FunctionRowMediaInput.TryOverride(
+        bool suppress = RazerBladeFunctionRowMediaInput.TryOverride(
             scanCode: 0x3B,
             keyDown: true,
             functionKeyPressed: false,
@@ -82,7 +95,7 @@ public sealed class FunctionRowInputTests
     [Fact]
     public void PassesThroughWhenFunctionKeyModeIsUnknown()
     {
-        bool suppress = Rz09_0581FunctionRowMediaInput.TryOverride(
+        bool suppress = RazerBladeFunctionRowMediaInput.TryOverride(
             scanCode: 0x3B,
             keyDown: true,
             functionKeyPressed: false,
@@ -97,7 +110,7 @@ public sealed class FunctionRowInputTests
     [Fact]
     public void SuppressesKeyUpWithoutPublishingAnotherAction()
     {
-        bool suppress = Rz09_0581FunctionRowMediaInput.TryOverride(
+        bool suppress = RazerBladeFunctionRowMediaInput.TryOverride(
             scanCode: 0x3B,
             keyDown: false,
             functionKeyPressed: false,
@@ -112,7 +125,7 @@ public sealed class FunctionRowInputTests
     [Fact]
     public void PassesThroughUnsupportedScanCodes()
     {
-        bool suppress = Rz09_0581FunctionRowMediaInput.TryOverride(
+        bool suppress = RazerBladeFunctionRowMediaInput.TryOverride(
             scanCode: 0x2A,
             keyDown: true,
             functionKeyPressed: false,
@@ -127,7 +140,7 @@ public sealed class FunctionRowInputTests
     [Fact]
     public void StatefulInput_LatchesSuppressionThroughFnAndStatusChanges()
     {
-        var state = new Rz09_0581FunctionRowInputState();
+        var state = new RazerBladeFunctionRowInputState();
 
         Assert.True(state.Process(
             0x3B,
@@ -151,7 +164,7 @@ public sealed class FunctionRowInputTests
     [Fact]
     public void StatefulInput_DoesNotSuppressAnUnmatchedKeyUp()
     {
-        var state = new Rz09_0581FunctionRowInputState();
+        var state = new RazerBladeFunctionRowInputState();
 
         Assert.False(state.Process(
             0x3B,
@@ -176,7 +189,7 @@ public sealed class FunctionRowInputTests
         uint scanCode,
         bool shouldRepeat)
     {
-        var state = new Rz09_0581FunctionRowInputState();
+        var state = new RazerBladeFunctionRowInputState();
         Assert.True(state.Process(
             scanCode,
             keyDown: true,

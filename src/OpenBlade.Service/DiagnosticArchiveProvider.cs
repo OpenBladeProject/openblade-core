@@ -279,7 +279,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
 
         DiagnosticBundle bundle = new(
             versions,
-            new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", SerialNumber: null),
+            CreateDeviceIdentity(status),
             CreateCapabilities(status.Capabilities),
             CreateConfiguration(status, liveReadingsEnabled),
             historySnapshot.CommandResults,
@@ -296,6 +296,24 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
 
         string fileName = $"OpenBlade-diagnostics-{metadata.CapturedAt.UtcDateTime:yyyyMMdd-HHmmssZ}.zip";
         return new DiagnosticArchive(fileName, destination.ToArray());
+    }
+
+    private static DiagnosticDeviceIdentity CreateDeviceIdentity(
+        ServiceStatusSnapshot status)
+    {
+        string? reportedModel = status.Firmware?.ModelNumber;
+        RazerBladeModelInfo? model = RazerBladeModelCatalog.Find(reportedModel);
+        return model is null
+            ? new DiagnosticDeviceIdentity(
+                string.IsNullOrWhiteSpace(reportedModel) ? "Unavailable" : reportedModel.Trim(),
+                "Unavailable",
+                "Unavailable",
+                SerialNumber: null)
+            : new DiagnosticDeviceIdentity(
+                model.ModelNumber,
+                model.UsbVendorId,
+                model.UsbProductId,
+                SerialNumber: null);
     }
 
     private static IReadOnlyDictionary<string, bool> CreateCapabilities(
@@ -316,11 +334,65 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         foreach (LightingEffect value in Enum.GetValues<LightingEffect>())
         {
             result[$"lighting.{value}"] = capabilities.LightingEffects.Contains(value);
+            result[$"lighting.observed.{value}"] =
+                capabilities.ObservedLightingEffects.Contains(value);
         }
 
         result["battery.chargeLimit"] = capabilities.ChargeLimits.Count > 0;
         result["battery.protectionOff"] = capabilities.SupportsBatteryProtectionOff;
         result["battery.temporaryFullCharge"] = capabilities.SupportsTemporaryFullCharge;
+        result["performance.customCombinations"] =
+            capabilities.CustomPerformance?.IsWellFormed == true;
+        result["performance.cpuPowerLimit.observed"] =
+            capabilities.CpuPowerLimit?.IsWellFormed == true;
+        result["performance.cpuPowerLimit.write"] =
+            capabilities.CpuPowerLimit?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.cpuVoltageOptimizer.observed"] =
+            capabilities.CpuVoltageOptimizer?.IsWellFormed == true;
+        result["performance.cpuVoltageOptimizer.write"] =
+            capabilities.CpuVoltageOptimizer?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.cpuVoltageOptimizer.enableDisableObserved"] =
+            capabilities.CpuVoltageOptimizer?.SupportsEnableDisable == true;
+        result["performance.gpuOverclock.observed"] =
+            capabilities.GpuOverclock?.IsWellFormed == true;
+        result["performance.gpuOverclock.write"] =
+            capabilities.GpuOverclock?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.gpuOverclock.enableDisableObserved"] =
+            capabilities.GpuOverclock?.SupportsEnableDisable == true;
+        result["laptop.specialKeyBindings.observed"] =
+            capabilities.SpecialKeyBindingsAccess is not null;
+        result["laptop.specialKeyBindings.write"] =
+            capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite;
+        foreach (SpecialKeySlotSet slot in new[]
+        {
+            SpecialKeySlotSet.M1,
+            SpecialKeySlotSet.M2,
+            SpecialKeySlotSet.M3,
+            SpecialKeySlotSet.M4,
+            SpecialKeySlotSet.M5,
+        })
+        {
+            result[$"laptop.specialKeyBindings.write.{slot}"] =
+                (capabilities.WritableSpecialKeySlots & slot) != 0;
+        }
+        result["lighting.lampArray.observed"] =
+            capabilities.LampArrayLightingAccess is not null;
+        result["lighting.lampArray.write"] =
+            capabilities.LampArrayLightingAccess == DeviceFeatureAccess.ReadWrite;
+        foreach (PowerSourceBehaviorObservation observation
+            in capabilities.ObservedPowerSourceBehaviors)
+        {
+            string prefix = $"powerSource.{observation.Source}";
+            result[$"{prefix}.observed"] = observation.IsWellFormed;
+            result[$"{prefix}.fixedFansAvailable"] =
+                observation.FixedFanControlAvailable == true;
+            result[$"{prefix}.performanceModeAvailable"] =
+                observation.PerformanceModeAvailable == true;
+            result[$"{prefix}.customModeAvailable"] =
+                observation.CustomModeAvailable == true;
+            result[$"{prefix}.inadequatePowerWarningVisible"] =
+                observation.InadequatePowerWarningVisible == true;
+        }
         return result;
     }
 
@@ -384,6 +456,23 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.SupportsBatteryProtectionOff.ToString(),
             ["capability.supportsTemporaryFullCharge"] =
                 capabilities.SupportsTemporaryFullCharge.ToString(),
+            ["capability.observedLightingEffects"] = string.Join(
+                ", ",
+                capabilities.ObservedLightingEffects
+                    .Where(Enum.IsDefined)
+                    .Order()),
+            ["capability.specialKeyBindingsAccess"] =
+                capabilities.SpecialKeyBindingsAccess?.ToString() ?? "Unavailable",
+            ["capability.writableSpecialKeySlots"] =
+                capabilities.WritableSpecialKeySlots.ToString(),
+            ["capability.lampArrayLightingAccess"] =
+                capabilities.LampArrayLightingAccess?.ToString() ?? "Unavailable",
+            ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
+                capabilities.FanSpeedRange?.MinimumRpm),
+            ["capability.fanSpeedMaximumRpm"] = NumberOrUnavailable(
+                capabilities.FanSpeedRange?.MaximumRpm),
+            ["capability.fanSpeedStepRpm"] = NumberOrUnavailable(
+                capabilities.FanSpeedRange?.StepRpm),
             ["override.performance"] = status.PerformanceOverride is null
                 ? "None"
                 : $"{status.PerformanceOverride.Value} ({status.PerformanceOverride.Lifetime})",
@@ -394,6 +483,23 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 ? "None"
                 : $"{status.LightingOverride.Value.Effect} ({status.LightingOverride.Lifetime})",
         };
+
+        foreach (PowerSourceBehaviorObservation observation
+            in capabilities.ObservedPowerSourceBehaviors)
+        {
+            string prefix = $"capability.powerSource.{observation.Source}";
+            configuration[$"{prefix}.selectedPerformance"] =
+                observation.SelectedPerformance.ToString();
+            configuration[$"{prefix}.selectedFans"] = observation.SelectedFans.ToString();
+            configuration[$"{prefix}.fixedFansAvailable"] =
+                BoolOrUnavailable(observation.FixedFanControlAvailable);
+            configuration[$"{prefix}.performanceModeAvailable"] =
+                BoolOrUnavailable(observation.PerformanceModeAvailable);
+            configuration[$"{prefix}.customModeAvailable"] =
+                BoolOrUnavailable(observation.CustomModeAvailable);
+            configuration[$"{prefix}.inadequatePowerWarningVisible"] =
+                BoolOrUnavailable(observation.InadequatePowerWarningVisible);
+        }
 
         return configuration;
     }

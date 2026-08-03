@@ -12,7 +12,21 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private static readonly TimeSpan MaximumKeyPulsePreAge =
         TimeSpan.FromMilliseconds(75);
     private static readonly IReadOnlySet<LightingEffect> AdmittedEffects =
-        new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>());
+        new HashSet<LightingEffect>(
+        [
+            LightingEffect.Off,
+            LightingEffect.Static,
+            LightingEffect.Spectrum,
+            LightingEffect.Breathing,
+            LightingEffect.Reactive,
+            LightingEffect.Tidal,
+            LightingEffect.Starlight,
+            LightingEffect.Wave,
+            LightingEffect.Wheel,
+            LightingEffect.Ripple,
+            LightingEffect.AmbientAwareness,
+            LightingEffect.AudioMeter,
+        ]);
 
     private readonly ValidationActor actor;
     private readonly IRazerCommandSession session;
@@ -37,6 +51,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private int nextCommandTransaction = 1;
     private int nextMatrixTransaction = 1;
     private int ownershipState;
+    private int driverModeRestoreOutcome;
     // Renderer-local overlay state. This is rolled back on a failed matrix
     // submission; the provider separately retains the desired Windows state
     // across renderer replacement.
@@ -73,6 +88,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     public LightingRendererOwnershipState OwnershipState =>
         (LightingRendererOwnershipState)Volatile.Read(ref ownershipState);
 
+    public DriverModeRestoreOutcome DriverModeRestoreOutcome =>
+        (DriverModeRestoreOutcome)Volatile.Read(ref driverModeRestoreOutcome);
+
     internal static DeviceCapabilities CreateCapabilities(bool admitted) => new(
         new HashSet<PerformancePreset>(),
         new HashSet<FanMode>(),
@@ -83,6 +101,13 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         SupportsBatteryProtectionOff: false,
         SupportsTemporaryFullCharge: false)
     {
+        SupportsPlaybackMuteIndicator = admitted,
+        SpecialKeyBindingsAccess = admitted
+            ? DeviceFeatureAccess.ReadWrite
+            : null,
+        WritableSpecialKeySlots = admitted
+            ? SpecialKeySlotSet.All
+            : SpecialKeySlotSet.None,
         LogoLightingModes = admitted
             ? new HashSet<LogoLightingMode>(Enum.GetValues<LogoLightingMode>())
             : new HashSet<LogoLightingMode>(),
@@ -434,14 +459,14 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             Pid02E0MatrixFrame matrixFrame;
             lock (effectSync)
             {
-                if (activeEffect is not Pid02E0AmbientAwarenessEffect ambient)
+                if (activeEffect is not Pid02E0SessionFrameEffect sessionEffect)
                 {
                     throw KnownNotApplied(
-                        "Ambient Awareness input was rejected because its renderer is not active.");
+                        "Session-rendered lighting input was rejected because its renderer is not active.");
                 }
 
-                ambient.Update(frame);
-                matrixFrame = ambient.RenderFrame(
+                sessionEffect.Update(frame);
+                matrixFrame = sessionEffect.RenderFrame(
                     timeProvider.GetElapsedTime(effectStartedTimestamp));
             }
 
@@ -535,7 +560,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             timeProvider,
             cleanupDrainTimeout,
             pendingDisposals).ConfigureAwait(false);
-        return closingTask.IsCompleted;
+        return closingTask.IsCompletedSuccessfully;
     }
 
     public async Task EnsureDriverModeAsync(CancellationToken cancellationToken) =>
@@ -859,6 +884,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     {
         if (!ownsDriverMode)
         {
+            SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.NotOwned);
             return;
         }
 
@@ -866,25 +892,37 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         {
             // Never overwrite a mode another controller already changed.
             if (await QueryDeviceModeCoreAsync(CancellationToken.None).ConfigureAwait(false)
-                == RazerDeviceMode.Driver)
+                != RazerDeviceMode.Driver)
             {
-                await SetDeviceModeCoreAsync(
-                    RazerDeviceMode.Normal,
-                    CancellationToken.None).ConfigureAwait(false);
-                _ = await QueryDeviceModeCoreAsync(CancellationToken.None)
-                    .ConfigureAwait(false);
+                ownsDriverMode = false;
+                SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.ForeignChange);
+                return;
             }
+
+            await SetDeviceModeCoreAsync(
+                RazerDeviceMode.Normal,
+                CancellationToken.None).ConfigureAwait(false);
+            RazerDeviceMode confirmed = await QueryDeviceModeCoreAsync(
+                CancellationToken.None).ConfigureAwait(false);
+            if (confirmed != RazerDeviceMode.Normal)
+            {
+                SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.Indeterminate);
+                return;
+            }
+
+            ownsDriverMode = false;
+            SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.Released);
         }
         catch
         {
             // Closing must still release both HID handles. This bounded cleanup
             // is never retried in a background fight with another controller.
-        }
-        finally
-        {
-            ownsDriverMode = false;
+            SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.Failed);
         }
     }
+
+    private void SetDriverModeRestoreOutcome(DriverModeRestoreOutcome outcome) =>
+        Volatile.Write(ref driverModeRestoreOutcome, (int)outcome);
 
     private static RazerCommandSpec Spec(
         byte commandClass,
@@ -1053,7 +1091,12 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 Color(value.Color),
                 ReactiveFadeDuration(value.Duration)),
             RippleLightingParameters value => new Pid02E0RippleEffect(Color(value.Color)),
-            AmbientAwarenessLightingParameters => new Pid02E0AmbientAwarenessEffect(),
+            AmbientAwarenessLightingParameters
+                when settings.Effect == LightingEffect.AmbientAwareness =>
+                new Pid02E0SessionFrameEffect(),
+            AudioMeterLightingParameters
+                when settings.Effect == LightingEffect.AudioMeter =>
+                new Pid02E0SessionFrameEffect(),
             TidalLightingParameters value => new Pid02E0TidalEffect(
                 Color(value.PrimaryColor),
                 Color(value.SecondaryColor),
@@ -1545,6 +1588,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
             LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
             LightingEffect.AmbientAwareness => LightingRendererOwnershipState.AmbientAwareness,
+            LightingEffect.AudioMeter => LightingRendererOwnershipState.AudioMeter,
             _ => throw new ArgumentOutOfRangeException(nameof(effect)),
         };
 

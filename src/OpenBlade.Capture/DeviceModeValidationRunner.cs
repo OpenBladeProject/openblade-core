@@ -170,17 +170,15 @@ internal sealed class DeviceModeValidationRunner : IDeviceModeValidationRunner
         }
 
         state.Baseline = baseline.Mode;
-        if (baseline.Mode != RazerDeviceMode.Normal)
-        {
-            state.Failure = DeviceModeValidationFailure.BaselineNotNormal;
-            return;
-        }
+        RazerDeviceMode candidateMode = baseline.Mode == RazerDeviceMode.Normal
+            ? RazerDeviceMode.Driver
+            : RazerDeviceMode.Normal;
 
         state.ApplyAttempted = true;
         HidSessionResult<ReadOnlyMemory<byte>> apply = await SetAsync(
             context,
             session,
-            RazerDeviceMode.Driver,
+            candidateMode,
             cancellationToken).ConfigureAwait(false);
         if (apply.Failure is not null)
         {
@@ -203,7 +201,7 @@ internal sealed class DeviceModeValidationRunner : IDeviceModeValidationRunner
         }
 
         state.Candidate = candidate.Mode;
-        if (candidate.Mode != RazerDeviceMode.Driver)
+        if (candidate.Mode != candidateMode)
         {
             state.Failure = DeviceModeValidationFailure.CandidateMismatch;
             return;
@@ -224,10 +222,17 @@ internal sealed class DeviceModeValidationRunner : IDeviceModeValidationRunner
         RunState state)
     {
         state.RestoreAttempted = true;
+        if (state.Baseline is not { } baselineMode)
+        {
+            state.ManualRecoveryRequired = true;
+            state.Failure = DeviceModeValidationFailure.RestoreFailed;
+            return;
+        }
+
         HidSessionResult<ReadOnlyMemory<byte>> restore = await SetAsync(
             context,
             session,
-            RazerDeviceMode.Normal,
+            baselineMode,
             CancellationToken.None).ConfigureAwait(false);
         if (restore.Failure is not null)
         {
@@ -249,7 +254,7 @@ internal sealed class DeviceModeValidationRunner : IDeviceModeValidationRunner
         }
 
         state.Restored = restored.Mode;
-        if (restored.Mode != RazerDeviceMode.Normal)
+        if (restored.Mode != baselineMode)
         {
             state.ManualRecoveryRequired = true;
             state.Failure = DeviceModeValidationFailure.RestorationMismatch;

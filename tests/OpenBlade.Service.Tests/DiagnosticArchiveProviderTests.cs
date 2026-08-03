@@ -15,6 +15,21 @@ public sealed class DiagnosticArchiveProviderTests
         {
             ControllerDetectionWarning = $"Enumeration warning: {secret}",
             AlwaysOverrideExternalLightingChanges = true,
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+                WritableSpecialKeySlots =
+                    SpecialKeySlotSet.M3
+                    | SpecialKeySlotSet.M4
+                    | SpecialKeySlotSet.M5,
+                LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+                ObservedLightingEffects =
+                    new HashSet<LightingEffect>
+                    {
+                        LightingEffect.Spectrum,
+                        LightingEffect.Static,
+                    },
+            },
         });
         var history = new DiagnosticHistory();
         history.RecordSummary(ControlOperationStatus.Blocked, $"Blocked for {secret}");
@@ -48,9 +63,9 @@ public sealed class DiagnosticArchiveProviderTests
         }
 
         using JsonDocument device = JsonDocument.Parse(await ReadEntryAsync(archive, "device.json"));
-        Assert.Equal("RZ09-0581", device.RootElement.GetProperty("model").GetString());
+        Assert.Equal("RZ09-0528", device.RootElement.GetProperty("model").GetString());
         Assert.Equal("1532", device.RootElement.GetProperty("vendorId").GetString());
-        Assert.Equal("02E0", device.RootElement.GetProperty("productId").GetString());
+        Assert.Equal("02C6", device.RootElement.GetProperty("productId").GetString());
         Assert.Equal(JsonValueKind.Null, device.RootElement.GetProperty("serialNumber").ValueKind);
 
         using JsonDocument configuration = JsonDocument.Parse(
@@ -88,6 +103,42 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             bool.TrueString,
             configuration.RootElement.GetProperty("lighting.alwaysOverrideExternalChanges").GetString());
+        Assert.Equal(
+            "Static, Spectrum",
+            configuration.RootElement.GetProperty("capability.observedLightingEffects").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite.ToString(),
+            configuration.RootElement.GetProperty("capability.specialKeyBindingsAccess").GetString());
+        Assert.Equal(
+            "M3, M4, M5",
+            configuration.RootElement.GetProperty("capability.writableSpecialKeySlots").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly.ToString(),
+            configuration.RootElement.GetProperty("capability.lampArrayLightingAccess").GetString());
+        using JsonDocument capabilities = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "capabilities.json"));
+        Assert.True(
+            capabilities.RootElement.GetProperty("lighting.observed.Spectrum").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("lighting.Spectrum").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.observed").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write.M1").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write.M2").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write.M3").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write.M4").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write.M5").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("lighting.lampArray.observed").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("lighting.lampArray.write").GetBoolean());
         Assert.DoesNotContain(
             configuration.RootElement.EnumerateObject(),
             property => property.Name.StartsWith("telemetry.", StringComparison.Ordinal));
@@ -261,7 +312,15 @@ public sealed class DiagnosticArchiveProviderTests
             PerformanceOverride: null,
             FanOverride: null,
             LightingOverride: null,
-            FullChargeOverride: false);
+            FullChargeOverride: false)
+        {
+            Firmware = new FirmwareVersions(
+                "2.02",
+                "1.09",
+                "1.9.0.0",
+                "Unavailable",
+                RazerBladeModelCatalog.Rz090528ModelNumber),
+        };
     }
 
     private sealed class FixedMetadataSource(

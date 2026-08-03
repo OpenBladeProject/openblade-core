@@ -41,13 +41,6 @@ public sealed class ControlCoordinator
         this.device = device ?? throw new ArgumentNullException(nameof(device));
     }
 
-    // Kept for source compatibility with existing Service tests and callers. Controller
-    // presence is advisory and the guard is intentionally never consulted.
-    public ControlCoordinator(IBladeDevice device, IHardwareAccessGuard _)
-        : this(device)
-    {
-    }
-
     public async Task<SubsystemApplyResults> ApplyDesiredStateAsync(
         DesiredDeviceState desired,
         CancellationToken cancellationToken) =>
@@ -65,11 +58,6 @@ public sealed class ControlCoordinator
         FanMode value,
         CancellationToken cancellationToken) =>
         (await ApplyFanOutcomeAsync(value, cancellationToken)).Result;
-
-    public async Task<ControlResult> ApplyBatteryAsync(
-        BatteryPolicy value,
-        CancellationToken cancellationToken) =>
-        (await ApplyChargeLimitOutcomeAsync(value, cancellationToken)).Result;
 
     public async Task<ControlResult> ApplyChargeLimitAsync(
         BatteryPolicy value,
@@ -112,7 +100,9 @@ public sealed class ControlCoordinator
                 && (value == PerformancePreset.Custom
                     ? CustomPerformanceSettings.IsWellFormed(customPerformance)
                     : customPerformance is null),
-            capabilities => capabilities.PerformancePresets.Contains(value),
+            capabilities => capabilities.PerformancePresets.Contains(value)
+                && (value != PerformancePreset.Custom
+                    || capabilities.CustomPerformance?.Supports(customPerformance) != false),
             state => PerformanceMatches(state, value, customPerformance),
             token => device.SetPerformanceAsync(value, customPerformance, token),
             cancellationToken,
@@ -141,7 +131,9 @@ public sealed class ControlCoordinator
             DeviceSubsystem.Fans,
             "Fans",
             IsDefined(value.Mode),
-            capabilities => capabilities.FanModes.Contains(value.Mode),
+            capabilities => capabilities.FanModes.Contains(value.Mode)
+                && (value.Mode != FanMode.Fixed
+                    || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true),
             state => FanModeMatches(state.Fans, value.Mode),
             token => device.SetFanControlAsync(value, token),
             cancellationToken,

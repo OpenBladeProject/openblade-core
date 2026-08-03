@@ -97,7 +97,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
     internal static readonly HidOpenParameters MetadataOnlyOpenParameters =
         OperationalOpenParameters with { DesiredAccess = 0 };
 
-    private static readonly HidHandleIdentity ExactIdentity = new(
+    private static readonly HidHandleIdentity ProductionExactIdentity = new(
         VendorId: 0x1532,
         ProductId: 0x02E0,
         UsagePage: 0x0001,
@@ -108,12 +108,28 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
     private readonly IHardwareAccessGuard hardwareAccessGuard;
     private readonly IHidCandidateNative native;
     private readonly ControllerExclusivityPolicy exclusivityPolicy;
+    private readonly HidHandleIdentity exactIdentity;
 
     internal WindowsRazerHidEvidenceEvaluator(
         IHostIdentitySource hostIdentity,
         IHardwareAccessGuard hardwareAccessGuard,
         IHidCandidateNative native,
         ControllerExclusivityPolicy exclusivityPolicy)
+        : this(
+            hostIdentity,
+            hardwareAccessGuard,
+            native,
+            exclusivityPolicy,
+            ProductionExactIdentity)
+    {
+    }
+
+    internal WindowsRazerHidEvidenceEvaluator(
+        IHostIdentitySource hostIdentity,
+        IHardwareAccessGuard hardwareAccessGuard,
+        IHidCandidateNative native,
+        ControllerExclusivityPolicy exclusivityPolicy,
+        HidHandleIdentity exactIdentity)
     {
         ArgumentNullException.ThrowIfNull(hostIdentity);
         ArgumentNullException.ThrowIfNull(hardwareAccessGuard);
@@ -122,6 +138,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
         this.hardwareAccessGuard = hardwareAccessGuard;
         this.native = native;
         this.exclusivityPolicy = exclusivityPolicy;
+        this.exactIdentity = exactIdentity;
     }
 
     internal HidEvidenceEvaluation Evaluate()
@@ -268,14 +285,14 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 }
 
                 identityReads++;
-                vendorMatches += handleIdentity.VendorId == ExactIdentity.VendorId ? 1 : 0;
-                productMatches += handleIdentity.ProductId == ExactIdentity.ProductId ? 1 : 0;
-                usagePageMatches += handleIdentity.UsagePage == ExactIdentity.UsagePage ? 1 : 0;
-                usageMatches += handleIdentity.Usage == ExactIdentity.Usage ? 1 : 0;
+                vendorMatches += handleIdentity.VendorId == exactIdentity.VendorId ? 1 : 0;
+                productMatches += handleIdentity.ProductId == exactIdentity.ProductId ? 1 : 0;
+                usagePageMatches += handleIdentity.UsagePage == exactIdentity.UsagePage ? 1 : 0;
+                usageMatches += handleIdentity.Usage == exactIdentity.Usage ? 1 : 0;
                 featureLengthMatches +=
-                    handleIdentity.FeatureReportByteLength == ExactIdentity.FeatureReportByteLength ? 1 : 0;
+                    handleIdentity.FeatureReportByteLength == exactIdentity.FeatureReportByteLength ? 1 : 0;
 
-                if (handleIdentity == ExactIdentity)
+                if (handleIdentity == exactIdentity)
                 {
                     exactMatches.Add(candidate);
                     fallbackExactMatches += usedAccessFallback ? 1 : 0;

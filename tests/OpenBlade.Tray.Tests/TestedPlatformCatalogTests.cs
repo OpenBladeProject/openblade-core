@@ -8,12 +8,31 @@ public sealed class TestedPlatformCatalogTests
     [Fact]
     public void Catalog_ListsTheValidatedTargetVersions()
     {
-        TestedPlatformVersionSet target = Assert.Single(TestedPlatformCatalog.Entries);
+        Assert.Equal(2, TestedPlatformCatalog.Entries.Count);
+        TestedPlatformVersionSet target = TestedPlatformCatalog.Entries[0];
 
         Assert.Equal("RZ09-0581", target.ModelNumber);
         Assert.Equal(["3.01"], target.BiosVersions);
         Assert.Equal(["1.04"], target.EcVersions);
         Assert.Equal(["1.5.0.0", "1.6.0.0"], target.McuVersions);
+
+        TestedPlatformVersionSet rz090528 = TestedPlatformCatalog.Entries[1];
+        Assert.Equal("RZ09-0528", rz090528.ModelNumber);
+        Assert.Equal(["2.02"], rz090528.BiosVersions);
+        Assert.Equal(["1.09"], rz090528.EcVersions);
+        Assert.Equal(["1.9.0.0"], rz090528.McuVersions);
+    }
+
+    [Fact]
+    public void Assess_AcceptsValidatedRz090528Firmware()
+    {
+        TestedPlatformAssessment assessment = TestedPlatformCatalog.Assess(
+            "RZ09-05289EN4",
+            new FirmwareVersions("2.02", "1.09", "1.9.0.0", "ignored"));
+
+        Assert.True(assessment.IsEvaluated);
+        Assert.True(assessment.MatchesTestedConfiguration);
+        Assert.Empty(assessment.Mismatches);
     }
 
     [Theory]
@@ -64,7 +83,7 @@ public sealed class TestedPlatformCatalogTests
         TestedPlatformVersionMismatch mismatch = Assert.Single(assessment.Mismatches);
         Assert.Equal("Model", mismatch.Component);
         Assert.Equal("RZ09-9999", mismatch.CurrentValue);
-        Assert.Equal(["RZ09-0581"], mismatch.TestedValues);
+        Assert.Equal(["RZ09-0581", "RZ09-0528"], mismatch.TestedValues);
     }
 
     [Fact]

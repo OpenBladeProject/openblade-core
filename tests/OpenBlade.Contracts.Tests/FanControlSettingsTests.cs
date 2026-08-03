@@ -4,6 +4,21 @@ namespace OpenBlade.Contracts.Tests;
 
 public sealed class FanControlSettingsTests
 {
+    [Fact]
+    public void FanSpeedRange_ValidatesAndQuantizesExactDeviceBounds()
+    {
+        var range = new FanSpeedRange(2000, 5000, 100);
+
+        Assert.True(range.IsWellFormed);
+        Assert.True(range.Supports(2000));
+        Assert.True(range.Supports(3800));
+        Assert.True(range.Supports(5000));
+        Assert.False(range.Supports(5100));
+        Assert.Equal(2000, range.Quantize(1950));
+        Assert.Equal(3800, range.Quantize(3760));
+        Assert.Equal(5000, range.Quantize(5400));
+    }
+
     [Theory]
     [InlineData(1999)]
     [InlineData(2050)]

@@ -5,6 +5,7 @@ param(
     [string]$VcRedistPath,
     [string]$SigningThumbprint,
     [string]$SignTool,
+    [string]$MakeAppx,
     [string]$TimestampUrl = 'http://timestamp.digicert.com',
     [switch]$VerifyPrivacyPolicy
 )
@@ -18,6 +19,7 @@ $artifacts = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts'))
 . (Join-Path $PSScriptRoot 'InstallerPrerequisites.ps1')
 . (Join-Path $PSScriptRoot 'StoreSubmissionValidation.ps1')
 . (Join-Path $PSScriptRoot 'WindowsAppRuntimeNotificationResource.ps1')
+. (Join-Path $PSScriptRoot 'SparsePackageIdentity.ps1')
 
 & (Join-Path $PSScriptRoot 'Verify-Branding.ps1') -Repository $repository
 if ($LASTEXITCODE -ne 0) {
@@ -192,6 +194,7 @@ try {
     )
     if ($signingEnabled) {
         $installerBuildArguments += @(
+            '--property:SignOutput=true',
             "--property:OpenBladeSigningThumbprint=$SigningThumbprint",
             "--property:OpenBladeSignTool=$resolvedSignTool",
             "--property:OpenBladeTimestampUrl=$TimestampUrl"

@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "repository": "openblade-captures",
+    "revision": "c1a551d",
+    "path": "decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json"
+  },
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": "1.09",
+    "mcu": "1.9.0.0"
+  },
+  "statusValues": [
+    "NotInvestigated",
+    "Absent",
+    "SoftwareOnly",
+    "Captured",
+    "QueryValidated",
+    "SetterValidated",
+    "ProductionAdmitted"
+  ],
+  "capabilities": {
+    "identityAndFirmware": {
+      "usbDescriptors": "ProductionAdmitted",
+      "modelNumber": "ProductionAdmitted",
+      "biosVersion": "ProductionAdmitted",
+      "ecVersion": "ProductionAdmitted",
+      "mcuVersion": "ProductionAdmitted",
+      "relevantInterfaces": "ProductionAdmitted"
+    },
+    "performance": {
+      "ac": {
+        "presets": "ProductionAdmitted",
+        "customCpuLevels": "ProductionAdmitted",
+        "customGpuLevels": "ProductionAdmitted",
+        "gpuClockOffsets": "QueryValidated",
+        "gpuClockOffsetUiPolicy": "Captured",
+        "cpuPowerLimitWatts": "Captured",
+        "cpuVoltageOptimizer": "Captured",
+        "gpuOverclockToggle": "Captured",
+        "readback": "ProductionAdmitted"
+      },
+      "usbC": {
+        "powerClasses": "ProductionAdmitted",
+        "presetsByPowerClass": "Captured",
+        "customCpuLevels": "Absent",
+        "customGpuLevels": "Absent",
+        "readback": "QueryValidated"
+      },
+      "battery": {
+        "presets": "Captured",
+        "customCpuLevels": "NotInvestigated",
+        "customGpuLevels": "NotInvestigated",
+        "readback": "QueryValidated"
+      }
+    },
+    "fans": {
+      "automatic": "ProductionAdmitted",
+      "fixedMinimum": "ProductionAdmitted",
+      "fixedMaximum": "ProductionAdmitted",
+      "fixedStep": "ProductionAdmitted",
+      "maximum": "ProductionAdmitted",
+      "manualCurveWrites": "ProductionAdmitted",
+      "manualCurveReadback": "SoftwareOnly",
+      "rpmQuery": "ProductionAdmitted"
+    },
+    "sensors": {
+      "cpuTemperature": "ProductionAdmitted"
+    },
+    "battery": {
+      "protectionOff": "ProductionAdmitted",
+      "advertisedLimits": "ProductionAdmitted",
+      "limitQuery": "ProductionAdmitted",
+      "limit70": "ProductionAdmitted",
+      "limit75": "ProductionAdmitted",
+      "otherLimitSetters": "ProductionAdmitted",
+      "temporaryFullCharge": "ProductionAdmitted",
+      "temporaryFullChargeQuery": "ProductionAdmitted"
+    },
+    "keyboardLighting": {
+      "off": "ProductionAdmitted",
+      "brightnessRange": "ProductionAdmitted",
+      "brightnessQuery": "ProductionAdmitted",
+      "effects": {
+        "ambientAwareness": {
+          "base": "ProductionAdmitted",
+          "screenRegions": "Captured",
+          "matrixFormat": "Captured",
+          "frameCadence": "Captured"
+        },
+        "audioMeter": {
+          "base": "ProductionAdmitted",
+          "colorBoost": "Captured"
+        },
+        "breathing": {
+          "base": "ProductionAdmitted",
+          "singleColor": "Captured",
+          "dualColor": "Captured",
+          "randomColor": "Captured",
+          "durations": "Absent"
+        },
+        "customMatrix": {
+          "setupCommand": "NotInvestigated",
+          "matrixFormat": "NotInvestigated",
+          "frameCadence": "NotInvestigated"
+        },
+        "reactive": {
+          "base": "ProductionAdmitted",
+          "colors": "Captured",
+          "durations": "Captured",
+          "keyMap": "Captured"
+        },
+        "fire": {
+          "base": "ProductionAdmitted"
+        },
+        "ripple": {
+          "base": "ProductionAdmitted",
+          "colors": "Captured",
+          "durations": "Absent",
+          "keyMap": "Captured"
+        },
+        "spectrum": {
+          "base": "ProductionAdmitted",
+          "hostColorSequence": "Captured",
+          "frameCadence": "Captured"
+        },
+        "starlight": {
+          "base": "ProductionAdmitted",
+          "singleColor": "Captured",
+          "dualColor": "Captured",
+          "randomColor": "Captured",
+          "durations": "Captured"
+        },
+        "static": {
+          "base": "ProductionAdmitted",
+          "colors": "ProductionAdmitted"
+        },
+        "tidal": {
+          "base": "ProductionAdmitted",
+          "primaryColor": "Captured",
+          "secondaryColor": "Captured",
+          "randomColor": "Captured",
+          "inwardDirection": "Captured",
+          "outwardDirection": "Captured"
+        },
+        "wave": {
+          "base": "ProductionAdmitted",
+          "leftDirection": "Captured",
+          "rightDirection": "Captured"
+        },
+        "wheel": {
+          "base": "ProductionAdmitted",
+          "leftDirection": "Captured",
+          "rightDirection": "Captured"
+        }
+      },
+      "effectGetter": "NotInvestigated",
+      "matrixInterfaceDiscovery": "Absent",
+      "lampArrayInterfaceDiscovery": "QueryValidated"
+    },
+    "logoLighting": {
+      "off": "ProductionAdmitted",
+      "static": "ProductionAdmitted",
+      "breathing": "ProductionAdmitted",
+      "getter": "ProductionAdmitted"
+    },
+    "keyboardBehavior": {
+      "functionKeyPrimary": "ProductionAdmitted",
+      "functionKeyPrimaryGetter": "ProductionAdmitted",
+      "gamingMode": "ProductionAdmitted",
+      "gamingModeGetter": "ProductionAdmitted",
+      "startupAnimation": "ProductionAdmitted",
+      "startupAnimationGetter": "ProductionAdmitted",
+      "normalDeviceMode": "ProductionAdmitted",
+      "driverDeviceMode": "ProductionAdmitted",
+      "deviceModeGetter": "ProductionAdmitted"
+    },
+    "specialKeys": {
+      "functionLayerReports": "Captured",
+      "performanceKey": "Captured",
+      "m1PageUp": "Captured",
+      "m2PageDown": "Captured",
+      "m3GamingMode": "ProductionAdmitted",
+      "m4PerformanceMode": "ProductionAdmitted",
+      "m5MicrophoneMute": "ProductionAdmitted"
+    },
+    "display": {
+      "windowsVisibleModes": "ProductionAdmitted",
+      "dynamicRefreshRate": "ProductionAdmitted",
+      "variableRefreshRange": "ProductionAdmitted",
+      "hdr": "ProductionAdmitted",
+      "colorProfilesSdr": "ProductionAdmitted",
+      "colorProfilesHdr": "SoftwareOnly"
+    },
+    "lifecycle": {
+      "coldBoot": "NotInvestigated",
+      "signIn": "NotInvestigated",
+      "serviceRestart": "ProductionAdmitted",
+      "sleepResume": "NotInvestigated",
+      "deviceReconnect": "NotInvestigated"
+    },
+    "power": {
+      "fullAc": "ProductionAdmitted",
+      "usbCPowerClasses": "ProductionAdmitted",
+      "battery": "ProductionAdmitted",
+      "acToUsbC": "Captured",
+      "usbCToAc": "QueryValidated",
+      "acToBattery": "QueryValidated",
+      "batteryToAc": "Captured",
+      "usbCToBattery": "Captured",
+      "batteryToUsbC": "QueryValidated"
+    },
+    "conflicts": {
+      "vendorControllerPresent": "SetterValidated",
+      "windowsDynamicLightingDelegation": "ProductionAdmitted",
+      "externalChangeDetection": "SoftwareOnly",
+      "defaultZeroWritePolicy": "ProductionAdmitted",
+      "explicitReclaim": "SoftwareOnly"
+    },
+    "failures": {
+      "timeout": "Captured",
+      "malformedResponse": "SoftwareOnly",
+      "checksumMismatch": "SoftwareOnly",
+      "transactionMismatch": "QueryValidated",
+      "commandClassMismatch": "SoftwareOnly",
+      "commandIdMismatch": "SoftwareOnly",
+      "statusFailure": "SoftwareOnly",
+      "unsupportedPid": "ProductionAdmitted",
+      "unsupportedFirmware": "ProductionAdmitted",
+      "disconnectMidTransaction": "SoftwareOnly"
+    }
+  }
+}

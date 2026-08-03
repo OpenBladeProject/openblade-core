@@ -89,6 +89,61 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PrepareForLowPower_ReleasesDriverModeAndRecordsBoundary()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.DriverModeActive = true;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForLowPowerAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.False(context.Device.DriverModeActive);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+        Assert.Contains("low power", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Detail?.Contains(
+                "Attempting",
+                StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public async Task PrepareForLowPower_RecordsDistinctReleaseFailureWithoutThrowing()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.DriverModeActive = true;
+        context.Device.DriverModeReleaseFailure = new IOException("synthetic release failure");
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForLowPowerAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains("synthetic release failure", result.Message);
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Status == "Failed"
+                && entry.Detail?.Contains("synthetic release failure") == true);
+    }
+
+    [Fact]
+    public async Task InvalidateLightingRenderer_RecordsIndeterminateModeCleanup()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Provider.InvalidationDriverModeRestoreOutcome =
+            DriverModeRestoreOutcome.Indeterminate;
+
+        await context.Runtime.InvalidateLightingRendererAsync(CancellationToken.None);
+
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Status == "Failed"
+                && entry.Detail?.Contains(
+                    "could not confirm",
+                    StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public async Task PrepareForShutdown_DoesNotChangeDriverModeDuringControllerConflict()
     {
         TestContext context = CreateContext(
@@ -328,6 +383,72 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(0, context.Device.TotalSetterCalls);
         Assert.Equal(context.Device.Capabilities, context.Runtime.GetStatus().Capabilities);
         Assert.Equal(context.Device.ConfirmedState, context.Runtime.GetStatus().ConfirmedState);
+    }
+
+    [Fact]
+    public async Task Observe_PublishesObservedCapabilityOnlyChanges()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        long revision = context.Runtime.GetStatus().Revision;
+        int publications = context.Hub.Published.Count;
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+            ObservedLightingEffects =
+                new HashSet<LightingEffect> { LightingEffect.Spectrum },
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(revision + 1, context.Runtime.GetStatus().Revision);
+        Assert.Equal(publications + 1, context.Hub.Published.Count);
+        Assert.True(context.Runtime.GetStatus().Capabilities!.ObservedLightingEffects.SetEquals(
+            [LightingEffect.Spectrum]));
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            context.Runtime.GetStatus().Capabilities!.SpecialKeyBindingsAccess);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            context.Runtime.GetStatus().Capabilities!.LampArrayLightingAccess);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task Observe_PublishesPlaybackMuteIndicatorCapabilityChange()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsPlaybackMuteIndicator = false,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        long revision = context.Runtime.GetStatus().Revision;
+        int publications = context.Hub.Published.Count;
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            SupportsPlaybackMuteIndicator = true,
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(revision + 1, status.Revision);
+        Assert.Equal(publications + 1, context.Hub.Published.Count);
+        Assert.True(status.Capabilities!.SupportsPlaybackMuteIndicator);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
     [Fact]
@@ -604,6 +725,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
         {
+            SupportsPlaybackMuteIndicator = true,
             LightingEffects = new HashSet<LightingEffect>
             {
                 LightingEffect.Off,
@@ -1036,6 +1158,95 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task LightingPowerPolicy_LowPowerGateStagesStateWithoutHardwareWrite()
+    {
+        var gate = new LowPowerGate();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            lowPowerGate: gate);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles with
+        {
+            PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(
+                    turnOffWhenDisplayTurnsOff: true,
+                    idleTimeoutMinutes: null),
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        int writesBeforeSuppression = context.Device.LightingSetCalls;
+        gate.Enter();
+
+        ControlOperationResult result = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(writesBeforeSuppression, context.Device.LightingSetCalls);
+        Assert.Equal(
+            [LightingSuppressionReason.DisplayOff],
+            context.Runtime.GetStatus().LightingSuppressions);
+        Assert.Contains("without a firmware write", result.Message, StringComparison.Ordinal);
+
+        gate.Exit();
+        ControlOperationResult resumed = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, resumed.Status);
+        Assert.Equal(writesBeforeSuppression + 1, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
+    }
+
+    [Fact]
+    public async Task LightingPowerPolicy_DeferredUnsuppressionReconcilesAfterGateExit()
+    {
+        var gate = new LowPowerGate();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            lowPowerGate: gate);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles with
+        {
+            PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(
+                    turnOffWhenDisplayTurnsOff: true,
+                    idleTimeoutMinutes: null),
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.DisplayOff,
+            suppressed: true,
+            CancellationToken.None);
+        int writesWhileSuppressed = context.Device.LightingSetCalls;
+        gate.Enter();
+
+        ControlOperationResult deferred = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, deferred.Status);
+        Assert.Equal(writesWhileSuppressed, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
+
+        gate.Exit();
+        ControlOperationResult reconciled = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, reconciled.Status);
+        Assert.Equal(writesWhileSuppressed + 1, context.Device.LightingSetCalls);
+        Assert.NotEqual(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+    }
+
+    [Fact]
     public async Task LightingPowerPolicy_ControllerAdvisoryDoesNotBlockConfiguredSuppression()
     {
         TestContext context = CreateWritableContext(
@@ -1211,6 +1422,200 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task WindowsDynamicLightingMode_PersistsAndBlocksKeyboardWrites()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            LightingSettingsFactory.Off());
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int writesBeforeDelegation = context.Device.LightingSetCalls;
+
+        ControlOperationResult delegated =
+            await context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, delegated.Status);
+        Assert.Equal(
+            KeyboardLightingControlMode.WindowsDynamicLighting,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+        Assert.Equal(writesBeforeDelegation, context.Device.LightingSetCalls);
+
+        ControlOperationResult effect = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Off(),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        ControlOperationResult brightness =
+            await context.Runtime.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Increase,
+                OverrideLifetime.UntilPowerSourceChange,
+                CancellationToken.None);
+        ControlOperationResult suppression =
+            await context.Runtime.SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, effect.Status);
+        Assert.Equal(ControlOperationStatus.Blocked, brightness.Status);
+        Assert.Equal(ControlOperationStatus.Blocked, suppression.Status);
+        Assert.Equal(writesBeforeDelegation, context.Device.LightingSetCalls);
+        Assert.All(
+            new[] { effect, brightness, suppression },
+            result => Assert.Contains("Windows Dynamic Lighting", result.Message));
+
+        BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(
+            KeyboardLightingControlMode.WindowsDynamicLighting,
+            saved.Preferences.KeyboardLightingControlMode);
+    }
+
+    [Fact]
+    public async Task WindowsDynamicLightingMode_InvalidatesOwnedRendererBeforeDelegating()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult delegated =
+            await context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, delegated.Status);
+        Assert.Equal(1, context.Provider.InvalidationCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Device.LightingRendererOwnership);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Equal(
+            KeyboardLightingControlMode.WindowsDynamicLighting,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+    }
+
+    [Fact]
+    public async Task WindowsDynamicLightingMode_DoesNotDelegateWhenRendererInvalidationFails()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.InvalidationFailure =
+            new InvalidOperationException("Synthetic invalidation failure.");
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None));
+
+        Assert.Contains("Synthetic invalidation failure", failure.Message);
+        Assert.Equal(
+            KeyboardLightingControlMode.OpenBlade,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(
+            KeyboardLightingControlMode.OpenBlade,
+            saved.Preferences.KeyboardLightingControlMode);
+    }
+
+    [Fact]
+    public async Task WindowsDynamicLightingMode_RestoresRendererWhenPersistenceFails()
+    {
+        bool failPersistence = false;
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            (_, _) => failPersistence
+                ? Task.FromException(new IOException("Synthetic persistence failure."))
+                : Task.CompletedTask);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        failPersistence = true;
+
+        IOException failure = await Assert.ThrowsAsync<IOException>(
+            () => context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None));
+
+        Assert.Contains("Synthetic persistence failure", failure.Message);
+        Assert.Equal(1, context.Provider.InvalidationCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Device.LightingRendererOwnership);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Equal(
+            KeyboardLightingControlMode.OpenBlade,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+    }
+
+    [Fact]
+    public async Task WindowsDynamicLightingMode_ReportsFailedPersistenceAndRollback()
+    {
+        bool failPersistence = false;
+        TestContext? context = null;
+        context = await CreateOwnedStaticLightingContextAsync(
+            (_, _) =>
+            {
+                if (!failPersistence)
+                {
+                    return Task.CompletedTask;
+                }
+
+                context!.Provider.Available = false;
+                return Task.FromException(
+                    new IOException("Synthetic persistence failure."));
+            });
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        failPersistence = true;
+
+        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(
+            () => context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None));
+
+        Assert.Collection(
+            failure.InnerExceptions,
+            exception => Assert.Contains(
+                "Synthetic persistence failure",
+                exception.Message),
+            exception => Assert.Contains(
+                "previous lighting renderer could not be restored",
+                exception.Message,
+                StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(
+            KeyboardLightingControlMode.OpenBlade,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Fact]
     public async Task Restart_RestoresPersistedLastKnownLighting()
     {
         TestContext original = await CreateOwnedStaticLightingContextAsync();
@@ -1313,6 +1718,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new SequenceLifecycleEventSource(
                 ServiceLifecycleTrigger.Suspending,
                 ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -1375,6 +1781,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new SequenceLifecycleEventSource(
                 ServiceLifecycleTrigger.Suspending,
                 ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -1396,6 +1803,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new SequenceLifecycleEventSource(
                 ServiceLifecycleTrigger.DeviceRemoved,
                 ServiceLifecycleTrigger.DeviceArrived),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -1417,6 +1825,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new SequenceLifecycleEventSource(
                 ServiceLifecycleTrigger.Suspending,
                 ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -1666,7 +2075,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task FirstObservation_ProfileMismatchIsLatchedWithoutSetters()
+    public async Task FirstObservation_ProfileMismatchEstablishesBaselineWithoutSetters()
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.ConfirmedState = new ConfirmedDeviceState(
@@ -1677,19 +2086,46 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
-        Assert.Equal(
-            [
-                DeviceSubsystem.Performance,
-                DeviceSubsystem.Fans,
-                DeviceSubsystem.Battery,
-                DeviceSubsystem.Lighting,
-            ],
-            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
     [Fact]
-    public async Task FirstObservation_BatteryMismatchIsPreservedOnPowerTransition()
+    public async Task StartupReconciliation_ReappliesSavedProfileWithoutExternalWarning()
+    {
+        TestContext context = CreateWritableContext();
+        PowerProfile saved = context.Runtime.GetStatus().Profiles.PluggedIn;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+
+        await context.Runtime.ReconcileStartupProfileAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot reconciled = context.Runtime.GetStatus();
+        Assert.Empty(reconciled.ExternalChanges);
+        Assert.Equal(saved.Performance, reconciled.ConfirmedState!.Performance);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [DeviceSubsystem.Performance],
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task StartupBaseline_BatteryMismatchIsPreservedBeforeReconciliation()
     {
         TestContext context = CreateWritableContext();
         PowerProfile pluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn;
@@ -1701,9 +2137,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
-        Assert.Equal(
-            [DeviceSubsystem.Battery],
-            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
         context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
 
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
@@ -2739,7 +3173,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(["RazerAppEngine"], conflict.PotentialControllers);
         Assert.Null(conflict.ControllerDetectionWarning);
         Assert.Empty(conflict.ExternalChanges);
-        Assert.Equal("No verified PID 02E0 device is available.", conflict.Message);
+        Assert.Equal("No verified supported device is available.", conflict.Message);
         Assert.Equal(conflict.Revision + 1, detectionFailure.Revision);
         Assert.Equal(
             "process enumeration failed",
@@ -2792,6 +3226,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var loop = new ServiceLifecycleRefreshLoop(
             context.Runtime,
             new SingleLifecycleEventSource(ServiceLifecycleTrigger.DeviceArrived),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -2812,6 +3247,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var loop = new ServiceLifecycleRefreshLoop(
             context.Runtime,
             new SingleLifecycleEventSource(ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -2836,6 +3272,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var loop = new ServiceLifecycleRefreshLoop(
             context.Runtime,
             new SingleLifecycleEventSource(ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
         await loop.RunAsync(CancellationToken.None);
@@ -2869,7 +3306,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             "Windows service enumeration failed.",
             status.ControllerDetectionWarning);
         Assert.Empty(status.ExternalChanges);
-        Assert.Equal("No verified PID 02E0 device is available.", status.Message);
+        Assert.Equal("No verified supported device is available.", status.Message);
         Assert.Equal(0, context.Provider.TryGetCount);
         Assert.Equal(0, context.Device.TotalCalls);
     }
@@ -4991,7 +5428,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         return context;
     }
 
-    private async Task<TestContext> CreateOwnedStaticLightingContextAsync()
+    private async Task<TestContext> CreateOwnedStaticLightingContextAsync(
+        Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
+            transactionBoundary = null,
+        LowPowerGate? lowPowerGate = null)
     {
         LightingSettings lighting = LightingSettingsFactory.Static(
             new RgbColor(0, 128, 255),
@@ -5006,7 +5446,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         };
         TestContext context = CreateContext(
             providerAvailable: true,
-            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities));
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities),
+            transactionBoundary: transactionBoundary,
+            lowPowerGate: lowPowerGate);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             LightingEffects = capabilities.LightingEffects,
@@ -5155,7 +5597,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         FirmwareVersions? firmwareVersions = null,
         ProfileSetValidator? profileValidator = null,
         IFanTemperatureSource? fanTemperatureSource = null,
-        BatteryHealthStatus? batteryHealth = null)
+        BatteryHealthStatus? batteryHealth = null,
+        LowPowerGate? lowPowerGate = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -5210,6 +5653,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             hub,
             provider,
             history,
+            lowPowerGate ?? new LowPowerGate(),
             monitor,
             firmwareSource,
             transitionRetryDelay ?? (static (delay, token) => Task.Delay(delay, token)),
@@ -5435,6 +5879,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? InvalidationFailure { get; set; }
 
+        public DriverModeRestoreOutcome InvalidationDriverModeRestoreOutcome { get; set; }
+
         public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
         {
             TryGetCount++;
@@ -5464,7 +5910,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             };
         }
 
-        public Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
+        public Task<LightingRendererInvalidationResult> InvalidateLightingRendererAsync(
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -5472,7 +5918,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             if (InvalidationFailure is { } failure)
             {
                 InvalidationFailure = null;
-                return Task.FromException<LightingRendererOwnershipState>(failure);
+                return Task.FromException<LightingRendererInvalidationResult>(failure);
             }
 
             LightingRendererOwnershipState observed =
@@ -5485,7 +5931,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 counting.ConfirmedState = counting.ConfirmedState with { Lighting = null };
             }
 
-            return Task.FromResult(observed);
+            return Task.FromResult(new LightingRendererInvalidationResult(
+                observed,
+                InvalidationDriverModeRestoreOutcome));
         }
     }
 
@@ -5572,6 +6020,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public int DriverModeReadCalls { get; private set; }
 
         public int DriverModeReleaseCalls { get; private set; }
+
+        public Exception? DriverModeReleaseFailure { get; set; }
 
         public int OneShotSetCalls { get; private set; }
 
@@ -5680,6 +6130,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             DriverModeReleaseCalls++;
+            if (DriverModeReleaseFailure is not null)
+            {
+                return Task.FromException<bool?>(DriverModeReleaseFailure);
+            }
             DriverModeActive = false;
             return Task.FromResult<bool?>(false);
         }

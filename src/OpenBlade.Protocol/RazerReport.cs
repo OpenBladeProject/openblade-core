@@ -61,14 +61,59 @@ internal sealed class RazerReport
     public byte[] Encode()
     {
         byte[] bytes = new byte[ReportLength];
-        bytes[0] = (byte)RazerCommandStatus.New;
-        bytes[1] = TransactionId;
-        bytes[5] = checked((byte)payloadBytes.Length);
-        bytes[6] = CommandClass;
-        bytes[7] = CommandId;
-        payloadBytes.CopyTo(bytes, 8);
-        bytes[88] = CalculateChecksum(bytes);
+        Encode(bytes);
         return bytes;
+    }
+
+    internal void Encode(Span<byte> destination)
+    {
+        if (destination.Length != ReportLength)
+        {
+            throw new ArgumentException(
+                $"A Razer report destination must contain exactly {ReportLength} bytes.",
+                nameof(destination));
+        }
+
+        destination.Clear();
+        destination[0] = (byte)RazerCommandStatus.New;
+        destination[1] = TransactionId;
+        destination[5] = checked((byte)payloadBytes.Length);
+        destination[6] = CommandClass;
+        destination[7] = CommandId;
+        payloadBytes.CopyTo(destination[8..]);
+        destination[88] = CalculateChecksum(destination);
+    }
+
+    internal static void Encode(
+        byte transactionId,
+        byte commandClass,
+        byte commandId,
+        ReadOnlySpan<byte> payload,
+        Span<byte> destination)
+    {
+        if (payload.Length > MaximumPayloadLength)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(payload),
+                payload.Length,
+                $"Razer payloads cannot exceed {MaximumPayloadLength} bytes.");
+        }
+
+        if (destination.Length != ReportLength)
+        {
+            throw new ArgumentException(
+                $"A Razer report destination must contain exactly {ReportLength} bytes.",
+                nameof(destination));
+        }
+
+        destination.Clear();
+        destination[0] = (byte)RazerCommandStatus.New;
+        destination[1] = transactionId;
+        destination[5] = checked((byte)payload.Length);
+        destination[6] = commandClass;
+        destination[7] = commandId;
+        payload.CopyTo(destination[8..]);
+        destination[88] = CalculateChecksum(destination);
     }
 
     public ReadOnlyMemory<byte> ValidateResponse(

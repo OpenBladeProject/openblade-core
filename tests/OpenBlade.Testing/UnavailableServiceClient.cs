@@ -82,6 +82,11 @@ internal abstract class UnavailableServiceClient : IServiceClient
         CancellationToken token) =>
         Unavailable("Keyboard brightness stepping is unavailable.");
 
+    public virtual Task<ControlOperationResult> SetKeyboardLightingControlModeAsync(
+        KeyboardLightingControlMode mode,
+        CancellationToken token) =>
+        Unavailable("Keyboard lighting ownership selection is unavailable.");
+
     public virtual Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
         bool enabled,
         CancellationToken token) =>

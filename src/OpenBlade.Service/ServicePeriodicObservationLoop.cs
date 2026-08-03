@@ -5,31 +5,54 @@ public sealed class ServicePeriodicObservationLoop
     internal static readonly TimeSpan ObservationInterval = TimeSpan.FromSeconds(15);
 
     private readonly IServiceControlRuntime runtime;
+    private readonly LowPowerGate lowPowerGate;
     private readonly ILogger logger;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
 
     public ServicePeriodicObservationLoop(
         IServiceControlRuntime runtime,
+        LowPowerGate lowPowerGate,
         ILogger logger)
-        : this(runtime, logger, static (interval, token) => Task.Delay(interval, token))
+        : this(
+            runtime,
+            lowPowerGate,
+            logger,
+            static (interval, token) => Task.Delay(interval, token))
     {
     }
 
     internal ServicePeriodicObservationLoop(
         IServiceControlRuntime runtime,
+        LowPowerGate lowPowerGate,
         ILogger logger,
         Func<TimeSpan, CancellationToken, Task> delay)
     {
         this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        this.lowPowerGate = lowPowerGate
+            ?? throw new ArgumentNullException(nameof(lowPowerGate));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         this.delay = delay ?? throw new ArgumentNullException(nameof(delay));
     }
 
     public async Task RunAsync(CancellationToken stoppingToken)
     {
+        bool lowPowerSkipLogged = false;
         while (!stoppingToken.IsCancellationRequested)
         {
             await delay(ObservationInterval, stoppingToken);
+            if (lowPowerGate.IsActive)
+            {
+                if (!lowPowerSkipLogged)
+                {
+                    logger.LogInformation(
+                        "Skipping periodic power classification, keyboard Driver-mode maintenance, and lighting-renderer restoration while the low-power gate is active.");
+                    lowPowerSkipLogged = true;
+                }
+
+                continue;
+            }
+
+            lowPowerSkipLogged = false;
             if (!await RunStepAsync(
                 runtime.RefreshPowerSourceClassificationAsync,
                 "power-source classification",

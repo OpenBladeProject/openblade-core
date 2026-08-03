@@ -10,8 +10,41 @@ namespace OpenBlade.SessionAgent;
 internal static class Program
 {
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        if (MicrophoneMuteStateProbeCommand.IsRequested(args))
+        {
+            try
+            {
+                return new MicrophoneMuteStateProbeCommand(
+                    WindowsMicrophoneMuteStateQuery.Query,
+                    Console.Out).Run();
+            }
+            catch
+            {
+                return 2;
+            }
+        }
+
+        if (DynamicLightingIdentityProbeCommand.IsRequested(args))
+        {
+            try
+            {
+                return new DynamicLightingIdentityProbeCommand(
+                        new WindowsDynamicLightingPackageIdentitySource(),
+                        new WindowsLampArrayObservationSource())
+                    .RunAsync(args, CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch
+            {
+                // The explicit probe never writes a crash report because
+                // exception details may contain package or device identifiers.
+                return 2;
+            }
+        }
+
         try
         {
             return RunAsync().GetAwaiter().GetResult();
@@ -155,6 +188,14 @@ internal static class Program
                         "OpenBlade Ambient Awareness failed: {0}",
                         exception.Message),
                     statusWatcher: statusFeed);
+                await using var audioMeterServiceClient = new ServiceClient();
+                await using var audioMeter = new ServiceAudioMeterLightingLoop(
+                    audioMeterServiceClient,
+                    WindowsAudioMeterLightingSamplerFactory.Instance,
+                    exception => System.Diagnostics.Trace.TraceWarning(
+                        "OpenBlade Audio Meter failed: {0}",
+                        exception.Message),
+                    statusWatcher: statusFeed);
                 await using var lightingIdleServiceClient = new ServiceClient();
                 var lightingIdlePolicy = new ServiceLightingIdlePolicyLoop(
                     lightingIdleServiceClient,
@@ -172,6 +213,15 @@ internal static class Program
                         "OpenBlade playback mute indication failed: {0}",
                         exception.Message),
                     statusWatcher: statusFeed);
+                var lampArrayObservation = new ServiceLampArrayObservationLoop(
+                    statusFeed,
+                    new WindowsLampArrayObservationSource(),
+                    observation => System.Diagnostics.Trace.TraceInformation(
+                        "OpenBlade LampArray observation: {0}",
+                        observation.ToSanitizedSummary()),
+                    exception => System.Diagnostics.Trace.TraceWarning(
+                        "OpenBlade LampArray observation failed: {0}",
+                        exception.Message));
 
                 Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
                 Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);
@@ -179,8 +229,11 @@ internal static class Program
                 Task automationTask = automation.RunAsync(lifetime.Token);
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
                 Task ambientTask = ambient.RunAsync(lifetime.Token);
+                Task audioMeterTask = audioMeter.RunAsync(lifetime.Token);
                 Task lightingIdleTask = lightingIdlePolicy.RunAsync(lifetime.Token);
                 Task playbackMuteTask = playbackMuteIndicator.RunAsync(lifetime.Token);
+                Task lampArrayObservationTask =
+                    lampArrayObservation.RunAsync(lifetime.Token);
                 Task completed = await Task.WhenAny(
                     serverTask,
                     statusFeedTask,
@@ -188,8 +241,10 @@ internal static class Program
                     automationTask,
                     reactiveTask,
                     ambientTask,
+                    audioMeterTask,
                     lightingIdleTask,
-                    playbackMuteTask).ConfigureAwait(false);
+                    playbackMuteTask,
+                    lampArrayObservationTask).ConfigureAwait(false);
                 Exception? terminalFailure = completed.IsFaulted
                     ? completed.Exception?.GetBaseException()
                     : null;
@@ -207,8 +262,10 @@ internal static class Program
                             automationTask,
                             reactiveTask,
                             ambientTask,
+                            audioMeterTask,
                             lightingIdleTask,
-                            playbackMuteTask)
+                            playbackMuteTask,
+                            lampArrayObservationTask)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested)

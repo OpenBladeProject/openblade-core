@@ -57,6 +57,60 @@ public sealed class SetupPayloadTransactionTests
     }
 
     [Fact]
+    public async Task StagePayload_PartialDynamicLightingIdentityPairFailsBeforeCreatingTransactionDirectories()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        File.WriteAllBytes(
+            Path.Combine(tree.Payload, "OpenBlade.DynamicLighting.msix"),
+            [0x50, 0x4B]);
+
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(
+            () => tree.CreatePlatform().StagePayloadAsync(CancellationToken.None));
+
+        Assert.Contains("both be present", failure.Message, StringComparison.Ordinal);
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles));
+    }
+
+    [Fact]
+    public async Task StagePayload_MalformedDynamicLightingIdentityPairFailsBeforeCreatingTransactionDirectories()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        File.WriteAllBytes(
+            Path.Combine(tree.Payload, "OpenBlade.DynamicLighting.msix"),
+            [0x50, 0x4B]);
+        File.WriteAllText(
+            Path.Combine(tree.Payload, "OpenBlade.DynamicLighting.identity.json"),
+            "{}");
+
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(
+            () => tree.CreatePlatform().StagePayloadAsync(CancellationToken.None));
+
+        Assert.Contains("reviewed schema", failure.Message, StringComparison.Ordinal);
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles));
+    }
+
+    [Fact]
+    public async Task StagePayload_ValidDynamicLightingIdentityPairIsPreserved()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        DynamicLightingIdentityRegistrationTests.WriteArtifacts(tree.Payload);
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform().StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+
+        Assert.True(File.Exists(
+            Path.Combine(tree.Install, "OpenBlade.DynamicLighting.msix")));
+        Assert.True(File.Exists(
+            Path.Combine(tree.Install, "OpenBlade.DynamicLighting.identity.json")));
+
+        await transaction.RollbackAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Commit_InstallsExactBytePreservingPayloadTreeAndRemovesObsoleteWpfFiles()
     {
         using TestTree tree = new();
@@ -956,7 +1010,12 @@ public sealed class SetupPayloadTransactionTests
         public Task InstallUninstallRegistrationAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task InstallBundleOwnershipAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RestoreBundleOwnershipAsync(
+            BundleOwnershipIdentity ownership,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveServiceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task StopTrayAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task StopSessionAgentAsync(CancellationToken cancellationToken) => throw new NotSupportedException();

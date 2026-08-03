@@ -5,8 +5,73 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed app accent changes in Light and Dark modes by keeping both WinUI's
+  live accent brushes and its theme resource dictionaries synchronized.
+- Fixed Ambient Awareness so a failed screen-capture resource is disposed and
+  recreated automatically instead of remaining faulted until the Session Agent
+  restarts or the selected region changes.
+- Fixed M1 and M2 shortcut selection so the action handler uses the binding's
+  typed key slot rather than its screen-reader label.
+- Fixed normal M5 microphone mute handling after Session Agent startup so the
+  Windows mute toggle and the key's red indicator use a shared, collision-free
+  Core Audio enumerator activation path.
+- Fixed RZ09-0581 M1 and M2 custom shortcuts so the low-level keyboard hook
+  dispatches each assigned action before suppressing the accompanying Page Up
+  or Page Down key, while retaining Raw Input as a hook-recovery fallback.
+
 ### Added
 
+- Added host-rendered Audio Meter keyboard lighting to the Razer Blade 16
+  (2026), `RZ09-0581`.
+- Added exact-device keyboard-brightness support for the Razer Blade 16
+  `RZ09-0528`, USB `1532:02C6`, on BIOS `2.02`. Admission is limited to the
+  independently captured and reversibly validated device paths: AC presets and
+  Custom CPU/GPU levels, Automatic/fixed/maximum/host-rendered-curve fans,
+  battery protection and 50–80 percent limits, temporary full charge, keyboard
+  brightness and Off, logo Off/Static/Breathing, startup animation,
+  function-key primary behavior, and Gaming mode. Model-specific CPU Power
+  Limit, CPU Voltage Optimizer, and GPU-overclock policy ranges are surfaced as
+  observed-only capabilities until safe backends and exact readback are
+  validated. Exact PID `02C6` Static and Spectrum are host-rendered over the
+  independently captured six-row, 17-column `03/0B` transport and were admitted
+  only after a committed exact-build round trip acknowledged every transition,
+  independently read brightness, visually confirmed both effects, and restored
+  Static at 50 percent. Starlight, Ripple, Tidal, Wave, and Wheel remain
+  observed-only exact-model capabilities until their parameters and write paths
+  receive the same validation. Windows Dynamic Lighting also exposes
+  the exact keyboard as an 85-lamp, virtual-key-aware LampArray. OpenBlade
+  offers an ownership control that delegates keyboard lighting to Windows.
+  While delegated, every OpenBlade keyboard-lighting producer is blocked in
+  the service and the tray links to Windows lighting settings; OpenBlade does
+  not register a competing background LampArray provider. The Session Agent
+  performs bounded, read-only enumeration
+  only after the service verifies the exact tested firmware tuple, and rejects
+  any array whose 85-lamp geometry fingerprint differs from captured evidence.
+  Its observation source exposes no priority or mutation operation. The
+  model's M1–M5 shortcut surface is also retained as observed-only. Exact PID
+  `02C6` M1–M5 and Fn+P reports are captured, and a model-aware decoder is
+  staged behind the capability gate. Editable bindings stay hidden and the
+  decoder remains inactive until a live OpenBlade round trip is validated.
+  PID `02C6` M4 is explicitly isolated from PID `02E0`'s conflicting D3
+  performance-button interpretation. A bounded exact-device diagnostic also
+  records that Windows denies direct shared reads of both keyboard top-level
+  collections, preventing an unsafe direct-HID fallback from being mistaken
+  for validated special-key access.
+  A separate exact-device GPU offset validator is staged behind host, device,
+  controller-isolation, and exact-confirmation interlocks; it performs an
+  adjacent one-MHz save/set/readback/restore transaction without changing
+  production admission until a live round trip succeeds.
+  Firmware-smoke schema 4 records these observed capabilities separately so an
+  update cannot silently lose them. Diagnostics, About, tested-platform
+  assessment, and firmware smoke now derive the RZ09-0528 / PID `02C6` identity
+  from the verified model instead of displaying or validating the older
+  RZ09-0581 / PID `02E0` target.
+- Added exact RZ09-0528 CPU-temperature support using the model-specific
+  `\_SB.PCI0.SBRG.EC0.TZRZ` Windows thermal-zone counter. OpenBlade retains the
+  earlier RZ09-0581 path as a separate explicit candidate and never substitutes
+  an unrelated thermal zone.
 - Added GitHub release checks to About with Every startup, Daily, Weekly,
   Monthly, and Manual only intervals. Checks run at most once during tray
   startup when due, and available releases open in the user's browser.
@@ -31,6 +96,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   failures. Diagnostic exports now include both user-mode log histories.
 - Added a compact, non-activating Windows-style flyout for built-in display
   brightness changes made with the laptop function keys.
+- HDR changes now reconcile the native Windows result with an independent
+  display-state readback. This handles systems that return an access-denied
+  status after applying the requested HDR state, while still failing closed
+  when readback disagrees. A bounded developer validator saves, applies,
+  reads back, and restores the original HDR state.
 - About now lists the installed app, Session Agent, and Service build
   versions, including each component's commit hash.
 - Added a session-local function-row bridge for validated RZ09-0581 Driver
@@ -93,6 +163,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Clarified the RZ09-0528 CPU Power Limit and CPU Voltage Optimizer cards with
+  the exact AMD kernel-driver boundary. The controls remain visible and
+  read-only because OpenBlade does not ship a kernel driver or depend on
+  Synapse-delivered binaries.
 - Fixed graphical-installer upgrades to compare installed versions, pinned the
   Burn upgrade family, added explicit orphaned-marker recovery, and restricted
   installation to Windows 11 version 24H2 x64 to match the tray's declared
@@ -221,6 +295,32 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed shortcut action pickers that changed visually without persisting their
+  new binding. Custom RZ09-0581 M1 and M2 actions now also suppress the paired
+  native Page Up or Page Down edge for the full key press, while Default and
+  unadmitted model paths continue to pass the native key through.
+- Hardened keyboard Driver-mode handling around genuine Windows low-power
+  transitions. The service now suppresses write-capable periodic and lifecycle
+  reconciliation while low power is active, performs the existing guarded
+  Normal-mode release before renderer invalidation, and records whether both
+  model-specific cleanup paths confirmed, skipped, or could not confirm their
+  final mode. Display lighting-policy transitions are also gated at both the
+  lifecycle and shared service-runtime boundaries, so Session Agent requests
+  can update logical suppression state without performing firmware writes.
+  Ordinary display-off notifications do not release Driver mode.
+- Kept Audio Meter renderer shutdown serialized with disposal, constrained
+  manual fan curves to each laptop's reported RPM range, and made PID `02C6`
+  reactive-key pulses safe during concurrent input and lighting-port shutdown.
+- Removed the redundant Windows Dynamic Lighting settings link from its
+  ownership row.
+- Hid Gaming mode key-blocking options while Gaming mode is off.
+- Restored the shared pointer-over highlight on settings cards without
+  interfering with their nested controls, apply it to expandable Settings
+  rows, and clear stale highlights after scrolling, pointer cancellation, or
+  pointer-capture changes.
+- Constrained every tray page to its vertical ScrollViewer viewport so long
+  card messages no longer widen the page and disappear past the right edge at
+  compact window sizes.
 - Kept temporary display-off lighting suppression from replacing the saved
   lighting effect with Off. Unplugging and immediately closing the lid now
   preserves the destination battery profile's lighting across resume or a

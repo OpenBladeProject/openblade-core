@@ -7,6 +7,26 @@ namespace OpenBlade.Capture.Tests;
 public sealed class PerformanceFanDiscriminatorQueryCommandTests
 {
     [Fact]
+    public async Task RunAsync_UsesSuppliedDeviceIdentity()
+    {
+        var snapshot = new PerformanceFanDiscriminatorSnapshot([]);
+        using var output = new StringWriter();
+        var command = new PerformanceFanDiscriminatorQueryCommand(
+            _ => Task.FromResult(
+                new HidSessionResult<PerformanceFanDiscriminatorSnapshot>(snapshot, null)),
+            output,
+            new DeviceIdentity("RZ09-0528", 0x1532, 0x02C6, "2.02"),
+            _ => NoopDisposable.Instance);
+
+        int exitCode = await command.RunAsync([], default);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("\"model\": \"RZ09-0528\"", output.ToString());
+        Assert.Contains("\"productId\": \"02C6\"", output.ToString());
+        Assert.Contains("\"biosVersion\": \"2.02\"", output.ToString());
+    }
+
+    [Fact]
     public async Task RunAsync_RendersSanitizedStructuredJsonForFixedQueries()
     {
         var snapshot = new PerformanceFanDiscriminatorSnapshot(
@@ -17,6 +37,8 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
             new("0D/87 custom CPU component", "010100", "010101"),
             new("0D/87 custom GPU component", "010200", "010202"),
             new("0F/98 startup animation candidate", "00", "00"),
+            new("00/87 MCU version", "00000000", "01020304"),
+            new("07/8C adapter power", "0000", "1111"),
         ]);
         var output = new StringWriter();
         var command = new PerformanceFanDiscriminatorQueryCommand(
@@ -47,10 +69,21 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
                 "0D/87 custom CPU component",
                 "0D/87 custom GPU component",
                 "0F/98 startup animation candidate",
+                "00/87 MCU version",
+                "07/8C adapter power",
             ],
             responses.Select(response => response.GetProperty("operation").GetString()!).ToArray());
         Assert.Equal(
-            ["00", "01010000", "01020000", "010100", "010200", "00"],
+            [
+                "00",
+                "01010000",
+                "01020000",
+                "010100",
+                "010200",
+                "00",
+                "00000000",
+                "0000",
+            ],
             responses.Select(response =>
                 response.GetProperty("requestPayloadHex").GetString()!).ToArray());
         Assert.All(responses, response =>

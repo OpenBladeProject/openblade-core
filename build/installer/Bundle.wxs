@@ -11,7 +11,7 @@
       AboutUrl="https://github.com/OSSBlade/openblade-core"
       HelpUrl="https://github.com/OSSBlade/openblade-docs"
       IconSourceFile="!(bindpath.BrandAssets)\OpenBlade.ico"
-      Condition="VersionNT64 &gt;= v10.0.26100"
+      Condition="VersionNT64 &gt;= v10.0 AND WindowsBuildNumber &gt;= 26100"
       Compressed="yes">
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication
@@ -90,7 +90,7 @@
           InstallArguments="install --bundle-managed"
           RepairArguments="install --bundle-managed"
           UninstallArguments="uninstall --bundle-managed"
-          DetectCondition="OpenBladeInstalledVersion AND OpenBladeInstalledVersion &gt;= v$(OpenBladeVersion)"
+          DetectCondition="OpenBladeInstalledVersion AND OpenBladeInstalledVersion &gt; v$(OpenBladeVersion)"
           PerMachine="yes"
           Cache="keep"
           Vital="yes">

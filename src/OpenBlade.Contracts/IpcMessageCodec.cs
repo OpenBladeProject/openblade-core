@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 24;
+    public const int ProtocolVersion = 32;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -167,6 +167,7 @@ public static class IpcMessageCodec
             StepKeyboardBrightnessRequest step =>
                 Enum.IsDefined(step.Direction)
                 && Enum.IsDefined(step.Lifetime),
+            SetKeyboardLightingControlModeRequest set => Enum.IsDefined(set.Mode),
             SetExternalLightingOverridePolicyRequest => true,
             SetLightingSuppressionRequest set => Enum.IsDefined(set.Reason),
             PulseReactiveKeyRequest pulse =>
@@ -368,6 +369,11 @@ public static class IpcMessageCodec
             throw InvalidStatus("lighting-renderer ownership is unknown");
         }
 
+        if (!Enum.IsDefined(status.KeyboardLightingControlMode))
+        {
+            throw InvalidStatus("keyboard-lighting control mode is unknown");
+        }
+
         if (status.FunctionKeyPrimary is { } functionKeyPrimary
             && !Enum.IsDefined(functionKeyPrimary))
         {
@@ -393,16 +399,7 @@ public static class IpcMessageCodec
             throw InvalidStatus("lighting-suppression collection is malformed");
         }
 
-        if (status.Capabilities is { } capabilities
-            && (capabilities.PerformancePresets is null
-                || capabilities.FanModes is null
-                || capabilities.LightingEffects is null
-                || capabilities.ChargeLimits is null
-                || capabilities.OneShotLaptopControls is null
-                || capabilities.OneShotLaptopControls.Any(value => !Enum.IsDefined(value))
-                || capabilities.OneShotLaptopControls.Distinct().Count()
-                    != capabilities.OneShotLaptopControls.Count
-                || !ValidChargeLimits(capabilities.ChargeLimits)))
+        if (status.Capabilities is { IsWellFormed: false })
         {
             throw InvalidStatus("capability collections are malformed");
         }
@@ -475,14 +472,6 @@ public static class IpcMessageCodec
         options.Converters.Add(new BatteryPolicyJsonConverter());
         options.Converters.Add(new ReadOnlySetJsonConverterFactory());
         return options;
-    }
-
-    private static bool ValidChargeLimits(IEnumerable<int> limits)
-    {
-        int[] values = limits.ToArray();
-        return values.Length <= 7
-            && values.Distinct().Count() == values.Length
-            && values.All(value => value is >= 50 and <= 80 && value % 5 == 0);
     }
 
     private sealed class BatteryPolicyJsonConverter : JsonConverter<BatteryPolicy>
@@ -614,7 +603,7 @@ public static class IpcMessageCodec
             IReadOnlySet<int> value,
             JsonSerializerOptions options)
         {
-            if (!ValidChargeLimits(value))
+            if (!DeviceCapabilities.AreChargeLimitsWellFormed(value))
             {
                 throw new JsonException("Charge limits are invalid.");
             }

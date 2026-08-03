@@ -69,6 +69,37 @@ public sealed class CustomPerformanceContractTests
     }
 
     [Fact]
+    public void ExactDeviceCombinations_CanNarrowGenericValidPairs()
+    {
+        var capabilities = new CustomPerformanceCapabilities(
+            new HashSet<CustomPerformanceCombination>
+            {
+                new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High),
+                new(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
+            });
+
+        Assert.True(capabilities.IsWellFormed);
+        Assert.True(capabilities.Supports(new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Low)));
+        Assert.False(capabilities.Supports(new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium)));
+    }
+
+    [Fact]
+    public void DiscoveredNumericRange_DoesNotClaimWritesWithoutValidatedStep()
+    {
+        var observedRange = new DeviceNumericRange(-1000, 400, null);
+        var writableRange = new DeviceNumericRange(45, 95, 1);
+
+        Assert.True(observedRange.IsWellFormed);
+        Assert.False(observedRange.Supports(0));
+        Assert.True(writableRange.Supports(61));
+        Assert.False(writableRange.Supports(96));
+    }
+
+    [Fact]
     public void PerformanceOverride_RequiresLevelsOnlyForCustom()
     {
         Assert.True(new PerformanceOverride(

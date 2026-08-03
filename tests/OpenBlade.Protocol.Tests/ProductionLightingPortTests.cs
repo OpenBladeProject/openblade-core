@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -39,14 +40,533 @@ public sealed class ProductionLightingPortTests
         Assert.Null(typeof(ProductionLightingOracleCaptureEvidence).GetProperty("Applied"));
         Assert.Null(typeof(ProductionLightingOracleCaptureEvidence).GetProperty("Restored"));
         Assert.Equal(
-            Enum.GetValues<LightingEffect>().Order(),
+            new[]
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+                LightingEffect.Spectrum,
+                LightingEffect.Breathing,
+                LightingEffect.Reactive,
+                LightingEffect.Tidal,
+                LightingEffect.Starlight,
+                LightingEffect.Wave,
+                LightingEffect.Wheel,
+                LightingEffect.Ripple,
+                LightingEffect.AmbientAwareness,
+                LightingEffect.AudioMeter,
+            }.Order(),
             factory.Capabilities.LightingEffects.Order());
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            factory.Capabilities.SpecialKeyBindingsAccess);
+        Assert.Equal(
+            SpecialKeySlotSet.All,
+            factory.Capabilities.WritableSpecialKeySlots);
+        Assert.True(factory.Capabilities.SupportsPlaybackMuteIndicator);
+        Assert.Null(factory.Capabilities.LampArrayLightingAccess);
         Assert.Empty(factory.Capabilities.PerformancePresets);
         Assert.Empty(factory.Capabilities.FanModes);
         Assert.Empty(factory.Capabilities.ChargeLimits);
         Assert.False(ProductionLightingEvidenceSource.HasCurrentExactBuildValidationArtifact(
             Path.Combine(Path.GetTempPath(), $"absent-{Guid.NewGuid():N}.json"),
             TestBuildIdentity()));
+    }
+
+    [Fact]
+    public void Rz090528ValidationCapabilities_AdmitCapturedRowEffectsBrightnessAndLogo()
+    {
+        DeviceCapabilities capabilities =
+            Rz090528BrightnessLightingPort.CreateCapabilities(
+                staticEffectAdmitted: true,
+                spectrumEffectAdmitted: true);
+
+        Assert.True(capabilities.SupportsKeyboardBrightness);
+        Assert.False(capabilities.SupportsPlaybackMuteIndicator);
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            capabilities.SpecialKeyBindingsAccess);
+        Assert.Equal(
+            SpecialKeySlotSet.M3
+                | SpecialKeySlotSet.M4
+                | SpecialKeySlotSet.M5,
+            capabilities.WritableSpecialKeySlots);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            capabilities.LampArrayLightingAccess);
+        Assert.True(capabilities.LightingEffects.SetEquals(
+        [
+            LightingEffect.Off,
+            LightingEffect.Spectrum,
+            LightingEffect.Static,
+        ]));
+        Assert.True(capabilities.ObservedLightingEffects.SetEquals(
+        [
+            LightingEffect.Starlight,
+            LightingEffect.Ripple,
+            LightingEffect.Tidal,
+            LightingEffect.Wave,
+            LightingEffect.Wheel,
+        ]));
+        Assert.True(capabilities.LogoLightingModes.SetEquals(
+            Enum.GetValues<LogoLightingMode>()));
+        Assert.Empty(capabilities.PerformancePresets);
+        Assert.Empty(capabilities.FanModes);
+        Assert.Empty(capabilities.ChargeLimits);
+        Assert.False(capabilities.SupportsBatteryProtectionOff);
+        Assert.False(capabilities.SupportsTemporaryFullCharge);
+    }
+
+    [Fact]
+    public void Rz090528ProductionCapabilities_KeepUnvalidatedMatrixEffectsObservedOnly()
+    {
+        DeviceCapabilities capabilities =
+            Rz090528BrightnessLightingPort.CreateCapabilities();
+
+        Assert.Equal([LightingEffect.Off], capabilities.LightingEffects);
+        Assert.Contains(LightingEffect.Static, capabilities.ObservedLightingEffects);
+        Assert.Contains(LightingEffect.Spectrum, capabilities.ObservedLightingEffects);
+    }
+
+    [Fact]
+    public async Task Rz090528BrightnessStep_UsesExactQuerySetReadbackSequence()
+    {
+        var session = new LightingSession(initialBrightness: 49);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        byte result = await port.StepBrightnessAsync(
+            KeyboardBrightnessDirection.Increase,
+            default);
+
+        Assert.Equal(29, result);
+        Assert.Equal(
+            [
+                (0x03, 0x83, "010500"),
+                (0x03, 0x03, "01054A"),
+                (0x03, 0x83, "010500"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task Rz090528LightingOffAndLogo_UseExactSelectorAndReadback()
+    {
+        var session = new LightingSession(initialBrightness: 49);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Off() with
+            {
+                LogoMode = LogoLightingMode.Breathing,
+            },
+            default);
+
+        Assert.Equal(0, session.Brightness);
+        Assert.True(session.LogoEnabled);
+        Assert.Equal(LogoLightingProtocol.BreathingEffect, session.LogoEffect);
+        Assert.Equal(LogoLightingMode.Breathing, await port.ReadLogoStateAsync(default));
+        Assert.Contains(
+            (0x03, 0x02, "000402"),
+            session.Commands.Select(CommandTuple));
+        Assert.Contains(
+            (0x03, 0x00, "000401"),
+            session.Commands.Select(CommandTuple));
+        Assert.All(
+            session.Commands.Where(command =>
+                command.ClassId == 0x03
+                && command.CommandId is 0x80 or 0x82),
+            command => Assert.Equal(0x00, command.Arguments.Span[0]));
+    }
+
+    [Fact]
+    public async Task Rz090528Static_UsesSixCapturedRowsThenLatchAndOwnsRenderer()
+    {
+        var session = new LightingSession(initialBrightness: 0);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            staticEffectAdmitted: true);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(0x47, 0xE1, 0x0C), 50),
+            default);
+
+        Assert.Equal(128, session.Brightness);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        Assert.Null(typeof(Rz090528BrightnessLightingPort)
+            .GetField("streamTask", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
+        RazerCommandSpec[] rows = session.Commands
+            .Where(command =>
+                command.ClassId == Rz090528MatrixRowProtocol.CommandClass
+                && command.CommandId == Rz090528MatrixRowProtocol.RowCommandId)
+            .ToArray();
+        Assert.Equal(Rz090528MatrixFrame.RowCount, rows.Length);
+        Assert.Equal(
+            Enumerable.Range(0, Rz090528MatrixFrame.RowCount),
+            rows.Select(command => (int)command.Arguments.Span[1]));
+        Assert.All(rows, command =>
+        {
+            Assert.Equal(Rz090528MatrixRowProtocol.RowPayloadLength, command.Arguments.Length);
+            Assert.Equal(0xFF, command.Arguments.Span[0]);
+            Assert.Equal(0x00, command.Arguments.Span[2]);
+            Assert.Equal(0x10, command.Arguments.Span[3]);
+        });
+        Assert.Equal(
+            (0x03, 0x0A, "0500"),
+            CommandTuple(session.Commands.Last()));
+    }
+
+    [Fact]
+    public async Task Rz090528Spectrum_AcknowledgesFirstFrameThenStreamsSetOnlyFrames()
+    {
+        var session = new LightingSession(initialBrightness: 128);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            staticEffectAdmitted: true,
+            spectrumEffectAdmitted: true);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(50),
+            default);
+
+        for (int attempt = 0;
+            attempt < 100 && session.SubmittedCommands.Count < 7;
+            attempt++)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.Equal(LightingRendererOwnershipState.Spectrum, port.OwnershipState);
+        Assert.Equal(7, session.Commands.Count(command =>
+            command.CommandId is Rz090528MatrixRowProtocol.RowCommandId
+                or Rz090528MatrixRowProtocol.LatchCommandId));
+        Assert.True(session.SubmittedBatchCount >= 1);
+        Assert.True(session.SubmittedCommands.Count >= 7);
+        Assert.All(
+            session.SubmittedCommands,
+            command => Assert.Equal(
+                Rz090528MatrixRowProtocol.CommandClass,
+                command.ClassId));
+        Assert.Contains(
+            session.SubmittedCommands,
+            command => command.CommandId
+                == Rz090528MatrixRowProtocol.LatchCommandId);
+    }
+
+    [Fact]
+    public async Task Rz090528Reactive_PulseWakeRendersWithPostWakeTime()
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 128);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            allSynapseEffectsAdmitted: true,
+            timeProvider: time);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                brightness: 50,
+                ReactiveLightingDuration.Medium),
+            default);
+
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(59), default);
+        for (int attempt = 0;
+            attempt < 100 && session.SubmittedCommands.Count < 7;
+            attempt++)
+        {
+            await Task.Delay(10);
+        }
+
+        RazerCommandSpec row = Assert.Single(session.SubmittedCommands, command =>
+                command.CommandId == Rz090528MatrixRowProtocol.RowCommandId
+                && command.Arguments.Span[1] == 3);
+        int column = 59 % Rz090528MatrixFrame.ColumnCount;
+        int colorOffset = 4 + (column * 3);
+        Assert.Equal(0, row.Arguments.Span[colorOffset]);
+        Assert.NotEqual(0, row.Arguments.Span[colorOffset + 1]);
+        Assert.Equal(0, row.Arguments.Span[colorOffset + 2]);
+    }
+
+    [Fact]
+    public async Task Rz090528ReactivePulse_DoesNotWaitBehindFirmwareOperationGate()
+    {
+        var session = new LightingSession(initialBrightness: 128);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            allSynapseEffectsAdmitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                brightness: 50,
+                ReactiveLightingDuration.Medium),
+            default);
+        SemaphoreSlim gate = Rz090528OperationGate(port);
+        await gate.WaitAsync();
+        try
+        {
+            await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(59), default)
+                .WaitAsync(TimeSpan.FromMilliseconds(250));
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    [Fact]
+    public async Task Rz090528ReactivePulse_IsRejectedAfterCloseStarts()
+    {
+        var session = new LightingSession(initialBrightness: 128);
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            allSynapseEffectsAdmitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                brightness: 50,
+                ReactiveLightingDuration.Medium),
+            default);
+        SemaphoreSlim gate = Rz090528OperationGate(port);
+        await gate.WaitAsync();
+        Task closing = port.DisposeAsync().AsTask();
+        try
+        {
+            await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+                port.PulseReactiveKeyAsync(new ReactiveKeyPulse(59), default));
+        }
+        finally
+        {
+            gate.Release();
+        }
+        await closing;
+    }
+
+    [Fact]
+    public async Task Rz090528ReadDriverMode_UsesQueryOnly()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        Assert.True(await port.ReadDriverModeAsync(default));
+        Assert.Equal(
+            [(0x00, 0x84, "0000")],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task Rz090528DriverModeLifecycle_AcquiresAndRestoresOwnedMode()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        Assert.True(await port.MaintainDriverModeAsync(default));
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+
+        await port.DisposeAsync();
+
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+        Assert.Equal(DriverModeRestoreOutcome.Released, port.DriverModeRestoreOutcome);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0000"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task Rz090528DriverModeLifecycle_PreservesPreExistingDriverMode()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        Assert.True(await port.MaintainDriverModeAsync(default));
+        await port.DisposeAsync();
+
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(
+            [(0x00, 0x84, "0000")],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task Rz090528ReleaseDriverMode_UsesSetAndIndependentReadback()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        Assert.False(await port.ReleaseDriverModeAsync(default));
+
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0000"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task Rz090528Invalidate_RestoresOwnedModeAndClosesSession()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+        await port.EnsureDriverModeAsync(default);
+
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            await port.InvalidateAsync());
+
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+        Assert.Equal(
+            RazerCommandSessionDisposition.FullyDisposed,
+            session.Disposition);
+    }
+
+    [Fact]
+    public async Task Rz090528DisposeWithinDeadline_RetainsStalledCleanup()
+    {
+        var time = new ManualTimeProvider();
+        var registry = new PendingDisposalRegistry();
+        var session = new LightingSession(initialBrightness: 0);
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            timeProvider: time,
+            cleanupDrainTimeout: TimeSpan.FromSeconds(1),
+            pendingDisposals: registry);
+        var gate = Assert.IsType<SemaphoreSlim>(
+            typeof(Rz090528BrightnessLightingPort)
+                .GetField(
+                    "operationGate",
+                    BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(port));
+        await gate.WaitAsync();
+
+        Task<bool> disposal = port.DisposeWithinCleanupDeadlineAsync();
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.False(await disposal);
+        Assert.Equal(1, registry.Count);
+        Assert.NotEqual(
+            RazerCommandSessionDisposition.FullyDisposed,
+            session.Disposition);
+
+        gate.Release();
+        await registry.WhenEmptyAsync().WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(0, registry.Count);
+        Assert.Equal(
+            RazerCommandSessionDisposition.FullyDisposed,
+            session.Disposition);
+        Assert.True(await port.DisposeWithinCleanupDeadlineAsync());
+    }
+
+    [Fact]
+    public async Task Rz090528DisposeWithinDeadline_ReturnsFalseWhenCleanupFaults()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DisposeFailure = new IOException("Synthetic close failure."),
+        };
+        var registry = new PendingDisposalRegistry();
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            pendingDisposals: registry);
+
+        bool drained = await port.DisposeWithinCleanupDeadlineAsync();
+
+        Assert.False(drained);
+        Assert.Equal(0, registry.Count);
     }
 
     [Fact]
@@ -85,6 +605,83 @@ public sealed class ProductionLightingPortTests
                 (0x00, 0x84, "0000"),
             ],
             session.Commands.Select(CommandTuple).ToArray());
+        Assert.Equal(DriverModeRestoreOutcome.Released, port.DriverModeRestoreOutcome);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DriverModeCleanup_ReadbackMismatchRetainsOwnershipAndReportsIndeterminate(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        (IProductionLightingPort port, MatrixWriter? writer) =
+            CreateDriverModeCleanupPort(session, rz090528);
+        await port.MaintainDriverModeAsync(default);
+        session.DeviceModeQueryOverrides.Enqueue(RazerDeviceMode.Driver);
+        session.DeviceModeQueryOverrides.Enqueue(RazerDeviceMode.Driver);
+
+        await port.DisposeAsync();
+
+        Assert.Equal(DriverModeRestoreOutcome.Indeterminate, port.DriverModeRestoreOutcome);
+        Assert.True(OwnsDriverMode(port));
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, session.Disposition);
+        if (writer is not null)
+        {
+            Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, writer.Disposition);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DriverModeCleanup_QueryFailureRetainsOwnershipAndReportsFailed(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+            FailDeviceModeQueryOnCall = 3,
+        };
+        (IProductionLightingPort port, MatrixWriter? writer) =
+            CreateDriverModeCleanupPort(session, rz090528);
+        await port.MaintainDriverModeAsync(default);
+
+        await port.DisposeAsync();
+
+        Assert.Equal(DriverModeRestoreOutcome.Failed, port.DriverModeRestoreOutcome);
+        Assert.True(OwnsDriverMode(port));
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, session.Disposition);
+        if (writer is not null)
+        {
+            Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, writer.Disposition);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DriverModeCleanup_ForeignChangeSkipsWriteAndReportsOutcome(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        (IProductionLightingPort port, _) = CreateDriverModeCleanupPort(session, rz090528);
+        await port.MaintainDriverModeAsync(default);
+        Assert.Equal(1, session.DeviceModeSetCalls);
+        session.DeviceMode = RazerDeviceMode.Normal;
+
+        await port.DisposeAsync();
+
+        Assert.Equal(DriverModeRestoreOutcome.ForeignChange, port.DriverModeRestoreOutcome);
+        Assert.False(OwnsDriverMode(port));
+        Assert.Equal(1, session.DeviceModeSetCalls);
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, session.Disposition);
     }
 
     [Fact]
@@ -986,6 +1583,29 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public void Rz090528FrameDeadline_AdvancesFromScheduleAndSkipsMissedFrames()
+    {
+        var effect = new Rz090528SpectrumEffect();
+
+        TimeSpan next = Rz090528BrightnessLightingPort.AdvanceFrameDeadline(
+            effect,
+            currentDeadline: Rz090528LightingTiming.AnimatedFrameInterval,
+            observedAfterWrite: TimeSpan.FromMilliseconds(82));
+
+        Assert.Equal(Rz090528LightingTiming.AnimatedFrameInterval * 3, next);
+    }
+
+    [Fact]
+    public void Rz090528FrameDeadline_RejectsNonPositiveEffectDelay()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            Rz090528BrightnessLightingPort.AdvanceFrameDeadline(
+                new NonAdvancingRz090528Effect(),
+                currentDeadline: TimeSpan.Zero,
+                observedAfterWrite: TimeSpan.Zero));
+    }
+
+    [Fact]
     public async Task AmbientAwareness_WritesOnlyTheTypedSessionSampleWhileOwned()
     {
         var session = new LightingSession(initialBrightness: 0xFF);
@@ -1005,6 +1625,29 @@ public sealed class ProductionLightingPortTests
 
         Assert.Equal(
             LightingRendererOwnershipState.AmbientAwareness,
+            port.OwnershipState);
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[19]);
+        Assert.Equal(MatrixRgb.Black, writer.Reports[^1].Frame[0]);
+    }
+
+    [Fact]
+    public async Task AudioMeter_WritesOnlyTheTypedSessionSampleWhileOwned()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.AudioMeter(colorBoost: 1.25, brightness: 100),
+            default);
+        RgbColor[] colors = new RgbColor[AmbientLightingFrame.SlotCount];
+        colors[19] = new RgbColor(0x12, 0x34, 0x56);
+
+        await port.PushAmbientLightingFrameAsync(
+            new AmbientLightingFrame(colors),
+            default);
+
+        Assert.Equal(
+            LightingRendererOwnershipState.AudioMeter,
             port.OwnershipState);
         Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[19]);
         Assert.Equal(MatrixRgb.Black, writer.Reports[^1].Frame[0]);
@@ -1258,6 +1901,26 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task DisposeWithinCleanupDeadline_ReturnsFalseWhenTheCloseFaults()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF)
+        {
+            DisposeFailure = new IOException("Synthetic close failure."),
+        };
+        var registry = new PendingDisposalRegistry();
+        var port = CreatePort(
+            session,
+            new MatrixWriter(),
+            admitted: true,
+            pendingDisposals: registry);
+
+        bool drained = await port.DisposeWithinCleanupDeadlineAsync();
+
+        Assert.False(drained);
+        Assert.Equal(0, registry.Count);
+    }
+
+    [Fact]
     public async Task DisposeWithinCleanupDeadline_IsIdempotentAcrossRepeatCalls()
     {
         var time = new ManualTimeProvider();
@@ -1492,15 +2155,61 @@ public sealed class ProductionLightingPortTests
             .GetField("operationGate", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(port));
 
+    private static SemaphoreSlim Rz090528OperationGate(
+        Rz090528BrightnessLightingPort port) =>
+        Assert.IsType<SemaphoreSlim>(typeof(Rz090528BrightnessLightingPort)
+            .GetField("operationGate", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
+
+    private static (IProductionLightingPort Port, MatrixWriter? Writer)
+        CreateDriverModeCleanupPort(LightingSession session, bool rz090528)
+    {
+        if (rz090528)
+        {
+            return (
+                new Rz090528BrightnessLightingPort(
+                    new ValidationActor(
+                        session,
+                        new BatteryCommands(),
+                        new TemporaryCommands()),
+                    TimeSpan.FromSeconds(1)),
+                null);
+        }
+
+        var writer = new MatrixWriter();
+        return (CreatePort(session, writer, admitted: true), writer);
+    }
+
+    private static bool OwnsDriverMode(IProductionLightingPort port) =>
+        Assert.IsType<bool>(port.GetType()
+            .GetField("ownsDriverMode", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
+
+    private sealed class NonAdvancingRz090528Effect : IRz090528LightingEffect
+    {
+        public bool RequiresContinuousRendering => true;
+
+        public TimeSpan GetNextFrameDelay(TimeSpan elapsed) => TimeSpan.Zero;
+
+        public Rz090528MatrixFrame RenderFrame(TimeSpan elapsed) =>
+            Rz090528MatrixFrame.Uniform(default);
+    }
+
     private static (int ClassId, int CommandId, string Arguments) CommandTuple(
         RazerCommandSpec command) => (
             command.ClassId,
             command.CommandId,
             Convert.ToHexString(command.Arguments.Span));
 
-    private sealed class LightingSession(byte initialBrightness) : IRazerCommandSession
+    private sealed class LightingSession(byte initialBrightness) :
+        IRazerCommandSession,
+        IRazerSetFeatureCommandSession
     {
         internal List<RazerCommandSpec> Commands { get; } = [];
+
+        internal ConcurrentQueue<RazerCommandSpec> SubmittedCommands { get; } = [];
+
+        internal int SubmittedBatchCount { get; private set; }
 
         internal Queue<byte> BrightnessQueryOverrides { get; } = [];
 
@@ -1518,7 +2227,17 @@ public sealed class ProductionLightingPortTests
 
         internal byte[]? Transition84Response { get; set; }
 
+        internal Exception? DisposeFailure { get; init; }
+
         internal RazerDeviceMode DeviceMode { get; set; } = RazerDeviceMode.Driver;
+
+        internal Queue<RazerDeviceMode> DeviceModeQueryOverrides { get; } = [];
+
+        internal int DeviceModeQueryCalls { get; private set; }
+
+        internal int? FailDeviceModeQueryOnCall { get; init; }
+
+        internal int DeviceModeSetCalls { get; private set; }
 
         public RazerCommandSessionDisposition Disposition { get; private set; } =
             RazerCommandSessionDisposition.Healthy;
@@ -1550,6 +2269,18 @@ public sealed class ProductionLightingPortTests
                 }
             }
 
+            if ((command.ClassId, command.CommandId) == (0x00, 0x84))
+            {
+                DeviceModeQueryCalls++;
+                if (FailDeviceModeQueryOnCall == DeviceModeQueryCalls)
+                {
+                    return Task.FromResult(
+                        new HidSessionResult<ReadOnlyMemory<byte>>(
+                            default,
+                            HidSessionFailureKind.ProtocolFailure));
+                }
+            }
+
             byte[] response = (command.ClassId, command.CommandId) switch
             {
                 (0x03, 0x83) =>
@@ -1558,15 +2289,21 @@ public sealed class ProductionLightingPortTests
                         : Brightness],
                 (0x03, 0x03) => SetBrightness(command.Arguments.Span),
                 (0x03, 0x80) =>
-                    [0x01, 0x04, LogoEnabled ? (byte)0x01 : (byte)0x00],
-                (0x03, 0x82) => [0x01, 0x04, LogoEffect],
+                    [command.Arguments.Span[0], 0x04,
+                        LogoEnabled ? (byte)0x01 : (byte)0x00],
+                (0x03, 0x82) =>
+                    [command.Arguments.Span[0], 0x04, LogoEffect],
                 (0x03, 0x00) => SetLogoState(command.Arguments.Span),
                 (0x03, 0x02) => SetLogoEffect(command.Arguments.Span),
                 (0x00, 0x86) => [0x01, 0x00, 0x00],
                 (0x00, 0x04) => SetDeviceMode(command.Arguments.Span),
                 (0x00, 0x84) => Transition84Response
-                    ?? DeviceModeProtocol.CreateSetArguments(DeviceMode),
+                    ?? DeviceModeProtocol.CreateSetArguments(
+                        DeviceModeQueryOverrides.TryDequeue(out RazerDeviceMode mode)
+                            ? mode
+                            : DeviceMode),
                 (0x03, 0x0A) => [0x05, 0x00],
+                (0x03, 0x0B) => command.Arguments.ToArray(),
                 _ => throw new InvalidOperationException(),
             };
             if (command.PayloadValidator?.Invoke(response) == false)
@@ -1591,10 +2328,46 @@ public sealed class ProductionLightingPortTests
                 new HidSessionResult<ReadOnlyMemory<byte>>(response, null));
         }
 
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            _ = assignTransactionId();
+            SubmittedCommands.Enqueue(command);
+
+            return Task.FromResult(
+                new HidSessionResult<ReadOnlyMemory<byte>>(
+                    ReadOnlyMemory<byte>.Empty,
+                    null));
+        }
+
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitBatchAsync(
+            IReadOnlyList<RazerCommandSpec> commands,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            SubmittedBatchCount++;
+            foreach (RazerCommandSpec command in commands)
+            {
+                _ = assignTransactionId();
+                SubmittedCommands.Enqueue(command);
+            }
+
+            return Task.FromResult(
+                new HidSessionResult<ReadOnlyMemory<byte>>(
+                    ReadOnlyMemory<byte>.Empty,
+                    null));
+        }
+
         public ValueTask DisposeAsync()
         {
             Disposition = RazerCommandSessionDisposition.FullyDisposed;
-            return ValueTask.CompletedTask;
+            return DisposeFailure is null
+                ? ValueTask.CompletedTask
+                : ValueTask.FromException(DisposeFailure);
         }
 
         private byte[] SetBrightness(ReadOnlySpan<byte> arguments)
@@ -1622,6 +2395,7 @@ public sealed class ProductionLightingPortTests
                 throw new InvalidOperationException();
             }
 
+            DeviceModeSetCalls++;
             DeviceMode = mode;
             return arguments.ToArray();
         }
@@ -1761,6 +2535,10 @@ public sealed class ProductionLightingPortTests
         private readonly List<Timer> timers = [];
 
         public override DateTimeOffset GetUtcNow() => now;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => now.Ticks;
 
         public override ITimer CreateTimer(
             TimerCallback callback,

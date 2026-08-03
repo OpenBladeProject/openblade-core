@@ -6,13 +6,14 @@ namespace OpenBlade.Service.Tests;
 public sealed class ServicePeriodicObservationLoopTests
 {
     [Fact]
-    public async Task RunAsync_PeriodicallyRequestsReadOnlyObservation()
+    public async Task RunAsync_PeriodicallyRunsActiveMaintenance()
     {
         using var cancellation = new CancellationTokenSource();
         var runtime = new RecordingRuntime(cancellation);
         TimeSpan? requestedDelay = null;
         var loop = new ServicePeriodicObservationLoop(
             runtime,
+            new LowPowerGate(),
             NullLogger.Instance,
             (delay, _) =>
             {
@@ -38,6 +39,7 @@ public sealed class ServicePeriodicObservationLoopTests
         };
         var loop = new ServicePeriodicObservationLoop(
             runtime,
+            new LowPowerGate(),
             NullLogger.Instance,
             (_, _) => Task.CompletedTask);
 
@@ -46,6 +48,80 @@ public sealed class ServicePeriodicObservationLoopTests
         Assert.Equal(1, runtime.RefreshCalls);
         Assert.Equal(1, runtime.DriverModeMaintenanceCalls);
         Assert.Equal(1, runtime.RestoreCalls);
+    }
+
+    [Fact]
+    public async Task RunAsync_LowPowerGateSkipsMutatingMaintenanceAndResumesAfterExit()
+    {
+        var gate = new LowPowerGate();
+        Assert.True(gate.Enter());
+        using var gatedCancellation = new CancellationTokenSource();
+        var gatedRuntime = new RecordingRuntime(gatedCancellation);
+        var gatedLoop = new ServicePeriodicObservationLoop(
+            gatedRuntime,
+            gate,
+            NullLogger.Instance,
+            (_, _) =>
+            {
+                gatedCancellation.Cancel();
+                return Task.CompletedTask;
+            });
+
+        await gatedLoop.RunAsync(gatedCancellation.Token);
+
+        Assert.Equal(0, gatedRuntime.RefreshCalls);
+        Assert.Equal(0, gatedRuntime.DriverModeMaintenanceCalls);
+        Assert.Equal(0, gatedRuntime.RestoreCalls);
+
+        Assert.True(gate.Exit());
+        using var activeCancellation = new CancellationTokenSource();
+        var activeRuntime = new RecordingRuntime(activeCancellation);
+        var activeLoop = new ServicePeriodicObservationLoop(
+            activeRuntime,
+            gate,
+            NullLogger.Instance,
+            (_, _) => Task.CompletedTask);
+
+        await activeLoop.RunAsync(activeCancellation.Token);
+
+        Assert.Equal(1, activeRuntime.DriverModeMaintenanceCalls);
+        Assert.Equal(1, activeRuntime.RestoreCalls);
+    }
+
+    [Fact]
+    public async Task RunAsync_LowPowerGateLogsOneCombinedSkipAcrossRepeatedIterations()
+    {
+        var gate = new LowPowerGate();
+        Assert.True(gate.Enter());
+        using var cancellation = new CancellationTokenSource();
+        var runtime = new RecordingRuntime(cancellation);
+        using var history = new DiagnosticHistory();
+        int delayCount = 0;
+        var loop = new ServicePeriodicObservationLoop(
+            runtime,
+            gate,
+            history.CreateLogger("OpenBlade.Service.ServicePeriodicObservationLoop"),
+            (_, _) =>
+            {
+                if (Interlocked.Increment(ref delayCount) == 5)
+                {
+                    cancellation.Cancel();
+                }
+
+                return Task.CompletedTask;
+            });
+
+        await loop.RunAsync(cancellation.Token);
+
+        Assert.Equal(5, delayCount);
+        Assert.Equal(0, runtime.RefreshCalls);
+        Assert.Equal(0, runtime.DriverModeMaintenanceCalls);
+        Assert.Equal(0, runtime.RestoreCalls);
+        Assert.Single(
+            history.Snapshot().LogLines,
+            line => line.Contains(
+                "Skipping periodic power classification",
+                StringComparison.Ordinal));
     }
 
     private sealed class RecordingRuntime(CancellationTokenSource cancellation)

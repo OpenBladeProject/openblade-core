@@ -24,7 +24,12 @@ public sealed record SetupStartupInstallState(
 public sealed record SetupInstallLifecycleState(
     SetupServiceInstallState Service,
     SetupStartupInstallState Startup,
-    bool BundleOwnershipExisted = false);
+    bool BundleOwnershipExisted = false,
+    bool DynamicLightingIdentityRegistered = false,
+    bool BundleOwnershipMatchesCurrentBuild = true)
+{
+    public BundleOwnershipIdentity? BundleOwnership { get; init; }
+}
 
 public interface ISetupPlatform
 {
@@ -50,7 +55,12 @@ public interface ISetupPlatform
     Task InstallUninstallRegistrationAsync(CancellationToken cancellationToken);
     Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken);
     Task InstallBundleOwnershipAsync(CancellationToken cancellationToken);
+    Task RestoreBundleOwnershipAsync(
+        BundleOwnershipIdentity ownership,
+        CancellationToken cancellationToken);
     Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken);
+    Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken);
+    Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken);
     Task RemoveServiceAsync(CancellationToken cancellationToken);
     Task StopTrayAsync(CancellationToken cancellationToken);
     Task StopSessionAgentAsync(CancellationToken cancellationToken);
@@ -80,6 +90,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
             try
             {
                 priorLifecycle = await platform.CaptureInstallLifecycleStateAsync(cancellationToken);
+                ValidateBundleOwnershipSnapshot(priorLifecycle);
                 if (priorLifecycle.BundleOwnershipExisted && !invocation.BundleManaged)
                 {
                     throw new InvalidOperationException(
@@ -102,7 +113,9 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 await platform.PrepareServiceForInstallAsync(cancellationToken);
                 await platform.StopTrayAsync(cancellationToken);
                 await platform.StopSessionAgentAsync(cancellationToken);
+                await platform.RemoveDynamicLightingIdentityAsync(cancellationToken);
                 await transaction.ActivateAsync(cancellationToken);
+                await platform.InstallDynamicLightingIdentityAsync(cancellationToken);
                 if (!invocation.BundleManaged)
                 {
                     await platform.InstallUninstallerAsync(cancellationToken);
@@ -152,6 +165,9 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                     await RecoverAsync(
                         () => platform.RemoveUninstallRegistrationAsync(recoveryToken),
                         recoveryFailures);
+                    await RecoverAsync(
+                        () => platform.RemoveDynamicLightingIdentityAsync(recoveryToken),
+                        recoveryFailures);
                 }
 
                 bool wasActivated = transaction.IsActivated;
@@ -174,6 +190,13 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
                 if (mutationStarted)
                 {
+                    if (priorLifecycle?.DynamicLightingIdentityRegistered == true)
+                    {
+                        await RecoverAsync(
+                            () => platform.InstallDynamicLightingIdentityAsync(recoveryToken),
+                            recoveryFailures);
+                    }
+
                     if (priorLifecycle?.Service is { Existed: true } priorService)
                     {
                         await RecoverAsync(
@@ -223,7 +246,9 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                         if (priorLifecycle?.BundleOwnershipExisted == true)
                         {
                             await RecoverAsync(
-                                () => platform.InstallBundleOwnershipAsync(recoveryToken),
+                                () => platform.RestoreBundleOwnershipAsync(
+                                    priorLifecycle.BundleOwnership!,
+                                    recoveryToken),
                                 recoveryFailures);
                         }
                         else
@@ -247,10 +272,20 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
         SetupInstallLifecycleState uninstallLifecycle =
             await platform.CaptureInstallLifecycleStateAsync(cancellationToken);
+        ValidateBundleOwnershipSnapshot(uninstallLifecycle);
         if (invocation.RecoverOrphanedBundle && !uninstallLifecycle.BundleOwnershipExisted)
         {
             throw new InvalidOperationException(
                 "No orphaned graphical-installer ownership marker was found.");
+        }
+        if (invocation.BundleManaged
+            && uninstallLifecycle.BundleOwnershipExisted
+            && !uninstallLifecycle.BundleOwnershipMatchesCurrentBuild)
+        {
+            Console.WriteLine(
+                "A newer OpenBlade payload owns this installation; "
+                + "the superseded bundle uninstall was ignored.");
+            return 0;
         }
         if (uninstallLifecycle.BundleOwnershipExisted
             && !invocation.BundleManaged
@@ -268,6 +303,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         await platform.StopSessionAgentAsync(cancellationToken);
         try
         {
+            await platform.RemoveDynamicLightingIdentityAsync(cancellationToken);
             await platform.RemoveUninstallShortcutAsync(cancellationToken);
             await platform.RemoveUninstallRegistrationAsync(cancellationToken);
             if (invocation.BundleManaged || invocation.RecoverOrphanedBundle)
@@ -280,6 +316,13 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         {
             List<Exception> recoveryFailures = [];
             using CancellationTokenSource recoveryTimeout = new(TimeSpan.FromSeconds(30));
+            if (uninstallLifecycle.DynamicLightingIdentityRegistered)
+            {
+                await RecoverAsync(
+                    () => platform.InstallDynamicLightingIdentityAsync(recoveryTimeout.Token),
+                    recoveryFailures);
+            }
+
             if (uninstallLifecycle.Startup.UninstallShortcutExisted)
             {
                 await RecoverAsync(
@@ -298,7 +341,9 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 && uninstallLifecycle.BundleOwnershipExisted)
             {
                 await RecoverAsync(
-                    () => platform.InstallBundleOwnershipAsync(recoveryTimeout.Token),
+                    () => platform.RestoreBundleOwnershipAsync(
+                        uninstallLifecycle.BundleOwnership!,
+                        recoveryTimeout.Token),
                     recoveryFailures);
             }
 
@@ -328,6 +373,18 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         catch (Exception exception)
         {
             failures.Add(exception);
+        }
+    }
+
+    private static void ValidateBundleOwnershipSnapshot(
+        SetupInstallLifecycleState lifecycle)
+    {
+        bool hasSnapshot = lifecycle.BundleOwnership is not null;
+        if (lifecycle.BundleOwnershipExisted != hasSnapshot
+            || lifecycle.BundleOwnership is { IsWellFormed: false })
+        {
+            throw new InvalidOperationException(
+                "The graphical-installer ownership marker could not be captured safely.");
         }
     }
 

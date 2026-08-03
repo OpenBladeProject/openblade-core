@@ -40,6 +40,27 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(2, command.ExpectedPayloadLength);
     }
 
+    [Theory]
+    [InlineData("0711", AdapterPowerState.Unknown)]
+    [InlineData("1111", AdapterPowerState.FullPower280W)]
+    [InlineData("FFFF", AdapterPowerState.Unknown)]
+    public async Task AdapterPowerQuery_FiltersValuesOutsideDeviceAdmission(
+        string responseHex,
+        AdapterPowerState expected)
+    {
+        var session = new ScriptedSession(
+            Success(Convert.FromHexString(responseHex)));
+        await using var port = CreatePort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower280W });
+
+        Assert.Equal(expected, await port.QueryAdapterPowerStateAsync(default));
+        Assert.Single(session.Commands);
+    }
+
     [Fact]
     public async Task McuVersionQuery_WithoutCodeControlledEvidenceReturnsNullWithoutIo()
     {
@@ -412,6 +433,56 @@ public sealed class ProductionBatteryPortTests
             ["01010000", "01020000", "01010001", "01020001", "010125", "010225"],
             session.Commands.Select(command =>
                 Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Fact]
+    public async Task ExactDeviceFixedFanSetterUsesCapturedRangeAndRejectsUnadmittedModes()
+    {
+        byte[] state1 = [0x01, 0x01, 0x00, 0x01];
+        byte[] state2 = [0x01, 0x02, 0x00, 0x01];
+        byte[] template1 = [0x01, 0x01, 0x32];
+        byte[] template2 = [0x01, 0x02, 0x32];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success(state1),
+            Success(state2),
+            Success([0x01, 0x01, 0x26]),
+            Success([0x01, 0x02, 0x26]));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(ProductionBatteryPort.FanMaximumStateFirstAction, 0x0D, 0x02, state1),
+                Fixture(ProductionBatteryPort.FanMaximumStateSecondAction, 0x0D, 0x02, state2),
+                Fixture(ProductionBatteryPort.FanMaximumSpeedFirstAction, 0x0D, 0x01, template1),
+                Fixture(ProductionBatteryPort.FanMaximumSpeedSecondAction, 0x0D, 0x01, template2)),
+            fanSpeedRange: new FanSpeedRange(2000, 5000, 100),
+            admittedFanModes: new HashSet<FanMode>
+            {
+                FanMode.Automatic,
+                FanMode.Fixed,
+                FanMode.Maximum,
+            });
+
+        await port.SetFanControlAsync(
+            new FanControlSettings(FanMode.Fixed, 3800, ManualFanCurve.Default),
+            default);
+
+        Assert.Equal(
+            ["01010000", "01020000", "01010001", "01020001", "010126", "010226"],
+            session.Commands.Select(command =>
+                Convert.ToHexString(command.Arguments.Span)).ToArray());
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(
+            () => port.SetFanControlAsync(
+                new FanControlSettings(
+                    FanMode.ManualCurve,
+                    5000,
+                    ManualFanCurve.Default),
+                default));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => port.SetFanTargetsAsync(5100, 5000, default));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => port.SetFanTargetsAsync(5400, 5000, default));
     }
 
     [Fact]
@@ -1244,12 +1315,18 @@ public sealed class ProductionBatteryPortTests
     private static ProductionBatteryPort CreatePort(
         IRazerCommandSession session,
         DeviceCommandCatalog catalog,
-        ProductionBatteryReadEvidence? evidence = null) => new(
+        ProductionBatteryReadEvidence? evidence = null,
+        FanSpeedRange? fanSpeedRange = null,
+        IReadOnlySet<FanMode>? admittedFanModes = null,
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null) => new(
             session,
             catalog,
             evidence ?? NoTemporaryReadEvidence(),
             new ValidationRunContext(),
-            TimeSpan.FromSeconds(1));
+            TimeSpan.FromSeconds(1),
+            fanSpeedRange,
+            admittedFanModes,
+            admittedAdapterPowerStates);
 
     private static DeviceCommandCatalog Catalog(params CapturedCommandFixture[] fixtures) =>
         DeviceCommandCatalog.Create(CapturedFixtureFile.TargetDevice, fixtures);

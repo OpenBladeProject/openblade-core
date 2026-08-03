@@ -2,6 +2,15 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
+public enum DriverModeRestoreOutcome
+{
+    NotOwned,
+    ForeignChange,
+    Released,
+    Indeterminate,
+    Failed,
+}
+
 /// <summary>
 /// Closed, typed production lighting surface. Raw Razer commands and matrix
 /// buffers never cross the protocol boundary.
@@ -11,6 +20,9 @@ public interface IProductionLightingPort : IAsyncDisposable
     DeviceCapabilities Capabilities { get; }
 
     LightingRendererOwnershipState OwnershipState { get; }
+
+    DriverModeRestoreOutcome DriverModeRestoreOutcome =>
+        DriverModeRestoreOutcome.NotOwned;
 
     /// <summary>
     /// Verifies that the firmware is in Driver mode and restores it when the

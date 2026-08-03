@@ -14,12 +14,12 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
             await runner.RunAsync(default);
 
         Assert.Null(result.Failure);
-        Assert.Equal([1, 2, 3, 4, 5, 6], session.TransactionIds);
-        Assert.Equal([0x8F, 0x82, 0x82, 0x87, 0x87, 0x98],
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], session.TransactionIds);
+        Assert.Equal([0x8F, 0x82, 0x82, 0x87, 0x87, 0x98, 0x87, 0x8C],
             session.Commands.Select(command => command.CommandId).ToArray());
-        Assert.Equal([0x07, 0x0D, 0x0D, 0x0D, 0x0D, 0x0F],
+        Assert.Equal([0x07, 0x0D, 0x0D, 0x0D, 0x0D, 0x0F, 0x00, 0x07],
             session.Commands.Select(command => command.ClassId).ToArray());
-        Assert.Equal([1, 4, 4, 3, 3, 1],
+        Assert.Equal([1, 4, 4, 3, 3, 1, 4, 2],
             session.Commands.Select(command => command.Arguments.Length).ToArray());
         Assert.Equal([0x01, 0x01, 0x00, 0x00], session.Commands[1].Arguments.ToArray());
         Assert.Equal([0x01, 0x02, 0x00, 0x00], session.Commands[2].Arguments.ToArray());
@@ -27,6 +27,8 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
         Assert.Equal([0x01, 0x01, 0x00], session.Commands[3].Arguments.ToArray());
         Assert.Equal([0x01, 0x02, 0x00], session.Commands[4].Arguments.ToArray());
         Assert.Equal([0x00], session.Commands[5].Arguments.ToArray());
+        Assert.Equal([0x00, 0x00, 0x00, 0x00], session.Commands[6].Arguments.ToArray());
+        Assert.Equal([0x00, 0x00], session.Commands[7].Arguments.ToArray());
         Assert.Equal(
             [
                 "07/8F power control",
@@ -35,6 +37,8 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
                 "0D/87 custom CPU component",
                 "0D/87 custom GPU component",
                 "0F/98 startup animation candidate",
+                "00/87 MCU version",
+                "07/8C adapter power",
             ],
             result.Value!.Readings.Select(reading => reading.Operation).ToArray());
         Assert.Equal(8, result.Value.Readings[1].RequestPayloadHex.Length);
@@ -68,8 +72,35 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
         Assert.Equal(1, session.DisposeCount);
     }
 
+    [Fact]
+    public async Task PowerSourceOnly_SendsAdapterAndTwoThermalQueries()
+    {
+        var session = new RecordingSession();
+
+        HidSessionResult<PerformanceFanDiscriminatorSnapshot> result =
+            await Runner(session, powerSourceOnly: true).RunAsync(default);
+
+        Assert.Null(result.Failure);
+        Assert.Equal([1, 2, 3], session.TransactionIds);
+        Assert.Equal(
+            [(byte)0x8C, (byte)0x82, (byte)0x82],
+            session.Commands.Select(command => command.CommandId).ToArray());
+        Assert.Equal(
+            [
+                "07/8C adapter power",
+                "0D/82 class1 thermal1",
+                "0D/82 class1 thermal2",
+            ],
+            result.Value!.Readings.Select(reading => reading.Operation).ToArray());
+        Assert.Equal([0x00, 0x00], session.Commands[0].Arguments.ToArray());
+        Assert.Equal([0x01, 0x01, 0x00, 0x00], session.Commands[1].Arguments.ToArray());
+        Assert.Equal([0x01, 0x02, 0x00, 0x00], session.Commands[2].Arguments.ToArray());
+        Assert.Equal(1, session.DisposeCount);
+    }
+
     private static PerformanceFanDiscriminatorQueryRunner Runner(
-        IRazerCommandSession session) => new(
+        IRazerCommandSession session,
+        bool powerSourceOnly = false) => new(
         static () => new ValidationRunContext(),
         new ActorFactory(new ValidationActor(
             session,
@@ -78,7 +109,8 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
         TimeProvider.System,
         TimeSpan.FromSeconds(3),
         TimeSpan.FromSeconds(5),
-        new PendingDisposalRegistry());
+        new PendingDisposalRegistry(),
+        powerSourceOnly);
 
     private sealed class ActorFactory(ValidationActor actor) : IValidationActorFactory
     {

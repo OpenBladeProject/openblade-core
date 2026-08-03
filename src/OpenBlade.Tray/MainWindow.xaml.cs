@@ -56,6 +56,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingGamingModeKeyPolicy;
     private bool changingStartupAnimation;
     private bool changingExternalLightingPolicy;
+    private bool changingWindowsDynamicLighting;
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
     private bool changingPageSections;
@@ -555,6 +556,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
         }
 
+        if (args.PropertyName == nameof(MainViewModel.IsSpecialKeyBindingsEditable))
+        {
+            if (dispatcherQueue.HasThreadAccess)
+            {
+                RefreshSpecialKeyBindingAccess();
+            }
+            else
+            {
+                dispatcherQueue.TryEnqueue(RefreshSpecialKeyBindingAccess);
+            }
+        }
+
         if (args.PropertyName is nameof(MainViewModel.LiveReadingsRefreshCadence)
             or nameof(MainViewModel.TrayHoverLabelMode)
             or nameof(MainViewModel.EnabledDashboardTelemetryItems)
@@ -878,7 +891,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             Title = "Check for OpenBlade updates?",
             Content = "OpenBlade can check GitHub for a new release once per day when "
                 + "the tray starts. The check sends no hardware state, profiles, "
-                + "settings, or diagnostics. You can change this later in About.",
+                + "settings, or diagnostics. You can change this later in Settings.",
             PrimaryButtonText = "Use daily checks",
             CloseButtonText = "Manual only",
             DefaultButton = ContentDialogButton.Primary,
@@ -920,6 +933,41 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             toggle.IsOn = ViewModel.AlwaysOverrideExternalLightingChanges;
             toggle.IsEnabled = true;
             changingExternalLightingPolicy = false;
+        }
+    }
+
+    private async void OnWindowsDynamicLightingToggled(
+        object sender,
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleWindowsDynamicLightingToggledAsync(sender),
+            nameof(OnWindowsDynamicLightingToggled));
+
+    private async Task HandleWindowsDynamicLightingToggledAsync(object sender)
+    {
+        if (changingWindowsDynamicLighting
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.UseWindowsDynamicLighting)
+        {
+            return;
+        }
+
+        changingWindowsDynamicLighting = true;
+        toggle.IsEnabled = false;
+        try
+        {
+            await ViewModel.SetKeyboardLightingControlModeAsync(
+                toggle.IsOn
+                    ? KeyboardLightingControlMode.WindowsDynamicLighting
+                    : KeyboardLightingControlMode.OpenBlade,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.UseWindowsDynamicLighting;
+            toggle.IsEnabled = true;
+            changingWindowsDynamicLighting = false;
         }
     }
 
@@ -1756,7 +1804,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             foreach (SpecialKeyBindingPreference preference in
                      SpecialKeyBindingDefaults.Normalize(preferences))
             {
-                var binding = new SpecialKeyBindingViewModel(preference);
+                var binding = new SpecialKeyBindingViewModel(
+                    preference,
+                    ViewModel.IsSpecialKeyBindingSlotEditable(preference.Slot));
                 binding.PropertyChanged += OnSpecialKeyBindingChanged;
                 SpecialKeyBindings.Add(binding);
             }
@@ -1764,6 +1814,37 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         finally
         {
             changingSpecialKeyBindings = false;
+        }
+    }
+
+    private void OnSpecialKeyActionSelectionChanged(
+        object sender,
+        SelectionChangedEventArgs args)
+    {
+        if (changingSpecialKeyBindings
+            || sender is not Microsoft.UI.Xaml.Controls.ComboBox
+            {
+                SelectedItem: SpecialKeyActionOption selectedAction,
+            } comboBox
+            || comboBox.Tag is not SpecialKeySlot slot)
+        {
+            return;
+        }
+
+        SpecialKeyBindingViewModel? binding = SpecialKeyBindings
+            .FirstOrDefault(candidate => candidate.Slot == slot);
+        if (binding is not null && binding.SelectedAction != selectedAction)
+        {
+            binding.SelectedAction = selectedAction;
+        }
+    }
+
+    private void RefreshSpecialKeyBindingAccess()
+    {
+        foreach (SpecialKeyBindingViewModel binding in SpecialKeyBindings)
+        {
+            binding.SetEditable(
+                ViewModel.IsSpecialKeyBindingSlotEditable(binding.Slot));
         }
     }
 
@@ -2860,14 +2941,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             SettingsBehaviorSection;
         pageSectionPresentations[PageSectionKind.SettingsAppearance] =
             SettingsAppearanceSection;
+        pageSectionPresentations[PageSectionKind.SettingsUpdates] =
+            SettingsUpdatesSection;
         pageSectionPresentations[PageSectionKind.SettingsShutdown] =
             SettingsShutdownSection;
         pageSectionPresentations[PageSectionKind.AboutOverview] =
             AboutOverviewSection;
         pageSectionPresentations[PageSectionKind.AboutVersions] =
             AboutVersionsSection;
-        pageSectionPresentations[PageSectionKind.AboutUpdates] =
-            AboutUpdatesSection;
         pageSectionPresentations[PageSectionKind.AboutDeviceInformation] =
             AboutDeviceInformationSection;
         pageSectionPresentations[PageSectionKind.AboutSupport] =

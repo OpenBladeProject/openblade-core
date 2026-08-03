@@ -1,3 +1,4 @@
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
@@ -64,6 +65,56 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         Assert.Single(second.Commands);
         Assert.Equal((0x07, 0x92), (first.Commands[0].ClassId, first.Commands[0].CommandId));
         Assert.Equal((0x07, 0x92), (second.Commands[0].ClassId, second.Commands[0].CommandId));
+    }
+
+    [Fact]
+    public async Task OpenedPortPreservesObservedOnlyPerformanceCapabilities()
+    {
+        var cpuPowerLimit = new CpuPowerLimitCapabilities(
+            new DeviceNumericRange(45, 95, 1),
+            DeviceFeatureAccess.ObservedOnly);
+        var cpuVoltageOptimizer = new CpuVoltageOptimizerCapabilities(
+            new DeviceNumericRange(-30, -1, 1),
+            DeviceFeatureAccess.ObservedOnly)
+        {
+            SupportsEnableDisable = true,
+        };
+        var gpuOverclock = new GpuOverclockCapabilities(
+            new DeviceNumericRange(-1000, 400, null),
+            new DeviceNumericRange(-1000, 3000, null),
+            DeviceFeatureAccess.ObservedOnly)
+        {
+            SupportsEnableDisable = true,
+        };
+        PowerSourceBehaviorObservation[] sourceBehaviors =
+        [
+            new(
+                PowerSource.UsbC,
+                PerformancePreset.Balanced,
+                FanMode.Automatic,
+                FixedFanControlAvailable: false,
+                PerformanceModeAvailable: false,
+                CustomModeAvailable: false,
+                InadequatePowerWarningVisible: true),
+        ];
+        ProductionBatteryFactory factory = Factory(
+            new RecordingActorFactory(new ControlledSession()),
+            cpuPowerLimitCapabilities: cpuPowerLimit,
+            cpuVoltageOptimizerCapabilities: cpuVoltageOptimizer,
+            gpuOverclockCapabilities: gpuOverclock,
+            observedPowerSourceBehaviors: sourceBehaviors);
+
+        await using IProductionBatteryPort port = Assert.IsAssignableFrom<IProductionBatteryPort>(
+            (await factory.OpenAsync(default)).Value);
+
+        Assert.Equal(factory.Capabilities.CpuPowerLimit, port.Capabilities.CpuPowerLimit);
+        Assert.Equal(
+            factory.Capabilities.CpuVoltageOptimizer,
+            port.Capabilities.CpuVoltageOptimizer);
+        Assert.Equal(factory.Capabilities.GpuOverclock, port.Capabilities.GpuOverclock);
+        Assert.Equal(
+            factory.Capabilities.ObservedPowerSourceBehaviors,
+            port.Capabilities.ObservedPowerSourceBehaviors);
     }
 
     [Fact]
@@ -192,15 +243,28 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     private static ProductionBatteryFactory Factory(
         IValidationActorFactory actors,
         Func<ValidationRunContext>? createContext = null,
-        DeviceCommandCatalog? catalog = null) => Factory(
+        DeviceCommandCatalog? catalog = null,
+        CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
+        CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
+        GpuOverclockCapabilities? gpuOverclockCapabilities = null,
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null) =>
+        Factory(
             _ => actors,
             createContext,
-            catalog);
+            catalog,
+            cpuPowerLimitCapabilities,
+            cpuVoltageOptimizerCapabilities,
+            gpuOverclockCapabilities,
+            observedPowerSourceBehaviors);
 
     private static ProductionBatteryFactory Factory(
         Func<TimeSpan, IValidationActorFactory> createActors,
         Func<ValidationRunContext>? createContext = null,
-        DeviceCommandCatalog? catalog = null) => new(
+        DeviceCommandCatalog? catalog = null,
+        CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
+        CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
+        GpuOverclockCapabilities? gpuOverclockCapabilities = null,
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null) => new(
             catalog ?? DeviceCommandCatalog.Empty,
             ProductionBatteryReadEvidence.Production,
             createContext ?? (static () => new ValidationRunContext()),
@@ -208,7 +272,11 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             TimeProvider.System,
             ExchangeTimeout,
             DrainTimeout,
-            new PendingDisposalRegistry());
+            new PendingDisposalRegistry(),
+            cpuPowerLimitCapabilities: cpuPowerLimitCapabilities,
+            cpuVoltageOptimizerCapabilities: cpuVoltageOptimizerCapabilities,
+            gpuOverclockCapabilities: gpuOverclockCapabilities,
+            observedPowerSourceBehaviors: observedPowerSourceBehaviors);
 
     private static DeviceCommandCatalog Limit80Catalog() => DeviceCommandCatalog.Create(
         CapturedFixtureFile.TargetDevice,

@@ -103,6 +103,26 @@ public sealed class BatteryValidationProbeTests
     }
 
     [Fact]
+    public void Evaluate_ExplicitExactIdentityDoesNotChangeProductionDefault()
+    {
+        HidHandleIdentity pid02C6 = ExactHandle with { ProductId = 0x02C6 };
+        ScriptedNative native = new([]);
+        native.Add("pid02c6", pid02C6);
+        var evaluator = new WindowsRazerHidEvidenceEvaluator(
+            new ScriptedIdentitySource(ExactHost, null),
+            new ScriptedGuard(new HardwareAccessDecision([], null), null),
+            native,
+            ControllerExclusivityPolicy.Advisory,
+            pid02C6);
+
+        using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
+
+        Assert.Equal(BatteryValidationProbeClassification.Ready, evaluation.Result.Classification);
+        Assert.Equal(1, evaluation.Result.ExactMatchCount);
+        Assert.Equal(1, evaluation.Result.ProductMatchCount);
+    }
+
+    [Fact]
     public void Evaluate_ReadyReportsClosedMetadataAndDisposesWithoutBinding()
     {
         List<string> events = [];

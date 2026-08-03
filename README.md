@@ -28,10 +28,17 @@ exact laptop and firmware.
 | Laptop | USB identity | BIOS | EC | MCU |
 | --- | --- | --- | --- | --- |
 | Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` | `3.01` | `1.04` | `1.5.0.0`, `1.6.0.0` |
+| Razer Blade 16 (2025), `RZ09-0528` | `1532:02C6` | `2.02` | `1.09` | `1.9.0.0` |
 
-Other Blade models remain unsupported until their commands have equivalent
-capture and restoration evidence. OpenBlade does not reuse commands from
-similar laptops or relax identity checks to make a device appear compatible.
+The exact-device `RZ09-0528` admission includes AC performance and custom
+levels, fan control, battery care, keyboard brightness and Off, lid-logo
+lighting, keyboard behavior, firmware reads, and Windows display controls.
+Seven additional Synapse quick effects are shown as observed-only discoveries,
+not writable choices, because their exact PID `02C6` captures did not reveal an
+effect-specific payload. Other controls and other Blade models remain
+unsupported until their commands have equivalent capture and restoration
+evidence. OpenBlade does not reuse commands from similar laptops or relax
+identity checks to make a device appear compatible.
 
 ## What it controls
 
@@ -153,7 +160,7 @@ payload files before WiX embeds them, then signs the detached Burn engine and
 the final installer.
 
 The same offline installer is prepared for a future Microsoft Store EXE
-listing. Store installs use `/quiet /norestart`; direct downloads retain the
+listing. Store installs use `/install /quiet /norestart`; direct downloads retain the
 graphical UI. See
 [Microsoft Store submission](docs/microsoft-store-submission.md) for the
 checked-in package contract, certification notes, hardware disclosure, and
