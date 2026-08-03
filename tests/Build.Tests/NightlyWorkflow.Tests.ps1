@@ -57,6 +57,9 @@ Assert-True ($nightly.Contains(
     'The nightly revision must convert the dedicated workflow run number to a number.'
 Assert-True ($nightly.Contains('needs: build-and-publish')) `
     'Nightly attestation must wait for the reusable build job.'
+Assert-True ($nightly.Contains(
+        "if: `${{ vars.OPENBLADE_ENABLE_ATTESTATIONS == 'true' }}")) `
+    'Nightly attestation must remain opt-in for repositories that support it.'
 Assert-True ($nightly.Contains('uses: actions/download-artifact@v4')) `
     'Nightly attestation must download the installer from the build job.'
 Assert-True ($nightly.Contains('uses: actions/attest@v4')) `

@@ -175,8 +175,12 @@ installer artifact for 14 days.
 
 Nightlies are test builds, not releases, and are not offered by OpenBlade's
 stable update check. Download the artifact from its successful Actions run and
-verify `OpenBlade-Setup.exe` against the included SHA-256 file. GitHub also
-records build provenance for the installer, which can be checked with:
+verify `OpenBlade-Setup.exe` against the included SHA-256 file. GitHub build
+provenance is optional because artifact attestations are not available for
+every repository visibility and billing plan. Maintainers can enable the
+attestation job by setting the `OPENBLADE_ENABLE_ATTESTATIONS` repository
+variable to `true` after confirming support. An enabled attestation can be
+checked with:
 
 ```powershell
 gh attestation verify .\OpenBlade-Setup.exe --repo OSSBlade/openblade-core

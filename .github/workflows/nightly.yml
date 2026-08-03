@@ -22,6 +22,7 @@ jobs:
       contents: read
 
   attest-installer:
+    if: ${{ vars.OPENBLADE_ENABLE_ATTESTATIONS == 'true' }}
     needs: build-and-publish
     runs-on: ubuntu-latest
     permissions:
