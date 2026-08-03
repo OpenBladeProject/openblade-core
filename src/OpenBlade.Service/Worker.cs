@@ -107,20 +107,20 @@ public sealed class Worker(
                 ControlOperationStatus.Applied or ControlOperationStatus.Stored))
             {
                 logger.LogWarning(
-                    "Keyboard Driver mode cleanup did not complete during service stop: {Message}",
+                    "Hardware cleanup did not complete during service stop: {Message}",
                     result.Message);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
-                "Keyboard Driver mode cleanup timed out during service stop.");
+                "Hardware cleanup timed out during service stop.");
         }
         catch (Exception exception)
         {
             logger.LogWarning(
                 exception,
-                "Keyboard Driver mode cleanup failed during service stop.");
+                "Hardware cleanup failed during service stop.");
         }
     }
 

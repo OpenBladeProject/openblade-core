@@ -88,6 +88,113 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, context.Device.DriverModeEnsureCalls);
     }
 
+    [Theory]
+    [InlineData(FanMode.Fixed)]
+    [InlineData(FanMode.ManualCurve)]
+    [InlineData(FanMode.Maximum)]
+    public async Task PrepareForShutdown_RestoresAutomaticFansAndPreservesManualIntent(
+        FanMode mode)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ControlOperationResult applied = await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(mode, OverrideLifetime.Persistent),
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        FanControlSettings? storedControl = context.Runtime.GetStatus().FanControlOverride;
+        int fanWrites = context.Device.FanSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(fanWrites + 1, context.Device.FanSetCalls);
+        Assert.Equal(FanMode.Automatic, status.ConfirmedState!.Fans);
+        Assert.Equal(mode, status.FanOverride!.Value);
+        Assert.Equal(storedControl, status.FanControlOverride);
+        Assert.Equal(mode, status.DesiredState.Fans.Value);
+        Assert.Contains("Automatic fan control was confirmed", result.Message);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_FanReadbackFailureStillReleasesDriverMode()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        context.Device.DriverModeActive = true;
+        context.Device.SuppressConfirmationFor = DeviceSubsystem.Fans;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+        Assert.False(context.Device.DriverModeActive);
+        Assert.Contains("could not be handed back", result.Message);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_DoesNotReclaimExternallyChangedFans()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Automatic,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Contains(DeviceSubsystem.Fans, context.Runtime.GetStatus().ExternalChanges);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Maximum,
+        };
+        int fanWrites = context.Device.FanSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+        Assert.Contains("no longer owns", result.Message);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_DoesNotRestoreFansWhenControllerDetectionFailed()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            [],
+            "Process enumeration failed.");
+        int fanWrites = context.Device.FanSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+        Assert.Contains("could not be checked", result.Message);
+    }
+
     [Fact]
     public async Task PrepareForLowPower_ReleasesDriverModeAndRecordsBoundary()
     {
