@@ -1,5 +1,5 @@
-using System.IO.Pipes;
 using System.Diagnostics;
+using System.IO.Pipes;
 using System.Security.Principal;
 using OpenBlade.Contracts;
 using OpenBlade.Session;
