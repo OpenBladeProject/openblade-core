@@ -1009,6 +1009,7 @@ public sealed class WinUiShellContractTests
     public void RuntimeThemeUsesRootRequestedThemeWithoutLegacyThemeWatchers()
     {
         string themeManager = ReadRepositoryFile("src", "OpenBlade.Tray", "ThemeManager.cs");
+        string appXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
         Assert.Contains("ThemeSelectionPolicy.Resolve", themeManager, StringComparison.Ordinal);
         Assert.Contains("root.RequestedTheme", themeManager, StringComparison.Ordinal);
 
@@ -1038,7 +1039,6 @@ public sealed class WinUiShellContractTests
         Assert.Contains("MinimumHeightDip = 600", ReadRepositoryFile(
             "src", "OpenBlade.Tray", "MainWindow.xaml.cs"), StringComparison.Ordinal);
 
-        string appXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
         Assert.DoesNotContain("RequestedTheme", appXaml, StringComparison.Ordinal);
 
         string trayRoot = Path.GetDirectoryName(ProjectPath)!;
@@ -1085,7 +1085,6 @@ public sealed class WinUiShellContractTests
             "src",
             "OpenBlade.Tray",
             "AccentColorManager.cs");
-
         Assert.Contains("<AddDeleteThemeTransition", xaml, StringComparison.Ordinal);
         Assert.Contains("<RepositionThemeTransition", xaml, StringComparison.Ordinal);
         Assert.Contains("dashboardCardPresentations", window, StringComparison.Ordinal);
@@ -1108,6 +1107,14 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Windows accent", window, StringComparison.Ordinal);
         Assert.Contains("ColorValuesChanged +=", accentManager, StringComparison.Ordinal);
         Assert.Contains("existing.Color = color", accentManager, StringComparison.Ordinal);
+        Assert.Contains("GetAccentResourceDictionaries(applicationResources)", accentManager,
+            StringComparison.Ordinal);
+        Assert.Contains("ApplyBrushPalette(applicationResources)", accentManager,
+            StringComparison.Ordinal);
+        Assert.Contains("current.MergedDictionaries", accentManager,
+            StringComparison.Ordinal);
+        Assert.Contains("new[] { \"Light\", \"Dark\" }", accentManager,
+            StringComparison.Ordinal);
         Assert.Contains("#47E10C", ReadRepositoryFile(
             "src",
             "OpenBlade.Tray.Core",
