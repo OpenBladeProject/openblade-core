@@ -8,8 +8,9 @@ public sealed class BundleOwnershipRegistrationTests
     [InlineData(null, "0.0.0")]
     [InlineData("1.2", "1.2.0")]
     [InlineData("1.2.3", "1.2.3")]
-    [InlineData("1.2.3.4", "1.2.3")]
-    public void FormatInstalledVersion_ProducesBurnComparableThreePartVersion(
+    [InlineData("1.2.3.0", "1.2.3")]
+    [InlineData("1.2.3.4", "1.2.3.4")]
+    public void FormatInstalledVersion_ProducesBurnComparableVersion(
         string? input,
         string expected)
     {

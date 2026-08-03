@@ -7,6 +7,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added daily and manually dispatched nightly installers from committed `main`,
+  with the full CI and production-publish gates, ordered upgrade-safe build
+  versions, 14-day artifact retention, SHA-256 metadata, and GitHub build
+  provenance. Nightlies remain outside the stable in-app update channel.
 - Added GitHub release checks to About with Every startup, Daily, Weekly,
   Monthly, and Manual only intervals. Checks run at most once during tray
   startup when due, and available releases open in the user's browser.

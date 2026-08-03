@@ -159,6 +159,28 @@ graphical UI. See
 checked-in package contract, certification notes, hardware disclosure, and
 remaining external release steps.
 
+### Nightly builds
+
+The `Nightly` GitHub Actions workflow builds the latest committed `main` every
+day at 09:17 UTC and can also be started manually. It runs the same formatting,
+build, test, authoring, and production-publish gates as CI before retaining the
+installer artifact for 14 days.
+
+Nightlies are test builds, not releases, and are not offered by OpenBlade's
+stable update check. Download the artifact from its successful Actions run and
+verify `OpenBlade-Setup.exe` against the included SHA-256 file. GitHub also
+records build provenance for the installer, which can be checked with:
+
+```powershell
+gh attestation verify .\OpenBlade-Setup.exe --repo OSSBlade/openblade-core
+```
+
+The included JSON identifies the exact commit, ordered nightly version, build
+time, workflow run, installer hash, and Authenticode status. Unless the nightly
+workflow is later connected to the protected release-signing certificate, its
+installer is expected to report `NotSigned` and Windows may show an
+unrecognized-publisher warning.
+
 ## Hardware development
 
 `OpenBlade.Capture` provides typed target checks, read-only queries, fixture

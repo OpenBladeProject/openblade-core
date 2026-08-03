@@ -18,61 +18,8 @@ concurrency:
 
 jobs:
   build-and-test:
-    runs-on: windows-latest
-    timeout-minutes: 45
-
-    env:
-      DOTNET_CLI_TELEMETRY_OPTOUT: 1
-      DOTNET_NOLOGO: true
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-          submodules: recursive
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Restore
-        run: dotnet restore OpenBlade.slnx -p:NuGetAudit=false
-
-      - name: Verify formatting
-        run: >-
-          dotnet format OpenBlade.slnx
-          --verify-no-changes
-          --no-restore
-          --severity error
-          --verbosity minimal
-
-      - name: Build
-        run: >-
-          dotnet build OpenBlade.slnx
-          -p:NuGetAudit=false
-          --no-restore
-          -m:1
-          --verbosity minimal
-
-      - name: Test
-        run: >-
-          dotnet test OpenBlade.slnx
-          -p:NuGetAudit=false
-          --no-build
-          --no-restore
-          -m:1
-          --verbosity minimal
-
-      - name: Validate installer and Store authoring
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Get-ChildItem .\tests\Build.Tests\*.Tests.ps1 |
-            Sort-Object Name |
-            ForEach-Object { & $_.FullName }
-
-      - name: Publish and validate production installer
-        shell: powershell
-        run: .\build\Publish.ps1 -Configuration Release
+    uses: ./.github/workflows/build.yml
+    with:
+      channel: Stable
+    permissions:
+      contents: read

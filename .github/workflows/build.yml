@@ -1,0 +1,136 @@
+name: Build and validate
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        description: Stable or Nightly build identity.
+        required: true
+        type: string
+      build-revision:
+        description: Ordered fourth version component for Nightly builds.
+        required: false
+        default: 0
+        type: number
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: true
+
+    steps:
+      - name: Validate build request
+        shell: powershell
+        env:
+          OPENBLADE_BUILD_CHANNEL: ${{ inputs.channel }}
+          OPENBLADE_BUILD_REVISION: ${{ inputs.build-revision }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:OPENBLADE_BUILD_CHANNEL -notin @('Stable', 'Nightly')) {
+            throw "Unsupported build channel '$env:OPENBLADE_BUILD_CHANNEL'."
+          }
+          $revision = 0
+          if (-not [int]::TryParse(
+              $env:OPENBLADE_BUILD_REVISION,
+              [ref]$revision)) {
+            throw 'The build revision is not an integer.'
+          }
+          if ($env:OPENBLADE_BUILD_CHANNEL -eq 'Stable' -and $revision -ne 0) {
+            throw 'Stable builds must use revision zero.'
+          }
+          if ($env:OPENBLADE_BUILD_CHANNEL -eq 'Nightly' -and
+              ($revision -lt 1 -or $revision -gt 65535)) {
+            throw 'Nightly build revisions must be between 1 and 65535.'
+          }
+
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore OpenBlade.slnx -p:NuGetAudit=false
+
+      - name: Verify formatting
+        run: >-
+          dotnet format OpenBlade.slnx
+          --verify-no-changes
+          --no-restore
+          --severity error
+          --verbosity minimal
+
+      - name: Build
+        run: >-
+          dotnet build OpenBlade.slnx
+          -p:NuGetAudit=false
+          --no-restore
+          -m:1
+          --verbosity minimal
+
+      - name: Test
+        run: >-
+          dotnet test OpenBlade.slnx
+          -p:NuGetAudit=false
+          --no-build
+          --no-restore
+          -m:1
+          --verbosity minimal
+
+      - name: Validate installer and Store authoring
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-ChildItem .\tests\Build.Tests\*.Tests.ps1 |
+            Sort-Object Name |
+            ForEach-Object { & $_.FullName }
+
+      - name: Publish and validate production installer
+        if: inputs.channel == 'Stable'
+        shell: powershell
+        run: .\build\Publish.ps1 -Configuration Release
+
+      - name: Publish and validate nightly installer
+        if: inputs.channel == 'Nightly'
+        shell: powershell
+        run: >-
+          .\build\Publish.ps1
+          -Configuration Release
+          -BuildChannel Nightly
+          -BuildRevision ${{ inputs.build-revision }}
+          -SourceRevision '${{ github.sha }}'
+          -WorkflowRunId '${{ github.run_id }}.${{ github.run_attempt }}'
+
+      - name: Attest nightly installer provenance
+        if: inputs.channel == 'Nightly'
+        uses: actions/attest@v4
+        with:
+          subject-path: artifacts/win-x64/OpenBlade-Setup.exe
+
+      - name: Upload nightly installer
+        if: inputs.channel == 'Nightly'
+        uses: actions/upload-artifact@v4
+        with:
+          name: >-
+            OpenBlade-nightly-${{ inputs.build-revision }}-attempt-${{ github.run_attempt }}
+          path: |
+            artifacts/win-x64/OpenBlade-Setup.exe
+            artifacts/win-x64/OpenBlade-Setup.exe.sha256
+            artifacts/win-x64/OpenBlade-Nightly.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

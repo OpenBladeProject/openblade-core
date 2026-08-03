@@ -186,6 +186,7 @@ Assert-True ($solution.IndexOf(
 
 $publish = Get-Content -LiteralPath (Join-Path $repository 'build\Publish.ps1') -Raw
 foreach ($requiredText in @(
+        'BuildIdentity.ps1',
         'InstallerValidation.ps1',
         'InstallerPrerequisites.ps1',
         'StoreSubmissionValidation.ps1',
@@ -197,6 +198,9 @@ foreach ($requiredText in @(
         'Invoke-OpenBladeSigning',
         'OpenBladeSigningThumbprint',
         'VerifyPrivacyPolicy',
+        'BuildChannel',
+        'BuildRevision',
+        'Write-OpenBladeNightlyArtifactMetadata',
         'upgradeProbeVersion',
         'upgrade-probe-validation')) {
     Assert-True ($publish.IndexOf($requiredText, [StringComparison]::Ordinal) -ge 0) `

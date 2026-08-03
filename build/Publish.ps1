@@ -6,7 +6,13 @@ param(
     [string]$SigningThumbprint,
     [string]$SignTool,
     [string]$TimestampUrl = 'http://timestamp.digicert.com',
-    [switch]$VerifyPrivacyPolicy
+    [switch]$VerifyPrivacyPolicy,
+    [ValidateSet('Stable', 'Nightly')]
+    [string]$BuildChannel = 'Stable',
+    [ValidateRange(0, 65535)]
+    [int]$BuildRevision = 0,
+    [string]$SourceRevision,
+    [string]$WorkflowRunId
 )
 
 Set-StrictMode -Version 3.0
@@ -18,6 +24,7 @@ $artifacts = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts'))
 . (Join-Path $PSScriptRoot 'InstallerPrerequisites.ps1')
 . (Join-Path $PSScriptRoot 'StoreSubmissionValidation.ps1')
 . (Join-Path $PSScriptRoot 'WindowsAppRuntimeNotificationResource.ps1')
+. (Join-Path $PSScriptRoot 'BuildIdentity.ps1')
 
 & (Join-Path $PSScriptRoot 'Verify-Branding.ps1') -Repository $repository
 if ($LASTEXITCODE -ne 0) {
@@ -28,6 +35,10 @@ $bundle = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlade'))
 $installer = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlade-Setup.exe'))
 $storeReadiness = [IO.Path]::GetFullPath((
     Join-Path $artifacts 'win-x64\OpenBlade-Store-Readiness.json'))
+$nightlyMetadata = [IO.Path]::GetFullPath((
+    Join-Path $artifacts 'win-x64\OpenBlade-Nightly.json'))
+$nightlyChecksum = [IO.Path]::GetFullPath((
+    Join-Path $artifacts 'win-x64\OpenBlade-Setup.exe.sha256'))
 $developerTools = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlade.DeveloperTools'))
 $stagingRoot = [IO.Path]::GetFullPath((Join-Path $artifacts ('.staging\' + [Guid]::NewGuid().ToString('N'))))
 $stagingBundle = Join-Path $stagingRoot 'OpenBlade'
@@ -41,6 +52,8 @@ $stagingUpgradeProbeObj = (
 $stagingPrerequisites = Join-Path $stagingRoot 'prerequisites'
 $stagingInstaller = Join-Path $stagingInstallerOutput 'OpenBlade-Setup.exe'
 $stagingStoreReadiness = Join-Path $stagingRoot 'OpenBlade-Store-Readiness.json'
+$stagingNightlyMetadata = Join-Path $stagingRoot 'OpenBlade-Nightly.json'
+$stagingNightlyChecksum = Join-Path $stagingRoot 'OpenBlade-Setup.exe.sha256'
 $payload = Join-Path $stagingBundle 'payload'
 
 function Assert-SafeArtifactPath {
@@ -70,6 +83,8 @@ function Invoke-CheckedPublish {
 Assert-SafeArtifactPath -Path $bundle
 Assert-SafeArtifactPath -Path $installer
 Assert-SafeArtifactPath -Path $storeReadiness
+Assert-SafeArtifactPath -Path $nightlyMetadata
+Assert-SafeArtifactPath -Path $nightlyChecksum
 Assert-SafeArtifactPath -Path $developerTools
 Assert-SafeArtifactPath -Path $stagingRoot
 
@@ -80,6 +95,11 @@ if ($null -eq $openBladeVersionNode -or
     [string]::IsNullOrWhiteSpace($openBladeVersionNode.InnerText)) {
     throw 'Directory.Build.props does not define OpenBladeVersion.'
 }
+$buildIdentity = Resolve-OpenBladeBuildIdentity `
+    -BaseVersion $openBladeVersionNode.InnerText `
+    -Channel $BuildChannel `
+    -BuildRevision $BuildRevision `
+    -SourceRevision $SourceRevision
 
 function Invoke-OpenBladeSigning {
     param(
@@ -97,14 +117,21 @@ function Invoke-OpenBladeSigning {
         throw "Authenticode signing failed with exit code $LASTEXITCODE for $Path"
     }
 }
-$openBladeVersion = $openBladeVersionNode.InnerText
-
 $publishArguments = @(
     '--configuration', $Configuration,
     '--runtime', 'win-x64',
     '--self-contained', 'true',
     '--property:PublishTrimmed=false'
 )
+if ($buildIdentity.Channel -eq 'Nightly') {
+    $publishArguments += @(
+        "--property:Version=$($buildIdentity.Version)",
+        "--property:AssemblyVersion=$($buildIdentity.AssemblyVersion)",
+        "--property:FileVersion=$($buildIdentity.FileVersion)",
+        "--property:InformationalVersion=$($buildIdentity.InformationalVersion)",
+        '--property:IncludeSourceRevisionInInformationalVersion=false'
+    )
+}
 $productionPublishArguments = @(
     '--property:DebugType=None',
     '--property:DebugSymbols=false',
@@ -188,6 +215,7 @@ try {
         '--property:NuGetAudit=false',
         "--property:OpenBladeBundle=$stagingBundle",
         "--property:OpenBladePrerequisites=$stagingPrerequisites",
+        "--property:OpenBladeVersion=$($buildIdentity.BundleVersion)",
         '--output', $stagingInstallerOutput
     )
     if ($signingEnabled) {
@@ -206,11 +234,11 @@ try {
         -Installer $stagingInstaller `
         -PublishedBundle $stagingBundle `
         -InstallerProject (Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj') `
-        -ExpectedVersion $openBladeVersion `
+        -ExpectedVersion $buildIdentity.BundleVersion `
         -ValidationRoot (Join-Path $stagingRoot 'installer-validation') `
         -PermittedRoot $artifacts
 
-    $parsedVersion = [Version]$openBladeVersion
+    $parsedVersion = [Version]$buildIdentity.BundleVersion
     $upgradeProbeVersion = '{0}.{1}.{2}' -f @(
         $parsedVersion.Major,
         $parsedVersion.Minor,
@@ -243,6 +271,15 @@ try {
         -RequireSignatures:$signingEnabled `
         -VerifyPrivacyPolicy:$VerifyPrivacyPolicy | Out-Null
 
+    if ($buildIdentity.Channel -eq 'Nightly') {
+        Write-OpenBladeNightlyArtifactMetadata `
+            -Installer $stagingInstaller `
+            -MetadataPath $stagingNightlyMetadata `
+            -ChecksumPath $stagingNightlyChecksum `
+            -BuildIdentity $buildIdentity `
+            -WorkflowRunId $WorkflowRunId | Out-Null
+    }
+
     Complete-ValidatedBundleReplacement `
         -StagingBundle $stagingBundle `
         -Bundle $bundle `
@@ -263,6 +300,16 @@ try {
         Remove-ValidatedPublishPath -Path $storeReadiness -PermittedRoot $artifacts
     }
     Move-Item -LiteralPath $stagingStoreReadiness -Destination $storeReadiness
+
+    foreach ($nightlyArtifact in @($nightlyMetadata, $nightlyChecksum)) {
+        if (Test-Path -LiteralPath $nightlyArtifact) {
+            Remove-ValidatedPublishPath -Path $nightlyArtifact -PermittedRoot $artifacts
+        }
+    }
+    if ($buildIdentity.Channel -eq 'Nightly') {
+        Move-Item -LiteralPath $stagingNightlyMetadata -Destination $nightlyMetadata
+        Move-Item -LiteralPath $stagingNightlyChecksum -Destination $nightlyChecksum
+    }
 }
 finally {
     if (Test-Path -LiteralPath $stagingRoot) {
@@ -274,3 +321,7 @@ Write-Host "Self-contained production bundle created at $bundle"
 Write-Host "Graphical production installer created at $installer"
 Write-Host "Microsoft Store readiness report created at $storeReadiness"
 Write-Host "Self-contained developer tools created at $developerTools"
+if ($buildIdentity.Channel -eq 'Nightly') {
+    Write-Host "Nightly build metadata created at $nightlyMetadata"
+    Write-Host "Nightly installer checksum created at $nightlyChecksum"
+}
