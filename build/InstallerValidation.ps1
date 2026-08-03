@@ -169,6 +169,32 @@ function Assert-OpenBladeInstallerBundle {
             }
         }
 
+        $purgeVariable = $manifest.SelectSingleNode(
+            '/burn:BurnManifest/burn:Variable[@Id="OpenBladePurgeProfiles"]',
+            $namespaces)
+        if (($null -eq $purgeVariable) -or
+            ($purgeVariable.GetAttribute('Type') -ne 'numeric') -or
+            ($purgeVariable.GetAttribute('Value') -ne '0')) {
+            throw "The Burn manifest does not default profile removal to off."
+        }
+
+        $purgeCommandLine = $package.SelectSingleNode(
+            'burn:CommandLine[@UninstallArgument="--purge"]',
+            $namespaces)
+        if (($null -eq $purgeCommandLine) -or
+            ($purgeCommandLine.GetAttribute('Condition') -ne
+                'OpenBladePurgeProfiles')) {
+            throw "The Burn manifest does not conditionally append the purge argument."
+        }
+
+        $themePath = Join-Path $bootstrapperOutput 'thm.xml'
+        [xml]$theme = Get-Content -LiteralPath $themePath
+        $purgeCheckbox = $theme.SelectSingleNode(
+            "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Modify']/*[local-name()='Checkbox'][@Name='OpenBladePurgeProfiles']")
+        if ($null -eq $purgeCheckbox) {
+            throw "The extracted maintenance UI does not contain the profile-removal checkbox."
+        }
+
         $search = $manifest.SelectSingleNode(
             '/burn:BurnManifest/burn:RegistrySearch[@Id="OpenBladeBundleOwnershipSearch"]',
             $namespaces)

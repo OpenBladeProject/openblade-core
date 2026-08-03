@@ -41,6 +41,11 @@ public sealed class SetupCommandParserTests
     [Theory]
     [InlineData(SetupCommand.Install, "INSTALL", "--BUNDLE-MANAGED")]
     [InlineData(SetupCommand.Uninstall, "UNINSTALL", "--BUNDLE-MANAGED")]
+    [InlineData(
+        SetupCommand.UninstallAndPurge,
+        "UNINSTALL",
+        "--BUNDLE-MANAGED",
+        "--PURGE")]
     public void TryParseInvocation_RecognizesExactBundleManagedCommands(
         SetupCommand expected,
         params string[] arguments)
@@ -78,7 +83,8 @@ public sealed class SetupCommandParserTests
     [InlineData()]
     [InlineData("install", "--purge")]
     [InlineData("install", "--bundle-managed", "extra")]
-    [InlineData("uninstall", "--bundle-managed", "--purge")]
+    [InlineData("uninstall", "--purge", "--bundle-managed")]
+    [InlineData("uninstall", "--bundle-managed", "--interactive")]
     [InlineData("uninstall", "--recover-orphaned-bundle", "extra")]
     [InlineData("uninstall", "--purge", "extra")]
     [InlineData("--purge", "uninstall")]

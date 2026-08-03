@@ -72,8 +72,19 @@ Assert-True ($null -ne $standardBa) `
     'The Burn bundle must use WixStandardBootstrapperApplication.'
 Assert-True ($standardBa.GetAttribute('Theme') -eq 'hyperlinkLargeLicense') `
     'The installer must retain the branded standard large-license theme.'
+Assert-True ($standardBa.GetAttribute('ThemeFile') -eq 'OpenBladeTheme.xml') `
+    'The installer must use the custom maintenance theme.'
 Assert-True ([string]::IsNullOrEmpty($standardBa.GetAttribute('LicenseUrl'))) `
     'The free OpenBlade installer must not present a separate license link.'
+
+$purgeVariable = $bundle.SelectSingleNode(
+    "*[local-name()='Variable'][@Name='OpenBladePurgeProfiles']")
+Assert-True ($null -ne $purgeVariable) `
+    'The bundle must define the profile-removal choice.'
+Assert-True ($purgeVariable.GetAttribute('Type') -eq 'numeric') `
+    'The profile-removal choice must be a numeric checkbox variable.'
+Assert-True ($purgeVariable.GetAttribute('Value') -eq '0') `
+    'Uninstall must keep profiles unless the user explicitly opts out.'
 
 $search = $bundle.SelectSingleNode(
     "*[local-name()='RegistrySearch'][@Id='OpenBladeBundleOwnershipSearch']")
@@ -109,6 +120,20 @@ foreach ($entry in $expectedPackageAttributes.GetEnumerator()) {
 }
 Assert-True ($package.GetAttribute('DetectCondition').Contains('>=')) `
     'The executable package must detect the same installed version so Burn runs its uninstall command.'
+
+$purgeCommandLine = $package.SelectSingleNode(
+    "*[local-name()='CommandLine'][@UninstallArgument='--purge']")
+Assert-True ($null -ne $purgeCommandLine) `
+    'The setup package must conditionally append the purge argument.'
+Assert-True ($purgeCommandLine.GetAttribute('Condition') -eq 'OpenBladePurgeProfiles') `
+    'The purge argument must be controlled by the maintenance checkbox.'
+
+[xml]$theme = Get-Content -LiteralPath (
+    Join-Path $repository 'build\installer\OpenBladeTheme.xml')
+$purgeCheckbox = $theme.SelectSingleNode(
+    "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Modify']/*[local-name()='Checkbox'][@Name='OpenBladePurgeProfiles']")
+Assert-True ($null -ne $purgeCheckbox) `
+    'The maintenance page must offer a profile-removal checkbox.'
 
 $payloads = $package.SelectSingleNode("*[local-name()='Payloads']")
 Assert-True ($null -ne $payloads) 'The OpenBlade payload group is missing.'

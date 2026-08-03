@@ -39,6 +39,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added an uninstall choice to keep saved profiles and settings by default or
+  remove them explicitly from the graphical maintenance screen.
+
 - Added a **Reapply OpenBlade settings** action for controls changed outside
   OpenBlade. It resolves the active profile and manual overrides, writes only
   the affected hardware subsystems, and clears each warning only after
