@@ -1252,6 +1252,12 @@ public sealed class MainViewModelTests
                 LiveReadingSensors.BatteryPower,
             ],
             client.RequestedLiveReadings);
+        Assert.True(viewModel.HasEnabledTrayHoverLiveReadings);
+
+        viewModel.ApplyTelemetryPreferences(
+            [LiveReadingItemKind.CpuTemperature],
+            [new(TrayHoverLabelItemKind.AppName, true)]);
+        Assert.False(viewModel.HasEnabledTrayHoverLiveReadings);
     }
 
     [Fact]
@@ -3392,6 +3398,59 @@ public sealed class MainViewModelTests
         Assert.DoesNotContain(nameof(viewModel.TroubleshootingServiceStatus), changed);
         Assert.DoesNotContain(nameof(viewModel.AboutDetectedLaptopStatus), changed);
         Assert.DoesNotContain(nameof(viewModel.CanAdjustChargeLimit), changed);
+    }
+
+    [Fact]
+    public async Task StatusWithoutLiveReadingsPreservesTheLastOnDemandSample()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 10,
+            LiveReadings = new LiveReadings(-18_000, 2400, 2300),
+        };
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.LiveReadings == baseline.LiveReadings);
+
+        int dispatchesBeforeUpdate = dispatcher.CompletedCalls;
+        client.Publish(baseline with
+        {
+            Revision = 11,
+            LiveReadings = null,
+        });
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeUpdate);
+
+        Assert.Equal(baseline.LiveReadings, viewModel.LiveReadings);
+    }
+
+    [Fact]
+    public async Task UnverifiedDeviceClearsTheLastOnDemandSample()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 10,
+            LiveReadings = new LiveReadings(-18_000, 2400, 2300),
+        };
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.LiveReadings == baseline.LiveReadings);
+
+        client.Publish(baseline with
+        {
+            Revision = 11,
+            DeviceVerified = false,
+            LiveReadings = null,
+        });
+        await WaitUntilAsync(() => viewModel.LiveReadings is null);
+
+        Assert.True(viewModel.IsConnected);
+        Assert.False(viewModel.CanControlHardware);
     }
 
     [Fact]

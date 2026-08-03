@@ -1224,9 +1224,25 @@ public sealed class WinUiShellContractTests
     {
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string trayHost = ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "WinFormsTrayIconHost.cs");
 
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveStateAsync", window, StringComparison.Ordinal);
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync", window, StringComparison.Ordinal);
+        Assert.Contains("observationIntervalProvider: () => Timeout.InfiniteTimeSpan", window, StringComparison.Ordinal);
+        Assert.Contains("trayIcon.MouseMove += OnTrayIconMouseMove", trayHost, StringComparison.Ordinal);
+        int mouseMoveHandler = trayHost.IndexOf(
+            "private void OnTrayIconMouseMove",
+            StringComparison.Ordinal);
+        int rateGate = trayHost.IndexOf(
+            "hoverTelemetryRefreshGate.TryAcquire",
+            mouseMoveHandler,
+            StringComparison.Ordinal);
+        int enqueueRequest = trayHost.IndexOf(
+            "hoverTelemetryRefreshRequested()",
+            mouseMoveHandler,
+            StringComparison.Ordinal);
+        Assert.True(mouseMoveHandler >= 0 && rateGate > mouseMoveHandler && enqueueRequest > rateGate);
         Assert.DoesNotContain("AppWindow.Show(true)", app, StringComparison.Ordinal);
         int showMethod = window.IndexOf("public void ShowAndActivate()", StringComparison.Ordinal);
         int start = window.IndexOf("visibleObservationLoop.StartOrWake()", showMethod, StringComparison.Ordinal);
@@ -1239,6 +1255,15 @@ public sealed class WinUiShellContractTests
         Assert.True(closing >= 0 && stop > closing && hide > stop);
 
         Assert.Contains("window.StartHiddenObservation()", app, StringComparison.Ordinal);
+        int hiddenMethod = window.IndexOf("public void StartHiddenObservation()", StringComparison.Ordinal);
+        int hiddenMethodEnd = window.IndexOf(
+            "public async Task StartUpdateCheckingAsync()",
+            hiddenMethod,
+            StringComparison.Ordinal);
+        string hiddenBody = window[hiddenMethod..hiddenMethodEnd];
+        Assert.DoesNotContain("trayObservationLoop.StartOrWake()", hiddenBody, StringComparison.Ordinal);
+        Assert.Contains("TryPreferEfficientProcessorsForCurrentThread()", hiddenBody, StringComparison.Ordinal);
+        Assert.Contains("TrySetProcessEcoQos(enabled: true)", hiddenBody, StringComparison.Ordinal);
         Assert.Contains(
             "!window.UpdateViewModel.NeedsConsentPrompt",
             app,
@@ -1256,6 +1281,26 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.True(disposeLoop >= 0 && disposeTrayLoop > disposeLoop && disposeViewModel > disposeTrayLoop);
         Assert.Contains("DisposeComponentSafelyAsync", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EfficientProcessorPolicyIsLimitedToTheTray()
+    {
+        string serviceProgram = ReadRepositoryFile("src", "OpenBlade.Service", "Program.cs");
+        string serviceProject = ReadRepositoryFile(
+            "src", "OpenBlade.Service", "OpenBlade.Service.csproj");
+        string sessionAgentProgram = ReadRepositoryFile(
+            "src", "OpenBlade.SessionAgent", "Program.cs");
+        string sessionAgentProject = ReadRepositoryFile(
+            "src", "OpenBlade.SessionAgent", "OpenBlade.SessionAgent.csproj");
+        string policy = ReadRepositoryFile(
+            "src", "OpenBlade.Platform", "WindowsProcessorEfficiencyPolicy.cs");
+
+        Assert.DoesNotContain("OpenBlade.Platform", serviceProgram, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenBlade.Platform", serviceProject, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenBlade.Platform", sessionAgentProgram, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenBlade.Platform", sessionAgentProject, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetProcessDefaultCpuSets", policy, StringComparison.Ordinal);
     }
 
     [Fact]

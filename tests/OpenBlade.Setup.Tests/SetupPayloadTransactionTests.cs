@@ -9,6 +9,7 @@ public sealed class SetupPayloadTransactionTests
 {
     [Theory]
     [InlineData("OpenBlade.Service.exe")]
+    [InlineData("OpenBlade.Platform.dll")]
     [InlineData("OpenBlade.SessionAgent.exe")]
     [InlineData("OpenBlade.SessionAgent.dll")]
     [InlineData("OpenBlade.SessionAgent.deps.json")]
@@ -846,6 +847,7 @@ public sealed class SetupPayloadTransactionTests
         private static readonly string[] RequiredFiles =
         [
             "OpenBlade.Service.exe",
+            "OpenBlade.Platform.dll",
             "OpenBlade.SessionAgent.exe",
             "OpenBlade.SessionAgent.dll",
             "OpenBlade.SessionAgent.deps.json",

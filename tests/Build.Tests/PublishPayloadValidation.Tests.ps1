@@ -140,6 +140,7 @@ function Write-ValidServicePayload {
     New-Item -ItemType Directory -Path $Payload -Force | Out-Null
     Write-ServiceManifest -Payload $Payload -Manifest (New-ValidServiceManifest)
     foreach ($sessionAgentFile in @(
+            'OpenBlade.Platform.dll',
             'OpenBlade.SessionAgent.exe',
             'OpenBlade.SessionAgent.dll',
             'OpenBlade.SessionAgent.deps.json',

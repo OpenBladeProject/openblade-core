@@ -5,6 +5,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Reduced idle CPU wakeups by replacing hidden live-reading polling with a
+  rate-limited on-hover refresh, retaining the last reading between hovers,
+  and applying EcoQoS plus an efficient processor selection to the hidden tray
+  UI thread when Windows reports a hybrid topology. Service and Session Agent
+  scheduling remains under Windows control so latency-sensitive hardware and
+  input work can use any processor.
+
 ### Fixed
 
 - Fixed app accent changes in Light and Dark modes by keeping both WinUI's

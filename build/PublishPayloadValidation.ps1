@@ -165,6 +165,7 @@ function Assert-ServicePublishPayload {
     Assert-DynamicLightingIdentityPayload -Payload $Payload
 
     $requiredSessionAgentFiles = @(
+        'OpenBlade.Platform.dll',
         'OpenBlade.SessionAgent.exe',
         'OpenBlade.SessionAgent.dll',
         'OpenBlade.SessionAgent.deps.json',

@@ -534,7 +534,7 @@ public sealed class CapabilityPresentationTests
             Assert.Null(Attribute(picker, "VerticalAlignment"));
         }
         Assert.Contains(
-            "Choose how often OpenBlade checks temperatures, fan speed, and net battery power.",
+            "Choose how often OpenBlade refreshes temperatures, fan speed, and net battery power while the window is open or the tray icon is hovered.",
             xaml,
             StringComparison.Ordinal);
         XElement hoverContents = Assert.Single(settings.Descendants(), element =>

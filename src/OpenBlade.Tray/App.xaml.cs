@@ -3,6 +3,7 @@ using System.Security.Principal;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using OpenBlade.Contracts;
+using OpenBlade.Platform;
 using OpenBlade.Session;
 
 namespace OpenBlade.Tray;
@@ -22,6 +23,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private TrayExitLifecycle? exitLifecycle;
     private Task windowInitializationTask = Task.CompletedTask;
     private DispatcherQueue uiDispatcherQueue = null!;
+    private WindowsProcessorEfficiencyPolicy processorPolicy = null!;
     private int fatalCrashReported;
 
     public bool ExitRequested => exitLifecycle?.ExitRequested == true;
@@ -33,6 +35,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         traceLogRegistration ??= PersistentTraceLog.RegisterDefault(
             "OpenBlade.Tray",
             OpenBladeProductVersion.Read(typeof(App).Assembly));
+        processorPolicy = WindowsProcessorEfficiencyPolicy.Discover();
+        Trace.TraceInformation(
+            "OpenBlade processor efficiency policy: {0}",
+            processorPolicy.Status.Message);
         uiDispatcherQueue = DispatcherQueue.GetForCurrentThread();
         string executablePath = Environment.ProcessPath
             ?? throw new InvalidOperationException("Tray executable path is unavailable.");
@@ -139,7 +145,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private MainWindow CreateMainWindow()
     {
-        return new MainWindow();
+        return new MainWindow(processorPolicy);
     }
 
     private void CreateTrayIconHost()
@@ -156,7 +162,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         trayIconHost = new WinFormsTrayIconHost(
             trayMenuController,
             mainWindow.ViewModel,
-            trayIconThemeSource);
+            trayIconThemeSource,
+            () => Enqueue(mainWindow.RequestTrayTelemetryRefresh));
     }
 
     private static void StartSessionAgent()

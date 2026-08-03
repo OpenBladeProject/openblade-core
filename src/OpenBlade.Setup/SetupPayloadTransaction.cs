@@ -60,6 +60,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
     private static readonly string[] RequiredRelativePaths =
     [
         "OpenBlade.Service.exe",
+        "OpenBlade.Platform.dll",
         "OpenBlade.SessionAgent.exe",
         "OpenBlade.SessionAgent.dll",
         "OpenBlade.SessionAgent.deps.json",

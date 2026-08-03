@@ -3520,13 +3520,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public Task ObserveStateAsync(CancellationToken cancellationToken) =>
-        ObserveStateAsync(trayOnly: false, cancellationToken);
+        ObserveStateAsync(includeDashboardReadings: true, cancellationToken);
 
     public Task ObserveTrayStateAsync(CancellationToken cancellationToken) =>
-        ObserveStateAsync(trayOnly: true, cancellationToken);
+        ObserveStateAsync(includeDashboardReadings: false, cancellationToken);
 
     private async Task ObserveStateAsync(
-        bool trayOnly,
+        bool includeDashboardReadings,
         CancellationToken cancellationToken)
     {
         ObservationRequestStamp stamp = default;
@@ -3537,7 +3537,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 stamp = new ObservationRequestStamp(
                     connectionGeneration,
                     subscriptionConnected);
-                requestedLiveReadings = ResolveRequestedLiveReadings(trayOnly);
+                requestedLiveReadings = ResolveRequestedLiveReadings(
+                    includeDashboardReadings);
             },
             cancellationToken);
         if (requestedLiveReadings == LiveReadingSensors.None)
@@ -3695,7 +3696,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && previousStatus is not null
             && StatusMetadataEqual(previousStatus, status))
         {
-            LiveReadings = LiveReadingsEnabled ? status.LiveReadings : null;
+            ApplyLiveReadings(status);
             return;
         }
 
@@ -3796,7 +3797,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             status.DeviceVerified,
             status.ActivePowerSource,
             SelectedPerformance);
-        LiveReadings = LiveReadingsEnabled ? status.LiveReadings : null;
+        ApplyLiveReadings(status);
         PerformanceOverride = status.PerformanceOverride;
         FanOverride = status.FanOverride;
         LightingOverride = status.LightingOverride;
@@ -4111,7 +4112,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    private LiveReadingSensors ResolveRequestedLiveReadings(bool trayOnly)
+    public bool HasEnabledTrayHoverLiveReadings =>
+        LiveReadingsEnabled
+        && TrayHoverLabelItems.Any(option =>
+            option.IsEnabled && ToSensor(option.Kind) != LiveReadingSensors.None);
+
+    private LiveReadingSensors ResolveRequestedLiveReadings(bool includeDashboardReadings)
     {
         if (!LiveReadingsEnabled)
         {
@@ -4119,7 +4125,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         LiveReadingSensors requested = LiveReadingSensors.None;
-        if (!trayOnly)
+        if (includeDashboardReadings)
         {
             foreach (LiveReadingVisibilityOption option in DashboardTelemetryItems)
             {
@@ -4138,6 +4144,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
         }
         return requested;
+    }
+
+    private void ApplyLiveReadings(ServiceStatusSnapshot status)
+    {
+        if (!LiveReadingsEnabled || !status.DeviceVerified)
+        {
+            LiveReadings = null;
+            if (!status.DeviceVerified)
+            {
+                ClearLiveReadingsRefreshTime();
+            }
+        }
+        else if (status.LiveReadings is not null)
+        {
+            LiveReadings = status.LiveReadings;
+        }
     }
 
     private static LiveReadingSensors ToSensor(LiveReadingItemKind kind) => kind switch

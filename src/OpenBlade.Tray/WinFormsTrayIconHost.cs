@@ -8,6 +8,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private readonly NotifyIcon trayIcon;
     private readonly MainViewModel viewModel;
     private readonly ITrayIconThemeSource themeSource;
+    private readonly TrayHoverTelemetryRefreshGate hoverTelemetryRefreshGate = new();
+    private readonly Action hoverTelemetryRefreshRequested;
     private readonly WindowsAppNotificationPresenter? notificationPresenter;
     private Icon? currentIcon;
     private int disposed;
@@ -15,11 +17,14 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     public WinFormsTrayIconHost(
         TrayMenuController controller,
         MainViewModel viewModel,
-        ITrayIconThemeSource themeSource)
+        ITrayIconThemeSource themeSource,
+        Action hoverTelemetryRefreshRequested)
     {
         ArgumentNullException.ThrowIfNull(controller);
         this.viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         this.themeSource = themeSource ?? throw new ArgumentNullException(nameof(themeSource));
+        this.hoverTelemetryRefreshRequested = hoverTelemetryRefreshRequested
+            ?? throw new ArgumentNullException(nameof(hoverTelemetryRefreshRequested));
 
         menu = BuildTrayMenu(controller);
         TrayMenuItem open = controller.Find("Open");
@@ -34,6 +39,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             Visible = true,
         };
         trayIcon.DoubleClick += (_, _) => open.Invoke();
+        trayIcon.MouseMove += OnTrayIconMouseMove;
         notificationPresenter = WindowsAppNotificationPresenter.CreateBestEffort(
             exception => System.Diagnostics.Trace.TraceWarning(
                 "OpenBlade app notification presenter failed: {0}",
@@ -51,6 +57,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
 
         viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         themeSource.TrayIconThemeChanged -= OnTrayIconThemeChanged;
+        trayIcon.MouseMove -= OnTrayIconMouseMove;
         trayIcon.Visible = false;
         trayIcon.Dispose();
         notificationPresenter?.Dispose();
@@ -103,6 +110,16 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         if (Volatile.Read(ref disposed) == 0)
         {
             UpdateTrayIcon();
+        }
+    }
+
+    private void OnTrayIconMouseMove(object? sender, MouseEventArgs args)
+    {
+        if (Volatile.Read(ref disposed) == 0
+            && hoverTelemetryRefreshGate.TryAcquire(
+                viewModel.LiveReadingsObservationInterval))
+        {
+            hoverTelemetryRefreshRequested();
         }
     }
 

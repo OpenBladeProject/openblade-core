@@ -12,6 +12,7 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.Windows.Storage.Pickers;
 using OpenBlade.Contracts;
+using OpenBlade.Platform;
 using Windows.Graphics;
 using WinRT.Interop;
 
@@ -37,6 +38,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
     private readonly VisibleObservationLoop trayObservationLoop;
+    private readonly WindowsProcessorEfficiencyPolicy processorPolicy;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
     private readonly DispatcherQueueTimer chargeLimitCommitTimer;
     private readonly DispatcherQueueTimer lightingCommitTimer;
@@ -91,7 +93,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public MainWindow()
+        : this(WindowsProcessorEfficiencyPolicy.Discover())
     {
+    }
+
+    internal MainWindow(WindowsProcessorEfficiencyPolicy processorPolicy)
+    {
+        this.processorPolicy = processorPolicy
+            ?? throw new ArgumentNullException(nameof(processorPolicy));
         dispatcherQueue = DispatcherQueue.GetForCurrentThread()
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         dispatcherQueue.EnsureSystemDispatcherQueue();
@@ -123,10 +132,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 ViewModel.LiveReadingsObservationInterval);
         trayObservationLoop = new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync,
             errorHandler: exception => Trace.TraceError(
-                "OpenBlade tray observation failed: {0}",
+                "OpenBlade on-demand tray telemetry refresh failed: {0}",
                 exception),
-            observationIntervalProvider: () =>
-                ViewModel.LiveReadingsObservationInterval);
+            observationIntervalProvider: () => Timeout.InfiniteTimeSpan);
         displayRefreshTimer = dispatcherQueue.CreateTimer();
         displayRefreshTimer.Interval = DisplayRefreshInterval;
         displayRefreshTimer.IsRepeating = true;
@@ -245,6 +253,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public void ShowAndActivate()
     {
+        _ = processorPolicy.TryAllowAllProcessorsForCurrentThread();
+        _ = processorPolicy.TrySetProcessEcoQos(enabled: false);
         windowVisible = true;
         ViewModel.SetDashboardTelemetryPresentationActive(
             HomePage.Visibility == Visibility.Visible);
@@ -259,8 +269,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         windowVisible = false;
         ViewModel.SetDashboardTelemetryPresentationActive(false);
         visibleObservationLoop.Stop();
+        trayObservationLoop.Stop();
         displayRefreshTimer.Stop();
-        trayObservationLoop.StartOrWake();
+        _ = processorPolicy.TryPreferEfficientProcessorsForCurrentThread();
+        _ = processorPolicy.TrySetProcessEcoQos(enabled: true);
     }
 
     public async Task StartUpdateCheckingAsync()
@@ -347,7 +359,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             "visible observation loop",
             visibleObservationLoop.DisposeAsync);
         await DisposeComponentSafelyAsync(
-            "tray observation loop",
+            "on-demand tray observation loop",
             trayObservationLoop.DisposeAsync);
         await DisposeComponentSafelyAsync(
             "update checker",
@@ -1959,10 +1971,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             visibleObservationLoop.StartOrWake();
         }
-        else
+    }
+
+    public void RequestTrayTelemetryRefresh()
+    {
+        if (windowVisible
+            || !ViewModel.HasEnabledTrayHoverLiveReadings)
         {
-            trayObservationLoop.StartOrWake();
+            return;
         }
+
+        trayObservationLoop.StartOrWake();
     }
 
     private async void OnDisplayRefreshRateChanged(
