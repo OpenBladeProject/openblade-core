@@ -3,6 +3,10 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
+public sealed record LightingRendererInvalidationResult(
+    LightingRendererOwnershipState Ownership,
+    DriverModeRestoreOutcome DriverModeRestoreOutcome);
+
 public interface IVerifiedBladeDeviceProvider
 {
     bool TryGetVerifiedDevice(out IBladeDevice device);
@@ -16,7 +20,9 @@ public interface IVerifiedBladeDeviceProvider
     bool TryGetOwnedAmbientLightingDevice(out IBladeDevice device) =>
         TryGetVerifiedDevice(out device);
 
-    Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
+    Task<LightingRendererInvalidationResult> InvalidateLightingRendererAsync(
         CancellationToken cancellationToken) =>
-        Task.FromResult(LightingRendererOwnershipState.None);
+        Task.FromResult(new LightingRendererInvalidationResult(
+            LightingRendererOwnershipState.None,
+            DriverModeRestoreOutcome.NotOwned));
 }

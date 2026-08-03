@@ -262,6 +262,82 @@ public sealed class WindowsServiceLifecycleEventSourceTests
     }
 
     [Fact]
+    public void Publish_SuspendingLatchesLowPowerGateBeforeQueuedObservation()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        var gate = new LowPowerGate();
+        using var source = new WindowsServiceLifecycleEventSource(backend, gate);
+
+        backend.Publish(ServiceLifecycleTrigger.Suspending);
+
+        Assert.True(gate.IsActive);
+    }
+
+    [Fact]
+    public void Publish_DeduplicatedResumeStillClearsLowPowerGate()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        var gate = new LowPowerGate();
+        using var source = new WindowsServiceLifecycleEventSource(
+            backend,
+            gate,
+            getTickCount: () => 1_000);
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+        gate.Enter();
+
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+
+        Assert.False(gate.IsActive);
+    }
+
+    [Fact]
+    public void Publish_DisplayOnClearsGateButDisplayOffDoesNotEnterIt()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        var gate = new LowPowerGate();
+        using var source = new WindowsServiceLifecycleEventSource(backend, gate);
+
+        backend.Publish(ServiceLifecycleTrigger.DisplayOff);
+        Assert.False(gate.IsActive);
+
+        gate.Enter();
+        backend.Publish(ServiceLifecycleTrigger.DisplayOn);
+        Assert.False(gate.IsActive);
+    }
+
+    [Theory]
+    [InlineData(
+        ServiceLifecycleTrigger.Suspending,
+        ServiceLifecycleTrigger.Suspending,
+        true)]
+    [InlineData(
+        ServiceLifecycleTrigger.Suspending,
+        ServiceLifecycleTrigger.Resumed,
+        false)]
+    [InlineData(
+        ServiceLifecycleTrigger.Resumed,
+        ServiceLifecycleTrigger.Suspending,
+        true)]
+    [InlineData(
+        ServiceLifecycleTrigger.Suspending,
+        ServiceLifecycleTrigger.DisplayOn,
+        false)]
+    public void Publish_DuplicateAndOutOfOrderNotificationsLeaveGateAtLatestLevel(
+        ServiceLifecycleTrigger first,
+        ServiceLifecycleTrigger second,
+        bool expectedActive)
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        var gate = new LowPowerGate();
+        using var source = new WindowsServiceLifecycleEventSource(backend, gate);
+
+        backend.Publish(first);
+        backend.Publish(second);
+
+        Assert.Equal(expectedActive, gate.IsActive);
+    }
+
+    [Fact]
     public async Task WatchAsync_PublishAfterSignalDrainBeforeBitExchangeIsNotLost()
     {
         var backend = new FakeWindowsLifecycleNotificationBackend();

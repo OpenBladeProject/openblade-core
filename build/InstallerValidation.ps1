@@ -103,7 +103,8 @@ function Assert-OpenBladeInstallerBundle {
             $namespaces)
         if (($manifest.DocumentElement.GetAttribute('Win64') -ne 'yes') -or
             ($null -eq $condition) -or
-            ($condition.InnerText -ne 'VersionNT64 >= v10.0.26100')) {
+            ($condition.InnerText -ne (
+                'VersionNT64 >= v10.0 AND WindowsBuildNumber >= 26100'))) {
             throw "The Burn manifest does not enforce the Windows 11 24H2 x64 platform gate."
         }
 
@@ -154,7 +155,7 @@ function Assert-OpenBladeInstallerBundle {
             InstallArguments = 'install --bundle-managed'
             RepairArguments = 'install --bundle-managed'
             UninstallArguments = 'uninstall --bundle-managed'
-            DetectCondition = "OpenBladeInstalledVersion AND OpenBladeInstalledVersion >= v$ExpectedVersion"
+            DetectCondition = "OpenBladeInstalledVersion AND OpenBladeInstalledVersion > v$ExpectedVersion"
             Scope = 'perMachine'
             Cache = 'keep'
             Vital = 'yes'

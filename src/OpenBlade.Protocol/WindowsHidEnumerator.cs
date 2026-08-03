@@ -37,12 +37,30 @@ internal static class WindowsHidEnumerator
         return FindTargetCollections(new WindowsHidNative());
     }
 
+    internal static IReadOnlyList<HidInterfaceInfo> FindCollections(
+        ushort vendorId,
+        ushort productId)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return [];
+        }
+
+        return FindCollections(new WindowsHidNative(), vendorId, productId);
+    }
+
     internal static IReadOnlyList<HidInterfaceInfo> FindTargetInterfaces(
         IHidCandidateNative native) =>
         SelectProductionInterfaces(FindTargetCollections(native));
 
     internal static IReadOnlyList<HidInterfaceInfo> FindTargetCollections(
-        IHidCandidateNative native)
+        IHidCandidateNative native) =>
+        FindCollections(native, TargetBladeDevice.VendorId, TargetBladeDevice.ProductId);
+
+    internal static IReadOnlyList<HidInterfaceInfo> FindCollections(
+        IHidCandidateNative native,
+        ushort vendorId,
+        ushort productId)
     {
         ArgumentNullException.ThrowIfNull(native);
         List<HidInterfaceInfo> interfaces = [];
@@ -84,9 +102,9 @@ internal static class WindowsHidEnumerator
         }
 
         return interfaces
-            .Where(device => TargetBladeDevice.Matches(
-                device.VendorId,
-                device.ProductId))
+            .Where(device =>
+                device.VendorId == vendorId
+                && device.ProductId == productId)
             .ToArray();
     }
 

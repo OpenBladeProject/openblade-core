@@ -16,13 +16,32 @@ public sealed class RazerBladeModelCatalogTests
         Assert.Equal("RZ09-0581", model.ModelNumber);
         Assert.Equal("Razer Blade 16", model.ProductName);
         Assert.Equal(2026, model.ModelYear);
+        Assert.Equal("1532", model.UsbVendorId);
+        Assert.Equal("02E0", model.UsbProductId);
         Assert.Equal("Razer Blade 16 (2026)", model.DisplayName);
+    }
+
+    [Theory]
+    [InlineData("RZ09-0528")]
+    [InlineData("RZ09-05289EN4")]
+    [InlineData("rz09-05289en4")]
+    public void Find_RecognizesRz090528FamilyAndFullSku(string modelNumber)
+    {
+        RazerBladeModelInfo model = Assert.IsType<RazerBladeModelInfo>(
+            RazerBladeModelCatalog.Find(modelNumber));
+
+        Assert.Equal("RZ09-0528", model.ModelNumber);
+        Assert.Equal("Razer Blade 16", model.ProductName);
+        Assert.Equal(2025, model.ModelYear);
+        Assert.Equal("1532", model.UsbVendorId);
+        Assert.Equal("02C6", model.UsbProductId);
+        Assert.Equal("Razer Blade 16 (2025)", model.DisplayName);
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    [InlineData("RZ09-0528")]
+    [InlineData("RZ09-9999")]
     public void Find_RejectsMissingOrUnsupportedModels(string? modelNumber)
     {
         Assert.Null(RazerBladeModelCatalog.Find(modelNumber));

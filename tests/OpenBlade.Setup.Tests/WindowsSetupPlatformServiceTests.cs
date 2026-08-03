@@ -468,7 +468,11 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         RecordingFileOperations files = new() { FileExistsResult = true };
         RecordingUninstallRegistration registration = new() { EntryExists = true };
-        RecordingBundleOwnershipRegistration bundleOwnership = new() { EntryExists = true };
+        RecordingBundleOwnershipRegistration bundleOwnership = new()
+        {
+            EntryExists = true,
+            OwnedByCurrentBuild = false,
+        };
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             fileOperations: files,
             uninstallRegistration: registration,
@@ -480,6 +484,8 @@ public sealed class WindowsSetupPlatformServiceTests
         Assert.True(state.Startup.UninstallShortcutExisted);
         Assert.True(state.Startup.UninstallRegistrationExisted);
         Assert.True(state.BundleOwnershipExisted);
+        Assert.False(state.BundleOwnershipMatchesCurrentBuild);
+        Assert.Equal(bundleOwnership.Ownership, state.BundleOwnership);
     }
 
     [Fact]
@@ -490,10 +496,43 @@ public sealed class WindowsSetupPlatformServiceTests
             bundleOwnershipRegistration: bundleOwnership);
 
         await platform.InstallBundleOwnershipAsync(CancellationToken.None);
+        await platform.RestoreBundleOwnershipAsync(
+            bundleOwnership.Ownership,
+            CancellationToken.None);
         await platform.RemoveBundleOwnershipAsync(CancellationToken.None);
 
         Assert.Equal(1, bundleOwnership.Installs);
+        Assert.Equal([bundleOwnership.Ownership], bundleOwnership.Restores);
         Assert.Equal(1, bundleOwnership.Removals);
+    }
+
+    [Fact]
+    public async Task DynamicLightingIdentityOperations_UseInstallDirectoryAndInstallingUser()
+    {
+        RecordingDynamicLightingIdentityRegistration identity = new()
+        {
+            Registered = true,
+        };
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            dynamicLightingIdentityRegistration: identity);
+
+        SetupInstallLifecycleState state =
+            await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
+        await platform.RemoveDynamicLightingIdentityAsync(CancellationToken.None);
+        await platform.InstallDynamicLightingIdentityAsync(CancellationToken.None);
+
+        Assert.True(state.DynamicLightingIdentityRegistered);
+        DynamicLightingIdentityRequest query = Assert.Single(identity.Queries);
+        DynamicLightingIdentityRequest removal = Assert.Single(identity.Removals);
+        DynamicLightingIdentityRequest install = Assert.Single(identity.Installs);
+        Assert.Equal(query, removal);
+        Assert.Equal(query, install);
+        Assert.True(Path.IsPathFullyQualified(query.InstallDirectory));
+        Assert.EndsWith(
+            Path.Combine("Program Files", "OpenBlade"),
+            query.InstallDirectory,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(platform.CurrentUserSid, query.UserSid);
     }
 
     [Theory]
@@ -686,11 +725,22 @@ public sealed class WindowsSetupPlatformServiceTests
     private sealed class RecordingBundleOwnershipRegistration : IBundleOwnershipRegistration
     {
         public bool EntryExists { get; init; }
+        public bool OwnedByCurrentBuild { get; init; } = true;
+        public BundleOwnershipIdentity Ownership { get; init; } = new(
+            "WiX Burn",
+            "0.1.0",
+            "0.1.0+captured");
         public int Installs { get; private set; }
+        public List<BundleOwnershipIdentity> Restores { get; } = [];
         public int Removals { get; private set; }
 
-        public bool Exists() => EntryExists;
+        public BundleOwnershipIdentity? Capture() =>
+            EntryExists ? Ownership : null;
+        public bool IsOwnedByCurrentBuild(BundleOwnershipIdentity ownership) =>
+            OwnedByCurrentBuild;
         public void Install() => Installs++;
+        public void Restore(BundleOwnershipIdentity ownership) =>
+            Restores.Add(ownership);
         public void Remove() => Removals++;
     }
 
@@ -703,6 +753,46 @@ public sealed class WindowsSetupPlatformServiceTests
             CancellationToken cancellationToken)
         {
             Requests.Add(request);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed record DynamicLightingIdentityRequest(
+        string InstallDirectory,
+        string UserSid);
+
+    private sealed class RecordingDynamicLightingIdentityRegistration
+        : IDynamicLightingIdentityRegistration
+    {
+        public bool Registered { get; init; }
+        public List<DynamicLightingIdentityRequest> Queries { get; } = [];
+        public List<DynamicLightingIdentityRequest> Installs { get; } = [];
+        public List<DynamicLightingIdentityRequest> Removals { get; } = [];
+
+        public Task<bool> IsRegisteredAsync(
+            string installDirectory,
+            string userSid,
+            CancellationToken cancellationToken)
+        {
+            Queries.Add(new(installDirectory, userSid));
+            return Task.FromResult(Registered);
+        }
+
+        public Task InstallIfPresentAsync(
+            string installDirectory,
+            string userSid,
+            CancellationToken cancellationToken)
+        {
+            Installs.Add(new(installDirectory, userSid));
+            return Task.CompletedTask;
+        }
+
+        public Task RemoveIfPresentAsync(
+            string installDirectory,
+            string userSid,
+            CancellationToken cancellationToken)
+        {
+            Removals.Add(new(installDirectory, userSid));
             return Task.CompletedTask;
         }
     }

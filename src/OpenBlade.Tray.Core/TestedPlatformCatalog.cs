@@ -29,6 +29,11 @@ public static class TestedPlatformCatalog
             Array.AsReadOnly(new[] { "3.01" }),
             Array.AsReadOnly(new[] { "1.04" }),
             Array.AsReadOnly(new[] { "1.5.0.0", "1.6.0.0" })),
+        new(
+            RazerBladeModelCatalog.Rz090528ModelNumber,
+            Array.AsReadOnly(new[] { "2.02" }),
+            Array.AsReadOnly(new[] { "1.09" }),
+            Array.AsReadOnly(new[] { "1.9.0.0" })),
     ];
 
     public static IReadOnlyList<TestedPlatformVersionSet> Entries { get; } =

@@ -107,49 +107,105 @@ public sealed class AccentColorManager : IDisposable
     private void ApplyPalette(AccentPalette palette)
     {
         CurrentColor = palette.Base;
-        ResourceDictionary resources = Microsoft.UI.Xaml.Application.Current.Resources;
-        resources["SystemAccentColor"] = palette.Base;
-        resources["SystemAccentColorLight1"] = palette.Light1;
-        resources["SystemAccentColorLight2"] = palette.Light2;
-        resources["SystemAccentColorLight3"] = palette.Light3;
-        resources["SystemAccentColorDark1"] = palette.Dark1;
-        resources["SystemAccentColorDark2"] = palette.Dark2;
-        resources["SystemAccentColorDark3"] = palette.Dark3;
+        ResourceDictionary applicationResources =
+            Microsoft.UI.Xaml.Application.Current.Resources;
+        applicationResources["SystemAccentColor"] = palette.Base;
+        applicationResources["SystemAccentColorLight1"] = palette.Light1;
+        applicationResources["SystemAccentColorLight2"] = palette.Light2;
+        applicationResources["SystemAccentColorLight3"] = palette.Light3;
+        applicationResources["SystemAccentColorDark1"] = palette.Dark1;
+        applicationResources["SystemAccentColorDark2"] = palette.Dark2;
+        applicationResources["SystemAccentColorDark3"] = palette.Dark3;
 
         Color textOnAccent = ShouldUseDarkText(palette.Base)
             ? Color.FromArgb(255, 0, 0, 0)
             : Color.FromArgb(255, 255, 255, 255);
-        SetBrushResource(resources, "AccentFillColorDefaultBrush", palette.Base);
-        SetBrushResource(
-            resources,
-            "AccentFillColorSecondaryBrush",
-            WithAlpha(palette.Base, 230));
-        SetBrushResource(
-            resources,
-            "AccentFillColorTertiaryBrush",
-            WithAlpha(palette.Base, 204));
-        SetBrushResource(
-            resources,
-            "AccentFillColorSelectedTextBackgroundBrush",
-            palette.Base);
-        SetBrushResource(resources, "AccentTextFillColorPrimaryBrush", palette.Base);
-        SetBrushResource(
-            resources,
-            "AccentTextFillColorSecondaryBrush",
-            WithAlpha(palette.Base, 230));
-        SetBrushResource(
-            resources,
-            "AccentTextFillColorTertiaryBrush",
-            WithAlpha(palette.Base, 204));
-        SetBrushResource(resources, "TextOnAccentFillColorPrimaryBrush", textOnAccent);
-        SetBrushResource(
-            resources,
-            "TextOnAccentFillColorSecondaryBrush",
-            WithAlpha(textOnAccent, 179));
+        foreach (ResourceDictionary resources in
+                 GetAccentResourceDictionaries(applicationResources))
+        {
+            ApplyBrushPalette(resources);
+        }
+
+        // Application resource lookup resolves the brushes used by the active
+        // Dark theme. Keep that live lookup synchronized in addition to the
+        // explicit theme dictionaries needed when the root forces Light mode.
+        ApplyBrushPalette(applicationResources);
 
         root.InvalidateMeasure();
         root.InvalidateArrange();
         ColorChanged?.Invoke(this, EventArgs.Empty);
+
+        void ApplyBrushPalette(ResourceDictionary resources)
+        {
+            SetBrushResource(resources, "AccentFillColorDefaultBrush", palette.Base);
+            SetBrushResource(
+                resources,
+                "AccentFillColorSecondaryBrush",
+                WithAlpha(palette.Base, 230));
+            SetBrushResource(
+                resources,
+                "AccentFillColorTertiaryBrush",
+                WithAlpha(palette.Base, 204));
+            SetBrushResource(
+                resources,
+                "AccentFillColorSelectedTextBackgroundBrush",
+                palette.Base);
+            SetBrushResource(resources, "AccentTextFillColorPrimaryBrush", palette.Base);
+            SetBrushResource(
+                resources,
+                "AccentTextFillColorSecondaryBrush",
+                WithAlpha(palette.Base, 230));
+            SetBrushResource(
+                resources,
+                "AccentTextFillColorTertiaryBrush",
+                WithAlpha(palette.Base, 204));
+            SetBrushResource(
+                resources,
+                "TextOnAccentFillColorPrimaryBrush",
+                textOnAccent);
+            SetBrushResource(
+                resources,
+                "TextOnAccentFillColorSecondaryBrush",
+                WithAlpha(textOnAccent, 179));
+        }
+    }
+
+    private static IReadOnlyList<ResourceDictionary> GetAccentResourceDictionaries(
+        ResourceDictionary resources)
+    {
+        var result = new List<ResourceDictionary>();
+        var visited = new HashSet<ResourceDictionary>();
+        Collect(resources);
+        if (result.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "The WinUI Light and Dark accent resource dictionaries are missing.");
+        }
+
+        return result;
+
+        void Collect(ResourceDictionary current)
+        {
+            if (!visited.Add(current))
+            {
+                return;
+            }
+
+            foreach (string theme in new[] { "Light", "Dark" })
+            {
+                if (current.ThemeDictionaries.TryGetValue(theme, out object? value)
+                    && value is ResourceDictionary dictionary
+                    && dictionary.ContainsKey("AccentFillColorDefaultBrush"))
+                {
+                    result.Add(dictionary);
+                }
+            }
+
+            foreach (ResourceDictionary merged in current.MergedDictionaries)
+            {
+                Collect(merged);
+            }
+        }
     }
 
     private static void SetBrushResource(

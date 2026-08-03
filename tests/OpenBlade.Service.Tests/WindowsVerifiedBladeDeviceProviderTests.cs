@@ -19,7 +19,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             nameof(ServiceComposition.CreateProductionBatteryFactory),
             WindowsVerifiedBladeDeviceProvider.ProductionPortFactory.Method.Name);
         Assert.Equal(
-            nameof(BatteryValidationFactory.CreateWindowsFanRpmQuery),
+            "CreateWindowsFanRpmForService",
             WindowsVerifiedBladeDeviceProvider.ProductionFanRpmFactory.Method.Name);
         Assert.Equal(
             nameof(ServiceComposition.CreateProductionLightingFactory),
@@ -282,6 +282,18 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(
             Enum.GetValues<LightingEffect>().Order(),
             capabilities.LightingEffects.Order());
+        Assert.True(capabilities.ObservedLightingEffects.SetEquals(
+            [LightingEffect.Ripple, LightingEffect.Wheel]));
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            capabilities.SpecialKeyBindingsAccess);
+        Assert.Equal(
+            SpecialKeySlotSet.M3 | SpecialKeySlotSet.M4 | SpecialKeySlotSet.M5,
+            capabilities.WritableSpecialKeySlots);
+        Assert.Equal(
+            DeviceFeatureAccess.ReadOnly,
+            capabilities.LampArrayLightingAccess);
+        Assert.True(capabilities.SupportsPlaybackMuteIndicator);
         Assert.Empty(capabilities.PerformancePresets);
         Assert.Empty(capabilities.FanModes);
         Assert.Empty(capabilities.ChargeLimits);
@@ -640,7 +652,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     [Fact]
     public async Task LightingWriter_IsOpenedOnceKeptAliveAndDisposedWithProvider()
     {
-        var lightingPort = new FakeLightingPort();
+        var lightingPort = new FakeLightingPort
+        {
+            DriverModeRestoreOutcome = DriverModeRestoreOutcome.Released,
+        };
         var lightingFactory = new FakeLightingFactory(lightingPort);
         var provider = new WindowsVerifiedBladeDeviceProvider(
             () => Probe(BatteryValidationProbeClassification.Ready),
@@ -667,9 +682,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal([77], lightingPort.Pulses.Select(pulse => (int)pulse.MatrixSlot));
         Assert.Equal(0, lightingPort.DisposeCount);
 
-        LightingRendererOwnershipState invalidated =
+        LightingRendererInvalidationResult invalidated =
             await provider.InvalidateLightingRendererAsync(default);
-        Assert.Equal(LightingRendererOwnershipState.Reactive, invalidated);
+        Assert.Equal(LightingRendererOwnershipState.Reactive, invalidated.Ownership);
+        Assert.Equal(DriverModeRestoreOutcome.Released, invalidated.DriverModeRestoreOutcome);
         Assert.Equal(1, lightingPort.DisposeCount);
         Assert.Equal(1, lightingFactory.OpenCount);
         Assert.Equal(
@@ -928,10 +944,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             default);
         lightingPort.OwnershipState = LightingRendererOwnershipState.Faulted;
 
-        LightingRendererOwnershipState invalidated =
+        LightingRendererInvalidationResult invalidated =
             await provider.InvalidateLightingRendererAsync(default);
 
-        Assert.Equal(LightingRendererOwnershipState.Faulted, invalidated);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, invalidated.Ownership);
         Assert.Equal(1, lightingPort.DisposeCount);
         Assert.Equal(1, lightingFactory.OpenCount);
         Assert.Equal(
@@ -1338,7 +1354,18 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
             new HashSet<int>(),
             false,
-            false);
+            false)
+        {
+            SupportsPlaybackMuteIndicator = true,
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+            WritableSpecialKeySlots =
+                SpecialKeySlotSet.M3
+                | SpecialKeySlotSet.M4
+                | SpecialKeySlotSet.M5,
+            LampArrayLightingAccess = DeviceFeatureAccess.ReadOnly,
+            ObservedLightingEffects =
+                new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
+        };
 
         public int OpenCount { get; private set; }
 
@@ -1361,9 +1388,22 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
             new HashSet<int>(),
             false,
-            false);
+            false)
+        {
+            SupportsPlaybackMuteIndicator = true,
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+            WritableSpecialKeySlots =
+                SpecialKeySlotSet.M3
+                | SpecialKeySlotSet.M4
+                | SpecialKeySlotSet.M5,
+            LampArrayLightingAccess = DeviceFeatureAccess.ReadOnly,
+            ObservedLightingEffects =
+                new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
+        };
 
         public LightingRendererOwnershipState OwnershipState { get; set; }
+
+        public DriverModeRestoreOutcome DriverModeRestoreOutcome { get; set; }
 
         public List<LightingSettings> Writes { get; } = [];
 

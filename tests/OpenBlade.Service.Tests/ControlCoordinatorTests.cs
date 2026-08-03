@@ -339,7 +339,7 @@ public sealed class ControlCoordinatorTests
         {
             device.State = device.State with { Performance = PerformancePreset.Balanced };
         }
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         ControlResult result = await ApplyScopedAsync(coordinator, subsystem);
 
@@ -359,7 +359,7 @@ public sealed class ControlCoordinatorTests
         DeviceSubsystem subsystem)
     {
         RecordingBladeDevice device = CreateMatchingDevice();
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         ControlResult result = await ApplyScopedAsync(coordinator, subsystem);
 
@@ -381,7 +381,7 @@ public sealed class ControlCoordinatorTests
         {
             FanModes = new HashSet<FanMode> { FanMode.Automatic },
         };
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         ControlResult result = await coordinator.ApplyFanAsync(
             FanMode.Maximum,
@@ -401,7 +401,7 @@ public sealed class ControlCoordinatorTests
             Performance = null,
             Fans = FanMode.Maximum,
         };
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
             PerformancePreset.Performance,
@@ -733,7 +733,7 @@ public sealed class ControlCoordinatorTests
     public async Task ScopedApply_InvalidLighting_IsBlockedBeforeDeviceAccess()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         ControlResult result = await coordinator.ApplyLightingAsync(
             new LightingSettings(LightingEffect.Spectrum, new RgbColor(1, 2, 3), 20),
@@ -748,7 +748,7 @@ public sealed class ControlCoordinatorTests
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
         device.AutoConfirmWrites = false;
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
             PerformancePreset.Balanced,
@@ -767,7 +767,7 @@ public sealed class ControlCoordinatorTests
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
         device.ReadStateFailureOnCall = 2;
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         ControlResult result = await coordinator.ApplyPerformanceAsync(
             PerformancePreset.Balanced,
@@ -776,22 +776,6 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(ControlResultStatus.Failed, result.Status);
         Assert.Contains("indeterminate", result.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(["Capabilities", "State", "SetPerformance", "State"], device.Calls);
-        Assert.Equal(1, device.PerformanceSetCalls);
-    }
-
-    [Fact]
-    public async Task ScopedApply_ControllerWarningIsAdvisory()
-    {
-        RecordingBladeDevice device = CreateMismatchedDevice();
-        var coordinator = new ControlCoordinator(
-            device,
-            new FakeHardwareAccessGuard(["RazerAppEngine"], "enumeration warning"));
-
-        ControlResult result = await coordinator.ApplyPerformanceAsync(
-            PerformancePreset.Balanced,
-            CancellationToken.None);
-
-        Assert.Equal(ControlResultStatus.Applied, result.Status);
         Assert.Equal(1, device.PerformanceSetCalls);
     }
 
@@ -807,7 +791,7 @@ public sealed class ControlCoordinatorTests
                 cancellation.Cancel();
             }
         };
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => coordinator.ApplyPerformanceAsync(
@@ -824,7 +808,7 @@ public sealed class ControlCoordinatorTests
         RecordingBladeDevice device = CreateMismatchedDevice();
         using var cancellation = new CancellationTokenSource();
         device.AfterSetter = _ => cancellation.Cancel();
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => coordinator.ApplyPerformanceAsync(
@@ -839,7 +823,7 @@ public sealed class ControlCoordinatorTests
     public async Task TemporaryFullCharge_IsBlockedWithoutBatterySetter()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
         var temporary = new DesiredBatteryState(
             BatteryPolicy.Create(80),
             protectionEnabled: true,
@@ -858,7 +842,7 @@ public sealed class ControlCoordinatorTests
     public async Task ApplyDesiredState_UsesOneInitialAndOneFinalAggregateRead()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
             CreateDesiredState(),
@@ -1013,7 +997,7 @@ public sealed class ControlCoordinatorTests
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
         device.SuppressConfirmationFor = DeviceSubsystem.Fans;
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
             CreateDesiredState(),
@@ -1039,7 +1023,7 @@ public sealed class ControlCoordinatorTests
                 device.State = device.State with { Fans = FanMode.Automatic };
             }
         };
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
             CreateDesiredState(),
@@ -1058,7 +1042,7 @@ public sealed class ControlCoordinatorTests
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
         device.PerformanceFailure = new IOException("device disconnected");
-        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+        var coordinator = new ControlCoordinator(device);
 
         SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
             CreateDesiredState(),
@@ -1085,7 +1069,7 @@ public sealed class ControlCoordinatorTests
             DeviceSubsystem.Fans => coordinator.ApplyFanAsync(
                 FanMode.Maximum,
                 CancellationToken.None),
-            DeviceSubsystem.Battery => coordinator.ApplyBatteryAsync(
+            DeviceSubsystem.Battery => coordinator.ApplyChargeLimitAsync(
                 BatteryPolicy.Create(75),
                 CancellationToken.None),
             DeviceSubsystem.Lighting => coordinator.ApplyLightingAsync(
@@ -1142,13 +1126,6 @@ public sealed class ControlCoordinatorTests
         LightingEffect.Static,
         new RgbColor(10, 20, 30),
         40);
-
-    private sealed class FakeHardwareAccessGuard(
-        IReadOnlyList<string> conflicts,
-        string? failure = null) : IHardwareAccessGuard
-    {
-        public HardwareAccessDecision Check() => new(conflicts, failure);
-    }
 
     private sealed class RecordingBladeDevice : IBladeDevice
     {

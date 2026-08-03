@@ -19,16 +19,23 @@ internal abstract class GetterCandidateProbeCommand
         Task<HidSessionResult<GetterCandidateProbeSnapshot>>> run;
     private readonly TextWriter output;
     private readonly Func<Action, IDisposable> registerCancellation;
+    private readonly DeviceIdentity device;
 
     protected GetterCandidateProbeCommand(
         Func<CancellationToken,
             Task<HidSessionResult<GetterCandidateProbeSnapshot>>> run,
         TextWriter output,
-        Func<Action, IDisposable>? registerCancellation = null)
+        Func<Action, IDisposable>? registerCancellation = null,
+        DeviceIdentity? device = null)
     {
         this.run = run ?? throw new ArgumentNullException(nameof(run));
         this.output = output ?? throw new ArgumentNullException(nameof(output));
         this.registerCancellation = registerCancellation ?? ConsoleCancellation.Register;
+        this.device = device ?? new DeviceIdentity(
+            TargetBladeDevice.Model,
+            TargetBladeDevice.VendorId,
+            TargetBladeDevice.ProductId,
+            TargetBladeDevice.BiosVersion);
     }
 
     protected abstract CandidateMetadata Metadata { get; }
@@ -72,10 +79,10 @@ internal abstract class GetterCandidateProbeCommand
         HidSessionResult<GetterCandidateProbeSnapshot> result) => new(
         SchemaVersion: 1,
         Device: new(
-            TargetBladeDevice.Model,
-            TargetBladeDevice.VendorId.ToString("X4"),
-            TargetBladeDevice.ProductId.ToString("X4"),
-            TargetBladeDevice.BiosVersion),
+            device.Model,
+            device.VendorId.ToString("X4"),
+            device.ProductId.ToString("X4"),
+            device.BiosVersion),
         Candidate: Metadata.Candidate,
         Request: new(
             Metadata.ClassIdHex,
@@ -136,8 +143,9 @@ internal abstract class GetterCandidateProbeCommand
 internal sealed class FunctionKeyPrimaryGetterCandidateProbeCommand(
     Func<CancellationToken, Task<HidSessionResult<GetterCandidateProbeSnapshot>>> run,
     TextWriter output,
-    Func<Action, IDisposable>? registerCancellation = null)
-    : GetterCandidateProbeCommand(run, output, registerCancellation)
+    Func<Action, IDisposable>? registerCancellation = null,
+    DeviceIdentity? device = null)
+    : GetterCandidateProbeCommand(run, output, registerCancellation, device)
 {
     protected override CandidateMetadata Metadata { get; } = new(
         CommandName: "probe-function-key-primary-getter",
@@ -151,8 +159,9 @@ internal sealed class FunctionKeyPrimaryGetterCandidateProbeCommand(
 internal sealed class GamingModeGetterCandidateProbeCommand(
     Func<CancellationToken, Task<HidSessionResult<GetterCandidateProbeSnapshot>>> run,
     TextWriter output,
-    Func<Action, IDisposable>? registerCancellation = null)
-    : GetterCandidateProbeCommand(run, output, registerCancellation)
+    Func<Action, IDisposable>? registerCancellation = null,
+    DeviceIdentity? device = null)
+    : GetterCandidateProbeCommand(run, output, registerCancellation, device)
 {
     protected override CandidateMetadata Metadata { get; } = new(
         CommandName: "probe-gaming-mode-getter",

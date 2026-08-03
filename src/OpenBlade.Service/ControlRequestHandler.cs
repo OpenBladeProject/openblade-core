@@ -88,6 +88,11 @@ public sealed class ControlRequestHandler
                     step.Direction,
                     step.Lifetime,
                     cancellationToken)),
+            SetKeyboardLightingControlModeRequest set => Result(
+                request.RequestId,
+                await runtime.SetKeyboardLightingControlModeAsync(
+                    set.Mode,
+                    cancellationToken)),
             SetExternalLightingOverridePolicyRequest set => Result(
                 request.RequestId,
                 await runtime.SetExternalLightingOverridePolicyAsync(

@@ -1946,6 +1946,182 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ExactModelCapabilities_ExposeDiscoveriesAndEnforceHighCpuGpuLowOnly()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var exactCombinations = new CustomPerformanceCapabilities(
+            new HashSet<CustomPerformanceCombination>
+            {
+                new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+                new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High),
+                new(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
+            });
+        var observedGpuPolicy = new GpuOverclockCapabilities(
+            new DeviceNumericRange(-1000, 400, null),
+            new DeviceNumericRange(-1000, 3000, null),
+            DeviceFeatureAccess.ObservedOnly)
+        {
+            SupportsEnableDisable = true,
+        };
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                CustomPerformance = exactCombinations,
+                CpuPowerLimit = new(
+                    new DeviceNumericRange(45, 95, 1),
+                    DeviceFeatureAccess.ObservedOnly),
+                CpuVoltageOptimizer = new(
+                    new DeviceNumericRange(-30, -1, 1),
+                    DeviceFeatureAccess.ObservedOnly)
+                {
+                    SupportsEnableDisable = true,
+                },
+                GpuOverclock = observedGpuPolicy,
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+                LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+                ObservedLightingEffects = new HashSet<LightingEffect>
+                {
+                    LightingEffect.Spectrum,
+                    LightingEffect.Static,
+                    LightingEffect.Starlight,
+                    LightingEffect.Ripple,
+                    LightingEffect.Tidal,
+                    LightingEffect.Wave,
+                    LightingEffect.Wheel,
+                },
+                ObservedPowerSourceBehaviors =
+                [
+                    new PowerSourceBehaviorObservation(
+                        PowerSource.Battery,
+                        PerformancePreset.BatterySaver,
+                        FanMode.Automatic,
+                        FixedFanControlAvailable: false,
+                        PerformanceModeAvailable: false,
+                        CustomModeAvailable: false,
+                        InadequatePowerWarningVisible: false),
+                    new PowerSourceBehaviorObservation(
+                        PowerSource.UsbC,
+                        PerformancePreset.Balanced,
+                        FanMode.Automatic,
+                        FixedFanControlAvailable: false,
+                        PerformanceModeAvailable: false,
+                        CustomModeAvailable: false,
+                        InadequatePowerWarningVisible: true),
+                ],
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.High,
+                    CustomPerformanceLevel.Low),
+                GpuClockOffsets = new GpuClockOffsetCapabilities(
+                    "NVIDIA GPU",
+                    new GpuClockOffsetRange(-1000, 400, 0),
+                    new GpuClockOffsetRange(-1000, 3000, 0)),
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.SelectedCustomCpuLevel == CustomPerformanceLevel.High);
+
+        Assert.Equal([CustomPerformanceLevel.Low], viewModel.AvailableCustomGpuLevels);
+        Assert.False(viewModel.SetCustomPerformanceCommand.CanExecute(
+            new CustomPerformanceSettings(
+                CustomPerformanceLevel.High,
+                CustomPerformanceLevel.Medium)));
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            viewModel.Capabilities.CpuPowerLimit?.Access);
+        Assert.Equal(45, viewModel.Capabilities.CpuPowerLimit?.Watts.Minimum);
+        Assert.Equal(95, viewModel.Capabilities.CpuPowerLimit?.Watts.Maximum);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            viewModel.Capabilities.CpuVoltageOptimizer?.Access);
+        Assert.Equal(-30, viewModel.Capabilities.CpuVoltageOptimizer?.Value.Minimum);
+        Assert.Equal(-1, viewModel.Capabilities.CpuVoltageOptimizer?.Value.Maximum);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            viewModel.Capabilities.GpuOverclock?.Access);
+        Assert.Equal(-1000, viewModel.Capabilities.GpuOverclock?.CoreOffsetMegahertz.Minimum);
+        Assert.Equal(400, viewModel.Capabilities.GpuOverclock?.CoreOffsetMegahertz.Maximum);
+        Assert.False(viewModel.CanEditGpuClockTuning);
+        Assert.False(viewModel.IsSpecialKeyBindingsEditable);
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+            ActivePowerSource = PowerSource.UsbC,
+            Capabilities = baseline.Capabilities! with
+            {
+                ObservedPowerSourceBehaviors =
+                [
+                    new PowerSourceBehaviorObservation(
+                        PowerSource.UsbC,
+                        PerformancePreset.Balanced,
+                        FanMode.Automatic,
+                        FixedFanControlAvailable: false,
+                        PerformanceModeAvailable: false,
+                        CustomModeAvailable: false,
+                        InadequatePowerWarningVisible: true),
+                ],
+            },
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+
+        PowerSourceBehaviorObservation observation = Assert.Single(
+            viewModel.Capabilities.ObservedPowerSourceBehaviors);
+        Assert.Equal(PowerSource.UsbC, observation.Source);
+        Assert.Equal(PerformancePreset.Balanced, observation.SelectedPerformance);
+        Assert.True(observation.InadequatePowerWarningVisible);
+    }
+
+    [Fact]
+    public async Task PartialSpecialKeyAdmission_EnablesOnlyM3ThroughM5()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+                WritableSpecialKeySlots =
+                    SpecialKeySlotSet.M3
+                    | SpecialKeySlotSet.M4
+                    | SpecialKeySlotSet.M5,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsSpecialKeyBindingsEditable);
+
+        Assert.False(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M1));
+        Assert.False(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M2));
+        Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M3));
+        Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M4));
+        Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M5));
+
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+            Capabilities = baseline.Capabilities! with
+            {
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+                WritableSpecialKeySlots = SpecialKeySlotSet.M4,
+            },
+        });
+        await WaitUntilAsync(() =>
+            !viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M3)
+            && viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M4));
+
+        Assert.False(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M3));
+        Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M4));
+    }
+
+    [Fact]
     public async Task GpuClockTuning_UsesDriverRangesAndSendsTypedCustomOverride()
     {
         var client = new FakeServiceClient();
@@ -3219,6 +3395,42 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task PlaybackMuteIndicatorCapabilityOnlyStatus_RefreshesCapabilities()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false) with
+        {
+            Revision = 10,
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            {
+                SupportsPlaybackMuteIndicator = false,
+            },
+        };
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        Assert.False(viewModel.Capabilities.SupportsPlaybackMuteIndicator);
+
+        client.Publish(baseline with
+        {
+            Revision = 11,
+            Capabilities = baseline.Capabilities! with
+            {
+                SupportsPlaybackMuteIndicator = true,
+            },
+        });
+        await WaitUntilAsync(
+            () => viewModel.Capabilities.SupportsPlaybackMuteIndicator);
+
+        Assert.True(viewModel.Capabilities.SupportsPlaybackMuteIndicator);
+    }
+
+    [Fact]
     public async Task HiddenDashboard_DoesNotRebuildTelemetryPresentation()
     {
         var client = new FakeServiceClient();
@@ -3574,6 +3786,7 @@ public sealed class MainViewModelTests
         Assert.Matches("^0\\.1\\.0\\+[0-9a-f]{8}$", viewModel.AboutUiVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal("Unavailable", viewModel.TroubleshootingUsbDeviceStatus);
         Assert.False(viewModel.HasTroubleshootingRecentError);
         Assert.Empty(viewModel.TroubleshootingRecentErrorStatus);
 
@@ -3629,7 +3842,12 @@ public sealed class MainViewModelTests
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
             Revision = 3,
-            Firmware = new FirmwareVersions("3.01", "1.04", "Unavailable", "98.3.5c.40.3d"),
+            Firmware = new FirmwareVersions(
+                "3.01",
+                "1.04",
+                "Unavailable",
+                "98.3.5c.40.3d",
+                RazerBladeModelCatalog.OpenBladeTargetModelNumber),
             KeyboardDriverModeActive = true,
         });
         await WaitUntilAsync(() =>
@@ -3642,6 +3860,7 @@ public sealed class MainViewModelTests
         Assert.Equal("None", viewModel.TroubleshootingOtherRazerSoftwareStatus);
         Assert.Equal("Loaded", viewModel.TroubleshootingKeyboardDriverModeStatus);
         Assert.Equal("Razer Blade 16 (2026), RZ09-0581", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal("VID 1532 · PID 02E0", viewModel.TroubleshootingUsbDeviceStatus);
         Assert.Equal("3.01", viewModel.AboutBiosVersionStatus);
         Assert.Equal("1.04", viewModel.AboutEcVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutMcuVersionStatus);
@@ -4079,6 +4298,23 @@ public sealed class MainViewModelTests
         Assert.Equal(
             "OpenBlade has not tested this configuration: Model RZ09-9999ABC.",
             viewModel.DashboardTestedPlatformWarningMessage);
+
+        client.Publish(stable with
+        {
+            Revision = stable.Revision + 3,
+            Firmware = new FirmwareVersions(
+                "2.02",
+                "1.09",
+                "1.9.0.0",
+                "Unavailable",
+                RazerBladeModelCatalog.Rz090528ModelNumber),
+        });
+        await WaitUntilAsync(() =>
+            viewModel.AboutDetectedLaptopStatus == "Razer Blade 16 (2025), RZ09-0528");
+
+        Assert.Equal("VID 1532 · PID 02C6", viewModel.TroubleshootingUsbDeviceStatus);
+        Assert.False(viewModel.HasUntestedPlatformVersion);
+        Assert.Equal(string.Empty, viewModel.DashboardTestedPlatformWarningMessage);
     }
 
     [Fact]
@@ -4268,6 +4504,34 @@ public sealed class MainViewModelTests
 
         Assert.Equal(FanMode.ManualCurve, viewModel.SelectedFanMode);
         Assert.Equal(FanMode.ManualCurve, client.LastFanControlSettings!.Mode);
+    }
+
+    [Fact]
+    public async Task DeviceFanRangeConstrainsLoadedAndEditedManualCurvePoints()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5000, 100),
+        };
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities));
+        await WaitUntilAsync(() => viewModel.FixedFanSpeedMaximumRpm == 5000);
+
+        Assert.All(
+            viewModel.CpuFanCurveEditorPoints.Concat(
+                viewModel.GpuFanCurveEditorPoints),
+            point => Assert.InRange(point.SpeedRpm, 2000, 5000));
+
+        FanCurveEditorPoint last = viewModel.CpuFanCurveEditorPoints[^1];
+        viewModel.UpdateFanCurvePoint(last, 5400);
+
+        Assert.Equal(5000, viewModel.CpuFanCurveEditorPoints[^1].SpeedRpm);
+        Assert.Equal(5000, viewModel.CurrentFanControlSettings.ManualCurve.Cpu[^1].SpeedRpm);
     }
 
     [Fact]

@@ -5,6 +5,27 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class RazerReportTests
 {
     [Fact]
+    public void SpanEncoder_IsByteIdenticalAndClearsReusedDestination()
+    {
+        byte[] expected = RazerReport.Create(
+            0x41,
+            0x03,
+            0x0B,
+            [0xFF, 0x02, 0x00, 0x10]).Encode();
+        byte[] destination = Enumerable.Repeat((byte)0xA5, RazerReport.ReportLength)
+            .ToArray();
+
+        RazerReport.Encode(
+            0x41,
+            0x03,
+            0x0B,
+            [0xFF, 0x02, 0x00, 0x10],
+            destination);
+
+        Assert.Equal(expected, destination);
+    }
+
+    [Fact]
     public void Encode_MatchesKnownBladeFeatureReport()
     {
         RazerReport report = RazerReport.Create(

@@ -1,16 +1,19 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
+using OpenBlade.Contracts;
+using OpenBlade.Tray;
 
 namespace OpenBlade.Capture;
 
 /// <summary>
-/// Read-only, time-bounded Raw Input probe for the RZ09-0581 keyboard collections.
+/// Read-only, time-bounded Raw Input probe for exact Razer keyboard collections.
 /// It records scan codes and raw HID reports, but never translates keys to text or
 /// inspects the foreground application.
 /// </summary>
 public sealed class SpecialKeyInputProbe
 {
+    private const string RazerVendorIdHex = "1532";
     private const uint WindowMessageInput = 0x00FF;
     private const uint WindowMessageClose = 0x0010;
     private const uint WindowMessageDestroy = 0x0002;
@@ -32,6 +35,8 @@ public sealed class SpecialKeyInputProbe
     private static readonly nint MessageOnlyWindow = new(-3);
 
     private readonly TextWriter output;
+    private readonly string productIdHex;
+    private readonly Rz090528SpecialKeySemanticDecoder? exactDecoder;
     private readonly string windowClassName = $"OpenBlade.SpecialKeyProbe.{Guid.NewGuid():N}";
     private readonly Dictionary<nint, string?> targetDevicePaths = new();
     private readonly WindowProcedure windowProcedure;
@@ -42,9 +47,13 @@ public sealed class SpecialKeyInputProbe
     private int targetInputMessages;
     private int deviceIdentityFailures;
 
-    public SpecialKeyInputProbe(TextWriter output)
+    public SpecialKeyInputProbe(TextWriter output, string productIdHex = "02E0")
     {
         this.output = output ?? throw new ArgumentNullException(nameof(output));
+        this.productIdHex = NormalizeProductId(productIdHex);
+        exactDecoder = this.productIdHex == "02C6"
+            ? new Rz090528SpecialKeySemanticDecoder()
+            : null;
         windowProcedure = ProcessWindowMessage;
         hookProcedure = ProcessKeyboardHook;
     }
@@ -103,7 +112,11 @@ public sealed class SpecialKeyInputProbe
                     "Unable to install the read-only keyboard scan-code hook.");
             }
             output.WriteLine($"ListeningSeconds={duration.TotalSeconds:0}");
-            output.WriteLine("Press M1, M2, M3, M4, and M5 once each, in that order.");
+            output.WriteLine($"TargetUsb={RazerVendorIdHex}:{productIdHex}");
+            output.WriteLine(
+                productIdHex == "02C6"
+                    ? "Press M1, M2, M3, M4, M5, Fn+P, Page Up, and Page Down once each, in that order."
+                    : "Press M1, M2, M3, M4, and M5 once each, in that order.");
 
             _ = Task.Delay(duration).ContinueWith(
                 _ => PostMessage(windowHandle, WindowMessageClose, 0, 0),
@@ -272,7 +285,8 @@ public sealed class SpecialKeyInputProbe
             ? "E0"
             : (keyboard.Flags & 0x0004) != 0 ? "E1" : "00";
         output.WriteLine(
-            $"Keyboard Collection={collection};ScanCode={prefix}:{keyboard.MakeCode:X2};State={state}");
+            $"Keyboard Collection={collection};ScanCode={prefix}:{keyboard.MakeCode:X2};" +
+            $"VirtualKey={keyboard.VirtualKey:X2};State={state}");
     }
 
     private void ProcessHid(nint buffer, uint headerSize, uint receivedSize, string collection)
@@ -302,6 +316,19 @@ public sealed class SpecialKeyInputProbe
             var report = new byte[length];
             Marshal.Copy(nint.Add(reports, checked((int)(index * reportSize))), report, 0, length);
             output.WriteLine($"HID Collection={collection};Report={Convert.ToHexString(report)}");
+            if (collection == "MI_01" && exactDecoder is { } decoder)
+            {
+                Rz090528DecodedSpecialKeyInput decoded = decoder.Process(report);
+                if (decoded.SpecialKey is { } specialKey)
+                {
+                    output.WriteLine($"DecodedSpecialKey={specialKey}");
+                }
+                if (decoded.PerformanceShortcut is { } performanceShortcut)
+                {
+                    output.WriteLine(
+                        $"DecodedPerformanceShortcut={performanceShortcut}");
+                }
+            }
         }
     }
 
@@ -323,7 +350,7 @@ public sealed class SpecialKeyInputProbe
         var name = new StringBuilder(checked((int)characterCount));
         uint result = GetRawInputDeviceInfo(device, RawInputDeviceName, name, ref characterCount);
         string? path = result != uint.MaxValue
-            && name.ToString().Contains("VID_1532&PID_02E0", StringComparison.OrdinalIgnoreCase)
+            && MatchesTargetDevicePath(name.ToString(), productIdHex)
                 ? name.ToString()
                 : null;
         targetDevicePaths[device] = path;
@@ -336,6 +363,40 @@ public sealed class SpecialKeyInputProbe
         return marker >= 0 && marker + 6 <= devicePath.Length
             ? devicePath.Substring(marker + 1, 5).ToUpperInvariant()
             : "Unknown";
+    }
+
+    internal static bool MatchesTargetDevicePath(string devicePath, string productIdHex)
+    {
+        ArgumentNullException.ThrowIfNull(devicePath);
+        string normalizedProductId = NormalizeProductId(productIdHex);
+        string identity = $"VID_{RazerVendorIdHex}&PID_{normalizedProductId}";
+        int identityIndex = devicePath.IndexOf(identity, StringComparison.OrdinalIgnoreCase);
+        if (identityIndex < 0)
+        {
+            return false;
+        }
+
+        int suffixIndex = identityIndex + identity.Length;
+        return suffixIndex == devicePath.Length
+            || devicePath[suffixIndex] is '&' or '#' or '\\';
+    }
+
+    internal static string NormalizeProductId(string productIdHex)
+    {
+        if (productIdHex is null
+            || productIdHex.Length != 4
+            || !ushort.TryParse(
+                productIdHex,
+                System.Globalization.NumberStyles.AllowHexSpecifier,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out _))
+        {
+            throw new ArgumentException(
+                "The target USB product ID must contain exactly four hexadecimal digits.",
+                nameof(productIdHex));
+        }
+
+        return productIdHex.ToUpperInvariant();
     }
 
     private static void RegisterRawInput(nint target)
@@ -551,4 +612,37 @@ public sealed class SpecialKeyInputProbe
         uint command,
         StringBuilder? data,
         ref uint size);
+}
+
+internal readonly record struct Rz090528DecodedSpecialKeyInput(
+    SpecialKeySlot? SpecialKey,
+    PerformanceShortcutSource? PerformanceShortcut);
+
+internal sealed class Rz090528SpecialKeySemanticDecoder
+{
+    private readonly bool[] specialKeyPressed = new bool[5];
+    private bool functionKeyPressed;
+    private bool functionPPressed;
+
+    internal Rz090528DecodedSpecialKeyInput Process(ReadOnlySpan<byte> report)
+    {
+        SpecialKeySlot? specialKey =
+            Rz09_0528SpecialKeyRawHidInput.TryCreateTrigger(
+                report,
+                ref functionKeyPressed,
+                specialKeyPressed,
+                out SpecialKeySlot triggeredSpecialKey)
+                ? triggeredSpecialKey
+                : null;
+        PerformanceShortcutSource? performanceShortcut =
+            Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
+                report,
+                functionKeyPressed,
+                ref functionPPressed,
+                out PerformanceShortcutSource triggeredPerformanceShortcut)
+                ? triggeredPerformanceShortcut
+                : null;
+        return new(specialKey, performanceShortcut);
+    }
+
 }

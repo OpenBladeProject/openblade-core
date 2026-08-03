@@ -67,7 +67,7 @@ public sealed class WindowsPlaybackMuteStateSource : IPlaybackMuteStateSource
         public NativeSubscription(Action<bool?> publish)
         {
             this.publish = publish ?? throw new ArgumentNullException(nameof(publish));
-            enumeratorObject = new MmDeviceEnumerator();
+            enumeratorObject = CoreAudioDeviceEnumerator.Create();
             enumerator = (IMMDeviceEnumerator)enumeratorObject;
             deviceNotification = new DeviceNotificationClient(this);
             volumeNotification = new AudioEndpointVolumeCallback(this);
@@ -320,12 +320,6 @@ public sealed class WindowsPlaybackMuteStateSource : IPlaybackMuteStateSource
 
         public float MasterVolume;
         public uint ChannelCount;
-    }
-
-    [ComImport]
-    [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-    private sealed class MmDeviceEnumerator
-    {
     }
 
     [ComImport]

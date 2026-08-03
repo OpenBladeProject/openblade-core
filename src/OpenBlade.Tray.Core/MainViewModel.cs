@@ -100,12 +100,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private static readonly IReadOnlyList<CustomPerformanceLevel> AllCustomPerformanceLevels =
         Enum.GetValues<CustomPerformanceLevel>();
 
-    private static readonly IReadOnlyList<CustomPerformanceLevel> NonHighCustomPerformanceLevels =
-    [
-        CustomPerformanceLevel.Low,
-        CustomPerformanceLevel.Medium,
-    ];
-
     private static readonly IReadOnlyList<LightingDirectionOption> StandardLightingDirectionOptions =
     [
         new(LightingDirection.Leftward, "Leftward"),
@@ -117,12 +111,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         new(LightingDirection.Leftward, "Outward"),
         new(LightingDirection.Rightward, "Inward"),
     ];
-
-    private static readonly RazerBladeModelInfo TargetLaptop =
-        RazerBladeModelCatalog.Find(RazerBladeModelCatalog.OpenBladeTargetModelNumber)
-        ?? throw new InvalidOperationException("The supported laptop is missing from the model catalog.");
-    private static readonly string TargetLaptopLabel =
-        $"{TargetLaptop.DisplayName}, {TargetLaptop.ModelNumber}";
 
     private readonly IServiceClient serviceClient;
     private readonly IUiDispatcher dispatcher;
@@ -159,6 +147,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool hasExternalChanges;
     private string externalChangesText = string.Empty;
     private bool alwaysOverrideExternalLightingChanges;
+    private KeyboardLightingControlMode keyboardLightingControlMode;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
     private IReadOnlyList<PerformancePresetOption> availableBatteryPerformanceOptions = [];
@@ -178,6 +167,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
+    private IReadOnlyList<CustomPerformanceLevel> availableCustomCpuLevels =
+        AllCustomPerformanceLevels;
+    private IReadOnlyList<CustomPerformanceLevel> availableCustomGpuLevels =
+        AllCustomPerformanceLevels;
     private GpuClockOffsetCapabilities? gpuClockOffsetCapabilities;
     private int gpuCoreClockOffsetMegahertz;
     private int gpuMemoryClockOffsetMegahertz;
@@ -251,6 +244,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingRotationDirection.Clockwise;
     private AmbientAwarenessRegion lightingAmbientAwarenessRegionEditor =
         AmbientAwarenessRegion.Full;
+    private double lightingAudioMeterColorBoostEditor = 1;
     private LogoLightingMode? logoLightingModeEditor;
     private bool lightingEditorDirty;
     private bool lightingTurnOffWithDisplayEditor;
@@ -979,6 +973,50 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         private set => SetField(ref alwaysOverrideExternalLightingChanges, value);
     }
 
+    public KeyboardLightingControlMode KeyboardLightingControlMode
+    {
+        get => keyboardLightingControlMode;
+        private set
+        {
+            if (keyboardLightingControlMode != value)
+            {
+                SetField(ref keyboardLightingControlMode, value);
+                Notify(nameof(UseWindowsDynamicLighting));
+                Notify(nameof(CanControlLighting));
+                Notify(nameof(IsLightingControlUnavailable));
+                Notify(nameof(IsLightingControlUnavailableNoticeVisible));
+                Notify(nameof(LightingControlUnavailableMessage));
+                Notify(nameof(ShowOpenBladeKeyboardLightingControls));
+            }
+        }
+    }
+
+    public bool UseWindowsDynamicLighting =>
+        KeyboardLightingControlMode
+            == KeyboardLightingControlMode.WindowsDynamicLighting;
+
+    public bool IsWindowsDynamicLightingAvailable =>
+        Capabilities.LampArrayLightingAccess is not null;
+
+    public bool ShowOpenBladeKeyboardLightingControls =>
+        !UseWindowsDynamicLighting;
+
+    public async Task<bool> SetKeyboardLightingControlModeAsync(
+        KeyboardLightingControlMode mode,
+        CancellationToken cancellationToken)
+    {
+        bool accepted = await RunOperationAsync(
+            token => serviceClient.SetKeyboardLightingControlModeAsync(mode, token),
+            cancellationToken);
+        if (accepted)
+        {
+            await dispatcher.InvokeAsync(
+                () => KeyboardLightingControlMode = mode,
+                cancellationToken);
+        }
+        return accepted;
+    }
+
     public async Task<bool> SetExternalLightingOverridePolicyAsync(
         bool enabled,
         CancellationToken cancellationToken)
@@ -1057,13 +1095,41 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ? installedServiceVersion
             : latestStatus.ServiceVersion.Trim();
 
-    public string AboutDetectedLaptopStatus => !IsConnected
-        ? "Unavailable"
-        : latestStatus?.DeviceVerified == true
-            ? TargetLaptopLabel
-            : HasConcreteFirmwareValue(latestStatus?.Firmware?.ModelNumber)
-                ? FirmwareValue(latestStatus?.Firmware?.ModelNumber)
+    public string AboutDetectedLaptopStatus
+    {
+        get
+        {
+            if (!IsConnected)
+            {
+                return "Unavailable";
+            }
+
+            string? modelNumber = latestStatus?.Firmware?.ModelNumber;
+            if (HasConcreteFirmwareValue(modelNumber))
+            {
+                RazerBladeModelInfo? model = RazerBladeModelCatalog.Find(modelNumber);
+                return model is null
+                    ? FirmwareValue(modelNumber)
+                    : $"{model.DisplayName}, {model.ModelNumber}";
+            }
+
+            return latestStatus?.DeviceVerified == true
+                ? "Verified Razer Blade"
                 : "Not detected";
+        }
+    }
+
+    public string TroubleshootingUsbDeviceStatus
+    {
+        get
+        {
+            RazerBladeModelInfo? model = RazerBladeModelCatalog.Find(
+                latestStatus?.Firmware?.ModelNumber);
+            return model is null
+                ? UnavailableLabel
+                : $"VID {model.UsbVendorId} · PID {model.UsbProductId}";
+        }
+    }
 
     public string AboutBiosVersionStatus => FirmwareValue(latestStatus?.Firmware?.BiosVersion);
 
@@ -1120,12 +1186,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             string? modelNumber = latestStatus?.Firmware?.ModelNumber;
             if (!HasConcreteFirmwareValue(modelNumber))
             {
-                if (latestStatus?.DeviceVerified != true)
-                {
-                    return new(false, []);
-                }
-
-                modelNumber = TargetLaptop.ModelNumber;
+                return new(false, []);
             }
 
             return TestedPlatformCatalog.Assess(
@@ -1289,15 +1350,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool HasLightingCapability => AvailableLightingEffects.Count > 0;
 
-    public bool CanControlLighting => CanRequestHardwareControl && HasLightingCapability;
+    public bool CanControlLighting =>
+        CanRequestHardwareControl
+        && HasLightingCapability
+        && !UseWindowsDynamicLighting;
 
     public bool IsLightingControlUnavailable =>
         !CanControlLighting && !IsCheckingLaptopConnection(latestStatus);
+
+    public bool IsLightingControlUnavailableNoticeVisible =>
+        IsLightingControlUnavailable && !UseWindowsDynamicLighting;
 
     public string LightingControlUnavailableMessage
     {
         get
         {
+            if (UseWindowsDynamicLighting)
+            {
+                return "Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies.";
+            }
+
             if (!IsConnected)
             {
                 return "OpenBlade can’t connect to its service, so lighting controls are unavailable.";
@@ -1372,6 +1444,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IsCustomPerformanceVisible
         && GpuClockOffsetCapabilities?.IsWellFormed == true;
 
+    public bool IsSpecialKeyBindingsEditable =>
+        Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
+        && Capabilities.WritableSpecialKeySlots != SpecialKeySlotSet.None;
+
+    public bool IsSpecialKeyBindingSlotEditable(SpecialKeySlot slot)
+    {
+        if (Capabilities.SpecialKeyBindingsAccess != DeviceFeatureAccess.ReadWrite)
+        {
+            return false;
+        }
+
+        SpecialKeySlotSet required = slot switch
+        {
+            SpecialKeySlot.M1 => SpecialKeySlotSet.M1,
+            SpecialKeySlot.M2 => SpecialKeySlotSet.M2,
+            SpecialKeySlot.M3 => SpecialKeySlotSet.M3,
+            SpecialKeySlot.M4 => SpecialKeySlotSet.M4,
+            SpecialKeySlot.M5 => SpecialKeySlotSet.M5,
+            _ => SpecialKeySlotSet.None,
+        };
+        return required != SpecialKeySlotSet.None
+            && (Capabilities.WritableSpecialKeySlots & required) != 0;
+    }
+
     public GpuClockOffsetCapabilities? GpuClockOffsetCapabilities
     {
         get => gpuClockOffsetCapabilities;
@@ -1431,7 +1527,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref selectedCustomCpuLevel, value);
-            Notify(nameof(AvailableCustomGpuLevels));
+            RefreshCustomPerformanceOptions();
         }
     }
 
@@ -1446,19 +1542,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref selectedCustomGpuLevel, value);
-            Notify(nameof(AvailableCustomCpuLevels));
+            RefreshCustomPerformanceOptions();
         }
     }
 
     public IReadOnlyList<CustomPerformanceLevel> AvailableCustomCpuLevels =>
-        SelectedCustomGpuLevel == CustomPerformanceLevel.High
-            ? NonHighCustomPerformanceLevels
-            : AllCustomPerformanceLevels;
+        availableCustomCpuLevels;
 
     public IReadOnlyList<CustomPerformanceLevel> AvailableCustomGpuLevels =>
-        SelectedCustomCpuLevel == CustomPerformanceLevel.High
-            ? NonHighCustomPerformanceLevels
-            : AllCustomPerformanceLevels;
+        availableCustomGpuLevels;
 
     public FanMode SelectedFanMode
     {
@@ -1482,7 +1574,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         get => fixedFanSpeedRpm;
         set
         {
-            int normalized = FanControlSettings.QuantizeSpeed(value);
+            int normalized = ActiveFanSpeedRange.Quantize(value);
             if (fixedFanSpeedRpm == normalized)
             {
                 return;
@@ -1492,6 +1584,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CurrentFanControlSettings));
         }
     }
+
+    public int FixedFanSpeedMinimumRpm => ActiveFanSpeedRange.MinimumRpm;
+
+    public int FixedFanSpeedMaximumRpm => ActiveFanSpeedRange.MaximumRpm;
+
+    public int FixedFanSpeedStepRpm => ActiveFanSpeedRange.StepRpm;
+
+    private FanSpeedRange ActiveFanSpeedRange =>
+        Capabilities.FanSpeedRange is { IsWellFormed: true } range
+            ? range
+            : FanSpeedRange.Standard;
 
     public bool UseHigherFanTemperature
     {
@@ -1541,7 +1644,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CanRequestHardwareControl && !IsPerformanceOperationInProgress;
 
     public bool CanEditGpuClockTuning =>
-        CanEditPerformance && IsGpuClockTuningAvailable;
+        CanEditPerformance
+        && IsGpuClockTuningAvailable
+        && Capabilities.GpuOverclock
+            is not { Access: not DeviceFeatureAccess.ReadWrite };
 
     public bool IsPerformanceOperationInProgress
     {
@@ -1656,14 +1762,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     "The fan-curve point does not belong to the active editor.",
                     nameof(point));
         int index = source.ToList().IndexOf(point);
+        FanSpeedRange range = ActiveFanSpeedRange;
         int minimum = index == 0
-            ? FanControlSettings.MinimumSpeedRpm
+            ? range.MinimumRpm
             : source[index - 1].SpeedRpm;
         int maximum = index == source.Count - 1
-            ? FanControlSettings.MaximumSpeedRpm
+            ? range.MaximumRpm
             : source[index + 1].SpeedRpm;
         point.SpeedRpm = Math.Clamp(
-            FanControlSettings.QuantizeSpeed(speedRpm),
+            range.Quantize(speedRpm),
             minimum,
             maximum);
         if (ReferenceEquals(source, CpuFanCurveEditorPoints))
@@ -1777,12 +1884,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref capabilities, value);
+            RefreshCustomPerformanceOptions();
+            int normalizedFanSpeed = ActiveFanSpeedRange.Quantize(fixedFanSpeedRpm);
+            SetField(
+                ref fixedFanSpeedRpm,
+                normalizedFanSpeed,
+                nameof(FixedFanSpeedRpm));
+            Notify(nameof(FixedFanSpeedMinimumRpm));
+            Notify(nameof(FixedFanSpeedMaximumRpm));
+            Notify(nameof(FixedFanSpeedStepRpm));
+            Notify(nameof(CurrentFanControlSettings));
             Notify(nameof(FullChargeActionLabel));
             Notify(nameof(HasOneShotLaptopControls));
             Notify(nameof(HasKeyboardLaptopControls));
             Notify(nameof(SupportsStartupAnimation));
             Notify(nameof(SupportsFunctionKeyPrimary));
             Notify(nameof(SupportsGamingMode));
+            Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(IsSpecialKeyBindingsEditable));
+            Notify(nameof(IsWindowsDynamicLightingAvailable));
+            Notify(nameof(CanControlLighting));
             NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();
         }
@@ -2707,6 +2828,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    public double LightingAudioMeterColorBoostEditor
+    {
+        get => lightingAudioMeterColorBoostEditor;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, 1);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 4);
+            if (!double.IsFinite(value)
+                || value * 4 != Math.Truncate(value * 4))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+            SetLightingEditorField(ref lightingAudioMeterColorBoostEditor, value);
+        }
+    }
+
     public AmbientAwarenessRegionOption? SelectedAmbientAwarenessRegionOption
     {
         get => AvailableAmbientAwarenessRegionOptions.FirstOrDefault(
@@ -2803,6 +2940,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool LightingShowsAmbientAwarenessRegion =>
         LightingEffectEditor == LightingEffect.AmbientAwareness;
+
+    public bool LightingShowsAudioMeterColorBoost =>
+        LightingEffectEditor == LightingEffect.AudioMeter;
 
     public LightingSettings LightingDraft => CreateLightingDraft();
 
@@ -3137,6 +3277,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool CanSetCustomPerformance(object? parameter) =>
         parameter is CustomPerformanceSettings value
         && CustomPerformanceSettings.IsWellFormed(value)
+        && CommandCapabilities.CustomPerformance?.Supports(value) != false
         && (value.GpuClockOffsets is null
             || GpuClockOffsetCapabilities?.Supports(value.GpuClockOffsets) == true)
         && IsCustomPerformanceVisible
@@ -3144,6 +3285,60 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && CanMutate
         && HasConfirmedPowerSource
         && !MaximumFansAreEffectiveOrConfirmed();
+
+    private bool SupportsCustomPerformance(
+        CustomPerformanceLevel cpu,
+        CustomPerformanceLevel gpu)
+    {
+        var combination = new CustomPerformanceCombination(cpu, gpu);
+        return combination.IsWellFormed
+            && (Capabilities.CustomPerformance?.AllowedCombinations.Contains(combination)
+                ?? true);
+    }
+
+    private void RefreshCustomPerformanceOptions()
+    {
+        CustomPerformanceLevel[] cpu = AllCustomPerformanceLevels
+            .Where(level => SupportsCustomPerformance(level, SelectedCustomGpuLevel))
+            .ToArray();
+        CustomPerformanceLevel[] gpu = AllCustomPerformanceLevels
+            .Where(level => SupportsCustomPerformance(SelectedCustomCpuLevel, level))
+            .ToArray();
+        if (!availableCustomCpuLevels.SequenceEqual(cpu))
+        {
+            availableCustomCpuLevels = cpu;
+            Notify(nameof(AvailableCustomCpuLevels));
+        }
+        if (!availableCustomGpuLevels.SequenceEqual(gpu))
+        {
+            availableCustomGpuLevels = gpu;
+            Notify(nameof(AvailableCustomGpuLevels));
+        }
+    }
+
+    private static string FormatObservedRange(DeviceNumericRange? range, string unit)
+    {
+        if (range?.IsWellFormed != true)
+        {
+            return UnavailableLabel;
+        }
+
+        string suffix = string.IsNullOrEmpty(unit) ? string.Empty : $" {unit}";
+        string step = range.Step.HasValue
+            ? $", {range.Step.Value}{suffix} steps"
+            : ", step not yet validated";
+        return $"{range.Minimum}–{range.Maximum}{suffix}{step}";
+    }
+
+    private static string FormatFeatureAccess(
+        DeviceFeatureAccess? access,
+        string observedOnlyText) => access switch
+        {
+            DeviceFeatureAccess.ReadWrite => "Available",
+            DeviceFeatureAccess.ReadOnly => "Read-only",
+            DeviceFeatureAccess.ObservedOnly => observedOnlyText,
+            _ => UnavailableLabel,
+        };
 
     private bool CanSetFanMode(object? parameter)
     {
@@ -3163,7 +3358,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private bool CanSetFanControl(object? parameter) =>
         parameter is FanControlSettings value
-        && CanSetFanMode(value.Mode);
+        && CanSetFanMode(value.Mode)
+        && (value.Mode != FanMode.Fixed
+            || ActiveFanSpeedRange.Supports(value.FixedSpeedRpm));
 
     private bool CanApplyOneShotLaptopControl(object? parameter) =>
         parameter is ApplyOneShotLaptopControl value
@@ -3669,6 +3866,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : string.Empty;
         AlwaysOverrideExternalLightingChanges =
             status.AlwaysOverrideExternalLightingChanges;
+        KeyboardLightingControlMode = status.KeyboardLightingControlMode;
         Profiles = status.Profiles;
         if (!lightingPowerPolicyEditorDirty)
         {
@@ -3859,6 +4057,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 LightingEffect.Spectrum => "Spectrum Cycling",
                 LightingEffect.AmbientAwareness => "Ambient Awareness",
+                LightingEffect.AudioMeter => "Audio Meter",
                 _ => effect.ToString(),
             });
 
@@ -4157,7 +4356,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         FanControlSettings settings = new(
             requested,
             requested == FanMode.Maximum
-                ? FanControlSettings.MaximumSpeedRpm
+                ? ActiveFanSpeedRange.MaximumRpm
                 : FixedFanSpeedRpm,
             CurrentFanControlSettings.ManualCurve);
         return ApplyFanControlAsync(settings, token);
@@ -5262,6 +5461,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ref lightingAmbientAwarenessRegionEditor,
             ambientAwarenessRegion,
             nameof(LightingAmbientAwarenessRegionEditor));
+        double audioMeterColorBoost =
+            value.Parameters is AudioMeterLightingParameters audioMeter
+                ? audioMeter.ColorBoost
+                : 1;
+        SetField(
+            ref lightingAudioMeterColorBoostEditor,
+            audioMeterColorBoost,
+            nameof(LightingAudioMeterColorBoostEditor));
         SetField(
             ref logoLightingModeEditor,
             value.LogoMode,
@@ -6007,6 +6214,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             LightingEffect.Spectrum => "Spectrum Cycling",
             LightingEffect.AmbientAwareness => "Ambient Awareness",
+            LightingEffect.AudioMeter => "Audio Meter",
             _ => lighting.Effect.ToString(),
         };
         string details = lighting.Parameters switch
@@ -6051,6 +6259,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ambient.Region == AmbientAwarenessRegion.Full
                     ? "full screen"
                     : ambient.Region.ToString().ToLowerInvariant(),
+            AudioMeterLightingParameters audioMeter =>
+                $"color boost {audioMeter.ColorBoost}",
             _ when lighting.Effect == LightingEffect.Static => FormatColor(lighting.Color),
             _ => string.Empty,
         };
@@ -6186,6 +6396,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         { Effect: LightingEffect.Off } => "Off",
         { Effect: LightingEffect.Spectrum } => "Spectrum Cycling",
         {
+            Effect: LightingEffect.AudioMeter,
+            Parameters: AudioMeterLightingParameters audioMeter,
+        } => $"Audio Meter, color boost {audioMeter.ColorBoost}",
+        {
             Effect: LightingEffect.AmbientAwareness,
             Parameters: AmbientAwarenessLightingParameters ambient,
         } => ambient.Region == AmbientAwarenessRegion.Full
@@ -6246,7 +6460,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         { Effect: LightingEffect.Spectrum } => "Automatic",
         {
             Effect: LightingEffect.Wave or LightingEffect.Wheel
-                or LightingEffect.AmbientAwareness,
+                or LightingEffect.AmbientAwareness
+                or LightingEffect.AudioMeter
+                or LightingEffect.Fire,
         } => "Automatic",
         {
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
@@ -6399,6 +6615,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             LightingEffect.AmbientAwareness => LightingSettingsFactory.AmbientAwareness(
                 LightingAmbientAwarenessRegionEditor,
                 brightness),
+            LightingEffect.AudioMeter => LightingSettingsFactory.AudioMeter(
+                LightingAudioMeterColorBoostEditor,
+                brightness),
+            LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
             _ => new LightingSettings(LightingEffectEditor, default, brightness),
         };
         return keyboard with { LogoMode = LogoLightingModeEditor };
@@ -6544,6 +6764,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             LightingEffect.AmbientAwareness => LightingSettingsFactory.AmbientAwareness(
                 AmbientAwarenessRegion.Full,
                 brightness),
+            LightingEffect.AudioMeter => LightingSettingsFactory.AudioMeter(
+                colorBoost: 1,
+                brightness),
+            LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
             _ => new LightingSettings(effect, color, brightness),
         };
     }
@@ -7129,7 +7353,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(HasLightingCapability));
         Notify(nameof(CanControlLighting));
         Notify(nameof(IsLightingControlUnavailable));
+        Notify(nameof(IsLightingControlUnavailableNoticeVisible));
         Notify(nameof(LightingControlUnavailableMessage));
+        Notify(nameof(ShowOpenBladeKeyboardLightingControls));
         Notify(nameof(HasActiveChanges));
         Notify(nameof(ActiveChangesText));
         Notify(nameof(HasAttention));
@@ -7140,6 +7366,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(TroubleshootingPowerSourceStatus));
         Notify(nameof(TroubleshootingControlsStatus));
         Notify(nameof(TroubleshootingKeyboardDriverModeStatus));
+        Notify(nameof(TroubleshootingUsbDeviceStatus));
         Notify(nameof(TroubleshootingOtherRazerSoftwareStatus));
         Notify(nameof(AboutServiceVersionStatus));
         Notify(nameof(AboutDetectedLaptopStatus));
@@ -7337,19 +7564,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void LoadFanControlEditor(FanControlSettings value)
     {
+        FanSpeedRange range = ActiveFanSpeedRange;
         SetField(
             ref fixedFanSpeedRpm,
-            value.FixedSpeedRpm,
+            range.Quantize(value.FixedSpeedRpm),
             nameof(FixedFanSpeedRpm));
         SetField(
             ref useHigherFanTemperature,
             value.ManualCurve.UseHigherTemperatureForBoth,
             nameof(UseHigherFanTemperature));
         cpuFanCurveEditorPoints = value.ManualCurve.Cpu
-            .Select(point => new FanCurveEditorPoint(point))
+            .Select(point => new FanCurveEditorPoint(new FanCurvePoint(
+                point.TemperatureCelsius,
+                range.Quantize(point.SpeedRpm))))
             .ToArray();
         gpuFanCurveEditorPoints = value.ManualCurve.Gpu
-            .Select(point => new FanCurveEditorPoint(point))
+            .Select(point => new FanCurveEditorPoint(new FanCurvePoint(
+                point.TemperatureCelsius,
+                range.Quantize(point.SpeedRpm))))
             .ToArray();
         Notify(nameof(CpuFanCurveEditorPoints));
         Notify(nameof(GpuFanCurveEditorPoints));
@@ -7484,6 +7716,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(SelectedLightingDirectionOption));
         Notify(nameof(LightingShowsRotationDirection));
         Notify(nameof(LightingShowsAmbientAwarenessRegion));
+        Notify(nameof(LightingShowsAudioMeterColorBoost));
     }
 
 }

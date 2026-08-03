@@ -129,6 +129,13 @@ type sealed class OpenBlade.Protocol.ControllerPresenceObservation
   method virtual System.Boolean Equals(OpenBlade.Protocol.ControllerPresenceObservation other)
   property System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers { get; init; }
   property System.String DetectionWarning { get; init; }
+type enum OpenBlade.Protocol.DriverModeRestoreOutcome
+  field System.Int32 value__
+  field const OpenBlade.Protocol.DriverModeRestoreOutcome Failed = 4
+  field const OpenBlade.Protocol.DriverModeRestoreOutcome ForeignChange = 1
+  field const OpenBlade.Protocol.DriverModeRestoreOutcome Indeterminate = 3
+  field const OpenBlade.Protocol.DriverModeRestoreOutcome NotOwned = 0
+  field const OpenBlade.Protocol.DriverModeRestoreOutcome Released = 2
 type sealed class OpenBlade.Protocol.FanRpmReadings
   interface System.IEquatable<OpenBlade.Protocol.FanRpmReadings>
   ctor (System.Int32 Selector1Rpm, System.Int32 Selector2Rpm)
@@ -353,6 +360,7 @@ type interface OpenBlade.Protocol.IProductionLightingPort
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> InvalidateAsync()
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingSettings> ReadStateAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<System.Byte> StepBrightnessAsync(OpenBlade.Contracts.KeyboardBrightnessDirection direction, System.Threading.CancellationToken cancellationToken)
+  method virtual OpenBlade.Protocol.DriverModeRestoreOutcome get_DriverModeRestoreOutcome()
   method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Boolean> DisposeWithinCleanupDeadlineAsync()
   method virtual System.Threading.Tasks.Task<System.Nullable<OpenBlade.Contracts.LogoLightingMode>> ReadLogoStateAsync(System.Threading.CancellationToken cancellationToken)
@@ -361,6 +369,7 @@ type interface OpenBlade.Protocol.IProductionLightingPort
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReleaseDriverModeAsync(System.Threading.CancellationToken cancellationToken)
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
   property OpenBlade.Contracts.LightingRendererOwnershipState OwnershipState { get; }
+  property OpenBlade.Protocol.DriverModeRestoreOutcome DriverModeRestoreOutcome { get; }
 type interface OpenBlade.Protocol.IProductionLightingPortFactory
   method abstract OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProductionLightingPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)

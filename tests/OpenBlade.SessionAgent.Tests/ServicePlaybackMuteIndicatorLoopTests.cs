@@ -65,6 +65,25 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
         await running;
     }
 
+    [Fact]
+    public async Task UnsupportedLaptopDoesNotSendOrRetry()
+    {
+        var client = new WatchClient();
+        var source = new MutableMuteSource();
+        var loop = new ServicePlaybackMuteIndicatorLoop(client, source);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.PublishConnected(supportsPlaybackMuteIndicator: false);
+        source.Publish(true);
+        await Task.Delay(20, cancellation.Token);
+
+        Assert.Empty(client.Requests);
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
     private sealed class MutableMuteSource : IPlaybackMuteStateSource
     {
         private readonly Channel<bool?> updates = Channel.CreateUnbounded<bool?>();
@@ -89,8 +108,9 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
 
         public ConcurrentQueue<bool> Requests { get; } = new();
 
-        public void PublishConnected() => updates.Writer.TryWrite(
-            new ServiceWatchUpdate.Connected(Status()));
+        public void PublishConnected(bool supportsPlaybackMuteIndicator = true) =>
+            updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(
+                Status(supportsPlaybackMuteIndicator)));
 
         public void PublishReconnecting() => updates.Writer.TryWrite(
             new ServiceWatchUpdate.Reconnecting());
@@ -117,7 +137,7 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
 
     }
 
-    private static ServiceStatusSnapshot Status()
+    private static ServiceStatusSnapshot Status(bool supportsPlaybackMuteIndicator)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         return new ServiceStatusSnapshot(
@@ -128,7 +148,10 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
             null,
             [],
             "Ready",
-            DeviceCapabilities.Unavailable(),
+            DeviceCapabilities.Unavailable() with
+            {
+                SupportsPlaybackMuteIndicator = supportsPlaybackMuteIndicator,
+            },
             null,
             profiles,
             new DesiredDeviceState(

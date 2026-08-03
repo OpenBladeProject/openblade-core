@@ -20,4 +20,20 @@ public sealed class BundleOwnershipRegistrationTests
             expected,
             WindowsBundleOwnershipRegistration.FormatInstalledVersion(version));
     }
+
+    [Theory]
+    [InlineData("0.1.0+abcdef12", "0.1.0+abcdef12", true)]
+    [InlineData(" 0.1.0+abcdef12 ", "0.1.0+abcdef12", true)]
+    [InlineData("0.1.0+11111111", "0.1.0+22222222", false)]
+    [InlineData(null, "0.1.0+abcdef12", false)]
+    [InlineData("", "0.1.0+abcdef12", false)]
+    public void IsOwnedByBuild_RequiresTheExactCommitAwareIdentity(
+        string? installed,
+        string current,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            WindowsBundleOwnershipRegistration.IsOwnedByBuild(installed, current));
+    }
 }

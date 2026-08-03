@@ -17,6 +17,15 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private readonly TimeSpan exchangeTimeout;
     private readonly TimeSpan cleanupDrainTimeout;
     private readonly PendingDisposalRegistry pendingDisposals;
+    private readonly FanSpeedRange fanSpeedRange;
+    private readonly IReadOnlySet<FanMode>? admittedFanModes;
+    private readonly CustomPerformanceCapabilities? customPerformanceCapabilities;
+    private readonly CpuPowerLimitCapabilities? cpuPowerLimitCapabilities;
+    private readonly CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities;
+    private readonly GpuOverclockCapabilities? gpuOverclockCapabilities;
+    private readonly IReadOnlyList<PowerSourceBehaviorObservation> observedPowerSourceBehaviors;
+    private readonly IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates;
+    private readonly SemaphoreSlim? sharedCommandGate;
 
     internal ProductionBatteryFactory(
         DeviceCommandCatalog catalog,
@@ -26,7 +35,16 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
-        PendingDisposalRegistry pendingDisposals)
+        PendingDisposalRegistry pendingDisposals,
+        FanSpeedRange? fanSpeedRange = null,
+        IReadOnlySet<FanMode>? admittedFanModes = null,
+        CustomPerformanceCapabilities? customPerformanceCapabilities = null,
+        CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
+        CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
+        GpuOverclockCapabilities? gpuOverclockCapabilities = null,
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null,
+        SemaphoreSlim? sharedCommandGate = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.readEvidence = readEvidence ?? throw new ArgumentNullException(nameof(readEvidence));
@@ -40,10 +58,44 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         RazerCommandSessionTimeout.Validate(cleanupDrainTimeout);
         this.exchangeTimeout = exchangeTimeout;
         this.cleanupDrainTimeout = cleanupDrainTimeout;
-        Capabilities = ProductionBatteryPort.CreateCapabilities(catalog, readEvidence);
+        this.fanSpeedRange = fanSpeedRange ?? FanSpeedRange.Standard;
+        if (!this.fanSpeedRange.IsWellFormed)
+        {
+            throw new ArgumentException(
+                "The production fan-speed range is malformed.",
+                nameof(fanSpeedRange));
+        }
+
+        this.admittedFanModes = admittedFanModes is null
+            ? null
+            : new HashSet<FanMode>(admittedFanModes);
+        this.customPerformanceCapabilities = customPerformanceCapabilities;
+        this.cpuPowerLimitCapabilities = cpuPowerLimitCapabilities;
+        this.cpuVoltageOptimizerCapabilities = cpuVoltageOptimizerCapabilities;
+        this.gpuOverclockCapabilities = gpuOverclockCapabilities;
+        this.observedPowerSourceBehaviors = observedPowerSourceBehaviors is null
+            ? []
+            : [.. observedPowerSourceBehaviors];
+        this.admittedAdapterPowerStates = admittedAdapterPowerStates is null
+            ? null
+            : new HashSet<AdapterPowerState>(admittedAdapterPowerStates);
+        this.sharedCommandGate = sharedCommandGate;
+        Capabilities = ProductionBatteryPort.CreateCapabilities(
+            catalog,
+            readEvidence,
+            this.fanSpeedRange,
+            this.admittedFanModes,
+            this.customPerformanceCapabilities,
+            this.cpuPowerLimitCapabilities,
+            this.cpuVoltageOptimizerCapabilities,
+            this.gpuOverclockCapabilities,
+            this.observedPowerSourceBehaviors);
     }
 
     public DeviceCapabilities Capabilities { get; }
+
+    internal IReadOnlySet<AdapterPowerState>? AdmittedAdapterPowerStates =>
+        admittedAdapterPowerStates;
 
     public static IProductionBatteryPortFactory CreateWindows()
     {
@@ -124,7 +176,16 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 catalog,
                 readEvidence,
                 context,
-                exchangeTimeout),
+                exchangeTimeout,
+                fanSpeedRange,
+                admittedFanModes,
+                admittedAdapterPowerStates,
+                customPerformanceCapabilities,
+                cpuPowerLimitCapabilities,
+                cpuVoltageOptimizerCapabilities,
+                gpuOverclockCapabilities,
+                observedPowerSourceBehaviors,
+                sharedCommandGate),
             null);
     }
 

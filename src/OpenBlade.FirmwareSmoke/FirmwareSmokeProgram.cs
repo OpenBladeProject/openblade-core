@@ -4,6 +4,9 @@ namespace OpenBlade.FirmwareSmoke;
 
 public static class FirmwareSmokeProgram
 {
+    public const string TargetConfirmationFormat = "<MODEL>-MCU-SMOKE";
+
+    [Obsolete("Use the baseline-specific <MODEL>-MCU-SMOKE confirmation.")]
     public const string ExactTargetConfirmation = "RZ09-0581-MCU-SMOKE";
 
     public static async Task<int> RunAsync(
@@ -140,20 +143,21 @@ public static class FirmwareSmokeProgram
         bool requireMcuChange,
         CancellationToken cancellationToken)
     {
-        string? confirmation = ReadOption(args, "--confirm-target");
-        if (!string.Equals(
-            confirmation,
-            ExactTargetConfirmation,
-            StringComparison.Ordinal))
-        {
-            Console.Error.WriteLine(
-                "Reversible writes require --confirm-target " + ExactTargetConfirmation);
-            return 1;
-        }
-
         FirmwareSmokeSnapshot baseline = await ReadBaselineAsync(
             args,
             cancellationToken).ConfigureAwait(false);
+        string expectedConfirmation = TargetConfirmation(baseline.TargetModel);
+        string? confirmation = ReadOption(args, "--confirm-target");
+        if (!string.Equals(
+            confirmation,
+            expectedConfirmation,
+            StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine(
+                "Reversible writes require --confirm-target " + expectedConfirmation);
+            return 1;
+        }
+
         FirmwareSmokeSnapshot current = await collector.CaptureAsync(
             cancellationToken).ConfigureAwait(false);
         FirmwareSmokeReport preflight = FirmwareSmokeAssessment.ComparePostUpdate(
@@ -200,21 +204,22 @@ public static class FirmwareSmokeProgram
         IFirmwareSmokeClient client,
         CancellationToken cancellationToken)
     {
+        FirmwareSmokeSnapshot baseline = await ReadBaselineAsync(
+            args,
+            cancellationToken).ConfigureAwait(false);
+        string expectedConfirmation = TargetConfirmation(baseline.TargetModel);
         string? confirmation = ReadOption(args, "--confirm-target");
         if (!string.Equals(
             confirmation,
-            ExactTargetConfirmation,
+            expectedConfirmation,
             StringComparison.Ordinal))
         {
             Console.Error.WriteLine(
                 "Baseline recovery requires --confirm-target " +
-                ExactTargetConfirmation);
+                expectedConfirmation);
             return 1;
         }
 
-        FirmwareSmokeSnapshot baseline = await ReadBaselineAsync(
-            args,
-            cancellationToken).ConfigureAwait(false);
         IReadOnlyList<FirmwareSmokeCheck> checks =
             await new FirmwareSmokeRecovery(client).RestoreAsync(
                 baseline,
@@ -314,6 +319,13 @@ public static class FirmwareSmokeProgram
             $"{timestamp}-{command}");
     }
 
+    public static string TargetConfirmation(string targetModel)
+    {
+        string canonical = RazerBladeModelCatalog.Find(targetModel)?.ModelNumber
+            ?? targetModel.Trim().ToUpperInvariant();
+        return $"{canonical}-MCU-SMOKE";
+    }
+
     private static void PrintSummary(
         FirmwareSmokeReport report,
         string outputDirectory,
@@ -353,13 +365,13 @@ public static class FirmwareSmokeProgram
             "  post-update --baseline <baseline.json> [--output <directory>]");
         Console.WriteLine(
             "  rehearsal --baseline <baseline.json> --confirm-target " +
-            ExactTargetConfirmation + " [--output <directory>]");
+            TargetConfirmationFormat + " [--output <directory>]");
         Console.WriteLine(
             "  reversible --baseline <baseline.json> --confirm-target " +
-            ExactTargetConfirmation + " [--output <directory>]");
+            TargetConfirmationFormat + " [--output <directory>]");
         Console.WriteLine(
             "  recover --baseline <baseline.json> --confirm-target " +
-            ExactTargetConfirmation + " [--output <directory>]");
+            TargetConfirmationFormat + " [--output <directory>]");
         Console.WriteLine();
         Console.WriteLine(
             "Rehearsal permits an unchanged MCU version. Reversible requires a changed MCU.");

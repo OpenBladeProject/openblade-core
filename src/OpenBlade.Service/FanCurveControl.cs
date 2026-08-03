@@ -156,13 +156,31 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
 
     internal static class WindowsThermalZone
     {
-        private const string RazerEcCounterPath =
-            @"\Thermal Zone Information(\_SB.PC00.LPCB.EC0.TZRZ)\High Precision Temperature";
+        internal static IReadOnlyList<string> RazerEcCounterPaths { get; } =
+        [
+            // RZ09-0528 BIOS 2.02 / EC 1.09.
+            @"\Thermal Zone Information(\_SB.PCI0.SBRG.EC0.TZRZ)\High Precision Temperature",
+            // RZ09-0581 validated baseline.
+            @"\Thermal Zone Information(\_SB.PC00.LPCB.EC0.TZRZ)\High Precision Temperature",
+        ];
         private const uint PdhFormatDouble = 0x00000200;
         private const uint PdhStatusValidData = 0x00000000;
         private const uint PdhStatusNewData = 0x00000001;
 
         public static int? TryReadRazerEcTemperature()
+        {
+            foreach (string counterPath in RazerEcCounterPaths)
+            {
+                if (TryReadCounter(counterPath) is { } temperature)
+                {
+                    return temperature;
+                }
+            }
+
+            return null;
+        }
+
+        private static int? TryReadCounter(string counterPath)
         {
             nint query = 0;
             try
@@ -170,7 +188,7 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
                 if (PdhOpenQueryW(null, 0, out query) != 0
                     || PdhAddEnglishCounterW(
                         query,
-                        RazerEcCounterPath,
+                        counterPath,
                         0,
                         out nint counter) != 0
                     || PdhCollectQueryData(query) != 0

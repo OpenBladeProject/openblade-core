@@ -126,6 +126,41 @@ public sealed class SpecialKeyBindingTests
         Assert.False(functionPressed);
     }
 
+    [Theory]
+    [InlineData(0x03, SpecialKeySlot.M3)]
+    [InlineData(0xD3, SpecialKeySlot.M4)]
+    [InlineData(0xD4, SpecialKeySlot.M5)]
+    public void RawHidInput_RearmsDedicatedMKeyAfterEveryRelease(
+        byte usage,
+        SpecialKeySlot expectedSlot)
+    {
+        bool functionPressed = false;
+        Span<bool> pressed = stackalloc bool[5];
+
+        Assert.False(Trigger([0x04, 0x0A, 0x00], ref functionPressed, pressed, out _));
+        for (int press = 0; press < 3; press++)
+        {
+            Assert.True(Trigger(
+                [0x04, 0x0A, usage],
+                ref functionPressed,
+                pressed,
+                out SpecialKeySlot slot));
+            Assert.Equal(expectedSlot, slot);
+            Assert.False(Trigger(
+                [0x04, 0x0A, usage],
+                ref functionPressed,
+                pressed,
+                out _));
+            Assert.False(Trigger(
+                [0x04, 0x0A, 0x00],
+                ref functionPressed,
+                pressed,
+                out _));
+        }
+
+        Assert.True(functionPressed);
+    }
+
     [Fact]
     public void RawHidInput_DoesNotTreatPageKeysAsMKeysWithoutFn()
     {
@@ -230,6 +265,48 @@ public sealed class SpecialKeyBindingTests
             ref gamingModePressed,
             ref microphoneMutePressed,
             out _));
+    }
+
+    [Fact]
+    public void Rz090528M4_IsSpecialKeyAndNeverNeedsOlderPerformanceSemantics()
+    {
+        bool functionPressed = false;
+        Span<bool> pressed = stackalloc bool[5];
+
+        Assert.False(RazerBladeSpecialKeyRawHidInput.TryCreateTrigger(
+            RazerBladeInputDeviceKind.Rz09_0528,
+            [0x04, 0x0A, 0x00],
+            ref functionPressed,
+            pressed,
+            out _));
+        Assert.True(RazerBladeSpecialKeyRawHidInput.TryCreateTrigger(
+            RazerBladeInputDeviceKind.Rz09_0528,
+            [0x04, 0x0A, 0xD3],
+            ref functionPressed,
+            pressed,
+            out SpecialKeySlot slot));
+        Assert.Equal(SpecialKeySlot.M4, slot);
+        Assert.False(RazerBladeSpecialKeyRawHidInput.TryCreateTrigger(
+            RazerBladeInputDeviceKind.Rz09_0528,
+            [0x04, 0x0A, 0x00],
+            ref functionPressed,
+            pressed,
+            out _));
+    }
+
+    [Fact]
+    public void ModelAwareSpecialKeyInput_RejectsUnsupportedDeviceIdentity()
+    {
+        bool functionPressed = false;
+        Span<bool> pressed = stackalloc bool[5];
+
+        Assert.False(RazerBladeSpecialKeyRawHidInput.TryCreateTrigger(
+            RazerBladeInputDeviceKind.Unsupported,
+            [0x04, 0x0A, 0xD3],
+            ref functionPressed,
+            pressed,
+            out _));
+        Assert.False(functionPressed);
     }
 
     private static bool Trigger(

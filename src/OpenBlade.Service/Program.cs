@@ -26,6 +26,7 @@ builder.Services.AddVerifiedBladeDeviceProvider();
 builder.Services.AddDiagnostics();
 builder.Services.AddSingleton<IStatusSubscriptionHub>(
     _ => new StatusSubscriptionHub(TimeProvider.System));
+builder.Services.AddSingleton<LowPowerGate>();
 builder.Services.AddSingleton<IServiceLifecycleEventSource, WindowsServiceLifecycleEventSource>();
 builder.Services.AddSingleton<IServiceControlRuntime, ServiceControlRuntime>();
 builder.Services.AddSingleton<IServiceShutdownSignal, HostServiceShutdownSignal>();

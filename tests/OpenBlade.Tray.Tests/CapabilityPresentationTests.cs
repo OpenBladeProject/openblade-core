@@ -9,6 +9,88 @@ namespace OpenBlade.Tray.Tests;
 public sealed class CapabilityPresentationTests
 {
     [Fact]
+    public void MainWindow_SettingsRowsConfigureTheSharedPointerOverHighlight()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement style = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsRowStyle");
+        Assert.Equal("Border", Attribute(style, "TargetType"));
+
+        Assert.Contains(
+            style.Descendants(),
+            element => Attribute(element, "Property") == "Background"
+                && Attribute(element, "Value") == "Transparent");
+        Assert.Contains(
+            style.Descendants(),
+            element => Attribute(element, "Property")
+                    == "local:SettingsCardPointerVisual.IsEnabled"
+                && Attribute(element, "Value") == "True");
+        Assert.Contains(
+            style.Descendants(),
+            element => Attribute(element, "Property")
+                    == "local:SettingsCardPointerVisual.PointerOverBackground"
+                && Attribute(element, "Value")
+                    == "{ThemeResource SubtleFillColorSecondaryBrush}");
+
+        XElement lastRowStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsLastRowStyle");
+        Assert.Equal(
+            "{StaticResource SettingsRowStyle}",
+            Attribute(lastRowStyle, "BasedOn"));
+    }
+
+    [Fact]
+    public void SettingsCardPointerVisual_ClearsInterruptedAndPreviousHighlights()
+    {
+        string behavior = ReadTraySource("SettingsCardPointerVisual.cs");
+
+        Assert.Contains("UIElement.PointerCanceledEvent", behavior);
+        Assert.Contains("UIElement.PointerCaptureLostEvent", behavior);
+        Assert.Contains("UIElement.PointerWheelChangedEvent", behavior);
+        Assert.Equal(3, behavior.Split("handledEventsToo: true").Length - 1);
+        Assert.Equal(3, behavior.Split("border.RemoveHandler(").Length - 1);
+        Assert.Contains("pointerOverBorder?.TryGetTarget", behavior);
+        Assert.Contains("RestoreBackground(previous)", behavior);
+    }
+
+    [Fact]
+    public void MainWindow_SettingsExpanderHeadersUseTheSharedHoverHighlight()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement style = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "Style"
+            && Attribute(element, "Key") == "SettingsExpanderHeaderStyle");
+
+        Assert.Equal("Border", Attribute(style, "TargetType"));
+        Assert.Contains(style.Elements(), setter =>
+            Attribute(setter, "Property")
+                == "local:SettingsCardPointerVisual.IsEnabled"
+            && Attribute(setter, "Value") == "True");
+        Assert.Contains(style.Elements(), setter =>
+            Attribute(setter, "Property")
+                == "local:SettingsCardPointerVisual.PointerOverBackground"
+            && Attribute(setter, "Value")
+                == "{ThemeResource SubtleFillColorSecondaryBrush}");
+
+        foreach (string name in new[]
+                 {
+                     "NavigationMenuExpander",
+                     "TaskbarHoverLabelExpander",
+                 })
+        {
+            XElement expander = NamedElement(document, "Expander", name);
+            XElement header = Assert.Single(
+                expander.Elements()
+                    .Where(element => element.Name.LocalName == "Expander.Header")
+                    .SelectMany(element => element.Elements()));
+            Assert.Equal("Border", header.Name.LocalName);
+            Assert.Equal(
+                "{StaticResource SettingsExpanderHeaderStyle}",
+                Attribute(header, "Style"));
+        }
+    }
+
+    [Fact]
     public void MainWindow_ShowsUnsavedNavigationBadgesAndStretchesFanCurveSliders()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
@@ -61,7 +143,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(20, animated.Length);
+        Assert.Equal(23, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -77,6 +159,16 @@ public sealed class CapabilityPresentationTests
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsManualFanCurveVisible",
                 StringComparison.Ordinal) is true);
+        XElement[] gamingModePolicies = animated
+            .Where(element => element.Descendants().Any(descendant =>
+                Attribute(descendant, "AutomationProperties.Name") is
+                    "Block the Windows key in Gaming mode"
+                    or "Block Alt+Tab in Gaming mode"))
+            .ToArray();
+        Assert.Equal(2, gamingModePolicies.Length);
+        Assert.All(gamingModePolicies, element => Assert.Equal(
+            "{x:Bind GamingModeToggleIsOn, Mode=OneWay}",
+            Attribute(element, "AnimatedVisibility.IsVisible")));
 
         XElement export = Assert.Single(document.Descendants(), element =>
             Attribute(element, "AutomationProperties.Name") == "Export profiles to JSON");
@@ -109,6 +201,32 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Power mode");
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "CPU power limit");
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "CPU voltage optimization");
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "GPU clock tuning");
+        Assert.DoesNotContain("Not available in OpenBlade yet", xaml, StringComparison.Ordinal);
+        foreach (string redundantDescription in new[]
+        {
+            "Balance speed, power use, and noise.",
+            "Automatic is recommended for everyday use.",
+            "Limit charging to help preserve battery health.",
+            "Choose the maximum charge level while protection is on.",
+            "Charge to 100%, then restore the limit after unplugging.",
+            "Set whether F1 through F12 or media actions work without holding Fn.",
+            "Turn Gaming mode on or off.",
+            "Prevent the Start menu from opening while Gaming mode is on.",
+            "Prevent switching to another app while Gaming mode is on.",
+            "Set whether the keyboard animation plays when the laptop starts.",
+        })
+        {
+            Assert.DoesNotContain(redundantDescription, xaml, StringComparison.Ordinal);
+        }
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Performance");
@@ -228,9 +346,9 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(fansTemplate.Descendants(), element =>
             element.Name.LocalName == "Slider"
             && Attribute(element, "Name") == "FixedFanSpeedSlider"
-            && Attribute(element, "Minimum") == "2000"
-            && Attribute(element, "Maximum") == "5400"
-            && Attribute(element, "StepFrequency") == "100");
+            && Attribute(element, "Minimum") == "{Binding FixedFanSpeedMinimumRpm}"
+            && Attribute(element, "Maximum") == "{Binding FixedFanSpeedMaximumRpm}"
+            && Attribute(element, "StepFrequency") == "{Binding FixedFanSpeedStepRpm}");
         Assert.DoesNotContain("\u00c2", xaml, StringComparison.Ordinal);
     }
 
@@ -265,6 +383,7 @@ public sealed class CapabilityPresentationTests
                      "LightingPage",
                      "DisplayPage",
                      "SettingsPage",
+                     "AboutPage",
                  })
         {
             XElement page = NamedElement(document, "ScrollViewer", pageName);
@@ -277,6 +396,9 @@ public sealed class CapabilityPresentationTests
                 page.Elements(),
                 element => element.Name.LocalName == "StackPanel");
             Assert.Equal("28,20,28,28", Attribute(content, "Padding"));
+            Assert.Equal(
+                $"{{Binding ElementName={pageName}, Path=ViewportWidth, Mode=OneWay}}",
+                Attribute(content, "Width"));
         }
     }
 
@@ -328,11 +450,11 @@ public sealed class CapabilityPresentationTests
         XElement about = NamedElement(document, "ScrollViewer", "AboutPage");
 
         Assert.Equal(
-            3,
+            4,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            6,
+            7,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -341,7 +463,7 @@ public sealed class CapabilityPresentationTests
                 element.Name.LocalName == "Expander"
                 && Attribute(element, "IsExpanded") == "False"));
         Assert.Equal(
-            2,
+            3,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
 
@@ -399,6 +521,7 @@ public sealed class CapabilityPresentationTests
                  {
                      "Live readings refresh interval",
                      "App theme",
+                     "Update check interval",
                  })
         {
             XElement picker = Assert.Single(settings.Descendants(), element =>
@@ -606,6 +729,10 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Text") is "Versions" or "Laptop" or "Firmware");
         XElement settingsPage = NamedElement(document, "ScrollViewer", "SettingsPage");
         XElement aboutPage = NamedElement(document, "ScrollViewer", "AboutPage");
+        XElement settingsUpdates = NamedElement(
+            document,
+            "StackPanel",
+            "SettingsUpdatesSection");
         XElement aboutVersions = NamedElement(document, "StackPanel", "AboutVersionsSection");
         XElement aboutNavigation = NamedElement(document, "NavigationViewItem", "AboutNavigationItem");
         Assert.Equal("about", Attribute(aboutNavigation, "Tag"));
@@ -617,7 +744,6 @@ public sealed class CapabilityPresentationTests
         foreach (string section in new[]
                  {
                      "Versions",
-                     "Updates",
                      "Device information",
                      "Support",
                      "Troubleshooting",
@@ -627,10 +753,21 @@ public sealed class CapabilityPresentationTests
                 element.Name.LocalName == "TextBlock"
                 && Attribute(element, "Text") == section);
         }
+        Assert.Contains(settingsUpdates.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Updates");
+        Assert.DoesNotContain(aboutPage.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Updates");
         Assert.Contains("ViewModel.AboutUiVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutSessionAgentVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutServiceVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutBatteryHealthStatus", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.TroubleshootingUsbDeviceStatus",
+            aboutPage.ToString(),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("VID 1532 · PID 02E0", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains(aboutPage.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Battery health");
@@ -1060,7 +1197,7 @@ public sealed class CapabilityPresentationTests
             "{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}",
             Attribute(NamedElement(document, "InfoBar", "OperationErrorInfoBar"), "Visibility"));
         Assert.Equal(
-            "{x:Bind IsLightingControlUnavailable, Mode=OneWay}",
+            "{x:Bind IsLightingControlUnavailableNoticeVisible, Mode=OneWay}",
             Attribute(NamedElement(document, "InfoBar", "LightingUnavailableInfoBar"), "Visibility"));
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
@@ -1772,6 +1909,21 @@ public sealed class CapabilityPresentationTests
         Assert.True(viewModel.LightingShowsRotationDirection);
         Assert.False(viewModel.LightingShowsPrimaryColor);
 
+        viewModel.LightingEffectEditor = LightingEffect.AudioMeter;
+        viewModel.LightingAudioMeterColorBoostEditor = 1.25;
+        Assert.Equal(
+            LightingSettingsFactory.AudioMeter(colorBoost: 1.25, brightness: 64),
+            viewModel.LightingDraft);
+        Assert.True(viewModel.LightingShowsAudioMeterColorBoost);
+        Assert.Equal("Audio Meter", viewModel.SelectedLightingEffectOption?.Label);
+
+        viewModel.LightingEffectEditor = LightingEffect.Fire;
+        Assert.Equal(
+            LightingSettingsFactory.Fire(64),
+            viewModel.LightingDraft);
+        Assert.False(viewModel.LightingShowsAudioMeterColorBoost);
+        Assert.False(viewModel.LightingShowsPrimaryColor);
+
         viewModel.LightingEffectEditor = LightingEffect.Spectrum;
         Assert.Equal(
             LightingSettingsFactory.SpectrumCycling(64),
@@ -1794,6 +1946,14 @@ public sealed class CapabilityPresentationTests
         XElement lightingTemplate = NamedTemplate(document, "DashboardLightingCardTemplate");
         XElement effectPicker = NamedElement(document, "ComboBox", "LightingEffectPicker");
         XElement controls = NamedElement(document, "ContentControl", "LightingControls");
+        XElement keyboardSection = NamedElement(
+            document,
+            "StackPanel",
+            "LightingKeyboardSection");
+        XElement powerSavingSection = NamedElement(
+            document,
+            "StackPanel",
+            "LightingPowerSavingSection");
         XElement infoBar = NamedElement(document, "InfoBar", "LightingUnavailableInfoBar");
         XElement displayOffToggle = NamedElement(
             document,
@@ -1812,10 +1972,10 @@ public sealed class CapabilityPresentationTests
         Assert.Null(Attribute(navigation, "Visibility"));
         Assert.Equal("Collapsed", Attribute(page, "Visibility"));
         Assert.Equal(
-            "{x:Bind CanControlLighting, Mode=OneWay}",
+            "{x:Bind CanRequestHardwareControl, Mode=OneWay}",
             Attribute(controls, "IsEnabled"));
         Assert.Equal(
-            "{x:Bind IsLightingControlUnavailable, Mode=OneWay}",
+            "{x:Bind IsLightingControlUnavailableNoticeVisible, Mode=OneWay}",
             Attribute(infoBar, "IsOpen"));
         Assert.Equal(
             "{x:Bind LightingControlUnavailableMessage, Mode=OneWay}",
@@ -1823,6 +1983,13 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind AvailableLightingEffectOptions, Mode=OneWay}",
             Attribute(effectPicker, "ItemsSource"));
+        Assert.All([keyboardSection, powerSavingSection], section =>
+        {
+            Assert.Null(Attribute(section, "IsEnabled"));
+            Assert.Equal(
+                "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}",
+                Attribute(section, "Visibility"));
+        });
         Assert.All([displayOffToggle, idleTimeoutToggle], toggle =>
         {
             Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));
@@ -1863,9 +2030,40 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("LightingSecondaryColorEditor", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Ambient Awareness screen region", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Choose which part of the display colors the keyboard.", lightingXaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Audio", lightingXaml, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Fire", lightingXaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            "Windows Dynamic Lighting interface detected",
+            lightingXaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Quick effects observed in Synapse",
+            lightingXaml,
+            StringComparison.Ordinal);
+        Assert.Contains("Audio Meter color boost", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("LightingShowsAudioMeterColorBoost", lightingXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Ripple", lightingXaml, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MainWindow_SpecialKeyBindingsRequireExplicitWritableCapability()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement section = NamedElement(document, "StackPanel", "ShortcutKeysSection");
+        XElement itemTemplate = section.Descendants().Single(element =>
+            element.Name.LocalName == "DataTemplate"
+            && Attribute(element, "DataType") == "local:SpecialKeyBindingViewModel");
+        XElement row = itemTemplate.Descendants().First(element =>
+            element.Name.LocalName == "Border");
+
+        Assert.Equal(
+            "{x:Bind ViewModel.IsSpecialKeyBindingsEditable, Mode=OneWay}",
+            Attribute(section, "Visibility"));
+        Assert.Equal(
+            "{x:Bind IsEditable, Mode=OneWay}",
+            Attribute(row, "Visibility"));
+        Assert.DoesNotContain(document.Descendants(), element =>
+            Attribute(element, "Name") == "SpecialKeyBindingsObservedOnlyInfoBar");
+        Assert.DoesNotContain(document.Descendants(), element =>
+            Attribute(element, "Text") == "{x:Bind AccessLabel, Mode=OneWay}");
     }
 
     private static string ReadMainWindowXaml() => ReadTraySource("MainWindow.xaml");

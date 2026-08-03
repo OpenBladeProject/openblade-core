@@ -315,7 +315,29 @@ public sealed class IpcMessageCodecTests
             new HashSet<LightingEffect>(),
             new HashSet<int> { 80 },
             SupportsBatteryProtectionOff: true,
-            SupportsTemporaryFullCharge: false);
+            SupportsTemporaryFullCharge: false)
+        {
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+            WritableSpecialKeySlots = SpecialKeySlotSet.All,
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+            ObservedLightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Spectrum,
+                LightingEffect.Static,
+                LightingEffect.Wheel,
+            },
+            ObservedPowerSourceBehaviors =
+            [
+                new PowerSourceBehaviorObservation(
+                    PowerSource.UsbC,
+                    PerformancePreset.Balanced,
+                    FanMode.Automatic,
+                    FixedFanControlAvailable: false,
+                    PerformanceModeAvailable: false,
+                    CustomModeAvailable: false,
+                    InadequatePowerWarningVisible: true),
+            ],
+        };
         var desired = new DesiredBatteryState(BatteryPolicy.Create(80), true, false);
         var confirmed = new ConfirmedBatteryState(true, 80, false);
         ServiceRequest request = new SetBatteryProtectionRequest(
@@ -332,10 +354,24 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(24, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(32, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
+        Assert.True(capabilities.ObservedLightingEffects.SetEquals(
+            roundTrip.Capabilities.ObservedLightingEffects));
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            roundTrip.Capabilities.SpecialKeyBindingsAccess);
+        Assert.Equal(
+            SpecialKeySlotSet.All,
+            roundTrip.Capabilities.WritableSpecialKeySlots);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            roundTrip.Capabilities.LampArrayLightingAccess);
+        Assert.Equal(
+            capabilities.ObservedPowerSourceBehaviors,
+            roundTrip.Capabilities.ObservedPowerSourceBehaviors);
         Assert.Equal(desired, roundTrip.DesiredState.Battery);
         Assert.Equal(confirmed, roundTrip.ConfirmedState!.Battery);
     }
@@ -403,7 +439,9 @@ public sealed class IpcMessageCodecTests
     [InlineData("PerformancePresets")]
     [InlineData("FanModes")]
     [InlineData("LightingEffects")]
+    [InlineData("ObservedLightingEffects")]
     [InlineData("OneShotLaptopControls")]
+    [InlineData("ObservedPowerSourceBehaviors")]
     public async Task ReadServerFrameAsync_RejectsNullNestedCapabilityCollection(
         string propertyName)
     {
@@ -426,6 +464,124 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownObservedLightingEffect()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    ObservedLightingEffects =
+                        new HashSet<LightingEffect> { (LightingEffect)999 },
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                new MemoryStream(),
+                frame,
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsMalformedCustomPerformanceCapabilities()
+    {
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            JsonObject customPerformance = Assert.IsType<JsonObject>(
+                capabilities[nameof(DeviceCapabilities.CustomPerformance)]);
+            customPerformance[
+                nameof(CustomPerformanceCapabilities.AllowedCombinations)] = null;
+        });
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsMalformedCpuPowerLimitCapabilities()
+    {
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            JsonObject cpuPowerLimit = Assert.IsType<JsonObject>(
+                capabilities[nameof(DeviceCapabilities.CpuPowerLimit)]);
+            JsonObject watts = Assert.IsType<JsonObject>(
+                cpuPowerLimit[nameof(CpuPowerLimitCapabilities.Watts)]);
+            watts[nameof(DeviceNumericRange.Minimum)] = 0;
+        });
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsMalformedCpuVoltageOptimizerCapabilities()
+    {
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            JsonObject cpuVoltageOptimizer = Assert.IsType<JsonObject>(
+                capabilities[nameof(DeviceCapabilities.CpuVoltageOptimizer)]);
+            JsonObject value = Assert.IsType<JsonObject>(
+                cpuVoltageOptimizer[nameof(CpuVoltageOptimizerCapabilities.Value)]);
+            value[nameof(DeviceNumericRange.Step)] = 0;
+        });
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsMalformedGpuOverclockCapabilities()
+    {
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            JsonObject gpuOverclock = Assert.IsType<JsonObject>(
+                capabilities[nameof(DeviceCapabilities.GpuOverclock)]);
+            JsonObject memoryOffset = Assert.IsType<JsonObject>(
+                gpuOverclock[
+                    nameof(GpuOverclockCapabilities.MemoryOffsetMegahertz)]);
+            memoryOffset[nameof(DeviceNumericRange.Minimum)] = 3_001;
+        });
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsUnknownKeyboardLightingControlMode()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
+        JsonObject status = Assert.IsType<JsonObject>(
+            root[nameof(ServiceStatusEvent.Status)]);
+        status[nameof(ServiceStatusSnapshot.KeyboardLightingControlMode)] = 999;
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsDuplicateObservedPowerSourceBehaviors()
+    {
+        var observation = new PowerSourceBehaviorObservation(
+            PowerSource.UsbC,
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            FixedFanControlAvailable: false,
+            PerformanceModeAvailable: false,
+            CustomModeAvailable: false,
+            InadequatePowerWarningVisible: true);
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    ObservedPowerSourceBehaviors = [observation, observation],
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(JsonSerializer.Serialize(frame)),
+                CancellationToken.None));
+    }
+
+    [Fact]
     public async Task VersionFourteenStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
@@ -435,8 +591,74 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(24, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(32, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownSpecialKeyBindingsAccess()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    SpecialKeyBindingsAccess = (DeviceFeatureAccess)999,
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                new MemoryStream(),
+                frame,
+                CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(DeviceFeatureAccess.ReadWrite, (int)SpecialKeySlotSet.None)]
+    [InlineData(DeviceFeatureAccess.ObservedOnly, (int)SpecialKeySlotSet.M3)]
+    [InlineData(DeviceFeatureAccess.ReadWrite, 32)]
+    public async Task WriteServerFrameAsync_RejectsInconsistentWritableSpecialKeySlots(
+        DeviceFeatureAccess access,
+        int slots)
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    SpecialKeyBindingsAccess = access,
+                    WritableSpecialKeySlots = (SpecialKeySlotSet)slots,
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                new MemoryStream(),
+                frame,
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownLampArrayLightingAccess()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    LampArrayLightingAccess = (DeviceFeatureAccess)999,
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                new MemoryStream(),
+                frame,
+                CancellationToken.None));
     }
 
     [Fact]
@@ -1166,6 +1388,52 @@ public sealed class IpcMessageCodecTests
             KeyboardDriverModeActive: true);
     }
 
+    private static async Task AssertMalformedNestedCapabilityRejectedAsync(
+        Action<JsonObject> mutateCapabilities)
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            CustomPerformance = new CustomPerformanceCapabilities(
+                new HashSet<CustomPerformanceCombination>
+                {
+                    new(
+                        CustomPerformanceLevel.Medium,
+                        CustomPerformanceLevel.High),
+                }),
+            CpuPowerLimit = new CpuPowerLimitCapabilities(
+                new DeviceNumericRange(45, 95, 1),
+                DeviceFeatureAccess.ReadOnly),
+            CpuVoltageOptimizer = new CpuVoltageOptimizerCapabilities(
+                new DeviceNumericRange(-30, -1, 1),
+                DeviceFeatureAccess.ReadOnly)
+            {
+                SupportsEnableDisable = true,
+            },
+            GpuOverclock = new GpuOverclockCapabilities(
+                new DeviceNumericRange(-1_000, 400, null),
+                new DeviceNumericRange(-1_000, 3_000, null),
+                DeviceFeatureAccess.ObservedOnly)
+            {
+                SupportsEnableDisable = true,
+            },
+        };
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with { Capabilities = capabilities });
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
+        JsonObject status = Assert.IsType<JsonObject>(
+            root[nameof(ServiceStatusEvent.Status)]);
+        JsonObject serializedCapabilities = Assert.IsType<JsonObject>(
+            status[nameof(ServiceStatusSnapshot.Capabilities)]);
+        mutateCapabilities(serializedCapabilities);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
     private static void AssertStatusEqual(
         ServiceStatusSnapshot expected,
         ServiceStatusSnapshot actual)
@@ -1182,6 +1450,11 @@ public sealed class IpcMessageCodecTests
         Assert.True(expected.Capabilities.PerformancePresets.SetEquals(actual.Capabilities.PerformancePresets));
         Assert.True(expected.Capabilities.FanModes.SetEquals(actual.Capabilities.FanModes));
         Assert.True(expected.Capabilities.LightingEffects.SetEquals(actual.Capabilities.LightingEffects));
+        Assert.True(expected.Capabilities.ObservedLightingEffects.SetEquals(
+            actual.Capabilities.ObservedLightingEffects));
+        Assert.Equal(
+            expected.Capabilities.LampArrayLightingAccess,
+            actual.Capabilities.LampArrayLightingAccess);
         Assert.True(expected.Capabilities.ChargeLimits.SetEquals(actual.Capabilities.ChargeLimits));
         Assert.Equal(expected.Capabilities.SupportsBatteryProtectionOff, actual.Capabilities.SupportsBatteryProtectionOff);
         Assert.Equal(expected.Capabilities.SupportsTemporaryFullCharge, actual.Capabilities.SupportsTemporaryFullCharge);

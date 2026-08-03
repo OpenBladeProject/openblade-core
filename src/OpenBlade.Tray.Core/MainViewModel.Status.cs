@@ -36,6 +36,7 @@ public sealed partial class MainViewModel
         && left.KeyboardDriverModeActive == right.KeyboardDriverModeActive
         && left.AlwaysOverrideExternalLightingChanges
             == right.AlwaysOverrideExternalLightingChanges
+        && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware
@@ -48,11 +49,35 @@ public sealed partial class MainViewModel
         ReferenceEquals(left, right)
         || (left is not null && right is not null
             && left.PerformancePresets.SetEquals(right.PerformancePresets)
+            && CustomPerformanceCapabilitiesEqual(
+                left.CustomPerformance,
+                right.CustomPerformance)
+            && left.CpuPowerLimit == right.CpuPowerLimit
+            && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
+            && left.GpuOverclock == right.GpuOverclock
+            && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
+            && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
+            && left.LampArrayLightingAccess == right.LampArrayLightingAccess
+            && left.ObservedPowerSourceBehaviors.SequenceEqual(
+                right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)
+            && left.FanSpeedRange == right.FanSpeedRange
             && left.LightingEffects.SetEquals(right.LightingEffects)
+            && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
             && left.LogoLightingModes.SetEquals(right.LogoLightingModes)
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
+            && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
+            && left.SupportsPlaybackMuteIndicator
+                == right.SupportsPlaybackMuteIndicator
             && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
             && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
+
+    private static bool CustomPerformanceCapabilitiesEqual(
+        CustomPerformanceCapabilities? left,
+        CustomPerformanceCapabilities? right) =>
+        ReferenceEquals(left, right)
+        || (left is not null
+            && right is not null
+            && left.AllowedCombinations.SetEquals(right.AllowedCombinations));
 }

@@ -61,7 +61,9 @@ public sealed class ServiceCompositionTests
             {
                 LightingEffects = new HashSet<LightingEffect> { LightingEffect.Static },
             });
-        ProfileSetValidator validator = ServiceComposition.CreateProfileSetValidator(factory);
+        ProfileSetValidator validator = ServiceComposition.CreateProfileSetValidator(
+            new StubProductionBatteryFactory(DeviceCapabilities.Unavailable()),
+            factory);
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         LightingSettings staticLighting = LightingSettingsFactory.Static(
             new RgbColor(12, 34, 56),
@@ -80,6 +82,7 @@ public sealed class ServiceCompositionTests
     public void ProfileValidatorRemainsOffOnlyWhenLightingAdmissionFallsBackReadOnly()
     {
         ProfileSetValidator validator = ServiceComposition.CreateProfileSetValidator(
+            new StubProductionBatteryFactory(DeviceCapabilities.Unavailable()),
             new StubProductionLightingFactory(DeviceCapabilities.Unavailable()));
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         validator.Validate(defaults);
@@ -91,6 +94,82 @@ public sealed class ServiceCompositionTests
                 Lighting = LightingSettingsFactory.SpectrumCycling(50),
             },
         }));
+    }
+
+    [Fact]
+    public void ProfileValidatorUsesBatteryCapabilitiesForFanAndCustomConstraints()
+    {
+        DeviceCapabilities batteryCapabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5000, 100),
+            CustomPerformance = new CustomPerformanceCapabilities(
+                new HashSet<CustomPerformanceCombination>
+                {
+                    new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+                    new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium),
+                    new(CustomPerformanceLevel.Low, CustomPerformanceLevel.High),
+                    new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low),
+                    new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Medium),
+                    new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High),
+                    new(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
+                }),
+        };
+        ProfileSetValidator validator = ServiceComposition.CreateProfileSetValidator(
+            new StubProductionBatteryFactory(batteryCapabilities),
+            new StubProductionLightingFactory(DeviceCapabilities.Unavailable()));
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet unsupported = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.High,
+                    CustomPerformanceLevel.Medium),
+            },
+        };
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(
+            () => validator.Validate(unsupported));
+
+        Assert.Contains("not supported by this device", exception.Message);
+
+        validator.Validate(defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.High,
+                    CustomPerformanceLevel.Low),
+            },
+        });
+
+        InvalidDataException fanException = Assert.Throws<InvalidDataException>(() =>
+            validator.Validate(defaults with
+            {
+                PluggedIn = defaults.PluggedIn with
+                {
+                    Fans = FanMode.Fixed,
+                    FanControl = new FanControlSettings(
+                        FanMode.Fixed,
+                        5400,
+                        ManualFanCurve.Default),
+                },
+            }));
+        Assert.Contains("outside the device range", fanException.Message);
+
+        validator.Validate(defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Fans = FanMode.Fixed,
+                FanControl = new FanControlSettings(
+                    FanMode.Fixed,
+                    5000,
+                    ManualFanCurve.Default),
+            },
+        });
     }
 
     [Fact]

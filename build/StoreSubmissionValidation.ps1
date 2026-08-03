@@ -21,7 +21,7 @@ function Get-OpenBladeStoreSubmissionContract {
         ($contract.appType -ne 'EXE') -or
         ($contract.architecture -ne 'x64') -or
         ($contract.language -ne 'en-US') -or
-        ($contract.installerParameters -ne '/quiet /norestart') -or
+        ($contract.installerParameters -ne '/install /quiet /norestart') -or
         ($contract.offlineInstaller -ne $true) -or
         ($contract.requiresElevation -ne $true) -or
         ($contract.minimumOperatingSystem -ne

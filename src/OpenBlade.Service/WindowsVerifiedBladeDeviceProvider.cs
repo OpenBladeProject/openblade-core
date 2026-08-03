@@ -21,7 +21,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         ServiceComposition.CreateProductionBatteryFactory;
 
     internal static Func<IFanRpmQueryRunFactory> ProductionFanRpmFactory { get; } =
-        BatteryValidationFactory.CreateWindowsFanRpmQuery;
+        BatteryValidationFactory.CreateWindowsFanRpmForService;
 
     internal static Func<IProductionLightingPortFactory> ProductionLightingPortFactory { get; } =
         ServiceComposition.CreateProductionLightingFactory;
@@ -197,10 +197,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         }
     }
 
-    public Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
+    public Task<LightingRendererInvalidationResult> InvalidateLightingRendererAsync(
         CancellationToken cancellationToken) =>
         Volatile.Read(ref disposed) != 0
-            ? Task.FromResult(LightingRendererOwnershipState.None)
+            ? Task.FromResult(new LightingRendererInvalidationResult(
+                LightingRendererOwnershipState.None,
+                DriverModeRestoreOutcome.NotOwned))
             : device.InvalidateLightingRendererAsync(cancellationToken);
 
     public void Dispose()
@@ -267,8 +269,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     }
                 }
 
-                return Volatile.Read(ref lightingPort)?.OwnershipState ==
-                    LightingRendererOwnershipState.AmbientAwareness;
+                return Volatile.Read(ref lightingPort)?.OwnershipState is
+                    LightingRendererOwnershipState.AmbientAwareness or
+                    LightingRendererOwnershipState.AudioMeter;
             }
         }
 
@@ -305,7 +308,19 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     : batteryCapabilities with
                     {
                         LightingEffects = lighting.Capabilities.LightingEffects,
+                        ObservedLightingEffects =
+                            lighting.Capabilities.ObservedLightingEffects,
+                        SpecialKeyBindingsAccess =
+                            lighting.Capabilities.SpecialKeyBindingsAccess,
+                        WritableSpecialKeySlots =
+                            lighting.Capabilities.WritableSpecialKeySlots,
+                        LampArrayLightingAccess =
+                            lighting.Capabilities.LampArrayLightingAccess,
                         LogoLightingModes = lighting.Capabilities.LogoLightingModes,
+                        SupportsKeyboardBrightness =
+                            lighting.Capabilities.SupportsKeyboardBrightness,
+                        SupportsPlaybackMuteIndicator =
+                            lighting.Capabilities.SupportsPlaybackMuteIndicator,
                     };
             }
             finally
@@ -492,7 +507,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                         .ConfigureAwait(false);
                 GpuClockOffsetCapabilities? gpuOffsets =
                     performanceFan.Performance == PerformancePreset.Custom
-                        ? gpuClockOffsets.Query()
+                        ? ApplyGpuPolicy(gpuClockOffsets.Query())
                         : null;
                 CustomPerformanceSettings? customPerformance =
                     performanceFan.CustomPerformance;
@@ -835,6 +850,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             if (!batteryFactory.Capabilities.PerformancePresets.Contains(value)
                 || (value == PerformancePreset.Custom
                     ? !CustomPerformanceSettings.IsWellFormed(customPerformance)
+                        || batteryFactory.Capabilities.CustomPerformance?.Supports(
+                            customPerformance) == false
                     : customPerformance is not null))
             {
                 await RejectProductionWrite(
@@ -846,7 +863,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             if (value == PerformancePreset.Custom
                 && customPerformance?.GpuClockOffsets is { } preflightOffsets)
             {
-                GpuClockOffsetCapabilities? capabilities = gpuClockOffsets.Query();
+                GpuClockOffsetCapabilities? capabilities =
+                    batteryFactory.Capabilities.GpuOverclock is null
+                        or { Access: DeviceFeatureAccess.ReadWrite }
+                        ? ApplyGpuPolicy(gpuClockOffsets.Query())
+                        : null;
                 if (capabilities is null || !capabilities.Supports(preflightOffsets))
                 {
                     await RejectProductionWrite(
@@ -917,7 +938,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                GpuClockOffsetCapabilities? capabilities = gpuClockOffsets.Query();
+                GpuClockOffsetCapabilities? capabilities =
+                    batteryFactory.Capabilities.GpuOverclock is null
+                        or { Access: DeviceFeatureAccess.ReadWrite }
+                        ? ApplyGpuPolicy(gpuClockOffsets.Query())
+                        : null;
                 if (capabilities is null || !capabilities.Supports(value))
                 {
                     throw new CapabilityUnavailableException(
@@ -950,12 +975,61 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     cancellationToken)
                 : RejectProductionWrite("The requested fan mode is not admitted.");
 
+        private GpuClockOffsetCapabilities? ApplyGpuPolicy(
+            GpuClockOffsetCapabilities? driver)
+        {
+            GpuOverclockCapabilities? policy = batteryFactory.Capabilities.GpuOverclock;
+            if (driver is null || policy?.IsWellFormed != true)
+            {
+                return driver;
+            }
+
+            int coreMinimum = Math.Max(
+                driver.Core.MinimumMegahertz,
+                policy.CoreOffsetMegahertz.Minimum);
+            int coreMaximum = Math.Min(
+                driver.Core.MaximumMegahertz,
+                policy.CoreOffsetMegahertz.Maximum);
+            int memoryMinimum = Math.Max(
+                driver.Memory.MinimumMegahertz,
+                policy.MemoryOffsetMegahertz.Minimum);
+            int memoryMaximum = Math.Min(
+                driver.Memory.MaximumMegahertz,
+                policy.MemoryOffsetMegahertz.Maximum);
+            if (coreMinimum > coreMaximum
+                || memoryMinimum > memoryMaximum
+                || driver.Core.CurrentMegahertz < coreMinimum
+                || driver.Core.CurrentMegahertz > coreMaximum
+                || driver.Memory.CurrentMegahertz < memoryMinimum
+                || driver.Memory.CurrentMegahertz > memoryMaximum)
+            {
+                return null;
+            }
+
+            return driver with
+            {
+                Core = driver.Core with
+                {
+                    MinimumMegahertz = coreMinimum,
+                    MaximumMegahertz = coreMaximum,
+                },
+                Memory = driver.Memory with
+                {
+                    MinimumMegahertz = memoryMinimum,
+                    MaximumMegahertz = memoryMaximum,
+                },
+            };
+        }
+
         public Task SetFanControlAsync(
             FanControlSettings value,
             CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(value);
-            return batteryFactory.Capabilities.FanModes.Contains(value.Mode)
+            DeviceCapabilities capabilities = batteryFactory.Capabilities;
+            return capabilities.FanModes.Contains(value.Mode)
+                && (value.Mode != FanMode.Fixed
+                    || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true)
                 ? ExecuteProductionWriteAsync(
                     port => port.SetFanControlAsync(value, cancellationToken),
                     cancellationToken)
@@ -1068,8 +1142,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         {
             ArgumentNullException.ThrowIfNull(frame);
             return frame.IsWellFormed()
-                && lightingFactory.Capabilities.LightingEffects.Contains(
-                    LightingEffect.AmbientAwareness)
+                && (lightingFactory.Capabilities.LightingEffects.Contains(
+                        LightingEffect.AmbientAwareness)
+                    || lightingFactory.Capabilities.LightingEffects.Contains(
+                        LightingEffect.AudioMeter))
                     ? ExecuteProductionAmbientLightingFrameAsync(frame.Copy(), cancellationToken)
                     : RejectProductionWrite("Ambient Awareness input is not admitted.");
         }
@@ -1077,7 +1153,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         public Task SetPlaybackMuteIndicatorAsync(
             bool muted,
             CancellationToken cancellationToken) =>
-            lightingFactory.Capabilities.LightingEffects.Count > 0
+            lightingFactory.Capabilities.SupportsPlaybackMuteIndicator
                 ? ExecuteProductionPlaybackMuteIndicatorAsync(
                     muted,
                     cancellationToken)
@@ -1180,7 +1256,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
-        internal async Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
+        internal async Task<LightingRendererInvalidationResult>
+            InvalidateLightingRendererAsync(
             CancellationToken cancellationToken)
         {
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
@@ -1189,18 +1266,38 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 IProductionLightingPort? current = lightingPort;
                 if (current is null)
                 {
-                    return LightingRendererOwnershipState.None;
+                    return new LightingRendererInvalidationResult(
+                        LightingRendererOwnershipState.None,
+                        DriverModeRestoreOutcome.NotOwned);
                 }
 
                 lightingPort = null;
+                LightingRendererOwnershipState ownership;
                 try
                 {
-                    return await current.InvalidateAsync().ConfigureAwait(false);
+                    ownership = await current.InvalidateAsync().ConfigureAwait(false);
                 }
                 catch
                 {
-                    return LightingRendererOwnershipState.Faulted;
+                    ownership = LightingRendererOwnershipState.Faulted;
                 }
+
+                DriverModeRestoreOutcome outcome = current.DriverModeRestoreOutcome;
+                if (outcome is DriverModeRestoreOutcome.Indeterminate
+                    or DriverModeRestoreOutcome.Failed)
+                {
+                    logger?.LogWarning(
+                        "Lighting-port cleanup reported keyboard Driver-mode restore outcome {Outcome}.",
+                        outcome);
+                }
+                else
+                {
+                    logger?.LogInformation(
+                        "Lighting-port cleanup reported keyboard Driver-mode restore outcome {Outcome}.",
+                        outcome);
+                }
+
+                return new LightingRendererInvalidationResult(ownership, outcome);
             }
             finally
             {
@@ -1413,7 +1510,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
-                if (port is null || port.Capabilities.LightingEffects.Count == 0)
+                if (port is null
+                    || !port.Capabilities.SupportsKeyboardBrightness)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
@@ -1509,7 +1607,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             CancellationToken cancellationToken)
         {
             IProductionLightingPort? ownedPort = Volatile.Read(ref lightingPort);
-            if (ownedPort?.OwnershipState == LightingRendererOwnershipState.AmbientAwareness)
+            if (ownedPort?.OwnershipState is
+                LightingRendererOwnershipState.AmbientAwareness or
+                LightingRendererOwnershipState.AudioMeter)
             {
                 try
                 {
@@ -1567,8 +1667,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             {
                 port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
                 if (port is null
-                    || !port.Capabilities.LightingEffects.Contains(
-                        LightingEffect.AmbientAwareness))
+                    || !(port.Capabilities.LightingEffects.Contains(
+                            LightingEffect.AmbientAwareness)
+                        || port.Capabilities.LightingEffects.Contains(
+                            LightingEffect.AudioMeter)))
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
@@ -1638,7 +1740,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
-                if (port is null || port.Capabilities.LightingEffects.Count == 0)
+                if (port is null || !port.Capabilities.SupportsPlaybackMuteIndicator)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,

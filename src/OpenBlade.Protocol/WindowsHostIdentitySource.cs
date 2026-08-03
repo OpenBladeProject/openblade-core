@@ -15,6 +15,12 @@ internal readonly record struct WindowsPlatformEvidence(
     Version Version,
     Architecture Architecture);
 
+internal readonly record struct ExpectedHostIdentity(
+    string Manufacturer,
+    string ProductName,
+    string Sku,
+    string BiosVersion);
+
 internal interface IRegistryValueSource
 {
     object? Read(RegistryHive hive, RegistryView view, string key, string valueName);
@@ -62,23 +68,61 @@ internal sealed class RuntimeWindowsPlatformEvidenceSource(
         RuntimeInformation.OSArchitecture);
 }
 
-internal sealed class WindowsHostIdentitySource(
-    IRegistryValueSource registry,
-    IWindowsPlatformEvidenceSource platform) : IHostIdentitySource
+internal sealed class WindowsHostIdentitySource : IHostIdentitySource
 {
     private const string BiosKey = @"HARDWARE\DESCRIPTION\System\BIOS";
     private const string SystemInformationKey = @"SYSTEM\CurrentControlSet\Control\SystemInformation";
+    private static readonly ExpectedHostIdentity ProductionIdentity = new(
+        "Razer",
+        "Blade 16 - RZ09-0581",
+        "RZ09-05819EN4",
+        "3.01");
+    internal static readonly ExpectedHostIdentity Rz090528Identity = new(
+        "Razer",
+        "Blade 16 - RZ09-0528",
+        "RZ09-05289EN4",
+        "2.02");
+    private readonly IRegistryValueSource registry;
+    private readonly IWindowsPlatformEvidenceSource platform;
+    private readonly ExpectedHostIdentity expected;
+
+    internal WindowsHostIdentitySource(
+        IRegistryValueSource registry,
+        IWindowsPlatformEvidenceSource platform)
+        : this(registry, platform, ProductionIdentity)
+    {
+    }
+
+    internal WindowsHostIdentitySource(
+        IRegistryValueSource registry,
+        IWindowsPlatformEvidenceSource platform,
+        ExpectedHostIdentity expected)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(platform);
+        if (string.IsNullOrWhiteSpace(expected.Manufacturer)
+            || string.IsNullOrWhiteSpace(expected.ProductName)
+            || string.IsNullOrWhiteSpace(expected.Sku)
+            || string.IsNullOrWhiteSpace(expected.BiosVersion))
+        {
+            throw new ArgumentException("Expected host identity must be complete.", nameof(expected));
+        }
+
+        this.registry = registry;
+        this.platform = platform;
+        this.expected = expected;
+    }
 
     public HostIdentityReadResult ReadExactIdentity()
     {
         if (!IsAuthorizedPlatform()
-            || !TryReadExact(BiosKey, "SystemManufacturer", "Razer", out string biosManufacturer)
-            || !TryReadExact(BiosKey, "SystemProductName", "Blade 16 - RZ09-0581", out string biosProductName)
-            || !TryReadExact(BiosKey, "SystemSKU", "RZ09-05819EN4", out string sku)
-            || !TryReadExact(BiosKey, "BIOSVersion", "3.01", out string biosVersion)
-            || !TryReadExact(SystemInformationKey, "SystemManufacturer", "Razer", out string systemManufacturer)
-            || !TryReadExact(SystemInformationKey, "SystemProductName", "Blade 16 - RZ09-0581", out string systemProductName)
-            || !TryReadExact(SystemInformationKey, "BIOSVersion", "3.01", out string systemBiosVersion)
+            || !TryReadExact(BiosKey, "SystemManufacturer", expected.Manufacturer, out string biosManufacturer)
+            || !TryReadExact(BiosKey, "SystemProductName", expected.ProductName, out string biosProductName)
+            || !TryReadExact(BiosKey, "SystemSKU", expected.Sku, out string sku)
+            || !TryReadExact(BiosKey, "BIOSVersion", expected.BiosVersion, out string biosVersion)
+            || !TryReadExact(SystemInformationKey, "SystemManufacturer", expected.Manufacturer, out string systemManufacturer)
+            || !TryReadExact(SystemInformationKey, "SystemProductName", expected.ProductName, out string systemProductName)
+            || !TryReadExact(SystemInformationKey, "BIOSVersion", expected.BiosVersion, out string systemBiosVersion)
             || !string.Equals(biosManufacturer, systemManufacturer, StringComparison.Ordinal)
             || !string.Equals(biosProductName, systemProductName, StringComparison.Ordinal)
             || !string.Equals(biosVersion, systemBiosVersion, StringComparison.Ordinal))
@@ -89,6 +133,19 @@ internal sealed class WindowsHostIdentitySource(
         return new(
             new HostIdentityEvidence(biosManufacturer, biosProductName, sku, biosVersion),
             null);
+    }
+
+    internal static bool IsExactRz090528WindowsHost()
+    {
+        var registry = new WindowsRegistryValueSource();
+        return new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            Rz090528Identity).ReadExactIdentity() is
+        {
+            Evidence: not null,
+            Failure: null,
+        };
     }
 
     private bool IsAuthorizedPlatform()

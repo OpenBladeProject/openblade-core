@@ -104,7 +104,8 @@ public sealed class WindowsHidNativeContractTests
                 && !pair.Key.EndsWith("BatteryValidationFactory.cs")
                 && !pair.Key.EndsWith("ProductionBatteryFactory.cs")
                 && !pair.Key.EndsWith("ProductionLightingFactory.cs")
-                && !pair.Key.EndsWith("GetterCandidateProbeRunner.cs")),
+                && !pair.Key.EndsWith("GetterCandidateProbeRunner.cs")
+                && !pair.Key.EndsWith("HidInputAccessProbe.cs")),
             pair => pair.Value.Contains("new WindowsHidNative("));
         string[] composition = sources
             .Where(pair => pair.Value.Contains("OverlappedFeatureOperation") &&

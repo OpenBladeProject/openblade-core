@@ -377,6 +377,58 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void WindowsLightingOwnershipUsesCompactSettingsRow()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        int cardStart = xaml.IndexOf(
+            "Text=\"Windows Dynamic Lighting\"",
+            StringComparison.Ordinal);
+        int cardEnd = xaml.IndexOf(
+            "x:Name=\"LightingControls\"",
+            cardStart,
+            StringComparison.Ordinal);
+
+        Assert.True(cardStart >= 0 && cardEnd > cardStart);
+        string card = xaml[cardStart..cardEnd];
+        Assert.Contains(
+            "Text=\"Use Windows for keyboard effects and brightness.\"",
+            card,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"Open settings\"", card, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "NavigateUri=\"ms-settings:personalization-lighting\"",
+            card,
+            StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"WindowsDynamicLightingToggle\"", card, StringComparison.Ordinal);
+        Assert.Contains("Grid.Column=\"1\"", card, StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"Choose the lighting mode for the Razer logo on the lid.\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "OpenBlade controls the lid logo, even when Windows controls the keyboard.",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "AutomationProperties.HelpText=\"Independent of Windows Dynamic Lighting.\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "OpenBlade stops all keyboard-lighting writes",
+            card,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Windows Dynamic Lighting interface detected",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Quick effects observed in Synapse",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("M1 through M5 are", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SettingsExposeReorderableTelemetryAndDestructiveShutdown()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
@@ -727,13 +779,26 @@ public sealed class WinUiShellContractTests
         Assert.Contains("RawInputDeviceInputSink", source, StringComparison.Ordinal);
         Assert.Contains("RawInputDeviceNotify", source, StringComparison.Ordinal);
         Assert.Contains("WindowMessageInputDeviceChange", source, StringComparison.Ordinal);
-        Assert.Contains("TryResolveTargetInputDevice", source, StringComparison.Ordinal);
-        Assert.Contains("Rz09_0581ReactiveInputDevice", source, StringComparison.Ordinal);
+        Assert.Contains("TryResolveInputDevice", source, StringComparison.Ordinal);
+        Assert.Contains("RazerBladeReactiveInputDevice", source, StringComparison.Ordinal);
         Assert.Contains("GetRawInputHeader", source, StringComparison.Ordinal);
         Assert.Contains("EnsureRawInputBuffer", source, StringComparison.Ordinal);
         Assert.Contains("stackalloc byte[3]", source, StringComparison.Ordinal);
+        Assert.Contains("readSpecialKeyInputAdmitted", source, StringComparison.Ordinal);
         Assert.Contains(
-            "!IsTargetInputDeviceCached(header.Device)",
+            "readSpecialKeyInputAdmitted(specialKey)",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Rz09_0528PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "VirtualKeyPageUp",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "!TryGetInputDeviceKind(header.Device",
             source,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
@@ -741,7 +806,7 @@ public sealed class WinUiShellContractTests
             source,
             StringComparison.Ordinal);
         Assert.True(
-            source.IndexOf("!IsTargetInputDeviceCached(header.Device)", StringComparison.Ordinal)
+            source.IndexOf("!TryGetInputDeviceKind(header.Device", StringComparison.Ordinal)
                 < source.IndexOf("EnsureRawInputBuffer(size)", StringComparison.Ordinal),
             "Non-target Raw Input packets must be rejected before the full packet buffer is acquired.");
         Assert.DoesNotContain("GetForegroundWindow", source, StringComparison.Ordinal);
@@ -944,6 +1009,7 @@ public sealed class WinUiShellContractTests
     public void RuntimeThemeUsesRootRequestedThemeWithoutLegacyThemeWatchers()
     {
         string themeManager = ReadRepositoryFile("src", "OpenBlade.Tray", "ThemeManager.cs");
+        string appXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
         Assert.Contains("ThemeSelectionPolicy.Resolve", themeManager, StringComparison.Ordinal);
         Assert.Contains("root.RequestedTheme", themeManager, StringComparison.Ordinal);
 
@@ -973,7 +1039,6 @@ public sealed class WinUiShellContractTests
         Assert.Contains("MinimumHeightDip = 600", ReadRepositoryFile(
             "src", "OpenBlade.Tray", "MainWindow.xaml.cs"), StringComparison.Ordinal);
 
-        string appXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
         Assert.DoesNotContain("RequestedTheme", appXaml, StringComparison.Ordinal);
 
         string trayRoot = Path.GetDirectoryName(ProjectPath)!;
@@ -1020,7 +1085,6 @@ public sealed class WinUiShellContractTests
             "src",
             "OpenBlade.Tray",
             "AccentColorManager.cs");
-
         Assert.Contains("<AddDeleteThemeTransition", xaml, StringComparison.Ordinal);
         Assert.Contains("<RepositionThemeTransition", xaml, StringComparison.Ordinal);
         Assert.Contains("dashboardCardPresentations", window, StringComparison.Ordinal);
@@ -1043,6 +1107,14 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Windows accent", window, StringComparison.Ordinal);
         Assert.Contains("ColorValuesChanged +=", accentManager, StringComparison.Ordinal);
         Assert.Contains("existing.Color = color", accentManager, StringComparison.Ordinal);
+        Assert.Contains("GetAccentResourceDictionaries(applicationResources)", accentManager,
+            StringComparison.Ordinal);
+        Assert.Contains("ApplyBrushPalette(applicationResources)", accentManager,
+            StringComparison.Ordinal);
+        Assert.Contains("current.MergedDictionaries", accentManager,
+            StringComparison.Ordinal);
+        Assert.Contains("new[] { \"Light\", \"Dark\" }", accentManager,
+            StringComparison.Ordinal);
         Assert.Contains("#47E10C", ReadRepositoryFile(
             "src",
             "OpenBlade.Tray.Core",
@@ -1273,14 +1345,30 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
+            "Visibility=\"{x:Bind IsEditable, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "SpecialKeyBindingsObservedOnlyInfoBar",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Text=\"{x:Bind AccessLabel, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "SelectedItem=\"{x:Bind SelectedAction, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "local:SpecialKeyActionSelection.Source=\"{x:Bind BindingTarget}\"",
+            "AutomationProperties.Name=\"{x:Bind SlotLabel}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.DoesNotContain(
+        Assert.Contains(
+            "Tag=\"{x:Bind Slot}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "SelectionChanged=\"OnSpecialKeyActionSelectionChanged\"",
             xaml,
             StringComparison.Ordinal);
@@ -1304,17 +1392,17 @@ public sealed class WinUiShellContractTests
             ".Select(binding => binding.ToPreference())",
             window,
             StringComparison.Ordinal);
-        string selection = ReadRepositoryFile(
-            "src",
-            "OpenBlade.Tray",
-            "SpecialKeyActionSelection.cs");
         Assert.Contains(
-            "GetSource(comboBox) is { } binding",
-            selection,
+            "comboBox.Tag is not SpecialKeySlot slot",
+            window,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "AutomationProperties.GetName(comboBox)",
+            window,
             StringComparison.Ordinal);
         Assert.Contains(
             "binding.SelectedAction = selectedAction;",
-            selection,
+            window,
             StringComparison.Ordinal);
     }
 

@@ -40,11 +40,15 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
 
     private SpecialKeyActionOption selectedAction;
     private string value;
+    private bool isEditable;
 
-    public SpecialKeyBindingViewModel(SpecialKeyBindingPreference preference)
+    public SpecialKeyBindingViewModel(
+        SpecialKeyBindingPreference preference,
+        bool isEditable = true)
     {
         ArgumentNullException.ThrowIfNull(preference);
         Slot = preference.Slot;
+        this.isEditable = isEditable;
         SpecialKeyAction normalized = SpecialKeyBindingDefaults.Normalize(preference.Action);
         selectedAction = ActionOptions.Single(option => option.Kind == normalized.Kind);
         value = normalized.Value ?? string.Empty;
@@ -56,9 +60,23 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
 
     public IReadOnlyList<SpecialKeyActionOption> AvailableActions => ActionOptions;
 
-    public SpecialKeyBindingViewModel BindingTarget => this;
-
     public string SlotLabel => Slot.ToString();
+
+    public bool IsEditable
+    {
+        get => isEditable;
+        private set
+        {
+            if (isEditable == value)
+            {
+                return;
+            }
+            isEditable = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public void SetEditable(bool value) => IsEditable = value;
 
     public SpecialKeyActionOption SelectedAction
     {

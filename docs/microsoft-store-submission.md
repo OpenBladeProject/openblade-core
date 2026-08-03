@@ -14,7 +14,7 @@ the fields that must stay synchronized with the release:
 | App type | EXE |
 | Architecture | x64 |
 | Language | en-US |
-| Installer parameters | `/quiet /norestart` |
+| Installer parameters | `/install /quiet /norestart` |
 | Minimum operating system | Windows 11 version 24H2 x64, build 26100 or later |
 | Supported hardware | Razer Blade 16 (2026), RZ09-0581, USB `1532:02E0` |
 
@@ -32,7 +32,8 @@ synchronized with the deployed documentation and Partner Center.
   including the pinned, Microsoft-signed Visual C++ runtime required by the
   unpackaged Windows App SDK deployment.
 - Interactive direct downloads show WixStdBA. Partner Center supplies
-  `/quiet /norestart`, which suppresses installer UI and prevents an automatic
+  `/install /quiet /norestart`, which explicitly selects installation, suppresses
+  installer UI, and prevents an automatic
   restart.
 - Windows may show UAC because OpenBlade installs a per-machine LocalSystem
   service. UAC is the only permitted Store-install prompt.
@@ -92,7 +93,7 @@ test that authoring and manifest checks cannot simulate:
    Verify it replaces the installed files, preserves the profile, leaves one
    Installed apps entry, and updates the installed-version marker under
    `HKLM\SOFTWARE\OSSBlade\OpenBlade\Installer`.
-3. Repeat the upgrade with `/quiet /norestart` and verify the same result
+3. Repeat the upgrade with `/install /quiet /norestart` and verify the same result
    without an application prompt or automatic restart.
 4. Repair, uninstall, and reinstall the new version. Verify the Microsoft
    Visual C++ prerequisite works both when absent and when the VM has an older

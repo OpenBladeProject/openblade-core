@@ -261,6 +261,38 @@ public sealed class UiPreferenceStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_NullPageSectionsMigrateToCurrentDefaults()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "theme": "Dark",
+              "pageLayouts": [
+                { "page": "Settings", "sections": null },
+                { "page": "About", "sections": null }
+              ]
+            }
+            """);
+
+        UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
+
+        IReadOnlyList<PageLayoutPreference> actual = preferences.EffectivePageLayouts;
+        Assert.Equal(PageLayoutPreferenceDefaults.Layouts.Count, actual.Count);
+        foreach (PageLayoutPreference expected in PageLayoutPreferenceDefaults.Layouts)
+        {
+            Assert.Equal(
+                expected.Sections.Select(section => (section.Kind, section.IsVisible)),
+                actual
+                    .Single(layout => layout.Page == expected.Page)
+                    .Sections
+                    .Select(section => (section.Kind, section.IsVisible)));
+        }
+    }
+
+    [Fact]
     public async Task LoadAsync_InvalidCustomAccentFallsBackToRazerGreen()
     {
         Directory.CreateDirectory(directory);

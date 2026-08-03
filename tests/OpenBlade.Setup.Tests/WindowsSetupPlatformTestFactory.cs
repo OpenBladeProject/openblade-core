@@ -18,6 +18,7 @@ internal static class WindowsSetupPlatformTestFactory
         IUninstallRegistration? uninstallRegistration = null,
         IBundleOwnershipRegistration? bundleOwnershipRegistration = null,
         IInstalledUninstallerWriter? installedUninstallerWriter = null,
+        IDynamicLightingIdentityRegistration? dynamicLightingIdentityRegistration = null,
         string? setupExecutablePath = null) =>
         new(
             new WindowsSetupPlatformOptions(
@@ -34,5 +35,6 @@ internal static class WindowsSetupPlatformTestFactory
                 UninstallRegistration: uninstallRegistration,
                 BundleOwnershipRegistration: bundleOwnershipRegistration,
                 InstalledUninstallerWriter: installedUninstallerWriter,
+                DynamicLightingIdentityRegistration: dynamicLightingIdentityRegistration,
                 SetupExecutablePath: setupExecutablePath));
 }

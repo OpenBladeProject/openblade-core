@@ -25,6 +25,7 @@ public sealed class ServicePlaybackMuteIndicatorLoop
             SingleWriter = false,
         });
     private int connected;
+    private int supported;
     // Latest state observed from Core Audio, independent of service delivery.
     private int latestMuteState = -1;
     // Successful IPC delivery cache only; failures and reconnects invalidate it.
@@ -78,8 +79,18 @@ public sealed class ServicePlaybackMuteIndicatorLoop
         {
             switch (update)
             {
-                case ServiceWatchUpdate.Connected:
-                    if (Interlocked.Exchange(ref connected, 1) == 0)
+                case ServiceWatchUpdate.Connected connectedUpdate:
+                    int nextSupported = connectedUpdate.Status.Capabilities?
+                        .SupportsPlaybackMuteIndicator == true
+                            ? 1
+                            : 0;
+                    bool connectionChanged =
+                        Interlocked.Exchange(ref connected, 1) == 0;
+                    bool supportChanged =
+                        Interlocked.Exchange(ref supported, nextSupported)
+                            != nextSupported;
+                    bool deliveryStateChanged = connectionChanged || supportChanged;
+                    if (deliveryStateChanged)
                     {
                         Interlocked.Exchange(ref lastSentState, -1);
                     }
@@ -87,6 +98,7 @@ public sealed class ServicePlaybackMuteIndicatorLoop
                     break;
                 case ServiceWatchUpdate.Reconnecting:
                     Volatile.Write(ref connected, 0);
+                    Volatile.Write(ref supported, 0);
                     Interlocked.Exchange(ref lastSentState, -1);
                     break;
             }
@@ -137,6 +149,7 @@ public sealed class ServicePlaybackMuteIndicatorLoop
         {
             int encoded = Volatile.Read(ref latestMuteState);
             if (Volatile.Read(ref connected) == 0
+                || Volatile.Read(ref supported) == 0
                 || encoded is not (0 or 1)
                 || Volatile.Read(ref lastSentState) == encoded)
             {

@@ -42,9 +42,10 @@ internal static class ServiceComposition
             CreateProductionLightingFactory());
         services.AddSingleton(provider =>
             CreateProfileSetValidator(
+                provider.GetRequiredService<IProductionBatteryPortFactory>(),
                 provider.GetRequiredService<IProductionLightingPortFactory>()));
         services.AddSingleton<IFanRpmQueryRunFactory>(_ =>
-            BatteryValidationFactory.CreateWindowsFanRpmQuery());
+            BatteryValidationFactory.CreateWindowsFanRpmForService());
         services.AddSingleton<IGpuClockOffsetController>(_ =>
             new NvidiaGpuClockOffsetController());
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
@@ -60,7 +61,7 @@ internal static class ServiceComposition
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory() =>
         CreateProductionBatteryFactory(
-            ProductionBatteryFactory.CreateWindows,
+            BatteryValidationFactory.CreateWindowsProductionBatteryForService,
             ProductionBatteryFactory.CreateWindowsReadOnly);
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(
@@ -85,7 +86,7 @@ internal static class ServiceComposition
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory() =>
         CreateProductionLightingFactory(
-            ProductionLightingFactory.CreateWindows,
+            BatteryValidationFactory.CreateWindowsProductionLightingForService,
             ProductionLightingFactory.CreateWindowsReadOnly);
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory(
@@ -109,10 +110,13 @@ internal static class ServiceComposition
     }
 
     internal static ProfileSetValidator CreateProfileSetValidator(
+        IProductionBatteryPortFactory batteryFactory,
         IProductionLightingPortFactory lightingFactory)
     {
+        ArgumentNullException.ThrowIfNull(batteryFactory);
         ArgumentNullException.ThrowIfNull(lightingFactory);
-        return ProfileSetValidator.CreateForLightingCapabilities(
+        return ProfileSetValidator.CreateForDeviceCapabilities(
+            batteryFactory.Capabilities,
             lightingFactory.Capabilities);
     }
 }

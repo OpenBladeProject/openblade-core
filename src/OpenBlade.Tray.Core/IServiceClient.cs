@@ -74,6 +74,10 @@ public interface IServiceClient : IServiceStatusWatcher
         OverrideLifetime lifetime,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetKeyboardLightingControlModeAsync(
+        KeyboardLightingControlMode mode,
+        CancellationToken token);
+
     Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
         bool enabled,
         CancellationToken token);

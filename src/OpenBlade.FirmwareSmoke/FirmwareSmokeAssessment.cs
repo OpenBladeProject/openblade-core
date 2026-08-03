@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.FirmwareSmoke;
 
 public static class FirmwareSmokeAssessment
@@ -39,6 +41,23 @@ public static class FirmwareSmokeAssessment
 
     private static readonly string[] ExpectedLogoModes = ["Breathing", "Off", "Static"];
 
+    private static readonly string[] ExpectedRz090528LightingEffects =
+    [
+        "AmbientAwareness",
+        "AudioMeter",
+        "Breathing",
+        "Fire",
+        "Off",
+        "Reactive",
+        "Ripple",
+        "Spectrum",
+        "Starlight",
+        "Static",
+        "Tidal",
+        "Wave",
+        "Wheel",
+    ];
+
     private static readonly string[] ExpectedLaptopControls =
     [
         "FunctionKeyPrimary",
@@ -47,14 +66,88 @@ public static class FirmwareSmokeAssessment
         "StartupAnimation",
     ];
 
+    private static readonly FirmwareSmokeCapabilityExpectation Rz090581Expectation = new(
+        ExpectedPerformancePresets,
+        ExpectedFanModes,
+        ExpectedLightingEffects,
+        ExpectedChargeLimits,
+        ExpectedLogoModes,
+        ExpectedLaptopControls,
+        DeviceFeatureAccess.ReadWrite.ToString(),
+        SpecialKeySlotSet.All.ToString(),
+        "Unavailable");
+
+    private static readonly FirmwareSmokeCapabilityExpectation Rz090528Expectation = new(
+        ["Balanced", "Custom", "Performance", "Silent"],
+        ExpectedFanModes,
+        ExpectedRz090528LightingEffects,
+        ExpectedChargeLimits,
+        ExpectedLogoModes,
+        ["FunctionKeyPrimary", "GamingMode", "StartupAnimation"],
+        DeviceFeatureAccess.ReadWrite.ToString(),
+        (SpecialKeySlotSet.M3 | SpecialKeySlotSet.M4 | SpecialKeySlotSet.M5).ToString(),
+        DeviceFeatureAccess.ObservedOnly.ToString());
+
+    private static readonly IReadOnlySet<CustomPerformanceCombination>
+        ExpectedRz090528CustomPerformance = new HashSet<CustomPerformanceCombination>
+        {
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium),
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.High),
+            new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low),
+            new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Medium),
+            new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High),
+            new(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
+        };
+
+    private static readonly CpuPowerLimitCapabilities ExpectedRz090528CpuPowerLimit =
+        new(new DeviceNumericRange(45, 95, 1), DeviceFeatureAccess.ObservedOnly);
+
+    private static readonly CpuVoltageOptimizerCapabilities
+        ExpectedRz090528CpuVoltageOptimizer = new(
+            new DeviceNumericRange(-30, -1, 1),
+            DeviceFeatureAccess.ObservedOnly)
+        {
+            SupportsEnableDisable = true,
+        };
+
+    private static readonly GpuOverclockCapabilities ExpectedRz090528GpuOverclock = new(
+        new DeviceNumericRange(-1000, 400, null),
+        new DeviceNumericRange(-1000, 3000, null),
+        DeviceFeatureAccess.ObservedOnly)
+    {
+        SupportsEnableDisable = true,
+    };
+
+    private static readonly IReadOnlyList<PowerSourceBehaviorObservation>
+        ExpectedRz090528PowerSourceBehaviors =
+        [
+            new(
+                PowerSource.Battery,
+                PerformancePreset.BatterySaver,
+                FanMode.Automatic,
+                FixedFanControlAvailable: false,
+                PerformanceModeAvailable: false,
+                CustomModeAvailable: false,
+                InadequatePowerWarningVisible: false),
+            new(
+                PowerSource.UsbC,
+                PerformancePreset.Balanced,
+                FanMode.Automatic,
+                FixedFanControlAvailable: false,
+                PerformanceModeAvailable: false,
+                CustomModeAvailable: false,
+                InadequatePowerWarningVisible: true),
+        ];
+
     public static IReadOnlyList<string> ManualChecks { get; } =
     [
-        "Confirm the keyboard visibly renders Static and at least one animated effect.",
+        "Confirm keyboard Off and brightness; on models with admitted effects, also confirm Static and one animation.",
         "Confirm keyboard brightness decreases and increases with the physical function keys.",
         "Confirm media, display-brightness, Project, and Print Screen function-row actions.",
         "Confirm the performance key or Fn+P changes mode and shows the expected notification.",
-        "Confirm M1 through M5 overrides and their default pass-through behavior.",
-        "Confirm microphone mute changes Windows state and its keyboard indicator.",
+        "If special-key access is ReadWrite, confirm every advertised writable slot and ordinary-key pass-through for every unavailable slot; if ObservedOnly, confirm the UI keeps bindings inactive.",
+        "If MicrophoneMuteIndicator is admitted, confirm microphone mute changes Windows state and its keyboard indicator.",
         "Unplug AC, test the Battery profile, then test USB-C and return to the full-power adapter.",
         "Sleep and resume once; confirm lighting, Driver mode, profile state, and readings recover.",
     ];
@@ -100,6 +193,15 @@ public static class FirmwareSmokeAssessment
             baseline.SchemaVersion == FirmwareSmokeSnapshotCollector.CurrentSchemaVersion,
             FirmwareSmokeSnapshotCollector.CurrentSchemaVersion.ToString(),
             baseline.SchemaVersion.ToString()));
+        checks.Add(Check(
+            "snapshot.target",
+            "Baseline and current snapshots target the same laptop model",
+            string.Equals(
+                baseline.TargetModel,
+                current.TargetModel,
+                StringComparison.OrdinalIgnoreCase),
+            baseline.TargetModel,
+            current.TargetModel));
         checks.Add(Check(
             "product.service-version",
             "Service build did not change during the firmware update",
@@ -218,13 +320,15 @@ public static class FirmwareSmokeAssessment
     private static List<FirmwareSmokeCheck> CommonHealthChecks(
         FirmwareSmokeSnapshot snapshot)
     {
+        FirmwareSmokeCapabilityExpectation expected = ExpectedCapabilities(
+            snapshot.TargetModel);
         var checks = new List<FirmwareSmokeCheck>
         {
             Check(
                 "target.model",
                 "Snapshot targets the supported laptop",
-                snapshot.TargetModel == "RZ09-0581",
-                "RZ09-0581",
+                RazerBladeModelCatalog.Find(snapshot.TargetModel) is not null,
+                "RZ09-0581 or RZ09-0528",
                 snapshot.TargetModel),
             Check(
                 "device.verified",
@@ -266,27 +370,27 @@ public static class FirmwareSmokeAssessment
                 "capabilities.performance",
                 "All approved performance presets are admitted",
                 snapshot.Capabilities.PerformancePresets.SequenceEqual(
-                    ExpectedPerformancePresets),
-                string.Join(", ", ExpectedPerformancePresets),
+                    expected.PerformancePresets),
+                string.Join(", ", expected.PerformancePresets),
                 List(snapshot.Capabilities.PerformancePresets)),
             Check(
                 "capabilities.fans",
                 "All approved fan modes are admitted",
-                snapshot.Capabilities.FanModes.SequenceEqual(ExpectedFanModes),
-                string.Join(", ", ExpectedFanModes),
+                snapshot.Capabilities.FanModes.SequenceEqual(expected.FanModes),
+                string.Join(", ", expected.FanModes),
                 List(snapshot.Capabilities.FanModes)),
             Check(
                 "capabilities.lighting",
                 "All approved lighting effects are admitted",
                 snapshot.Capabilities.LightingEffects.SequenceEqual(
-                    ExpectedLightingEffects),
-                string.Join(", ", ExpectedLightingEffects),
+                    expected.LightingEffects),
+                string.Join(", ", expected.LightingEffects),
                 List(snapshot.Capabilities.LightingEffects)),
             Check(
                 "capabilities.charge-limits",
                 "All approved charge limits are admitted",
-                snapshot.Capabilities.ChargeLimits.SequenceEqual(ExpectedChargeLimits),
-                string.Join(", ", ExpectedChargeLimits),
+                snapshot.Capabilities.ChargeLimits.SequenceEqual(expected.ChargeLimits),
+                string.Join(", ", expected.ChargeLimits),
                 List(snapshot.Capabilities.ChargeLimits)),
             Check(
                 "capabilities.battery",
@@ -299,16 +403,43 @@ public static class FirmwareSmokeAssessment
             Check(
                 "capabilities.logo",
                 "All approved lid-logo modes are admitted",
-                snapshot.Capabilities.LogoLightingModes.SequenceEqual(ExpectedLogoModes),
-                string.Join(", ", ExpectedLogoModes),
+                snapshot.Capabilities.LogoLightingModes.SequenceEqual(expected.LogoLightingModes),
+                string.Join(", ", expected.LogoLightingModes),
                 List(snapshot.Capabilities.LogoLightingModes)),
             Check(
                 "capabilities.laptop-controls",
                 "All approved laptop controls are admitted",
                 snapshot.Capabilities.OneShotLaptopControls.SequenceEqual(
-                    ExpectedLaptopControls),
-                string.Join(", ", ExpectedLaptopControls),
+                    expected.OneShotLaptopControls),
+                string.Join(", ", expected.OneShotLaptopControls),
                 List(snapshot.Capabilities.OneShotLaptopControls)),
+            Check(
+                "capabilities.special-keys",
+                "Special-key access matches the exact model",
+                string.Equals(
+                    snapshot.Capabilities.SpecialKeyBindingsAccess,
+                    expected.SpecialKeyBindingsAccess,
+                    StringComparison.Ordinal),
+                expected.SpecialKeyBindingsAccess,
+                snapshot.Capabilities.SpecialKeyBindingsAccess ?? "Unavailable"),
+            Check(
+                "capabilities.special-key-slots",
+                "Writable special-key slots match the exact model",
+                string.Equals(
+                    snapshot.Capabilities.WritableSpecialKeySlots,
+                    expected.WritableSpecialKeySlots,
+                    StringComparison.Ordinal),
+                expected.WritableSpecialKeySlots,
+                snapshot.Capabilities.WritableSpecialKeySlots ?? "Unavailable"),
+            Check(
+                "capabilities.lamp-array",
+                "Windows LampArray access matches the exact model",
+                string.Equals(
+                    snapshot.Capabilities.LampArrayLightingAccess ?? "Unavailable",
+                    expected.LampArrayLightingAccess,
+                    StringComparison.Ordinal),
+                expected.LampArrayLightingAccess,
+                snapshot.Capabilities.LampArrayLightingAccess ?? "Unavailable"),
             Check(
                 "readback.performance",
                 "Performance readback is available",
@@ -376,6 +507,46 @@ public static class FirmwareSmokeAssessment
                 snapshot.Runtime.SessionAgentProcessCount),
         };
 
+        if (RazerBladeModelCatalog.Find(snapshot.TargetModel)?.ModelNumber
+            == RazerBladeModelCatalog.Rz090528ModelNumber)
+        {
+            checks.Add(Check(
+                "capabilities.custom-performance",
+                "Exact-model Custom performance combinations are retained",
+                snapshot.Capabilities.CustomPerformance?.AllowedCombinations.SetEquals(
+                    ExpectedRz090528CustomPerformance) == true,
+                $"{ExpectedRz090528CustomPerformance.Count} exact combinations",
+                snapshot.Capabilities.CustomPerformance is { } custom
+                    ? $"{custom.AllowedCombinations.Count} combinations"
+                    : "Unavailable"));
+            checks.Add(Check(
+                "capabilities.cpu-power-limit",
+                "Observed CPU power-limit range is retained",
+                snapshot.Capabilities.CpuPowerLimit == ExpectedRz090528CpuPowerLimit,
+                ExpectedRz090528CpuPowerLimit.ToString(),
+                snapshot.Capabilities.CpuPowerLimit?.ToString() ?? "Unavailable"));
+            checks.Add(Check(
+                "capabilities.cpu-voltage-optimizer",
+                "Observed CPU voltage-optimizer range is retained",
+                snapshot.Capabilities.CpuVoltageOptimizer
+                    == ExpectedRz090528CpuVoltageOptimizer,
+                ExpectedRz090528CpuVoltageOptimizer.ToString(),
+                snapshot.Capabilities.CpuVoltageOptimizer?.ToString() ?? "Unavailable"));
+            checks.Add(Check(
+                "capabilities.gpu-overclock",
+                "Observed GPU overclock policy is retained",
+                snapshot.Capabilities.GpuOverclock == ExpectedRz090528GpuOverclock,
+                ExpectedRz090528GpuOverclock.ToString(),
+                snapshot.Capabilities.GpuOverclock?.ToString() ?? "Unavailable"));
+            checks.Add(Check(
+                "capabilities.power-source-behaviors",
+                "Observed battery and USB-C restrictions are retained",
+                snapshot.Capabilities.ObservedPowerSourceBehaviors.SequenceEqual(
+                    ExpectedRz090528PowerSourceBehaviors),
+                $"{ExpectedRz090528PowerSourceBehaviors.Count} exact observations",
+                $"{snapshot.Capabilities.ObservedPowerSourceBehaviors.Count} observations"));
+        }
+
         checks.Add(new FirmwareSmokeCheck(
             "runtime.tray",
             "One OpenBlade Tray process is preferred",
@@ -438,9 +609,19 @@ public static class FirmwareSmokeAssessment
         $"Performance={capabilities.PerformancePresets.Count}; " +
         $"Fans={capabilities.FanModes.Count}; " +
         $"Lighting={capabilities.LightingEffects.Count}; " +
+        $"ObservedLighting={capabilities.ObservedLightingEffects.Count}; " +
+        $"SpecialKeys={capabilities.SpecialKeyBindingsAccess ?? "Unavailable"}; " +
+        $"WritableSpecialKeySlots={capabilities.WritableSpecialKeySlots ?? "Unavailable"}; " +
+        $"LampArray={capabilities.LampArrayLightingAccess ?? "Unavailable"}; " +
         $"ChargeLimits={capabilities.ChargeLimits.Count}; " +
         $"Logo={capabilities.LogoLightingModes.Count}; " +
-        $"Laptop={capabilities.OneShotLaptopControls.Count}";
+        $"Laptop={capabilities.OneShotLaptopControls.Count}; " +
+        $"CustomPerformance={capabilities.CustomPerformance?.AllowedCombinations.Count ?? 0}; " +
+        $"CpuPowerLimit={capabilities.CpuPowerLimit?.Access.ToString() ?? "Unavailable"}; " +
+        $"CpuVoltageOptimizer=" +
+        $"{capabilities.CpuVoltageOptimizer?.Access.ToString() ?? "Unavailable"}; " +
+        $"GpuOverclock={capabilities.GpuOverclock?.Access.ToString() ?? "Unavailable"}; " +
+        $"PowerSourceBehaviors={capabilities.ObservedPowerSourceBehaviors.Count}";
 
     private static bool CapabilitiesEqual(
         FirmwareSmokeCapabilities left,
@@ -448,11 +629,59 @@ public static class FirmwareSmokeAssessment
         left.PerformancePresets.SequenceEqual(right.PerformancePresets)
         && left.FanModes.SequenceEqual(right.FanModes)
         && left.LightingEffects.SequenceEqual(right.LightingEffects)
+        && left.ObservedLightingEffects.SequenceEqual(right.ObservedLightingEffects)
+        && string.Equals(
+            left.SpecialKeyBindingsAccess,
+            right.SpecialKeyBindingsAccess,
+            StringComparison.Ordinal)
+        && string.Equals(
+            left.WritableSpecialKeySlots,
+            right.WritableSpecialKeySlots,
+            StringComparison.Ordinal)
+        && string.Equals(
+            left.LampArrayLightingAccess,
+            right.LampArrayLightingAccess,
+            StringComparison.Ordinal)
         && left.ChargeLimits.SequenceEqual(right.ChargeLimits)
         && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
         && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge
         && left.LogoLightingModes.SequenceEqual(right.LogoLightingModes)
-        && left.OneShotLaptopControls.SequenceEqual(right.OneShotLaptopControls);
+        && left.OneShotLaptopControls.SequenceEqual(right.OneShotLaptopControls)
+        && CustomPerformanceEqual(left.CustomPerformance, right.CustomPerformance)
+        && left.CpuPowerLimit == right.CpuPowerLimit
+        && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
+        && left.GpuOverclock == right.GpuOverclock
+        && left.ObservedPowerSourceBehaviors.SequenceEqual(
+            right.ObservedPowerSourceBehaviors);
+
+    private static bool CustomPerformanceEqual(
+        CustomPerformanceCapabilities? left,
+        CustomPerformanceCapabilities? right) =>
+        (left, right) switch
+        {
+            (null, null) => true,
+            ({ } leftValue, { } rightValue) =>
+                leftValue.AllowedCombinations.SetEquals(rightValue.AllowedCombinations),
+            _ => false,
+        };
+
+    private static FirmwareSmokeCapabilityExpectation ExpectedCapabilities(
+        string modelNumber) =>
+        RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber switch
+        {
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber => Rz090581Expectation,
+            RazerBladeModelCatalog.Rz090528ModelNumber => Rz090528Expectation,
+            _ => new(
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                "Unavailable",
+                SpecialKeySlotSet.None.ToString(),
+                "Unavailable"),
+        };
 
     private static string List<T>(IReadOnlyList<T> values) =>
         values.Count == 0 ? "None" : string.Join(", ", values);
@@ -460,4 +689,15 @@ public static class FirmwareSmokeAssessment
     private static string Value<T>(T? value)
         where T : struct =>
         value?.ToString() ?? "Unavailable";
+
+    private sealed record FirmwareSmokeCapabilityExpectation(
+        IReadOnlyList<string> PerformancePresets,
+        IReadOnlyList<string> FanModes,
+        IReadOnlyList<string> LightingEffects,
+        IReadOnlyList<int> ChargeLimits,
+        IReadOnlyList<string> LogoLightingModes,
+        IReadOnlyList<string> OneShotLaptopControls,
+        string SpecialKeyBindingsAccess,
+        string WritableSpecialKeySlots,
+        string LampArrayLightingAccess);
 }
