@@ -227,6 +227,12 @@ target.
 Commits follow Conventional Commits. Version and migration rules are in
 [VERSIONING.md](VERSIONING.md).
 
+## License
+
+OpenBlade is free software licensed under the
+[GNU General Public License version 3 or later](LICENSE)
+(`GPL-3.0-or-later`).
+
 ## Project repositories
 
 - [openblade-docs](https://github.com/OSSBlade/openblade-docs): user

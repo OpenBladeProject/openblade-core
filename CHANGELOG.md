@@ -39,6 +39,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Licensed OpenBlade under the GNU General Public License version 3 or later.
 - Added an uninstall choice to keep saved profiles and settings by default or
   remove them explicitly from the graphical maintenance screen.
 

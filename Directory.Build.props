@@ -12,5 +12,6 @@
     <FileVersion>$(OpenBladeVersion).0</FileVersion>
     <InformationalVersion>$(OpenBladeVersion)</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>true</IncludeSourceRevisionInInformationalVersion>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
   </PropertyGroup>
 </Project>
