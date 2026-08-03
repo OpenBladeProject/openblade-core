@@ -3481,6 +3481,115 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ResumeValidation_UnchangedStateRecordsReadOnlyConfirmation()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        int setters = context.Device.TotalSetterCalls;
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Contains("retained", validation.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Power mode", validation.Detail, StringComparison.Ordinal);
+        Assert.Contains("Fans", validation.Detail, StringComparison.Ordinal);
+        Assert.Contains("Battery", validation.Detail, StringComparison.Ordinal);
+        Assert.Contains("Lighting", validation.Detail, StringComparison.Ordinal);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_ChangedStateNamesSubsystemsWithoutRecoveryWrites()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Maximum,
+            Battery = ConfirmedBattery(75),
+        };
+        int setters = context.Device.TotalSetterCalls;
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Contains("Power mode", validation.Detail, StringComparison.Ordinal);
+        Assert.Contains("Fans", validation.Detail, StringComparison.Ordinal);
+        Assert.Contains("Battery", validation.Detail, StringComparison.Ordinal);
+        Assert.Contains(
+            "no resume recovery writes",
+            validation.Detail,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Equal(
+            [
+                DeviceSubsystem.Performance,
+                DeviceSubsystem.Fans,
+                DeviceSubsystem.Battery,
+            ],
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_TransientReadFailureWaitsForConfirmedObservation()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 1;
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        int setters = context.Device.TotalSetterCalls;
+
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: false,
+            CancellationToken.None);
+
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Contains("retained", validation.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_PowerChangeUsesDestinationProfileWithoutComparison()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Contains("PluggedIn", validation.Detail, StringComparison.Ordinal);
+        Assert.Contains("Battery", validation.Detail, StringComparison.Ordinal);
+        Assert.Contains(
+            "destination-profile transition",
+            validation.Detail,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(PowerSource.Battery, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(
+            PerformancePreset.BatterySaver,
+            context.Runtime.GetStatus().ConfirmedState!.Performance);
+    }
+
+    [Fact]
     public async Task DetectionFailure_PreservesSortedExactAdvisoryNamesWithoutBlockingMessage()
     {
         TestContext context = CreateContext(

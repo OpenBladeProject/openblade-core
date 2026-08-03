@@ -251,6 +251,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool batteryHealthVerificationRetryPending;
     private bool startupProfileReconciliationPending;
     private bool startupProfileReconciliationRequested;
+    private ResumeStateBaseline? pendingResumeStateBaseline;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -2172,7 +2173,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : null;
             bool sourceChanged = powerSource != PowerSource.ExternalUnknown
                 && Automation.PowerSource != powerSource;
-            bool canUseReadOnlyFastPath = !sourceChanged
+            bool canUseReadOnlyFastPath = pendingResumeStateBaseline is null
+                && !sourceChanged
                 && CanUseObservationFastPath(
                     includeLiveReadings,
                     powerSource != PowerSource.ExternalUnknown);
@@ -2181,6 +2183,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 allowRecentObservation: canUseReadOnlyFastPath);
             bool changed = powerSource != PowerSource.ExternalUnknown
                 && Automation.ChangePowerSource(powerSource);
+            if (changed)
+            {
+                RecordResumePowerSourceTransitionCore(powerSource);
+            }
             if (startupProfileReconciliationPending
                 && startupProfileReconciliationRequested
                 && powerSource != PowerSource.ExternalUnknown)
@@ -2266,9 +2272,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             RefreshBatteryHealthAfterPowerSourceChangeCore();
             RefreshControllerPresenceCore(cancellationToken);
-            if (powerSource != PowerSource.ExternalUnknown
-                && Automation.ChangePowerSource(powerSource))
+            bool changed = powerSource != PowerSource.ExternalUnknown
+                && Automation.ChangePowerSource(powerSource);
+            if (changed)
             {
+                RecordResumePowerSourceTransitionCore(powerSource);
                 // The destination profile supersedes any renderer snapshot captured
                 // before the power-source transition.
                 pendingLightingRestore = null;
@@ -2560,6 +2568,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             : null;
         bool preservedLifecycleRestore = preserveLightingIntent
             && pendingLightingRestoreFromLifecycle;
+        if (preserveLightingIntent)
+        {
+            CaptureResumeStateBaselineCore();
+        }
         try
         {
             return await ReleaseDriverModeCoreAsync(reasonLabel, cancellationToken)
@@ -4058,6 +4070,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 await RecoverFaultedLightingRendererCoreAsync(cancellationToken)
                     .ConfigureAwait(false);
             }
+
+            CompletePendingResumeStateValidationCore(
+                powerSource,
+                observation.Confirmed);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -4073,6 +4089,131 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 cancellationToken);
         }
     }
+
+    private void CaptureResumeStateBaselineCore()
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        pendingResumeStateBaseline = current.DeviceVerified
+            && current.ConfirmedState is { } confirmed
+                ? new ResumeStateBaseline(current.ActivePowerSource, confirmed)
+                : null;
+    }
+
+    private void RecordResumePowerSourceTransitionCore(PowerSource powerSource)
+    {
+        if (pendingResumeStateBaseline is not { } baseline)
+        {
+            return;
+        }
+
+        pendingResumeStateBaseline = null;
+        history.RecordResumeValidation(
+            $"Resume changed the power source from {baseline.PowerSource} to {powerSource}; the existing destination-profile transition was used instead of comparing the two power profiles.");
+    }
+
+    private void CompletePendingResumeStateValidationCore(
+        PowerSource powerSource,
+        ConfirmedDeviceState observed)
+    {
+        if (pendingResumeStateBaseline is not { } baseline)
+        {
+            return;
+        }
+
+        if (baseline.PowerSource != powerSource)
+        {
+            RecordResumePowerSourceTransitionCore(powerSource);
+            return;
+        }
+
+        pendingResumeStateBaseline = null;
+        IReadOnlyList<DeviceSubsystem> compared = GetComparableResumeSubsystems(
+            baseline.Confirmed,
+            observed);
+        IReadOnlyList<DeviceSubsystem> changed = GetChangedResumeSubsystems(
+            baseline.Confirmed,
+            observed,
+            compared);
+        if (changed.Count > 0)
+        {
+            history.RecordResumeValidation(
+                $"Resume validation observed changed control state for {FormatSubsystemList(changed)}. The changes remain externally classified; no resume recovery writes were attempted.");
+            return;
+        }
+
+        history.RecordResumeValidation(compared.Count > 0
+            ? $"Resume validation confirmed that comparable pre-suspend control state was retained for {FormatSubsystemList(compared)}. No resume recovery writes were needed."
+            : "Resume validation could not compare control state because no subsystem had confirmed readings in both samples. No resume recovery writes were attempted.");
+    }
+
+    private static IReadOnlyList<DeviceSubsystem> GetComparableResumeSubsystems(
+        ConfirmedDeviceState baseline,
+        ConfirmedDeviceState observed)
+    {
+        var compared = new List<DeviceSubsystem>(4);
+        if (baseline.Performance is not null && observed.Performance is not null)
+        {
+            compared.Add(DeviceSubsystem.Performance);
+        }
+        if (baseline.Fans is not null && observed.Fans is not null)
+        {
+            compared.Add(DeviceSubsystem.Fans);
+        }
+        if (baseline.Battery is not null && observed.Battery is not null)
+        {
+            compared.Add(DeviceSubsystem.Battery);
+        }
+        if (baseline.Lighting is not null && observed.Lighting is not null)
+        {
+            compared.Add(DeviceSubsystem.Lighting);
+        }
+        return compared;
+    }
+
+    private static IReadOnlyList<DeviceSubsystem> GetChangedResumeSubsystems(
+        ConfirmedDeviceState baseline,
+        ConfirmedDeviceState observed,
+        IReadOnlyList<DeviceSubsystem> compared)
+    {
+        var changed = new List<DeviceSubsystem>(4);
+        foreach (DeviceSubsystem subsystem in compared)
+        {
+            bool matches = subsystem switch
+            {
+                DeviceSubsystem.Performance =>
+                    baseline.Performance == observed.Performance
+                    && CompareWhenBothKnown(
+                        baseline.CustomPerformance,
+                        observed.CustomPerformance)
+                    && CompareWhenBothKnown(
+                        baseline.GpuClockOffsets,
+                        observed.GpuClockOffsets),
+                DeviceSubsystem.Fans => baseline.Fans == observed.Fans,
+                DeviceSubsystem.Battery => baseline.Battery == observed.Battery,
+                DeviceSubsystem.Lighting =>
+                    baseline.Lighting == observed.Lighting
+                    && CompareWhenBothKnown(
+                        baseline.LogoLighting,
+                        observed.LogoLighting),
+                _ => true,
+            };
+            if (!matches)
+            {
+                changed.Add(subsystem);
+            }
+        }
+        return changed;
+    }
+
+    private static bool CompareWhenBothKnown<T>(T? baseline, T? observed)
+        where T : class => baseline is null
+            || observed is null
+            || EqualityComparer<T>.Default.Equals(baseline, observed);
+
+    private static bool CompareWhenBothKnown<T>(T? baseline, T? observed)
+        where T : struct => baseline is null
+            || observed is null
+            || EqualityComparer<T>.Default.Equals(baseline.Value, observed.Value);
 
     private void PublishUnavailableDeviceObservation(
         PowerSource powerSource,
@@ -5508,6 +5649,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool? StartupAnimation,
         FunctionKeyPrimaryMode? FunctionKeyPrimary,
         bool? GamingMode);
+
+    private sealed record ResumeStateBaseline(
+        PowerSource PowerSource,
+        ConfirmedDeviceState Confirmed);
 
     private sealed record FullDeviceObservation(
         DeviceCapabilities Capabilities,
