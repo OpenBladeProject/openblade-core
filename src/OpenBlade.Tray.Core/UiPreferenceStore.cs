@@ -36,7 +36,10 @@ public sealed record UiPreferences(
     DateTimeOffset? UpdateCheckRetryAfter = null,
     string? UpdateCheckEntityTag = null,
     string? LastKnownReleaseTag = null,
-    string? LastKnownReleaseUrl = null)
+    string? LastKnownReleaseUrl = null,
+    UpdateCheckInterval FirmwareUpdateCheckInterval = UpdateCheckInterval.ManualOnly,
+    DateTimeOffset? LastSuccessfulFirmwareUpdateCheckAt = null,
+    DateTimeOffset? FirmwareUpdateCheckRetryAfter = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -59,7 +62,10 @@ public sealed record UiPreferences(
         UpdateCheckRetryAfter: null,
         UpdateCheckEntityTag: null,
         LastKnownReleaseTag: null,
-        LastKnownReleaseUrl: null);
+        LastKnownReleaseUrl: null,
+        FirmwareUpdateCheckInterval: UpdateCheckInterval.ManualOnly,
+        LastSuccessfulFirmwareUpdateCheckAt: null,
+        FirmwareUpdateCheckRetryAfter: null);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled
@@ -108,6 +114,11 @@ public sealed record UiPreferences(
         Enum.IsDefined(UpdateChannel)
             ? UpdateChannel
             : UpdateChannel.Stable;
+
+    public UpdateCheckInterval EffectiveFirmwareUpdateCheckInterval =>
+        Enum.IsDefined(FirmwareUpdateCheckInterval)
+            ? FirmwareUpdateCheckInterval
+            : UpdateCheckInterval.ManualOnly;
 }
 
 public sealed class UiPreferenceStore

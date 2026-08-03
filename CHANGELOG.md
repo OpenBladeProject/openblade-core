@@ -41,6 +41,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a read-only firmware assistant for admitted Blade models that shows
+  installed BIOS, EC, and MCU values beside versions published on the model's
+  official Razer support page without downloading or running firmware tools,
+  with a separate user-configurable check interval.
 - Licensed OpenBlade under the GNU General Public License version 3 or later.
 - Added an uninstall choice to keep saved profiles and settings by default or
   remove them explicitly from the graphical maintenance screen.

@@ -9,6 +9,28 @@ namespace OpenBlade.Tray.Tests;
 public sealed class CapabilityPresentationTests
 {
     [Fact]
+    public void MainWindow_FirmwareAssistantIsReadOnlyAndModelScoped()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement card = NamedElement(document, "Border", "OfficialFirmwareUpdatesCard");
+        string presentation = card.ToString();
+
+        Assert.Equal(
+            "{x:Bind FirmwareUpdateViewModel.IsSupported, Mode=OneWay}",
+            Attribute(card, "Visibility"));
+        Assert.Contains("FirmwareUpdateViewModel.CheckCommand", presentation);
+        Assert.Contains("FirmwareUpdateViewModel.OfficialSupportUri", presentation);
+        Assert.Contains("FirmwareUpdateViewModel.IntervalOptions", presentation);
+        Assert.Contains("FirmwareUpdateViewModel.SelectedIntervalOption", presentation);
+        Assert.Contains("does not decide update eligibility", presentation);
+        Assert.DoesNotContain(card.Descendants(), element =>
+            element.Name.LocalName == "Button"
+            && Attribute(element, "Content") is string content
+            && (content.Contains("Download", StringComparison.OrdinalIgnoreCase)
+                || content.Contains("Install", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [Fact]
     public void MainWindow_SettingsRowsConfigureTheSharedPointerOverHighlight()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());

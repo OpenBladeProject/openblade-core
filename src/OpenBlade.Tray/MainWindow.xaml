@@ -3343,6 +3343,95 @@
                             </StackPanel>
                         </Border>
 
+                        <Border x:Name="OfficialFirmwareUpdatesCard"
+                                Style="{StaticResource CardStyle}"
+                                Margin="0,18,0,0"
+                                Padding="18"
+                                Visibility="{x:Bind FirmwareUpdateViewModel.IsSupported, Mode=OneWay}"
+                                AutomationProperties.Name="Official Razer firmware update assistant">
+                            <StackPanel Spacing="12">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Official firmware"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Read-only check of Razer's model-specific support page"
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Content="Check Razer"
+                                            Command="{x:Bind FirmwareUpdateViewModel.CheckCommand}"
+                                            AutomationProperties.Name="Check official Razer firmware versions" />
+                                </Grid>
+
+                                <ProgressRing Width="18"
+                                              Height="18"
+                                              HorizontalAlignment="Left"
+                                              IsActive="{x:Bind FirmwareUpdateViewModel.IsChecking, Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind FirmwareUpdateViewModel.StatusText, Mode=OneWay}"
+                                           Style="{StaticResource SecondaryTextStyle}"
+                                           TextWrapping="Wrap" />
+
+                                <Grid ColumnSpacing="18">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Check interval"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="OpenBlade checks Razer at startup when this interval is due."
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <ComboBox Grid.Column="1"
+                                              MinWidth="160"
+                                              Style="{StaticResource SettingsPickerStyle}"
+                                              AutomationProperties.Name="Firmware update check interval"
+                                              ItemsSource="{x:Bind FirmwareUpdateViewModel.IntervalOptions, Mode=OneWay}"
+                                              DisplayMemberPath="Label"
+                                              SelectedItem="{x:Bind FirmwareUpdateViewModel.SelectedIntervalOption, Mode=TwoWay}"
+                                              local:StableComboBoxSelection.Anchor="{x:Bind FirmwareUpdateViewModel.SelectedIntervalOption, Mode=OneWay}" />
+                                </Grid>
+
+                                <Grid ColumnSpacing="18" RowSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="2*" />
+                                        <ColumnDefinition Width="2*" />
+                                        <ColumnDefinition Width="2*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Column="1" Text="Installed" Style="{StaticResource SecondaryTextStyle}" />
+                                    <TextBlock Grid.Column="2" Text="Published updater" Style="{StaticResource SecondaryTextStyle}" />
+                                    <TextBlock Grid.Row="1" Text="BIOS" Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind FirmwareUpdateViewModel.InstalledBiosVersion, Mode=OneWay}" />
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{x:Bind FirmwareUpdateViewModel.PublishedBiosVersion, Mode=OneWay}" />
+                                    <TextBlock Grid.Row="2" Text="EC" Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind FirmwareUpdateViewModel.InstalledEcVersion, Mode=OneWay}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="{x:Bind FirmwareUpdateViewModel.PublishedEcVersion, Mode=OneWay}" />
+                                    <TextBlock Grid.Row="3" Text="MCU" Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{x:Bind FirmwareUpdateViewModel.InstalledMcuVersion, Mode=OneWay}" />
+                                    <TextBlock Grid.Row="3" Grid.Column="2" Text="{x:Bind FirmwareUpdateViewModel.PublishedMcuVersion, Mode=OneWay}" />
+                                </Grid>
+
+                                <TextBlock Text="Updater labels can use different formatting from the installed firmware. OpenBlade does not decide update eligibility, download an updater, or run one."
+                                           Style="{StaticResource SecondaryTextStyle}"
+                                           TextWrapping="Wrap" />
+                                <HyperlinkButton Content="Open official Razer page"
+                                                 Padding="0"
+                                                 NavigateUri="{x:Bind FirmwareUpdateViewModel.OfficialSupportUri, Mode=OneWay}"
+                                                 AutomationProperties.Name="Open official Razer firmware support page" />
+                            </StackPanel>
+                        </Border>
+
                         <Border x:Name="AboutTestedPlatformWarning"
                                 Style="{StaticResource CardStyle}"
                                 Margin="0,18,0,0"
