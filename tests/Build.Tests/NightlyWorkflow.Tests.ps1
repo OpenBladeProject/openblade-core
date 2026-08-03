@@ -52,8 +52,9 @@ Assert-True ($nightly.Contains('group: openblade-nightly')) `
     'Nightly builds must use a dedicated concurrency group.'
 Assert-True ($nightly.Contains('channel: Nightly')) `
     'The nightly caller must request the nightly identity.'
-Assert-True ($nightly.Contains('build-revision: ${{ github.run_number }}')) `
-    'The nightly revision must use the dedicated workflow run number.'
+Assert-True ($nightly.Contains(
+        'build-revision: ${{ fromJSON(github.run_number) }}')) `
+    'The nightly revision must convert the dedicated workflow run number to a number.'
 Assert-True ($nightly.Contains('needs: build-and-publish')) `
     'Nightly attestation must wait for the reusable build job.'
 Assert-True ($nightly.Contains('uses: actions/download-artifact@v4')) `

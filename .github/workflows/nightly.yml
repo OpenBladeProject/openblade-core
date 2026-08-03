@@ -17,7 +17,7 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       channel: Nightly
-      build-revision: ${{ github.run_number }}
+      build-revision: ${{ fromJSON(github.run_number) }}
     permissions:
       contents: read
 
