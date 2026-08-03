@@ -155,7 +155,7 @@ function Assert-OpenBladeInstallerBundle {
             InstallArguments = 'install --bundle-managed'
             RepairArguments = 'install --bundle-managed'
             UninstallArguments = 'uninstall --bundle-managed'
-            DetectCondition = "OpenBladeInstalledVersion AND OpenBladeInstalledVersion > v$ExpectedVersion"
+            DetectCondition = "OpenBladeInstalledVersion AND OpenBladeInstalledVersion >= v$ExpectedVersion"
             Scope = 'perMachine'
             Cache = 'keep'
             Vital = 'yes'

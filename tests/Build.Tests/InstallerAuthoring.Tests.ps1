@@ -98,7 +98,7 @@ $expectedPackageAttributes = [ordered]@{
     InstallArguments = 'install --bundle-managed'
     RepairArguments = 'install --bundle-managed'
     UninstallArguments = 'uninstall --bundle-managed'
-    DetectCondition = 'OpenBladeInstalledVersion AND OpenBladeInstalledVersion > v$(OpenBladeVersion)'
+    DetectCondition = 'OpenBladeInstalledVersion AND OpenBladeInstalledVersion >= v$(OpenBladeVersion)'
     PerMachine = 'yes'
     Cache = 'keep'
     Vital = 'yes'
@@ -107,6 +107,8 @@ foreach ($entry in $expectedPackageAttributes.GetEnumerator()) {
     Assert-True ($package.GetAttribute($entry.Key) -eq $entry.Value) `
         "The executable package attribute $($entry.Key) changed unexpectedly."
 }
+Assert-True ($package.GetAttribute('DetectCondition').Contains('>=')) `
+    'The executable package must detect the same installed version so Burn runs its uninstall command.'
 
 $payloads = $package.SelectSingleNode("*[local-name()='Payloads']")
 Assert-True ($null -ne $payloads) 'The OpenBlade payload group is missing.'

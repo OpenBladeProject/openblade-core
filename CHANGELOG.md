@@ -16,6 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed the graphical uninstaller so it detects a same-version OpenBlade
+  payload and runs the product uninstall before removing its own registration.
 - Fixed tray-hover telemetry from waking hidden WinUI presentation work after
   the tooltip was refreshed. Unchanged service metadata now updates only the
   tray label until the dashboard becomes visible again.
