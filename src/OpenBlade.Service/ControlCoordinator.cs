@@ -464,10 +464,7 @@ public sealed class ControlCoordinator
         bool stopThermalWrites = false;
         string? thermalStopReason = null;
         IReadOnlyList<DeviceSubsystem> orderedSubsystems =
-            IsManualFanMode(initial.Fans)
-            && desired.Fans.Value == FanMode.Automatic
-                ? DeviceSubsystemOrder.FansFirst
-                : DeviceSubsystemOrder.Default;
+            DeviceSubsystemOrder.ForTransition(initial, desired);
 
         foreach (DeviceSubsystem subsystem in orderedSubsystems)
         {

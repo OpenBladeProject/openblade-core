@@ -2239,6 +2239,82 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(0, context.Device.LightingSetCalls);
         Assert.Contains("Fans", result.Message, StringComparison.Ordinal);
         Assert.Contains("Power mode", result.Message, StringComparison.Ordinal);
+        Assert.Contains("write rejected", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReapplyChangedSettings_ManualFansSafelyBlockThermalRecovery()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        int[] before = SetterCounts(context.Device);
+        LightingSettings externalLighting = context.Device.ConfirmedState.Lighting! with
+        {
+            Brightness = 30,
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+            Battery = ConfirmedBattery(75),
+            Lighting = externalLighting,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.ReapplyChangedSettingsAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(
+            [DeviceSubsystem.Performance],
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(before[0], context.Device.PerformanceSetCalls);
+        Assert.Equal(before[1], context.Device.FanSetCalls);
+        Assert.Equal(before[2] + 1, context.Device.BatterySetCalls);
+        Assert.Equal(before[3] + 1, context.Device.LightingSetCalls);
+        Assert.Contains(
+            "Power mode cannot be reapplied while manual fan control is active",
+            result.Message,
+            StringComparison.Ordinal);
+        Assert.Contains("Switch fans to Automatic", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReapplyChangedSettings_ExternalUnknownPreservesAvailability()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = context.Device.ConfirmedState.Lighting! with
+            {
+                Brightness = 30,
+            },
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        Assert.True(before.DeviceVerified);
+        Assert.False(before.WritesBlocked);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        int setters = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await context.Runtime.ReapplyChangedSettingsAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        ServiceStatusSnapshot after = context.Runtime.GetStatus();
+        Assert.True(after.DeviceVerified);
+        Assert.False(after.WritesBlocked);
+        Assert.Equal(before.ActivePowerSource, after.ActivePowerSource);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Equal(
+            [DeviceSubsystem.Lighting],
+            after.ExternalChanges);
     }
 
     [Fact]

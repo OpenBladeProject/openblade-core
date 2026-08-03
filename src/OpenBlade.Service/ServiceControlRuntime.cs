@@ -1242,7 +1242,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PublishIfChanged(GetStatus() with
                 {
                     ActivePowerSource = PowerSourceForStatus(powerSource),
-                    WritesBlocked = true,
                     Message = blockedMessage,
                 });
                 return new ControlOperationResult(
@@ -1255,8 +1254,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
 
-            DeviceSubsystem[] targets = [.. driftTracker.ExternalChanges];
-            if (targets.Length == 0)
+            HashSet<DeviceSubsystem> targetSet =
+                [.. driftTracker.ExternalChanges];
+            if (targetSet.Count == 0)
             {
                 const string reconciledMessage =
                     "OpenBlade settings already match the current profile and overrides.";
@@ -1266,27 +1266,41 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     reconciledMessage);
             }
 
-            DesiredDeviceState desired = ResolveHardwareDesired(
-                GetStatus().ConfirmedState ?? UnknownConfirmedState);
-            if (targets.Contains(DeviceSubsystem.Performance)
-                && targets.Contains(DeviceSubsystem.Fans)
-                && desired.Fans.Value == FanMode.Automatic)
-            {
-                targets =
-                [
-                    DeviceSubsystem.Fans,
-                    .. targets.Where(
-                        subsystem => subsystem != DeviceSubsystem.Fans),
-                ];
-            }
+            ConfirmedDeviceState confirmed =
+                GetStatus().ConfirmedState ?? UnknownConfirmedState;
+            DesiredDeviceState desired = ResolveHardwareDesired(confirmed);
+            DeviceSubsystem[] targets =
+            [
+                .. DeviceSubsystemOrder.ForTransition(confirmed, desired)
+                    .Where(targetSet.Contains),
+            ];
+            bool manualFanPerformanceBlocked =
+                targetSet.Contains(DeviceSubsystem.Performance)
+                && DeviceSubsystemOrder.RequiresManualFanPerformanceBridge(
+                    confirmed,
+                    desired);
 
-            var results = new List<ControlOperationResult>(targets.Length);
+            var results = new Dictionary<DeviceSubsystem, ControlOperationResult>(
+                targets.Length);
             foreach (DeviceSubsystem subsystem in targets)
             {
-                results.Add(await ReapplyChangedSubsystemAsync(
+                if (manualFanPerformanceBlocked
+                    && DeviceSubsystemOrder.IsThermal(subsystem))
+                {
+                    // Restoring this pair would require a staged
+                    // Manual -> Automatic -> Performance -> Manual transition.
+                    // That transition remains deferred until it has exact-model
+                    // capture evidence and interactive hardware validation.
+                    results[subsystem] = new ControlOperationResult(
+                        ControlOperationStatus.Blocked,
+                        "Power mode cannot be reapplied while manual fan control is active. Switch fans to Automatic, then reapply.");
+                    continue;
+                }
+
+                results[subsystem] = await ReapplyChangedSubsystemAsync(
                     subsystem,
                     powerSource,
-                    token).ConfigureAwait(false));
+                    token).ConfigureAwait(false);
                 if (GetStatus().WritesBlocked)
                 {
                     break;
@@ -1299,14 +1313,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             var reapplied = targets.Except(remaining).ToArray();
             ControlOperationStatus status = remaining.Length == 0
                 ? ControlOperationStatus.Applied
-                : results.Any(result => result.Status == ControlOperationStatus.Failed)
+                : results.Values.Any(
+                    result => result.Status == ControlOperationStatus.Failed)
                     ? ControlOperationStatus.Failed
                     : ControlOperationStatus.Blocked;
+            string remainingReasons = FormatRemainingReasons(remaining, results);
             string message = remaining.Length == 0
                 ? $"OpenBlade reapplied {FormatSubsystemList(reapplied)} from the current settings."
                 : reapplied.Length == 0
-                    ? $"OpenBlade could not reapply the changed settings. Still changed: {FormatSubsystemList(remaining)}."
-                    : $"OpenBlade reapplied {FormatSubsystemList(reapplied)}. Still changed: {FormatSubsystemList(remaining)}.";
+                    ? $"OpenBlade could not reapply the changed settings. Still changed: {FormatSubsystemList(remaining)}.{remainingReasons}"
+                    : $"OpenBlade reapplied {FormatSubsystemList(reapplied)}. Still changed: {FormatSubsystemList(remaining)}.{remainingReasons}";
             history.RecordSummary(status, message);
             PublishIfChanged(GetStatus() with
             {
@@ -1375,6 +1391,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 DeviceSubsystem.Lighting => "Lighting",
                 _ => throw new ArgumentOutOfRangeException(nameof(subsystem)),
             }));
+
+    private static string FormatRemainingReasons(
+        IEnumerable<DeviceSubsystem> remaining,
+        IReadOnlyDictionary<DeviceSubsystem, ControlOperationResult> results)
+    {
+        string[] reasons = remaining
+            .Select(subsystem => results.GetValueOrDefault(subsystem)?.Message)
+            .OfType<string>()
+            .Where(message => !string.IsNullOrWhiteSpace(message))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return reasons.Length == 0
+            ? string.Empty
+            : $" {string.Join(" ", reasons)}";
+    }
 
     public async Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
         bool enabled,

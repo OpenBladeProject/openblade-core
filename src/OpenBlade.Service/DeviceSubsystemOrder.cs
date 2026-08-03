@@ -19,4 +19,24 @@ internal static class DeviceSubsystemOrder
         DeviceSubsystem.Battery,
         DeviceSubsystem.Lighting,
     ];
+
+    public static IReadOnlyList<DeviceSubsystem> ForTransition(
+        ConfirmedDeviceState initial,
+        DesiredDeviceState desired) =>
+        IsManualFanMode(initial.Fans)
+            && desired.Fans.Value == FanMode.Automatic
+                ? FansFirst
+                : Default;
+
+    public static bool RequiresManualFanPerformanceBridge(
+        ConfirmedDeviceState initial,
+        DesiredDeviceState desired) =>
+        IsManualFanMode(initial.Fans)
+        && IsManualFanMode(desired.Fans.Value);
+
+    public static bool IsThermal(DeviceSubsystem subsystem) => subsystem is
+        DeviceSubsystem.Performance or DeviceSubsystem.Fans;
+
+    private static bool IsManualFanMode(FanMode? mode) => mode is
+        FanMode.Maximum or FanMode.Fixed or FanMode.ManualCurve;
 }
