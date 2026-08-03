@@ -41,13 +41,6 @@ public sealed class ControlCoordinator
         this.device = device ?? throw new ArgumentNullException(nameof(device));
     }
 
-    // Kept for source compatibility with existing Service tests and callers. Controller
-    // presence is advisory and the guard is intentionally never consulted.
-    public ControlCoordinator(IBladeDevice device, IHardwareAccessGuard _)
-        : this(device)
-    {
-    }
-
     public async Task<SubsystemApplyResults> ApplyDesiredStateAsync(
         DesiredDeviceState desired,
         CancellationToken cancellationToken) =>
@@ -65,11 +58,6 @@ public sealed class ControlCoordinator
         FanMode value,
         CancellationToken cancellationToken) =>
         (await ApplyFanOutcomeAsync(value, cancellationToken)).Result;
-
-    public async Task<ControlResult> ApplyBatteryAsync(
-        BatteryPolicy value,
-        CancellationToken cancellationToken) =>
-        (await ApplyChargeLimitOutcomeAsync(value, cancellationToken)).Result;
 
     public async Task<ControlResult> ApplyChargeLimitAsync(
         BatteryPolicy value,
