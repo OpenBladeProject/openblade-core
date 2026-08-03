@@ -2459,6 +2459,7 @@
                                                                   DisplayMemberPath="Label"
                                                                   SelectedItem="{x:Bind SelectedAction, Mode=OneWay}"
                                                                   local:StableComboBoxSelection.Anchor="{x:Bind SelectedAction, Mode=OneWay}"
+                                                                  Tag="{x:Bind Slot}"
                                                                   SelectionChanged="OnSpecialKeyActionSelectionChanged"
                                                                   AutomationProperties.Name="{x:Bind SlotLabel}" />
                                                     </Grid>

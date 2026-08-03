@@ -1358,6 +1358,10 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
+            "Tag=\"{x:Bind Slot}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "SelectionChanged=\"OnSpecialKeyActionSelectionChanged\"",
             xaml,
             StringComparison.Ordinal);
@@ -1382,6 +1386,10 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
+            "comboBox.Tag is not SpecialKeySlot slot",
+            window,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
             "AutomationProperties.GetName(comboBox)",
             window,
             StringComparison.Ordinal);

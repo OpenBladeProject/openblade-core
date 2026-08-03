@@ -1826,10 +1826,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             {
                 SelectedItem: SpecialKeyActionOption selectedAction,
             } comboBox
-            || !Enum.TryParse(
-                AutomationProperties.GetName(comboBox),
-                ignoreCase: true,
-                out SpecialKeySlot slot))
+            || comboBox.Tag is not SpecialKeySlot slot)
         {
             return;
         }
