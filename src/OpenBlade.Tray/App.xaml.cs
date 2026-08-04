@@ -155,12 +155,9 @@ public partial class App : Microsoft.UI.Xaml.Application
             return;
         }
 
-        var trayMenuController = new TrayMenuController(
-            mainWindow.ViewModel,
-            () => Enqueue(ShowMainWindow),
-            () => Enqueue(() => _ = ExitTrayAsync()));
         trayIconHost = new WinFormsTrayIconHost(
-            trayMenuController,
+            () => Enqueue(ShowMainWindow),
+            () => Enqueue(() => _ = RequestTrayExitAsync()),
             mainWindow.ViewModel,
             trayIconThemeSource,
             () => Enqueue(mainWindow.RequestTrayTelemetryRefresh));
@@ -229,6 +226,69 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         return exitLifecycle.ExitAsync();
+    }
+
+    public async Task ShutdownOpenBladeAsync()
+    {
+        MainWindow? window = mainWindow;
+        if (window is null)
+        {
+            return;
+        }
+
+        await window.ViewModel.ShutdownOpenBladeAsync(CancellationToken.None);
+        _ = SessionAgentLauncher.TryStopSibling();
+        await ExitTrayAsync();
+    }
+
+    private async Task RequestTrayExitAsync()
+    {
+        var keepRunning = new TaskDialogButton("Keep background features running");
+        var shutDown = new TaskDialogButton("Shut down completely");
+        var page = new TaskDialogPage
+        {
+            Caption = "OpenBlade",
+            Heading = "Exit OpenBlade?",
+            Text = "Choose whether keyboard lighting, hotkeys, profiles, and automation "
+                + "should keep running in the background.",
+            AllowCancel = true,
+            DefaultButton = TaskDialogButton.Cancel,
+            Buttons =
+            {
+                keepRunning,
+                shutDown,
+                TaskDialogButton.Cancel,
+            },
+        };
+
+        TaskDialogButton result = TaskDialog.ShowDialog(page);
+        if (result == keepRunning)
+        {
+            await ExitTrayAsync();
+            return;
+        }
+
+        if (result != shutDown)
+        {
+            return;
+        }
+
+        try
+        {
+            await ShutdownOpenBladeAsync();
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade shutdown failed: {0}", exception);
+            TaskDialog.ShowDialog(new TaskDialogPage
+            {
+                Caption = "OpenBlade",
+                Heading = "OpenBlade could not shut down",
+                Text = exception.Message,
+                Buttons = { TaskDialogButton.Close },
+                DefaultButton = TaskDialogButton.Close,
+            });
+        }
     }
 
     private void ShowMainWindow() => _ = ShowMainWindowWhenReadyAsync(initialLaunch: false);

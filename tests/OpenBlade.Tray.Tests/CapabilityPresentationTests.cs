@@ -1322,52 +1322,6 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public async Task UnsupportedPerformanceAndFanValuesAreDisabledInSharedTrayMenu()
-    {
-        var client = new PresentationClient();
-        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
-        await viewModel.StartAsync();
-        client.Publish(CreateStatus(
-            verified: true,
-            blocked: false,
-            capabilities: new DeviceCapabilities(
-                new HashSet<PerformancePreset> { PerformancePreset.Balanced },
-                new HashSet<FanMode> { FanMode.Automatic },
-                new HashSet<LightingEffect> { LightingEffect.Off },
-                ChargeLimits(), true, true)));
-        await WaitUntilAsync(() =>
-            viewModel.CanControlHardware && viewModel.AvailableLightingSettings.Count > 0);
-        var controller = new TrayMenuController(viewModel, () => { }, () => { });
-
-        Assert.False(controller.Find("Silent").IsEnabled);
-        Assert.True(controller.Find("Balanced").IsEnabled);
-        Assert.False(controller.Find("Performance").IsEnabled);
-        Assert.True(controller.Find("Automatic").IsEnabled);
-        Assert.False(controller.Find("Maximum").IsEnabled);
-    }
-
-    [Fact]
-    public async Task ControllerAdvisoryDoesNotDisableAdmittedMutationOrOpenAndExit()
-    {
-        var client = new PresentationClient();
-        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
-        await viewModel.StartAsync();
-        client.Publish(CreateStatus(
-            verified: true,
-            blocked: false,
-            conflicts: ["RazerAppEngine"],
-            capabilities: DeviceCapabilities.SafeTargetDefaults()));
-        await WaitUntilAsync(() => viewModel.HasControllerAdvisory);
-        var controller = new TrayMenuController(viewModel, () => { }, () => { });
-
-        Assert.True(controller.Find("Automatic").IsEnabled);
-        Assert.True(controller.Find("Open").IsEnabled);
-        Assert.True(controller.Find("Exit").IsEnabled);
-        Assert.True(viewModel.HasControllerAdvisory);
-        Assert.Contains("RazerAppEngine", viewModel.ControllerAdvisoryText, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task ProfileEditorsBuildAndSaveBothPowerProfiles()
     {
         var client = new PresentationClient();

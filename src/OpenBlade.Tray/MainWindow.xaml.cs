@@ -2296,11 +2296,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
-            await ViewModel.ShutdownOpenBladeAsync(CancellationToken.None);
-            _ = SessionAgentLauncher.TryStopSibling();
             if (Microsoft.UI.Xaml.Application.Current is App app)
             {
-                await app.ExitTrayAsync();
+                await app.ShutdownOpenBladeAsync();
             }
         }
         catch (Exception exception)
