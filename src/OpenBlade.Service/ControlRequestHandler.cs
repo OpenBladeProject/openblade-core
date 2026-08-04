@@ -1,15 +1,18 @@
+using System.Text.Json;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
 
 public sealed class ControlRequestHandler
 {
+    private static readonly ProfileSet InactiveSessionProfiles =
+        ProfileDefaults.CreateSafeDefaults();
     private readonly IServiceControlRuntime runtime;
     private readonly IDiagnosticArchiveProvider diagnosticArchiveProvider;
     private readonly IServiceShutdownSignal shutdownSignal;
     private readonly IInteractiveSessionAuthority sessionAuthority;
 
-    public ControlRequestHandler(
+    internal ControlRequestHandler(
         IServiceControlRuntime runtime,
         IDiagnosticArchiveProvider diagnosticArchiveProvider)
         : this(
@@ -20,7 +23,7 @@ public sealed class ControlRequestHandler
     {
     }
 
-    public ControlRequestHandler(
+    internal ControlRequestHandler(
         IServiceControlRuntime runtime,
         IDiagnosticArchiveProvider diagnosticArchiveProvider,
         IServiceShutdownSignal shutdownSignal)
@@ -47,7 +50,7 @@ public sealed class ControlRequestHandler
             ?? throw new ArgumentNullException(nameof(sessionAuthority));
     }
 
-    public async Task<ServiceResponse> HandleAsync(
+    internal async Task<ServiceResponse> HandleAsync(
         ServiceRequest request,
         CancellationToken cancellationToken)
         => await HandleAsync(
@@ -75,29 +78,49 @@ public sealed class ControlRequestHandler
             return Failure(Guid.Empty, "IPC request ID is missing.");
         }
 
-        string? rejection = ServiceRequestAccessPolicy.GetRejection(
+        ServiceRequestAccessDecision accessDecision = ServiceRequestAccessPolicy.Evaluate(
             request,
             client,
             sessionAuthority);
-        if (rejection is not null)
+        if (accessDecision.Rejection is not null)
         {
-            return Failure(request.RequestId, rejection);
+            return Failure(request.RequestId, accessDecision.Rejection);
         }
 
-        if (client.IsInteractive
-            && ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
-                == SessionControlAccess.Active)
+        if (request is not ShutdownOpenBladeRequest
+            && client.IsInteractive
+            && accessDecision.Access == SessionControlAccess.Active)
         {
-            await runtime.ActivateUserAsync(client.UserSid, cancellationToken);
+            try
+            {
+                await runtime.ActivateUserAsync(
+                    client.UserSid,
+                    () => ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
+                        == SessionControlAccess.Active,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (exception is
+                InvalidDataException or IOException or JsonException or UnauthorizedAccessException)
+            {
+                return Failure(
+                    request.RequestId,
+                    $"The active user's configuration could not be loaded: {exception.Message}");
+            }
         }
 
         return request switch
         {
-            GetStatusRequest or SubscribeStatusRequest => Status(request.RequestId, client),
+            GetStatusRequest or SubscribeStatusRequest => Status(
+                request.RequestId,
+                accessDecision.Access),
             ObserveStateRequest observe => await ObserveStatusAsync(
                 observe.RequestId,
                 observe.EffectiveLiveReadings,
-                client,
+                accessDecision.Access,
                 cancellationToken),
             UpdateProfilesRequest update => Result(
                 request.RequestId,
@@ -202,30 +225,63 @@ public sealed class ControlRequestHandler
     private async Task<ServiceResponse> ObserveStatusAsync(
         Guid requestId,
         LiveReadingSensors requestedLiveReadings,
-        ServiceClientContext client,
+        SessionControlAccess access,
         CancellationToken cancellationToken)
     {
         await runtime.ObserveAsync(requestedLiveReadings, cancellationToken);
-        return Status(requestId, client);
+        return Status(requestId, access);
     }
 
-    private ServiceResponse Status(Guid requestId, ServiceClientContext client) => new(
+    private ServiceResponse Status(Guid requestId, SessionControlAccess access) => new(
         OpenBladeIpc.ProtocolVersion,
         requestId,
         Success: true,
         Error: null,
-        Status: ProjectStatus(runtime.GetStatus(), client),
+        Status: ProjectStatus(runtime.GetStatus(), access),
         Result: null,
         Archive: null);
 
-    public ServiceStatusSnapshot ProjectStatus(
+    internal ServiceStatusSnapshot ProjectStatus(
         ServiceStatusSnapshot snapshot,
         ServiceClientContext client)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        return ProjectStatus(
+            snapshot,
+            ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority));
+    }
+
+    private static ServiceStatusSnapshot ProjectStatus(
+        ServiceStatusSnapshot snapshot,
+        SessionControlAccess access)
+    {
+        if (access == SessionControlAccess.Active)
+        {
+            return snapshot with { ControlAccess = access };
+        }
+
+        var inactiveAutomation = new ProfileAutomationState(
+            InactiveSessionProfiles,
+            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            snapshot.ActivePowerSource);
+        ConfirmedDeviceState confirmed = snapshot.ConfirmedState
+            ?? new ConfirmedDeviceState(null, null, null, null);
         return snapshot with
         {
-            ControlAccess = ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority),
+            Message = access == SessionControlAccess.InactiveSession
+                ? "Another Windows session currently controls OpenBlade hardware."
+                : "OpenBlade accepts requests only from an interactive Windows session.",
+            Profiles = InactiveSessionProfiles,
+            DesiredState = inactiveAutomation.Resolve(confirmed),
+            PerformanceOverride = null,
+            FanOverride = null,
+            FanControlOverride = null,
+            LightingOverride = null,
+            FullChargeOverride = false,
+            AlwaysOverrideExternalLightingChanges = false,
+            KeyboardLightingControlMode = KeyboardLightingControlMode.OpenBlade,
+            PerformanceShortcutPreview = null,
+            ControlAccess = access,
         };
     }
 

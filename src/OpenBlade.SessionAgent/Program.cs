@@ -91,25 +91,6 @@ internal static class Program
 
         await using SessionAgentPipeOwner acquiredOwner = owner!;
         using IDisposable acquiredTraceLogRegistration = traceLogRegistration!;
-        if (!identityRegistrationRelaunch)
-        {
-            try
-            {
-                if (await new PerUserDynamicLightingRegistration()
-                        .EnsureRegisteredAsync(CancellationToken.None))
-                {
-                    await acquiredOwner.DisposeAsync();
-                    return RelaunchAfterIdentityRegistration();
-                }
-            }
-            catch (Exception exception)
-            {
-                Trace.TraceWarning(
-                    "OpenBlade per-user Dynamic Lighting registration failed: {0}",
-                    exception.Message);
-            }
-        }
-
         using (var lifetime = new CancellationTokenSource())
         using (EventWaitHandle shutdownEvent = CreateShutdownEvent())
         using (var controller = new WindowsDisplaySettingsController())
@@ -261,6 +242,10 @@ internal static class Program
                 Task playbackMuteTask = playbackMuteIndicator.RunAsync(lifetime.Token);
                 Task lampArrayObservationTask =
                     lampArrayObservation.RunAsync(lifetime.Token);
+                Task<bool> identityRegistrationTask =
+                    MonitorIdentityRegistrationAsync(
+                        enabled: !identityRegistrationRelaunch,
+                        lifetime.Token);
                 Task completed = await Task.WhenAny(
                     serverTask,
                     statusFeedTask,
@@ -271,7 +256,10 @@ internal static class Program
                     audioMeterTask,
                     lightingIdleTask,
                     playbackMuteTask,
-                    lampArrayObservationTask).ConfigureAwait(false);
+                    lampArrayObservationTask,
+                    identityRegistrationTask).ConfigureAwait(false);
+                bool relaunchForIdentity = completed == identityRegistrationTask
+                    && await identityRegistrationTask.ConfigureAwait(false);
                 Exception? terminalFailure = completed.IsFaulted
                     ? completed.Exception?.GetBaseException()
                     : null;
@@ -292,7 +280,8 @@ internal static class Program
                             audioMeterTask,
                             lightingIdleTask,
                             playbackMuteTask,
-                            lampArrayObservationTask)
+                            lampArrayObservationTask,
+                            identityRegistrationTask)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
@@ -301,6 +290,11 @@ internal static class Program
                 if (terminalFailure is not null)
                 {
                     ExceptionDispatchInfo.Capture(terminalFailure).Throw();
+                }
+                if (relaunchForIdentity)
+                {
+                    await acquiredOwner.DisposeAsync();
+                    return RelaunchAfterIdentityRegistration();
                 }
                 return 0;
             }
@@ -315,6 +309,37 @@ internal static class Program
                 }
             }
         }
+    }
+
+    internal static async Task<bool> MonitorIdentityRegistrationAsync(
+        bool enabled,
+        CancellationToken cancellationToken,
+        PerUserDynamicLightingRegistration? registration = null)
+    {
+        if (enabled)
+        {
+            try
+            {
+                if (await (registration ?? new PerUserDynamicLightingRegistration())
+                        .EnsureRegisteredAsync(cancellationToken))
+                {
+                    return true;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade per-user Dynamic Lighting registration failed: {0}",
+                    exception.Message);
+            }
+        }
+
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        return false;
     }
 
     private static int RelaunchAfterIdentityRegistration()

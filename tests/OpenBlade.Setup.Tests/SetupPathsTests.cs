@@ -5,6 +5,19 @@ namespace OpenBlade.Setup.Tests;
 public sealed class SetupPathsTests
 {
     [Fact]
+    public void Create_CommonStartupWithoutProgramsParentNamesCorrectParameter()
+    {
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => SetupPaths.Create(
+            @"C:\Program Files",
+            @"C:\ProgramData",
+            @"C:\Users\jack\AppData\Local",
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup",
+            @"C:\"));
+
+        Assert.Equal("commonStartupRoot", exception.ParamName);
+    }
+
+    [Fact]
     public void Create_MapsEachArtifactToItsRequiredWindowsKnownFolder()
     {
         SetupPaths paths = SetupPaths.Create(

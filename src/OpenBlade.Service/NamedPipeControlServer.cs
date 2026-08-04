@@ -20,7 +20,7 @@ public sealed class NamedPipeControlServer
     private readonly SemaphoreSlim firstListenerGate = new(1, 1);
     private int firstListenerEstablished;
 
-    public NamedPipeControlServer(
+    internal NamedPipeControlServer(
         string pipeName,
         SecurityIdentifier authorizedUser,
         ControlRequestHandler handler,
@@ -123,7 +123,7 @@ public sealed class NamedPipeControlServer
             pipeSecurity);
     }
 
-    public async Task ServeConnectionAsync(
+    internal async Task ServeConnectionAsync(
         Stream connection,
         CancellationToken cancellationToken)
         => await ServeConnectionAsync(
@@ -218,6 +218,16 @@ public sealed class NamedPipeControlServer
         ServiceClientContext client,
         CancellationToken cancellationToken)
     {
+        ServiceResponse initial = await handler.HandleAsync(
+            request,
+            client,
+            cancellationToken);
+        if (!initial.Success)
+        {
+            await WriteFrameAsync(connection, initial, cancellationToken);
+            return;
+        }
+
         StatusSubscriptionLease lease;
         try
         {
@@ -234,10 +244,6 @@ public sealed class NamedPipeControlServer
 
         await using (lease)
         {
-            ServiceResponse initial = await handler.HandleAsync(
-                request,
-                client,
-                cancellationToken);
             await WriteFrameAsync(connection, initial, cancellationToken);
             long initialRevision = initial.Status?.Revision ?? -1;
 
@@ -298,11 +304,6 @@ public sealed class NamedPipeControlServer
             }
 
             ServiceStatusSnapshot projected = handler.ProjectStatus(snapshot, client);
-            if (projected.ControlAccess != SessionControlAccess.Active)
-            {
-                return;
-            }
-
             await WriteFrameAsync(
                 connection,
                 new ServiceStatusEvent(

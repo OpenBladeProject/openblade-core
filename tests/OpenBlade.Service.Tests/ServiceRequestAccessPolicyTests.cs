@@ -29,13 +29,24 @@ public sealed class ServiceRequestAccessPolicyTests
     }
 
     [Fact]
-    public void BackgroundSession_CannotReadOrMutate()
+    public void BackgroundSession_CanReadButCannotMutate()
     {
         ServiceClientContext client = Client(sessionId: 3);
         var authority = new FixedSessionAuthority(4);
 
-        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+        Assert.Null(ServiceRequestAccessPolicy.GetRejection(
             new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            client,
+            authority));
+        Assert.Null(ServiceRequestAccessPolicy.GetRejection(
+            new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            client,
+            authority));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            new ExportDiagnosticsRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                LiveReadingsEnabled: false),
             client,
             authority));
         Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
@@ -78,6 +89,10 @@ public sealed class ServiceRequestAccessPolicyTests
             ServiceRequestAccessPolicy.GetAccess(
                 client,
                 new FixedSessionAuthority(4)));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            client,
+            new FixedSessionAuthority(4)));
     }
 
     private static ServiceClientContext Client(

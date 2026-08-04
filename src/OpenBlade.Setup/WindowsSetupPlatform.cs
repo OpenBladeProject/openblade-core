@@ -284,17 +284,18 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         return Task.CompletedTask;
     }
 
-    public Task InstallSessionAgentStartupShortcutAsync(CancellationToken cancellationToken)
+    public async Task InstallSessionAgentStartupShortcutAsync(
+        CancellationToken cancellationToken)
     {
         string sessionAgentExecutable = Path.Combine(
             paths.InstallDirectory,
             "OpenBlade.SessionAgent.exe");
-        Task install = shortcutWriter.CreateAsync(
+        await shortcutWriter.CreateAsync(
             new ShortcutRequest(
                 paths.SessionAgentStartupFile,
                 sessionAgentExecutable,
                 paths.InstallDirectory),
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
         if (!string.Equals(
                 paths.LegacySessionAgentStartupFile,
                 paths.SessionAgentStartupFile,
@@ -302,8 +303,6 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         {
             fileOperations.DeleteFile(paths.LegacySessionAgentStartupFile);
         }
-
-        return install;
     }
 
     public Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken)

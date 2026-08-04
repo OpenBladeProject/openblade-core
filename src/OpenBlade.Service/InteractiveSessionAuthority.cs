@@ -10,96 +10,21 @@ public interface IInteractiveSessionAuthority
 
 public sealed class WindowsInteractiveSessionAuthority : IInteractiveSessionAuthority
 {
-    private const int CurrentServerHandle = 0;
-    private const int CurrentVersion = 1;
-    private const int InvalidSessionId = -1;
-
     public int? GetControlSessionId()
     {
         uint consoleSession = WTSGetActiveConsoleSessionId();
-        int[] activeSessions = EnumerateActiveSessions();
-        if (consoleSession != uint.MaxValue
-            && activeSessions.Contains(unchecked((int)consoleSession)))
-        {
-            return unchecked((int)consoleSession);
-        }
-
-        return activeSessions.Length == 0
+        return consoleSession == uint.MaxValue
             ? null
-            : activeSessions.Min();
-    }
-
-    private static int[] EnumerateActiveSessions()
-    {
-        if (!WTSEnumerateSessionsW(
-                (IntPtr)CurrentServerHandle,
-                0,
-                CurrentVersion,
-                out IntPtr buffer,
-                out int count))
-        {
-            return [];
-        }
-
-        try
-        {
-            int size = Marshal.SizeOf<WtsSessionInfo>();
-            List<int> active = [];
-            for (int index = 0; index < count; index++)
-            {
-                IntPtr item = IntPtr.Add(buffer, index * size);
-                WtsSessionInfo info = Marshal.PtrToStructure<WtsSessionInfo>(item);
-                if (info.State == WtsConnectState.Active && info.SessionId != InvalidSessionId)
-                {
-                    active.Add(info.SessionId);
-                }
-            }
-
-            return [.. active.Distinct().Order()];
-        }
-        finally
-        {
-            WTSFreeMemory(buffer);
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct WtsSessionInfo
-    {
-        public int SessionId;
-        public IntPtr WindowStationName;
-        public WtsConnectState State;
-    }
-
-    private enum WtsConnectState
-    {
-        Active,
-        Connected,
-        ConnectQuery,
-        Shadow,
-        Disconnected,
-        Idle,
-        Listen,
-        Reset,
-        Down,
-        Init,
+            : unchecked((int)consoleSession);
     }
 
     [DllImport("kernel32.dll")]
     private static extern uint WTSGetActiveConsoleSessionId();
-
-    [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool WTSEnumerateSessionsW(
-        IntPtr serverHandle,
-        int reserved,
-        int version,
-        out IntPtr sessionInfo,
-        out int count);
-
-    [DllImport("wtsapi32.dll")]
-    private static extern void WTSFreeMemory(IntPtr memory);
 }
+
+internal readonly record struct ServiceRequestAccessDecision(
+    SessionControlAccess Access,
+    string? Rejection);
 
 public static class ServiceRequestAccessPolicy
 {
@@ -129,36 +54,43 @@ public static class ServiceRequestAccessPolicy
         ServiceRequest request,
         ServiceClientContext client,
         IInteractiveSessionAuthority authority)
+        => Evaluate(request, client, authority).Rejection;
+
+    internal static ServiceRequestAccessDecision Evaluate(
+        ServiceRequest request,
+        ServiceClientContext client,
+        IInteractiveSessionAuthority authority)
     {
         ArgumentNullException.ThrowIfNull(request);
-        SessionControlAccess access = GetAccess(client, authority);
         if (request is ShutdownOpenBladeRequest)
         {
-            return client.IsLocalSystem || client.IsAdministrator
-                ? null
-                : "This operation requires an administrator.";
+            return new ServiceRequestAccessDecision(
+                SessionControlAccess.Active,
+                client.IsLocalSystem || client.IsAdministrator
+                    ? null
+                    : "This operation requires an administrator.");
         }
 
+        SessionControlAccess access = GetAccess(client, authority);
         if (request is GetStatusRequest
             or ObserveStateRequest
-            or SubscribeStatusRequest
-            or ExportDiagnosticsRequest)
+            or SubscribeStatusRequest)
         {
-            return access switch
+            return new ServiceRequestAccessDecision(
+                access,
+                access == SessionControlAccess.NotInteractive
+                    ? "OpenBlade accepts requests only from an interactive Windows session."
+                    : null);
+        }
+
+        return new ServiceRequestAccessDecision(
+            access,
+            access switch
             {
                 SessionControlAccess.Active => null,
                 SessionControlAccess.NotInteractive =>
-                    "OpenBlade accepts requests only from an interactive Windows session.",
+                    "OpenBlade accepts control requests only from an interactive Windows session.",
                 _ => "Another Windows session currently controls OpenBlade hardware.",
-            };
-        }
-
-        return access switch
-        {
-            SessionControlAccess.Active => null,
-            SessionControlAccess.NotInteractive =>
-                "OpenBlade accepts control requests only from an interactive Windows session.",
-            _ => "Another Windows session currently controls OpenBlade hardware.",
-        };
+            });
     }
 }

@@ -28,7 +28,7 @@ public sealed record SetupPaths
         string programsRoot = Path.GetDirectoryName(commonStartupRoot)
             ?? throw new ArgumentException(
                 "The Startup folder must have a Start menu Programs parent.",
-                nameof(startupRoot));
+                nameof(commonStartupRoot));
         StartMenuFile = Path.Combine(programsRoot, "OpenBlade.lnk");
         UninstallStartMenuFile = Path.Combine(programsRoot, "Uninstall OpenBlade.lnk");
     }

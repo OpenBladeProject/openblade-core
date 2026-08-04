@@ -3913,7 +3913,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool checkingLaptopConnection)
     {
         IsConnected = true;
-        bool controllable = status.DeviceVerified
+        bool controllable = status.ControlAccess == SessionControlAccess.Active
+            && status.DeviceVerified
             && !status.WritesBlocked
             && !checkingLaptopConnection;
         IsReadOnly = !controllable;

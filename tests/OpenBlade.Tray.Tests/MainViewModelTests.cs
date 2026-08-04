@@ -5106,6 +5106,38 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task InactiveSessionStatusStaysConnectedAndRestoresControl()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 10,
+            ControlAccess = SessionControlAccess.InactiveSession,
+        };
+
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Another user is controlling OpenBlade");
+
+        Assert.True(viewModel.IsConnected);
+        Assert.False(viewModel.CanControlHardware);
+
+        client.Publish(status with
+        {
+            Revision = 11,
+            ControlAccess = SessionControlAccess.Active,
+            Message = "Ready",
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Ready"
+            && viewModel.CanControlHardware);
+
+        Assert.True(viewModel.IsConnected);
+    }
+
+    [Fact]
     public async Task ReconnectingUpdate_RetainsLastSnapshotAndCommandsDuringGrace()
     {
         var client = new FakeServiceClient();

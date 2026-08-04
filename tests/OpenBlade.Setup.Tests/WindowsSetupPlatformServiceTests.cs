@@ -322,6 +322,25 @@ public sealed class WindowsSetupPlatformServiceTests
     }
 
     [Fact]
+    public async Task InstallSessionAgentStartupShortcut_CreateFailureKeepsLegacyLink()
+    {
+        var files = new RecordingFileOperations();
+        var shortcutWriter = new RecordingShortcutWriter
+        {
+            Failure = new IOException("create failed"),
+        };
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            new RecordingServiceControl(),
+            shortcutWriter,
+            fileOperations: files);
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            platform.InstallSessionAgentStartupShortcutAsync(CancellationToken.None));
+
+        Assert.Empty(files.DeletedFiles);
+    }
+
+    [Fact]
     public async Task RemoveStartupShortcut_RemovesCurrentAndLegacyStartupEntries()
     {
         RecordingFileOperations files = new();
@@ -676,10 +695,14 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         public List<ShortcutRequest> Requests { get; } = [];
 
+        public Exception? Failure { get; init; }
+
         public Task CreateAsync(ShortcutRequest request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
-            return Task.CompletedTask;
+            return Failure is null
+                ? Task.CompletedTask
+                : Task.FromException(Failure);
         }
     }
 

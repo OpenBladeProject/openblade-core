@@ -79,6 +79,45 @@ public sealed class PerUserDynamicLightingRegistrationTests : IDisposable
             observedExternalLocation);
     }
 
+    [Fact]
+    public async Task RegistrationMonitor_SignalsRelaunchAfterIdentityChanges()
+    {
+        Directory.CreateDirectory(directory);
+        await File.WriteAllBytesAsync(
+            Path.Combine(directory, "OpenBlade.DynamicLighting.msix"),
+            [1]);
+        var registration = new PerUserDynamicLightingRegistration(
+            new FixedIdentitySource(DynamicLightingPackageIdentityState.Unavailable),
+            (_, _, _) => Task.FromResult(true),
+            directory);
+
+        bool relaunch = await Program.MonitorIdentityRegistrationAsync(
+            enabled: true,
+            CancellationToken.None,
+            registration);
+
+        Assert.True(relaunch);
+    }
+
+    [Fact]
+    public async Task RegistrationMonitor_NoChangeWaitsForAgentLifetime()
+    {
+        var registration = new PerUserDynamicLightingRegistration(
+            new FixedIdentitySource(DynamicLightingPackageIdentityState.Exact),
+            (_, _, _) => Task.FromResult(true),
+            directory);
+        using var lifetime = new CancellationTokenSource();
+        Task<bool> monitoring = Program.MonitorIdentityRegistrationAsync(
+            enabled: true,
+            lifetime.Token,
+            registration);
+
+        Assert.False(monitoring.IsCompleted);
+        lifetime.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => monitoring);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))

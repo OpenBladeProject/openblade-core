@@ -15,6 +15,77 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task ActivateUserAsync_SwitchesProfilesAndSameUserIsNoOp()
+    {
+        ProfileSet firstProfiles = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet secondProfiles = firstProfiles with
+        {
+            PluggedIn = firstProfiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Performance,
+            },
+        };
+        var firstSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var secondSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1002");
+        var repository = new RecordingUserConfigurationRepository(new Dictionary<string, ProfileSet>
+        {
+            [firstSid.Value] = firstProfiles,
+            [secondSid.Value] = secondProfiles,
+        }, directory);
+        TestContext context = CreateContext(
+            providerAvailable: false,
+            userConfigurationRepository: repository);
+
+        await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
+        long firstRevision = context.Runtime.GetStatus().Revision;
+        await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
+
+        Assert.Equal(1, repository.Loads[firstSid.Value]);
+        Assert.Equal(firstRevision, context.Runtime.GetStatus().Revision);
+
+        await context.Runtime.ActivateUserAsync(secondSid, CancellationToken.None);
+
+        ServiceStatusSnapshot switched = context.Runtime.GetStatus();
+        Assert.Equal(secondProfiles, switched.Profiles);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            switched.DesiredState.Performance.Value);
+        Assert.Equal(1, repository.Loads[secondSid.Value]);
+    }
+
+    [Fact]
+    public async Task ActivateUserAsync_DoesNotApplyConfigurationAfterSessionChanges()
+    {
+        ProfileSet initialProfiles = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet staleProfiles = initialProfiles with
+        {
+            PluggedIn = initialProfiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Performance,
+            },
+        };
+        var staleSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var repository = new RecordingUserConfigurationRepository(new Dictionary<string, ProfileSet>
+        {
+            [staleSid.Value] = staleProfiles,
+        }, directory);
+        TestContext context = CreateContext(
+            providerAvailable: false,
+            userConfigurationRepository: repository);
+
+        await context.Runtime.ActivateUserAsync(
+            staleSid,
+            static () => false,
+            CancellationToken.None);
+
+        Assert.Equal(initialProfiles, context.Runtime.GetStatus().Profiles);
+        Assert.Equal(1, repository.Loads[staleSid.Value]);
+    }
+
+    [Fact]
     public async Task MaintainDriverMode_PublishesConfirmedStateAndClearsItWhenUnavailable()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -5790,7 +5861,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ProfileSetValidator? profileValidator = null,
         IFanTemperatureSource? fanTemperatureSource = null,
         BatteryHealthStatus? batteryHealth = null,
-        LowPowerGate? lowPowerGate = null)
+        LowPowerGate? lowPowerGate = null,
+        IUserConfigurationRepository? userConfigurationRepository = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -5850,7 +5922,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             firmwareSource,
             transitionRetryDelay ?? (static (delay, token) => Task.Delay(delay, token)),
             profileValidator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults(),
-            fanTemperatureSource ?? new FixedFanTemperatureSource(default));
+            fanTemperatureSource ?? new FixedFanTemperatureSource(default),
+            userConfigurationRepository);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -5924,6 +5997,38 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         if (Directory.Exists(directory))
         {
             Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private sealed class RecordingUserConfigurationRepository(
+        IReadOnlyDictionary<string, ProfileSet> profiles,
+        string root) : IUserConfigurationRepository
+    {
+        public Dictionary<string, int> Loads { get; } =
+            profiles.Keys.ToDictionary(key => key, _ => 0, StringComparer.OrdinalIgnoreCase);
+
+        public Task<UserConfigurationContext> LoadAsync(
+            System.Security.Principal.SecurityIdentifier userSid,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ProfileSet selected = profiles[userSid.Value];
+            Loads[userSid.Value]++;
+            string userRoot = Path.Combine(root, userSid.Value);
+            var store = new BatteryConfigurationStore(
+                Path.Combine(userRoot, "profiles.json"),
+                Path.Combine(userRoot, "battery-preferences.json"),
+                Path.Combine(userRoot, "battery-configuration.commit.json"));
+            var overrides = new PersistentOverrideStore(
+                Path.Combine(userRoot, "manual-overrides.json"));
+            return Task.FromResult(new UserConfigurationContext(
+                store,
+                overrides,
+                new BatteryConfiguration(
+                    selected,
+                    new BatteryAutomationPreferences(ProtectionEnabled: true),
+                    Recovered: false),
+                PersistentOverrideState.Empty));
         }
     }
 

@@ -227,6 +227,110 @@ public sealed class NamedPipeControlServerTests
     }
 
     [Fact]
+    public async Task Subscribe_BackgroundSessionStaysConnectedAndRegainsControl()
+    {
+        var runtime = new StubRuntime(CreateStatus(0));
+        var hub = new StatusSubscriptionHub(runtime.Status, TimeProvider.System);
+        var authority = new MutableSessionAuthority(4);
+        var clientContext = new ServiceClientContext(
+            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
+            SessionId: 3,
+            IsAdministrator: false,
+            ServiceClientLogonKind.Interactive);
+        var server = new NamedPipeControlServer(
+            $"OpenBlade.Tests.{Guid.NewGuid():N}",
+            WindowsIdentity.GetCurrent().User
+                ?? throw new InvalidOperationException("Current user has no SID."),
+            new ControlRequestHandler(
+                runtime,
+                new StubArchiveProvider(),
+                NullServiceShutdownSignal.Instance,
+                authority),
+            hub);
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        (Stream serverConnection, Stream client) = CreateDuplexPair();
+        await using (serverConnection)
+        await using (client)
+        {
+            Task serverTask = server.ServeConnectionAsync(
+                serverConnection,
+                clientContext,
+                timeout.Token);
+            await IpcMessageCodec.WriteRequestAsync(
+                client,
+                new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+                timeout.Token);
+
+            ServiceResponse initial = Assert.IsType<ServiceResponse>(
+                await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+            hub.Publish(CreateStatus(1));
+            ServiceStatusEvent inactive = Assert.IsType<ServiceStatusEvent>(
+                await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+            authority.SessionId = 3;
+            hub.Publish(CreateStatus(2));
+            ServiceStatusEvent active = Assert.IsType<ServiceStatusEvent>(
+                await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+
+            Assert.True(initial.Success);
+            Assert.Equal(SessionControlAccess.InactiveSession, initial.Status!.ControlAccess);
+            Assert.Equal(SessionControlAccess.InactiveSession, inactive.Status.ControlAccess);
+            Assert.Equal(SessionControlAccess.Active, active.Status.ControlAccess);
+            timeout.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => serverTask);
+        }
+    }
+
+    [Fact]
+    public async Task Subscribe_RejectedClientDoesNotAcquireLease()
+    {
+        var runtime = new StubRuntime(CreateStatus(0));
+        var hub = new StatusSubscriptionHub(runtime.Status, TimeProvider.System);
+        var clientContext = new ServiceClientContext(
+            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
+            SessionId: 3,
+            IsAdministrator: false,
+            ServiceClientLogonKind.Other);
+        var server = new NamedPipeControlServer(
+            $"OpenBlade.Tests.{Guid.NewGuid():N}",
+            WindowsIdentity.GetCurrent().User
+                ?? throw new InvalidOperationException("Current user has no SID."),
+            new ControlRequestHandler(
+                runtime,
+                new StubArchiveProvider(),
+                NullServiceShutdownSignal.Instance,
+                new MutableSessionAuthority(3)),
+            hub);
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        (Stream serverConnection, Stream client) = CreateDuplexPair();
+        await using (serverConnection)
+        await using (client)
+        {
+            Task serverTask = server.ServeConnectionAsync(
+                serverConnection,
+                clientContext,
+                timeout.Token);
+            await IpcMessageCodec.WriteRequestAsync(
+                client,
+                new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+                timeout.Token);
+
+            ServiceResponse response = Assert.IsType<ServiceResponse>(
+                await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+            await serverTask.WaitAsync(timeout.Token);
+
+            Assert.False(response.Success);
+            StatusSubscriptionLease[] leases = Enumerable
+                .Range(0, StatusSubscriptionHub.MaximumSubscribers)
+                .Select(_ => hub.Subscribe(CancellationToken.None))
+                .ToArray();
+            foreach (StatusSubscriptionLease lease in leases)
+            {
+                await lease.DisposeAsync();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Subscribe_WhenCapacityIsFull_ReturnsFailureWithoutLeakingSlot()
     {
         TestServer context = CreateServer();
@@ -385,6 +489,25 @@ public sealed class NamedPipeControlServerTests
         return stream.ToArray();
     }
 
+    private static (Stream Server, Stream Client) CreateDuplexPair()
+    {
+        var serverReader = new AnonymousPipeServerStream(
+            PipeDirection.In,
+            HandleInheritability.Inheritable);
+        var clientWriter = new AnonymousPipeClientStream(
+            PipeDirection.Out,
+            serverReader.GetClientHandleAsString());
+        var serverWriter = new AnonymousPipeServerStream(
+            PipeDirection.Out,
+            HandleInheritability.Inheritable);
+        var clientReader = new AnonymousPipeClientStream(
+            PipeDirection.In,
+            serverWriter.GetClientHandleAsString());
+        return (
+            new DuplexStream(serverReader, serverWriter),
+            new DuplexStream(clientReader, clientWriter));
+    }
+
     private static byte[] Frame(byte[] payload)
     {
         byte[] frame = new byte[sizeof(int) + payload.Length];
@@ -443,6 +566,63 @@ public sealed class NamedPipeControlServerTests
             Task.FromResult(new DiagnosticArchive(
                 "OpenBlade-diagnostics.zip",
                 [0x50, 0x4B, 0x03, 0x04]));
+    }
+
+    private sealed class MutableSessionAuthority(int? sessionId)
+        : IInteractiveSessionAuthority
+    {
+        public int? SessionId { get; set; } = sessionId;
+
+        public int? GetControlSessionId() => SessionId;
+    }
+
+    private sealed class DuplexStream(Stream reader, Stream writer) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() => writer.Flush();
+        public override Task FlushAsync(CancellationToken cancellationToken) =>
+            writer.FlushAsync(cancellationToken);
+        public override int Read(byte[] buffer, int offset, int count) =>
+            reader.Read(buffer, offset, count);
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default) =>
+            reader.ReadAsync(buffer, cancellationToken);
+        public override void Write(byte[] buffer, int offset, int count) =>
+            writer.Write(buffer, offset, count);
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default) =>
+            writer.WriteAsync(buffer, cancellationToken);
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                reader.Dispose();
+                writer.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await reader.DisposeAsync();
+            await writer.DisposeAsync();
+            GC.SuppressFinalize(this);
+        }
     }
 
     private sealed class BlockingWriteStream(byte[] input) : Stream

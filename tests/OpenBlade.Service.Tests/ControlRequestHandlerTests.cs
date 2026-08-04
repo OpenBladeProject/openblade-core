@@ -145,7 +145,7 @@ public sealed class ControlRequestHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_RejectsBackgroundSessionWithoutRuntimeDispatch()
+    public async Task HandleAsync_BackgroundSessionReceivesRedactedReadOnlyStatus()
     {
         var runtime = new RecordingRuntime();
         var handler = new ControlRequestHandler(
@@ -164,8 +164,65 @@ public sealed class ControlRequestHandlerTests
             client,
             CancellationToken.None);
 
+        Assert.True(response.Success);
+        Assert.Equal(SessionControlAccess.InactiveSession, response.Status!.ControlAccess);
+        Assert.Equal(ProfileDefaults.CreateSafeDefaults(), response.Status.Profiles);
+        Assert.Null(response.Status.PerformanceOverride);
+        Assert.Null(response.Status.FanOverride);
+        Assert.Null(response.Status.LightingOverride);
+        Assert.Equal(["GetStatus"], runtime.Calls);
+    }
+
+    [Fact]
+    public async Task HandleAsync_ReusesAccessDecisionForAuthorizationAndProjection()
+    {
+        var runtime = new RecordingRuntime();
+        var authority = new CountingSessionAuthority(4);
+        var handler = new ControlRequestHandler(
+            runtime,
+            new ThrowingArchiveProvider(),
+            NullServiceShutdownSignal.Instance,
+            authority);
+        var client = new ServiceClientContext(
+            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
+            SessionId: 4,
+            IsAdministrator: false,
+            ServiceClientLogonKind.Interactive);
+
+        ServiceResponse response = await handler.HandleAsync(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            client,
+            CancellationToken.None);
+
+        Assert.True(response.Success);
+        Assert.Equal(1, authority.Calls);
+    }
+
+    [Fact]
+    public async Task HandleAsync_InvalidActiveUserConfigurationReturnsFailure()
+    {
+        var runtime = new RecordingRuntime
+        {
+            ActivationFailure = new InvalidDataException("Invalid profiles."),
+        };
+        var handler = new ControlRequestHandler(
+            runtime,
+            new ThrowingArchiveProvider(),
+            NullServiceShutdownSignal.Instance,
+            new FixedSessionAuthority(4));
+        var client = new ServiceClientContext(
+            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
+            SessionId: 4,
+            IsAdministrator: false,
+            ServiceClientLogonKind.Interactive);
+
+        ServiceResponse response = await handler.HandleAsync(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            client,
+            CancellationToken.None);
+
         Assert.False(response.Success);
-        Assert.Contains("Another Windows session", response.Error, StringComparison.Ordinal);
+        Assert.Contains("configuration", response.Error, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(runtime.Calls);
     }
 
@@ -268,6 +325,19 @@ public sealed class ControlRequestHandlerTests
         private long revision;
 
         public List<string> Calls { get; } = [];
+
+        public Exception? ActivationFailure { get; init; }
+
+        public Task ActivateUserAsync(
+            SecurityIdentifier userSid,
+            CancellationToken cancellationToken) => ActivationFailure is null
+                ? Task.CompletedTask
+                : Task.FromException(ActivationFailure);
+
+        public Task ActivateUserAsync(
+            SecurityIdentifier userSid,
+            Func<bool> stillControlsSession,
+            CancellationToken cancellationToken) => ActivateUserAsync(userSid, cancellationToken);
 
         public ServiceStatusSnapshot GetStatus()
         {
@@ -412,6 +482,18 @@ public sealed class ControlRequestHandlerTests
         : IInteractiveSessionAuthority
     {
         public int? GetControlSessionId() => sessionId;
+    }
+
+    private sealed class CountingSessionAuthority(int? sessionId)
+        : IInteractiveSessionAuthority
+    {
+        public int Calls { get; private set; }
+
+        public int? GetControlSessionId()
+        {
+            Calls++;
+            return sessionId;
+        }
     }
 
     private sealed class FixedControllerPresenceMonitor(IReadOnlyList<string> controllers)
