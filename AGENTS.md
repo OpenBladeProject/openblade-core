@@ -59,7 +59,8 @@ be copied to the other.
    so a fan failure cannot skip keyboard cleanup. It hands OpenBlade-owned
    manual fan control back to firmware Automatic only after confirmed-state,
    exact-device, and competing-controller safety checks pass, without changing
-   the saved fan intent.
+   the saved fan intent. A first observation or matching desired state does not
+   establish fan ownership; only a successful service fan write does.
    Production lighting admission is owned by the approved embedded oracle and
    the reviewed semantic admission manifest. The manifest compares the actual
    device identity, command contracts, report geometry, layout mask, supported

@@ -118,6 +118,39 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PrepareForShutdown_RestoresManualFansOwnedByPowerTransition()
+    {
+        TestContext context = CreateWritableContext(
+            initialPowerSource: PowerSource.Battery);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Maximum,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        };
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles,
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+        int fanWrites = context.Device.FanSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(fanWrites + 1, context.Device.FanSetCalls);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+    }
+
+    [Fact]
     public async Task PrepareForShutdown_FanReadbackFailureStillReleasesDriverMode()
     {
         TestContext context = CreateWritableContext();
@@ -202,6 +235,52 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(fanWrites + 1, context.Device.FanSetCalls);
         Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
         Assert.Contains("Automatic fan control was confirmed", result.Message);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_DoesNotClaimFirstObservedManualFans()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        int fanWrites = context.Device.FanSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+        Assert.Contains("did not establish ownership", result.Message);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_DoesNotRestoreOwnedFansWhileSynapseIsActive()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["RazerAppEngine"],
+            null);
+        int fanWrites = context.Device.FanSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+        Assert.Equal(0, context.Device.DriverModeReleaseCalls);
+        Assert.Contains("Razer Synapse is active", result.Message);
     }
 
     [Fact]
@@ -5769,12 +5848,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         string? detectionFailure = null,
         Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
             transactionBoundary = null,
-        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null)
+        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null,
+        PowerSource initialPowerSource = PowerSource.PluggedIn)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
             conflicts,
             detectionFailure,
+            initialPowerSource,
             transactionBoundary: transactionBoundary,
             transitionRetryDelay: transitionRetryDelay);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
@@ -5783,11 +5864,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             SupportsBatteryProtectionOff = true,
             SupportsTemporaryFullCharge = true,
         };
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        PowerProfile active = initialPowerSource switch
+        {
+            PowerSource.Battery => defaults.Battery,
+            PowerSource.UsbC => defaults.UsbC,
+            _ => defaults.PluggedIn,
+        };
         context.Device.ConfirmedState = new ConfirmedDeviceState(
-            ProfileDefaults.CreateSafeDefaults().PluggedIn.Performance,
-            ProfileDefaults.CreateSafeDefaults().PluggedIn.Fans,
+            active.Performance,
+            active.Fans,
             ConfirmedBattery(80),
-            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+            active.Lighting);
         return context;
     }
 

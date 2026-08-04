@@ -17,8 +17,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Restored firmware-managed Automatic fan control during a graceful service
-  stop when OpenBlade owns a fixed, maximum, or service-rendered fan curve, while
-  retaining the saved fan intent for the next service start.
+  stop when the current service instance owns a fixed, maximum, or
+  service-rendered fan curve, while retaining the saved fan intent for the next
+  service start and leaving first-observed or Synapse-owned fan state unchanged.
 - Kept manual and automatic update checks nonfatal when the computer is
   offline, with a clear connectivity status and bounded retry delay.
 - Fixed the graphical uninstaller so it detects a same-version OpenBlade
