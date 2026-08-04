@@ -29,6 +29,30 @@ public sealed class NamedPipeControlServerTests
     }
 
     [Fact]
+    public async Task ServeOnceAsync_ReadsRequestBeforeResolvingWindowsClientContext()
+    {
+        string pipeName = $"OpenBlade.Tests.{Guid.NewGuid():N}";
+        var runtime = new StubRuntime(CreateStatus(0));
+        var hub = new StatusSubscriptionHub(runtime.Status, TimeProvider.System);
+        var server = new NamedPipeControlServer(
+            pipeName,
+            new ControlRequestHandler(runtime, new StubArchiveProvider()),
+            hub,
+            new WindowsServiceClientContextResolver());
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task serverTask = server.ServeOnceAsync(timeout.Token);
+        await using NamedPipeClientStream client = await ConnectAsync(pipeName, timeout.Token);
+        var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+
+        await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
+        ServiceResponse response = Assert.IsType<ServiceResponse>(
+            await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+        await serverTask;
+
+        Assert.Equal(request.RequestId, response.RequestId);
+    }
+
+    [Fact]
     public async Task PulseBurst_AcceptsMultipleOrderedRequestsOnOneConnection()
     {
         TestServer context = CreateServer();

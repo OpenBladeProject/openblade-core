@@ -88,8 +88,26 @@ public sealed class NamedPipeControlServer
                 firstListenerGate.Release();
                 ownsFirstListenerGate = false;
             }
+            ServiceRequest request;
+            try
+            {
+                request = await ReadRequestAsync(pipe, cancellationToken);
+            }
+            catch (Exception exception) when (exception is InvalidDataException or JsonException)
+            {
+                await WriteFrameAsync(
+                    pipe,
+                    Failure(Guid.Empty, "IPC request is malformed."),
+                    cancellationToken);
+                return;
+            }
+
+            // Windows permits named-pipe impersonation only after the server has
+            // read client data. Resolve the authenticated client context after
+            // consuming the first complete request, then handle that request
+            // without reading a second frame.
             ServiceClientContext client = clientContextResolver.Resolve(pipe);
-            await ServeConnectionAsync(pipe, client, cancellationToken);
+            await ServeConnectionAsync(pipe, client, request, cancellationToken);
         }
         finally
         {
@@ -135,6 +153,17 @@ public sealed class NamedPipeControlServer
         Stream connection,
         ServiceClientContext client,
         CancellationToken cancellationToken)
+        => await ServeConnectionAsync(
+            connection,
+            client,
+            initialRequest: null,
+            cancellationToken);
+
+    private async Task ServeConnectionAsync(
+        Stream connection,
+        ServiceClientContext client,
+        ServiceRequest? initialRequest,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
         try
@@ -143,20 +172,28 @@ public sealed class NamedPipeControlServer
             while (true)
             {
                 ServiceRequest request;
-                try
+                if (initialRequest is not null)
                 {
-                    request = await ReadRequestAsync(
-                        connection,
-                        cancellationToken,
-                        useDeadline: streamingRequestType is null);
+                    request = initialRequest;
+                    initialRequest = null;
                 }
-                catch (Exception exception) when (exception is InvalidDataException or JsonException)
+                else
                 {
-                    await WriteFrameAsync(
-                        connection,
-                        Failure(Guid.Empty, "IPC request is malformed."),
-                        cancellationToken);
-                    return;
+                    try
+                    {
+                        request = await ReadRequestAsync(
+                            connection,
+                            cancellationToken,
+                            useDeadline: streamingRequestType is null);
+                    }
+                    catch (Exception exception) when (exception is InvalidDataException or JsonException)
+                    {
+                        await WriteFrameAsync(
+                            connection,
+                            Failure(Guid.Empty, "IPC request is malformed."),
+                            cancellationToken);
+                        return;
+                    }
                 }
 
                 if (request is SubscribeStatusRequest)

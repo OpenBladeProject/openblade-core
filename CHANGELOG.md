@@ -16,6 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed multi-user builds failing their installer health check because Windows
+  named-pipe impersonation ran before the service read the client's request.
 - Kept background-user trays connected during Fast User Switching with
   user-specific status fields redacted, restored control without a tray
   restart, authorized subscriptions before consuming a bounded lease, and
