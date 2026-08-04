@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $installerProject = Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj'
 $bundleSource = Join-Path $repository 'build\installer\Bundle.wxs'
+$setupPathsSource = Join-Path $repository 'src\OpenBlade.Setup\SetupPaths.cs'
 
 function Assert-True {
     param(
@@ -76,14 +77,23 @@ Assert-True ($standardBa.GetAttribute('ThemeFile') -eq 'OpenBladeTheme.xml') `
     'The installer must use the custom maintenance theme.'
 Assert-True ([string]::IsNullOrEmpty($standardBa.GetAttribute('LicenseUrl'))) `
     'The free OpenBlade installer must not present a separate license link.'
+
+$setupPaths = Get-Content -LiteralPath $setupPathsSource -Raw
+$installDirectoryMatch = [regex]::Match(
+    $setupPaths,
+    'InstallDirectory\s*=\s*Path\.Combine\(programFilesRoot,\s*"([^"]+)"\);')
+Assert-True $installDirectoryMatch.Success `
+    'SetupPaths.InstallDirectory must combine Program Files with one directory name.'
+$installDirectoryName = $installDirectoryMatch.Groups[1].Value
+$expectedLaunchWorkingFolder = "[ProgramFiles64Folder]$installDirectoryName"
+$expectedLaunchTarget = "$expectedLaunchWorkingFolder\OpenBlade.Tray.exe"
 Assert-True (
-    $standardBa.GetAttribute('LaunchTarget') -eq
-        '[ProgramFiles64Folder]OpenBlade\OpenBlade.Tray.exe') `
-    'Successful interactive setup must offer a normal-user OpenBlade launch.'
+    $standardBa.GetAttribute('LaunchTarget') -eq $expectedLaunchTarget) `
+    'Successful interactive setup must launch the Tray from SetupPaths.InstallDirectory.'
 Assert-True (
     $standardBa.GetAttribute('LaunchWorkingFolder') -eq
-        '[ProgramFiles64Folder]OpenBlade') `
-    'The post-setup launch must use the installed OpenBlade directory.'
+        $expectedLaunchWorkingFolder) `
+    'The post-setup working directory must match SetupPaths.InstallDirectory.'
 
 $purgeVariable = $bundle.SelectSingleNode(
     "*[local-name()='Variable'][@Name='OpenBladePurgeProfiles']")

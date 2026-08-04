@@ -133,13 +133,18 @@ The user-facing installer is written to
 `artifacts\win-x64\OpenBlade-Setup.exe`. Double-click it and choose Install;
 Windows requests administrator approval only when setup is ready to make
 system changes. After a successful install or repair, choose **Launch** to
-start the Tray at normal user integrity; the Tray starts the Session Agent.
+start the Tray; the Tray starts the Session Agent. In the ordinary
+double-click flow, both run in the normal user session. If you explicitly
+start the installer with **Run as administrator**, they inherit that elevated
+context, so close them and start OpenBlade normally instead.
 
 Quiet installs intentionally suppress both installer UI and application
 launch. Automation that invokes `/quiet` must start the installed
 `OpenBlade.Tray.exe` from its original normal-integrity process after setup
 returns successfully, then confirm that both the Tray and Session Agent are
-running.
+running. This caller-controlled recovery does not apply to the Microsoft Store
+EXE channel, where Partner Center owns the quiet invocation; that remaining
+gap is tracked in [issue #25](https://github.com/OSSBlade/openblade-core/issues/25).
 
 The unpacked production bundle remains available at
 `artifacts\win-x64\OpenBlade` for development and recovery. Its command-line
@@ -167,8 +172,11 @@ payload files before WiX embeds them, then signs the detached Burn engine and
 the final installer.
 
 The same offline installer is prepared for a future Microsoft Store EXE
-listing. Store installs use `/install /quiet /norestart`; direct downloads retain the
-graphical UI. See
+listing. Store installs use `/install /quiet /norestart`; direct downloads
+retain the graphical UI. The Store caller cannot perform the explicit
+normal-integrity relaunch described above, so Store lifecycle support remains
+incomplete until [issue #25](https://github.com/OSSBlade/openblade-core/issues/25)
+is resolved. See
 [Microsoft Store submission](docs/microsoft-store-submission.md) for the
 checked-in package contract, certification notes, hardware disclosure, and
 remaining external release steps.

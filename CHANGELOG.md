@@ -16,10 +16,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Added a normal-user Launch action after successful graphical install or
-  repair so an upgrade does not leave the Tray and Session Agent stopped until
-  the next sign-in. Quiet installers remain noninteractive and require their
-  caller to relaunch the installed Tray explicitly.
+- Added a Launch action after successful graphical install or repair so a
+  normally started upgrade does not leave the Tray and Session Agent stopped
+  until the next sign-in. The launched processes inherit the installer's user
+  context. Quiet callers still relaunch the installed Tray explicitly; the
+  Partner Center-owned Store path remains tracked in issue #25.
 - Kept manual and automatic update checks nonfatal when the computer is
   offline, with a clear connectivity status and bounded retry delay.
 - Fixed the graphical uninstaller so it detects a same-version OpenBlade

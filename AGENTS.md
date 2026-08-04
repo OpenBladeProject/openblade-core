@@ -188,12 +188,16 @@ dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
 Use `build/Publish.ps1` and the payload validation tests for release or setup
 changes. Do not install or request UAC when the user is unavailable.
 
-The graphical installer success page launches the installed Tray through
-WiX's normal-user launch action; the Tray starts the Session Agent. Quiet
-installs deliberately suppress that UI and launch. A quiet-install validation
-must relaunch the installed Tray from its original normal-integrity parent and
-must not report success until exactly one Tray and one Session Agent are
-running.
+The graphical installer success page launches the installed Tray from the
+WiX bootstrapper's current user context; the Tray starts the Session Agent.
+The ordinary double-click flow keeps both processes at normal integrity, but
+an explicitly elevated bootstrapper makes them inherit elevation. Interactive
+validation must therefore start the bundle normally, not with **Run as
+administrator**. Quiet installs deliberately suppress that UI and launch. A
+quiet-install validation must relaunch the installed Tray from its original
+normal-integrity parent and must not report success until exactly one Tray and
+one Session Agent are running. This caller-controlled relaunch does not solve
+the Partner Center-owned Store invocation tracked in issue #25.
 
 ## Live tray patching on the installed machine
 
