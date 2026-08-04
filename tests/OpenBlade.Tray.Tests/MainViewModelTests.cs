@@ -2073,10 +2073,19 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task CustomPerformance_ExposesValidPairsAndSendsTypedOverride()
+    public async Task CustomPerformance_StartupPublishesVisibleStateAndSendsTypedOverride()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        int visibleCustomPerformanceNotifications = 0;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.IsCustomPerformanceVisible)
+                && viewModel.IsCustomPerformanceVisible)
+            {
+                Interlocked.Increment(ref visibleCustomPerformanceNotifications);
+            }
+        };
         await viewModel.StartAsync();
         ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false) with
         {
@@ -2100,6 +2109,7 @@ public sealed class MainViewModelTests
         client.Publish(status);
         await WaitUntilAsync(() => viewModel.IsCustomPerformanceVisible);
 
+        Assert.True(Volatile.Read(ref visibleCustomPerformanceNotifications) > 0);
         Assert.DoesNotContain(
             CustomPerformanceLevel.High,
             viewModel.AvailableCustomCpuLevels);

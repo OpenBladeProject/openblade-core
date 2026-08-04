@@ -16,6 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed Custom performance controls not appearing until a mode switch when the
+  tray starts with Custom mode already active.
 - Kept manual and automatic update checks nonfatal when the computer is
   offline, with a clear connectivity status and bounded retry delay.
 - Fixed the graphical uninstaller so it detects a same-version OpenBlade
