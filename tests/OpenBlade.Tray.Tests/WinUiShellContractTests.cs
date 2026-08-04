@@ -1003,7 +1003,17 @@ public sealed class WinUiShellContractTests
         Assert.Contains("AppNotificationManager.Default", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("manager.Register()", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("builder.SetAppLogoOverride(logoUri)", notificationPresenter, StringComparison.Ordinal);
+        Assert.Contains("builder.SetTag(notification.ReplacementTag)", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("\"OpenBlade.png\"", notificationPresenter, StringComparison.Ordinal);
+
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        Assert.Contains(
+            "PerformanceNotificationReplacementTag = \"performance\"",
+            app,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            3,
+            CountOccurrences(app, "PerformanceNotificationReplacementTag"));
 
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         Assert.Contains("OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath", window, StringComparison.Ordinal);

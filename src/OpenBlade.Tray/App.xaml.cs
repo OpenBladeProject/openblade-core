@@ -10,6 +10,8 @@ namespace OpenBlade.Tray;
 
 public partial class App : Microsoft.UI.Xaml.Application
 {
+    private const string PerformanceNotificationReplacementTag = "performance";
+
     private CrashReportWriter? crashReportWriter;
     private IDisposable? traceLogRegistration;
     private EventWaitHandle? shutdownEvent;
@@ -198,7 +200,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             notification = new TrayNotification(
                 "Performance mode could not be changed",
                 "OpenBlade could not apply the selected mode.",
-                TrayNotificationSeverity.Error);
+                TrayNotificationSeverity.Error,
+                ReplacementTag: PerformanceNotificationReplacementTag);
         }
         else
         {
@@ -215,7 +218,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 "Performance mode changed",
                 body,
                 TrayNotificationSeverity.Information,
-                logoAssetRelativePath);
+                logoAssetRelativePath,
+                PerformanceNotificationReplacementTag);
         }
 
         trayIconHost.ShowNotification(notification);
