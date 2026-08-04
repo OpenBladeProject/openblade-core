@@ -120,6 +120,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             new GitHubReleaseUpdateClient(),
             uiVersion);
         UpdateViewModel.PreferencesChanged += OnUpdatePreferencesChanged;
+        FirmwareUpdateViewModel = new FirmwareUpdateAssistantViewModel(
+            new RazerFirmwareUpdateClient());
+        FirmwareUpdateViewModel.PreferencesChanged +=
+            OnFirmwareUpdatePreferencesChanged;
         displaySettingsAdapter = new SessionDisplaySettingsAdapter();
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
@@ -187,6 +191,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public DisplaySettingsViewModel DisplayViewModel { get; }
 
     public UpdateCheckViewModel UpdateViewModel { get; }
+
+    public FirmwareUpdateAssistantViewModel FirmwareUpdateViewModel { get; }
 
     public bool StartMinimized { get; private set; }
 
@@ -317,6 +323,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         UpdateViewModel.PreferencesChanged -= OnUpdatePreferencesChanged;
+        FirmwareUpdateViewModel.PreferencesChanged -=
+            OnFirmwareUpdatePreferencesChanged;
         DashboardCards.CollectionChanged -= OnDashboardCardsCollectionChanged;
         PrimaryNavigationItems.CollectionChanged -= OnPrimaryNavigationItemsCollectionChanged;
         foreach (DashboardCardOption option in DashboardCards)
@@ -364,6 +372,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await DisposeComponentSafelyAsync(
             "update checker",
             UpdateViewModel.DisposeAsync);
+        await DisposeComponentSafelyAsync(
+            "firmware update assistant",
+            FirmwareUpdateViewModel.DisposeAsync);
         await DisposeComponentSafelyAsync(
             "preference save queue",
             preferenceSaveQueue.DisposeAsync);
@@ -421,6 +432,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         string? initialUpdateCheckEntityTag = null;
         string? initialLastKnownReleaseTag = null;
         string? initialLastKnownReleaseUrl = null;
+        UpdateCheckInterval initialFirmwareUpdateCheckInterval =
+            UpdateCheckInterval.ManualOnly;
+        DateTimeOffset? initialLastSuccessfulFirmwareUpdateCheckAt = null;
+        DateTimeOffset? initialFirmwareUpdateCheckRetryAfter = null;
+        string? initialLastKnownFirmwareModelNumber = null;
+        string? initialLastKnownPublishedBiosVersion = null;
+        string? initialLastKnownPublishedEcVersion = null;
+        string? initialLastKnownPublishedMcuVersion = null;
+        RazerPublishedFirmwareVersionStatus? initialLastKnownPublishedBiosStatus = null;
+        RazerPublishedFirmwareVersionStatus? initialLastKnownPublishedEcStatus = null;
+        RazerPublishedFirmwareVersionStatus? initialLastKnownPublishedMcuStatus = null;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -446,6 +468,26 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialUpdateCheckEntityTag = preferences.UpdateCheckEntityTag;
             initialLastKnownReleaseTag = preferences.LastKnownReleaseTag;
             initialLastKnownReleaseUrl = preferences.LastKnownReleaseUrl;
+            initialFirmwareUpdateCheckInterval =
+                preferences.EffectiveFirmwareUpdateCheckInterval;
+            initialLastSuccessfulFirmwareUpdateCheckAt =
+                preferences.LastSuccessfulFirmwareUpdateCheckAt;
+            initialFirmwareUpdateCheckRetryAfter =
+                preferences.FirmwareUpdateCheckRetryAfter;
+            initialLastKnownFirmwareModelNumber =
+                preferences.LastKnownFirmwareModelNumber;
+            initialLastKnownPublishedBiosVersion =
+                preferences.LastKnownPublishedBiosVersion;
+            initialLastKnownPublishedEcVersion =
+                preferences.LastKnownPublishedEcVersion;
+            initialLastKnownPublishedMcuVersion =
+                preferences.LastKnownPublishedMcuVersion;
+            initialLastKnownPublishedBiosStatus =
+                preferences.LastKnownPublishedBiosStatus;
+            initialLastKnownPublishedEcStatus =
+                preferences.LastKnownPublishedEcStatus;
+            initialLastKnownPublishedMcuStatus =
+                preferences.LastKnownPublishedMcuStatus;
         }
         catch (Exception exception)
         {
@@ -483,6 +525,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialUpdateCheckEntityTag,
             initialLastKnownReleaseTag,
             initialLastKnownReleaseUrl);
+        FirmwareUpdateViewModel.ApplyPreferences(
+            initialFirmwareUpdateCheckInterval,
+            initialLastSuccessfulFirmwareUpdateCheckAt,
+            initialFirmwareUpdateCheckRetryAfter,
+            initialLastKnownFirmwareModelNumber,
+            initialLastKnownPublishedBiosVersion,
+            initialLastKnownPublishedEcVersion,
+            initialLastKnownPublishedMcuVersion,
+            initialLastKnownPublishedBiosStatus,
+            initialLastKnownPublishedEcStatus,
+            initialLastKnownPublishedMcuStatus);
         try
         {
             ApplyTheme(ViewModel.Theme);
@@ -523,6 +576,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 exception);
         }
 
+        FirmwareUpdateViewModel.UpdateInstalledFirmware(ViewModel.DetectedFirmware);
+        FirmwareUpdateViewModel.StartAutomaticCheck();
+
         DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
         DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
         DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
@@ -553,6 +609,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (args.PropertyName == nameof(MainViewModel.ActivePowerSource))
         {
             DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.DetectedFirmware))
+        {
+            FirmwareUpdateViewModel.UpdateInstalledFirmware(ViewModel.DetectedFirmware);
+            FirmwareUpdateViewModel.StartAutomaticCheck();
         }
 
         if (args.PropertyName is nameof(MainViewModel.ActivePowerSource)
@@ -731,7 +793,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 UpdateCheckRetryAfter: UpdateViewModel.RetryAfter,
                 UpdateCheckEntityTag: UpdateViewModel.EntityTag,
                 LastKnownReleaseTag: UpdateViewModel.CachedReleaseTag,
-                LastKnownReleaseUrl: UpdateViewModel.CachedReleaseUrl));
+                LastKnownReleaseUrl: UpdateViewModel.CachedReleaseUrl,
+                FirmwareUpdateCheckInterval: FirmwareUpdateViewModel.Interval,
+                LastSuccessfulFirmwareUpdateCheckAt:
+                    FirmwareUpdateViewModel.LastSuccessfulCheckAt,
+                FirmwareUpdateCheckRetryAfter: FirmwareUpdateViewModel.RetryAfter,
+                LastKnownFirmwareModelNumber: FirmwareUpdateViewModel.CachedModelNumber,
+                LastKnownPublishedBiosVersion: FirmwareUpdateViewModel.CachedBiosVersion,
+                LastKnownPublishedEcVersion: FirmwareUpdateViewModel.CachedEcVersion,
+                LastKnownPublishedMcuVersion: FirmwareUpdateViewModel.CachedMcuVersion,
+                LastKnownPublishedBiosStatus: FirmwareUpdateViewModel.CachedBiosStatus,
+                LastKnownPublishedEcStatus: FirmwareUpdateViewModel.CachedEcStatus,
+                LastKnownPublishedMcuStatus: FirmwareUpdateViewModel.CachedMcuStatus));
         }
         catch (ObjectDisposedException)
         {
@@ -892,6 +965,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     }
 
     private void OnUpdatePreferencesChanged(object? sender, EventArgs args) =>
+        QueuePreferenceSave();
+
+    private void OnFirmwareUpdatePreferencesChanged(object? sender, EventArgs args) =>
         QueuePreferenceSave();
 
     private async Task ShowUpdateCheckConsentIfNeededAsync()

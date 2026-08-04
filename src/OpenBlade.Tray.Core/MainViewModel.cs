@@ -1167,6 +1167,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    public FirmwareVersions? DetectedFirmware => latestStatus?.Firmware;
+
     public string TroubleshootingUsbDeviceStatus
     {
         get
@@ -7502,6 +7504,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(TroubleshootingOtherRazerSoftwareStatus));
         Notify(nameof(AboutServiceVersionStatus));
         Notify(nameof(AboutDetectedLaptopStatus));
+        Notify(nameof(DetectedFirmware));
         Notify(nameof(AboutBiosVersionStatus));
         Notify(nameof(AboutEcVersionStatus));
         Notify(nameof(AboutMcuVersionStatus));

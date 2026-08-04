@@ -36,7 +36,17 @@ public sealed record UiPreferences(
     DateTimeOffset? UpdateCheckRetryAfter = null,
     string? UpdateCheckEntityTag = null,
     string? LastKnownReleaseTag = null,
-    string? LastKnownReleaseUrl = null)
+    string? LastKnownReleaseUrl = null,
+    UpdateCheckInterval FirmwareUpdateCheckInterval = UpdateCheckInterval.ManualOnly,
+    DateTimeOffset? LastSuccessfulFirmwareUpdateCheckAt = null,
+    DateTimeOffset? FirmwareUpdateCheckRetryAfter = null,
+    string? LastKnownFirmwareModelNumber = null,
+    string? LastKnownPublishedBiosVersion = null,
+    string? LastKnownPublishedEcVersion = null,
+    string? LastKnownPublishedMcuVersion = null,
+    RazerPublishedFirmwareVersionStatus? LastKnownPublishedBiosStatus = null,
+    RazerPublishedFirmwareVersionStatus? LastKnownPublishedEcStatus = null,
+    RazerPublishedFirmwareVersionStatus? LastKnownPublishedMcuStatus = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -59,7 +69,17 @@ public sealed record UiPreferences(
         UpdateCheckRetryAfter: null,
         UpdateCheckEntityTag: null,
         LastKnownReleaseTag: null,
-        LastKnownReleaseUrl: null);
+        LastKnownReleaseUrl: null,
+        FirmwareUpdateCheckInterval: UpdateCheckInterval.ManualOnly,
+        LastSuccessfulFirmwareUpdateCheckAt: null,
+        FirmwareUpdateCheckRetryAfter: null,
+        LastKnownFirmwareModelNumber: null,
+        LastKnownPublishedBiosVersion: null,
+        LastKnownPublishedEcVersion: null,
+        LastKnownPublishedMcuVersion: null,
+        LastKnownPublishedBiosStatus: null,
+        LastKnownPublishedEcStatus: null,
+        LastKnownPublishedMcuStatus: null);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled
@@ -108,6 +128,11 @@ public sealed record UiPreferences(
         Enum.IsDefined(UpdateChannel)
             ? UpdateChannel
             : UpdateChannel.Stable;
+
+    public UpdateCheckInterval EffectiveFirmwareUpdateCheckInterval =>
+        Enum.IsDefined(FirmwareUpdateCheckInterval)
+            ? FirmwareUpdateCheckInterval
+            : UpdateCheckInterval.ManualOnly;
 }
 
 public sealed class UiPreferenceStore

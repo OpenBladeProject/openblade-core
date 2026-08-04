@@ -60,8 +60,11 @@ Use the following as the starting point for Notes for certification:
 > per-user tray and Session Agent. It does not install a kernel driver, depend
 > on Synapse, or download executable content. The per-user tray can request
 > public release metadata from GitHub at a user-selected interval; Manual only
-> disables automatic checks. The LocalSystem service remains offline, and no
-> hardware state, profiles, or diagnostics are sent with an update check.
+> disables automatic checks. For supported models, the tray can also request
+> published updater versions from `mysupport.razer.com` at a separately selected
+> interval that defaults to Manual only. The LocalSystem service remains offline,
+> and no profiles, diagnostics, or current hardware state are sent with either
+> check; the model-specific Razer support URL identifies the supported model.
 > Unsupported hardware is detected and reported without attempting hardware
 > writes. Hardware and firmware limitations are disclosed in the Store listing
 > and compatibility documentation.
