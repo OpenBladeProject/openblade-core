@@ -101,14 +101,16 @@ public sealed class DiagnosticHistory : ILoggerProvider
             Clamp(summary)));
     }
 
-    public void RecordResumeValidation(string summary)
+    public void RecordResumeValidation(
+        ControlOperationStatus status,
+        string summary)
     {
         ArgumentNullException.ThrowIfNull(summary);
         AddCommandResult(new DiagnosticCommandResult(
             timeProvider.GetUtcNow(),
             "Service",
             "ResumeValidation",
-            ControlOperationStatus.Stored.ToString(),
+            status.ToString(),
             Clamp(summary)));
     }
 

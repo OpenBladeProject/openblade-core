@@ -43,8 +43,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Added read-only resume validation records to diagnostic bundles. OpenBlade
   now compares confirmed pre-suspend and post-resume control state, names any
-  changed subsystems, and performs no recovery writes without exact-device
-  evidence.
+  changed subsystems, and does not add validation-driven recovery writes.
+  Diagnostics separately disclose the existing owned-lighting restoration and
+  whether that lifecycle action applied a control write.
 - Licensed OpenBlade under the GNU General Public License version 3 or later.
 - Added an uninstall choice to keep saved profiles and settings by default or
   remove them explicitly from the graphical maintenance screen.

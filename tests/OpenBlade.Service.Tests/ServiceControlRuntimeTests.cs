@@ -3481,54 +3481,86 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task ResumeValidation_UnchangedStateRecordsReadOnlyConfirmation()
+    public async Task ResumeValidation_LifecyclePathDisclosesLightingRestoreWrite()
     {
         TestContext context = CreateWritableContext();
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
-        int setters = context.Device.TotalSetterCalls;
+        int settersBeforeResume = context.Device.TotalSetterCalls;
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new SequenceLifecycleEventSource(
+                ServiceLifecycleTrigger.Suspending,
+                ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
-        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        await loop.RunAsync(CancellationToken.None);
 
         DiagnosticCommandResult validation = Assert.Single(
             context.History.Snapshot().CommandResults,
             entry => entry.Action == "ResumeValidation");
-        Assert.Contains("retained", validation.Detail, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Power mode", validation.Detail, StringComparison.Ordinal);
-        Assert.Contains("Fans", validation.Detail, StringComparison.Ordinal);
-        Assert.Contains("Battery", validation.Detail, StringComparison.Ordinal);
-        Assert.Contains("Lighting", validation.Detail, StringComparison.Ordinal);
-        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Equal(ControlOperationStatus.Applied.ToString(), validation.Status);
+        Assert.Contains(
+            "retained control state for Power mode, Fans, Battery",
+            validation.Detail,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Lighting was not compared",
+            validation.Detail,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "restoration applied a lighting control write",
+            validation.Detail,
+            StringComparison.Ordinal);
+        Assert.Equal(settersBeforeResume + 1, context.Device.TotalSetterCalls);
+        Assert.Equal(1, context.Device.LightingSetCalls);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
     }
 
     [Fact]
-    public async Task ResumeValidation_ChangedStateNamesSubsystemsWithoutRecoveryWrites()
+    public async Task ResumeValidation_LifecyclePathClassifiesChangedStateWithoutRecoveryWrites()
     {
         TestContext context = CreateWritableContext();
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
-        context.Device.ConfirmedState = context.Device.ConfirmedState with
-        {
-            Performance = PerformancePreset.Performance,
-            Fans = FanMode.Maximum,
-            Battery = ConfirmedBattery(75),
-        };
-        int setters = context.Device.TotalSetterCalls;
+        int settersBeforeResume = context.Device.TotalSetterCalls;
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new InterleavedResumeLifecycleEventSource(() =>
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    Performance = PerformancePreset.Performance,
+                    Fans = FanMode.Maximum,
+                    Battery = ConfirmedBattery(75),
+                    Lighting = LightingSettingsFactory.Off(),
+                };
+            }),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
-        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        await loop.RunAsync(CancellationToken.None);
 
         DiagnosticCommandResult validation = Assert.Single(
             context.History.Snapshot().CommandResults,
             entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Blocked.ToString(), validation.Status);
         Assert.Contains("Power mode", validation.Detail, StringComparison.Ordinal);
         Assert.Contains("Fans", validation.Detail, StringComparison.Ordinal);
         Assert.Contains("Battery", validation.Detail, StringComparison.Ordinal);
         Assert.Contains(
-            "no resume recovery writes",
+            "no validation-driven recovery writes",
             validation.Detail,
             StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Contains(
+            "Lighting was not compared",
+            validation.Detail,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "restoration applied a lighting control write",
+            validation.Detail,
+            StringComparison.Ordinal);
+        Assert.Equal(settersBeforeResume + 1, context.Device.TotalSetterCalls);
+        Assert.Equal(1, context.Device.LightingSetCalls);
         Assert.Equal(
             [
                 DeviceSubsystem.Performance,
@@ -3539,20 +3571,26 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task ResumeValidation_TransientReadFailureWaitsForConfirmedObservation()
+    public async Task ResumeValidation_LifecyclePathWaitsForDeviceToReturn()
     {
         TestContext context = CreateWritableContext();
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
-        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 1;
+        int settersBeforeResume = context.Device.TotalSetterCalls;
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new InterleavedResumeLifecycleEventSource(
+                () => context.Provider.Available = false),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
-        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        await loop.RunAsync(CancellationToken.None);
 
         Assert.DoesNotContain(
             context.History.Snapshot().CommandResults,
             entry => entry.Action == "ResumeValidation");
-        int setters = context.Device.TotalSetterCalls;
+        Assert.Equal(settersBeforeResume, context.Device.TotalSetterCalls);
 
+        context.Provider.Available = true;
         await context.Runtime.ObserveAsync(
             includeLiveReadings: false,
             CancellationToken.None);
@@ -3560,23 +3598,33 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         DiagnosticCommandResult validation = Assert.Single(
             context.History.Snapshot().CommandResults,
             entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Stored.ToString(), validation.Status);
         Assert.Contains("retained", validation.Detail, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Contains(
+            "Lighting was unavailable in at least one sample",
+            validation.Detail,
+            StringComparison.Ordinal);
+        Assert.Equal(settersBeforeResume, context.Device.TotalSetterCalls);
     }
 
     [Fact]
-    public async Task ResumeValidation_PowerChangeUsesDestinationProfileWithoutComparison()
+    public async Task ResumeValidation_LifecyclePowerChangeUsesDestinationProfile()
     {
         TestContext context = CreateWritableContext();
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
-        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new InterleavedResumeLifecycleEventSource(
+                () => context.Telemetry.Current = CreateTelemetry(PowerSource.Battery)),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
 
-        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        await loop.RunAsync(CancellationToken.None);
 
         DiagnosticCommandResult validation = Assert.Single(
             context.History.Snapshot().CommandResults,
             entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Stored.ToString(), validation.Status);
         Assert.Contains("PluggedIn", validation.Detail, StringComparison.Ordinal);
         Assert.Contains("Battery", validation.Detail, StringComparison.Ordinal);
         Assert.Contains(
@@ -3587,6 +3635,37 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             PerformancePreset.BatterySaver,
             context.Runtime.GetStatus().ConfirmedState!.Performance);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_UnresumedBaselineDoesNotLabelLaterPowerChange()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(PowerSource.Battery, context.Runtime.GetStatus().ActivePowerSource);
+    }
+
+    [Fact]
+    public void ResumeValidation_ComparatorAllowlistCoversConfirmedState()
+    {
+        string[] expected = typeof(ConfirmedDeviceState)
+            .GetProperties()
+            .Select(property => property.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        string[] actual = ServiceControlRuntime.ResumeComparedStatePropertyNames
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(expected, actual);
     }
 
     [Fact]
@@ -6154,6 +6233,24 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 cancellationToken.ThrowIfCancellationRequested();
                 yield return trigger;
             }
+        }
+    }
+
+    private sealed class InterleavedResumeLifecycleEventSource(Action betweenTriggers)
+        : IServiceLifecycleEventSource
+    {
+        public async IAsyncEnumerable<ServiceLifecycleTrigger> WatchAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
+            CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return ServiceLifecycleTrigger.Suspending;
+
+            betweenTriggers();
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return ServiceLifecycleTrigger.Resumed;
         }
     }
 
