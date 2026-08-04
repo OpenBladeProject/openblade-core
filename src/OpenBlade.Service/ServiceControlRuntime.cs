@@ -597,6 +597,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             pendingLightingRestoreFromLifecycle = false;
 
             ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
+            if (powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
+            {
+                await ApplyFullTransitionAsync(
+                        powerSource,
+                        cancellationToken,
+                        preserveObservedExternalChanges: false)
+                    .ConfigureAwait(false);
+            }
+
+            current = GetStatus();
+            confirmed = current.ConfirmedState ?? UnknownConfirmedState;
             PublishIfChanged(current with
             {
                 Message = "The active Windows user's profile is loaded.",
@@ -610,12 +621,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 LightingSuppressions = CurrentLightingSuppressions(),
                 PerformanceShortcutPreview = null,
             });
-
-            if (powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
-            {
-                await ApplyFullTransitionAsync(powerSource, cancellationToken)
-                    .ConfigureAwait(false);
-            }
 
             Volatile.Write(ref activeUserSid, userSid.Value);
         }

@@ -31,8 +31,11 @@ public sealed class SetupPathsTests
         Assert.Equal(@"C:\ProgramData\OpenBlade", paths.MachineDataDirectory);
         Assert.Equal(@"C:\Users\jack\AppData\Local\OpenBlade", paths.UserDataDirectory);
         Assert.Equal(
-            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.lnk",
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.lnk",
             paths.StartupFile);
+        Assert.Equal(
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.lnk",
+            paths.LegacyTrayStartupFile);
         Assert.Equal(
             @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.SessionAgent.lnk",
             paths.SessionAgentStartupFile);

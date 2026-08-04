@@ -16,6 +16,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Reapplied the newly active user's keyboard-lighting profile during Fast User
+  Switching instead of misclassifying the prior user's lighting as an external
+  change, including an A-to-B-to-A round trip.
+- Started the visible tray for every signed-in user from the all-users Startup
+  folder while safely migrating the installing user's legacy startup link.
 - Fixed multi-user builds failing their installer health check because Windows
   named-pipe impersonation ran before the service read the client's request.
 - Kept background-user trays connected during Fast User Switching with

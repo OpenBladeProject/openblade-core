@@ -281,13 +281,17 @@ public sealed class WindowsSetupPlatformServiceTests
             Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
             "OpenBlade");
         ShortcutRequest request = Assert.Single(shortcutWriter.Requests);
-        Assert.EndsWith("OpenBlade.lnk", request.ShortcutPath, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup),
+                "OpenBlade.lnk"),
+            request.ShortcutPath);
         Assert.Equal(Path.Combine(installDirectory, "OpenBlade.Tray.exe"), request.TargetPath);
         Assert.Equal(installDirectory, request.WorkingDirectory);
     }
 
     [Fact]
-    public async Task InstallStartupShortcut_RemovesLegacyCommandStartupEntry()
+    public async Task InstallStartupShortcut_RemovesLegacyPerUserEntries()
     {
         RecordingFileOperations files = new();
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
@@ -300,6 +304,32 @@ public sealed class WindowsSetupPlatformServiceTests
         Assert.Contains(
             files.DeletedFiles,
             path => path.EndsWith("OpenBlade.cmd", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            files.DeletedFiles,
+            path => path.Equals(
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+                    "OpenBlade.lnk"),
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task InstallStartupShortcut_CreateFailureKeepsLegacyPerUserEntries()
+    {
+        var files = new RecordingFileOperations();
+        var shortcutWriter = new RecordingShortcutWriter
+        {
+            Failure = new IOException("create failed"),
+        };
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            new RecordingServiceControl(),
+            shortcutWriter,
+            fileOperations: files);
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            platform.InstallStartupShortcutAsync(CancellationToken.None));
+
+        Assert.Empty(files.DeletedFiles);
     }
 
     [Fact]
@@ -351,10 +381,22 @@ public sealed class WindowsSetupPlatformServiceTests
 
         await platform.RemoveStartupShortcutAsync(CancellationToken.None);
 
-        Assert.Collection(
+        Assert.Equal(3, files.DeletedFiles.Count);
+        Assert.Contains(
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup),
+                "OpenBlade.lnk"),
             files.DeletedFiles,
-            path => Assert.EndsWith("OpenBlade.lnk", path, StringComparison.OrdinalIgnoreCase),
-            path => Assert.EndsWith("OpenBlade.cmd", path, StringComparison.OrdinalIgnoreCase));
+            StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+                "OpenBlade.lnk"),
+            files.DeletedFiles,
+            StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(
+            files.DeletedFiles,
+            path => path.EndsWith("OpenBlade.cmd", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

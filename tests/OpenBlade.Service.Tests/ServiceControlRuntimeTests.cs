@@ -86,6 +86,80 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ActivateUserAsync_ReappliesLightingAcrossUserRoundTrip()
+    {
+        LightingSettings firstLighting = LightingSettingsFactory.Static(
+            new RgbColor(255, 0, 0),
+            brightness: 40);
+        LightingSettings secondLighting = LightingSettingsFactory.Static(
+            new RgbColor(0, 0, 255),
+            brightness: 70);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet firstProfiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Lighting = firstLighting },
+            Battery = defaults.Battery with { Lighting = firstLighting },
+            UsbC = defaults.UsbC with { Lighting = firstLighting },
+        };
+        ProfileSet secondProfiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Lighting = secondLighting },
+            Battery = defaults.Battery with { Lighting = secondLighting },
+            UsbC = defaults.UsbC with { Lighting = secondLighting },
+        };
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        var firstSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var secondSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1002");
+        var repository = new RecordingUserConfigurationRepository(new Dictionary<string, ProfileSet>
+        {
+            [firstSid.Value] = firstProfiles,
+            [secondSid.Value] = secondProfiles,
+        }, directory);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities),
+            userConfigurationRepository: repository);
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            null,
+            null,
+            firstLighting);
+        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.Static;
+
+        await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
+        await context.Runtime.ActivateUserAsync(secondSid, CancellationToken.None);
+
+        Assert.Equal(secondLighting, context.Device.ConfirmedState.Lighting);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.Off(),
+        };
+        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.None;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            [DeviceSubsystem.Lighting],
+            context.Runtime.GetStatus().ExternalChanges);
+
+        await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
+
+        Assert.Equal(firstLighting, context.Device.ConfirmedState.Lighting);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(3, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
     public async Task MaintainDriverMode_PublishesConfirmedStateAndClearsItWhenUnavailable()
     {
         TestContext context = CreateContext(providerAvailable: true);

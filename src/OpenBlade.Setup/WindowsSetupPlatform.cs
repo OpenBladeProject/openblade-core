@@ -88,6 +88,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         SetupServiceState? state = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
         bool trayShortcutExisted = fileOperations.FileExists(paths.StartupFile)
+            || fileOperations.FileExists(paths.LegacyTrayStartupFile)
             || fileOperations.FileExists(paths.LegacyStartupFile);
         bool sessionAgentShortcutExisted = fileOperations.FileExists(paths.SessionAgentStartupFile)
             || fileOperations.FileExists(paths.LegacySessionAgentStartupFile);
@@ -273,6 +274,13 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         await shortcutWriter.CreateAsync(
             new ShortcutRequest(paths.StartupFile, trayExecutable, paths.InstallDirectory),
             cancellationToken);
+        if (!string.Equals(
+                paths.LegacyTrayStartupFile,
+                paths.StartupFile,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            fileOperations.DeleteFile(paths.LegacyTrayStartupFile);
+        }
         fileOperations.DeleteFile(paths.LegacyStartupFile);
     }
 
@@ -280,6 +288,13 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         cancellationToken.ThrowIfCancellationRequested();
         fileOperations.DeleteFile(paths.StartupFile);
+        if (!string.Equals(
+                paths.LegacyTrayStartupFile,
+                paths.StartupFile,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            fileOperations.DeleteFile(paths.LegacyTrayStartupFile);
+        }
         fileOperations.DeleteFile(paths.LegacyStartupFile);
         return Task.CompletedTask;
     }
