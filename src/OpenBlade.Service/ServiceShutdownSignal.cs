@@ -5,11 +5,29 @@ public interface IServiceShutdownSignal
     void RequestShutdownAfterResponse();
 }
 
-public sealed class HostServiceShutdownSignal(
-    IHostApplicationLifetime applicationLifetime) : IServiceShutdownSignal
+public sealed class HostServiceShutdownSignal : IServiceShutdownSignal
 {
-    private static readonly TimeSpan ResponseGracePeriod = TimeSpan.FromMilliseconds(500);
+    internal static readonly TimeSpan ResponseGracePeriod = TimeSpan.FromMilliseconds(500);
+
+    private readonly IHostApplicationLifetime applicationLifetime;
+    private readonly Func<TimeSpan, Task> delay;
     private int requested;
+
+    public HostServiceShutdownSignal(IHostApplicationLifetime applicationLifetime)
+        : this(
+            applicationLifetime,
+            static gracePeriod => Task.Delay(gracePeriod))
+    {
+    }
+
+    internal HostServiceShutdownSignal(
+        IHostApplicationLifetime applicationLifetime,
+        Func<TimeSpan, Task> delay)
+    {
+        this.applicationLifetime = applicationLifetime
+            ?? throw new ArgumentNullException(nameof(applicationLifetime));
+        this.delay = delay ?? throw new ArgumentNullException(nameof(delay));
+    }
 
     public void RequestShutdownAfterResponse()
     {
@@ -23,7 +41,7 @@ public sealed class HostServiceShutdownSignal(
 
     private async Task StopAfterResponseAsync()
     {
-        await Task.Delay(ResponseGracePeriod).ConfigureAwait(false);
+        await delay(ResponseGracePeriod).ConfigureAwait(false);
         applicationLifetime.StopApplication();
     }
 }
