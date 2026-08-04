@@ -43,7 +43,10 @@ public sealed record UiPreferences(
     string? LastKnownFirmwareModelNumber = null,
     string? LastKnownPublishedBiosVersion = null,
     string? LastKnownPublishedEcVersion = null,
-    string? LastKnownPublishedMcuVersion = null)
+    string? LastKnownPublishedMcuVersion = null,
+    RazerPublishedFirmwareVersionStatus? LastKnownPublishedBiosStatus = null,
+    RazerPublishedFirmwareVersionStatus? LastKnownPublishedEcStatus = null,
+    RazerPublishedFirmwareVersionStatus? LastKnownPublishedMcuStatus = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -73,7 +76,10 @@ public sealed record UiPreferences(
         LastKnownFirmwareModelNumber: null,
         LastKnownPublishedBiosVersion: null,
         LastKnownPublishedEcVersion: null,
-        LastKnownPublishedMcuVersion: null);
+        LastKnownPublishedMcuVersion: null,
+        LastKnownPublishedBiosStatus: null,
+        LastKnownPublishedEcStatus: null,
+        LastKnownPublishedMcuStatus: null);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled

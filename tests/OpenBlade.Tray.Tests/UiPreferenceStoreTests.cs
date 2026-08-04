@@ -149,7 +149,10 @@ public sealed class UiPreferenceStoreTests : IDisposable
             LastKnownFirmwareModelNumber: "RZ09-0581",
             LastKnownPublishedBiosVersion: "3.01",
             LastKnownPublishedEcVersion: "1.04",
-            LastKnownPublishedMcuVersion: "1.06"));
+            LastKnownPublishedMcuVersion: "1.06",
+            LastKnownPublishedBiosStatus: RazerPublishedFirmwareVersionStatus.Listed,
+            LastKnownPublishedEcStatus: RazerPublishedFirmwareVersionStatus.Listed,
+            LastKnownPublishedMcuStatus: RazerPublishedFirmwareVersionStatus.Listed));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -226,6 +229,15 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal("3.01", reloaded.LastKnownPublishedBiosVersion);
         Assert.Equal("1.04", reloaded.LastKnownPublishedEcVersion);
         Assert.Equal("1.06", reloaded.LastKnownPublishedMcuVersion);
+        Assert.Equal(
+            RazerPublishedFirmwareVersionStatus.Listed,
+            reloaded.LastKnownPublishedBiosStatus);
+        Assert.Equal(
+            RazerPublishedFirmwareVersionStatus.Listed,
+            reloaded.LastKnownPublishedEcStatus);
+        Assert.Equal(
+            RazerPublishedFirmwareVersionStatus.Listed,
+            reloaded.LastKnownPublishedMcuStatus);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",

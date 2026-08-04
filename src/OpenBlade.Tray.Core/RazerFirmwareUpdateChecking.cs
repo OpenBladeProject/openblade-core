@@ -13,10 +13,23 @@ public sealed record RazerFirmwareSupportPage(
     string ModelNumber,
     Uri OfficialPageUri);
 
+public enum RazerPublishedFirmwareVersionStatus
+{
+    Listed,
+    NotListed,
+    Unreadable,
+}
+
 public sealed record RazerPublishedFirmwareVersions(
     string? BiosVersion,
     string? EcVersion,
-    string? McuVersion);
+    string? McuVersion,
+    RazerPublishedFirmwareVersionStatus BiosStatus =
+        RazerPublishedFirmwareVersionStatus.Listed,
+    RazerPublishedFirmwareVersionStatus EcStatus =
+        RazerPublishedFirmwareVersionStatus.Listed,
+    RazerPublishedFirmwareVersionStatus McuStatus =
+        RazerPublishedFirmwareVersionStatus.Listed);
 
 public static class RazerFirmwareSupportCatalog
 {
@@ -64,17 +77,41 @@ public static partial class RazerFirmwarePageParser
         ArgumentNullException.ThrowIfNull(html);
         string text = WebUtility.HtmlDecode(TagRegex().Replace(html, " "));
         text = WhitespaceRegex().Replace(text, " ");
+        ParsedVersion bios = FindVersion(text, BiosLabelRegex(), BiosVersionRegex());
+        ParsedVersion ec = FindVersion(text, EcLabelRegex(), EcVersionRegex());
+        ParsedVersion mcu = FindVersion(text, McuLabelRegex(), McuVersionRegex());
         return new(
-            FindVersion(text, BiosVersionRegex()),
-            FindVersion(text, EcVersionRegex()),
-            FindVersion(text, McuVersionRegex()));
+            bios.Value,
+            ec.Value,
+            mcu.Value,
+            bios.Status,
+            ec.Status,
+            mcu.Status);
     }
 
-    private static string? FindVersion(string text, Regex regex)
+    private static ParsedVersion FindVersion(
+        string text,
+        Regex labelRegex,
+        Regex versionRegex)
     {
-        Match match = regex.Match(text);
-        return match.Success ? match.Groups["version"].Value : null;
+        Match match = versionRegex.Match(text);
+        if (match.Success)
+        {
+            return new(
+                match.Groups["version"].Value,
+                RazerPublishedFirmwareVersionStatus.Listed);
+        }
+
+        return new(
+            Value: null,
+            labelRegex.IsMatch(text)
+                ? RazerPublishedFirmwareVersionStatus.Unreadable
+                : RazerPublishedFirmwareVersionStatus.NotListed);
     }
+
+    private readonly record struct ParsedVersion(
+        string? Value,
+        RazerPublishedFirmwareVersionStatus Status);
 
     [GeneratedRegex("<[^>]+>", RegexOptions.Singleline)]
     private static partial Regex TagRegex();
@@ -83,14 +120,29 @@ public static partial class RazerFirmwarePageParser
     private static partial Regex WhitespaceRegex();
 
     [GeneratedRegex(
+        "\\bBIOS(?:\\s+Firmware)?\\s+Updater\\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex BiosLabelRegex();
+
+    [GeneratedRegex(
         "\\bBIOS(?:\\s+Firmware)?\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex BiosVersionRegex();
 
     [GeneratedRegex(
+        "\\bEC\\s+Firmware\\s+Updater\\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex EcLabelRegex();
+
+    [GeneratedRegex(
         "\\bEC\\s+Firmware\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex EcVersionRegex();
+
+    [GeneratedRegex(
+        "\\bMCU\\s+Firmware\\s+Updater\\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex McuLabelRegex();
 
     [GeneratedRegex(
         "\\bMCU\\s+Firmware\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
@@ -134,7 +186,11 @@ public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
                 timeout.Token).ConfigureAwait(false);
             if (response.RequestMessage?.RequestUri is Uri effectiveUri)
             {
-                ValidateOfficialPage(effectiveUri);
+                if (!IsOfficialPage(effectiveUri))
+                {
+                    throw new RazerFirmwareUpdateException(
+                        "Razer's official firmware page resolved to an unapproved destination.");
+                }
             }
             response.EnsureSuccessStatusCode();
             await response.Content.LoadIntoBufferAsync(
@@ -180,14 +236,17 @@ public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
 
     private static void ValidateOfficialPage(Uri uri)
     {
-        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(uri.Host, "mysupport.razer.com", StringComparison.OrdinalIgnoreCase))
+        if (!IsOfficialPage(uri))
         {
             throw new ArgumentException(
                 "Firmware metadata must come from the official Razer support host.",
                 nameof(uri));
         }
     }
+
+    private static bool IsOfficialPage(Uri uri) =>
+        string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(uri.Host, "mysupport.razer.com", StringComparison.OrdinalIgnoreCase);
 
     private static HttpClient CreateSharedHttpClient() =>
         new(new SocketsHttpHandler
@@ -221,6 +280,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
     private string? cachedBiosVersion;
     private string? cachedEcVersion;
     private string? cachedMcuVersion;
+    private RazerPublishedFirmwareVersionStatus? cachedBiosStatus;
+    private RazerPublishedFirmwareVersionStatus? cachedEcStatus;
+    private RazerPublishedFirmwareVersionStatus? cachedMcuStatus;
     private string statusText = NotCheckedMessage;
     private string publishedBiosVersion = "Not checked";
     private string publishedEcVersion = "Not checked";
@@ -303,6 +365,12 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     public string? CachedMcuVersion => cachedMcuVersion;
 
+    public RazerPublishedFirmwareVersionStatus? CachedBiosStatus => cachedBiosStatus;
+
+    public RazerPublishedFirmwareVersionStatus? CachedEcStatus => cachedEcStatus;
+
+    public RazerPublishedFirmwareVersionStatus? CachedMcuStatus => cachedMcuStatus;
+
     public ICommand CheckCommand => checkCommand;
 
     public bool IsSupported => supportPage is not null;
@@ -381,7 +449,10 @@ public sealed class FirmwareUpdateAssistantViewModel :
         string? selectedCachedModelNumber = null,
         string? selectedCachedBiosVersion = null,
         string? selectedCachedEcVersion = null,
-        string? selectedCachedMcuVersion = null)
+        string? selectedCachedMcuVersion = null,
+        RazerPublishedFirmwareVersionStatus? selectedCachedBiosStatus = null,
+        RazerPublishedFirmwareVersionStatus? selectedCachedEcStatus = null,
+        RazerPublishedFirmwareVersionStatus? selectedCachedMcuStatus = null)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         Interval = Enum.IsDefined(selectedInterval)
@@ -394,6 +465,13 @@ public sealed class FirmwareUpdateAssistantViewModel :
         cachedBiosVersion = NormalizeCachedVersion(selectedCachedBiosVersion);
         cachedEcVersion = NormalizeCachedVersion(selectedCachedEcVersion);
         cachedMcuVersion = NormalizeCachedVersion(selectedCachedMcuVersion);
+        cachedBiosStatus = NormalizeCachedStatus(
+            selectedCachedBiosStatus,
+            cachedBiosVersion);
+        cachedEcStatus = NormalizeCachedStatus(selectedCachedEcStatus, cachedEcVersion);
+        cachedMcuStatus = NormalizeCachedStatus(
+            selectedCachedMcuStatus,
+            cachedMcuVersion);
         RestoreCachedVersionsForCurrentModel();
         Notify(nameof(LastSuccessfulCheckAt));
         Notify(nameof(RetryAfter));
@@ -484,13 +562,16 @@ public sealed class FirmwareUpdateAssistantViewModel :
                 return;
             }
 
-            PublishedBiosVersion = PublishedValue(versions.BiosVersion);
-            PublishedEcVersion = PublishedValue(versions.EcVersion);
-            PublishedMcuVersion = PublishedValue(versions.McuVersion);
+            PublishedBiosVersion = PublishedValue(versions.BiosVersion, versions.BiosStatus);
+            PublishedEcVersion = PublishedValue(versions.EcVersion, versions.EcStatus);
+            PublishedMcuVersion = PublishedValue(versions.McuVersion, versions.McuStatus);
             cachedModelNumber = page.ModelNumber;
             cachedBiosVersion = NormalizeCachedVersion(versions.BiosVersion);
             cachedEcVersion = NormalizeCachedVersion(versions.EcVersion);
             cachedMcuVersion = NormalizeCachedVersion(versions.McuVersion);
+            cachedBiosStatus = versions.BiosStatus;
+            cachedEcStatus = versions.EcStatus;
+            cachedMcuStatus = versions.McuStatus;
             lastSuccessfulCheckAt = timeProvider.GetUtcNow();
             retryAfter = null;
             Notify(nameof(LastSuccessfulCheckAt));
@@ -551,9 +632,15 @@ public sealed class FirmwareUpdateAssistantViewModel :
             || cachedMcuVersion is not null;
         if (lastSuccessfulCheckAt is not null && modelMatches && hasCachedVersion)
         {
-            PublishedBiosVersion = PublishedValue(cachedBiosVersion);
-            PublishedEcVersion = PublishedValue(cachedEcVersion);
-            PublishedMcuVersion = PublishedValue(cachedMcuVersion);
+            PublishedBiosVersion = PublishedValue(
+                cachedBiosVersion,
+                cachedBiosStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable);
+            PublishedEcVersion = PublishedValue(
+                cachedEcVersion,
+                cachedEcStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable);
+            PublishedMcuVersion = PublishedValue(
+                cachedMcuVersion,
+                cachedMcuStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable);
             StatusText =
                 $"Published updater versions last loaded {lastSuccessfulCheckAt.Value.ToLocalTime():g}.";
             return;
@@ -576,6 +663,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
             cachedBiosVersion = null;
             cachedEcVersion = null;
             cachedMcuVersion = null;
+            cachedBiosStatus = null;
+            cachedEcStatus = null;
+            cachedMcuStatus = null;
             Notify(nameof(LastSuccessfulCheckAt));
             Notify(nameof(RetryAfter));
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
@@ -588,11 +678,32 @@ public sealed class FirmwareUpdateAssistantViewModel :
             ? "Unavailable"
             : value.Trim();
 
-    private static string PublishedValue(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? "Not listed" : value.Trim();
+    private static string PublishedValue(
+        string? value,
+        RazerPublishedFirmwareVersionStatus status) =>
+        !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
+            : status == RazerPublishedFirmwareVersionStatus.NotListed
+                ? "Not listed"
+                : "Couldn't read";
 
     private static string? NormalizeCachedVersion(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static RazerPublishedFirmwareVersionStatus? NormalizeCachedStatus(
+        RazerPublishedFirmwareVersionStatus? status,
+        string? value)
+    {
+        if (value is not null)
+        {
+            return RazerPublishedFirmwareVersionStatus.Listed;
+        }
+
+        return status is RazerPublishedFirmwareVersionStatus.NotListed
+            or RazerPublishedFirmwareVersionStatus.Unreadable
+                ? status
+                : null;
+    }
 
     private bool SetField<T>(
         ref T field,

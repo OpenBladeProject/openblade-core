@@ -50,6 +50,9 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.Equal("3.01", versions.BiosVersion);
         Assert.Equal("1.04", versions.EcVersion);
         Assert.Equal("1.06", versions.McuVersion);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.BiosStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.EcStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.McuStatus);
     }
 
     [Fact]
@@ -68,6 +71,26 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.Null(versions.BiosVersion);
         Assert.Equal("1.09", versions.EcVersion);
         Assert.Equal("1.09", versions.McuVersion);
+        Assert.Equal(
+            RazerPublishedFirmwareVersionStatus.Unreadable,
+            versions.BiosStatus);
+    }
+
+    [Fact]
+    public void PageParser_DistinguishesAnAbsentUpdaterFromAnUnreadableRow()
+    {
+        const string html = """
+            <table>
+              <tr><td>EC Firmware Updater</td><td>version unavailable</td></tr>
+              <tr><td>MCU Firmware Updater</td><td>v1.09</td></tr>
+            </table>
+            """;
+
+        RazerPublishedFirmwareVersions versions = RazerFirmwarePageParser.Parse(html);
+
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.NotListed, versions.BiosStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Unreadable, versions.EcStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.McuStatus);
     }
 
     [Fact]
@@ -136,8 +159,12 @@ public sealed class RazerFirmwareUpdateCheckingTests
             RazerFirmwareSupportCatalog.Find(
                 RazerBladeModelCatalog.OpenBladeTargetModelNumber));
 
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            client.GetPublishedVersionsAsync(page, CancellationToken.None));
+        RazerFirmwareUpdateException exception = await Assert.ThrowsAsync<
+            RazerFirmwareUpdateException>(() => client.GetPublishedVersionsAsync(
+                page,
+                CancellationToken.None));
+
+        Assert.Contains("unapproved destination", exception.Message);
     }
 
     [Fact]
@@ -178,6 +205,25 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.Equal("1.06", viewModel.PublishedMcuVersion);
         Assert.Equal("Published updater versions loaded from Razer.", viewModel.StatusText);
         Assert.NotNull(viewModel.OfficialSupportUri);
+    }
+
+    [Fact]
+    public async Task ViewModel_DistinguishesUnreadableAndUnlistedPublishedVersions()
+    {
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            new StubClient(new(
+                BiosVersion: null,
+                EcVersion: null,
+                McuVersion: "1.06",
+                BiosStatus: RazerPublishedFirmwareVersionStatus.Unreadable,
+                EcStatus: RazerPublishedFirmwareVersionStatus.NotListed)));
+        UpdateModel(viewModel);
+
+        await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
+
+        Assert.Equal("Couldn't read", viewModel.PublishedBiosVersion);
+        Assert.Equal("Not listed", viewModel.PublishedEcVersion);
+        Assert.Equal("1.06", viewModel.PublishedMcuVersion);
     }
 
     [Fact]
@@ -258,16 +304,19 @@ public sealed class RazerFirmwareUpdateCheckingTests
             Now.AddHours(-1),
             selectedRetryAfter: null,
             RazerBladeModelCatalog.OpenBladeTargetModelNumber,
-            "3.01",
-            "1.04",
-            "1.06");
+            selectedCachedBiosVersion: null,
+            selectedCachedEcVersion: null,
+            selectedCachedMcuVersion: "1.06",
+            selectedCachedBiosStatus: RazerPublishedFirmwareVersionStatus.Unreadable,
+            selectedCachedEcStatus: RazerPublishedFirmwareVersionStatus.NotListed,
+            selectedCachedMcuStatus: RazerPublishedFirmwareVersionStatus.Listed);
 
         UpdateModel(viewModel);
         viewModel.StartAutomaticCheck();
         await Task.Yield();
 
-        Assert.Equal("3.01", viewModel.PublishedBiosVersion);
-        Assert.Equal("1.04", viewModel.PublishedEcVersion);
+        Assert.Equal("Couldn't read", viewModel.PublishedBiosVersion);
+        Assert.Equal("Not listed", viewModel.PublishedEcVersion);
         Assert.Equal("1.06", viewModel.PublishedMcuVersion);
         Assert.Contains("last loaded", viewModel.StatusText);
         Assert.Equal(0, client.CallCount);

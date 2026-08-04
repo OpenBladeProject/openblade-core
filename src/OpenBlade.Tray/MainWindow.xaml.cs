@@ -440,6 +440,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         string? initialLastKnownPublishedBiosVersion = null;
         string? initialLastKnownPublishedEcVersion = null;
         string? initialLastKnownPublishedMcuVersion = null;
+        RazerPublishedFirmwareVersionStatus? initialLastKnownPublishedBiosStatus = null;
+        RazerPublishedFirmwareVersionStatus? initialLastKnownPublishedEcStatus = null;
+        RazerPublishedFirmwareVersionStatus? initialLastKnownPublishedMcuStatus = null;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -479,6 +482,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 preferences.LastKnownPublishedEcVersion;
             initialLastKnownPublishedMcuVersion =
                 preferences.LastKnownPublishedMcuVersion;
+            initialLastKnownPublishedBiosStatus =
+                preferences.LastKnownPublishedBiosStatus;
+            initialLastKnownPublishedEcStatus =
+                preferences.LastKnownPublishedEcStatus;
+            initialLastKnownPublishedMcuStatus =
+                preferences.LastKnownPublishedMcuStatus;
         }
         catch (Exception exception)
         {
@@ -523,7 +532,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialLastKnownFirmwareModelNumber,
             initialLastKnownPublishedBiosVersion,
             initialLastKnownPublishedEcVersion,
-            initialLastKnownPublishedMcuVersion);
+            initialLastKnownPublishedMcuVersion,
+            initialLastKnownPublishedBiosStatus,
+            initialLastKnownPublishedEcStatus,
+            initialLastKnownPublishedMcuStatus);
         try
         {
             ApplyTheme(ViewModel.Theme);
@@ -789,7 +801,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastKnownFirmwareModelNumber: FirmwareUpdateViewModel.CachedModelNumber,
                 LastKnownPublishedBiosVersion: FirmwareUpdateViewModel.CachedBiosVersion,
                 LastKnownPublishedEcVersion: FirmwareUpdateViewModel.CachedEcVersion,
-                LastKnownPublishedMcuVersion: FirmwareUpdateViewModel.CachedMcuVersion));
+                LastKnownPublishedMcuVersion: FirmwareUpdateViewModel.CachedMcuVersion,
+                LastKnownPublishedBiosStatus: FirmwareUpdateViewModel.CachedBiosStatus,
+                LastKnownPublishedEcStatus: FirmwareUpdateViewModel.CachedEcStatus,
+                LastKnownPublishedMcuStatus: FirmwareUpdateViewModel.CachedMcuStatus));
         }
         catch (ObjectDisposedException)
         {
