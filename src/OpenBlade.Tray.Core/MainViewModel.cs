@@ -167,6 +167,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
+    private PerformanceOverride? pendingPerformance;
     private IReadOnlyList<CustomPerformanceLevel> availableCustomCpuLevels =
         AllCustomPerformanceLevels;
     private IReadOnlyList<CustomPerformanceLevel> availableCustomGpuLevels =
@@ -1475,6 +1476,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsCustomPerformanceVisible));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(CanEditFanControl));
+            Notify(nameof(IsManualFanControlUnavailable));
             NotifyTrayHoverLabel();
         }
     }
@@ -1688,7 +1691,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool CanEditFanControl =>
-        CanRequestHardwareControl && !IsFanControlOperationInProgress;
+        CanRequestHardwareControl
+        && !IsFanControlOperationInProgress
+        && (ActivePowerSource != PowerSource.PluggedIn
+            || SelectedFanMode != FanMode.Automatic
+            || IsManualFanControlEligible());
+
+    public bool IsManualFanControlUnavailable =>
+        ActivePowerSource == PowerSource.PluggedIn
+        && SelectedFanMode == FanMode.Automatic
+        && AvailableFanModes.Any(mode => mode is
+            FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum)
+        && !IsManualFanControlEligible();
 
     public bool CanEditPerformance =>
         CanRequestHardwareControl && !IsPerformanceOperationInProgress;
@@ -3815,7 +3829,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool checkingLaptopConnection)
     {
         UpdateOneShotReadbacks(status);
-        SelectedPerformance = ResolvePresentedPerformance(status, confirmed, capabilities);
+        SelectedPerformance = pendingPerformance?.Value
+            ?? ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = pendingFanControl?.Mode
             ?? ResolvePresentedFanMode(status, confirmed, capabilities);
         LoadFanControlEditor(
@@ -3865,7 +3880,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SetTemporaryFullChargeState(confirmed?.Battery?.TemporaryFullCharge);
         ActivePowerSource = status.ActivePowerSource;
         CustomPerformanceSettings customPerformance =
-            confirmed is { Performance: PerformancePreset.Custom, CustomPerformance: { } observed }
+            pendingPerformance is
+            { Value: PerformancePreset.Custom, CustomPerformance: { } pendingCustom }
+                ? pendingCustom
+                : confirmed is
+                { Performance: PerformancePreset.Custom, CustomPerformance: { } observed }
                 ? observed
                 : status.DesiredState.CustomPerformance
                     ?? status.Profiles.PluggedIn.CustomPerformance
@@ -4432,63 +4451,94 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private async Task SetPerformanceAsync(object? parameter, CancellationToken token)
     {
         PerformancePreset requested = (PerformancePreset)parameter!;
-        PowerSource sourceAtStart = ActivePowerSource;
-        IsPerformanceOperationInProgress = true;
-        try
-        {
-            await RunOperationAsync(
-                cancellationToken => serviceClient.SetPerformanceConfigurationOverrideAsync(
-                    new PerformanceOverride(
-                        requested,
-                        OverrideLifetime.UntilPowerSourceChange,
-                        requested == PerformancePreset.Custom
-                            ? GetActiveProfileCustomPerformance()
-                            : null),
-                    cancellationToken),
-                token,
-                result =>
-                {
-                    if (result.Status == ControlOperationStatus.Applied)
-                    {
-                        MarkActiveProfileDraft(sourceAtStart, performance: requested);
-                    }
-                });
-        }
-        finally
-        {
-            IsPerformanceOperationInProgress = false;
-        }
+        await ApplyPerformanceAsync(
+            new PerformanceOverride(
+                requested,
+                OverrideLifetime.UntilPowerSourceChange,
+                requested == PerformancePreset.Custom
+                    ? GetActiveProfileCustomPerformance()
+                    : null),
+            token);
     }
 
     private async Task SetCustomPerformanceAsync(object? parameter, CancellationToken token)
     {
         CustomPerformanceSettings requested = (CustomPerformanceSettings)parameter!;
+        await ApplyPerformanceAsync(
+            new PerformanceOverride(
+                PerformancePreset.Custom,
+                OverrideLifetime.UntilPowerSourceChange,
+                requested),
+            token);
+    }
+
+    private async Task ApplyPerformanceAsync(
+        PerformanceOverride requested,
+        CancellationToken token)
+    {
         PowerSource sourceAtStart = ActivePowerSource;
+        PerformancePreset previousPerformance = SelectedPerformance;
+        CustomPerformanceSettings previousCustom = new(
+            SelectedCustomCpuLevel,
+            SelectedCustomGpuLevel)
+        {
+            GpuClockOffsets = CurrentGpuClockOffsets,
+        };
+        bool applied = false;
+        pendingPerformance = requested;
         IsPerformanceOperationInProgress = true;
+        PresentPerformance(requested);
         try
         {
             await RunOperationAsync(
                 cancellationToken => serviceClient.SetPerformanceConfigurationOverrideAsync(
-                    new PerformanceOverride(
-                        PerformancePreset.Custom,
-                        OverrideLifetime.UntilPowerSourceChange,
-                        requested),
+                    requested,
                     cancellationToken),
                 token,
                 result =>
                 {
                     if (result.Status == ControlOperationStatus.Applied)
                     {
+                        applied = true;
+                        PresentPerformance(requested);
                         MarkActiveProfileDraft(
                             sourceAtStart,
-                            performance: PerformancePreset.Custom,
-                            customPerformance: requested);
+                            performance: requested.Value,
+                            customPerformance: requested.CustomPerformance);
                     }
                 });
         }
         finally
         {
+            pendingPerformance = null;
             IsPerformanceOperationInProgress = false;
+            if (!applied)
+            {
+                PresentPerformance(new PerformanceOverride(
+                    previousPerformance,
+                    OverrideLifetime.UntilPowerSourceChange,
+                    previousPerformance == PerformancePreset.Custom
+                        ? previousCustom
+                        : null));
+            }
+        }
+    }
+
+    private void PresentPerformance(PerformanceOverride value)
+    {
+        SelectedPerformance = value.Value;
+        if (value is not
+            { Value: PerformancePreset.Custom, CustomPerformance: { } custom })
+        {
+            return;
+        }
+
+        SelectedCustomCpuLevel = custom.Cpu;
+        SelectedCustomGpuLevel = custom.Gpu;
+        if (custom.GpuClockOffsets is { } offsets)
+        {
+            GpuCoreClockOffsetMegahertz = offsets.CoreMegahertz;
+            GpuMemoryClockOffsetMegahertz = offsets.MemoryMegahertz;
         }
     }
 
@@ -7490,6 +7540,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(CanEditPerformance));
         Notify(nameof(CanEditGpuClockTuning));
         Notify(nameof(CanEditFanControl));
+        Notify(nameof(IsManualFanControlUnavailable));
         NotifyGamingModeKeyPolicy();
         NotifyDashboardTelemetryValuesChanged();
         Notify(nameof(LiveReadingsRefreshToolTip));

@@ -40,6 +40,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Kept the legacy per-user Session Agent startup link until its replacement is
   created successfully, and moved first-use Dynamic Lighting identity
   registration off the Session Agent's startup-critical path.
+- Kept applied dashboard Power mode and Custom CPU/GPU selections stable while
+  service status catches up, restored the previous selection after real
+  failures, and disabled fixed/manual fan choices until the required Balanced
+  Automatic baseline is confirmed.
 - Kept manual and automatic update checks nonfatal when the computer is
   offline, with a clear connectivity status and bounded retry delay.
 - Fixed the graphical uninstaller so it detects a same-version OpenBlade
