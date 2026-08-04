@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Principal;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -16,6 +17,17 @@ public interface IServiceControlRuntime
         Initialize(configuration, powerSource);
 
     ServiceStatusSnapshot GetStatus();
+
+    Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        CancellationToken cancellationToken) => Task.CompletedTask;
+
+    Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken) => stillControlsSession()
+            ? ActivateUserAsync(userSid, cancellationToken)
+            : Task.CompletedTask;
 
     Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
@@ -223,8 +235,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             "Razer Synapse Service",
         };
 
-    private readonly BatteryConfigurationStore store;
-    private readonly PersistentOverrideStore overrideStore;
+    private UserConfigurationStores userStores;
+    private readonly IUserConfigurationRepository? userConfigurationRepository;
     private readonly IPowerStateProvider powerStateProvider;
     private readonly IStatusSubscriptionHub subscriptionHub;
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
@@ -265,6 +277,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool batteryHealthVerificationRetryPending;
     private bool startupProfileReconciliationPending;
     private bool startupProfileReconciliationRequested;
+    private string? activeUserSid;
     private ResumeStateBaseline? pendingResumeStateBaseline;
 
     public ServiceControlRuntime(
@@ -340,6 +353,35 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
     }
 
+    public ServiceControlRuntime(
+        BatteryConfigurationStore store,
+        PersistentOverrideStore overrideStore,
+        IPowerStateProvider powerStateProvider,
+        IStatusSubscriptionHub subscriptionHub,
+        IVerifiedBladeDeviceProvider deviceProvider,
+        DiagnosticHistory history,
+        LowPowerGate lowPowerGate,
+        IControllerPresenceMonitor controllerPresenceMonitor,
+        IFirmwareVersionSource firmwareVersionSource,
+        ProfileSetValidator validator,
+        IUserConfigurationRepository userConfigurationRepository)
+        : this(
+            store,
+            overrideStore,
+            powerStateProvider,
+            subscriptionHub,
+            deviceProvider,
+            history,
+            lowPowerGate,
+            controllerPresenceMonitor,
+            firmwareVersionSource,
+            static (delay, token) => Task.Delay(delay, token),
+            validator,
+            fanTemperatureSource: null,
+            userConfigurationRepository: userConfigurationRepository)
+    {
+    }
+
     internal ServiceControlRuntime(
         BatteryConfigurationStore store,
         PersistentOverrideStore overrideStore,
@@ -404,11 +446,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<TimeSpan, CancellationToken, Task> transitionRetryDelay,
         ProfileSetValidator validator,
         IFanTemperatureSource? fanTemperatureSource = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IUserConfigurationRepository? userConfigurationRepository = null)
     {
-        this.store = store ?? throw new ArgumentNullException(nameof(store));
-        this.overrideStore = overrideStore
-            ?? throw new ArgumentNullException(nameof(overrideStore));
+        userStores = new UserConfigurationStores(
+            store ?? throw new ArgumentNullException(nameof(store)),
+            overrideStore ?? throw new ArgumentNullException(nameof(overrideStore)));
         this.powerStateProvider = powerStateProvider
             ?? throw new ArgumentNullException(nameof(powerStateProvider));
         this.subscriptionHub = subscriptionHub
@@ -426,6 +469,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.validator = validator ?? throw new ArgumentNullException(nameof(validator));
+        this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
             ?? new SafeWindowsFanTemperatureSource();
     }
@@ -480,6 +524,112 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public ServiceStatusSnapshot GetStatus() => Volatile.Read(ref status)
         ?? throw new InvalidOperationException("The service runtime is not initialized.");
 
+    public async Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        CancellationToken cancellationToken) => await ActivateUserAsync(
+            userSid,
+            static () => true,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(userSid);
+        ArgumentNullException.ThrowIfNull(stillControlsSession);
+        if (userConfigurationRepository is null
+            || string.Equals(
+                Volatile.Read(ref activeUserSid),
+                userSid.Value,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        UserConfigurationContext context = await userConfigurationRepository
+            .LoadAsync(userSid, cancellationToken)
+            .ConfigureAwait(false);
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (string.Equals(
+                    activeUserSid,
+                    userSid.Value,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (!stillControlsSession())
+            {
+                return;
+            }
+
+            ProfileSet profiles = ProfileStore.NormalizeLegacyBatteryProfile(
+                context.Configuration.Profiles,
+                out _);
+            PersistentOverrideState overrides =
+                PersistentOverrideStore.NormalizeLegacyFanControl(
+                    PersistentOverrideStore.NormalizeLegacyLighting(context.Overrides));
+            validator.Validate(profiles);
+            validator.ValidatePreferences(context.Configuration.Preferences);
+            PersistentOverrideStore.Validate(overrides);
+
+            ServiceStatusSnapshot current = GetStatus();
+            PowerSource powerSource = current.ActivePowerSource;
+            await InvalidateLightingRendererCoreAsync(
+                preserveForLifecycleRestore: false,
+                cancellationToken).ConfigureAwait(false);
+            current = GetStatus();
+            Volatile.Write(
+                ref userStores,
+                new UserConfigurationStores(context.Store, context.OverrideStore));
+            automation = new ProfileAutomationState(
+                profiles,
+                context.Configuration.Preferences,
+                powerSource,
+                overrides);
+            preferences = context.Configuration.Preferences;
+            persistentOverrides = overrides;
+            lightingSuppressions.Clear();
+            pendingLightingRestore = null;
+            pendingLightingRestoreFromLifecycle = false;
+
+            ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
+            if (powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
+            {
+                await ApplyFullTransitionAsync(
+                        powerSource,
+                        cancellationToken,
+                        preserveObservedExternalChanges: false)
+                    .ConfigureAwait(false);
+            }
+
+            current = GetStatus();
+            confirmed = current.ConfirmedState ?? UnknownConfirmedState;
+            PublishIfChanged(current with
+            {
+                Message = "The active Windows user's profile is loaded.",
+                Profiles = profiles,
+                DesiredState = Automation.Resolve(confirmed),
+                PerformanceOverride = Automation.PerformanceOverride,
+                FanOverride = Automation.FanOverride,
+                FanControlOverride = Automation.FanControlOverride,
+                LightingOverride = Automation.LightingOverride,
+                FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
+                LightingSuppressions = CurrentLightingSuppressions(),
+                PerformanceShortcutPreview = null,
+            });
+
+            Volatile.Write(ref activeUserSid, userSid.Value);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
         CancellationToken token)
@@ -493,7 +643,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
                 validator.Validate(profiles);
-                await store.SaveProfilesAsync(profiles, token);
+                await ConfigurationStore.SaveProfilesAsync(profiles, token);
                 Automation.UpdateProfiles(profiles);
                 RemoveDisabledLightingSuppressions();
             }
@@ -1173,7 +1323,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             try
             {
-                await store.SaveConfigurationAsync(Automation.Profiles, staged, token)
+                await ConfigurationStore.SaveConfigurationAsync(Automation.Profiles, staged, token)
                     .ConfigureAwait(false);
             }
             catch (Exception saveException) when (delegateToWindows)
@@ -1444,7 +1594,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 AlwaysOverrideExternalLightingChanges = enabled,
             };
-            await store.SaveConfigurationAsync(Automation.Profiles, staged, token)
+            await ConfigurationStore.SaveConfigurationAsync(Automation.Profiles, staged, token)
                 .ConfigureAwait(false);
             preferences = staged;
             ServiceStatusSnapshot current = GetStatus();
@@ -3118,7 +3268,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken) =>
         staged == persistentOverrides
             ? Task.CompletedTask
-            : overrideStore.SaveAsync(staged, cancellationToken);
+            : OverrideStore.SaveAsync(staged, cancellationToken);
 
     private async Task<ControlOperationResult> ExecuteScopedMutationAsync(
         DeviceSubsystem subsystem,
@@ -3231,7 +3381,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 desired => desired with { Battery = staged },
                 async cancellationToken =>
                 {
-                    await store.SaveConfigurationAsync(
+                    await ConfigurationStore.SaveConfigurationAsync(
                         stagedProfiles,
                         preferences with { ProtectionEnabled = staged.ProtectionEnabled },
                         cancellationToken);
@@ -5434,6 +5584,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private ProfileAutomationState Automation => automation
         ?? throw new InvalidOperationException("The service runtime is not initialized.");
 
+    private BatteryConfigurationStore ConfigurationStore =>
+        Volatile.Read(ref userStores).Configuration;
+
+    private PersistentOverrideStore OverrideStore =>
+        Volatile.Read(ref userStores).Overrides;
+
+    private sealed record UserConfigurationStores(
+        BatteryConfigurationStore Configuration,
+        PersistentOverrideStore Overrides);
+
     private void EnsureInitialized()
     {
         _ = GetStatus();
@@ -5720,7 +5880,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LastKnownLighting = lighting,
         };
         validator.ValidatePreferences(staged);
-        await store.SaveConfigurationAsync(
+        await ConfigurationStore.SaveConfigurationAsync(
             Automation.Profiles,
             staged,
             cancellationToken).ConfigureAwait(false);

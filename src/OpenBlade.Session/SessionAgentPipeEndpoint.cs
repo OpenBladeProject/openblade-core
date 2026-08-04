@@ -6,10 +6,18 @@ namespace OpenBlade.Session;
 
 public sealed record SessionAgentPipeEndpoint(string PipeName)
 {
-    public static SessionAgentPipeEndpoint Create(SecurityIdentifier userSid)
+    public static SessionAgentPipeEndpoint Create(
+        SecurityIdentifier userSid,
+        int sessionId)
     {
         ArgumentNullException.ThrowIfNull(userSid);
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(userSid.Value));
+        if (sessionId < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sessionId));
+        }
+
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"{userSid.Value}|{sessionId}"));
         return new SessionAgentPipeEndpoint(
             $"{SessionDisplayIpc.PipeNamePrefix}.{Convert.ToHexString(hash.AsSpan(0, 16))}");
     }

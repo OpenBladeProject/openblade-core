@@ -546,6 +546,31 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
+    public async Task WatchStatusAsync_InactiveSessionRemainsConnectedUntilControlReturns()
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task server = RunSubscriptionServerAsync(
+            pipeName,
+            CreateStatus(4) with { ControlAccess = SessionControlAccess.InactiveSession },
+            [CreateStatus(5) with { ControlAccess = SessionControlAccess.Active }],
+            timeout.Token);
+        IServiceClient client = new ServiceClient(pipeName);
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
+            client.WatchStatusAsync(timeout.Token).GetAsyncEnumerator();
+
+        Assert.True(await reader.MoveNextAsync());
+        ServiceStatusSnapshot inactive =
+            Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status;
+        Assert.Equal(SessionControlAccess.InactiveSession, inactive.ControlAccess);
+        Assert.True(await reader.MoveNextAsync());
+        ServiceStatusSnapshot active =
+            Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status;
+        Assert.Equal(SessionControlAccess.Active, active.ControlAccess);
+        await server;
+    }
+
+    [Fact]
     public async Task GetStatusAsync_RejectsOversizedFramePrefix()
     {
         string pipeName = NewPipeName();

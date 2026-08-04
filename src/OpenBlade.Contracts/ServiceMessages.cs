@@ -193,6 +193,13 @@ public sealed record ApplyOneShotLaptopControlRequest(
 public sealed record ShutdownOpenBladeRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
+public enum SessionControlAccess
+{
+    Active,
+    InactiveSession,
+    NotInteractive,
+}
+
 public sealed record ServiceStatusSnapshot(
     long Revision,
     bool DeviceVerified,
@@ -223,7 +230,8 @@ public sealed record ServiceStatusSnapshot(
     bool? KeyboardDriverModeActive = null,
     BatteryHealthStatus? BatteryHealth = null,
     KeyboardLightingControlMode KeyboardLightingControlMode =
-        KeyboardLightingControlMode.OpenBlade)
+        KeyboardLightingControlMode.OpenBlade,
+    SessionControlAccess ControlAccess = SessionControlAccess.Active)
 {
     public FanControlSettings? FanControlOverride { get; init; }
 

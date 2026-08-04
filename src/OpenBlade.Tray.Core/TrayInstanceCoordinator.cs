@@ -2,11 +2,16 @@ namespace OpenBlade.Tray;
 
 public sealed record TrayInstanceEndpoint(string InstanceEventName)
 {
-    public static TrayInstanceEndpoint Create(string userSid)
+    public static TrayInstanceEndpoint Create(string userSid, int sessionId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userSid);
+        if (sessionId < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sessionId));
+        }
+
         return new TrayInstanceEndpoint(
-            $@"Local\OpenBlade.Tray.Instance.{userSid}");
+            $@"Local\OpenBlade.Tray.Instance.{userSid}.{sessionId}");
     }
 }
 

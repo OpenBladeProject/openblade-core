@@ -168,6 +168,9 @@ submodules.
 
 Follow [VERSIONING.md](VERSIONING.md). The short form is:
 
+- Name branches for the work, not the agent or vendor. Use purpose prefixes
+  such as `feat/`, `fix/`, `docs/`, `chore/`, or `refactor/`; do not use
+  prefixes such as `codex/` or `claude/`.
 - Base new work branches on `main` by default. Use a different base only when
   the user explicitly requests one.
 - `Directory.Build.props` is the product-version source of truth.
@@ -192,6 +195,14 @@ dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
 
 Use `build/Publish.ps1` and the payload validation tests for release or setup
 changes. Do not install or request UAC when the user is unavailable.
+
+On Windows hosts where local execution policy blocks repository `.ps1` files,
+run them in a child process with
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File <script>`. This bypass
+is process-scoped and must not be replaced by a machine policy change. When
+running multiple scripts, check and propagate each child exit code; a parent
+pipeline can otherwise return success after printing script-load errors, which
+is not a valid test result.
 
 ## Live tray patching on the installed machine
 

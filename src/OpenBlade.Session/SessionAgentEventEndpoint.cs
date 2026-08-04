@@ -13,10 +13,18 @@ public sealed record SessionAgentEventEndpoint(
     private const string PerformanceShortcutNotificationPrefix =
         "OpenBlade.SessionAgent.PerformanceShortcutNotification";
 
-    public static SessionAgentEventEndpoint Create(SecurityIdentifier userSid)
+    public static SessionAgentEventEndpoint Create(
+        SecurityIdentifier userSid,
+        int sessionId)
     {
         ArgumentNullException.ThrowIfNull(userSid);
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(userSid.Value));
+        if (sessionId < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sessionId));
+        }
+
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"{userSid.Value}|{sessionId}"));
         string suffix = Convert.ToHexString(hash.AsSpan(0, 16));
         return new SessionAgentEventEndpoint(
             $"{DisplayBrightnessChangedPrefix}.{suffix}",
