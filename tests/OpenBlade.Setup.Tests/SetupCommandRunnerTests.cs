@@ -180,7 +180,7 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
-    public async Task Install_UpdateWithDisabledTrayStartup_PreservesMissingTrayShortcutAndRepairsAgentShortcut()
+    public async Task Install_BundleManagedUpdateWithMissingLegacyTrayShortcut_RepairsAllUsersStartupShortcuts()
     {
         RecordingSetupPlatform platform = new()
         {
@@ -190,14 +190,17 @@ public sealed class SetupCommandRunnerTests
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
         };
 
-        int exitCode = await new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None);
+        int exitCode = await new SetupCommandRunner(platform).RunAsync(
+            ["install", "--bundle-managed"],
+            CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.False(platform.TrayShortcutPresent);
+        Assert.True(platform.TrayShortcutPresent);
         Assert.True(platform.SessionAgentShortcutPresent);
         Assert.True(platform.StartMenuShortcutPresent);
-        Assert.DoesNotContain("shortcut-install", platform.Operations);
+        Assert.Contains("shortcut-install", platform.Operations);
         Assert.Contains("agent-shortcut-install", platform.Operations);
+        Assert.Contains("bundle-ownership-install", platform.Operations);
         Assert.Equal("payload-commit", platform.Operations[^1]);
     }
 

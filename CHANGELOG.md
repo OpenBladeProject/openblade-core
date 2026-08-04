@@ -16,6 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Repaired the all-users Tray startup shortcut during every install and repair
+  so upgrades cannot leave newly signed-in users without OpenBlade.
 - Reapplied the newly active user's keyboard-lighting profile during Fast User
   Switching instead of misclassifying the prior user's lighting as an external
   change, including an A-to-B-to-A round trip.

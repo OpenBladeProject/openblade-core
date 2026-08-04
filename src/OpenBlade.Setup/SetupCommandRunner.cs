@@ -129,10 +129,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                     await platform.InstallUninstallShortcutAsync(cancellationToken);
                     await platform.InstallUninstallRegistrationAsync(cancellationToken);
                 }
-                if (!transaction.HadExistingInstall || priorLifecycle.Startup.TrayShortcutExisted)
-                {
-                    await platform.InstallStartupShortcutAsync(cancellationToken);
-                }
+                await platform.InstallStartupShortcutAsync(cancellationToken);
                 if (invocation.BundleManaged)
                 {
                     await platform.InstallBundleOwnershipAsync(cancellationToken);
