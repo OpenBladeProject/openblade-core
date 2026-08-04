@@ -85,8 +85,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, repository.Loads[staleSid.Value]);
     }
 
-    [Fact]
-    public async Task ActivateUserAsync_ReappliesLightingAcrossUserRoundTrip()
+    [Theory]
+    [InlineData(DeviceSubsystem.Performance)]
+    [InlineData(DeviceSubsystem.Fans)]
+    [InlineData(DeviceSubsystem.Battery)]
+    [InlineData(DeviceSubsystem.Lighting)]
+    public async Task ActivateUserAsync_ReappliesEverySubsystemAcrossUserRoundTrip(
+        DeviceSubsystem externallyChangedSubsystem)
     {
         LightingSettings firstLighting = LightingSettingsFactory.Static(
             new RgbColor(255, 0, 0),
@@ -97,23 +102,50 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         ProfileSet firstProfiles = defaults with
         {
-            PluggedIn = defaults.PluggedIn with { Lighting = firstLighting },
-            Battery = defaults.Battery with { Lighting = firstLighting },
-            UsbC = defaults.UsbC with { Lighting = firstLighting },
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+                Fans = FanMode.Automatic,
+                Lighting = firstLighting,
+            },
+            Battery = defaults.Battery with
+            {
+                Lighting = firstLighting,
+            },
+            UsbC = defaults.UsbC with
+            {
+                Lighting = firstLighting,
+            },
+            BatteryPolicy = BatteryPolicy.Create(80),
         };
         ProfileSet secondProfiles = defaults with
         {
-            PluggedIn = defaults.PluggedIn with { Lighting = secondLighting },
-            Battery = defaults.Battery with { Lighting = secondLighting },
-            UsbC = defaults.UsbC with { Lighting = secondLighting },
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Maximum,
+                Lighting = secondLighting,
+            },
+            Battery = defaults.Battery with
+            {
+                Lighting = secondLighting,
+            },
+            UsbC = defaults.UsbC with
+            {
+                Lighting = secondLighting,
+            },
+            BatteryPolicy = BatteryPolicy.Create(75),
         };
-        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             LightingEffects = new HashSet<LightingEffect>
             {
                 LightingEffect.Off,
                 LightingEffect.Static,
             },
+            ChargeLimits = new HashSet<int> { 70, 75, 80 },
+            SupportsBatteryProtectionOff = true,
+            SupportsTemporaryFullCharge = true,
         };
         var firstSid = new System.Security.Principal.SecurityIdentifier(
             "S-1-5-21-1-2-3-1001");
@@ -130,33 +162,59 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             userConfigurationRepository: repository);
         context.Device.Capabilities = capabilities;
         context.Device.ConfirmedState = new ConfirmedDeviceState(
-            null,
-            null,
-            null,
-            firstLighting);
-        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.Static;
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            LightingSettingsFactory.Off());
+        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.None;
 
         await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
         await context.Runtime.ActivateUserAsync(secondSid, CancellationToken.None);
 
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+        Assert.Equal(ConfirmedBattery(75), context.Device.ConfirmedState.Battery);
         Assert.Equal(secondLighting, context.Device.ConfirmedState.Lighting);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
 
-        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        context.Device.ConfirmedState = externallyChangedSubsystem switch
         {
-            Lighting = LightingSettingsFactory.Off(),
+            DeviceSubsystem.Performance => context.Device.ConfirmedState with
+            {
+                Performance = PerformancePreset.Performance,
+            },
+            DeviceSubsystem.Fans => context.Device.ConfirmedState with
+            {
+                Fans = FanMode.Automatic,
+            },
+            DeviceSubsystem.Battery => context.Device.ConfirmedState with
+            {
+                Battery = ConfirmedBattery(70),
+            },
+            DeviceSubsystem.Lighting => context.Device.ConfirmedState with
+            {
+                Lighting = LightingSettingsFactory.Off(),
+            },
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(externallyChangedSubsystem)),
         };
-        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.None;
+        if (externallyChangedSubsystem == DeviceSubsystem.Lighting)
+        {
+            context.Device.LightingRendererOwnership = LightingRendererOwnershipState.None;
+        }
+
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.Equal(
-            [DeviceSubsystem.Lighting],
+            [externallyChangedSubsystem],
             context.Runtime.GetStatus().ExternalChanges);
 
         await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
 
+        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Equal(ConfirmedBattery(80), context.Device.ConfirmedState.Battery);
         Assert.Equal(firstLighting, context.Device.ConfirmedState.Lighting);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
-        Assert.Equal(3, context.Device.LightingSetCalls);
     }
 
     [Fact]

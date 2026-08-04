@@ -576,9 +576,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool HasOperationFeedback => !string.IsNullOrWhiteSpace(OperationFeedbackMessage);
 
-    public bool HasActiveControlAccess => IsConnected
-        && latestStatus?.ControlAccess == SessionControlAccess.Active;
-
     public string TroubleshootingRecentErrorStatus
     {
         get => troubleshootingRecentErrorStatus;
@@ -3596,6 +3593,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         ObservationRequestStamp stamp = default;
         LiveReadingSensors requestedLiveReadings = LiveReadingSensors.None;
+        bool refreshControlAccess = false;
         await dispatcher.InvokeAsync(
             () =>
             {
@@ -3604,8 +3602,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     subscriptionConnected);
                 requestedLiveReadings = ResolveRequestedLiveReadings(
                     includeDashboardReadings);
+                refreshControlAccess = IsConnected
+                    && latestStatus?.ControlAccess != SessionControlAccess.Active;
             },
             cancellationToken);
+        if (refreshControlAccess)
+        {
+            ServiceStatusSnapshot status = await serviceClient
+                .GetStatusAsync(cancellationToken);
+            await dispatcher.InvokeAsync(
+                () => ApplyObservedStatus(
+                    status,
+                    stamp,
+                    trayOnly: !includeDashboardReadings),
+                cancellationToken);
+            return;
+        }
+
         if (requestedLiveReadings == LiveReadingSensors.None)
         {
             return;
@@ -7471,7 +7484,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private void NotifyPresentationState()
     {
         Notify(nameof(IsServiceUnavailable));
-        Notify(nameof(HasActiveControlAccess));
         Notify(nameof(ControlAccessStatus));
         Notify(nameof(CanRequestHardwareControl));
         Notify(nameof(CanReapplyChangedSettings));

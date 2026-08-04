@@ -5138,6 +5138,43 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task InactiveSessionObservationRefreshesAccessBeforeHardwareObservation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot inactive = CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 10,
+            ControlAccess = SessionControlAccess.InactiveSession,
+        };
+        ServiceStatusSnapshot active = inactive with
+        {
+            ControlAccess = SessionControlAccess.Active,
+            Message = "Ready",
+        };
+        client.Publish(inactive);
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Another user is controlling OpenBlade");
+        client.GetStatusResponse = active;
+
+        await viewModel.ObserveStateAsync(CancellationToken.None);
+
+        Assert.Equal(1, client.GetStatusCalls);
+        Assert.Equal(0, client.ObservationCalls);
+        Assert.True(viewModel.CanControlHardware);
+        Assert.Equal("Ready", viewModel.ControlAccessStatus);
+
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        client.PendingObservation.SetResult(active with { Revision = 11 });
+
+        await viewModel.ObserveStateAsync(CancellationToken.None);
+
+        Assert.Equal(1, client.ObservationCalls);
+    }
+
+    [Fact]
     public async Task ReconnectingUpdate_RetainsLastSnapshotAndCommandsDuringGrace()
     {
         var client = new FakeServiceClient();
@@ -5480,6 +5517,7 @@ public sealed class MainViewModelTests
         public int ExportCalls { get; private set; }
         public bool? LastExportLiveReadingsEnabled { get; private set; }
         public int ObservationCalls { get; private set; }
+        public int GetStatusCalls { get; private set; }
         public List<bool> IncludeLiveReadingsRequests { get; } = [];
         public List<LiveReadingSensors> RequestedLiveReadings { get; } = [];
         public TaskCompletionSource<ServiceStatusSnapshot>? PendingObservation { get; set; }
@@ -5503,6 +5541,7 @@ public sealed class MainViewModelTests
         public ControlOperationResult NextResult { get; set; } = new(ControlOperationStatus.Applied, "Applied");
         public Queue<ControlOperationResult> MutationResults { get; } = [];
         public ServiceStatusSnapshot? CurrentStatus { get; private set; }
+        public ServiceStatusSnapshot? GetStatusResponse { get; set; }
         public DiagnosticArchive NextArchive { get; init; } = new(
             "OpenBlade-diagnostics.zip",
             [0x50, 0x4B, 0x03, 0x04]);
@@ -5536,7 +5575,8 @@ public sealed class MainViewModelTests
         public override Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            return Task.FromResult(CurrentStatus ?? throw new InvalidOperationException(
+            GetStatusCalls++;
+            return Task.FromResult(GetStatusResponse ?? CurrentStatus ?? throw new InvalidOperationException(
                 "No status has been published."));
         }
 

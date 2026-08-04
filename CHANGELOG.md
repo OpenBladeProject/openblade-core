@@ -16,6 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Let a returning console session recover control through safe status polling
+  without allowing inactive sessions to invoke hardware observation.
 - Kept the service IPC listener alive when a local client connects but stalls
   before sending its first request or receiving a malformed-request response.
 - Prevented inactive and Remote Desktop sessions from invoking write-capable

@@ -133,14 +133,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "OpenBlade visible observation failed: {0}",
                 exception),
             observationIntervalProvider: () =>
-                ViewModel.LiveReadingsObservationInterval,
-            canObserve: () => ViewModel.HasActiveControlAccess);
+                ViewModel.LiveReadingsObservationInterval);
         trayObservationLoop = new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync,
             errorHandler: exception => Trace.TraceError(
                 "OpenBlade on-demand tray telemetry refresh failed: {0}",
                 exception),
-            observationIntervalProvider: () => Timeout.InfiniteTimeSpan,
-            canObserve: () => ViewModel.HasActiveControlAccess);
+            observationIntervalProvider: () => Timeout.InfiniteTimeSpan);
         displayRefreshTimer = dispatcherQueue.CreateTimer();
         displayRefreshTimer.Interval = DisplayRefreshInterval;
         displayRefreshTimer.IsRepeating = true;

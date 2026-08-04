@@ -8,7 +8,6 @@ public sealed class VisibleObservationLoop : IAsyncDisposable
     private readonly Func<TimeSpan, CancellationToken, Task> delayAsync;
     private readonly Action<Exception>? errorHandler;
     private readonly Func<TimeSpan> observationIntervalProvider;
-    private readonly Func<bool> canObserve;
     private readonly object sync = new();
     private CancellationTokenSource? loopCancellation;
     private Task? loopTask;
@@ -20,8 +19,7 @@ public sealed class VisibleObservationLoop : IAsyncDisposable
         Func<CancellationToken, Task> observeAsync,
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
         Action<Exception>? errorHandler = null,
-        Func<TimeSpan>? observationIntervalProvider = null,
-        Func<bool>? canObserve = null)
+        Func<TimeSpan>? observationIntervalProvider = null)
     {
         this.observeAsync = observeAsync ?? throw new ArgumentNullException(nameof(observeAsync));
         this.delayAsync = delayAsync
@@ -29,7 +27,6 @@ public sealed class VisibleObservationLoop : IAsyncDisposable
         this.errorHandler = errorHandler;
         this.observationIntervalProvider = observationIntervalProvider
             ?? (() => DefaultObservationInterval);
-        this.canObserve = canObserve ?? (() => true);
     }
 
     public void StartOrWake()
@@ -135,10 +132,7 @@ public sealed class VisibleObservationLoop : IAsyncDisposable
 
             try
             {
-                if (canObserve())
-                {
-                    await observeAsync(token).ConfigureAwait(false);
-                }
+                await observeAsync(token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {

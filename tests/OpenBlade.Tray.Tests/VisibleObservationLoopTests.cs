@@ -69,26 +69,6 @@ public sealed class VisibleObservationLoopTests
     }
 
     [Fact]
-    public async Task InactiveControlAccessSkipsObservationUntilAccessReturns()
-    {
-        var delay = new ManualDelay();
-        bool canObserve = false;
-        int calls = 0;
-        await using var loop = new VisibleObservationLoop(
-            _ => { Interlocked.Increment(ref calls); return Task.CompletedTask; },
-            delay.WaitAsync,
-            canObserve: () => canObserve);
-
-        loop.StartOrWake();
-        await WaitUntilAsync(() => delay.WaitingCount == 1);
-        Assert.Equal(0, calls);
-
-        canObserve = true;
-        delay.CompleteNext();
-        await WaitUntilAsync(() => calls == 1);
-    }
-
-    [Fact]
     public async Task WakeDuringObservationCoalescesOneNonOverlappingFollowUp()
     {
         var delay = new ManualDelay();
