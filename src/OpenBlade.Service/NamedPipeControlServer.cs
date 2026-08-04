@@ -109,6 +109,14 @@ public sealed class NamedPipeControlServer
             ServiceClientContext client = clientContextResolver.Resolve(pipe);
             await ServeConnectionAsync(pipe, client, request, cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or TimeoutException)
+        {
+            // A disconnect or stalled initial request affects only this connection.
+        }
         finally
         {
             if (ownsFirstListenerGate)

@@ -131,7 +131,8 @@ public sealed class Worker(
             {
                 return;
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception) when (exception is
+                IOException or TimeoutException or UnauthorizedAccessException)
             {
                 logger.LogError(exception, "Named-pipe connection failed.");
             }

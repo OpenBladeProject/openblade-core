@@ -420,6 +420,37 @@ public sealed class NamedPipeControlServerTests
     }
 
     [Fact]
+    public async Task ServeOnceAsync_StalledInitialClientDoesNotPreventNextConnection()
+    {
+        var time = new ManualTimeProvider();
+        TestServer context = CreateServer(time);
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+
+        Task stalledServer = context.Server.ServeOnceAsync(timeout.Token);
+        await using NamedPipeClientStream stalledClient = await ConnectAsync(
+            context.PipeName,
+            timeout.Token);
+        await time.TimerCreated.Task.WaitAsync(timeout.Token);
+
+        time.Advance(TimeSpan.FromSeconds(2));
+
+        await stalledServer.WaitAsync(timeout.Token);
+        Task nextServer = context.Server.ServeOnceAsync(timeout.Token);
+        await using NamedPipeClientStream nextClient = await ConnectAsync(
+            context.PipeName,
+            timeout.Token);
+        await IpcMessageCodec.WriteRequestAsync(
+            nextClient,
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            timeout.Token);
+        ServiceResponse response = Assert.IsType<ServiceResponse>(
+            await IpcMessageCodec.ReadServerFrameAsync(nextClient, timeout.Token));
+        await nextServer.WaitAsync(timeout.Token);
+
+        Assert.True(response.Success);
+    }
+
+    [Fact]
     public async Task Subscribe_DisconnectDisposesLeaseAndReleasesCapacity()
     {
         TestServer context = CreateServer();
@@ -731,11 +762,14 @@ public sealed class NamedPipeControlServerTests
     {
         private readonly List<ManualTimer> timers = [];
         private DateTimeOffset now = DateTimeOffset.UnixEpoch;
+        public TaskCompletionSource TimerCreated { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         public override DateTimeOffset GetUtcNow() => now;
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
             var timer = new ManualTimer(callback, state, now + dueTime, period);
             timers.Add(timer);
+            TimerCreated.TrySetResult();
             return timer;
         }
         public void Advance(TimeSpan amount)
