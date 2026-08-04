@@ -141,6 +141,70 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PrepareForShutdown_FanCancellationOccursAfterDriverModeRelease()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        context.Device.DriverModeActive = true;
+        using var cancellation = new CancellationTokenSource();
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                cancellation.Cancel();
+            }
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            context.Runtime.PrepareForShutdownAsync(cancellation.Token));
+
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+        Assert.False(context.Device.DriverModeActive);
+        Assert.Contains(
+            DeviceSubsystem.Fans,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_UsesConfirmedManualStateAfterClearWasRefused()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        context.Device.FanFailure = new CapabilityUnavailableException(
+            "Synthetic fan refusal.");
+
+        ControlOperationResult cleared = await context.Runtime.SetFanOverrideAsync(
+            null,
+            CancellationToken.None);
+
+        ServiceStatusSnapshot refused = context.Runtime.GetStatus();
+        Assert.Equal(ControlOperationStatus.Blocked, cleared.Status);
+        Assert.Equal(FanMode.Automatic, refused.DesiredState.Fans.Value);
+        Assert.Equal(FanMode.Maximum, refused.ConfirmedState!.Fans);
+        Assert.DoesNotContain(DeviceSubsystem.Fans, refused.ExternalChanges);
+        context.Device.FanFailure = null;
+        int fanWrites = context.Device.FanSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(fanWrites + 1, context.Device.FanSetCalls);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Contains("Automatic fan control was confirmed", result.Message);
+    }
+
+    [Fact]
     public async Task PrepareForShutdown_DoesNotReclaimExternallyChangedFans()
     {
         TestContext context = CreateWritableContext();
@@ -165,7 +229,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ControlOperationResult result = await context.Runtime
             .PrepareForShutdownAsync(CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(fanWrites, context.Device.FanSetCalls);
         Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
         Assert.Contains("no longer owns", result.Message);
@@ -189,7 +253,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ControlOperationResult result = await context.Runtime
             .PrepareForShutdownAsync(CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
         Assert.Equal(fanWrites, context.Device.FanSetCalls);
         Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
         Assert.Contains("could not be checked", result.Message);
@@ -6300,6 +6364,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? PerformanceFailure { get; set; }
 
+        public Exception? FanFailure { get; set; }
+
         public Exception? LightingFailure { get; set; }
 
         public Exception? OneShotFailure { get; set; }
@@ -6493,6 +6559,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             TotalCalls++;
             FanSetCalls++;
+            if (FanFailure is not null)
+            {
+                throw FanFailure;
+            }
+
             if (SuppressConfirmationFor != DeviceSubsystem.Fans)
             {
                 ConfirmedState = ConfirmedState with { Fans = value };

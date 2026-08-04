@@ -2543,6 +2543,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ControlOperationResult driverModeResult = await ReleaseDriverModeCoreAsync(
+                "shutdown",
+                cancellationToken).ConfigureAwait(false);
             ControlOperationResult fanResult;
             try
             {
@@ -2563,9 +2566,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     failure);
             }
 
-            ControlOperationResult driverModeResult = await ReleaseDriverModeCoreAsync(
-                "shutdown",
-                cancellationToken).ConfigureAwait(false);
             return CombineShutdownCleanupResults(fanResult, driverModeResult);
         }
         finally
@@ -2687,13 +2687,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         ServiceStatusSnapshot current = GetStatus();
-        FanControlSettings desired = current.DesiredState.FanControl
-            ?? FanControlSettings.FromLegacy(current.DesiredState.Fans.Value);
-        if (!DeviceSubsystemOrder.IsManualFanMode(desired.Mode))
+        if (current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+        {
+            const string externallyChanged =
+                "Fan control was left unchanged because OpenBlade no longer owns the confirmed fan state.";
+            history.RecordSummary(ControlOperationStatus.Stored, externallyChanged);
+            return new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                externallyChanged);
+        }
+
+        FanMode? confirmedFanMode = current.ConfirmedState?.Fans;
+        if (confirmedFanMode is null
+            || !DeviceSubsystemOrder.IsManualFanMode(confirmedFanMode.Value))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Stored,
-                "Fan control already uses firmware-managed Automatic mode.");
+                confirmedFanMode == FanMode.Automatic
+                    ? "Fan control already uses firmware-managed Automatic mode."
+                    : "Fan control was left unchanged because an OpenBlade-owned manual state was not confirmed.");
         }
 
         history.RecordSummary(
@@ -2705,18 +2717,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             const string unverified =
                 "Manual fan control was left unchanged because other Razer software could not be checked.";
-            history.RecordSummary(ControlOperationStatus.Blocked, unverified);
-            return new ControlOperationResult(ControlOperationStatus.Blocked, unverified);
-        }
-
-        if (current.ExternalChanges.Contains(DeviceSubsystem.Fans))
-        {
-            const string externallyChanged =
-                "Fan control was left unchanged because OpenBlade no longer owns the confirmed fan state.";
-            history.RecordSummary(ControlOperationStatus.Blocked, externallyChanged);
-            return new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                externallyChanged);
+            history.RecordSummary(ControlOperationStatus.Stored, unverified);
+            return new ControlOperationResult(ControlOperationStatus.Stored, unverified);
         }
 
         FanControlSettings automatic = FanControlSettings.FromLegacy(FanMode.Automatic);
@@ -2752,16 +2754,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ControlOperationResult fanResult,
         ControlOperationResult driverModeResult)
     {
-        ControlOperationStatus status = fanResult.Status == ControlOperationStatus.Failed
-            || driverModeResult.Status == ControlOperationStatus.Failed
-                ? ControlOperationStatus.Failed
-                : fanResult.Status == ControlOperationStatus.Blocked
-                    || driverModeResult.Status == ControlOperationStatus.Blocked
-                        ? ControlOperationStatus.Blocked
-                        : fanResult.Status == ControlOperationStatus.Applied
-                            || driverModeResult.Status == ControlOperationStatus.Applied
-                                ? ControlOperationStatus.Applied
-                                : ControlOperationStatus.Stored;
+        ControlOperationStatus status;
+        if (fanResult.Status == ControlOperationStatus.Failed
+            || driverModeResult.Status == ControlOperationStatus.Failed)
+        {
+            status = ControlOperationStatus.Failed;
+        }
+        else if (fanResult.Status == ControlOperationStatus.Blocked
+            || driverModeResult.Status == ControlOperationStatus.Blocked)
+        {
+            status = ControlOperationStatus.Blocked;
+        }
+        else if (fanResult.Status == ControlOperationStatus.Applied
+            || driverModeResult.Status == ControlOperationStatus.Applied)
+        {
+            status = ControlOperationStatus.Applied;
+        }
+        else
+        {
+            status = ControlOperationStatus.Stored;
+        }
+
         return new ControlOperationResult(
             status,
             $"Fan cleanup: {fanResult.Message} Keyboard cleanup: {driverModeResult.Message}");

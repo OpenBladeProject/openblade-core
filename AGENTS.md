@@ -55,7 +55,11 @@ be copied to the other.
    mode until Windows reports that the system is active again. The Session
    Agent consumes confirmed status only and must pass function-row keys through
    whenever Driver-mode status is unknown. During coordinated shutdown, the
-   service uses the same guarded Normal-mode release.
+   service uses the same guarded Normal-mode release before bounded fan cleanup
+   so a fan failure cannot skip keyboard cleanup. It hands OpenBlade-owned
+   manual fan control back to firmware Automatic only after confirmed-state,
+   exact-device, and competing-controller safety checks pass, without changing
+   the saved fan intent.
    Production lighting admission is owned by the approved embedded oracle and
    the reviewed semantic admission manifest. The manifest compares the actual
    device identity, command contracts, report geometry, layout mask, supported
