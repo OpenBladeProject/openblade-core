@@ -14,6 +14,10 @@ builder.Services.AddSingleton(provider => new BatteryConfigurationStore(
     provider.GetRequiredService<ProfileSetValidator>()));
 builder.Services.AddSingleton(new PersistentOverrideStore(
     Path.Combine(machineDataDirectory, "manual-overrides.json")));
+builder.Services.AddSingleton<IUserConfigurationRepository>(provider =>
+    new UserConfigurationRepository(
+        machineDataDirectory,
+        provider.GetRequiredService<ProfileSetValidator>()));
 builder.Services.AddSingleton<MachineProfileBootstrapper>();
 builder.Services.AddSingleton<IRunningProcessSource, RunningProcessSource>();
 builder.Services.AddSingleton<IWindowsServiceSource, WindowsServiceSource>();
@@ -22,6 +26,7 @@ builder.Services.AddSingleton<IHardwareAccessGuard>(provider =>
     new WindowsHardwareAccessGuard(
         provider.GetRequiredService<IControllerPresenceMonitor>()));
 builder.Services.AddWindowsPowerState();
+builder.Services.AddMultiUserSessionSupport();
 builder.Services.AddVerifiedBladeDeviceProvider();
 builder.Services.AddDiagnostics();
 builder.Services.AddSingleton<IStatusSubscriptionHub>(

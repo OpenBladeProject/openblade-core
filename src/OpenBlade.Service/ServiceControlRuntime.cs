@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Principal;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -16,6 +17,17 @@ public interface IServiceControlRuntime
         Initialize(configuration, powerSource);
 
     ServiceStatusSnapshot GetStatus();
+
+    Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        CancellationToken cancellationToken) => Task.CompletedTask;
+
+    Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken) => stillControlsSession()
+            ? ActivateUserAsync(userSid, cancellationToken)
+            : Task.CompletedTask;
 
     Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
@@ -174,6 +186,15 @@ public interface IServiceControlRuntime
     Task<ControlOperationResult> PrepareForLowPowerAsync(
         CancellationToken cancellationToken) => PrepareForShutdownAsync(cancellationToken);
 
+    Task BeginResumeValidationAsync(CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
+    Task CancelResumeValidationAsync(CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
+    Task CompleteResumeValidationAsync(CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
     Task InvalidateLightingRendererAsync(CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
@@ -198,6 +219,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static readonly TimeSpan FullObservationInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan FastPathControllerPresenceInterval =
         TimeSpan.FromSeconds(15);
+    // Allow slow HID re-enumeration without carrying resume attribution into a
+    // later, unrelated device or power lifecycle.
+    internal static readonly TimeSpan ResumeValidationObservationWindow =
+        TimeSpan.FromMinutes(1);
     private const int ObservationFailureThreshold = 3;
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
         new(null, null, null, null);
@@ -210,8 +235,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             "Razer Synapse Service",
         };
 
-    private readonly BatteryConfigurationStore store;
-    private readonly PersistentOverrideStore overrideStore;
+    private UserConfigurationStores userStores;
+    private readonly IUserConfigurationRepository? userConfigurationRepository;
     private readonly IPowerStateProvider powerStateProvider;
     private readonly IStatusSubscriptionHub subscriptionHub;
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
@@ -220,6 +245,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly LowPowerGate lowPowerGate;
     private readonly IFirmwareVersionSource firmwareVersionSource;
     private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
+    private readonly TimeProvider timeProvider;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ProfileSetValidator validator;
     private readonly object initializationGate = new();
@@ -252,6 +278,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool batteryHealthVerificationRetryPending;
     private bool startupProfileReconciliationPending;
     private bool startupProfileReconciliationRequested;
+    private string? activeUserSid;
+    private ResumeStateBaseline? pendingResumeStateBaseline;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -326,6 +354,35 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
     }
 
+    public ServiceControlRuntime(
+        BatteryConfigurationStore store,
+        PersistentOverrideStore overrideStore,
+        IPowerStateProvider powerStateProvider,
+        IStatusSubscriptionHub subscriptionHub,
+        IVerifiedBladeDeviceProvider deviceProvider,
+        DiagnosticHistory history,
+        LowPowerGate lowPowerGate,
+        IControllerPresenceMonitor controllerPresenceMonitor,
+        IFirmwareVersionSource firmwareVersionSource,
+        ProfileSetValidator validator,
+        IUserConfigurationRepository userConfigurationRepository)
+        : this(
+            store,
+            overrideStore,
+            powerStateProvider,
+            subscriptionHub,
+            deviceProvider,
+            history,
+            lowPowerGate,
+            controllerPresenceMonitor,
+            firmwareVersionSource,
+            static (delay, token) => Task.Delay(delay, token),
+            validator,
+            fanTemperatureSource: null,
+            userConfigurationRepository: userConfigurationRepository)
+    {
+    }
+
     internal ServiceControlRuntime(
         BatteryConfigurationStore store,
         PersistentOverrideStore overrideStore,
@@ -389,11 +446,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IFirmwareVersionSource firmwareVersionSource,
         Func<TimeSpan, CancellationToken, Task> transitionRetryDelay,
         ProfileSetValidator validator,
-        IFanTemperatureSource? fanTemperatureSource = null)
+        IFanTemperatureSource? fanTemperatureSource = null,
+        TimeProvider? timeProvider = null,
+        IUserConfigurationRepository? userConfigurationRepository = null)
     {
-        this.store = store ?? throw new ArgumentNullException(nameof(store));
-        this.overrideStore = overrideStore
-            ?? throw new ArgumentNullException(nameof(overrideStore));
+        userStores = new UserConfigurationStores(
+            store ?? throw new ArgumentNullException(nameof(store)),
+            overrideStore ?? throw new ArgumentNullException(nameof(overrideStore)));
         this.powerStateProvider = powerStateProvider
             ?? throw new ArgumentNullException(nameof(powerStateProvider));
         this.subscriptionHub = subscriptionHub
@@ -409,7 +468,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? throw new ArgumentNullException(nameof(firmwareVersionSource));
         this.transitionRetryDelay = transitionRetryDelay
             ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
+        this.timeProvider = timeProvider ?? TimeProvider.System;
         this.validator = validator ?? throw new ArgumentNullException(nameof(validator));
+        this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
             ?? new SafeWindowsFanTemperatureSource();
     }
@@ -464,6 +525,112 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public ServiceStatusSnapshot GetStatus() => Volatile.Read(ref status)
         ?? throw new InvalidOperationException("The service runtime is not initialized.");
 
+    public async Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        CancellationToken cancellationToken) => await ActivateUserAsync(
+            userSid,
+            static () => true,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(userSid);
+        ArgumentNullException.ThrowIfNull(stillControlsSession);
+        if (userConfigurationRepository is null
+            || string.Equals(
+                Volatile.Read(ref activeUserSid),
+                userSid.Value,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        UserConfigurationContext context = await userConfigurationRepository
+            .LoadAsync(userSid, cancellationToken)
+            .ConfigureAwait(false);
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (string.Equals(
+                    activeUserSid,
+                    userSid.Value,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (!stillControlsSession())
+            {
+                return;
+            }
+
+            ProfileSet profiles = ProfileStore.NormalizeLegacyBatteryProfile(
+                context.Configuration.Profiles,
+                out _);
+            PersistentOverrideState overrides =
+                PersistentOverrideStore.NormalizeLegacyFanControl(
+                    PersistentOverrideStore.NormalizeLegacyLighting(context.Overrides));
+            validator.Validate(profiles);
+            validator.ValidatePreferences(context.Configuration.Preferences);
+            PersistentOverrideStore.Validate(overrides);
+
+            ServiceStatusSnapshot current = GetStatus();
+            PowerSource powerSource = current.ActivePowerSource;
+            await InvalidateLightingRendererCoreAsync(
+                preserveForLifecycleRestore: false,
+                cancellationToken).ConfigureAwait(false);
+            current = GetStatus();
+            Volatile.Write(
+                ref userStores,
+                new UserConfigurationStores(context.Store, context.OverrideStore));
+            automation = new ProfileAutomationState(
+                profiles,
+                context.Configuration.Preferences,
+                powerSource,
+                overrides);
+            preferences = context.Configuration.Preferences;
+            persistentOverrides = overrides;
+            lightingSuppressions.Clear();
+            pendingLightingRestore = null;
+            pendingLightingRestoreFromLifecycle = false;
+
+            ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
+            if (powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
+            {
+                await ApplyFullTransitionAsync(
+                        powerSource,
+                        cancellationToken,
+                        preserveObservedExternalChanges: false)
+                    .ConfigureAwait(false);
+            }
+
+            current = GetStatus();
+            confirmed = current.ConfirmedState ?? UnknownConfirmedState;
+            PublishIfChanged(current with
+            {
+                Message = "The active Windows user's profile is loaded.",
+                Profiles = profiles,
+                DesiredState = Automation.Resolve(confirmed),
+                PerformanceOverride = Automation.PerformanceOverride,
+                FanOverride = Automation.FanOverride,
+                FanControlOverride = Automation.FanControlOverride,
+                LightingOverride = Automation.LightingOverride,
+                FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
+                LightingSuppressions = CurrentLightingSuppressions(),
+                PerformanceShortcutPreview = null,
+            });
+
+            Volatile.Write(ref activeUserSid, userSid.Value);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
         CancellationToken token)
@@ -477,7 +644,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
                 validator.Validate(profiles);
-                await store.SaveProfilesAsync(profiles, token);
+                await ConfigurationStore.SaveProfilesAsync(profiles, token);
                 Automation.UpdateProfiles(profiles);
                 RemoveDisabledLightingSuppressions();
             }
@@ -1158,7 +1325,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             try
             {
-                await store.SaveConfigurationAsync(Automation.Profiles, staged, token)
+                await ConfigurationStore.SaveConfigurationAsync(Automation.Profiles, staged, token)
                     .ConfigureAwait(false);
             }
             catch (Exception saveException) when (delegateToWindows)
@@ -1429,7 +1596,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 AlwaysOverrideExternalLightingChanges = enabled,
             };
-            await store.SaveConfigurationAsync(Automation.Profiles, staged, token)
+            await ConfigurationStore.SaveConfigurationAsync(Automation.Profiles, staged, token)
                 .ConfigureAwait(false);
             preferences = staged;
             ServiceStatusSnapshot current = GetStatus();
@@ -2162,6 +2329,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
+            DiscardExpiredResumeBaselineCore();
             bool includeLiveReadings = requestedLiveReadings != LiveReadingSensors.None;
             cancellationToken.ThrowIfCancellationRequested();
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(
@@ -2174,7 +2342,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : null;
             bool sourceChanged = powerSource != PowerSource.ExternalUnknown
                 && Automation.PowerSource != powerSource;
-            bool canUseReadOnlyFastPath = !sourceChanged
+            bool canUseReadOnlyFastPath = pendingResumeStateBaseline?.ResumeStarted != true
+                && !sourceChanged
                 && CanUseObservationFastPath(
                     includeLiveReadings,
                     powerSource != PowerSource.ExternalUnknown);
@@ -2183,6 +2352,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 allowRecentObservation: canUseReadOnlyFastPath);
             bool changed = powerSource != PowerSource.ExternalUnknown
                 && Automation.ChangePowerSource(powerSource);
+            if (changed)
+            {
+                RecordResumePowerSourceTransitionCore(powerSource);
+            }
             if (startupProfileReconciliationPending
                 && startupProfileReconciliationRequested
                 && powerSource != PowerSource.ExternalUnknown)
@@ -2264,13 +2437,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
+            DiscardExpiredResumeBaselineCore();
+            DiscardUnstartedResumeBaselineCore();
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             RefreshBatteryHealthAfterPowerSourceChangeCore();
             RefreshControllerPresenceCore(cancellationToken);
-            if (powerSource != PowerSource.ExternalUnknown
-                && Automation.ChangePowerSource(powerSource))
+            bool changed = powerSource != PowerSource.ExternalUnknown
+                && Automation.ChangePowerSource(powerSource);
+            if (changed)
             {
+                RecordResumePowerSourceTransitionCore(powerSource);
                 // The destination profile supersedes any renderer snapshot captured
                 // before the power-source transition.
                 pendingLightingRestore = null;
@@ -2582,6 +2759,65 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             reasonLabel: "low power",
             cancellationToken).ConfigureAwait(false);
 
+    public async Task BeginResumeValidationAsync(CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (pendingResumeStateBaseline is { } baseline)
+            {
+                pendingResumeStateBaseline = baseline with { ResumeStarted = true };
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task CancelResumeValidationAsync(CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            pendingResumeStateBaseline = null;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task CompleteResumeValidationAsync(CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (pendingResumeStateBaseline is not { ResumeStarted: true } baseline)
+            {
+                return;
+            }
+
+            ResumeStateBaseline completed = baseline with
+            {
+                ResumeLifecycleCompleted = true,
+                ObservationWindowStartedAt = timeProvider.GetTimestamp(),
+            };
+            pendingResumeStateBaseline = completed;
+            if (completed.Observed is { } observed)
+            {
+                RecordResumeStateValidationCore(completed, observed);
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     private async Task<ControlOperationResult> ReleaseDriverModeAsync(
         bool preserveLightingIntent,
         string reasonLabel,
@@ -2594,6 +2830,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             : null;
         bool preservedLifecycleRestore = preserveLightingIntent
             && pendingLightingRestoreFromLifecycle;
+        if (preserveLightingIntent)
+        {
+            CaptureResumeStateBaselineCore();
+        }
         try
         {
             return await ReleaseDriverModeCoreAsync(reasonLabel, cancellationToken)
@@ -3053,6 +3293,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return false;
         }
 
+        if (pendingResumeStateBaseline is { ResumeStarted: true } baseline)
+        {
+            pendingResumeStateBaseline = baseline with
+            {
+                LightingRestoredDuringResume = true,
+                LightingWriteApplied =
+                    outcome.Result.Status == ControlResultStatus.Applied,
+            };
+        }
+
         await TryPersistLastKnownLightingAsync(requested, cancellationToken)
             .ConfigureAwait(false);
         pendingLightingRestoreFromLifecycle = false;
@@ -3166,7 +3416,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken) =>
         staged == persistentOverrides
             ? Task.CompletedTask
-            : overrideStore.SaveAsync(staged, cancellationToken);
+            : OverrideStore.SaveAsync(staged, cancellationToken);
 
     private async Task<ControlOperationResult> ExecuteScopedMutationAsync(
         DeviceSubsystem subsystem,
@@ -3279,7 +3529,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 desired => desired with { Battery = staged },
                 async cancellationToken =>
                 {
-                    await store.SaveConfigurationAsync(
+                    await ConfigurationStore.SaveConfigurationAsync(
                         stagedProfiles,
                         preferences with { ProtectionEnabled = staged.ProtectionEnabled },
                         cancellationToken);
@@ -4221,6 +4471,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 await RecoverFaultedLightingRendererCoreAsync(cancellationToken)
                     .ConfigureAwait(false);
             }
+
+            CompletePendingResumeStateValidationCore(
+                powerSource,
+                observation.Confirmed);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -4236,6 +4490,245 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 cancellationToken);
         }
     }
+
+    private void CaptureResumeStateBaselineCore()
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        pendingResumeStateBaseline = current.DeviceVerified
+            && current.ConfirmedState is { } confirmed
+                ? new ResumeStateBaseline(
+                    current.ActivePowerSource,
+                    confirmed,
+                    ResumeStarted: false,
+                    ResumeLifecycleCompleted: false,
+                    LightingRestoredDuringResume: false,
+                    LightingWriteApplied: false,
+                    Observed: null,
+                    ObservationWindowStartedAt: null)
+                : null;
+    }
+
+    private void DiscardUnstartedResumeBaselineCore()
+    {
+        if (pendingResumeStateBaseline is { ResumeStarted: false })
+        {
+            pendingResumeStateBaseline = null;
+        }
+    }
+
+    private void DiscardExpiredResumeBaselineCore()
+    {
+        if (pendingResumeStateBaseline is
+            {
+                ResumeLifecycleCompleted: true,
+                ObservationWindowStartedAt: { } startedAt,
+            }
+            && timeProvider.GetElapsedTime(startedAt)
+                >= ResumeValidationObservationWindow)
+        {
+            pendingResumeStateBaseline = null;
+        }
+    }
+
+    private void RecordResumePowerSourceTransitionCore(PowerSource powerSource)
+    {
+        if (pendingResumeStateBaseline is not { ResumeStarted: true } baseline)
+        {
+            return;
+        }
+
+        pendingResumeStateBaseline = null;
+        if (baseline.ResumeLifecycleCompleted)
+        {
+            return;
+        }
+
+        history.RecordResumeValidation(
+            ControlOperationStatus.Stored,
+            $"Resume changed the power source from {baseline.PowerSource} to {powerSource}; the existing destination-profile transition was used instead of comparing the two power profiles.");
+    }
+
+    private void CompletePendingResumeStateValidationCore(
+        PowerSource powerSource,
+        ConfirmedDeviceState observed)
+    {
+        if (pendingResumeStateBaseline is not { ResumeStarted: true } baseline)
+        {
+            return;
+        }
+
+        if (baseline.PowerSource != powerSource)
+        {
+            RecordResumePowerSourceTransitionCore(powerSource);
+            return;
+        }
+
+        if (!baseline.ResumeLifecycleCompleted)
+        {
+            pendingResumeStateBaseline = baseline with { Observed = observed };
+            return;
+        }
+
+        RecordResumeStateValidationCore(baseline, observed);
+    }
+
+    private void RecordResumeStateValidationCore(
+        ResumeStateBaseline baseline,
+        ConfirmedDeviceState observed)
+    {
+        if (pendingResumeStateBaseline != baseline)
+        {
+            return;
+        }
+
+        pendingResumeStateBaseline = null;
+        IReadOnlyList<DeviceSubsystem> compared = GetComparableResumeSubsystems(
+            baseline,
+            observed);
+        IReadOnlyList<DeviceSubsystem> changed = GetChangedResumeSubsystems(
+            baseline.Confirmed,
+            observed,
+            compared);
+        if (changed.Count > 0)
+        {
+            history.RecordResumeValidation(
+                ControlOperationStatus.Blocked,
+                BuildResumeValidationSummary(
+                    $"Resume validation observed changed control state for {FormatSubsystemList(changed)}. The changes remain externally classified; no validation-driven recovery writes were attempted.",
+                    baseline,
+                    observed,
+                    compared));
+            return;
+        }
+
+        history.RecordResumeValidation(
+            baseline.LightingWriteApplied
+                ? ControlOperationStatus.Applied
+                : ControlOperationStatus.Stored,
+            BuildResumeValidationSummary(
+                compared.Count > 0
+                    ? $"Resume validation confirmed retained control state for {FormatSubsystemList(compared)}. No validation-driven recovery writes were needed."
+                    : "Resume validation could not compare control state because no subsystem had confirmed readings in both samples. No validation-driven recovery writes were attempted.",
+                baseline,
+                observed,
+                compared));
+    }
+
+    private static string BuildResumeValidationSummary(
+        string result,
+        ResumeStateBaseline baseline,
+        ConfirmedDeviceState observed,
+        IReadOnlyList<DeviceSubsystem> compared)
+    {
+        var details = new List<string> { result };
+        if (baseline.LightingRestoredDuringResume)
+        {
+            details.Add(baseline.LightingWriteApplied
+                ? "Lighting was not compared because OpenBlade restored its owned lighting during the resume lifecycle; that restoration applied a lighting control write."
+                : "Lighting was not compared because OpenBlade restored its owned lighting during the resume lifecycle; no new lighting control write was required.");
+        }
+        else if (!compared.Contains(DeviceSubsystem.Lighting))
+        {
+            details.Add("Lighting was unavailable in at least one sample and was not compared.");
+        }
+
+        IReadOnlyList<DeviceSubsystem> unavailable = GetUnavailableResumeSubsystems(
+            compared,
+            excludeLighting: baseline.LightingRestoredDuringResume);
+        if (unavailable.Count > 0)
+        {
+            details.Add($"Unavailable for comparison: {FormatSubsystemList(unavailable)}.");
+        }
+        return string.Join(" ", details);
+    }
+
+    private static IReadOnlyList<DeviceSubsystem> GetComparableResumeSubsystems(
+        ResumeStateBaseline baseline,
+        ConfirmedDeviceState observed)
+    {
+        var compared = new List<DeviceSubsystem>(4);
+        if (baseline.Confirmed.Performance is not null
+            && observed.Performance is not null)
+        {
+            compared.Add(DeviceSubsystem.Performance);
+        }
+        if (baseline.Confirmed.Fans is not null && observed.Fans is not null)
+        {
+            compared.Add(DeviceSubsystem.Fans);
+        }
+        if (baseline.Confirmed.Battery is not null && observed.Battery is not null)
+        {
+            compared.Add(DeviceSubsystem.Battery);
+        }
+        if (!baseline.LightingRestoredDuringResume
+            && baseline.Confirmed.Lighting is not null
+            && observed.Lighting is not null)
+        {
+            compared.Add(DeviceSubsystem.Lighting);
+        }
+        return compared;
+    }
+
+    private static IReadOnlyList<DeviceSubsystem> GetUnavailableResumeSubsystems(
+        IReadOnlyList<DeviceSubsystem> compared,
+        bool excludeLighting)
+    {
+        var unavailable = new List<DeviceSubsystem>(4);
+        foreach (DeviceSubsystem subsystem in ResumeComparedSubsystems)
+        {
+            if ((!excludeLighting || subsystem != DeviceSubsystem.Lighting)
+                && !compared.Contains(subsystem))
+            {
+                unavailable.Add(subsystem);
+            }
+        }
+        return unavailable;
+    }
+
+    private static IReadOnlyList<DeviceSubsystem> GetChangedResumeSubsystems(
+        ConfirmedDeviceState baseline,
+        ConfirmedDeviceState observed,
+        IReadOnlyList<DeviceSubsystem> compared)
+    {
+        var changed = new List<DeviceSubsystem>(4);
+        foreach (DeviceSubsystem subsystem in compared)
+        {
+            bool matches = subsystem switch
+            {
+                DeviceSubsystem.Performance =>
+                    baseline.Performance == observed.Performance
+                    && CompareWhenBothKnown(
+                        baseline.CustomPerformance,
+                        observed.CustomPerformance)
+                    && CompareWhenBothKnown(
+                        baseline.GpuClockOffsets,
+                        observed.GpuClockOffsets),
+                DeviceSubsystem.Fans => baseline.Fans == observed.Fans,
+                DeviceSubsystem.Battery => baseline.Battery == observed.Battery,
+                DeviceSubsystem.Lighting =>
+                    baseline.Lighting == observed.Lighting
+                    && CompareWhenBothKnown(
+                        baseline.LogoLighting,
+                        observed.LogoLighting),
+                _ => true,
+            };
+            if (!matches)
+            {
+                changed.Add(subsystem);
+            }
+        }
+        return changed;
+    }
+
+    private static bool CompareWhenBothKnown<T>(T? baseline, T? observed)
+        where T : class => baseline is null
+            || observed is null
+            || EqualityComparer<T>.Default.Equals(baseline, observed);
+
+    private static bool CompareWhenBothKnown<T>(T? baseline, T? observed)
+        where T : struct => baseline is null
+            || observed is null
+            || EqualityComparer<T>.Default.Equals(baseline.Value, observed.Value);
 
     private void PublishUnavailableDeviceObservation(
         PowerSource powerSource,
@@ -5276,6 +5769,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private ProfileAutomationState Automation => automation
         ?? throw new InvalidOperationException("The service runtime is not initialized.");
 
+    private BatteryConfigurationStore ConfigurationStore =>
+        Volatile.Read(ref userStores).Configuration;
+
+    private PersistentOverrideStore OverrideStore =>
+        Volatile.Read(ref userStores).Overrides;
+
+    private sealed record UserConfigurationStores(
+        BatteryConfigurationStore Configuration,
+        PersistentOverrideStore Overrides);
+
     private void EnsureInitialized()
     {
         _ = GetStatus();
@@ -5562,7 +6065,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LastKnownLighting = lighting,
         };
         validator.ValidatePreferences(staged);
-        await store.SaveConfigurationAsync(
+        await ConfigurationStore.SaveConfigurationAsync(
             Automation.Profiles,
             staged,
             cancellationToken).ConfigureAwait(false);
@@ -5693,6 +6196,36 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool? StartupAnimation,
         FunctionKeyPrimaryMode? FunctionKeyPrimary,
         bool? GamingMode);
+
+    internal static IReadOnlySet<string> ResumeComparedStatePropertyNames { get; } =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            nameof(ConfirmedDeviceState.Performance),
+            nameof(ConfirmedDeviceState.CustomPerformance),
+            nameof(ConfirmedDeviceState.GpuClockOffsets),
+            nameof(ConfirmedDeviceState.Fans),
+            nameof(ConfirmedDeviceState.Battery),
+            nameof(ConfirmedDeviceState.Lighting),
+            nameof(ConfirmedDeviceState.LogoLighting),
+        };
+
+    private static IReadOnlyList<DeviceSubsystem> ResumeComparedSubsystems { get; } =
+    [
+        DeviceSubsystem.Performance,
+        DeviceSubsystem.Fans,
+        DeviceSubsystem.Battery,
+        DeviceSubsystem.Lighting,
+    ];
+
+    private sealed record ResumeStateBaseline(
+        PowerSource PowerSource,
+        ConfirmedDeviceState Confirmed,
+        bool ResumeStarted,
+        bool ResumeLifecycleCompleted,
+        bool LightingRestoredDuringResume,
+        bool LightingWriteApplied,
+        ConfirmedDeviceState? Observed,
+        long? ObservationWindowStartedAt);
 
     private sealed record FullDeviceObservation(
         DeviceCapabilities Capabilities,

@@ -1167,6 +1167,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    public FirmwareVersions? DetectedFirmware => latestStatus?.Firmware;
+
     public string TroubleshootingUsbDeviceStatus
     {
         get
@@ -3311,6 +3313,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             DeviceVerified: true,
             Capabilities: not null,
+            ControlAccess: SessionControlAccess.Active,
         }
         && (!latestStatus.WritesBlocked || IsRetainedPowerSourceRecheck(latestStatus))
         && !IsCheckingLaptopConnection(latestStatus);
@@ -3590,6 +3593,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         ObservationRequestStamp stamp = default;
         LiveReadingSensors requestedLiveReadings = LiveReadingSensors.None;
+        bool refreshControlAccess = false;
         await dispatcher.InvokeAsync(
             () =>
             {
@@ -3598,8 +3602,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     subscriptionConnected);
                 requestedLiveReadings = ResolveRequestedLiveReadings(
                     includeDashboardReadings);
+                refreshControlAccess = IsConnected
+                    && latestStatus?.ControlAccess != SessionControlAccess.Active;
             },
             cancellationToken);
+        if (refreshControlAccess)
+        {
+            ServiceStatusSnapshot status = await serviceClient
+                .GetStatusAsync(cancellationToken);
+            await dispatcher.InvokeAsync(
+                () => ApplyObservedStatus(
+                    status,
+                    stamp,
+                    trayOnly: !includeDashboardReadings),
+                cancellationToken);
+            return;
+        }
+
         if (requestedLiveReadings == LiveReadingSensors.None)
         {
             return;
@@ -3912,7 +3931,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool checkingLaptopConnection)
     {
         IsConnected = true;
-        bool controllable = status.DeviceVerified
+        bool controllable = status.ControlAccess == SessionControlAccess.Active
+            && status.DeviceVerified
             && !status.WritesBlocked
             && !checkingLaptopConnection;
         IsReadOnly = !controllable;
@@ -7265,6 +7285,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static string FormatControlAccessStatus(ServiceStatusSnapshot status)
     {
+        if (status.ControlAccess != SessionControlAccess.Active)
+        {
+            return status.ControlAccess == SessionControlAccess.InactiveSession
+                ? "Another user is controlling OpenBlade"
+                : "Interactive session required";
+        }
+
         if (IsCheckingLaptopConnection(status))
         {
             return "Checking laptop";
@@ -7493,6 +7520,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(TroubleshootingOtherRazerSoftwareStatus));
         Notify(nameof(AboutServiceVersionStatus));
         Notify(nameof(AboutDetectedLaptopStatus));
+        Notify(nameof(DetectedFirmware));
         Notify(nameof(AboutBiosVersionStatus));
         Notify(nameof(AboutEcVersionStatus));
         Notify(nameof(AboutMcuVersionStatus));

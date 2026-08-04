@@ -96,6 +96,7 @@ public sealed class ServiceLifecycleRefreshLoop
                             }
                             else
                             {
+                                await runtime.CancelResumeValidationAsync(stoppingToken);
                                 await runtime.HandlePowerSourceChangedAsync(stoppingToken);
                             }
                             break;
@@ -107,13 +108,16 @@ public sealed class ServiceLifecycleRefreshLoop
                             await runtime.InvalidateLightingRendererAsync(stoppingToken);
                             if (lowPowerGate.IsActive)
                             {
+                                await runtime.CancelResumeValidationAsync(stoppingToken);
                                 logger.LogInformation(
                                     "Skipping power-source transition and lighting-renderer restoration after resume while the low-power gate remains active.");
                             }
                             else
                             {
+                                await runtime.BeginResumeValidationAsync(stoppingToken);
                                 await runtime.HandlePowerSourceChangedAsync(stoppingToken);
                                 await runtime.RestoreLightingRendererAsync(stoppingToken);
+                                await runtime.CompleteResumeValidationAsync(stoppingToken);
                             }
                             break;
                         case ServiceLifecycleTrigger.DisplayOff:

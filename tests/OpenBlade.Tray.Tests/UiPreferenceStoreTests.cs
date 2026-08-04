@@ -28,6 +28,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.False(preferences.StartMinimized);
         Assert.Equal(UpdateChannel.Stable, preferences.EffectiveUpdateChannel);
         Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
+        Assert.Equal(
+            UpdateCheckInterval.ManualOnly,
+            preferences.EffectiveFirmwareUpdateCheckInterval);
         Assert.False(preferences.UpdateCheckPromptShown);
         Assert.Null(preferences.LastSuccessfulUpdateCheckAt);
         Assert.Null(preferences.UpdateCheckRetryAfter);
@@ -125,7 +128,31 @@ public sealed class UiPreferenceStoreTests : IDisposable
             UpdateCheckEntityTag: "\"release-etag\"",
             LastKnownReleaseTag: "v1.2.0",
             LastKnownReleaseUrl:
-                "https://github.com/OSSBlade/openblade-core/releases/tag/v1.2.0"));
+                "https://github.com/OSSBlade/openblade-core/releases/tag/v1.2.0",
+            FirmwareUpdateCheckInterval: UpdateCheckInterval.Weekly,
+            LastSuccessfulFirmwareUpdateCheckAt: new DateTimeOffset(
+                2026,
+                7,
+                27,
+                11,
+                0,
+                0,
+                TimeSpan.Zero),
+            FirmwareUpdateCheckRetryAfter: new DateTimeOffset(
+                2026,
+                7,
+                27,
+                11,
+                5,
+                0,
+                TimeSpan.Zero),
+            LastKnownFirmwareModelNumber: "RZ09-0581",
+            LastKnownPublishedBiosVersion: "3.01",
+            LastKnownPublishedEcVersion: "1.04",
+            LastKnownPublishedMcuVersion: "1.06",
+            LastKnownPublishedBiosStatus: RazerPublishedFirmwareVersionStatus.Listed,
+            LastKnownPublishedEcStatus: RazerPublishedFirmwareVersionStatus.Listed,
+            LastKnownPublishedMcuStatus: RazerPublishedFirmwareVersionStatus.Listed));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -189,6 +216,28 @@ public sealed class UiPreferenceStoreTests : IDisposable
             reloaded.UpdateCheckRetryAfter);
         Assert.Equal("\"release-etag\"", reloaded.UpdateCheckEntityTag);
         Assert.Equal("v1.2.0", reloaded.LastKnownReleaseTag);
+        Assert.Equal(
+            UpdateCheckInterval.Weekly,
+            reloaded.EffectiveFirmwareUpdateCheckInterval);
+        Assert.Equal(
+            new DateTimeOffset(2026, 7, 27, 11, 0, 0, TimeSpan.Zero),
+            reloaded.LastSuccessfulFirmwareUpdateCheckAt);
+        Assert.Equal(
+            new DateTimeOffset(2026, 7, 27, 11, 5, 0, TimeSpan.Zero),
+            reloaded.FirmwareUpdateCheckRetryAfter);
+        Assert.Equal("RZ09-0581", reloaded.LastKnownFirmwareModelNumber);
+        Assert.Equal("3.01", reloaded.LastKnownPublishedBiosVersion);
+        Assert.Equal("1.04", reloaded.LastKnownPublishedEcVersion);
+        Assert.Equal("1.06", reloaded.LastKnownPublishedMcuVersion);
+        Assert.Equal(
+            RazerPublishedFirmwareVersionStatus.Listed,
+            reloaded.LastKnownPublishedBiosStatus);
+        Assert.Equal(
+            RazerPublishedFirmwareVersionStatus.Listed,
+            reloaded.LastKnownPublishedEcStatus);
+        Assert.Equal(
+            RazerPublishedFirmwareVersionStatus.Listed,
+            reloaded.LastKnownPublishedMcuStatus);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -231,6 +280,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             "Monthly",
             document.RootElement.GetProperty("updateCheckInterval").GetString());
+        Assert.Equal(
+            "Weekly",
+            document.RootElement.GetProperty("firmwareUpdateCheckInterval").GetString());
         Assert.Equal(
             "2026-07-27T12:30:00+00:00",
             document.RootElement.GetProperty("lastSuccessfulUpdateCheckAt").GetString());
@@ -279,6 +331,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(UpdateChannel.Stable, preferences.EffectiveUpdateChannel);
         Assert.False(preferences.UpdateCheckPromptShown);
         Assert.Null(preferences.LastSuccessfulUpdateCheckAt);
+        Assert.Equal(
+            UpdateCheckInterval.ManualOnly,
+            preferences.EffectiveFirmwareUpdateCheckInterval);
     }
 
     [Fact]
