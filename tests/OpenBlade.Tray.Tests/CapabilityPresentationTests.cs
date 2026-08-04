@@ -23,6 +23,18 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("FirmwareUpdateViewModel.IntervalOptions", presentation);
         Assert.Contains("FirmwareUpdateViewModel.SelectedIntervalOption", presentation);
         Assert.Contains("does not decide update eligibility", presentation);
+        XElement progressRing = Assert.Single(
+            card.Descendants(),
+            element => element.Name.LocalName == "ProgressRing");
+        Assert.Equal(
+            "{StaticResource FirmwareProgressRingStyle}",
+            Attribute(progressRing, "Style"));
+        Assert.Equal(
+            "{x:Bind FirmwareUpdateViewModel.IsChecking, Mode=OneWay}",
+            Attribute(progressRing, "Visibility"));
+        Assert.Equal(
+            "Checking Razer for firmware versions",
+            Attribute(progressRing, "AutomationProperties.Name"));
         Assert.DoesNotContain(card.Descendants(), element =>
             element.Name.LocalName == "Button"
             && Attribute(element, "Content") is string content

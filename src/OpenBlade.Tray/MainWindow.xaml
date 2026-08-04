@@ -3367,10 +3367,11 @@
                                             AutomationProperties.Name="Check official Razer firmware versions" />
                                 </Grid>
 
-                                <ProgressRing Width="18"
-                                              Height="18"
+                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
                                               HorizontalAlignment="Left"
-                                              IsActive="{x:Bind FirmwareUpdateViewModel.IsChecking, Mode=OneWay}" />
+                                              IsActive="{x:Bind FirmwareUpdateViewModel.IsChecking, Mode=OneWay}"
+                                              Visibility="{x:Bind FirmwareUpdateViewModel.IsChecking, Mode=OneWay}"
+                                              AutomationProperties.Name="Checking Razer for firmware versions" />
                                 <TextBlock Text="{x:Bind FirmwareUpdateViewModel.StatusText, Mode=OneWay}"
                                            Style="{StaticResource SecondaryTextStyle}"
                                            TextWrapping="Wrap" />

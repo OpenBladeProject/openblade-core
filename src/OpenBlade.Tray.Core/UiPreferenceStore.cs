@@ -39,7 +39,11 @@ public sealed record UiPreferences(
     string? LastKnownReleaseUrl = null,
     UpdateCheckInterval FirmwareUpdateCheckInterval = UpdateCheckInterval.ManualOnly,
     DateTimeOffset? LastSuccessfulFirmwareUpdateCheckAt = null,
-    DateTimeOffset? FirmwareUpdateCheckRetryAfter = null)
+    DateTimeOffset? FirmwareUpdateCheckRetryAfter = null,
+    string? LastKnownFirmwareModelNumber = null,
+    string? LastKnownPublishedBiosVersion = null,
+    string? LastKnownPublishedEcVersion = null,
+    string? LastKnownPublishedMcuVersion = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -65,7 +69,11 @@ public sealed record UiPreferences(
         LastKnownReleaseUrl: null,
         FirmwareUpdateCheckInterval: UpdateCheckInterval.ManualOnly,
         LastSuccessfulFirmwareUpdateCheckAt: null,
-        FirmwareUpdateCheckRetryAfter: null);
+        FirmwareUpdateCheckRetryAfter: null,
+        LastKnownFirmwareModelNumber: null,
+        LastKnownPublishedBiosVersion: null,
+        LastKnownPublishedEcVersion: null,
+        LastKnownPublishedMcuVersion: null);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled

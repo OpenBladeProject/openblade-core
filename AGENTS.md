@@ -101,7 +101,9 @@ capture the WinUI context: the bare `await Task.Yield()` in
 `ToggleFullChargeAsync` mutate bound state in a `finally` after an await.
 `UpdateCheckViewModel.RunAutomaticCheckAsync` and `CheckCoreAsync` also capture
 the UI context because they mutate bound update status after awaiting the
-release client.
+release client. `FirmwareUpdateAssistantViewModel.RunAutomaticCheckAsync` and
+`CheckAsync` capture it for the same reason after awaiting the Razer firmware
+client.
 Background pumps, loops, queues, and `ServiceClient` use
 `ConfigureAwait(false)`.
 

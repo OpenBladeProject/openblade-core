@@ -83,17 +83,17 @@ public static partial class RazerFirmwarePageParser
     private static partial Regex WhitespaceRegex();
 
     [GeneratedRegex(
-        "\\bBIOS(?:\\s+Firmware)?\\s+Updater\\b.{0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
+        "\\bBIOS(?:\\s+Firmware)?\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex BiosVersionRegex();
 
     [GeneratedRegex(
-        "\\bEC\\s+Firmware\\s+Updater\\b.{0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
+        "\\bEC\\s+Firmware\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex EcVersionRegex();
 
     [GeneratedRegex(
-        "\\bMCU\\s+Firmware\\s+Updater\\b.{0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
+        "\\bMCU\\s+Firmware\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex McuVersionRegex();
 }
@@ -217,6 +217,10 @@ public sealed class FirmwareUpdateAssistantViewModel :
     private UpdateCheckInterval interval = UpdateCheckInterval.ManualOnly;
     private DateTimeOffset? lastSuccessfulCheckAt;
     private DateTimeOffset? retryAfter;
+    private string? cachedModelNumber;
+    private string? cachedBiosVersion;
+    private string? cachedEcVersion;
+    private string? cachedMcuVersion;
     private string statusText = NotCheckedMessage;
     private string publishedBiosVersion = "Not checked";
     private string publishedEcVersion = "Not checked";
@@ -291,6 +295,14 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     public DateTimeOffset? RetryAfter => retryAfter;
 
+    public string? CachedModelNumber => cachedModelNumber;
+
+    public string? CachedBiosVersion => cachedBiosVersion;
+
+    public string? CachedEcVersion => cachedEcVersion;
+
+    public string? CachedMcuVersion => cachedMcuVersion;
+
     public ICommand CheckCommand => checkCommand;
 
     public bool IsSupported => supportPage is not null;
@@ -358,17 +370,18 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
         if (modelChanged)
         {
-            PublishedBiosVersion = "Not checked";
-            PublishedEcVersion = "Not checked";
-            PublishedMcuVersion = "Not checked";
-            StatusText = CreateNotCheckedMessage();
+            RestoreCachedVersionsForCurrentModel();
         }
     }
 
     public void ApplyPreferences(
         UpdateCheckInterval selectedInterval,
         DateTimeOffset? selectedLastSuccessfulCheckAt,
-        DateTimeOffset? selectedRetryAfter)
+        DateTimeOffset? selectedRetryAfter,
+        string? selectedCachedModelNumber = null,
+        string? selectedCachedBiosVersion = null,
+        string? selectedCachedEcVersion = null,
+        string? selectedCachedMcuVersion = null)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         Interval = Enum.IsDefined(selectedInterval)
@@ -376,7 +389,12 @@ public sealed class FirmwareUpdateAssistantViewModel :
             : UpdateCheckInterval.ManualOnly;
         lastSuccessfulCheckAt = selectedLastSuccessfulCheckAt;
         retryAfter = selectedRetryAfter;
-        StatusText = CreateNotCheckedMessage();
+        cachedModelNumber = RazerFirmwareSupportCatalog.Find(selectedCachedModelNumber)
+            ?.ModelNumber;
+        cachedBiosVersion = NormalizeCachedVersion(selectedCachedBiosVersion);
+        cachedEcVersion = NormalizeCachedVersion(selectedCachedEcVersion);
+        cachedMcuVersion = NormalizeCachedVersion(selectedCachedMcuVersion);
+        RestoreCachedVersionsForCurrentModel();
         Notify(nameof(LastSuccessfulCheckAt));
         Notify(nameof(RetryAfter));
     }
@@ -469,6 +487,10 @@ public sealed class FirmwareUpdateAssistantViewModel :
             PublishedBiosVersion = PublishedValue(versions.BiosVersion);
             PublishedEcVersion = PublishedValue(versions.EcVersion);
             PublishedMcuVersion = PublishedValue(versions.McuVersion);
+            cachedModelNumber = page.ModelNumber;
+            cachedBiosVersion = NormalizeCachedVersion(versions.BiosVersion);
+            cachedEcVersion = NormalizeCachedVersion(versions.EcVersion);
+            cachedMcuVersion = NormalizeCachedVersion(versions.McuVersion);
             lastSuccessfulCheckAt = timeProvider.GetUtcNow();
             retryAfter = null;
             Notify(nameof(LastSuccessfulCheckAt));
@@ -485,7 +507,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
             Trace.TraceWarning(
                 "OpenBlade firmware update check failed: {0}",
                 exception);
-            RecordFailureRetry();
+            RecordFailureRetry(page.ModelNumber);
             StatusText = "Couldn't read Razer's page. The official link is still available.";
         }
         catch (Exception exception)
@@ -493,7 +515,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
             Trace.TraceError(
                 "OpenBlade firmware update check failed unexpectedly: {0}",
                 exception);
-            RecordFailureRetry();
+            RecordFailureRetry(page.ModelNumber);
             StatusText = "Couldn't read Razer's page. The official link is still available.";
         }
         finally
@@ -503,8 +525,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
         }
     }
 
-    private void RecordFailureRetry()
+    private void RecordFailureRetry(string modelNumber)
     {
+        cachedModelNumber = modelNumber;
         retryAfter = timeProvider.GetUtcNow() + FailureRetryDelay;
         Notify(nameof(RetryAfter));
         PreferencesChanged?.Invoke(this, EventArgs.Empty);
@@ -515,6 +538,50 @@ public sealed class FirmwareUpdateAssistantViewModel :
             ? $"Last checked {checkedAt.ToLocalTime():g}. Check again to load published versions."
             : NotCheckedMessage;
 
+    private void RestoreCachedVersionsForCurrentModel()
+    {
+        bool modelMatches = supportPage is not null
+            && cachedModelNumber is not null
+            && string.Equals(
+                cachedModelNumber,
+                supportPage.ModelNumber,
+                StringComparison.OrdinalIgnoreCase);
+        bool hasCachedVersion = cachedBiosVersion is not null
+            || cachedEcVersion is not null
+            || cachedMcuVersion is not null;
+        if (lastSuccessfulCheckAt is not null && modelMatches && hasCachedVersion)
+        {
+            PublishedBiosVersion = PublishedValue(cachedBiosVersion);
+            PublishedEcVersion = PublishedValue(cachedEcVersion);
+            PublishedMcuVersion = PublishedValue(cachedMcuVersion);
+            StatusText =
+                $"Published updater versions last loaded {lastSuccessfulCheckAt.Value.ToLocalTime():g}.";
+            return;
+        }
+
+        PublishedBiosVersion = "Not checked";
+        PublishedEcVersion = "Not checked";
+        PublishedMcuVersion = "Not checked";
+        StatusText = CreateNotCheckedMessage();
+
+        bool successfulCacheIsInvalid = lastSuccessfulCheckAt is not null
+            && (!modelMatches || !hasCachedVersion);
+        bool retryBelongsToAnotherModel = retryAfter is not null && !modelMatches;
+        if (supportPage is not null
+            && (successfulCacheIsInvalid || retryBelongsToAnotherModel))
+        {
+            lastSuccessfulCheckAt = null;
+            retryAfter = null;
+            cachedModelNumber = null;
+            cachedBiosVersion = null;
+            cachedEcVersion = null;
+            cachedMcuVersion = null;
+            Notify(nameof(LastSuccessfulCheckAt));
+            Notify(nameof(RetryAfter));
+            PreferencesChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     private static string FirmwareValue(string? value) =>
         string.IsNullOrWhiteSpace(value)
             || string.Equals(value.Trim(), "Unavailable", StringComparison.OrdinalIgnoreCase)
@@ -523,6 +590,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     private static string PublishedValue(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "Not listed" : value.Trim();
+
+    private static string? NormalizeCachedVersion(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private bool SetField<T>(
         ref T field,

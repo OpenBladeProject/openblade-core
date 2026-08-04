@@ -145,7 +145,11 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 11,
                 5,
                 0,
-                TimeSpan.Zero)));
+                TimeSpan.Zero),
+            LastKnownFirmwareModelNumber: "RZ09-0581",
+            LastKnownPublishedBiosVersion: "3.01",
+            LastKnownPublishedEcVersion: "1.04",
+            LastKnownPublishedMcuVersion: "1.06"));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -218,6 +222,10 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             new DateTimeOffset(2026, 7, 27, 11, 5, 0, TimeSpan.Zero),
             reloaded.FirmwareUpdateCheckRetryAfter);
+        Assert.Equal("RZ09-0581", reloaded.LastKnownFirmwareModelNumber);
+        Assert.Equal("3.01", reloaded.LastKnownPublishedBiosVersion);
+        Assert.Equal("1.04", reloaded.LastKnownPublishedEcVersion);
+        Assert.Equal("1.06", reloaded.LastKnownPublishedMcuVersion);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",

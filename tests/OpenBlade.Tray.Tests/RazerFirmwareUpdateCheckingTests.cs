@@ -53,6 +53,24 @@ public sealed class RazerFirmwareUpdateCheckingTests
     }
 
     [Fact]
+    public void PageParser_DoesNotBorrowAVersionFromANeighboringUpdater()
+    {
+        const string html = """
+            <table>
+              <tr><td>BIOS Firmware Updater</td><td>2.02</td></tr>
+              <tr><td>EC Firmware Updater</td><td>v1.09</td></tr>
+              <tr><td>MCU Firmware Updater</td><td>v1.09</td></tr>
+            </table>
+            """;
+
+        RazerPublishedFirmwareVersions versions = RazerFirmwarePageParser.Parse(html);
+
+        Assert.Null(versions.BiosVersion);
+        Assert.Equal("1.09", versions.EcVersion);
+        Assert.Equal("1.09", versions.McuVersion);
+    }
+
+    [Fact]
     public async Task Client_ReadsOnlyTheSuppliedOfficialRazerPage()
     {
         var handler = new StubHandler("""
@@ -60,7 +78,8 @@ public sealed class RazerFirmwareUpdateCheckingTests
             <div>EC Firmware Updater</div><div>v1.09</div>
             <div>MCU Firmware Updater</div><div>v1.09</div>
             """);
-        var client = new RazerFirmwareUpdateClient(new HttpClient(handler));
+        using var httpClient = new HttpClient(handler);
+        var client = new RazerFirmwareUpdateClient(httpClient);
         RazerFirmwareSupportPage page = Assert.IsType<RazerFirmwareSupportPage>(
             RazerFirmwareSupportCatalog.Find(RazerBladeModelCatalog.Rz090528ModelNumber));
 
@@ -78,7 +97,8 @@ public sealed class RazerFirmwareUpdateCheckingTests
     public async Task Client_RejectsNonRazerMetadataSourceBeforeSending()
     {
         var handler = new StubHandler("unused");
-        var client = new RazerFirmwareUpdateClient(new HttpClient(handler));
+        using var httpClient = new HttpClient(handler);
+        var client = new RazerFirmwareUpdateClient(httpClient);
         var page = new RazerFirmwareSupportPage(
             RazerBladeModelCatalog.OpenBladeTargetModelNumber,
             new Uri("https://example.com/firmware"));
@@ -86,6 +106,57 @@ public sealed class RazerFirmwareUpdateCheckingTests
         await Assert.ThrowsAsync<ArgumentException>(() =>
             client.GetPublishedVersionsAsync(page, CancellationToken.None));
         Assert.Null(handler.RequestUri);
+    }
+
+    [Fact]
+    public async Task Client_RejectsAPageWithoutRecognizedUpdaterVersions()
+    {
+        using var httpClient = new HttpClient(new StubHandler(
+            "<div>No firmware updater versions are published.</div>"));
+        var client = new RazerFirmwareUpdateClient(httpClient);
+        RazerFirmwareSupportPage page = Assert.IsType<RazerFirmwareSupportPage>(
+            RazerFirmwareSupportCatalog.Find(
+                RazerBladeModelCatalog.OpenBladeTargetModelNumber));
+
+        RazerFirmwareUpdateException exception = await Assert.ThrowsAsync<
+            RazerFirmwareUpdateException>(() => client.GetPublishedVersionsAsync(
+                page,
+                CancellationToken.None));
+
+        Assert.IsType<InvalidDataException>(exception.InnerException);
+    }
+
+    [Fact]
+    public async Task Client_RejectsAnEffectiveUriOutsideTheOfficialRazerHost()
+    {
+        using var httpClient = new HttpClient(new EffectiveUriHandler(
+            new Uri("https://example.com/redirected")));
+        var client = new RazerFirmwareUpdateClient(httpClient);
+        RazerFirmwareSupportPage page = Assert.IsType<RazerFirmwareSupportPage>(
+            RazerFirmwareSupportCatalog.Find(
+                RazerBladeModelCatalog.OpenBladeTargetModelNumber));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.GetPublishedVersionsAsync(page, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Client_RejectsAResponseLargerThanTheConfiguredLimit()
+    {
+        const int maximumResponseBytes = 512 * 1024;
+        using var httpClient = new HttpClient(new StubHandler(
+            new string('x', maximumResponseBytes + 1)));
+        var client = new RazerFirmwareUpdateClient(httpClient);
+        RazerFirmwareSupportPage page = Assert.IsType<RazerFirmwareSupportPage>(
+            RazerFirmwareSupportCatalog.Find(
+                RazerBladeModelCatalog.OpenBladeTargetModelNumber));
+
+        RazerFirmwareUpdateException exception = await Assert.ThrowsAsync<
+            RazerFirmwareUpdateException>(() => client.GetPublishedVersionsAsync(
+                page,
+                CancellationToken.None));
+
+        Assert.IsType<HttpRequestException>(exception.InnerException);
     }
 
     [Fact]
@@ -176,6 +247,120 @@ public sealed class RazerFirmwareUpdateCheckingTests
     }
 
     [Fact]
+    public async Task ViewModel_RestoresModelScopedPublishedVersionsFromPreferences()
+    {
+        var client = new StubClient(new("9.9", "9.9", "9.9"));
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            client,
+            new FixedTimeProvider(Now));
+        viewModel.ApplyPreferences(
+            UpdateCheckInterval.Daily,
+            Now.AddHours(-1),
+            selectedRetryAfter: null,
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            "3.01",
+            "1.04",
+            "1.06");
+
+        UpdateModel(viewModel);
+        viewModel.StartAutomaticCheck();
+        await Task.Yield();
+
+        Assert.Equal("3.01", viewModel.PublishedBiosVersion);
+        Assert.Equal("1.04", viewModel.PublishedEcVersion);
+        Assert.Equal("1.06", viewModel.PublishedMcuVersion);
+        Assert.Contains("last loaded", viewModel.StatusText);
+        Assert.Equal(0, client.CallCount);
+    }
+
+    [Fact]
+    public async Task ViewModel_DoesNotLetAnUncachedTimestampSuppressAnAutomaticCheck()
+    {
+        var client = new StubClient(new("3.01", "1.04", "1.06"));
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            client,
+            new FixedTimeProvider(Now));
+        viewModel.ApplyPreferences(
+            UpdateCheckInterval.Daily,
+            Now.AddHours(-1),
+            selectedRetryAfter: null);
+
+        UpdateModel(viewModel);
+        viewModel.StartAutomaticCheck();
+        await WaitUntilAsync(() => client.CallCount == 1 && !viewModel.IsChecking);
+
+        Assert.Equal("3.01", viewModel.PublishedBiosVersion);
+        Assert.Equal(Now, viewModel.LastSuccessfulCheckAt);
+    }
+
+    [Fact]
+    public async Task ViewModel_DoesNotLetAnotherModelsCacheSuppressAnAutomaticCheck()
+    {
+        var client = new StubClient(new("3.01", "1.04", "1.06"));
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            client,
+            new FixedTimeProvider(Now));
+        viewModel.ApplyPreferences(
+            UpdateCheckInterval.Daily,
+            Now.AddHours(-1),
+            selectedRetryAfter: null,
+            RazerBladeModelCatalog.Rz090528ModelNumber,
+            "2.02",
+            "1.09",
+            "1.09");
+
+        UpdateModel(viewModel);
+        viewModel.StartAutomaticCheck();
+        await WaitUntilAsync(() => client.CallCount == 1 && !viewModel.IsChecking);
+
+        Assert.Equal(RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            viewModel.CachedModelNumber);
+        Assert.Equal("3.01", viewModel.PublishedBiosVersion);
+        Assert.Equal(Now, viewModel.LastSuccessfulCheckAt);
+    }
+
+    [Fact]
+    public async Task ViewModel_DoesNotLetAnotherModelsRetrySuppressAnAutomaticCheck()
+    {
+        var client = new StubClient(new("3.01", "1.04", "1.06"));
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            client,
+            new FixedTimeProvider(Now));
+        viewModel.ApplyPreferences(
+            UpdateCheckInterval.Daily,
+            selectedLastSuccessfulCheckAt: null,
+            selectedRetryAfter: Now.AddMinutes(5),
+            selectedCachedModelNumber: RazerBladeModelCatalog.Rz090528ModelNumber);
+
+        UpdateModel(viewModel);
+        viewModel.StartAutomaticCheck();
+        await WaitUntilAsync(() => client.CallCount == 1 && !viewModel.IsChecking);
+
+        Assert.Equal(RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            viewModel.CachedModelNumber);
+        Assert.Null(viewModel.RetryAfter);
+    }
+
+    [Fact]
+    public async Task ViewModel_ClearsPublishedVersionsWhenTheModelChanges()
+    {
+        await using var viewModel = CreateScheduledViewModel(
+            new StubClient(new("3.01", "1.04", "1.06")));
+        await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
+
+        viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "2.02",
+            "1.09",
+            "1.9.0.0",
+            "Unavailable",
+            RazerBladeModelCatalog.Rz090528ModelNumber));
+
+        Assert.Equal("Not checked", viewModel.PublishedBiosVersion);
+        Assert.Null(viewModel.LastSuccessfulCheckAt);
+        Assert.Null(viewModel.CachedModelNumber);
+    }
+
+    [Fact]
     public async Task ViewModel_DoesNotRunBeforeTheSelectedIntervalIsDue()
     {
         var client = new StubClient(new("3.01", "1.04", "1.06"));
@@ -183,7 +368,11 @@ public sealed class RazerFirmwareUpdateCheckingTests
         viewModel.ApplyPreferences(
             UpdateCheckInterval.Weekly,
             Now.AddDays(-2),
-            selectedRetryAfter: null);
+            selectedRetryAfter: null,
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            "3.01",
+            "1.04",
+            "1.06");
 
         viewModel.StartAutomaticCheck();
         await Task.Yield();
@@ -280,6 +469,19 @@ public sealed class RazerFirmwareUpdateCheckingTests
                 Content = new StringContent(responseBody),
             });
         }
+    }
+
+    private sealed class EffectiveUriHandler(Uri effectiveUri) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                RequestMessage = new HttpRequestMessage(HttpMethod.Get, effectiveUri),
+                Content = new StringContent(
+                    "<div>BIOS Firmware Updater</div><div>v3.01</div>"),
+            });
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

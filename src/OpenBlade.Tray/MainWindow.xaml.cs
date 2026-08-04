@@ -436,6 +436,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             UpdateCheckInterval.ManualOnly;
         DateTimeOffset? initialLastSuccessfulFirmwareUpdateCheckAt = null;
         DateTimeOffset? initialFirmwareUpdateCheckRetryAfter = null;
+        string? initialLastKnownFirmwareModelNumber = null;
+        string? initialLastKnownPublishedBiosVersion = null;
+        string? initialLastKnownPublishedEcVersion = null;
+        string? initialLastKnownPublishedMcuVersion = null;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -467,6 +471,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 preferences.LastSuccessfulFirmwareUpdateCheckAt;
             initialFirmwareUpdateCheckRetryAfter =
                 preferences.FirmwareUpdateCheckRetryAfter;
+            initialLastKnownFirmwareModelNumber =
+                preferences.LastKnownFirmwareModelNumber;
+            initialLastKnownPublishedBiosVersion =
+                preferences.LastKnownPublishedBiosVersion;
+            initialLastKnownPublishedEcVersion =
+                preferences.LastKnownPublishedEcVersion;
+            initialLastKnownPublishedMcuVersion =
+                preferences.LastKnownPublishedMcuVersion;
         }
         catch (Exception exception)
         {
@@ -507,7 +519,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         FirmwareUpdateViewModel.ApplyPreferences(
             initialFirmwareUpdateCheckInterval,
             initialLastSuccessfulFirmwareUpdateCheckAt,
-            initialFirmwareUpdateCheckRetryAfter);
+            initialFirmwareUpdateCheckRetryAfter,
+            initialLastKnownFirmwareModelNumber,
+            initialLastKnownPublishedBiosVersion,
+            initialLastKnownPublishedEcVersion,
+            initialLastKnownPublishedMcuVersion);
         try
         {
             ApplyTheme(ViewModel.Theme);
@@ -769,7 +785,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 FirmwareUpdateCheckInterval: FirmwareUpdateViewModel.Interval,
                 LastSuccessfulFirmwareUpdateCheckAt:
                     FirmwareUpdateViewModel.LastSuccessfulCheckAt,
-                FirmwareUpdateCheckRetryAfter: FirmwareUpdateViewModel.RetryAfter));
+                FirmwareUpdateCheckRetryAfter: FirmwareUpdateViewModel.RetryAfter,
+                LastKnownFirmwareModelNumber: FirmwareUpdateViewModel.CachedModelNumber,
+                LastKnownPublishedBiosVersion: FirmwareUpdateViewModel.CachedBiosVersion,
+                LastKnownPublishedEcVersion: FirmwareUpdateViewModel.CachedEcVersion,
+                LastKnownPublishedMcuVersion: FirmwareUpdateViewModel.CachedMcuVersion));
         }
         catch (ObjectDisposedException)
         {
