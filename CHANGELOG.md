@@ -41,6 +41,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a read-only firmware assistant for admitted Blade models that shows
+  installed BIOS, EC, and MCU values beside versions published on the model's
+  official Razer support page without downloading or running firmware tools,
+  with a separate user-configurable check interval.
 - Added read-only resume validation records to diagnostic bundles. OpenBlade
   now compares confirmed pre-suspend and post-resume control state, names any
   changed subsystems, and does not add validation-driven recovery writes.
