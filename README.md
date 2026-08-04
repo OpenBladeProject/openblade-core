@@ -132,7 +132,14 @@ and separate developer tools:
 The user-facing installer is written to
 `artifacts\win-x64\OpenBlade-Setup.exe`. Double-click it and choose Install;
 Windows requests administrator approval only when setup is ready to make
-system changes.
+system changes. After a successful install or repair, choose **Launch** to
+start the Tray at normal user integrity; the Tray starts the Session Agent.
+
+Quiet installs intentionally suppress both installer UI and application
+launch. Automation that invokes `/quiet` must start the installed
+`OpenBlade.Tray.exe` from its original normal-integrity process after setup
+returns successfully, then confirm that both the Tray and Session Agent are
+running.
 
 The unpacked production bundle remains available at
 `artifacts\win-x64\OpenBlade` for development and recovery. Its command-line

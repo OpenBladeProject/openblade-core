@@ -19,6 +19,8 @@
           ThemeFile="OpenBladeTheme.xml"
           LicenseUrl=""
           LogoFile="!(bindpath.BrandAssets)\OpenBlade.png"
+          LaunchTarget="[ProgramFiles64Folder]OpenBlade\OpenBlade.Tray.exe"
+          LaunchWorkingFolder="[ProgramFiles64Folder]OpenBlade"
           ShowVersion="yes"
           SuppressOptionsUI="yes" />
     </BootstrapperApplication>

@@ -76,6 +76,14 @@ Assert-True ($standardBa.GetAttribute('ThemeFile') -eq 'OpenBladeTheme.xml') `
     'The installer must use the custom maintenance theme.'
 Assert-True ([string]::IsNullOrEmpty($standardBa.GetAttribute('LicenseUrl'))) `
     'The free OpenBlade installer must not present a separate license link.'
+Assert-True (
+    $standardBa.GetAttribute('LaunchTarget') -eq
+        '[ProgramFiles64Folder]OpenBlade\OpenBlade.Tray.exe') `
+    'Successful interactive setup must offer a normal-user OpenBlade launch.'
+Assert-True (
+    $standardBa.GetAttribute('LaunchWorkingFolder') -eq
+        '[ProgramFiles64Folder]OpenBlade') `
+    'The post-setup launch must use the installed OpenBlade directory.'
 
 $purgeVariable = $bundle.SelectSingleNode(
     "*[local-name()='Variable'][@Name='OpenBladePurgeProfiles']")
@@ -134,6 +142,14 @@ $purgeCheckbox = $theme.SelectSingleNode(
     "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Modify']/*[local-name()='Checkbox'][@Name='OpenBladePurgeProfiles']")
 Assert-True ($null -ne $purgeCheckbox) `
     'The maintenance page must offer a profile-removal checkbox.'
+$launchButton = $theme.SelectSingleNode(
+    "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Success']/*[local-name()='Button'][@Name='LaunchButton']")
+Assert-True ($null -ne $launchButton) `
+    'The success page must expose the configured OpenBlade launch action.'
+Assert-True (
+    $launchButton.GetAttribute('VisibleCondition') -eq
+        'WixBundleAction = 5 OR WixBundleAction = 7') `
+    'The OpenBlade launch action must be limited to install and repair.'
 
 $payloads = $package.SelectSingleNode("*[local-name()='Payloads']")
 Assert-True ($null -ne $payloads) 'The OpenBlade payload group is missing.'
@@ -212,6 +228,13 @@ Assert-True ($solution.IndexOf(
         'OpenBlade.Installer.wixproj',
         [StringComparison]::OrdinalIgnoreCase) -lt 0) `
     'The release-only installer project must remain outside the normal solution build.'
+
+$installerValidation = Get-Content -LiteralPath (
+    Join-Path $repository 'build\InstallerValidation.ps1') -Raw
+Assert-True ($installerValidation.IndexOf(
+        '-intermediateFolder $intermediateOutput',
+        [StringComparison]::Ordinal) -ge 0) `
+    'Installer extraction must use its isolated validation workspace.'
 
 $publish = Get-Content -LiteralPath (Join-Path $repository 'build\Publish.ps1') -Raw
 foreach ($requiredText in @(

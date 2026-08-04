@@ -80,12 +80,16 @@ function Assert-OpenBladeInstallerBundle {
 
     $payloadOutput = Join-Path $canonicalValidation 'payload'
     $bootstrapperOutput = Join-Path $canonicalValidation 'bootstrapper'
+    $intermediateOutput = Join-Path $canonicalValidation 'intermediate'
     try {
-        New-Item -ItemType Directory -Path $payloadOutput,$bootstrapperOutput -Force | Out-Null
+        New-Item -ItemType Directory `
+            -Path $payloadOutput,$bootstrapperOutput,$intermediateOutput `
+            -Force | Out-Null
         $wix = Get-WixCommandAssembly -InstallerProject $InstallerProject
         & dotnet $wix -acceptEula wix7 burn extract $Installer `
             -out $payloadOutput `
-            -outba $bootstrapperOutput
+            -outba $bootstrapperOutput `
+            -intermediateFolder $intermediateOutput
         if ($LASTEXITCODE -ne 0) {
             throw "WiX failed to extract the OpenBlade installer with exit code $LASTEXITCODE."
         }
@@ -187,12 +191,41 @@ function Assert-OpenBladeInstallerBundle {
             throw "The Burn manifest does not conditionally append the purge argument."
         }
 
+        $launchTarget = $manifest.SelectSingleNode(
+            '/burn:BurnManifest/burn:Variable[@Id="LaunchTarget"]',
+            $namespaces)
+        $launchWorkingFolder = $manifest.SelectSingleNode(
+            '/burn:BurnManifest/burn:Variable[@Id="LaunchWorkingFolder"]',
+            $namespaces)
+        if (($null -eq $launchTarget) -or
+            ($launchTarget.GetAttribute('Value') -ne
+                '[ProgramFiles64Folder]OpenBlade\OpenBlade.Tray.exe') -or
+            ($launchTarget.GetAttribute('Type') -ne 'formatted') -or
+            ($launchTarget.GetAttribute('Hidden') -ne 'no') -or
+            ($launchTarget.GetAttribute('Persisted') -ne 'no') -or
+            ($null -eq $launchWorkingFolder) -or
+            ($launchWorkingFolder.GetAttribute('Value') -ne
+                '[ProgramFiles64Folder]OpenBlade') -or
+            ($launchWorkingFolder.GetAttribute('Type') -ne 'formatted') -or
+            ($launchWorkingFolder.GetAttribute('Hidden') -ne 'no') -or
+            ($launchWorkingFolder.GetAttribute('Persisted') -ne 'no')) {
+            throw "The extracted installer does not launch the installed OpenBlade Tray."
+        }
+
         $themePath = Join-Path $bootstrapperOutput 'thm.xml'
         [xml]$theme = Get-Content -LiteralPath $themePath
         $purgeCheckbox = $theme.SelectSingleNode(
             "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Modify']/*[local-name()='Checkbox'][@Name='OpenBladePurgeProfiles']")
         if ($null -eq $purgeCheckbox) {
             throw "The extracted maintenance UI does not contain the profile-removal checkbox."
+        }
+
+        $launchButton = $theme.SelectSingleNode(
+            "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Success']/*[local-name()='Button'][@Name='LaunchButton']")
+        if (($null -eq $launchButton) -or
+            ($launchButton.GetAttribute('VisibleCondition') -ne
+                'WixBundleAction = 5 OR WixBundleAction = 7')) {
+            throw "The extracted installer does not limit Launch to install and repair."
         }
 
         $search = $manifest.SelectSingleNode(

@@ -188,6 +188,13 @@ dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
 Use `build/Publish.ps1` and the payload validation tests for release or setup
 changes. Do not install or request UAC when the user is unavailable.
 
+The graphical installer success page launches the installed Tray through
+WiX's normal-user launch action; the Tray starts the Session Agent. Quiet
+installs deliberately suppress that UI and launch. A quiet-install validation
+must relaunch the installed Tray from its original normal-integrity parent and
+must not report success until exactly one Tray and one Session Agent are
+running.
+
 ## Live tray patching on the installed machine
 
 Use this path only when shared Contracts and both IPC versions are unchanged.
