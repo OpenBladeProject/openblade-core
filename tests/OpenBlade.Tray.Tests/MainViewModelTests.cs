@@ -2073,11 +2073,12 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task CustomPerformance_StartupPublishesVisibleStateAndSendsTypedOverride()
+    public async Task CustomPerformance_StartupPublishesDependentVisibility()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         int visibleCustomPerformanceNotifications = 0;
+        int visibleGpuClockTuningNotifications = 0;
         viewModel.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(MainViewModel.IsCustomPerformanceVisible)
@@ -2085,7 +2086,44 @@ public sealed class MainViewModelTests
             {
                 Interlocked.Increment(ref visibleCustomPerformanceNotifications);
             }
+            else if (args.PropertyName == nameof(MainViewModel.IsGpuClockTuningAvailable)
+                     && viewModel.IsGpuClockTuningAvailable)
+            {
+                Interlocked.Increment(ref visibleGpuClockTuningNotifications);
+            }
         };
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = CustomPerformanceSettings.Default,
+                GpuClockOffsets = new GpuClockOffsetCapabilities(
+                    "NVIDIA GPU",
+                    new GpuClockOffsetRange(-1000, 400, 0),
+                    new GpuClockOffsetRange(-1000, 3000, 0)),
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Custom,
+                    SettingValueSource.PowerProfile),
+                CustomPerformance = CustomPerformanceSettings.Default,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsGpuClockTuningAvailable);
+
+        Assert.True(Volatile.Read(ref visibleCustomPerformanceNotifications) > 0);
+        Assert.True(Volatile.Read(ref visibleGpuClockTuningNotifications) > 0);
+    }
+
+    [Fact]
+    public async Task CustomPerformance_ExposesValidPairsAndSendsTypedOverride()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
         ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false) with
         {
@@ -2109,7 +2147,6 @@ public sealed class MainViewModelTests
         client.Publish(status);
         await WaitUntilAsync(() => viewModel.IsCustomPerformanceVisible);
 
-        Assert.True(Volatile.Read(ref visibleCustomPerformanceNotifications) > 0);
         Assert.DoesNotContain(
             CustomPerformanceLevel.High,
             viewModel.AvailableCustomCpuLevels);
