@@ -218,8 +218,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 "Performance mode changed",
                 body,
                 TrayNotificationSeverity.Information,
-                logoAssetRelativePath,
-                PerformanceNotificationReplacementTag);
+                LogoAssetRelativePath: logoAssetRelativePath,
+                ReplacementTag: PerformanceNotificationReplacementTag);
         }
 
         trayIconHost.ShowNotification(notification);
