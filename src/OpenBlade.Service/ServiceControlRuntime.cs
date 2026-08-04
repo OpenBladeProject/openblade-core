@@ -207,6 +207,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static readonly TimeSpan FullObservationInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan FastPathControllerPresenceInterval =
         TimeSpan.FromSeconds(15);
+    // Allow slow HID re-enumeration without carrying resume attribution into a
+    // later, unrelated device or power lifecycle.
+    internal static readonly TimeSpan ResumeValidationObservationWindow =
+        TimeSpan.FromMinutes(1);
     private const int ObservationFailureThreshold = 3;
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
         new(null, null, null, null);
@@ -229,6 +233,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly LowPowerGate lowPowerGate;
     private readonly IFirmwareVersionSource firmwareVersionSource;
     private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
+    private readonly TimeProvider timeProvider;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ProfileSetValidator validator;
     private readonly object initializationGate = new();
@@ -398,7 +403,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IFirmwareVersionSource firmwareVersionSource,
         Func<TimeSpan, CancellationToken, Task> transitionRetryDelay,
         ProfileSetValidator validator,
-        IFanTemperatureSource? fanTemperatureSource = null)
+        IFanTemperatureSource? fanTemperatureSource = null,
+        TimeProvider? timeProvider = null)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         this.overrideStore = overrideStore
@@ -418,6 +424,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? throw new ArgumentNullException(nameof(firmwareVersionSource));
         this.transitionRetryDelay = transitionRetryDelay
             ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
+        this.timeProvider = timeProvider ?? TimeProvider.System;
         this.validator = validator ?? throw new ArgumentNullException(nameof(validator));
         this.fanTemperatureSource = fanTemperatureSource
             ?? new SafeWindowsFanTemperatureSource();
@@ -2170,6 +2177,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
+            DiscardExpiredResumeBaselineCore();
             bool includeLiveReadings = requestedLiveReadings != LiveReadingSensors.None;
             cancellationToken.ThrowIfCancellationRequested();
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(
@@ -2277,6 +2285,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
+            DiscardExpiredResumeBaselineCore();
             DiscardUnstartedResumeBaselineCore();
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
@@ -2611,6 +2620,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ResumeStateBaseline completed = baseline with
             {
                 ResumeLifecycleCompleted = true,
+                ObservationWindowStartedAt = timeProvider.GetTimestamp(),
             };
             pendingResumeStateBaseline = completed;
             if (completed.Observed is { } observed)
@@ -4180,13 +4190,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ResumeLifecycleCompleted: false,
                     LightingRestoredDuringResume: false,
                     LightingWriteApplied: false,
-                    Observed: null)
+                    Observed: null,
+                    ObservationWindowStartedAt: null)
                 : null;
     }
 
     private void DiscardUnstartedResumeBaselineCore()
     {
         if (pendingResumeStateBaseline is { ResumeStarted: false })
+        {
+            pendingResumeStateBaseline = null;
+        }
+    }
+
+    private void DiscardExpiredResumeBaselineCore()
+    {
+        if (pendingResumeStateBaseline is
+            {
+                ResumeLifecycleCompleted: true,
+                ObservationWindowStartedAt: { } startedAt,
+            }
+            && timeProvider.GetElapsedTime(startedAt)
+                >= ResumeValidationObservationWindow)
         {
             pendingResumeStateBaseline = null;
         }
@@ -4200,6 +4225,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         pendingResumeStateBaseline = null;
+        if (baseline.ResumeLifecycleCompleted)
+        {
+            return;
+        }
+
         history.RecordResumeValidation(
             ControlOperationStatus.Stored,
             $"Resume changed the power source from {baseline.PowerSource} to {powerSource}; the existing destination-profile transition was used instead of comparing the two power profiles.");
@@ -5849,7 +5879,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool ResumeLifecycleCompleted,
         bool LightingRestoredDuringResume,
         bool LightingWriteApplied,
-        ConfirmedDeviceState? Observed);
+        ConfirmedDeviceState? Observed,
+        long? ObservationWindowStartedAt);
 
     private sealed record FullDeviceObservation(
         DeviceCapabilities Capabilities,

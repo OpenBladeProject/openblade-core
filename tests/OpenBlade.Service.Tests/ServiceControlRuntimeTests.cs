@@ -3654,6 +3654,59 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ResumeValidation_LifecyclePathDoesNotLabelLaterPowerChangeAtDeviceArrival()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new ResumeThenDeviceArrivalLifecycleEventSource(
+                afterSuspending: () => context.Provider.Available = false,
+                beforeDeviceArrival: () =>
+                {
+                    context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+                    context.Provider.Available = true;
+                }),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(PowerSource.Battery, context.Runtime.GetStatus().ActivePowerSource);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_LifecyclePathExpiresBeforeLateDeviceArrival()
+    {
+        var time = new ManualTimeProvider();
+        TestContext context = CreateWritableContext(timeProvider: time);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new ResumeThenDeviceArrivalLifecycleEventSource(
+                afterSuspending: () => context.Provider.Available = false,
+                beforeDeviceArrival: () =>
+                {
+                    time.Advance(
+                        ServiceControlRuntime.ResumeValidationObservationWindow
+                        + TimeSpan.FromMilliseconds(1));
+                    context.Provider.Available = true;
+                }),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
+    }
+
+    [Fact]
     public void ResumeValidation_ComparatorAllowlistCoversConfirmedState()
     {
         string[] expected = typeof(ConfirmedDeviceState)
@@ -5786,14 +5839,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         string? detectionFailure = null,
         Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
             transactionBoundary = null,
-        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null)
+        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null,
+        TimeProvider? timeProvider = null)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
             conflicts,
             detectionFailure,
             transactionBoundary: transactionBoundary,
-            transitionRetryDelay: transitionRetryDelay);
+            transitionRetryDelay: transitionRetryDelay,
+            timeProvider: timeProvider);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             ChargeLimits = new HashSet<int> { 50, 55, 60, 65, 70, 75, 80 },
@@ -5978,7 +6033,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ProfileSetValidator? profileValidator = null,
         IFanTemperatureSource? fanTemperatureSource = null,
         BatteryHealthStatus? batteryHealth = null,
-        LowPowerGate? lowPowerGate = null)
+        LowPowerGate? lowPowerGate = null,
+        TimeProvider? timeProvider = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -6018,7 +6074,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var provider = new CountingProvider(providerAvailable, device);
         var monitor = new FakeControllerPresenceMonitor(
             new ControllerPresenceObservation(conflicts ?? [], detectionFailure));
-        var history = new DiagnosticHistory();
+        var history = new DiagnosticHistory(timeProvider: timeProvider);
         var overrideStore = new PersistentOverrideStore(
             persistentOverridePath ?? Path.Combine(
                 directory,
@@ -6038,7 +6094,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             firmwareSource,
             transitionRetryDelay ?? (static (delay, token) => Task.Delay(delay, token)),
             profileValidator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults(),
-            fanTemperatureSource ?? new FixedFanTemperatureSource(default));
+            fanTemperatureSource ?? new FixedFanTemperatureSource(default),
+            timeProvider);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -6251,6 +6308,44 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             await Task.Yield();
             cancellationToken.ThrowIfCancellationRequested();
             yield return ServiceLifecycleTrigger.Resumed;
+        }
+    }
+
+    private sealed class ResumeThenDeviceArrivalLifecycleEventSource(
+        Action afterSuspending,
+        Action beforeDeviceArrival) : IServiceLifecycleEventSource
+    {
+        public async IAsyncEnumerable<ServiceLifecycleTrigger> WatchAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
+            CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return ServiceLifecycleTrigger.Suspending;
+
+            afterSuspending();
+            yield return ServiceLifecycleTrigger.Resumed;
+
+            beforeDeviceArrival();
+            yield return ServiceLifecycleTrigger.DeviceArrived;
+        }
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset utcNow = DateTimeOffset.UnixEpoch;
+        private long timestamp;
+
+        public override DateTimeOffset GetUtcNow() => utcNow;
+
+        public override long GetTimestamp() => timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public void Advance(TimeSpan amount)
+        {
+            utcNow += amount;
+            timestamp += amount.Ticks;
         }
     }
 
