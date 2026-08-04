@@ -142,21 +142,22 @@ submodules.
 
 1. Inspect `git status`, the affected contracts, and existing tests before
    editing. User changes and unrelated dirty files are not cleanup targets.
-2. For every fix, create the tracking issue before implementing the change,
+2. Whenever creating an issue, apply the relevant repository labels.
+3. For every fix, create the tracking issue before implementing the change,
    then deliver the implementation through a pull request.
-3. Update the smallest authoritative layer. Do not duplicate state between the
+4. Update the smallest authoritative layer. Do not duplicate state between the
    service, Session Agent, and tray.
-4. Add focused tests for parsing, normalization, failure handling, and shared UI
+5. Add focused tests for parsing, normalization, failure handling, and shared UI
    contracts. Run the affected project tests before the full solution.
-5. For WinUI changes, build `OpenBlade.Tray` and inspect the rendered app when
+6. For WinUI changes, build `OpenBlade.Tray` and inspect the rendered app when
    interactive access is available. XAML contract tests do not prove visual
    quality.
-6. For hardware changes, complete the documented interactive validation before
+7. For hardware changes, complete the documented interactive validation before
    marking support production-ready.
-7. Update `CHANGELOG.md` under `Unreleased` for user-visible changes.
-8. Commit and push coherent slices. Do not bundle capture evidence, product
+8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes.
+9. Commit and push coherent slices. Do not bundle capture evidence, product
    code, history maintenance, and unrelated formatting in one commit.
-9. Preserve the line endings declared by `.editorconfig` and `.gitattributes`.
+10. Preserve the line endings declared by `.editorconfig` and `.gitattributes`.
    Patch application can insert LF-only lines into an existing CRLF file, and
    `git diff --check` does not detect that mixed state. Before committing,
    inspect every touched text file for mixed endings and normalize the complete
