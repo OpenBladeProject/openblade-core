@@ -237,6 +237,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public Microsoft.UI.Xaml.Media.Brush AccentColorPreviewBrush =>
         new Microsoft.UI.Xaml.Media.SolidColorBrush(accentColorManager.CurrentColor);
 
+    public bool IsWindowVisible => windowVisible;
+
     public Visibility CustomAccentColorVisibility => accentColorMode == AppAccentColorMode.Custom
         ? Visibility.Visible
         : Visibility.Collapsed;

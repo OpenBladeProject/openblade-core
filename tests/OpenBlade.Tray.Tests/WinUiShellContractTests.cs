@@ -987,7 +987,17 @@ public sealed class WinUiShellContractTests
         Assert.Contains("viewModel.PropertyChanged -=", trayHost, StringComparison.Ordinal);
         Assert.Contains("nameof(MainViewModel.TrayIconState)", trayHost, StringComparison.Ordinal);
         Assert.Contains("OpenBladeIconAssets.LoadTrayIcon", trayHost, StringComparison.Ordinal);
-        Assert.Contains("openTray()", trayHost, StringComparison.Ordinal);
+        int doubleClickHandlerStart = trayHost.IndexOf(
+            "trayIcon.DoubleClick +=",
+            StringComparison.Ordinal);
+        int mouseMoveHandlerStart = trayHost.IndexOf(
+            "trayIcon.MouseMove +=",
+            doubleClickHandlerStart,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "openTray()",
+            trayHost[doubleClickHandlerStart..mouseMoveHandlerStart],
+            StringComparison.Ordinal);
         Assert.Contains("Interlocked.Exchange(ref disposed, 1)", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Visible = false", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Dispose()", trayHost, StringComparison.Ordinal);
@@ -1043,8 +1053,13 @@ public sealed class WinUiShellContractTests
         Assert.Contains("RequestTrayExitAsync()", app, StringComparison.Ordinal);
         Assert.Contains("Keep background features running", app, StringComparison.Ordinal);
         Assert.Contains("Shut down completely", app, StringComparison.Ordinal);
-        Assert.Contains("await ShutdownOpenBladeAsync()", app, StringComparison.Ordinal);
-        Assert.True(CountOccurrences(app, "ExitTrayAsync()") >= 3);
+        Assert.Contains("System.Windows.Forms.Application.EnableVisualStyles()", app, StringComparison.Ordinal);
+        Assert.Contains("ShowTrayTaskDialog", app, StringComparison.Ordinal);
+        Assert.Contains("WindowNative.GetWindowHandle(window)", app, StringComparison.Ordinal);
+        Assert.Contains("main window is unavailable", app, StringComparison.Ordinal);
+        Assert.True(
+            CountOccurrences(app, "ExitTrayAsync()") >= 3,
+            "The setup event and both exit choices must route through ExitTrayAsync().");
     }
 
     [Fact]

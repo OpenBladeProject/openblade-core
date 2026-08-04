@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using OpenBlade.Contracts;
 using OpenBlade.Platform;
 using OpenBlade.Session;
+using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
@@ -21,6 +22,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private WindowsShellThemeSource? trayIconThemeSource;
     private ITrayIconHost? trayIconHost;
     private TrayExitLifecycle? exitLifecycle;
+    private TrayExitController? trayExitController;
     private Task windowInitializationTask = Task.CompletedTask;
     private DispatcherQueue uiDispatcherQueue = null!;
     private WindowsProcessorEfficiencyPolicy processorPolicy = null!;
@@ -31,6 +33,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         base.OnLaunched(args);
+        System.Windows.Forms.Application.EnableVisualStyles();
         RegisterCrashReporting();
         traceLogRegistration ??= PersistentTraceLog.RegisterDefault(
             "OpenBlade.Tray",
@@ -155,6 +158,10 @@ public partial class App : Microsoft.UI.Xaml.Application
             return;
         }
 
+        trayExitController = new TrayExitController(
+            ShowTrayExitDialog,
+            ExitTrayAsync,
+            ShutdownOpenBladeAsync);
         trayIconHost = new WinFormsTrayIconHost(
             () => Enqueue(ShowMainWindow),
             () => Enqueue(() => _ = RequestTrayExitAsync()),
@@ -233,15 +240,55 @@ public partial class App : Microsoft.UI.Xaml.Application
         MainWindow? window = mainWindow;
         if (window is null)
         {
-            return;
+            Trace.TraceWarning(
+                "OpenBlade could not request service shutdown because the main window is unavailable.");
+        }
+        else
+        {
+            await window.ViewModel.ShutdownOpenBladeAsync(CancellationToken.None);
         }
 
-        await window.ViewModel.ShutdownOpenBladeAsync(CancellationToken.None);
         _ = SessionAgentLauncher.TryStopSibling();
         await ExitTrayAsync();
     }
 
     private async Task RequestTrayExitAsync()
+    {
+        try
+        {
+            if (trayExitController is null)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade ignored a tray exit request before exit controls were initialized.");
+                return;
+            }
+
+            await trayExitController.RequestExitAsync();
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade shutdown failed: {0}", exception);
+            try
+            {
+                ShowTrayTaskDialog(new TaskDialogPage
+                {
+                    Caption = "OpenBlade",
+                    Heading = "OpenBlade could not shut down",
+                    Text = exception.Message,
+                    Buttons = { TaskDialogButton.Close },
+                    DefaultButton = TaskDialogButton.Close,
+                });
+            }
+            catch (Exception dialogException)
+            {
+                Trace.TraceError(
+                    "OpenBlade could not show the shutdown error dialog: {0}",
+                    dialogException);
+            }
+        }
+    }
+
+    private TrayExitChoice ShowTrayExitDialog()
     {
         var keepRunning = new TaskDialogButton("Keep background features running");
         var shutDown = new TaskDialogButton("Shut down completely");
@@ -261,34 +308,32 @@ public partial class App : Microsoft.UI.Xaml.Application
             },
         };
 
-        TaskDialogButton result = TaskDialog.ShowDialog(page);
+        TaskDialogButton result = ShowTrayTaskDialog(page);
         if (result == keepRunning)
         {
-            await ExitTrayAsync();
-            return;
+            return TrayExitChoice.KeepBackgroundRunning;
         }
 
-        if (result != shutDown)
+        if (result == shutDown)
         {
-            return;
+            return TrayExitChoice.ShutDownCompletely;
         }
 
-        try
+        return TrayExitChoice.Cancel;
+    }
+
+    private TaskDialogButton ShowTrayTaskDialog(TaskDialogPage page)
+    {
+        MainWindow? window = mainWindow;
+        if (window?.IsWindowVisible == true)
         {
-            await ShutdownOpenBladeAsync();
+            return TaskDialog.ShowDialog(
+                WindowNative.GetWindowHandle(window),
+                page,
+                TaskDialogStartupLocation.CenterOwner);
         }
-        catch (Exception exception)
-        {
-            Trace.TraceError("OpenBlade shutdown failed: {0}", exception);
-            TaskDialog.ShowDialog(new TaskDialogPage
-            {
-                Caption = "OpenBlade",
-                Heading = "OpenBlade could not shut down",
-                Text = exception.Message,
-                Buttons = { TaskDialogButton.Close },
-                DefaultButton = TaskDialogButton.Close,
-            });
-        }
+
+        return TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen);
     }
 
     private void ShowMainWindow() => _ = ShowMainWindowWhenReadyAsync(initialLaunch: false);
