@@ -594,10 +594,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             () => Probe(BatteryValidationProbeClassification.Ready),
             Adapt(factory),
             UnavailableFanRpmFactory(),
-            onDisposing: () => providerClosing.TrySetResult());
+            onClosing: () => providerClosing.TrySetResult());
         provider.TryGetVerifiedDevice(out IBladeDevice device);
         Task<ConfirmedDeviceState> first = device.ReadStateAsync(default);
-        await firstPort.QueryStarted.Task;
+        await firstPort.QueryStarted.Task.WaitAsync(TestDeadlockGuard);
         Task<ConfirmedDeviceState> queued = device.ReadStateAsync(default);
 
         Task disposing = Task.Run(provider.Dispose);
@@ -1111,7 +1111,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             UnavailableFanRpmFactory(),
             new FakeLightingFactory(lightingPort),
             shutdownBudget: TestShutdownBudget,
-            onDisposing: () => providerClosing.TrySetResult());
+            onClosing: () => providerClosing.TrySetResult());
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
         await device.SetLightingAsync(
             LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
