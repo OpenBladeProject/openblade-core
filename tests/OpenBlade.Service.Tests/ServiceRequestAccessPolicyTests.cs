@@ -59,6 +59,31 @@ public sealed class ServiceRequestAccessPolicyTests
     }
 
     [Fact]
+    public void RemoteInteractiveSession_IsReadOnlyEvenWhenSessionIdMatchesConsole()
+    {
+        ServiceClientContext client = Client(sessionId: 4) with
+        {
+            LogonKind = ServiceClientLogonKind.RemoteInteractive,
+        };
+        var authority = new FixedSessionAuthority(4);
+
+        Assert.Equal(
+            SessionControlAccess.InactiveSession,
+            ServiceRequestAccessPolicy.GetAccess(client, authority));
+        Assert.Null(ServiceRequestAccessPolicy.GetRejection(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            client,
+            authority));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            new SetFullChargeOverrideRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Enabled: true),
+            client,
+            authority));
+    }
+
+    [Fact]
     public void Shutdown_RequiresAdministrator()
     {
         var authority = new FixedSessionAuthority(4);

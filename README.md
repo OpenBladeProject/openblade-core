@@ -64,6 +64,8 @@ user-specific configuration redacted, then restores control on switch-back
 without a tray restart. The Session Agent starts for every user, while tray
 startup remains an individual user preference. Battery and firmware changes
 still affect the physical laptop, regardless of which user requested them.
+Remote Desktop sessions are read-only; hardware control remains with the
+physical console session and fails closed when no console session is attached.
 
 ## Hardware safety
 

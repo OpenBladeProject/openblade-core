@@ -20,7 +20,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   user-specific status fields redacted, restored control without a tray
   restart, authorized subscriptions before consuming a bounded lease, and
   reduced the steady-state request path to one fail-closed console-session
-  lookup, with a second check only when committing a user switch.
+  lookup, with a second check only when committing a user switch. Remote
+  Desktop sessions are explicitly read-only.
 - Kept the legacy per-user Session Agent startup link until its replacement is
   created successfully, and moved first-use Dynamic Lighting identity
   registration off the Session Agent's startup-critical path.

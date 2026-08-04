@@ -44,6 +44,11 @@ public static class ServiceRequestAccessPolicy
             return SessionControlAccess.NotInteractive;
         }
 
+        if (client.LogonKind == ServiceClientLogonKind.RemoteInteractive)
+        {
+            return SessionControlAccess.InactiveSession;
+        }
+
         int? activeSession = authority.GetControlSessionId();
         return activeSession.HasValue && activeSession.Value == client.SessionId
             ? SessionControlAccess.Active
