@@ -49,7 +49,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         IProductionLightingPortFactory? lightingFactory = null,
         IGpuClockOffsetController? gpuClockOffsets = null,
         ILogger<WindowsVerifiedBladeDeviceProvider>? logger = null,
-        TimeSpan? shutdownBudget = null)
+        TimeSpan? shutdownBudget = null,
+        Action? onDisposing = null)
     {
         TimeSpan effectiveShutdownBudget = shutdownBudget ?? DefaultShutdownBudget;
         if (effectiveShutdownBudget <= TimeSpan.Zero ||
@@ -65,7 +66,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             lightingFactory ?? UnavailableProductionLightingFactory.Instance,
             gpuClockOffsets ?? UnavailableGpuClockOffsetController.Instance,
             logger,
-            effectiveShutdownBudget);
+            effectiveShutdownBudget,
+            onDisposing);
     }
 
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
@@ -229,6 +231,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private readonly IGpuClockOffsetController gpuClockOffsets;
         private readonly ILogger<WindowsVerifiedBladeDeviceProvider>? logger;
         private readonly TimeSpan shutdownBudget;
+        private readonly Action? onDisposing;
         private readonly object lifecycleSync = new();
         private readonly SemaphoreSlim hardwareOperationGate = new(1, 1);
         private Task? deferredDisposal;
@@ -281,7 +284,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             IProductionLightingPortFactory lightingFactory,
             IGpuClockOffsetController gpuClockOffsets,
             ILogger<WindowsVerifiedBladeDeviceProvider>? logger,
-            TimeSpan shutdownBudget)
+            TimeSpan shutdownBudget,
+            Action? onDisposing)
         {
             this.batteryFactory = batteryFactory;
             this.fanRpmFactory = fanRpmFactory;
@@ -289,6 +293,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             this.gpuClockOffsets = gpuClockOffsets;
             this.logger = logger;
             this.shutdownBudget = shutdownBudget;
+            this.onDisposing = onDisposing;
         }
 
         public async Task<DeviceCapabilities> ReadCapabilitiesAsync(
@@ -1315,6 +1320,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 }
 
                 closing = true;
+                onDisposing?.Invoke();
             }
 
             if (!hardwareOperationGate.Wait(shutdownBudget))

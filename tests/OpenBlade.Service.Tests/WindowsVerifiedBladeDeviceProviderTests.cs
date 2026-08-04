@@ -7,6 +7,7 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsVerifiedBladeDeviceProviderTests
 {
+    private static readonly TimeSpan TestDeadlockGuard = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan TestShutdownBudget = TimeSpan.FromMilliseconds(50);
 
     [Fact]
@@ -331,13 +332,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     [Fact]
     public async Task DisposeWhileProbeIsBlocked_PreventsStaleDevicePublication()
     {
-        using var probeStarted = new ManualResetEventSlim();
+        var probeStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         using var releaseProbe = new ManualResetEventSlim();
         var factory = new FakeQueryFactory();
         var provider = new WindowsVerifiedBladeDeviceProvider(
             () =>
             {
-                probeStarted.Set();
+                probeStarted.TrySetResult();
                 releaseProbe.Wait();
                 return Probe(BatteryValidationProbeClassification.Ready);
             },
@@ -349,7 +351,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             bool available = provider.TryGetVerifiedDevice(out IBladeDevice device);
             return (available, device);
         });
-        Assert.True(probeStarted.Wait(TimeSpan.FromSeconds(1)));
+        await probeStarted.Task.WaitAsync(TestDeadlockGuard);
 
         provider.Dispose();
         releaseProbe.Set();
@@ -586,23 +588,27 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         var firstPort = FakeQueryPort.Blocked(BatteryValidationSetting.Limit65);
         var secondPort = FakeQueryPort.Success(BatteryValidationSetting.Limit70);
         var factory = new FakeQueryFactory(firstPort, secondPort);
-        var provider = ReadyProvider(factory);
+        var providerClosing = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(factory),
+            UnavailableFanRpmFactory(),
+            onDisposing: () => providerClosing.TrySetResult());
         provider.TryGetVerifiedDevice(out IBladeDevice device);
         Task<ConfirmedDeviceState> first = device.ReadStateAsync(default);
         await firstPort.QueryStarted.Task;
         Task<ConfirmedDeviceState> queued = device.ReadStateAsync(default);
-        await Task.Yield();
 
         Task disposing = Task.Run(provider.Dispose);
-        Assert.True(SpinWait.SpinUntil(
-            () => !provider.TryGetVerifiedDevice(out _),
-            TimeSpan.FromSeconds(1)));
+        await providerClosing.Task.WaitAsync(TestDeadlockGuard);
+        Assert.False(provider.TryGetVerifiedDevice(out _));
         Task<ConfirmedDeviceState> late = device.ReadStateAsync(default);
         bool lateRejectedBeforeRelease = late.IsCompleted;
 
         firstPort.Release();
         Assert.Equal(65, (await first).Battery!.ChargeLimitPercent);
-        await disposing;
+        await disposing.WaitAsync(TestDeadlockGuard);
         await Assert.ThrowsAsync<ObjectDisposedException>(() => queued);
         ObjectDisposedException lateError =
             await Assert.ThrowsAsync<ObjectDisposedException>(() => late);
@@ -722,8 +728,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         await gate.WaitAsync();
         try
         {
-            await device.PulseReactiveKeyAsync(new ReactiveKeyPulse(77), default)
-                .WaitAsync(TimeSpan.FromMilliseconds(250));
+            Task pulse = device.PulseReactiveKeyAsync(new ReactiveKeyPulse(77), default);
+            Assert.True(pulse.IsCompleted);
+            await pulse;
         }
         finally
         {
@@ -886,11 +893,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         await gate.WaitAsync();
         try
         {
-            await owned.PushAmbientLightingFrameAsync(
-                    new AmbientLightingFrame(
-                        new RgbColor[AmbientLightingFrame.SlotCount]),
-                    default)
-                .WaitAsync(TimeSpan.FromMilliseconds(250));
+            Task frame = owned.PushAmbientLightingFrameAsync(
+                new AmbientLightingFrame(
+                    new RgbColor[AmbientLightingFrame.SlotCount]),
+                default);
+            Assert.True(frame.IsCompleted);
+            await frame;
         }
         finally
         {
@@ -1023,15 +1031,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         BlockedShutdownScenario scenario = await StartBlockedShutdownScenarioAsync();
 
         Task disposal = Task.Run(scenario.Provider.Dispose);
-        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        while (scenario.Provider.TryGetVerifiedDevice(out _))
-        {
-            await Task.Delay(1, deadline.Token);
-        }
+        await scenario.ProviderClosing.WaitAsync(TestDeadlockGuard);
 
+        Assert.False(scenario.Provider.TryGetVerifiedDevice(out _));
         await Assert.ThrowsAsync<ObjectDisposedException>(
             () => scenario.Device.ReadStateAsync(default));
-        await disposal;
+        await disposal.WaitAsync(TestDeadlockGuard);
         await scenario.ReleaseAndDrainAsync();
     }
 
@@ -1064,7 +1069,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     {
         BlockedShutdownScenario scenario = await StartBlockedShutdownScenarioAsync();
 
-        await Task.Run(scenario.Provider.Dispose).WaitAsync(TimeSpan.FromSeconds(1));
+        await Task.Run(scenario.Provider.Dispose).WaitAsync(TestDeadlockGuard);
 
         Assert.Equal(0, scenario.LightingPort.DrainCount);
         await scenario.ReleaseAndDrainAsync();
@@ -1098,23 +1103,27 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         FakeQueryPort blockedPort =
             FakeQueryPort.Blocked(BatteryValidationSetting.Limit80);
         var lightingPort = new FakeLightingPort();
+        var providerClosing = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         var provider = new WindowsVerifiedBladeDeviceProvider(
             () => Probe(BatteryValidationProbeClassification.Ready),
             Adapt(new FakeQueryFactory(blockedPort)),
             UnavailableFanRpmFactory(),
             new FakeLightingFactory(lightingPort),
-            shutdownBudget: TestShutdownBudget);
+            shutdownBudget: TestShutdownBudget,
+            onDisposing: () => providerClosing.TrySetResult());
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
         await device.SetLightingAsync(
             LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
             default);
         Task<ConfirmedDeviceState> hardwareOperation = device.ReadStateAsync(default);
-        await blockedPort.QueryStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await blockedPort.QueryStarted.Task.WaitAsync(TestDeadlockGuard);
         return new(
             provider,
             device,
             lightingPort,
             blockedPort,
+            providerClosing.Task,
             hardwareOperation);
     }
 
@@ -1536,13 +1545,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         IBladeDevice Device,
         FakeLightingPort LightingPort,
         FakeQueryPort BlockedPort,
+        Task ProviderClosing,
         Task<ConfirmedDeviceState> HardwareOperation)
     {
         internal async Task ReleaseAndDrainAsync()
         {
             BlockedPort.Release();
-            await HardwareOperation.WaitAsync(TimeSpan.FromSeconds(1));
-            await LightingPort.DrainStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+            await Task.WhenAll(HardwareOperation, LightingPort.DrainStarted.Task)
+                .WaitAsync(TestDeadlockGuard);
         }
     }
 
