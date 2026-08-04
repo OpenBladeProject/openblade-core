@@ -174,6 +174,34 @@ public sealed class ControlRequestHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_RejectsInactiveObservationWithoutRuntimeDispatch()
+    {
+        var runtime = new RecordingRuntime();
+        var handler = new ControlRequestHandler(
+            runtime,
+            new ThrowingArchiveProvider(),
+            NullServiceShutdownSignal.Instance,
+            new FixedSessionAuthority(4));
+        var client = new ServiceClientContext(
+            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
+            SessionId: 3,
+            IsAdministrator: false,
+            ServiceClientLogonKind.Interactive);
+
+        ServiceResponse response = await handler.HandleAsync(
+            new ObserveStateRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                IncludeLiveReadings: true),
+            client,
+            CancellationToken.None);
+
+        Assert.False(response.Success);
+        Assert.Contains("another Windows session", response.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(runtime.Calls);
+    }
+
+    [Fact]
     public async Task HandleAsync_ReusesAccessDecisionForAuthorizationAndProjection()
     {
         var runtime = new RecordingRuntime();

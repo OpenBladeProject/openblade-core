@@ -1268,6 +1268,9 @@ public sealed class WinUiShellContractTests
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveStateAsync", window, StringComparison.Ordinal);
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync", window, StringComparison.Ordinal);
         Assert.Contains("observationIntervalProvider: () => Timeout.InfiniteTimeSpan", window, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            CountOccurrences(window, "canObserve: () => ViewModel.HasActiveControlAccess"));
         Assert.Contains("trayIcon.MouseMove += OnTrayIconMouseMove", trayHost, StringComparison.Ordinal);
         int mouseMoveHandler = trayHost.IndexOf(
             "private void OnTrayIconMouseMove",

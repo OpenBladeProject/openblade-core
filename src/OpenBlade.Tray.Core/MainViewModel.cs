@@ -576,6 +576,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool HasOperationFeedback => !string.IsNullOrWhiteSpace(OperationFeedbackMessage);
 
+    public bool HasActiveControlAccess => IsConnected
+        && latestStatus?.ControlAccess == SessionControlAccess.Active;
+
     public string TroubleshootingRecentErrorStatus
     {
         get => troubleshootingRecentErrorStatus;
@@ -7468,6 +7471,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private void NotifyPresentationState()
     {
         Notify(nameof(IsServiceUnavailable));
+        Notify(nameof(HasActiveControlAccess));
         Notify(nameof(ControlAccessStatus));
         Notify(nameof(CanRequestHardwareControl));
         Notify(nameof(CanReapplyChangedSettings));

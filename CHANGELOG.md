@@ -16,6 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevented inactive and Remote Desktop sessions from invoking write-capable
+  hardware observation while retaining redacted status and subscriptions.
 - Repaired the all-users Tray startup shortcut during every install and repair
   so upgrades cannot leave newly signed-in users without OpenBlade.
 - Reapplied the newly active user's keyboard-lighting profile during Fast User

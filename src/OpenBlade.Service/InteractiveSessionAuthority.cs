@@ -77,9 +77,7 @@ public static class ServiceRequestAccessPolicy
         }
 
         SessionControlAccess access = GetAccess(client, authority);
-        if (request is GetStatusRequest
-            or ObserveStateRequest
-            or SubscribeStatusRequest)
+        if (request is GetStatusRequest or SubscribeStatusRequest)
         {
             return new ServiceRequestAccessDecision(
                 access,

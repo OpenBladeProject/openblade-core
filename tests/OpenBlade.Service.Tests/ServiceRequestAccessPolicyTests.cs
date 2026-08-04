@@ -43,6 +43,13 @@ public sealed class ServiceRequestAccessPolicyTests
             client,
             authority));
         Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            new ObserveStateRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                IncludeLiveReadings: true),
+            client,
+            authority));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
             new ExportDiagnosticsRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -72,6 +79,13 @@ public sealed class ServiceRequestAccessPolicyTests
             ServiceRequestAccessPolicy.GetAccess(client, authority));
         Assert.Null(ServiceRequestAccessPolicy.GetRejection(
             new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            client,
+            authority));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            new ObserveStateRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                IncludeLiveReadings: true),
             client,
             authority));
         Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
