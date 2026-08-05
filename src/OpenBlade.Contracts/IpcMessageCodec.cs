@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 35;
+    public const int ProtocolVersion = 37;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -169,6 +169,7 @@ public static class IpcMessageCodec
                 && Enum.IsDefined(step.Lifetime),
             SetKeyboardLightingControlModeRequest set => Enum.IsDefined(set.Mode),
             SetExternalLightingOverridePolicyRequest => true,
+            SetFirmwareCompatibilityOverrideRequest => true,
             ReapplyChangedSettingsRequest => true,
             SetLightingSuppressionRequest set => Enum.IsDefined(set.Reason),
             PulseReactiveKeyRequest pulse =>

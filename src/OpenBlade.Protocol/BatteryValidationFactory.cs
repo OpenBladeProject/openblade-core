@@ -20,7 +20,23 @@ public static class BatteryValidationFactory
             : ProductionBatteryFactory.CreateWindows();
 
     internal static IProductionBatteryPortFactory
-        CreateWindowsRz090528ProductionBattery()
+        CreateWindowsProductionBatteryForService(
+            FirmwareCompatibilityPolicy compatibilityPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        return WindowsHostIdentitySource.IsRz090528WindowsHost(
+                allowUntestedFirmware: true)
+            ? CreateWindowsRz090528ProductionBattery(compatibilityPolicy)
+            : ProductionBatteryFactory.CreateWindows(compatibilityPolicy);
+    }
+
+    internal static IProductionBatteryPortFactory
+        CreateWindowsRz090528ProductionBattery() =>
+        CreateWindowsRz090528ProductionBattery(compatibilityPolicy: null);
+
+    private static IProductionBatteryPortFactory
+        CreateWindowsRz090528ProductionBattery(
+            FirmwareCompatibilityPolicy? compatibilityPolicy)
     {
         var target = new DeviceIdentity(
             Model: "RZ09-0528",
@@ -439,7 +455,8 @@ public static class BatteryValidationFactory
         var hostIdentity = new WindowsHostIdentitySource(
             registry,
             new RuntimeWindowsPlatformEvidenceSource(registry),
-            WindowsHostIdentitySource.Rz090528Identity);
+            WindowsHostIdentitySource.Rz090528Identity,
+            compatibilityPolicy);
         var opener = new WindowsRazerHidSessionOpener(
             hostIdentity,
             guard,
@@ -548,31 +565,51 @@ public static class BatteryValidationFactory
             : ProductionLightingFactory.CreateWindows();
 
     internal static IProductionLightingPortFactory
-        CreateWindowsRz090528ProductionLighting()
+        CreateWindowsProductionLightingForService(
+            FirmwareCompatibilityPolicy compatibilityPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        return WindowsHostIdentitySource.IsRz090528WindowsHost(
+                allowUntestedFirmware: true)
+            ? CreateWindowsRz090528ProductionLighting(compatibilityPolicy)
+            : ProductionLightingFactory.CreateWindows(compatibilityPolicy);
+    }
+
+    internal static IProductionLightingPortFactory
+        CreateWindowsRz090528ProductionLighting() =>
+        CreateWindowsRz090528ProductionLighting(compatibilityPolicy: null);
+
+    private static IProductionLightingPortFactory
+        CreateWindowsRz090528ProductionLighting(
+            FirmwareCompatibilityPolicy? compatibilityPolicy)
         => CreateWindowsRz090528BrightnessLighting(
             staticEffectAdmitted: true,
             spectrumEffectAdmitted: true,
-            allSynapseEffectsAdmitted: true);
+            allSynapseEffectsAdmitted: true,
+            compatibilityPolicy: compatibilityPolicy);
 
     internal static IProductionLightingPortFactory
         CreateWindowsRz090528BrightnessLighting()
         => CreateWindowsRz090528BrightnessLighting(
             staticEffectAdmitted: false,
             spectrumEffectAdmitted: false,
-            allSynapseEffectsAdmitted: false);
+            allSynapseEffectsAdmitted: false,
+            compatibilityPolicy: null);
 
     internal static IProductionLightingPortFactory
         CreateWindowsRz090528LightingValidation()
         => CreateWindowsRz090528BrightnessLighting(
             staticEffectAdmitted: true,
             spectrumEffectAdmitted: true,
-            allSynapseEffectsAdmitted: true);
+            allSynapseEffectsAdmitted: true,
+            compatibilityPolicy: null);
 
     private static IProductionLightingPortFactory
         CreateWindowsRz090528BrightnessLighting(
             bool staticEffectAdmitted,
             bool spectrumEffectAdmitted,
-            bool allSynapseEffectsAdmitted)
+            bool allSynapseEffectsAdmitted,
+            FirmwareCompatibilityPolicy? compatibilityPolicy)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -582,7 +619,8 @@ public static class BatteryValidationFactory
         var hostIdentity = new WindowsHostIdentitySource(
             registry,
             new RuntimeWindowsPlatformEvidenceSource(registry),
-            WindowsHostIdentitySource.Rz090528Identity);
+            WindowsHostIdentitySource.Rz090528Identity,
+            compatibilityPolicy);
         var opener = new WindowsRazerHidSessionOpener(
             hostIdentity,
             guard,
@@ -724,10 +762,15 @@ public static class BatteryValidationFactory
     }
 
     internal static IFanRpmQueryRunFactory CreateWindowsRz090528FanRpmQuery()
+        => CreateWindowsRz090528FanRpmQuery(compatibilityPolicy: null);
+
+    private static IFanRpmQueryRunFactory CreateWindowsRz090528FanRpmQuery(
+        FirmwareCompatibilityPolicy? compatibilityPolicy)
     {
         ValidationActorFactory actorFactory =
             CreateWindowsRz090528TemporaryFullChargeActorFactory(
-                ControllerExclusivityPolicy.Advisory);
+                ControllerExclusivityPolicy.Advisory,
+                compatibilityPolicy);
         return new FanRpmQueryRunFactory(
             static () => new ValidationRunContext(),
             actorFactory,
@@ -740,6 +783,31 @@ public static class BatteryValidationFactory
         WindowsHostIdentitySource.IsExactRz090528WindowsHost()
             ? CreateWindowsRz090528FanRpmQuery()
             : CreateWindowsFanRpmQuery();
+
+    internal static IFanRpmQueryRunFactory CreateWindowsFanRpmForService(
+        FirmwareCompatibilityPolicy compatibilityPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        if (WindowsHostIdentitySource.IsRz090528WindowsHost(
+                allowUntestedFirmware: true))
+        {
+            return CreateWindowsRz090528FanRpmQuery(compatibilityPolicy);
+        }
+
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        return CreateWindowsFanRpmQuery(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new RunningProcessSource(),
+            new WindowsServiceSource(),
+            native,
+            new OverlappedFeatureOperation(native),
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout,
+            compatibilityPolicy);
+    }
 
     public static ILightingBrightnessQueryRunner CreateWindowsLightingBrightnessQuery()
     {
@@ -950,6 +1018,20 @@ public static class BatteryValidationFactory
             new WindowsHidNative());
     }
 
+    internal static BatteryValidationProbeResult ProbeWindowsForService(
+        FirmwareCompatibilityPolicy compatibilityPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        var registry = new WindowsRegistryValueSource();
+        return ProbeWindowsForService(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new RunningProcessSource(),
+            new WindowsServiceSource(),
+            new WindowsHidNative(),
+            compatibilityPolicy);
+    }
+
     internal static BatteryValidationProbeResult ProbeWindows(
         IRegistryValueSource registry,
         IWindowsPlatformEvidenceSource platform,
@@ -969,7 +1051,8 @@ public static class BatteryValidationFactory
         IWindowsPlatformEvidenceSource platform,
         IRunningProcessSource processSource,
         IWindowsServiceSource serviceSource,
-        IHidCandidateNative native)
+        IHidCandidateNative native,
+        FirmwareCompatibilityPolicy? compatibilityPolicy = null)
     {
         BatteryValidationProbeResult production = ProbeWindows(
             registry,
@@ -977,7 +1060,8 @@ public static class BatteryValidationFactory
             processSource,
             serviceSource,
             native,
-            ControllerExclusivityPolicy.Advisory);
+            ControllerExclusivityPolicy.Advisory,
+            compatibilityPolicy: compatibilityPolicy);
         if (production.Classification
             != BatteryValidationProbeClassification.HostIdentityBlocked)
         {
@@ -997,7 +1081,8 @@ public static class BatteryValidationFactory
                 ProductId: 0x02C6,
                 UsagePage: 0x0001,
                 Usage: 0x0002,
-                FeatureReportByteLength: 91));
+                FeatureReportByteLength: 91),
+            compatibilityPolicy);
     }
 
     private static BatteryValidationProbeResult ProbeWindows(
@@ -1008,7 +1093,8 @@ public static class BatteryValidationFactory
         IHidCandidateNative native,
         ControllerExclusivityPolicy exclusivityPolicy,
         ExpectedHostIdentity? expectedHostIdentity = null,
-        HidHandleIdentity? exactHandleIdentity = null)
+        HidHandleIdentity? exactHandleIdentity = null,
+        FirmwareCompatibilityPolicy? compatibilityPolicy = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(platform);
@@ -1018,8 +1104,17 @@ public static class BatteryValidationFactory
 
         var guard = new WindowsHardwareAccessGuard(processSource, serviceSource);
         var hostIdentity = expectedHostIdentity is { } expected
-            ? new WindowsHostIdentitySource(registry, platform, expected)
-            : new WindowsHostIdentitySource(registry, platform);
+            ? new WindowsHostIdentitySource(
+                registry,
+                platform,
+                expected,
+                compatibilityPolicy)
+            : compatibilityPolicy is null
+                ? new WindowsHostIdentitySource(registry, platform)
+                : new WindowsHostIdentitySource(
+                    registry,
+                    platform,
+                    compatibilityPolicy);
         var evaluator = exactHandleIdentity is { } exact
             ? new WindowsRazerHidEvidenceEvaluator(
                 hostIdentity,
@@ -1139,7 +1234,8 @@ public static class BatteryValidationFactory
         IHidFeatureIo featureIo,
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
-        TimeSpan cleanupDrainTimeout)
+        TimeSpan cleanupDrainTimeout,
+        FirmwareCompatibilityPolicy? compatibilityPolicy = null)
     {
         ValidationActorFactory actorFactory = CreateActorFactory(
             registry,
@@ -1150,7 +1246,8 @@ public static class BatteryValidationFactory
             featureIo,
             timeProvider,
             exchangeTimeout,
-            ControllerExclusivityPolicy.Advisory);
+            ControllerExclusivityPolicy.Advisory,
+            compatibilityPolicy: compatibilityPolicy);
         return new FanRpmQueryRunFactory(
             static () => new ValidationRunContext(),
             actorFactory,
@@ -1383,6 +1480,7 @@ public static class BatteryValidationFactory
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         ControllerExclusivityPolicy exclusivityPolicy,
+        FirmwareCompatibilityPolicy? compatibilityPolicy = null,
         TimeSpan? featureReportSettleDelay = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
@@ -1395,7 +1493,12 @@ public static class BatteryValidationFactory
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
 
         var hardwareAccessGuard = new WindowsHardwareAccessGuard(processSource, serviceSource);
-        var hostIdentity = new WindowsHostIdentitySource(registry, platform);
+        var hostIdentity = compatibilityPolicy is null
+            ? new WindowsHostIdentitySource(registry, platform)
+            : new WindowsHostIdentitySource(
+                registry,
+                platform,
+                compatibilityPolicy);
         var opener = new WindowsRazerHidSessionOpener(
             hostIdentity,
             hardwareAccessGuard,
@@ -1413,7 +1516,8 @@ public static class BatteryValidationFactory
 
     private static ValidationActorFactory
         CreateWindowsRz090528TemporaryFullChargeActorFactory(
-            ControllerExclusivityPolicy exclusivityPolicy)
+            ControllerExclusivityPolicy exclusivityPolicy,
+            FirmwareCompatibilityPolicy? compatibilityPolicy = null)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -1423,7 +1527,8 @@ public static class BatteryValidationFactory
         var hostIdentity = new WindowsHostIdentitySource(
             registry,
             new RuntimeWindowsPlatformEvidenceSource(registry),
-            WindowsHostIdentitySource.Rz090528Identity);
+            WindowsHostIdentitySource.Rz090528Identity,
+            compatibilityPolicy);
         var opener = new WindowsRazerHidSessionOpener(
             hostIdentity,
             guard,

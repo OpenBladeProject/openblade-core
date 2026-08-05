@@ -82,6 +82,10 @@ public interface IServiceClient : IServiceStatusWatcher
         bool enabled,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
+        bool enabled,
+        CancellationToken token);
+
     Task<ControlOperationResult> ReapplyChangedSettingsAsync(CancellationToken token);
 
     Task<ControlOperationResult> SetLightingSuppressionAsync(

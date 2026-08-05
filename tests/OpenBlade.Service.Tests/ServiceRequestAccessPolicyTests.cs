@@ -116,6 +116,24 @@ public sealed class ServiceRequestAccessPolicyTests
     }
 
     [Fact]
+    public void FirmwareCompatibilityOverride_AllowsActiveStandardUserOnly()
+    {
+        var request = new SetFirmwareCompatibilityOverrideRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Enabled: true);
+
+        Assert.Null(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 4, administrator: false),
+            new FixedSessionAuthority(4)));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 3, administrator: false),
+            new FixedSessionAuthority(4)));
+    }
+
+    [Fact]
     public void NonInteractiveToken_IsRejected()
     {
         ServiceClientContext client = Client(sessionId: 4) with

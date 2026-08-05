@@ -3012,7 +3012,8 @@ public sealed class MainViewModelTests
             LightingRendererOwnership = LightingRendererOwnershipState.Spectrum,
         });
         await WaitUntilAsync(() =>
-            viewModel.SelectedLightingEffectOption?.Effect == LightingEffect.Spectrum);
+            viewModel.SelectedLightingEffectOption?.Effect == LightingEffect.Spectrum
+            && viewModel.LogoLightingModeEditor == LogoLightingMode.Static);
 
         Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
         Assert.Equal(LogoLightingMode.Static, viewModel.LogoLightingModeEditor);
@@ -3213,6 +3214,27 @@ public sealed class MainViewModelTests
         Assert.True(accepted);
         Assert.False(viewModel.AlwaysOverrideExternalLightingChanges);
         Assert.False(client.ExternalLightingOverridePolicy);
+    }
+
+    [Fact]
+    public async Task FirmwareCompatibilityOverride_ReflectsStatusAndSendsMutation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: false, blocked: true) with
+        {
+            AllowUntestedFirmware = true,
+        });
+        await WaitUntilAsync(() => viewModel.AllowUntestedFirmware);
+
+        bool accepted = await viewModel.SetFirmwareCompatibilityOverrideAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.True(accepted);
+        Assert.False(viewModel.AllowUntestedFirmware);
+        Assert.False(client.FirmwareCompatibilityOverride);
     }
 
     [Fact]
@@ -4625,6 +4647,7 @@ public sealed class MainViewModelTests
 
         ServiceStatusSnapshot stable = CreateStatus(verified: true, blocked: false) with
         {
+            FirmwareCompatibility = FirmwareCompatibilityStatus.Tested,
             Firmware = new FirmwareVersions(
                 "3.01",
                 "1.04",
@@ -4645,7 +4668,10 @@ public sealed class MainViewModelTests
         });
         await WaitUntilAsync(() => viewModel.HasUntestedPlatformVersion);
 
-        Assert.Equal("Incompatible firmware", viewModel.PlatformCompatibilityWarningTitle);
+        Assert.False(viewModel.HasIncompatibleFirmware);
+        Assert.Equal(
+            "Untested platform configuration",
+            viewModel.PlatformCompatibilityWarningTitle);
         Assert.Equal(
             "OpenBlade has not tested this configuration: MCU 1.7.0.0.",
             viewModel.DashboardTestedPlatformWarningMessage);
@@ -4658,6 +4684,64 @@ public sealed class MainViewModelTests
         {
             Revision = stable.Revision + 2,
             DeviceVerified = false,
+            WritesBlocked = true,
+            FirmwareCompatibility = FirmwareCompatibilityStatus.UntestedBlocked,
+            Firmware = stable.Firmware! with { BiosVersion = "3.02" },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.BatterySourceLabel == "Incompatible firmware");
+
+        Assert.Equal("Incompatible firmware", viewModel.PlatformCompatibilityWarningTitle);
+        Assert.Equal("Incompatible firmware", viewModel.ProfileStateLabel);
+        Assert.Equal("Incompatible firmware", viewModel.ControlAccessStatus);
+        Assert.Equal("Incompatible firmware", viewModel.PerformanceSourceLabel);
+        Assert.Equal("Incompatible firmware", viewModel.FanSourceLabel);
+        Assert.Equal("Incompatible firmware", viewModel.LightingSourceLabel);
+        Assert.Equal("Incompatible firmware", viewModel.BatterySourceLabel);
+        Assert.Equal("Incompatible firmware", viewModel.TroubleshootingControlsStatus);
+        Assert.Contains(
+            "found a supported laptop with incompatible firmware",
+            viewModel.LightingControlUnavailableMessage,
+            StringComparison.Ordinal);
+        Assert.True(viewModel.IsReadinessWarning);
+        Assert.False(viewModel.IsReadinessError);
+        Assert.DoesNotContain(
+            "Laptop not found",
+            string.Join(
+                '|',
+                viewModel.ProfileStateLabel,
+                viewModel.ControlAccessStatus,
+                viewModel.PerformanceSourceLabel,
+                viewModel.FanSourceLabel,
+                viewModel.LightingSourceLabel,
+                viewModel.BatterySourceLabel),
+            StringComparison.Ordinal);
+
+        client.Publish(stable with
+        {
+            Revision = stable.Revision + 3,
+            DeviceVerified = false,
+            WritesBlocked = true,
+            AllowUntestedFirmware = true,
+            FirmwareCompatibility = FirmwareCompatibilityStatus.UntestedAllowed,
+            Firmware = stable.Firmware! with { BiosVersion = "3.02" },
+        });
+        await WaitUntilAsync(() => viewModel.AllowUntestedFirmware);
+
+        Assert.DoesNotContain(
+            "unless you enable the firmware override",
+            viewModel.LightingControlUnavailableMessage,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "find a supported laptop",
+            viewModel.LightingControlUnavailableMessage,
+            StringComparison.Ordinal);
+
+        client.Publish(stable with
+        {
+            Revision = stable.Revision + 4,
+            DeviceVerified = false,
+            FirmwareCompatibility = FirmwareCompatibilityStatus.Unknown,
             Firmware = stable.Firmware! with { ModelNumber = "RZ09-9999ABC" },
         });
         await WaitUntilAsync(() =>
@@ -4670,7 +4754,7 @@ public sealed class MainViewModelTests
 
         client.Publish(stable with
         {
-            Revision = stable.Revision + 3,
+            Revision = stable.Revision + 5,
             Firmware = new FirmwareVersions(
                 "2.02",
                 "1.09",
@@ -5675,6 +5759,7 @@ public sealed class MainViewModelTests
         public FanControlSettings? LastFanControlSettings { get; private set; }
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
         public bool? ExternalLightingOverridePolicy { get; private set; }
+        public bool? FirmwareCompatibilityOverride { get; private set; }
         public int ReapplyChangedSettingsCalls { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
@@ -5832,6 +5917,14 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             ExternalLightingOverridePolicy = enabled;
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            FirmwareCompatibilityOverride = enabled;
             return MutateAsync(token);
         }
 

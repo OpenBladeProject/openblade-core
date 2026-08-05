@@ -86,6 +86,12 @@ public static class ServiceRequestAccessPolicy
                     : null);
         }
 
+        // Firmware override is intentionally governed by the same single active,
+        // local interactive-session boundary as the other hardware controls. It
+        // does not relax exact model, SKU, USB identity, or typed-command gates;
+        // requiring elevation here would make the tray setting unusable without
+        // a separate brokered elevation flow. Service shutdown remains the sole
+        // administrator-only request above.
         return new ServiceRequestAccessDecision(
             access,
             access switch

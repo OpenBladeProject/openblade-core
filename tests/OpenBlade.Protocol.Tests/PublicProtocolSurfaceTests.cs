@@ -203,9 +203,10 @@ public sealed class PublicProtocolSurfaceTests
 
         Assert.Equal(typeof(BatteryValidationProbeStage), properties["Stage"]);
         Assert.Equal(typeof(BatteryValidationProbeClassification), properties["Classification"]);
+        Assert.Equal(typeof(BatteryValidationFirmwareCompatibility), properties["FirmwareCompatibility"]);
         Assert.Equal(typeof(int?), properties["CandidateOpenWin32Error"]);
         Assert.Equal(typeof(int), properties["CandidateAccessFallbackCount"]);
-        Assert.Equal(16, properties.Count);
+        Assert.Equal(17, properties.Count);
         Assert.DoesNotContain(properties.Keys, name =>
             name.Contains("Path", StringComparison.OrdinalIgnoreCase)
             || name.Contains("Handle", StringComparison.OrdinalIgnoreCase)

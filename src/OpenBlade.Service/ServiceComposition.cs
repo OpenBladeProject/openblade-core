@@ -45,26 +45,36 @@ internal static class ServiceComposition
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddSingleton<IProductionBatteryPortFactory>(_ =>
-            CreateProductionBatteryFactory());
-        services.AddSingleton<IProductionLightingPortFactory>(_ =>
-            CreateProductionLightingFactory());
+        services.AddSingleton<FirmwareCompatibilityPolicy>();
+        services.AddSingleton<IProductionBatteryPortFactory>(provider =>
+            CreateProductionBatteryFactory(
+                provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+        services.AddSingleton<IProductionLightingPortFactory>(provider =>
+            CreateProductionLightingFactory(
+                provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
         services.AddSingleton(provider =>
             CreateProfileSetValidator(
                 provider.GetRequiredService<IProductionBatteryPortFactory>(),
                 provider.GetRequiredService<IProductionLightingPortFactory>()));
-        services.AddSingleton<IFanRpmQueryRunFactory>(_ =>
-            BatteryValidationFactory.CreateWindowsFanRpmForService());
+        services.AddSingleton<IFanRpmQueryRunFactory>(provider =>
+            BatteryValidationFactory.CreateWindowsFanRpmForService(
+                provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
         services.AddSingleton<IGpuClockOffsetController>(_ =>
             new NvidiaGpuClockOffsetController());
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
-            new WindowsVerifiedBladeDeviceProvider(
-                WindowsVerifiedBladeDeviceProvider.ProductionProbeFactory,
+        {
+            FirmwareCompatibilityPolicy compatibilityPolicy =
+                provider.GetRequiredService<FirmwareCompatibilityPolicy>();
+            return new WindowsVerifiedBladeDeviceProvider(
+                () => BatteryValidationFactory.ProbeWindowsForService(
+                    compatibilityPolicy),
                 provider.GetRequiredService<IProductionBatteryPortFactory>(),
                 provider.GetRequiredService<IFanRpmQueryRunFactory>(),
                 provider.GetRequiredService<IProductionLightingPortFactory>(),
                 provider.GetRequiredService<IGpuClockOffsetController>(),
-                provider.GetService<ILogger<WindowsVerifiedBladeDeviceProvider>>()));
+                provider.GetService<ILogger<WindowsVerifiedBladeDeviceProvider>>(),
+                compatibilityPolicy: compatibilityPolicy);
+        });
         return services;
     }
 
@@ -72,6 +82,17 @@ internal static class ServiceComposition
         CreateProductionBatteryFactory(
             BatteryValidationFactory.CreateWindowsProductionBatteryForService,
             ProductionBatteryFactory.CreateWindowsReadOnly);
+
+    internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(
+        FirmwareCompatibilityPolicy compatibilityPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        return CreateProductionBatteryFactory(
+            () => BatteryValidationFactory.CreateWindowsProductionBatteryForService(
+                compatibilityPolicy),
+            () => ProductionBatteryFactory.CreateWindowsReadOnly(
+                compatibilityPolicy));
+    }
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(
         Func<IProductionBatteryPortFactory> createAdmitted,
@@ -97,6 +118,17 @@ internal static class ServiceComposition
         CreateProductionLightingFactory(
             BatteryValidationFactory.CreateWindowsProductionLightingForService,
             ProductionLightingFactory.CreateWindowsReadOnly);
+
+    internal static IProductionLightingPortFactory CreateProductionLightingFactory(
+        FirmwareCompatibilityPolicy compatibilityPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        return CreateProductionLightingFactory(
+            () => BatteryValidationFactory.CreateWindowsProductionLightingForService(
+                compatibilityPolicy),
+            () => ProductionLightingFactory.CreateWindowsReadOnly(
+                compatibilityPolicy));
+    }
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory(
         Func<IProductionLightingPortFactory> createAdmitted,
