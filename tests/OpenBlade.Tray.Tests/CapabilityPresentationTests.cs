@@ -55,6 +55,66 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_FirmwareAssistantUsesResponsiveSettingsGroupLayout()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement card = NamedElement(document, "Border", "OfficialFirmwareUpdatesCard");
+        Assert.Equal("{StaticResource SettingsGroupStyle}", Attribute(card, "Style"));
+        Assert.Null(Attribute(card, "Padding"));
+
+        string[] sectionNames =
+        [
+            "FirmwareHeaderSection",
+            "FirmwareCheckIntervalSection",
+            "FirmwareVersionsSection",
+            "FirmwareFooterSection",
+        ];
+        XElement host = Assert.Single(card.Elements());
+        Assert.Equal(
+            sectionNames,
+            host.Elements().Select(section => Attribute(section, "Name")));
+
+        XElement versionsSection = NamedElement(
+            document,
+            "Border",
+            "FirmwareVersionsSection");
+        XElement versionsGrid = Assert.Single(versionsSection.Elements());
+        Assert.Contains(versionsGrid.Elements(), element =>
+            Attribute(element, "Text") == "Firmware");
+
+        XElement[] valueGrids = versionsGrid.Elements()
+            .Where(element => element.Name.LocalName == "Grid")
+            .ToArray();
+        Assert.Equal(4, valueGrids.Length);
+        Assert.All(valueGrids, grid => Assert.Equal(
+            2,
+            grid.Elements()
+                .Single(element => element.Name.LocalName == "Grid.ColumnDefinitions")
+                .Elements()
+                .Count()));
+
+        Assert.DoesNotContain(
+            versionsSection.Descendants()
+                .Where(element => element.Name.LocalName == "ColumnDefinition"),
+            column => double.TryParse(Attribute(column, "Width"), out _));
+
+        XElement[] versionValues = versionsSection.Descendants()
+            .Where(element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Text") is string text
+                && (text.Contains(
+                        "FirmwareUpdateViewModel.Installed",
+                        StringComparison.Ordinal)
+                    || text.Contains(
+                        "FirmwareUpdateViewModel.Published",
+                        StringComparison.Ordinal)))
+            .ToArray();
+        Assert.Equal(6, versionValues.Length);
+        Assert.All(versionValues, value =>
+            Assert.Equal("Wrap", Attribute(value, "TextWrapping")));
+    }
+
+    [Fact]
     public void MainWindow_SettingsRowsConfigureTheSharedPointerOverHighlight()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
