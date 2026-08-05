@@ -19,6 +19,34 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Let a returning console session recover control through safe status polling
+  without allowing inactive sessions to invoke hardware observation.
+- Kept the service IPC listener alive when a local client connects but stalls
+  before sending its first request or receiving a malformed-request response.
+- Prevented inactive and Remote Desktop sessions from invoking write-capable
+  hardware observation while retaining redacted status and subscriptions.
+- Repaired the all-users Tray startup shortcut during every install and repair
+  so upgrades cannot leave newly signed-in users without OpenBlade.
+- Reapplied the newly active user's keyboard-lighting profile during Fast User
+  Switching instead of misclassifying the prior user's lighting as an external
+  change, including an A-to-B-to-A round trip.
+- Started the visible tray for every signed-in user from the all-users Startup
+  folder while safely migrating the installing user's legacy startup link.
+- Fixed multi-user builds failing their installer health check because Windows
+  named-pipe impersonation ran before the service read the client's request.
+- Kept background-user trays connected during Fast User Switching with
+  user-specific status fields redacted, restored control without a tray
+  restart, authorized subscriptions before consuming a bounded lease, and
+  reduced the steady-state request path to one fail-closed console-session
+  lookup, with a second check only when committing a user switch. Remote
+  Desktop sessions are explicitly read-only.
+- Kept the legacy per-user Session Agent startup link until its replacement is
+  created successfully, and moved first-use Dynamic Lighting identity
+  registration off the Session Agent's startup-critical path.
+- Kept applied dashboard Power mode and Custom CPU/GPU selections stable while
+  service status catches up, restored the previous selection after real
+  failures, and disabled fixed/manual fan choices until the required Balanced
+  Automatic baseline is confirmed.
 - Kept manual and automatic update checks nonfatal when the computer is
   offline, with a clear connectivity status and bounded retry delay.
 - Fixed the graphical uninstaller so it detects a same-version OpenBlade
@@ -44,6 +72,16 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added multi-user Windows support. The LocalSystem service authenticates each
+  named-pipe client from its Windows token, permits hardware mutation only from
+  the active interactive session, keeps profiles and persistent overrides
+  isolated by user SID, migrates the legacy owner's saved configuration, and
+  starts the per-session Session Agent for every user. The agent registers its
+  Dynamic Lighting identity on first use and relaunches once under that
+  identity. Tray and Session Agent endpoints now include the Windows session
+  ID, background sessions lose control without exposing another user's
+  profiles, service shutdown requires an administrator, and service IPC is now
+  version 34.
 - Added a read-only firmware assistant for admitted Blade models that shows
   installed BIOS, EC, and MCU values beside versions published on the model's
   official Razer support page without downloading or running firmware tools,

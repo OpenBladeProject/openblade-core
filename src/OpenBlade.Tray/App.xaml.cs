@@ -47,7 +47,9 @@ public partial class App : Microsoft.UI.Xaml.Application
             ?? throw new InvalidOperationException("Tray executable path is unavailable.");
         string userSid = WindowsIdentity.GetCurrent().User?.Value
             ?? throw new InvalidOperationException("Current user SID is unavailable.");
-        TrayInstanceEndpoint instanceEndpoint = TrayInstanceEndpoint.Create(userSid);
+        using Process currentProcess = Process.GetCurrentProcess();
+        int sessionId = currentProcess.SessionId;
+        TrayInstanceEndpoint instanceEndpoint = TrayInstanceEndpoint.Create(userSid, sessionId);
         if (!TrayInstanceCoordinator.TryStart(
             instanceEndpoint,
             () => Enqueue(ShowMainWindow),
@@ -59,7 +61,9 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         mainWindow = CreateMainWindow();
         SessionAgentEventEndpoint sessionEventEndpoint =
-            SessionAgentEventEndpoint.Create(new SecurityIdentifier(userSid));
+            SessionAgentEventEndpoint.Create(
+                new SecurityIdentifier(userSid),
+                sessionId);
         brightnessOsdHost = WindowsTrayBrightnessOsdHost.CreateBestEffort(
             mainWindow,
             sessionEventEndpoint,

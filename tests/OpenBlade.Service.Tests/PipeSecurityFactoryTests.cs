@@ -39,4 +39,38 @@ public sealed class PipeSecurityFactoryTests
                 WellKnownSidType.BuiltinUsersSid,
                 null));
     }
+
+    [Fact]
+    public void CreateForInteractiveUsers_AllowsLocalUsersAndDeniesNetworkLogons()
+    {
+        PipeSecurity security = PipeSecurityFactory.CreateForInteractiveUsers();
+        PipeAccessRule[] rules = security.GetAccessRules(
+                includeExplicit: true,
+                includeInherited: false,
+                typeof(SecurityIdentifier))
+            .Cast<PipeAccessRule>()
+            .ToArray();
+
+        Assert.True(security.AreAccessRulesProtected);
+        Assert.Contains(rules, rule =>
+            rule.IdentityReference == new SecurityIdentifier(
+                WellKnownSidType.BuiltinUsersSid,
+                null)
+            && rule.AccessControlType == AccessControlType.Allow);
+        Assert.Contains(rules, rule =>
+            rule.IdentityReference == new SecurityIdentifier(
+                WellKnownSidType.BuiltinAdministratorsSid,
+                null)
+            && rule.AccessControlType == AccessControlType.Allow);
+        Assert.Contains(rules, rule =>
+            rule.IdentityReference == new SecurityIdentifier(
+                WellKnownSidType.LocalSystemSid,
+                null)
+            && rule.AccessControlType == AccessControlType.Allow);
+        Assert.Contains(rules, rule =>
+            rule.IdentityReference == new SecurityIdentifier(
+                WellKnownSidType.NetworkSid,
+                null)
+            && rule.AccessControlType == AccessControlType.Deny);
+    }
 }

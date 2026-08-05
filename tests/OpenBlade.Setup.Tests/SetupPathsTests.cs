@@ -5,28 +5,48 @@ namespace OpenBlade.Setup.Tests;
 public sealed class SetupPathsTests
 {
     [Fact]
+    public void Create_CommonStartupWithoutProgramsParentNamesCorrectParameter()
+    {
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => SetupPaths.Create(
+            @"C:\Program Files",
+            @"C:\ProgramData",
+            @"C:\Users\jack\AppData\Local",
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup",
+            @"C:\"));
+
+        Assert.Equal("commonStartupRoot", exception.ParamName);
+    }
+
+    [Fact]
     public void Create_MapsEachArtifactToItsRequiredWindowsKnownFolder()
     {
         SetupPaths paths = SetupPaths.Create(
             @"C:\Program Files",
             @"C:\ProgramData",
             @"C:\Users\jack\AppData\Local",
-            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup");
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup",
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup");
 
         Assert.Equal(@"C:\Program Files\OpenBlade", paths.InstallDirectory);
         Assert.Equal(@"C:\ProgramData\OpenBlade", paths.MachineDataDirectory);
         Assert.Equal(@"C:\Users\jack\AppData\Local\OpenBlade", paths.UserDataDirectory);
         Assert.Equal(
-            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.lnk",
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.lnk",
             paths.StartupFile);
         Assert.Equal(
-            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.SessionAgent.lnk",
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.lnk",
+            paths.LegacyTrayStartupFile);
+        Assert.Equal(
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.SessionAgent.lnk",
             paths.SessionAgentStartupFile);
         Assert.Equal(
-            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\OpenBlade.lnk",
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.SessionAgent.lnk",
+            paths.LegacySessionAgentStartupFile);
+        Assert.Equal(
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\OpenBlade.lnk",
             paths.StartMenuFile);
         Assert.Equal(
-            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Uninstall OpenBlade.lnk",
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Uninstall OpenBlade.lnk",
             paths.UninstallStartMenuFile);
     }
 

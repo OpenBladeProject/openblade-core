@@ -31,6 +31,15 @@ internal static class ServiceComposition
         return services;
     }
 
+    internal static IServiceCollection AddMultiUserSessionSupport(
+        this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.AddSingleton<IInteractiveSessionAuthority, WindowsInteractiveSessionAuthority>();
+        services.AddSingleton<IServiceClientContextResolver, WindowsServiceClientContextResolver>();
+        return services;
+    }
+
     internal static IServiceCollection AddVerifiedBladeDeviceProvider(
         this IServiceCollection services)
     {

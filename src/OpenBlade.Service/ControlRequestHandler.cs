@@ -1,34 +1,66 @@
+using System.Text.Json;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
 
 public sealed class ControlRequestHandler
 {
+    private static readonly ProfileSet InactiveSessionProfiles =
+        ProfileDefaults.CreateSafeDefaults();
     private readonly IServiceControlRuntime runtime;
     private readonly IDiagnosticArchiveProvider diagnosticArchiveProvider;
     private readonly IServiceShutdownSignal shutdownSignal;
+    private readonly IInteractiveSessionAuthority sessionAuthority;
 
-    public ControlRequestHandler(
+    internal ControlRequestHandler(
         IServiceControlRuntime runtime,
         IDiagnosticArchiveProvider diagnosticArchiveProvider)
-        : this(runtime, diagnosticArchiveProvider, NullServiceShutdownSignal.Instance)
+        : this(
+            runtime,
+            diagnosticArchiveProvider,
+            NullServiceShutdownSignal.Instance,
+            new AllowAllInteractiveSessionAuthority())
+    {
+    }
+
+    internal ControlRequestHandler(
+        IServiceControlRuntime runtime,
+        IDiagnosticArchiveProvider diagnosticArchiveProvider,
+        IServiceShutdownSignal shutdownSignal)
+        : this(
+            runtime,
+            diagnosticArchiveProvider,
+            shutdownSignal,
+            new AllowAllInteractiveSessionAuthority())
     {
     }
 
     public ControlRequestHandler(
         IServiceControlRuntime runtime,
         IDiagnosticArchiveProvider diagnosticArchiveProvider,
-        IServiceShutdownSignal shutdownSignal)
+        IServiceShutdownSignal shutdownSignal,
+        IInteractiveSessionAuthority sessionAuthority)
     {
         this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         this.diagnosticArchiveProvider = diagnosticArchiveProvider
             ?? throw new ArgumentNullException(nameof(diagnosticArchiveProvider));
         this.shutdownSignal = shutdownSignal
             ?? throw new ArgumentNullException(nameof(shutdownSignal));
+        this.sessionAuthority = sessionAuthority
+            ?? throw new ArgumentNullException(nameof(sessionAuthority));
     }
+
+    internal async Task<ServiceResponse> HandleAsync(
+        ServiceRequest request,
+        CancellationToken cancellationToken)
+        => await HandleAsync(
+            request,
+            ServiceClientContext.TrustedTestClient,
+            cancellationToken);
 
     public async Task<ServiceResponse> HandleAsync(
         ServiceRequest request,
+        ServiceClientContext client,
         CancellationToken cancellationToken)
     {
         if (request is null)
@@ -46,12 +78,49 @@ public sealed class ControlRequestHandler
             return Failure(Guid.Empty, "IPC request ID is missing.");
         }
 
+        ServiceRequestAccessDecision accessDecision = ServiceRequestAccessPolicy.Evaluate(
+            request,
+            client,
+            sessionAuthority);
+        if (accessDecision.Rejection is not null)
+        {
+            return Failure(request.RequestId, accessDecision.Rejection);
+        }
+
+        if (request is not ShutdownOpenBladeRequest
+            && client.IsInteractive
+            && accessDecision.Access == SessionControlAccess.Active)
+        {
+            try
+            {
+                await runtime.ActivateUserAsync(
+                    client.UserSid,
+                    () => ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
+                        == SessionControlAccess.Active,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (exception is
+                InvalidDataException or IOException or JsonException or UnauthorizedAccessException)
+            {
+                return Failure(
+                    request.RequestId,
+                    $"The active user's configuration could not be loaded: {exception.Message}");
+            }
+        }
+
         return request switch
         {
-            GetStatusRequest or SubscribeStatusRequest => Status(request.RequestId),
+            GetStatusRequest or SubscribeStatusRequest => Status(
+                request.RequestId,
+                accessDecision.Access),
             ObserveStateRequest observe => await ObserveStatusAsync(
                 observe.RequestId,
                 observe.EffectiveLiveReadings,
+                accessDecision.Access,
                 cancellationToken),
             UpdateProfilesRequest update => Result(
                 request.RequestId,
@@ -156,20 +225,65 @@ public sealed class ControlRequestHandler
     private async Task<ServiceResponse> ObserveStatusAsync(
         Guid requestId,
         LiveReadingSensors requestedLiveReadings,
+        SessionControlAccess access,
         CancellationToken cancellationToken)
     {
         await runtime.ObserveAsync(requestedLiveReadings, cancellationToken);
-        return Status(requestId);
+        return Status(requestId, access);
     }
 
-    private ServiceResponse Status(Guid requestId) => new(
+    private ServiceResponse Status(Guid requestId, SessionControlAccess access) => new(
         OpenBladeIpc.ProtocolVersion,
         requestId,
         Success: true,
         Error: null,
-        Status: runtime.GetStatus(),
+        Status: ProjectStatus(runtime.GetStatus(), access),
         Result: null,
         Archive: null);
+
+    internal ServiceStatusSnapshot ProjectStatus(
+        ServiceStatusSnapshot snapshot,
+        ServiceClientContext client)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return ProjectStatus(
+            snapshot,
+            ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority));
+    }
+
+    private static ServiceStatusSnapshot ProjectStatus(
+        ServiceStatusSnapshot snapshot,
+        SessionControlAccess access)
+    {
+        if (access == SessionControlAccess.Active)
+        {
+            return snapshot with { ControlAccess = access };
+        }
+
+        var inactiveAutomation = new ProfileAutomationState(
+            InactiveSessionProfiles,
+            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            snapshot.ActivePowerSource);
+        ConfirmedDeviceState confirmed = snapshot.ConfirmedState
+            ?? new ConfirmedDeviceState(null, null, null, null);
+        return snapshot with
+        {
+            Message = access == SessionControlAccess.InactiveSession
+                ? "Another Windows session currently controls OpenBlade hardware."
+                : "OpenBlade accepts requests only from an interactive Windows session.",
+            Profiles = InactiveSessionProfiles,
+            DesiredState = inactiveAutomation.Resolve(confirmed),
+            PerformanceOverride = null,
+            FanOverride = null,
+            FanControlOverride = null,
+            LightingOverride = null,
+            FullChargeOverride = false,
+            AlwaysOverrideExternalLightingChanges = false,
+            KeyboardLightingControlMode = KeyboardLightingControlMode.OpenBlade,
+            PerformanceShortcutPreview = null,
+            ControlAccess = access,
+        };
+    }
 
     private static ServiceResponse Result(Guid requestId, ControlOperationResult result) => new(
         OpenBladeIpc.ProtocolVersion,
@@ -219,4 +333,10 @@ public sealed class ControlRequestHandler
         Status: null,
         Result: null,
         Archive: null);
+
+    private sealed class AllowAllInteractiveSessionAuthority : IInteractiveSessionAuthority
+    {
+        public int? GetControlSessionId() =>
+            ServiceClientContext.TrustedTestClient.SessionId;
+    }
 }

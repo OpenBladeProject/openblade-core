@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Security.Principal;
 using OpenBlade.Contracts;
@@ -9,6 +10,9 @@ namespace OpenBlade.SessionAgent;
 
 internal static class Program
 {
+    private const string IdentityRegistrationRelaunchArgument =
+        "--identity-registration-relaunch";
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -47,7 +51,9 @@ internal static class Program
 
         try
         {
-            return RunAsync().GetAwaiter().GetResult();
+            return RunAsync(args.Contains(
+                IdentityRegistrationRelaunchArgument,
+                StringComparer.Ordinal)).GetAwaiter().GetResult();
         }
         catch (Exception exception)
         {
@@ -62,13 +68,15 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunAsync()
+    private static async Task<int> RunAsync(bool identityRegistrationRelaunch)
     {
         SecurityIdentifier userSid = WindowsIdentity.GetCurrent().User
             ?? throw new InvalidOperationException("The current user SID is unavailable.");
-        SessionAgentPipeEndpoint endpoint = SessionAgentPipeEndpoint.Create(userSid);
+        using Process currentProcess = Process.GetCurrentProcess();
+        int sessionId = currentProcess.SessionId;
+        SessionAgentPipeEndpoint endpoint = SessionAgentPipeEndpoint.Create(userSid, sessionId);
         SessionAgentEventEndpoint eventEndpoint =
-            SessionAgentEventEndpoint.Create(userSid);
+            SessionAgentEventEndpoint.Create(userSid, sessionId);
         if (!TryAcquireStartupOwnership(
                 endpoint,
                 userSid,
@@ -234,6 +242,10 @@ internal static class Program
                 Task playbackMuteTask = playbackMuteIndicator.RunAsync(lifetime.Token);
                 Task lampArrayObservationTask =
                     lampArrayObservation.RunAsync(lifetime.Token);
+                Task<bool> identityRegistrationTask =
+                    MonitorIdentityRegistrationAsync(
+                        enabled: !identityRegistrationRelaunch,
+                        lifetime.Token);
                 Task completed = await Task.WhenAny(
                     serverTask,
                     statusFeedTask,
@@ -244,7 +256,10 @@ internal static class Program
                     audioMeterTask,
                     lightingIdleTask,
                     playbackMuteTask,
-                    lampArrayObservationTask).ConfigureAwait(false);
+                    lampArrayObservationTask,
+                    identityRegistrationTask).ConfigureAwait(false);
+                bool relaunchForIdentity = completed == identityRegistrationTask
+                    && await identityRegistrationTask.ConfigureAwait(false);
                 Exception? terminalFailure = completed.IsFaulted
                     ? completed.Exception?.GetBaseException()
                     : null;
@@ -265,7 +280,8 @@ internal static class Program
                             audioMeterTask,
                             lightingIdleTask,
                             playbackMuteTask,
-                            lampArrayObservationTask)
+                            lampArrayObservationTask,
+                            identityRegistrationTask)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
@@ -274,6 +290,11 @@ internal static class Program
                 if (terminalFailure is not null)
                 {
                     ExceptionDispatchInfo.Capture(terminalFailure).Throw();
+                }
+                if (relaunchForIdentity)
+                {
+                    await acquiredOwner.DisposeAsync();
+                    return RelaunchAfterIdentityRegistration();
                 }
                 return 0;
             }
@@ -288,6 +309,53 @@ internal static class Program
                 }
             }
         }
+    }
+
+    internal static async Task<bool> MonitorIdentityRegistrationAsync(
+        bool enabled,
+        CancellationToken cancellationToken,
+        PerUserDynamicLightingRegistration? registration = null)
+    {
+        if (enabled)
+        {
+            try
+            {
+                if (await (registration ?? new PerUserDynamicLightingRegistration())
+                        .EnsureRegisteredAsync(cancellationToken))
+                {
+                    return true;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade per-user Dynamic Lighting registration failed: {0}",
+                    exception.Message);
+            }
+        }
+
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        return false;
+    }
+
+    private static int RelaunchAfterIdentityRegistration()
+    {
+        string executablePath = Environment.ProcessPath
+            ?? throw new InvalidOperationException(
+                "The Session Agent executable path is unavailable.");
+        using Process? process = Process.Start(new ProcessStartInfo
+        {
+            FileName = executablePath,
+            Arguments = IdentityRegistrationRelaunchArgument,
+            UseShellExecute = false,
+            WorkingDirectory = AppContext.BaseDirectory,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        });
+        return process is null ? 1 : 0;
     }
 
     internal static bool TryAcquireStartupOwnership(

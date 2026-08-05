@@ -177,7 +177,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(23, animated.Length);
+        Assert.Equal(24, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -192,6 +192,10 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsManualFanCurveVisible",
+                StringComparison.Ordinal) is true);
+        Assert.Contains(animated, element =>
+            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                "IsManualFanControlUnavailable",
                 StringComparison.Ordinal) is true);
         XElement[] gamingModePolicies = animated
             .Where(element => element.Descendants().Any(descendant =>
