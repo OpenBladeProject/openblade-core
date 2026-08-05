@@ -48,6 +48,14 @@ supplied only by `build/Publish.ps1`, and revision zero remains reserved for
 stable builds. The full Git revision, installer hash, and generated identity
 must accompany every retained nightly artifact.
 
+Every published nightly includes `OpenBlade-Nightly-CHANGELOG.md`, generated
+from the exact tagged source history. A separate workflow job reconstructs any
+nightly sections not yet recorded in the repository, rebases the result on the
+current `main` changelog, leaves post-build entries under `Unreleased`, and
+opens or updates the workflow-owned draft documentation pull request. The job
+may replace only its dedicated branch with a force-with-lease guard; it never
+pushes directly to `main`.
+
 ## Service IPC
 
 The service IPC protocol version is defined in `IpcMessageCodec`.

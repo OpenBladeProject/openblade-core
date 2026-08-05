@@ -50,6 +50,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added exact-source changelog snapshots to nightly prereleases. After each
+  successful publication, the workflow reconstructs any unrecorded nightly
+  boundaries and opens or updates a guarded draft documentation pull request
+  while preserving changes merged after the build under `Unreleased`.
 - Added multi-user Windows support. The LocalSystem service authenticates each
   named-pipe client from its Windows token, permits hardware mutation only from
   the active interactive session, keeps profiles and persistent overrides

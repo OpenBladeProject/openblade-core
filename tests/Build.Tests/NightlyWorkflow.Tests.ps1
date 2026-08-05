@@ -139,13 +139,50 @@ foreach ($requiredReleaseContract in @(
         'publish-nightly-release:',
         "if: `${{ github.ref == 'refs/heads/main' }}",
         'contents: write',
+        'pull-requests: write',
+        'fetch-depth: 0',
+        './build/NightlyChangelog.ps1',
+        'OpenBlade-Nightly-CHANGELOG.md',
         'gh release create',
         '--prerelease',
         '--latest=false',
         'artifacts/OpenBlade-Setup.exe.sha256',
-        'artifacts/OpenBlade-Nightly.json')) {
+        'artifacts/OpenBlade-Nightly.json',
+        'update-nightly-changelog:',
+        'needs: publish-nightly-release',
+        'docs/nightly-changelog-automation',
+        '--force-with-lease=',
+        'gh pr create',
+        '--draft')) {
     Assert-True ($nightly.Contains($requiredReleaseContract)) `
         "Nightly release publishing is missing '$requiredReleaseContract'."
+}
+Assert-True (-not $nightly.Contains('git push origin main')) `
+    'Nightly changelog automation must never push directly to main.'
+$pwshBlockPattern =
+    '(?ms)^      - name:.*?^        shell: pwsh\r?\n' +
+    '        run: \|\r?\n' +
+    '(?<script>(?:          .*?(?:\r?\n|$))+)'
+$pwshBlocks = [Regex]::Matches($nightly, $pwshBlockPattern)
+Assert-True ($pwshBlocks.Count -ge 2) `
+    'Nightly workflow tests must parse each multiline PowerShell step.'
+foreach ($pwshBlock in $pwshBlocks) {
+    $scriptText = @(
+        $pwshBlock.Groups['script'].Value -split '\r?\n' |
+            ForEach-Object { $_ -replace '^          ', '' }) -join "`n"
+    $scriptText = [Regex]::Replace(
+        $scriptText,
+        '\$\{\{.*?\}\}',
+        '1')
+    $tokens = $null
+    $parseErrors = $null
+    [void][Management.Automation.Language.Parser]::ParseInput(
+        $scriptText,
+        [ref]$tokens,
+        [ref]$parseErrors)
+    Assert-True ($parseErrors.Count -eq 0) (
+        'Nightly workflow contains invalid embedded PowerShell: ' +
+        (($parseErrors | ForEach-Object Message) -join '; '))
 }
 Assert-True (-not $build.Contains('id-token: write')) `
     'The shared build workflow must not elevate stable CI permissions.'
