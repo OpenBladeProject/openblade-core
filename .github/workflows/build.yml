@@ -12,22 +12,23 @@ on:
         required: false
         default: 0
         type: number
+      run-installer:
+        description: Run the complete production installer validation lane.
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
-  build-and-test:
-    runs-on: windows-latest
-    timeout-minutes: 45
-
-    env:
-      DOTNET_CLI_TELEMETRY_OPTOUT: 1
-      DOTNET_NOLOGO: true
-
+  validate-request:
+    name: Validate build request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Validate build request
-        shell: powershell
+      - name: Validate inputs
+        shell: pwsh
         env:
           OPENBLADE_BUILD_CHANNEL: ${{ inputs.channel }}
           OPENBLADE_BUILD_REVISION: ${{ inputs.build-revision }}
@@ -50,6 +51,15 @@ jobs:
             throw 'Nightly build revisions must be between 1 and 65535.'
           }
 
+  quality-and-tests:
+    name: Quality and tests
+    needs: validate-request
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: true
+    steps:
       - name: Check out source
         uses: actions/checkout@v7
         with:
@@ -89,6 +99,29 @@ jobs:
           -m:1
           --verbosity minimal
 
+  build-contracts:
+    name: Build contracts
+    needs: validate-request
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: true
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore OpenBlade.slnx -p:NuGetAudit=false
+
       - name: Validate installer and Store authoring
         shell: powershell
         run: |
@@ -96,6 +129,27 @@ jobs:
           Get-ChildItem .\tests\Build.Tests\*.Tests.ps1 |
             Sort-Object Name |
             ForEach-Object { & $_.FullName }
+
+  installer-validation:
+    name: Installer validation
+    needs: validate-request
+    if: ${{ inputs.run-installer }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: true
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
 
       - name: Publish and validate production installer
         if: inputs.channel == 'Stable'
@@ -126,3 +180,42 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+  build-and-test:
+    needs:
+      - validate-request
+      - quality-and-tests
+      - build-contracts
+      - installer-validation
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify required validation lanes
+        shell: pwsh
+        env:
+          OPENBLADE_VALIDATE_RESULT: ${{ needs.validate-request.result }}
+          OPENBLADE_QUALITY_RESULT: ${{ needs.quality-and-tests.result }}
+          OPENBLADE_CONTRACT_RESULT: ${{ needs.build-contracts.result }}
+          OPENBLADE_INSTALLER_RESULT: ${{ needs.installer-validation.result }}
+          OPENBLADE_RUN_INSTALLER: ${{ inputs.run-installer }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($requiredResult in @(
+              $env:OPENBLADE_VALIDATE_RESULT,
+              $env:OPENBLADE_QUALITY_RESULT,
+              $env:OPENBLADE_CONTRACT_RESULT)) {
+            if ($requiredResult -ne 'success') {
+              throw "A required validation lane finished with '$requiredResult'."
+            }
+          }
+
+          $expectedInstallerResult = if ($env:OPENBLADE_RUN_INSTALLER -eq 'true') {
+            'success'
+          }
+          else {
+            'skipped'
+          }
+          if ($env:OPENBLADE_INSTALLER_RESULT -ne $expectedInstallerResult) {
+            throw "Installer validation finished with '$env:OPENBLADE_INSTALLER_RESULT'; expected '$expectedInstallerResult'."
+          }

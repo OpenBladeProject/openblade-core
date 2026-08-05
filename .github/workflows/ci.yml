@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       requires-build: ${{ steps.scope.outputs.requires-build }}
+      requires-installer: ${{ steps.scope.outputs.requires-installer }}
     steps:
       - name: Check out source metadata
         uses: actions/checkout@v7
@@ -72,8 +73,12 @@ jobs:
           $requiresBuild = Test-OpenBladeCiBuildRequired `
             -ChangedPath $changedPaths `
             -Force:$forceBuild
-          $outputValue = $requiresBuild.ToString().ToLowerInvariant()
-          "requires-build=$outputValue" |
+          $requiresInstaller = Test-OpenBladeCiInstallerRequired `
+            -ChangedPath $changedPaths `
+            -Force:$forceBuild
+          "requires-build=$($requiresBuild.ToString().ToLowerInvariant())" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "requires-installer=$($requiresInstaller.ToString().ToLowerInvariant())" |
             Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
   build-and-test:
@@ -82,5 +87,6 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       channel: Stable
+      run-installer: ${{ needs.classify-changes.outputs.requires-installer == 'true' }}
     permissions:
       contents: read
