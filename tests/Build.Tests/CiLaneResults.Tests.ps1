@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $gateScript = Join-Path $repository 'build\Assert-CiLaneResults.ps1'
 
+# Smoke marker: this test-only diff must skip installer validation in Actions.
 function Assert-ThrowsLike {
     param(
         [Parameter(Mandatory)][scriptblock]$Action,
