@@ -89,6 +89,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Made rapid performance-key presses replace the visible Windows notification
+  so it immediately reflects the newest selected mode instead of queuing stale
+  profile changes.
 - Kept manual and automatic update checks nonfatal when the computer is
   offline, with a clear connectivity status and bounded retry delay.
 - Fixed the graphical uninstaller so it detects a same-version OpenBlade

@@ -1016,6 +1016,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("AppNotificationManager.Default", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("manager.Register()", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("builder.SetAppLogoOverride(logoUri)", notificationPresenter, StringComparison.Ordinal);
+        Assert.Contains("builder.SetTag(notification.ReplacementTag)", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("\"OpenBlade.png\"", notificationPresenter, StringComparison.Ordinal);
 
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
@@ -1041,6 +1042,38 @@ public sealed class WinUiShellContractTests
         Assert.Contains("TrayIconThemeChanged?.Invoke", shellThemeSource, StringComparison.Ordinal);
         Assert.Contains("SystemEvents.UserPreferenceChanged -=", shellThemeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("CreateTimer()", shellThemeSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PerformanceNotificationsShareAReplacementTag()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        Assert.Contains(
+            "PerformanceNotificationReplacementTag = \"performance\"",
+            app,
+            StringComparison.Ordinal);
+
+        int failureStart = app.IndexOf(
+            "\"Performance mode could not be changed\"",
+            StringComparison.Ordinal);
+        int successStart = app.IndexOf(
+            "\"Performance mode changed\"",
+            StringComparison.Ordinal);
+        int showNotification = app.IndexOf(
+            "trayIconHost.ShowNotification(notification)",
+            StringComparison.Ordinal);
+        Assert.True(
+            failureStart >= 0 && successStart > failureStart && showNotification > successStart,
+            "The performance notification branches must remain discoverable.");
+
+        Assert.Contains(
+            "ReplacementTag: PerformanceNotificationReplacementTag",
+            app[failureStart..successStart],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ReplacementTag: PerformanceNotificationReplacementTag",
+            app[successStart..showNotification],
+            StringComparison.Ordinal);
     }
 
     [Fact]
