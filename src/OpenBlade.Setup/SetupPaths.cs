@@ -6,22 +6,30 @@ public sealed record SetupPaths
         string programFilesRoot,
         string machineDataRoot,
         string userDataRoot,
-        string startupRoot)
+        string startupRoot,
+        string commonStartupRoot)
     {
         ProgramFilesRoot = programFilesRoot;
         MachineDataRoot = machineDataRoot;
         UserDataRoot = userDataRoot;
         StartupRoot = startupRoot;
+        CommonStartupRoot = commonStartupRoot;
         InstallDirectory = Path.Combine(programFilesRoot, "OpenBlade");
         MachineDataDirectory = Path.Combine(machineDataRoot, "OpenBlade");
         UserDataDirectory = Path.Combine(userDataRoot, "OpenBlade");
-        StartupFile = Path.Combine(startupRoot, "OpenBlade.lnk");
-        SessionAgentStartupFile = Path.Combine(startupRoot, "OpenBlade.SessionAgent.lnk");
+        StartupFile = Path.Combine(commonStartupRoot, "OpenBlade.lnk");
+        LegacyTrayStartupFile = Path.Combine(startupRoot, "OpenBlade.lnk");
+        SessionAgentStartupFile = Path.Combine(
+            commonStartupRoot,
+            "OpenBlade.SessionAgent.lnk");
+        LegacySessionAgentStartupFile = Path.Combine(
+            startupRoot,
+            "OpenBlade.SessionAgent.lnk");
         LegacyStartupFile = Path.Combine(startupRoot, "OpenBlade.cmd");
-        string programsRoot = Path.GetDirectoryName(startupRoot)
+        string programsRoot = Path.GetDirectoryName(commonStartupRoot)
             ?? throw new ArgumentException(
                 "The Startup folder must have a Start menu Programs parent.",
-                nameof(startupRoot));
+                nameof(commonStartupRoot));
         StartMenuFile = Path.Combine(programsRoot, "OpenBlade.lnk");
         UninstallStartMenuFile = Path.Combine(programsRoot, "Uninstall OpenBlade.lnk");
     }
@@ -30,11 +38,14 @@ public sealed record SetupPaths
     public string MachineDataRoot { get; }
     public string UserDataRoot { get; }
     public string StartupRoot { get; }
+    public string CommonStartupRoot { get; }
     public string InstallDirectory { get; }
     public string MachineDataDirectory { get; }
     public string UserDataDirectory { get; }
     public string StartupFile { get; }
+    public string LegacyTrayStartupFile { get; }
     public string SessionAgentStartupFile { get; }
+    public string LegacySessionAgentStartupFile { get; }
     public string LegacyStartupFile { get; }
     public string StartMenuFile { get; }
     public string UninstallStartMenuFile { get; }
@@ -43,17 +54,22 @@ public sealed record SetupPaths
         string programFilesRoot,
         string machineDataRoot,
         string userDataRoot,
-        string startupRoot) => new(
+        string startupRoot,
+        string? commonStartupRoot = null) => new(
             NormalizeKnownFolder(programFilesRoot, nameof(programFilesRoot)),
             NormalizeKnownFolder(machineDataRoot, nameof(machineDataRoot)),
             NormalizeKnownFolder(userDataRoot, nameof(userDataRoot)),
-            NormalizeKnownFolder(startupRoot, nameof(startupRoot)));
+            NormalizeKnownFolder(startupRoot, nameof(startupRoot)),
+            NormalizeKnownFolder(
+                commonStartupRoot ?? startupRoot,
+                nameof(commonStartupRoot)));
 
     public static SetupPaths CreateDefault() => Create(
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        Environment.GetFolderPath(Environment.SpecialFolder.Startup));
+        Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup));
 
     public static bool IsExactOpenBladeDirectory(string candidate, string knownFolderRoot)
     {

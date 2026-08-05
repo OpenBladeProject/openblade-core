@@ -35,7 +35,7 @@ public sealed class SetupCommandRunnerTests
                 "uninstall-shortcut-remove", "uninstall-registration-remove",
                 "service-prepare", "tray-stop", "session-agent-stop",
                 "dynamic-lighting-remove", "payload-activate", "dynamic-lighting-install",
-                "uninstaller-install", "sid:S-1-5-21-test", "service-install",
+                "uninstaller-install", "service-install",
                 "service-health", "agent-shortcut-install", "start-menu-install",
                 "uninstall-shortcut-install", "uninstall-registration-install", "shortcut-install", "payload-commit",
             ],
@@ -180,7 +180,7 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
-    public async Task Install_UpdateWithDisabledTrayStartup_PreservesMissingTrayShortcutAndRepairsAgentShortcut()
+    public async Task Install_BundleManagedUpdateWithMissingLegacyTrayShortcut_RepairsAllUsersStartupShortcuts()
     {
         RecordingSetupPlatform platform = new()
         {
@@ -190,14 +190,17 @@ public sealed class SetupCommandRunnerTests
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
         };
 
-        int exitCode = await new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None);
+        int exitCode = await new SetupCommandRunner(platform).RunAsync(
+            ["install", "--bundle-managed"],
+            CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.False(platform.TrayShortcutPresent);
+        Assert.True(platform.TrayShortcutPresent);
         Assert.True(platform.SessionAgentShortcutPresent);
         Assert.True(platform.StartMenuShortcutPresent);
-        Assert.DoesNotContain("shortcut-install", platform.Operations);
+        Assert.Contains("shortcut-install", platform.Operations);
         Assert.Contains("agent-shortcut-install", platform.Operations);
+        Assert.Contains("bundle-ownership-install", platform.Operations);
         Assert.Equal("payload-commit", platform.Operations[^1]);
     }
 
@@ -238,7 +241,6 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Theory]
-    [InlineData("sid")]
     [InlineData("service-install")]
     [InlineData("service-health")]
     [InlineData("agent-shortcut-install")]
@@ -584,7 +586,7 @@ public sealed class SetupCommandRunnerTests
         RecordingSetupPlatform platform = new()
         {
             ServiceExists = true,
-            FailurePoint = "sid-cancel",
+            FailurePoint = "service-install-cancel",
             Cancellation = cancellation,
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
         };
@@ -928,12 +930,6 @@ public sealed class SetupCommandRunnerTests
                 return Task.FromException(new InvalidOperationException("sid failed"));
             }
 
-            if (FailurePoint == "sid-cancel")
-            {
-                Cancellation!.Cancel();
-                return Task.FromCanceled(Cancellation.Token);
-            }
-
             return Task.CompletedTask;
         }
 
@@ -1042,6 +1038,13 @@ public sealed class SetupCommandRunnerTests
             {
                 FailurePoint = null;
                 return Task.FromException(new InvalidOperationException($"{operation} failed"));
+            }
+
+            if (FailurePoint == $"{operation}-cancel")
+            {
+                FailurePoint = null;
+                Cancellation!.Cancel();
+                return Task.FromCanceled(Cancellation.Token);
             }
 
             return Task.CompletedTask;

@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 33;
+    public const int ProtocolVersion = 34;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -373,6 +373,11 @@ public static class IpcMessageCodec
         if (!Enum.IsDefined(status.KeyboardLightingControlMode))
         {
             throw InvalidStatus("keyboard-lighting control mode is unknown");
+        }
+
+        if (!Enum.IsDefined(status.ControlAccess))
+        {
+            throw InvalidStatus("session control access is unknown");
         }
 
         if (status.FunctionKeyPrimary is { } functionKeyPrimary

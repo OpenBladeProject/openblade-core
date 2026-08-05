@@ -9,6 +9,8 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class ProductionLightingPortTests
 {
+    private static readonly TimeSpan TestDeadlockGuard = TimeSpan.FromSeconds(5);
+
     [Theory]
     [InlineData(ReactiveLightingDuration.Short, 500)]
     [InlineData(ReactiveLightingDuration.Medium, 1500)]
@@ -1780,7 +1782,7 @@ public sealed class ProductionLightingPortTests
             new RgbColor(0, 0xFF, 0),
             100);
         await port.SetLightingAsync(previous, default);
-        writer.FailNext = true;
+        writer.FailNextWrite();
 
         await Assert.ThrowsAsync<BladeWriteException>(() => port.SetLightingAsync(
             LightingSettingsFactory.Static(new RgbColor(0xFF, 0, 0), 100),
@@ -1796,17 +1798,23 @@ public sealed class ProductionLightingPortTests
     {
         var session = new LightingSession(initialBrightness: 0xFF);
         var writer = new MatrixWriter();
-        await using var port = CreatePort(session, writer, admitted: true);
+        var time = new ManualTimeProvider();
+        await using var port = CreatePort(
+            session,
+            writer,
+            admitted: true,
+            timeProvider: time);
         await port.SetLightingAsync(
             LightingSettingsFactory.BreathingSingle(new RgbColor(0, 0xFF, 0), 100),
             default);
         Assert.Equal(LightingRendererOwnershipState.Breathing, port.OwnershipState);
+        Task stream = Assert.IsAssignableFrom<Task>(typeof(ProductionLightingPort)
+            .GetField("streamTask", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
 
-        writer.FailNext = true;
-        await writer.WaitForWriteCountAsync(2, TimeSpan.FromSeconds(2));
-        await WaitUntilAsync(
-            () => port.OwnershipState == LightingRendererOwnershipState.Faulted,
-            TimeSpan.FromSeconds(2));
+        writer.FailNextWrite();
+        time.Advance(Pid02E0LightingTiming.AnimatedFrameInterval);
+        await stream.WaitAsync(TestDeadlockGuard);
 
         LightingRendererOwnershipState invalidated = await port.InvalidateAsync();
 
@@ -2424,12 +2432,11 @@ public sealed class ProductionLightingPortTests
         private TaskCompletionSource writeObserved = NewWriteObserved();
         private TaskCompletionSource<HidSessionResult<HidUnit>>? blockedWrite;
         private bool blockNextWrite;
+        private bool failNext;
 
         internal List<Pid02E0MatrixReport> Reports { get; } = [];
 
         internal List<CancellationToken> CancellationTokens { get; } = [];
-
-        internal bool FailNext { get; set; }
 
         internal Queue<HidSessionFailureKind> Failures { get; } = [];
 
@@ -2447,8 +2454,8 @@ public sealed class ProductionLightingPortTests
             {
                 Reports.Add(report);
                 CancellationTokens.Add(cancellationToken);
-                fail = FailNext || Failures.Count > 0;
-                FailNext = false;
+                fail = failNext || Failures.Count > 0;
+                failNext = false;
                 TaskCompletionSource observed = writeObserved;
                 writeObserved = NewWriteObserved();
                 observed.TrySetResult();
@@ -2483,6 +2490,14 @@ public sealed class ProductionLightingPortTests
             {
                 Assert.Null(blockedWrite);
                 blockNextWrite = true;
+            }
+        }
+
+        internal void FailNextWrite()
+        {
+            lock (sync)
+            {
+                failNext = true;
             }
         }
 

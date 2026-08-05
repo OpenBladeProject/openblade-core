@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Principal;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -16,6 +17,17 @@ public interface IServiceControlRuntime
         Initialize(configuration, powerSource);
 
     ServiceStatusSnapshot GetStatus();
+
+    Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        CancellationToken cancellationToken) => Task.CompletedTask;
+
+    Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken) => stillControlsSession()
+            ? ActivateUserAsync(userSid, cancellationToken)
+            : Task.CompletedTask;
 
     Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
@@ -216,15 +228,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         new(null, null, null, null);
     private static readonly DeviceCapabilities UnavailableCapabilities =
         DeviceCapabilities.Unavailable();
-    private static readonly HashSet<string> KeyboardDriverModeControllers =
+    private static readonly HashSet<string> CompetingControllerProcesses =
         new(StringComparer.OrdinalIgnoreCase)
         {
             "RazerAppEngine",
             "Razer Synapse Service",
         };
 
-    private readonly BatteryConfigurationStore store;
-    private readonly PersistentOverrideStore overrideStore;
+    private UserConfigurationStores userStores;
+    private readonly IUserConfigurationRepository? userConfigurationRepository;
     private readonly IPowerStateProvider powerStateProvider;
     private readonly IStatusSubscriptionHub subscriptionHub;
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
@@ -247,6 +259,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private ServiceStatusSnapshot? status;
     private bool mcuVersionReadAttempted;
     private LightingSettings? lastOwnedLightingSettings;
+    private FanControlSettings? lastOwnedFanControlSettings;
     private LightingSettings? pendingLightingRestore;
     private bool pendingLightingRestoreFromLifecycle;
     private LightingSettings? faultedLightingRecoveryCandidate;
@@ -265,6 +278,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool batteryHealthVerificationRetryPending;
     private bool startupProfileReconciliationPending;
     private bool startupProfileReconciliationRequested;
+    private string? activeUserSid;
     private ResumeStateBaseline? pendingResumeStateBaseline;
 
     public ServiceControlRuntime(
@@ -340,6 +354,35 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
     }
 
+    public ServiceControlRuntime(
+        BatteryConfigurationStore store,
+        PersistentOverrideStore overrideStore,
+        IPowerStateProvider powerStateProvider,
+        IStatusSubscriptionHub subscriptionHub,
+        IVerifiedBladeDeviceProvider deviceProvider,
+        DiagnosticHistory history,
+        LowPowerGate lowPowerGate,
+        IControllerPresenceMonitor controllerPresenceMonitor,
+        IFirmwareVersionSource firmwareVersionSource,
+        ProfileSetValidator validator,
+        IUserConfigurationRepository userConfigurationRepository)
+        : this(
+            store,
+            overrideStore,
+            powerStateProvider,
+            subscriptionHub,
+            deviceProvider,
+            history,
+            lowPowerGate,
+            controllerPresenceMonitor,
+            firmwareVersionSource,
+            static (delay, token) => Task.Delay(delay, token),
+            validator,
+            fanTemperatureSource: null,
+            userConfigurationRepository: userConfigurationRepository)
+    {
+    }
+
     internal ServiceControlRuntime(
         BatteryConfigurationStore store,
         PersistentOverrideStore overrideStore,
@@ -404,11 +447,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<TimeSpan, CancellationToken, Task> transitionRetryDelay,
         ProfileSetValidator validator,
         IFanTemperatureSource? fanTemperatureSource = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IUserConfigurationRepository? userConfigurationRepository = null)
     {
-        this.store = store ?? throw new ArgumentNullException(nameof(store));
-        this.overrideStore = overrideStore
-            ?? throw new ArgumentNullException(nameof(overrideStore));
+        userStores = new UserConfigurationStores(
+            store ?? throw new ArgumentNullException(nameof(store)),
+            overrideStore ?? throw new ArgumentNullException(nameof(overrideStore)));
         this.powerStateProvider = powerStateProvider
             ?? throw new ArgumentNullException(nameof(powerStateProvider));
         this.subscriptionHub = subscriptionHub
@@ -426,6 +470,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.validator = validator ?? throw new ArgumentNullException(nameof(validator));
+        this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
             ?? new SafeWindowsFanTemperatureSource();
     }
@@ -480,6 +525,112 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public ServiceStatusSnapshot GetStatus() => Volatile.Read(ref status)
         ?? throw new InvalidOperationException("The service runtime is not initialized.");
 
+    public async Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        CancellationToken cancellationToken) => await ActivateUserAsync(
+            userSid,
+            static () => true,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(userSid);
+        ArgumentNullException.ThrowIfNull(stillControlsSession);
+        if (userConfigurationRepository is null
+            || string.Equals(
+                Volatile.Read(ref activeUserSid),
+                userSid.Value,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        UserConfigurationContext context = await userConfigurationRepository
+            .LoadAsync(userSid, cancellationToken)
+            .ConfigureAwait(false);
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (string.Equals(
+                    activeUserSid,
+                    userSid.Value,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (!stillControlsSession())
+            {
+                return;
+            }
+
+            ProfileSet profiles = ProfileStore.NormalizeLegacyBatteryProfile(
+                context.Configuration.Profiles,
+                out _);
+            PersistentOverrideState overrides =
+                PersistentOverrideStore.NormalizeLegacyFanControl(
+                    PersistentOverrideStore.NormalizeLegacyLighting(context.Overrides));
+            validator.Validate(profiles);
+            validator.ValidatePreferences(context.Configuration.Preferences);
+            PersistentOverrideStore.Validate(overrides);
+
+            ServiceStatusSnapshot current = GetStatus();
+            PowerSource powerSource = current.ActivePowerSource;
+            await InvalidateLightingRendererCoreAsync(
+                preserveForLifecycleRestore: false,
+                cancellationToken).ConfigureAwait(false);
+            current = GetStatus();
+            Volatile.Write(
+                ref userStores,
+                new UserConfigurationStores(context.Store, context.OverrideStore));
+            automation = new ProfileAutomationState(
+                profiles,
+                context.Configuration.Preferences,
+                powerSource,
+                overrides);
+            preferences = context.Configuration.Preferences;
+            persistentOverrides = overrides;
+            lightingSuppressions.Clear();
+            pendingLightingRestore = null;
+            pendingLightingRestoreFromLifecycle = false;
+
+            ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
+            if (powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
+            {
+                await ApplyFullTransitionAsync(
+                        powerSource,
+                        cancellationToken,
+                        preserveObservedExternalChanges: false)
+                    .ConfigureAwait(false);
+            }
+
+            current = GetStatus();
+            confirmed = current.ConfirmedState ?? UnknownConfirmedState;
+            PublishIfChanged(current with
+            {
+                Message = "The active Windows user's profile is loaded.",
+                Profiles = profiles,
+                DesiredState = Automation.Resolve(confirmed),
+                PerformanceOverride = Automation.PerformanceOverride,
+                FanOverride = Automation.FanOverride,
+                FanControlOverride = Automation.FanControlOverride,
+                LightingOverride = Automation.LightingOverride,
+                FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
+                LightingSuppressions = CurrentLightingSuppressions(),
+                PerformanceShortcutPreview = null,
+            });
+
+            Volatile.Write(ref activeUserSid, userSid.Value);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
         CancellationToken token)
@@ -493,7 +644,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
                 validator.Validate(profiles);
-                await store.SaveProfilesAsync(profiles, token);
+                await ConfigurationStore.SaveProfilesAsync(profiles, token);
                 Automation.UpdateProfiles(profiles);
                 RemoveDisabledLightingSuppressions();
             }
@@ -772,6 +923,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     targets.Fan1Rpm,
                     targets.Fan2Rpm,
                     cancellationToken).ConfigureAwait(false);
+                lastOwnedFanControlSettings = settings;
                 lastCurveFan1Rpm = targets.Fan1Rpm;
                 lastCurveFan2Rpm = targets.Fan2Rpm;
                 if (targets.FailSafe)
@@ -1173,7 +1325,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             try
             {
-                await store.SaveConfigurationAsync(Automation.Profiles, staged, token)
+                await ConfigurationStore.SaveConfigurationAsync(Automation.Profiles, staged, token)
                     .ConfigureAwait(false);
             }
             catch (Exception saveException) when (delegateToWindows)
@@ -1444,7 +1596,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 AlwaysOverrideExternalLightingChanges = enabled,
             };
-            await store.SaveConfigurationAsync(Automation.Profiles, staged, token)
+            await ConfigurationStore.SaveConfigurationAsync(Automation.Profiles, staged, token)
                 .ConfigureAwait(false);
             preferences = staged;
             ServiceStatusSnapshot current = GetStatus();
@@ -2564,10 +2716,42 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     public async Task<ControlOperationResult> PrepareForShutdownAsync(
-        CancellationToken cancellationToken) => await ReleaseDriverModeAsync(
-            preserveLightingIntent: false,
-            reasonLabel: "shutdown",
-            cancellationToken).ConfigureAwait(false);
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ControlOperationResult driverModeResult = await ReleaseDriverModeCoreAsync(
+                "shutdown",
+                cancellationToken).ConfigureAwait(false);
+            ControlOperationResult fanResult;
+            try
+            {
+                fanResult = await RestoreAutomaticFansForShutdownCoreAsync(
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                string failure =
+                    $"Fan control could not be handed back to firmware: {exception.Message}";
+                history.RecordSummary(ControlOperationStatus.Failed, failure);
+                fanResult = new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    failure);
+            }
+
+            return CombineShutdownCleanupResults(fanResult, driverModeResult);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
 
     public async Task<ControlOperationResult> PrepareForLowPowerAsync(
         CancellationToken cancellationToken) => await ReleaseDriverModeAsync(
@@ -2690,7 +2874,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return new ControlOperationResult(ControlOperationStatus.Stored, unverified);
             }
 
-            if (current.PotentialControllers.Any(KeyboardDriverModeControllers.Contains))
+            if (current.PotentialControllers.Any(CompetingControllerProcesses.Contains))
             {
                 string retained = reasonLabel == "shutdown"
                     ? "Keyboard Driver mode was left unchanged because Razer Synapse is active."
@@ -2739,6 +2923,120 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             history.RecordSummary(ControlOperationStatus.Failed, failure);
             return new ControlOperationResult(ControlOperationStatus.Failed, failure);
         }
+    }
+
+    private async Task<ControlOperationResult> RestoreAutomaticFansForShutdownCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+        {
+            const string externallyChanged =
+                "Fan control was left unchanged because OpenBlade no longer owns the confirmed fan state.";
+            history.RecordSummary(ControlOperationStatus.Stored, externallyChanged);
+            return new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                externallyChanged);
+        }
+
+        FanMode? confirmedFanMode = current.ConfirmedState?.Fans;
+        if (confirmedFanMode is null
+            || !DeviceSubsystemOrder.IsManualFanMode(confirmedFanMode.Value))
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                confirmedFanMode == FanMode.Automatic
+                    ? "Fan control already uses firmware-managed Automatic mode."
+                    : "Fan control was left unchanged because an OpenBlade-owned manual state was not confirmed.");
+        }
+
+        if (lastOwnedFanControlSettings is not { } ownedFanControl
+            || !DeviceSubsystemOrder.IsManualFanMode(ownedFanControl.Mode))
+        {
+            const string notOwned =
+                "Manual fan control was left unchanged because OpenBlade did not establish ownership of the current state.";
+            history.RecordSummary(ControlOperationStatus.Stored, notOwned);
+            return new ControlOperationResult(ControlOperationStatus.Stored, notOwned);
+        }
+
+        history.RecordSummary(
+            ControlOperationStatus.Stored,
+            "Attempting to restore firmware-managed Automatic fan control before shutdown.");
+        RefreshControllerPresenceCore(cancellationToken);
+        current = GetStatus();
+        if (current.ControllerDetectionWarning is not null)
+        {
+            const string unverified =
+                "Manual fan control was left unchanged because other Razer software could not be checked.";
+            history.RecordSummary(ControlOperationStatus.Stored, unverified);
+            return new ControlOperationResult(ControlOperationStatus.Stored, unverified);
+        }
+
+        if (current.PotentialControllers.Any(CompetingControllerProcesses.Contains))
+        {
+            const string retained =
+                "Manual fan control was left unchanged because Razer Synapse is active.";
+            history.RecordSummary(ControlOperationStatus.Stored, retained);
+            return new ControlOperationResult(ControlOperationStatus.Stored, retained);
+        }
+
+        FanControlSettings automatic = FanControlSettings.FromLegacy(FanMode.Automatic);
+        ControlOperationResult result = await ApplyScopedIntentAsync(
+            DeviceSubsystem.Fans,
+            current.ActivePowerSource,
+            (coordinator, _, token) => coordinator.ApplyFanControlOutcomeAsync(
+                automatic,
+                token),
+            cancellationToken,
+            state => state with
+            {
+                Fans = state.Fans with { Value = FanMode.Automatic },
+                FanControl = automatic,
+            }).ConfigureAwait(false);
+        if (result.Status == ControlOperationStatus.Applied)
+        {
+            lastCurveFan1Rpm = null;
+            lastCurveFan2Rpm = null;
+            const string restored =
+                "Firmware-managed Automatic fan control was confirmed before shutdown.";
+            history.RecordSummary(ControlOperationStatus.Applied, restored);
+            return result with { Message = restored };
+        }
+
+        return result with
+        {
+            Message = $"Fan control could not be handed back to firmware. {result.Message}",
+        };
+    }
+
+    private static ControlOperationResult CombineShutdownCleanupResults(
+        ControlOperationResult fanResult,
+        ControlOperationResult driverModeResult)
+    {
+        ControlOperationStatus status;
+        if (fanResult.Status == ControlOperationStatus.Failed
+            || driverModeResult.Status == ControlOperationStatus.Failed)
+        {
+            status = ControlOperationStatus.Failed;
+        }
+        else if (fanResult.Status == ControlOperationStatus.Blocked
+            || driverModeResult.Status == ControlOperationStatus.Blocked)
+        {
+            status = ControlOperationStatus.Blocked;
+        }
+        else if (fanResult.Status == ControlOperationStatus.Applied
+            || driverModeResult.Status == ControlOperationStatus.Applied)
+        {
+            status = ControlOperationStatus.Applied;
+        }
+        else
+        {
+            status = ControlOperationStatus.Stored;
+        }
+
+        return new ControlOperationResult(
+            status,
+            $"Fan cleanup: {fanResult.Message} Keyboard cleanup: {driverModeResult.Message}");
     }
 
     public async Task InvalidateLightingRendererAsync(
@@ -3118,7 +3416,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken) =>
         staged == persistentOverrides
             ? Task.CompletedTask
-            : overrideStore.SaveAsync(staged, cancellationToken);
+            : OverrideStore.SaveAsync(staged, cancellationToken);
 
     private async Task<ControlOperationResult> ExecuteScopedMutationAsync(
         DeviceSubsystem subsystem,
@@ -3231,7 +3529,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 desired => desired with { Battery = staged },
                 async cancellationToken =>
                 {
-                    await store.SaveConfigurationAsync(
+                    await ConfigurationStore.SaveConfigurationAsync(
                         stagedProfiles,
                         preferences with { ProtectionEnabled = staged.ProtectionEnabled },
                         cancellationToken);
@@ -3328,6 +3626,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!outcome.ReadbackMatched && outcome.WriteAttempted)
         {
             driftTracker.ConfirmIntentional(subsystem, matched: false);
+        }
+
+        if (subsystem == DeviceSubsystem.Fans)
+        {
+            UpdateOwnedFanControlSettings(
+                desired.FanControl
+                    ?? FanControlSettings.FromLegacy(desired.Fans.Value),
+                outcome.Result,
+                outcome.WriteAttempted);
         }
 
         ControlOperationResult? commitFailure = await CommitScopedIntentAsync(
@@ -3803,6 +4110,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 driftTracker.ConfirmIntentional(subsystem, matched: false);
             }
         }
+
+        UpdateOwnedFanControlSettings(
+            desired.FanControl
+                ?? FanControlSettings.FromLegacy(desired.Fans.Value),
+            ResultFor(outcome.Results, DeviceSubsystem.Fans),
+            outcome.WriteAttempted.Contains(DeviceSubsystem.Fans));
 
         ControlResult lightingResult = ResultFor(
             outcome.Results,
@@ -5428,11 +5741,43 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         },
         result.Message);
 
+    private void UpdateOwnedFanControlSettings(
+        FanControlSettings requested,
+        ControlResult result,
+        bool writeAttempted)
+    {
+        if (result.Status == ControlResultStatus.Unchanged
+            && requested.Mode == FanMode.Automatic)
+        {
+            lastOwnedFanControlSettings = null;
+            return;
+        }
+
+        if (result.Status != ControlResultStatus.Applied || !writeAttempted)
+        {
+            return;
+        }
+
+        lastOwnedFanControlSettings = DeviceSubsystemOrder.IsManualFanMode(requested.Mode)
+            ? requested
+            : null;
+    }
+
     private static bool IsIntentFailure(Exception exception) => exception is
         ArgumentException or InvalidDataException or IOException or UnauthorizedAccessException;
 
     private ProfileAutomationState Automation => automation
         ?? throw new InvalidOperationException("The service runtime is not initialized.");
+
+    private BatteryConfigurationStore ConfigurationStore =>
+        Volatile.Read(ref userStores).Configuration;
+
+    private PersistentOverrideStore OverrideStore =>
+        Volatile.Read(ref userStores).Overrides;
+
+    private sealed record UserConfigurationStores(
+        BatteryConfigurationStore Configuration,
+        PersistentOverrideStore Overrides);
 
     private void EnsureInitialized()
     {
@@ -5720,7 +6065,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LastKnownLighting = lighting,
         };
         validator.ValidatePreferences(staged);
-        await store.SaveConfigurationAsync(
+        await ConfigurationStore.SaveConfigurationAsync(
             Automation.Profiles,
             staged,
             cancellationToken).ConfigureAwait(false);

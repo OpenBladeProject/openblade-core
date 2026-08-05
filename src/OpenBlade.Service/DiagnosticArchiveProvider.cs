@@ -29,12 +29,12 @@ public interface IAuthorizedUserTokenSource
 public sealed class WindowsAuthorizedUserTokenSource : IAuthorizedUserTokenSource
 {
     private const string AuthorizedUserEnvironmentVariable = "OPENBLADE_USER_SID";
-    private readonly Func<string?> readAuthorizedSid;
+    private readonly Func<IReadOnlyCollection<string>> readUserSids;
     private readonly Func<SecurityIdentifier, string?> translateAccount;
     private readonly Func<SecurityIdentifier, string?> readProfilePath;
 
     public WindowsAuthorizedUserTokenSource()
-        : this(ReadAuthorizedUserSid, TranslateAccount, ReadProfilePath)
+        : this(ReadKnownUserSids, TranslateAccount, ReadProfilePath)
     {
     }
 
@@ -42,9 +42,21 @@ public sealed class WindowsAuthorizedUserTokenSource : IAuthorizedUserTokenSourc
         Func<string?> readAuthorizedSid,
         Func<SecurityIdentifier, string?> translateAccount,
         Func<SecurityIdentifier, string?> readProfilePath)
+        : this(
+            () => readAuthorizedSid() is { } sid ? [sid] : [],
+            translateAccount,
+            readProfilePath)
     {
-        this.readAuthorizedSid = readAuthorizedSid
-            ?? throw new ArgumentNullException(nameof(readAuthorizedSid));
+        ArgumentNullException.ThrowIfNull(readAuthorizedSid);
+    }
+
+    internal WindowsAuthorizedUserTokenSource(
+        Func<IReadOnlyCollection<string>> readUserSids,
+        Func<SecurityIdentifier, string?> translateAccount,
+        Func<SecurityIdentifier, string?> readProfilePath)
+    {
+        this.readUserSids = readUserSids
+            ?? throw new ArgumentNullException(nameof(readUserSids));
         this.translateAccount = translateAccount
             ?? throw new ArgumentNullException(nameof(translateAccount));
         this.readProfilePath = readProfilePath
@@ -54,20 +66,30 @@ public sealed class WindowsAuthorizedUserTokenSource : IAuthorizedUserTokenSourc
     public IReadOnlyCollection<string> ReadTokens()
     {
         var tokens = new HashSet<string>(StringComparer.Ordinal);
-        string? sidText;
+        IReadOnlyCollection<string> userSids;
         try
         {
-            sidText = readAuthorizedSid();
+            userSids = readUserSids();
         }
         catch (Exception exception) when (IsSafeMetadataFailure(exception))
         {
             return [];
         }
 
+        foreach (string sidText in userSids)
+        {
+            AddUserTokens(tokens, sidText);
+        }
+
+        return tokens.ToArray();
+    }
+
+    private void AddUserTokens(ISet<string> tokens, string? sidText)
+    {
         Add(tokens, sidText);
         if (string.IsNullOrWhiteSpace(sidText))
         {
-            return tokens.ToArray();
+            return;
         }
 
         SecurityIdentifier sid;
@@ -77,7 +99,7 @@ public sealed class WindowsAuthorizedUserTokenSource : IAuthorizedUserTokenSourc
         }
         catch (ArgumentException)
         {
-            return tokens.ToArray();
+            return;
         }
 
         try
@@ -109,7 +131,36 @@ public sealed class WindowsAuthorizedUserTokenSource : IAuthorizedUserTokenSourc
         {
         }
 
-        return tokens.ToArray();
+    }
+
+    private static IReadOnlyCollection<string> ReadKnownUserSids()
+    {
+        var sids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Add(sids, ReadAuthorizedUserSid());
+        string usersDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "OpenBlade",
+            "users");
+        if (Directory.Exists(usersDirectory))
+        {
+            foreach (string directory in Directory.EnumerateDirectories(usersDirectory))
+            {
+                string candidate = Path.GetFileName(directory);
+                try
+                {
+                    var sid = new SecurityIdentifier(candidate);
+                    if (sid.IsAccountSid())
+                    {
+                        sids.Add(sid.Value);
+                    }
+                }
+                catch (ArgumentException)
+                {
+                }
+            }
+        }
+
+        return sids.ToArray();
     }
 
     private static string? ReadAuthorizedUserSid()
