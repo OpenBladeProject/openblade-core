@@ -175,6 +175,12 @@ Assert-True ($publishJob.Contains(
 Assert-True ($publishJob.Contains(
         'The attached changelog is the exact source snapshot.')) `
     'A failed tally must attach and identify the exact source changelog.'
+Assert-True ($publishJob.Contains(
+        'Changelog processing runs independently after publication.')) `
+    'Initial release notes must describe processing without promising an attachment.'
+Assert-True (-not $publishJob.Contains(
+        'changelog tally is attached after publication')) `
+    'Initial release notes must not promise an attachment before upload succeeds.'
 Assert-True ($publishJob.Contains('continue-on-error: true')) `
     'Attaching the changelog must remain nonfatal after release publication.'
 $publishIndex = $publishJob.IndexOf(

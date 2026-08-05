@@ -74,7 +74,7 @@ jobs:
             "- Workflow: [run ${{ github.run_id }}]($runUrl)",
             "- Authenticode: ``$($metadata.installer.authenticodeStatus)``",
             '',
-            'The exact-source nightly changelog tally is attached after publication.',
+            'Changelog processing runs independently after publication.',
             '',
             'This is a prerelease and is available only to users who select the Nightly update channel.',
             'Verify `OpenBlade-Setup.exe` with the attached SHA-256 file before installing.'

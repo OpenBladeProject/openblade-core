@@ -254,6 +254,40 @@ Assert-Equal 1 ([Regex]::Matches(
         [Regex]::Escape('- Fixed the first nightly regression.')).Count) `
     'Moving an unchanged bullet between categories must not duplicate it.'
 
+$recategorizedNightly8Source = (
+    ConvertTo-OpenBladeNormalizedText -Text $nightly8Source).Replace(
+    "### Fixed`n`n- Fixed the first nightly regression.`n`n### Added",
+    "### Changed`n`n- Fixed the first nightly regression.`n`n### Added")
+$recategorizedReleaseRecords = @(
+    foreach ($record in $releaseRecords) {
+        if ($record.BuildRevision -eq 8) {
+            [pscustomobject]@{
+                BuildRevision = $record.BuildRevision
+                TagName = $record.TagName
+                PublishedAt = $record.PublishedAt
+                SourceContent = $recategorizedNightly8Source
+            }
+        }
+        else {
+            $record
+        }
+    })
+$recategorizedResult = New-OpenBladeNightlyChangelogContent `
+    -CurrentContent $movedReleasedEntry `
+    -BaseVersion '0.1.0' `
+    -CurrentBuildRevision 8 `
+    -ReleaseRecord $recategorizedReleaseRecords
+$recategorizedNightly8 = Get-OpenBladeChangelogSection `
+    -Content $recategorizedResult.Content `
+    -Heading '## [0.1.0-nightly.8] - 2026-08-06'
+Assert-True (-not $recategorizedNightly8.Content.Contains(
+        '- Fixed the first nightly regression.')) `
+    'A category-only move between nightly sources must not release the bullet twice.'
+Assert-Equal 1 ([Regex]::Matches(
+        $recategorizedResult.Content,
+        [Regex]::Escape('- Fixed the first nightly regression.')).Count) `
+    'A category-only move must remain recorded under only its first nightly.'
+
 $markdownEntryContent = @'
 # Changelog
 
@@ -352,8 +386,13 @@ try {
         $manifestPath = Join-Path $temporaryRoot 'releases.json'
         [IO.File]::WriteAllText(
             $manifestPath,
-            '[{"tagName":"v0.1.0-nightly.6","publishedAt":"2026-08-04T11:47:22Z"}]',
+            ('[{"tagName":"v0.1.0-nightly.6",' +
+                '"publishedAt":"2026-08-04T11:47:22Z"},' +
+                '{"tagName":"v0.1.0-nightly.7",' +
+                '"publishedAt":"2026-08-05T23:59:59Z"}]'),
             [Text.UTF8Encoding]::new($false))
+        Assert-Equal 0 @(& git tag --list 'v0.1.0-nightly.7').Count `
+            'The attachment regression must model a just-created tag absent locally.'
         $outputPath = Join-Path $temporaryRoot 'generated\CHANGELOG.md'
         $wrapperResult = Write-OpenBladeNightlyChangelogSnapshot `
             -RepositoryRoot $temporaryRoot `

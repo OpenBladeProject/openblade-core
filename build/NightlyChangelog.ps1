@@ -321,17 +321,17 @@ function New-OpenBladeNightlyChangelogContent {
     $previousTag = $baselineRecord.TagName
     $releaseSections = [Collections.Generic.List[object]]::new()
     foreach ($record in $pendingRecords) {
-        $previousKeys = [Collections.Generic.HashSet[string]]::new(
+        $previousEntryTexts = [Collections.Generic.HashSet[string]]::new(
             [StringComparer]::Ordinal)
         foreach ($entry in $previousEntries) {
-            [void]$previousKeys.Add($entry.Key)
+            [void]$previousEntryTexts.Add($entry.Text)
         }
 
         $sourceEntries = @(Get-OpenBladeChangelogEntries `
                 -Content $record.SourceContent)
         $releasedEntries = @(
             $sourceEntries |
-                Where-Object { -not $previousKeys.Contains($_.Key) })
+                Where-Object { -not $previousEntryTexts.Contains($_.Text) })
         $version = "$BaseVersion-nightly.$($record.BuildRevision)"
         $releaseDate = ([DateTimeOffset]$record.PublishedAt).
             ToUniversalTime().ToString('yyyy-MM-dd')
@@ -537,6 +537,12 @@ function Write-OpenBladeNightlyChangelogSnapshot {
         }
         else {
             [string]$item.tag_name
+        }
+        if ([string]::Equals(
+                $tagName,
+                $CurrentTag,
+                [StringComparison]::Ordinal)) {
+            continue
         }
         $publishedAt = if ($null -ne $item.PSObject.Properties['publishedAt']) {
             [DateTimeOffset]$item.publishedAt
