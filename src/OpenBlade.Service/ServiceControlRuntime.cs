@@ -228,7 +228,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         new(null, null, null, null);
     private static readonly DeviceCapabilities UnavailableCapabilities =
         DeviceCapabilities.Unavailable();
-    private static readonly HashSet<string> KeyboardDriverModeControllers =
+    private static readonly HashSet<string> CompetingControllerProcesses =
         new(StringComparer.OrdinalIgnoreCase)
         {
             "RazerAppEngine",
@@ -259,6 +259,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private ServiceStatusSnapshot? status;
     private bool mcuVersionReadAttempted;
     private LightingSettings? lastOwnedLightingSettings;
+    private FanControlSettings? lastOwnedFanControlSettings;
     private LightingSettings? pendingLightingRestore;
     private bool pendingLightingRestoreFromLifecycle;
     private LightingSettings? faultedLightingRecoveryCandidate;
@@ -922,6 +923,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     targets.Fan1Rpm,
                     targets.Fan2Rpm,
                     cancellationToken).ConfigureAwait(false);
+                lastOwnedFanControlSettings = settings;
                 lastCurveFan1Rpm = targets.Fan1Rpm;
                 lastCurveFan2Rpm = targets.Fan2Rpm;
                 if (targets.FailSafe)
@@ -2714,10 +2716,42 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     public async Task<ControlOperationResult> PrepareForShutdownAsync(
-        CancellationToken cancellationToken) => await ReleaseDriverModeAsync(
-            preserveLightingIntent: false,
-            reasonLabel: "shutdown",
-            cancellationToken).ConfigureAwait(false);
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ControlOperationResult driverModeResult = await ReleaseDriverModeCoreAsync(
+                "shutdown",
+                cancellationToken).ConfigureAwait(false);
+            ControlOperationResult fanResult;
+            try
+            {
+                fanResult = await RestoreAutomaticFansForShutdownCoreAsync(
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                string failure =
+                    $"Fan control could not be handed back to firmware: {exception.Message}";
+                history.RecordSummary(ControlOperationStatus.Failed, failure);
+                fanResult = new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    failure);
+            }
+
+            return CombineShutdownCleanupResults(fanResult, driverModeResult);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
 
     public async Task<ControlOperationResult> PrepareForLowPowerAsync(
         CancellationToken cancellationToken) => await ReleaseDriverModeAsync(
@@ -2840,7 +2874,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return new ControlOperationResult(ControlOperationStatus.Stored, unverified);
             }
 
-            if (current.PotentialControllers.Any(KeyboardDriverModeControllers.Contains))
+            if (current.PotentialControllers.Any(CompetingControllerProcesses.Contains))
             {
                 string retained = reasonLabel == "shutdown"
                     ? "Keyboard Driver mode was left unchanged because Razer Synapse is active."
@@ -2889,6 +2923,120 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             history.RecordSummary(ControlOperationStatus.Failed, failure);
             return new ControlOperationResult(ControlOperationStatus.Failed, failure);
         }
+    }
+
+    private async Task<ControlOperationResult> RestoreAutomaticFansForShutdownCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+        {
+            const string externallyChanged =
+                "Fan control was left unchanged because OpenBlade no longer owns the confirmed fan state.";
+            history.RecordSummary(ControlOperationStatus.Stored, externallyChanged);
+            return new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                externallyChanged);
+        }
+
+        FanMode? confirmedFanMode = current.ConfirmedState?.Fans;
+        if (confirmedFanMode is null
+            || !DeviceSubsystemOrder.IsManualFanMode(confirmedFanMode.Value))
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                confirmedFanMode == FanMode.Automatic
+                    ? "Fan control already uses firmware-managed Automatic mode."
+                    : "Fan control was left unchanged because an OpenBlade-owned manual state was not confirmed.");
+        }
+
+        if (lastOwnedFanControlSettings is not { } ownedFanControl
+            || !DeviceSubsystemOrder.IsManualFanMode(ownedFanControl.Mode))
+        {
+            const string notOwned =
+                "Manual fan control was left unchanged because OpenBlade did not establish ownership of the current state.";
+            history.RecordSummary(ControlOperationStatus.Stored, notOwned);
+            return new ControlOperationResult(ControlOperationStatus.Stored, notOwned);
+        }
+
+        history.RecordSummary(
+            ControlOperationStatus.Stored,
+            "Attempting to restore firmware-managed Automatic fan control before shutdown.");
+        RefreshControllerPresenceCore(cancellationToken);
+        current = GetStatus();
+        if (current.ControllerDetectionWarning is not null)
+        {
+            const string unverified =
+                "Manual fan control was left unchanged because other Razer software could not be checked.";
+            history.RecordSummary(ControlOperationStatus.Stored, unverified);
+            return new ControlOperationResult(ControlOperationStatus.Stored, unverified);
+        }
+
+        if (current.PotentialControllers.Any(CompetingControllerProcesses.Contains))
+        {
+            const string retained =
+                "Manual fan control was left unchanged because Razer Synapse is active.";
+            history.RecordSummary(ControlOperationStatus.Stored, retained);
+            return new ControlOperationResult(ControlOperationStatus.Stored, retained);
+        }
+
+        FanControlSettings automatic = FanControlSettings.FromLegacy(FanMode.Automatic);
+        ControlOperationResult result = await ApplyScopedIntentAsync(
+            DeviceSubsystem.Fans,
+            current.ActivePowerSource,
+            (coordinator, _, token) => coordinator.ApplyFanControlOutcomeAsync(
+                automatic,
+                token),
+            cancellationToken,
+            state => state with
+            {
+                Fans = state.Fans with { Value = FanMode.Automatic },
+                FanControl = automatic,
+            }).ConfigureAwait(false);
+        if (result.Status == ControlOperationStatus.Applied)
+        {
+            lastCurveFan1Rpm = null;
+            lastCurveFan2Rpm = null;
+            const string restored =
+                "Firmware-managed Automatic fan control was confirmed before shutdown.";
+            history.RecordSummary(ControlOperationStatus.Applied, restored);
+            return result with { Message = restored };
+        }
+
+        return result with
+        {
+            Message = $"Fan control could not be handed back to firmware. {result.Message}",
+        };
+    }
+
+    private static ControlOperationResult CombineShutdownCleanupResults(
+        ControlOperationResult fanResult,
+        ControlOperationResult driverModeResult)
+    {
+        ControlOperationStatus status;
+        if (fanResult.Status == ControlOperationStatus.Failed
+            || driverModeResult.Status == ControlOperationStatus.Failed)
+        {
+            status = ControlOperationStatus.Failed;
+        }
+        else if (fanResult.Status == ControlOperationStatus.Blocked
+            || driverModeResult.Status == ControlOperationStatus.Blocked)
+        {
+            status = ControlOperationStatus.Blocked;
+        }
+        else if (fanResult.Status == ControlOperationStatus.Applied
+            || driverModeResult.Status == ControlOperationStatus.Applied)
+        {
+            status = ControlOperationStatus.Applied;
+        }
+        else
+        {
+            status = ControlOperationStatus.Stored;
+        }
+
+        return new ControlOperationResult(
+            status,
+            $"Fan cleanup: {fanResult.Message} Keyboard cleanup: {driverModeResult.Message}");
     }
 
     public async Task InvalidateLightingRendererAsync(
@@ -3480,6 +3628,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             driftTracker.ConfirmIntentional(subsystem, matched: false);
         }
 
+        if (subsystem == DeviceSubsystem.Fans)
+        {
+            UpdateOwnedFanControlSettings(
+                desired.FanControl
+                    ?? FanControlSettings.FromLegacy(desired.Fans.Value),
+                outcome.Result,
+                outcome.WriteAttempted);
+        }
+
         ControlOperationResult? commitFailure = await CommitScopedIntentAsync(
             subsystem,
             powerSource,
@@ -3953,6 +4110,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 driftTracker.ConfirmIntentional(subsystem, matched: false);
             }
         }
+
+        UpdateOwnedFanControlSettings(
+            desired.FanControl
+                ?? FanControlSettings.FromLegacy(desired.Fans.Value),
+            ResultFor(outcome.Results, DeviceSubsystem.Fans),
+            outcome.WriteAttempted.Contains(DeviceSubsystem.Fans));
 
         ControlResult lightingResult = ResultFor(
             outcome.Results,
@@ -5577,6 +5740,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             _ => ControlOperationStatus.Applied,
         },
         result.Message);
+
+    private void UpdateOwnedFanControlSettings(
+        FanControlSettings requested,
+        ControlResult result,
+        bool writeAttempted)
+    {
+        if (result.Status == ControlResultStatus.Unchanged
+            && requested.Mode == FanMode.Automatic)
+        {
+            lastOwnedFanControlSettings = null;
+            return;
+        }
+
+        if (result.Status != ControlResultStatus.Applied || !writeAttempted)
+        {
+            return;
+        }
+
+        lastOwnedFanControlSettings = DeviceSubsystemOrder.IsManualFanMode(requested.Mode)
+            ? requested
+            : null;
+    }
 
     private static bool IsIntentFailure(Exception exception) => exception is
         ArgumentException or InvalidDataException or IOException or UnauthorizedAccessException;
