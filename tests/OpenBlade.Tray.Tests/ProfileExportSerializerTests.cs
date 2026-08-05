@@ -119,6 +119,46 @@ public sealed class ProfileExportSerializerTests
     }
 
     [Fact]
+    public void Deserialize_VersionFiveDoesNotMigrateGpuTuningOutsidePluggedIn()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var offsets = new GpuClockOffsetSettings(125, 500);
+        var legacyCustom = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium)
+        {
+            GpuClockOffsets = offsets,
+        };
+        ProfileSet legacy = defaults with
+        {
+            Battery = defaults.Battery with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = legacyCustom,
+            },
+            UsbC = defaults.UsbC with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = legacyCustom,
+            },
+        };
+        string json = ProfileExportSerializer.Serialize(
+            legacy,
+            "0.1.0+abcdef0",
+            DateTimeOffset.UtcNow).Replace(
+                "\"schemaVersion\": 6",
+                "\"schemaVersion\": 5",
+                StringComparison.Ordinal);
+
+        ProfileSet imported = ProfileExportSerializer.Deserialize(json);
+
+        Assert.Null(imported.Battery.GpuClockTuning);
+        Assert.Equal(offsets, imported.Battery.CustomPerformance?.GpuClockOffsets);
+        Assert.Null(imported.UsbC.GpuClockTuning);
+        Assert.Equal(offsets, imported.UsbC.CustomPerformance?.GpuClockOffsets);
+    }
+
+    [Fact]
     public void Deserialize_RejectsUnsupportedSchema()
     {
         string json = ProfileExportSerializer.Serialize(

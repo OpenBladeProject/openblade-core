@@ -154,8 +154,6 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         usbC = NormalizeLegacyDisplay(usbC);
         pluggedIn = NormalizeLegacyCustomPerformance(pluggedIn);
         pluggedIn = NormalizeLegacyGpuClockTuning(pluggedIn);
-        battery = NormalizeLegacyGpuClockTuning(battery);
-        usbC = NormalizeLegacyGpuClockTuning(usbC);
         LightingPowerPolicy legacyLightingPowerPolicy =
             profiles.LightingPowerPolicy ?? LightingPowerPolicy.Disabled;
         pluggedIn = NormalizeLightingPowerPolicy(pluggedIn, legacyLightingPowerPolicy);

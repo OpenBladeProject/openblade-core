@@ -145,8 +145,6 @@ public static class ProfileExportSerializer
     private static ProfileSet NormalizeLegacyGpuClockTuning(ProfileSet profiles) => profiles with
     {
         PluggedIn = NormalizeLegacyGpuClockTuning(profiles.PluggedIn),
-        Battery = NormalizeLegacyGpuClockTuning(profiles.Battery),
-        UsbC = NormalizeLegacyGpuClockTuning(profiles.UsbC),
     };
 
     private static PowerProfile NormalizeLegacyGpuClockTuning(PowerProfile profile)

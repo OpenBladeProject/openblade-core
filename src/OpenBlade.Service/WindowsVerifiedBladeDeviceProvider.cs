@@ -1130,8 +1130,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             GpuOverclockCapabilities? policy = batteryFactory.Capabilities.GpuOverclock;
             return policy?.IsWellFormed != true
                 || policy.Access == DeviceFeatureAccess.ReadWrite
-                    && policy.CoreOffsetMegahertz.Supports(requested.CoreMegahertz)
-                    && policy.MemoryOffsetMegahertz.Supports(requested.MemoryMegahertz);
+                    && requested.CoreMegahertz >= policy.CoreOffsetMegahertz.Minimum
+                    && requested.CoreMegahertz <= policy.CoreOffsetMegahertz.Maximum
+                    && requested.MemoryMegahertz >= policy.MemoryOffsetMegahertz.Minimum
+                    && requested.MemoryMegahertz <= policy.MemoryOffsetMegahertz.Maximum;
         }
 
         public Task SetFanControlAsync(

@@ -117,6 +117,41 @@ public sealed class ProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public void NormalizeLegacyBatteryProfile_DoesNotMigrateGpuTuningOutsidePluggedIn()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var offsets = new GpuClockOffsetSettings(125, 500);
+        var legacyCustom = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium)
+        {
+            GpuClockOffsets = offsets,
+        };
+        ProfileSet legacy = defaults with
+        {
+            Battery = defaults.Battery with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = legacyCustom,
+            },
+            UsbC = defaults.UsbC with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = legacyCustom,
+            },
+        };
+
+        ProfileSet normalized = ProfileStore.NormalizeLegacyBatteryProfile(
+            legacy,
+            out _);
+
+        Assert.Null(normalized.Battery.GpuClockTuning);
+        Assert.Equal(offsets, normalized.Battery.CustomPerformance?.GpuClockOffsets);
+        Assert.Null(normalized.UsbC.GpuClockTuning);
+        Assert.Equal(offsets, normalized.UsbC.CustomPerformance?.GpuClockOffsets);
+    }
+
+    [Fact]
     public async Task Load_CorruptJsonReturnsSafeDefaultsAndReportsRecovery()
     {
         Directory.CreateDirectory(storeDirectory);

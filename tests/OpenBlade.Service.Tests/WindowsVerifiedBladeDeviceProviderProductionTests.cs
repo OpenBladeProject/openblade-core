@@ -379,6 +379,31 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task SetGpuClockOffsets_StepLessReadWritePolicyAdmitsInRangeWrite()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic }) with
+        {
+            GpuOverclock = new(
+                new DeviceNumericRange(-1000, 400, null),
+                new DeviceNumericRange(-1000, 3000, null),
+                DeviceFeatureAccess.ReadWrite),
+        };
+        var gpu = new FakeGpuClockOffsetController();
+        var requested = new GpuClockOffsetSettings(125, 500);
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities),
+            gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await device.SetGpuClockOffsetsAsync(requested, default);
+
+        Assert.Equal(1, gpu.QueryCount);
+        Assert.Equal([requested], gpu.Writes);
+    }
+
+    [Fact]
     public async Task SetGpuClockOffsets_PreflightsAndWritesWithoutOpeningFirmwarePort()
     {
         DeviceCapabilities capabilities = ThermalCapabilities(
