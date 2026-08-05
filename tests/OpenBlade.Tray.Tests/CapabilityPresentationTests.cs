@@ -25,7 +25,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("FirmwareUpdateViewModel.IntervalOptions", presentation);
         Assert.Contains("FirmwareUpdateViewModel.SelectedIntervalOption", presentation);
         Assert.Contains(
-            "MCU labels may use a different format. OpenBlade never downloads or installs firmware.",
+            "MCU versions use Razer's updater label format where it applies. OpenBlade never downloads or installs firmware.",
             presentation);
         Assert.Equal(2, document.Descendants().Count(element =>
             Attribute(element, "Text") == "Checks at startup when due."));
