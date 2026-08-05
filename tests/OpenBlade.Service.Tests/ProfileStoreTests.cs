@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using OpenBlade.Contracts;
 using OpenBlade.Service;
 
@@ -227,6 +228,99 @@ public sealed class ProfileStoreTests : IDisposable
         Assert.Equal(
             LightingSettingsFactory.DefaultVisibleColor,
             result.Profiles.PluggedIn.Lighting.Color);
+    }
+
+    [Fact]
+    public async Task Load_InvalidAudioMeterDecayNormalizesAndRewritesCurrentSchema()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet stored = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Lighting = LightingSettingsFactory.AudioMeter(
+                    colorBoost: 1,
+                    brightness: 50,
+                    decayMilliseconds: 250),
+            },
+        };
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(
+                new ProfileDocument(ProfileStore.CurrentSchemaVersion, stored),
+                ProfileStore.SerializerOptions));
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.AudioMeter,
+            },
+        };
+
+        ProfileLoadResult result = await new ProfileStore(
+            path,
+            ProfileSetValidator.CreateForLightingCapabilities(capabilities))
+            .LoadAsync(CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Equal(
+            300,
+            Assert.IsType<AudioMeterLightingParameters>(
+                result.Profiles.PluggedIn.Lighting.Parameters).DecayMilliseconds);
+        string rewritten = await File.ReadAllTextAsync(path);
+        Assert.Contains("\"schemaVersion\": 9", rewritten, StringComparison.Ordinal);
+        Assert.Contains("\"decayMilliseconds\": 300", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Load_PreviousSchemaWithoutAudioMeterDecayDefaultsToOff()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet stored = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Lighting = LightingSettingsFactory.AudioMeter(1, 50),
+            },
+        };
+        JsonObject root = Assert.IsType<JsonObject>(JsonNode.Parse(
+            JsonSerializer.Serialize(
+                new ProfileDocument(ProfileStore.PreviousSchemaVersion, stored),
+                ProfileStore.SerializerOptions)));
+        JsonObject profiles = Assert.IsType<JsonObject>(root["profiles"]);
+        JsonObject pluggedIn = Assert.IsType<JsonObject>(profiles["pluggedIn"]);
+        JsonObject lighting = Assert.IsType<JsonObject>(pluggedIn["lighting"]);
+        JsonObject parameters = Assert.IsType<JsonObject>(lighting["parameters"]);
+        Assert.True(parameters.Remove("decayMilliseconds"));
+        await File.WriteAllTextAsync(path, root.ToJsonString());
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.AudioMeter,
+            },
+        };
+
+        ProfileLoadResult result = await new ProfileStore(
+            path,
+            ProfileSetValidator.CreateForLightingCapabilities(capabilities))
+            .LoadAsync(CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Equal(
+            0,
+            Assert.IsType<AudioMeterLightingParameters>(
+                result.Profiles.PluggedIn.Lighting.Parameters).DecayMilliseconds);
+        Assert.Contains(
+            "\"schemaVersion\": 9",
+            await File.ReadAllTextAsync(path),
+            StringComparison.Ordinal);
     }
 
     [Fact]

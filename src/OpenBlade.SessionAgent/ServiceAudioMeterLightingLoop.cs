@@ -84,6 +84,15 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
         double level = Math.Clamp(peak * colorBoost, 0, 1);
         int litColumns = (int)Math.Ceiling(
             level * AmbientLightingFrame.Columns);
+        return RenderColumns(litColumns);
+    }
+
+    internal static AmbientLightingFrame RenderColumns(int litColumns)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(litColumns);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(
+            litColumns,
+            AmbientLightingFrame.Columns);
         RgbColor[] slots = new RgbColor[AmbientLightingFrame.SlotCount];
         for (int row = 0; row < AmbientLightingFrame.Rows; row++)
         {
@@ -168,6 +177,81 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
     }
 }
 
+internal sealed class AudioMeterDecaySmoother
+{
+    private double? displayedColumns;
+
+    internal AmbientLightingFrame Apply(
+        AmbientLightingFrame frame,
+        TimeSpan elapsed,
+        int decayMilliseconds)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        if (!frame.IsWellFormed())
+        {
+            throw new ArgumentException("The Audio Meter frame is invalid.", nameof(frame));
+        }
+        if (decayMilliseconds is
+                < LightingSettingsFactory.MinAudioMeterDecayMilliseconds
+                or > LightingSettingsFactory.MaxAudioMeterDecayMilliseconds
+            || decayMilliseconds
+                % LightingSettingsFactory.AudioMeterDecayStepMilliseconds != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(decayMilliseconds));
+        }
+
+        int targetColumns = CountLitColumns(frame);
+        if (targetColumns == 0)
+        {
+            Reset();
+            return frame;
+        }
+        if (decayMilliseconds == 0
+            || displayedColumns is null
+            || targetColumns >= displayedColumns.Value)
+        {
+            displayedColumns = targetColumns;
+            return frame;
+        }
+
+        double elapsedMilliseconds = Math.Max(0, elapsed.TotalMilliseconds);
+        double decayedColumns = displayedColumns.Value
+            - (AmbientLightingFrame.Columns
+                * elapsedMilliseconds
+                / decayMilliseconds);
+        displayedColumns = Math.Max(targetColumns, decayedColumns);
+        int litColumns = (int)Math.Ceiling(displayedColumns.Value);
+        return litColumns == targetColumns
+            ? frame
+            : WindowsAudioMeterLightingSampler.RenderColumns(litColumns);
+    }
+
+    internal void Reset() => displayedColumns = null;
+
+    private static int CountLitColumns(AmbientLightingFrame frame)
+    {
+        int litColumns = 0;
+        for (int column = 0; column < AmbientLightingFrame.Columns; column++)
+        {
+            bool lit = false;
+            for (int row = 0; row < AmbientLightingFrame.Rows; row++)
+            {
+                int slot = (row * AmbientLightingFrame.Columns) + column;
+                if (!AmbientLightingFrame.IsHole(slot) && frame.Slots[slot] != default)
+                {
+                    lit = true;
+                    break;
+                }
+            }
+            if (lit)
+            {
+                litColumns = column + 1;
+            }
+        }
+        return litColumns;
+    }
+}
+
 public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
 {
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(1);
@@ -180,7 +264,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
     private readonly SemaphoreSlim rendererStateGate = new(1, 1);
     private CancellationTokenSource? rendererCancellation;
     private Task? rendererTask;
-    private double? activeBoost;
+    private AudioMeterLightingParameters? activeParameters;
     private int disposed;
 
     public ServiceAudioMeterLightingLoop(
@@ -210,22 +294,22 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                 .WithCancellation(cancellationToken)
                 .ConfigureAwait(false))
             {
-                double? boost = update switch
+                AudioMeterLightingParameters? parameters = update switch
                 {
                     ServiceWatchUpdate.Connected connected
                         when connected.Status.LightingRendererOwnership ==
                             LightingRendererOwnershipState.AudioMeter
                         && connected.Status.DesiredState.Lighting.Value.Parameters is
-                            AudioMeterLightingParameters parameters =>
-                        parameters.ColorBoost,
+                            AudioMeterLightingParameters audioMeter =>
+                        audioMeter,
                     _ => null,
                 };
-                await SetBoostAsync(boost, cancellationToken).ConfigureAwait(false);
+                await SetParametersAsync(parameters, cancellationToken).ConfigureAwait(false);
             }
         }
         finally
         {
-            await SetBoostAsync(null, CancellationToken.None).ConfigureAwait(false);
+            await SetParametersAsync(null, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
@@ -233,17 +317,19 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
     {
         if (Interlocked.Exchange(ref disposed, 1) == 0)
         {
-            await SetBoostAsync(null, CancellationToken.None).ConfigureAwait(false);
+            await SetParametersAsync(null, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
-    private async Task SetBoostAsync(double? boost, CancellationToken cancellationToken)
+    private async Task SetParametersAsync(
+        AudioMeterLightingParameters? parameters,
+        CancellationToken cancellationToken)
     {
         await rendererStateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (activeBoost == boost
-                && (boost is null || rendererTask is { IsCompleted: false }))
+            if (activeParameters == parameters
+                && (parameters is null || rendererTask is { IsCompleted: false }))
             {
                 return;
             }
@@ -252,7 +338,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
             Task? previousTask = rendererTask;
             rendererCancellation = null;
             rendererTask = null;
-            activeBoost = null;
+            activeParameters = null;
             previousCancellation?.Cancel();
             if (previousTask is not null)
             {
@@ -265,15 +351,15 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                 }
             }
             previousCancellation?.Dispose();
-            if (boost is null || Volatile.Read(ref disposed) != 0)
+            if (parameters is null || Volatile.Read(ref disposed) != 0)
             {
                 return;
             }
 
             var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             rendererCancellation = linked;
-            rendererTask = RenderAsync(boost.Value, linked.Token);
-            activeBoost = boost;
+            rendererTask = RenderAsync(parameters, linked.Token);
+            activeParameters = parameters;
         }
         finally
         {
@@ -281,10 +367,14 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
         }
     }
 
-    private async Task RenderAsync(double boost, CancellationToken cancellationToken)
+    private async Task RenderAsync(
+        AudioMeterLightingParameters parameters,
+        CancellationToken cancellationToken)
     {
         IAudioMeterLightingSampler? sampler = null;
         var cadence = new SessionLightingFrameCadence(timeProvider);
+        var smoother = new AudioMeterDecaySmoother();
+        long? lastCaptureTimestamp = null;
         try
         {
             while (true)
@@ -293,7 +383,16 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                 try
                 {
                     sampler ??= samplerFactory.Create();
-                    frame = sampler.Capture(boost);
+                    frame = sampler.Capture(parameters.ColorBoost);
+                    long capturedTimestamp = timeProvider.GetTimestamp();
+                    TimeSpan elapsed = lastCaptureTimestamp is { } previous
+                        ? timeProvider.GetElapsedTime(previous, capturedTimestamp)
+                        : TimeSpan.Zero;
+                    frame = smoother.Apply(
+                        frame,
+                        elapsed,
+                        parameters.DecayMilliseconds);
+                    lastCaptureTimestamp = capturedTimestamp;
                 }
                 catch (OperationCanceledException) when (
                     cancellationToken.IsCancellationRequested)
@@ -303,6 +402,8 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                 catch (Exception exception)
                 {
                     ResetSampler(ref sampler);
+                    smoother.Reset();
+                    lastCaptureTimestamp = null;
                     ReportFailure(exception);
                     await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
                     continue;
@@ -341,6 +442,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
         }
         finally
         {
+            smoother.Reset();
             ResetSampler(ref sampler);
         }
     }
