@@ -229,10 +229,15 @@ administrator elevation.
 
    The source directory is
    `src\OpenBlade.Tray\bin\Release\net10.0-windows10.0.26100.0\win-x64`.
-2. Deploy the complete matching tray payload:
+2. Before stopping either installed process, copy the complete matching tray
+   payload into a new staging directory outside `%ProgramFiles%`:
    `OpenBlade.Tray.exe`, `OpenBlade.Tray.dll`, `OpenBlade.Tray.Core.dll`,
    `OpenBlade.Session.dll`, `OpenBlade.Tray.pri`, and `MainWindow.xbf`.
-   Missing `.pri` or `.xbf` files can make the tray exit immediately.
+   Verify every staged file exists, is non-empty, and matches the SHA-256 of
+   its Release-build source. Do not stage directly into the install directory,
+   and do not stop or relaunch anything if this preflight is incomplete.
+   Missing `.dll`, `.pri`, or `.xbf` files can make the Session Agent or tray
+   exit immediately.
 3. Treat `OpenBlade.Tray.Core.dll` and `OpenBlade.Session.dll` as shared,
    process-loaded files. If either differs, stop both the installed tray and
    Session Agent after verifying their executable paths are exactly under
@@ -242,11 +247,16 @@ administrator elevation.
    - A normal-integrity parent launches one short-lived PowerShell child with
      `Start-Process -Verb RunAs -Wait`.
    - The elevated child stops the exact installed processes, waits for the
-     target files to accept an exclusive read/write open, copies the payload,
-     verifies it, writes a JSON report, and exits. It must not launch the tray
-     or Session Agent.
-   - After the elevated child exits, the normal-integrity parent starts the
-     unchanged installed Session Agent hidden, then starts the installed tray.
+     target files to accept an exclusive read/write open, copies only from the
+     verified staging directory, verifies all target hashes, writes a JSON
+     report, and exits. It must not launch the tray or Session Agent.
+   - After the elevated child exits, the normal-integrity parent must read the
+     report and relaunch nothing unless all required target files exist and
+     match their staged hashes. On failure, restore the complete previous
+     payload or leave both processes stopped; never launch a partial payload.
+   - After a successful report, the normal-integrity parent starts the
+     unchanged installed Session Agent hidden, confirms that it remains alive
+     with the expected shared-DLL versions, then starts the installed tray.
 5. Do not start the long-lived tray or Session Agent from the elevated child.
    They inherit elevation, Computer Use cannot inspect them normally, and the
    parent `-Wait` can remain blocked on the elevated process tree until those
@@ -278,3 +288,8 @@ Known failure signatures:
   elevated tray and Session Agent, then relaunch both from the normal parent.
 - The tray starts and immediately exits after a XAML patch: verify the matching
   `.pri` and `MainWindow.xbf` were copied with the binaries.
+- Media keys are temporarily dead and Event Viewer reports
+  `FileNotFoundException` for `OpenBlade.Tray.Core`: the Session Agent was
+  relaunched against a partial payload. Stop relaunch attempts, complete or
+  restore the entire staged payload, verify all hashes, and start the Session
+  Agent only after the deployment report passes.
