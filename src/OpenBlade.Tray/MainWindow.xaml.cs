@@ -2305,6 +2305,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async Task ShowTestedPlatformWarningAsync()
     {
+        if (!ViewModel.HasIncompatibleFirmware)
+        {
+            NavigateToAboutTestedPlatformWarning();
+            return;
+        }
+
         var content = new StackPanel
         {
             MaxWidth = 440,
@@ -2352,6 +2358,22 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await ViewModel.SetFirmwareCompatibilityOverrideAsync(
             enabled,
             CancellationToken.None);
+    }
+
+    private void NavigateToAboutTestedPlatformWarning()
+    {
+        MainNavigation.SelectedItem = AboutNavigationItem;
+        dispatcherQueue.TryEnqueue(
+            DispatcherQueuePriority.Low,
+            () =>
+            {
+                AboutTestedPlatformWarning.StartBringIntoView(
+                    new BringIntoViewOptions
+                    {
+                        AnimationDesired = true,
+                        VerticalAlignmentRatio = 0,
+                    });
+            });
     }
 
     private async void OnShutdownOpenBlade(object sender, RoutedEventArgs args)

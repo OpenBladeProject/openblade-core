@@ -1229,19 +1229,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             MatchesTestedConfiguration: false,
         };
 
-    public bool HasIncompatibleFirmware => HasUntestedPlatformVersion
-        && !CurrentTestedPlatformAssessment.Mismatches.Any(mismatch =>
-            string.Equals(
-                mismatch.Component,
-                "Model",
-                StringComparison.OrdinalIgnoreCase));
+    public bool HasIncompatibleFirmware => latestStatus?.FirmwareCompatibility is
+        FirmwareCompatibilityStatus.UntestedBlocked
+        or FirmwareCompatibilityStatus.UntestedAllowed;
 
-    private string UnavailableLaptopReason => HasIncompatibleFirmware
+    private string UnavailableLaptopReason => IsFirmwareAdmissionBlocked
         ? "Incompatible firmware"
         : "Laptop not found";
 
-    private bool IsFirmwareAdmissionBlocked => HasIncompatibleFirmware
-        && latestStatus?.DeviceVerified != true;
+    private bool IsFirmwareAdmissionBlocked =>
+        latestStatus?.FirmwareCompatibility
+            == FirmwareCompatibilityStatus.UntestedBlocked;
 
     public string PlatformCompatibilityWarningTitle =>
         CurrentTestedPlatformAssessment.Mismatches.Any(mismatch =>
@@ -1250,7 +1248,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 "Model",
                 StringComparison.OrdinalIgnoreCase))
             ? "Incompatible hardware"
-            : "Incompatible firmware";
+            : HasIncompatibleFirmware
+                ? "Incompatible firmware"
+                : "Untested platform configuration";
 
     public string DashboardTestedPlatformWarningMessage =>
         FormatTestedPlatformWarning(CurrentTestedPlatformAssessment);

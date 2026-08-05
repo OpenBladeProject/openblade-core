@@ -346,6 +346,14 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("ShowTestedPlatformWarningAsync", window, StringComparison.Ordinal);
         Assert.Contains(
+            "NavigateToAboutTestedPlatformWarning",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "if (!ViewModel.HasIncompatibleFirmware)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "Ignore this firmware mismatch and run anyway",
             window,
             StringComparison.Ordinal);

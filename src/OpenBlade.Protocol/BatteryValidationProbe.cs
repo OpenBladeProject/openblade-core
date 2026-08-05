@@ -25,6 +25,14 @@ public enum BatteryValidationProbeClassification
     AmbiguousExactHandles,
 }
 
+public enum BatteryValidationFirmwareCompatibility
+{
+    Unknown,
+    Tested,
+    UntestedBlocked,
+    UntestedAllowed,
+}
+
 public sealed record BatteryValidationProbeResult(
     BatteryValidationProbeStage Stage,
     BatteryValidationProbeClassification Classification,
@@ -41,7 +49,9 @@ public sealed record BatteryValidationProbeResult(
     int UsagePageMatchCount,
     int UsageMatchCount,
     int FeatureLengthMatchCount,
-    int ExactMatchCount);
+    int ExactMatchCount,
+    BatteryValidationFirmwareCompatibility FirmwareCompatibility =
+        BatteryValidationFirmwareCompatibility.Unknown);
 
 internal sealed class HidEvidenceEvaluation : IDisposable
 {
@@ -159,8 +169,13 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
         {
             return Failure(
                 BatteryValidationProbeStage.HostIdentity,
-                BatteryValidationProbeClassification.HostIdentityBlocked);
+                BatteryValidationProbeClassification.HostIdentityBlocked,
+                firmwareCompatibility: MapFirmwareCompatibility(
+                    identity.FirmwareCompatibility));
         }
+
+        BatteryValidationFirmwareCompatibility firmwareCompatibility =
+            MapFirmwareCompatibility(identity.FirmwareCompatibility);
 
         bool conflictCheckPassed = exclusivityPolicy == ControllerExclusivityPolicy.Strict;
         if (exclusivityPolicy == ControllerExclusivityPolicy.Strict)
@@ -342,14 +357,17 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 UsagePageMatchCount: usagePageMatches,
                 UsageMatchCount: usageMatches,
                 FeatureLengthMatchCount: featureLengthMatches,
-                ExactMatchCount: exactMatches.Count);
+                ExactMatchCount: exactMatches.Count,
+                FirmwareCompatibility: firmwareCompatibility);
     }
 
     private static HidEvidenceEvaluation Failure(
         BatteryValidationProbeStage stage,
         BatteryValidationProbeClassification classification,
         bool hostIdentityMatched = false,
-        bool conflictCheckPassed = false) =>
+        bool conflictCheckPassed = false,
+        BatteryValidationFirmwareCompatibility firmwareCompatibility =
+            BatteryValidationFirmwareCompatibility.Unknown) =>
         new(new BatteryValidationProbeResult(
             stage,
             classification,
@@ -366,5 +384,18 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
             UsagePageMatchCount: 0,
             UsageMatchCount: 0,
             FeatureLengthMatchCount: 0,
-            ExactMatchCount: 0));
+            ExactMatchCount: 0,
+            FirmwareCompatibility: firmwareCompatibility));
+
+    private static BatteryValidationFirmwareCompatibility MapFirmwareCompatibility(
+        HostFirmwareCompatibility compatibility) => compatibility switch
+        {
+            HostFirmwareCompatibility.Tested =>
+                BatteryValidationFirmwareCompatibility.Tested,
+            HostFirmwareCompatibility.UntestedBlocked =>
+                BatteryValidationFirmwareCompatibility.UntestedBlocked,
+            HostFirmwareCompatibility.UntestedAllowed =>
+                BatteryValidationFirmwareCompatibility.UntestedAllowed,
+            _ => BatteryValidationFirmwareCompatibility.Unknown,
+        };
 }

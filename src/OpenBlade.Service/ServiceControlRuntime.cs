@@ -1684,15 +1684,47 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     staged,
                     token)
                 .ConfigureAwait(false);
+
+            Exception? cleanupFailure = null;
+            if (!enabled
+                && deviceProvider.FirmwareCompatibility
+                    == FirmwareCompatibilityStatus.UntestedAllowed)
+            {
+                try
+                {
+                    // Relinquish any long-lived renderer while the old admission
+                    // policy can still reach its exact device for cleanup.
+                    await InvalidateLightingRendererCoreAsync(
+                        preserveForLifecycleRestore: false,
+                        token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    preferences = staged;
+                    deviceProvider.SetAllowUntestedFirmware(enabled);
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    cleanupFailure = exception;
+                }
+            }
+
             preferences = staged;
             deviceProvider.SetAllowUntestedFirmware(enabled);
+            // This is a deliberate policy transition, not a transient missed
+            // enumeration. Skip the normal one-miss presentation debounce so
+            // the following observation publishes the new admission state.
             consecutiveDeviceProbeFailures = ObservationFailureThreshold;
             PublishIfChanged(GetStatus() with
             {
                 AllowUntestedFirmware = enabled,
-                Message = message,
+                FirmwareCompatibility = deviceProvider.FirmwareCompatibility,
+                Message = cleanupFailure is null
+                    ? message
+                    : $"{message} Renderer access is blocked, but lighting cleanup could not complete. {cleanupFailure.Message}",
             });
-            history.RecordSummary(ControlOperationStatus.Stored, message);
+            history.RecordSummary(ControlOperationStatus.Stored, GetStatus().Message);
         }
         finally
         {
@@ -4968,6 +5000,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FunctionKeyPrimary = observation.FunctionKeyPrimary,
             GamingModeEnabled = observation.GamingModeEnabled,
             BatteryHealth = batteryHealth,
+            FirmwareCompatibility = deviceProvider.FirmwareCompatibility,
         });
     }
 
@@ -5533,6 +5566,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             KeyboardDriverModeActive = deviceVerified
                 ? current.KeyboardDriverModeActive
                 : null,
+            FirmwareCompatibility = deviceProvider.FirmwareCompatibility,
         });
     }
 
@@ -5597,7 +5631,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             BatteryHealth: batteryHealth,
             KeyboardLightingControlMode:
                 preferences.KeyboardLightingControlMode,
-            AllowUntestedFirmware: preferences.AllowUntestedFirmware)
+            AllowUntestedFirmware: preferences.AllowUntestedFirmware,
+            FirmwareCompatibility: deviceProvider.FirmwareCompatibility)
         {
             FanControlOverride = Automation.FanControlOverride,
         };
@@ -5928,6 +5963,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.AlwaysOverrideExternalLightingChanges
             == right.AlwaysOverrideExternalLightingChanges
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
+        && left.FirmwareCompatibility == right.FirmwareCompatibility
         && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
         && left.LightingRendererOwnership == right.LightingRendererOwnership
         && (left.LightingSuppressions ?? []).SequenceEqual(

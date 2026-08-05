@@ -97,6 +97,7 @@ public sealed class WindowsHostIdentitySourceTests
             new HostIdentityEvidence("Razer", "Blade 16 - RZ09-0581", "RZ09-05819EN4", "3.01"),
             result.Evidence);
         Assert.Null(result.Failure);
+        Assert.Equal(HostFirmwareCompatibility.Tested, result.FirmwareCompatibility);
         Assert.Equal(
             ExpectedRequests.Select(request => request.Location).Order(),
             registry.Requests.Select(request => request.Location).Order());
@@ -150,13 +151,20 @@ public sealed class WindowsHostIdentitySourceTests
             new FakeWindowsPlatformEvidenceSource(ExactPlatform),
             policy);
 
-        AssertIdentityBlocked(source.ReadExactIdentity());
+        HostIdentityReadResult blocked = source.ReadExactIdentity();
+        AssertIdentityBlocked(blocked);
+        Assert.Equal(
+            HostFirmwareCompatibility.UntestedBlocked,
+            blocked.FirmwareCompatibility);
 
         policy.AllowUntestedFirmware = true;
         HostIdentityReadResult result = source.ReadExactIdentity();
 
         Assert.Equal("3.02", result.Evidence?.BiosVersion);
         Assert.Null(result.Failure);
+        Assert.Equal(
+            HostFirmwareCompatibility.UntestedAllowed,
+            result.FirmwareCompatibility);
     }
 
     [Fact]
@@ -173,6 +181,17 @@ public sealed class WindowsHostIdentitySourceTests
             policy).ReadExactIdentity();
 
         AssertIdentityBlocked(result);
+        Assert.Equal(HostFirmwareCompatibility.Unknown, result.FirmwareCompatibility);
+
+        registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|SystemSKU"] = "RZ09-05819EU4";
+        result = new WindowsHostIdentitySource(
+            registry,
+            new FakeWindowsPlatformEvidenceSource(ExactPlatform),
+            policy).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        Assert.Equal(HostFirmwareCompatibility.Unknown, result.FirmwareCompatibility);
     }
 
     [Fact]

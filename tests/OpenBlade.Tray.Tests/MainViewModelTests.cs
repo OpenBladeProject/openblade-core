@@ -4646,6 +4646,7 @@ public sealed class MainViewModelTests
 
         ServiceStatusSnapshot stable = CreateStatus(verified: true, blocked: false) with
         {
+            FirmwareCompatibility = FirmwareCompatibilityStatus.Tested,
             Firmware = new FirmwareVersions(
                 "3.01",
                 "1.04",
@@ -4662,13 +4663,14 @@ public sealed class MainViewModelTests
         client.Publish(stable with
         {
             Revision = stable.Revision + 1,
-            DeviceVerified = false,
-            WritesBlocked = true,
             Firmware = stable.Firmware! with { McuVersion = "1.7.0.0" },
         });
         await WaitUntilAsync(() => viewModel.HasUntestedPlatformVersion);
 
-        Assert.Equal("Incompatible firmware", viewModel.PlatformCompatibilityWarningTitle);
+        Assert.False(viewModel.HasIncompatibleFirmware);
+        Assert.Equal(
+            "Untested platform configuration",
+            viewModel.PlatformCompatibilityWarningTitle);
         Assert.Equal(
             "OpenBlade has not tested this configuration: MCU 1.7.0.0.",
             viewModel.DashboardTestedPlatformWarningMessage);
@@ -4676,6 +4678,18 @@ public sealed class MainViewModelTests
             "This is a compatibility notice, not a hardware failure.",
             viewModel.AboutTestedPlatformWarningMessage,
             StringComparison.Ordinal);
+
+        client.Publish(stable with
+        {
+            Revision = stable.Revision + 2,
+            DeviceVerified = false,
+            WritesBlocked = true,
+            FirmwareCompatibility = FirmwareCompatibilityStatus.UntestedBlocked,
+            Firmware = stable.Firmware! with { BiosVersion = "3.02" },
+        });
+        await WaitUntilAsync(() => viewModel.HasIncompatibleFirmware);
+
+        Assert.Equal("Incompatible firmware", viewModel.PlatformCompatibilityWarningTitle);
         Assert.Equal("Incompatible firmware", viewModel.ProfileStateLabel);
         Assert.Equal("Incompatible firmware", viewModel.ControlAccessStatus);
         Assert.Equal("Incompatible firmware", viewModel.PerformanceSourceLabel);
@@ -4703,8 +4717,9 @@ public sealed class MainViewModelTests
 
         client.Publish(stable with
         {
-            Revision = stable.Revision + 2,
+            Revision = stable.Revision + 3,
             DeviceVerified = false,
+            FirmwareCompatibility = FirmwareCompatibilityStatus.Unknown,
             Firmware = stable.Firmware! with { ModelNumber = "RZ09-9999ABC" },
         });
         await WaitUntilAsync(() =>
@@ -4717,7 +4732,7 @@ public sealed class MainViewModelTests
 
         client.Publish(stable with
         {
-            Revision = stable.Revision + 3,
+            Revision = stable.Revision + 4,
             Firmware = new FirmwareVersions(
                 "2.02",
                 "1.09",

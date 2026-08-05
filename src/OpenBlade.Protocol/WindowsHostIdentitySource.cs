@@ -7,7 +7,18 @@ internal readonly record struct HostIdentityEvidence(
     string Manufacturer, string ProductName, string Sku, string BiosVersion);
 
 internal readonly record struct HostIdentityReadResult(
-    HostIdentityEvidence? Evidence, HidSessionFailureKind? Failure);
+    HostIdentityEvidence? Evidence,
+    HidSessionFailureKind? Failure,
+    HostFirmwareCompatibility FirmwareCompatibility =
+        HostFirmwareCompatibility.Unknown);
+
+internal enum HostFirmwareCompatibility
+{
+    Unknown,
+    Tested,
+    UntestedBlocked,
+    UntestedAllowed,
+}
 
 internal readonly record struct WindowsPlatformEvidence(
     bool IsWindows,
@@ -136,16 +147,29 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
             || !TryReadValue(SystemInformationKey, "BIOSVersion", out string systemBiosVersion)
             || !string.Equals(biosManufacturer, systemManufacturer, StringComparison.Ordinal)
             || !string.Equals(biosProductName, systemProductName, StringComparison.Ordinal)
-            || !string.Equals(biosVersion, systemBiosVersion, StringComparison.Ordinal)
-            || (compatibilityPolicy?.AllowUntestedFirmware != true
-                && !string.Equals(biosVersion, expected.BiosVersion, StringComparison.Ordinal)))
+            || !string.Equals(biosVersion, systemBiosVersion, StringComparison.Ordinal))
         {
             return new(null, HidSessionFailureKind.IdentityBlocked);
         }
 
+        bool testedFirmware = string.Equals(
+            biosVersion,
+            expected.BiosVersion,
+            StringComparison.Ordinal);
+        if (!testedFirmware && compatibilityPolicy?.AllowUntestedFirmware != true)
+        {
+            return new(
+                null,
+                HidSessionFailureKind.IdentityBlocked,
+                HostFirmwareCompatibility.UntestedBlocked);
+        }
+
         return new(
             new HostIdentityEvidence(biosManufacturer, biosProductName, sku, biosVersion),
-            null);
+            null,
+            testedFirmware
+                ? HostFirmwareCompatibility.Tested
+                : HostFirmwareCompatibility.UntestedAllowed);
     }
 
     internal static bool IsExactRz090528WindowsHost() =>

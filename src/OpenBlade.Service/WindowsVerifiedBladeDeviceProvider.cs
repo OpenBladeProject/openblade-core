@@ -31,6 +31,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
     private readonly SerializedBladeDevice device;
     private readonly object providerLifecycleSync = new();
     private long lastReadyProbeTimestamp;
+    private int firmwareCompatibility;
     private int disposed;
 
     public WindowsVerifiedBladeDeviceProvider()
@@ -74,8 +75,20 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             onClosing);
     }
 
-    public void SetAllowUntestedFirmware(bool enabled) =>
+    public void SetAllowUntestedFirmware(bool enabled)
+    {
         compatibilityPolicy.AllowUntestedFirmware = enabled;
+        if (!enabled
+            && FirmwareCompatibility == FirmwareCompatibilityStatus.UntestedAllowed)
+        {
+            Volatile.Write(
+                ref firmwareCompatibility,
+                (int)FirmwareCompatibilityStatus.UntestedBlocked);
+        }
+    }
+
+    public FirmwareCompatibilityStatus FirmwareCompatibility =>
+        (FirmwareCompatibilityStatus)Volatile.Read(ref firmwareCompatibility);
 
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
     {
@@ -87,7 +100,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
         try
         {
-            BatteryValidationProbeClassification classification = probe().Classification;
+            BatteryValidationProbeResult result = probe();
+            Volatile.Write(
+                ref firmwareCompatibility,
+                (int)MapFirmwareCompatibility(result.FirmwareCompatibility));
+            BatteryValidationProbeClassification classification = result.Classification;
             if (!IsReadyClassification(classification))
             {
                 if (IsTransientProbeClassification(classification)
@@ -159,10 +176,23 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             BatteryValidationProbeClassification.EnumerationFailed
             or BatteryValidationProbeClassification.CandidateOpenFailed;
 
+    private static FirmwareCompatibilityStatus MapFirmwareCompatibility(
+        BatteryValidationFirmwareCompatibility compatibility) => compatibility switch
+        {
+            BatteryValidationFirmwareCompatibility.Tested =>
+                FirmwareCompatibilityStatus.Tested,
+            BatteryValidationFirmwareCompatibility.UntestedBlocked =>
+                FirmwareCompatibilityStatus.UntestedBlocked,
+            BatteryValidationFirmwareCompatibility.UntestedAllowed =>
+                FirmwareCompatibilityStatus.UntestedAllowed,
+            _ => FirmwareCompatibilityStatus.Unknown,
+        };
+
     public bool TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice verifiedDevice)
     {
         verifiedDevice = null!;
         if (Volatile.Read(ref disposed) != 0
+            || FirmwareCompatibility == FirmwareCompatibilityStatus.UntestedBlocked
             || !device.HasOwnedKeyTriggeredRenderer)
         {
             return false;
@@ -170,7 +200,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
         lock (providerLifecycleSync)
         {
-            if (disposed != 0 || !device.HasOwnedKeyTriggeredRenderer)
+            if (disposed != 0
+                || FirmwareCompatibility == FirmwareCompatibilityStatus.UntestedBlocked
+                || !device.HasOwnedKeyTriggeredRenderer)
             {
                 return false;
             }
@@ -187,6 +219,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
     {
         verifiedDevice = null!;
         if (Volatile.Read(ref disposed) != 0
+            || FirmwareCompatibility == FirmwareCompatibilityStatus.UntestedBlocked
             || !device.HasOwnedAmbientRenderer)
         {
             return false;
@@ -194,7 +227,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
         lock (providerLifecycleSync)
         {
-            if (disposed != 0 || !device.HasOwnedAmbientRenderer)
+            if (disposed != 0
+                || FirmwareCompatibility == FirmwareCompatibilityStatus.UntestedBlocked
+                || !device.HasOwnedAmbientRenderer)
             {
                 return false;
             }

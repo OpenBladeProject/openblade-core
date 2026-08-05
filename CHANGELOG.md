@@ -15,7 +15,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Reported a recognized laptop with incompatible firmware as **Incompatible
   firmware** instead of also showing the contradictory **Laptop not found**
-  state.
+  state, using the service's exact BIOS admission result rather than unrelated
+  EC or MCU version notices. Disabling the override now also relinquishes any
+  owned reactive or ambient lighting renderer immediately.
 - Shortened the official firmware card and displayed decoded MCU versions in
   the same release format used by Razer's updater labels.
 - Fixed Custom performance controls not appearing until a mode switch when the

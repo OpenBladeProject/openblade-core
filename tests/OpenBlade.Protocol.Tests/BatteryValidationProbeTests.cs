@@ -36,6 +36,30 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(0, native.BindCalls);
     }
 
+    [Fact]
+    public void Evaluate_ReportsFirmwareSpecificHostBlock()
+    {
+        var evaluator = new WindowsRazerHidEvidenceEvaluator(
+            new ScriptedIdentitySource(
+                new HostIdentityReadResult(
+                    null,
+                    HidSessionFailureKind.IdentityBlocked,
+                    HostFirmwareCompatibility.UntestedBlocked),
+                null),
+            new ScriptedGuard(new HardwareAccessDecision([], null), null),
+            new ScriptedNative([]),
+            ControllerExclusivityPolicy.Advisory);
+
+        using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
+
+        Assert.Equal(
+            BatteryValidationProbeClassification.HostIdentityBlocked,
+            evaluation.Result.Classification);
+        Assert.Equal(
+            BatteryValidationFirmwareCompatibility.UntestedBlocked,
+            evaluation.Result.FirmwareCompatibility);
+    }
+
     [Theory]
     [InlineData(false, BatteryValidationProbeClassification.ConflictBlocked)]
     [InlineData(true, BatteryValidationProbeClassification.ConflictDetectionFailed)]

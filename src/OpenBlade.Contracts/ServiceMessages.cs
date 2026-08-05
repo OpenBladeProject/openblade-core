@@ -207,6 +207,14 @@ public enum SessionControlAccess
     NotInteractive,
 }
 
+public enum FirmwareCompatibilityStatus
+{
+    Unknown,
+    Tested,
+    UntestedBlocked,
+    UntestedAllowed,
+}
+
 public sealed record ServiceStatusSnapshot(
     long Revision,
     bool DeviceVerified,
@@ -239,7 +247,9 @@ public sealed record ServiceStatusSnapshot(
     KeyboardLightingControlMode KeyboardLightingControlMode =
         KeyboardLightingControlMode.OpenBlade,
     SessionControlAccess ControlAccess = SessionControlAccess.Active,
-    bool AllowUntestedFirmware = false)
+    bool AllowUntestedFirmware = false,
+    FirmwareCompatibilityStatus FirmwareCompatibility =
+        FirmwareCompatibilityStatus.Unknown)
 {
     public FanControlSettings? FanControlOverride { get; init; }
 

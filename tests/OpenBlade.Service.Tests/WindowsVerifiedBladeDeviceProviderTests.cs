@@ -168,6 +168,22 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(0, factory.OpenCount);
     }
 
+    [Fact]
+    public void TryGetVerifiedDevice_ReportsAuthoritativeFirmwareCompatibility()
+    {
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(
+                BatteryValidationProbeClassification.HostIdentityBlocked,
+                BatteryValidationFirmwareCompatibility.UntestedBlocked),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory());
+
+        Assert.False(provider.TryGetVerifiedDevice(out _));
+        Assert.Equal(
+            FirmwareCompatibilityStatus.UntestedBlocked,
+            provider.FirmwareCompatibility);
+    }
+
     [Theory]
     [InlineData(BatteryValidationProbeClassification.EnumerationFailed)]
     [InlineData(BatteryValidationProbeClassification.CandidateOpenFailed)]
@@ -768,6 +784,34 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task DisablingUntestedFirmware_BlocksOwnedRendererImmediately()
+    {
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(
+                BatteryValidationProbeClassification.Ready,
+                BatteryValidationFirmwareCompatibility.UntestedAllowed),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            new FakeLightingFactory(new FakeLightingPort()));
+        provider.SetAllowUntestedFirmware(true);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                77,
+                ReactiveLightingDuration.Medium),
+            default);
+        Assert.True(provider.TryGetOwnedKeyTriggeredLightingDevice(out _));
+
+        provider.SetAllowUntestedFirmware(false);
+
+        Assert.Equal(
+            FirmwareCompatibilityStatus.UntestedBlocked,
+            provider.FirmwareCompatibility);
+        Assert.False(provider.TryGetOwnedKeyTriggeredLightingDevice(out _));
+    }
+
+    [Fact]
     public async Task EnsureDriverMode_ReusesTheSerializedLightingPort()
     {
         var lightingPort = new FakeLightingPort();
@@ -1140,7 +1184,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         IBatteryQuerySequenceRunFactory factory) => new QueryFactoryAdapter(factory);
 
     private static BatteryValidationProbeResult Probe(
-        BatteryValidationProbeClassification classification) => new(
+        BatteryValidationProbeClassification classification,
+        BatteryValidationFirmwareCompatibility firmwareCompatibility =
+            BatteryValidationFirmwareCompatibility.Tested) => new(
             BatteryValidationProbeStage.Ready,
             classification,
             HostIdentityMatched: true,
@@ -1156,7 +1202,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             UsagePageMatchCount: 1,
             UsageMatchCount: 1,
             FeatureLengthMatchCount: 1,
-            ExactMatchCount: 1);
+            ExactMatchCount: 1,
+            FirmwareCompatibility: firmwareCompatibility);
 
     private sealed class QueryFactoryAdapter(IBatteryQuerySequenceRunFactory inner)
         : IProductionBatteryPortFactory

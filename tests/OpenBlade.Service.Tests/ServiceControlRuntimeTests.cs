@@ -1906,6 +1906,28 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task DisablingFirmwareCompatibilityOverride_RevokesOwnedRenderer()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        context.Provider.AvailableWhenUntestedFirmwareAllowed = true;
+        await context.Runtime.SetFirmwareCompatibilityOverrideAsync(
+            true,
+            CancellationToken.None);
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.Reactive;
+
+        await context.Runtime.SetFirmwareCompatibilityOverrideAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Provider.InvalidationCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Device.LightingRendererOwnership);
+        Assert.False(context.Provider.TryGetOwnedKeyTriggeredLightingDevice(out _));
+    }
+
+    [Fact]
     public async Task WindowsDynamicLightingMode_PersistsAndBlocksKeyboardWrites()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -6895,6 +6917,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public bool AvailableWhenUntestedFirmwareAllowed { get; set; }
 
         public bool AllowUntestedFirmware { get; private set; }
+
+        public FirmwareCompatibilityStatus FirmwareCompatibility =>
+            AvailableWhenUntestedFirmwareAllowed
+                ? AllowUntestedFirmware
+                    ? FirmwareCompatibilityStatus.UntestedAllowed
+                    : FirmwareCompatibilityStatus.UntestedBlocked
+                : Available
+                    ? FirmwareCompatibilityStatus.Tested
+                    : FirmwareCompatibilityStatus.Unknown;
 
         public int TryGetCount { get; private set; }
 
