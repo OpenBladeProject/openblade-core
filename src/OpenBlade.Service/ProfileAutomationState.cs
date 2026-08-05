@@ -31,8 +31,9 @@ public sealed class ProfileAutomationState
     {
         this.profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
         ArgumentNullException.ThrowIfNull(preferences);
-        persistentOverrides = PersistentOverrideStore.NormalizeLegacyFanControl(
-            PersistentOverrideStore.NormalizeLegacyLighting(persistentOverrides));
+        persistentOverrides = PersistentOverrideStore.NormalizeLegacyGpuClockTuning(
+            PersistentOverrideStore.NormalizeLegacyFanControl(
+                PersistentOverrideStore.NormalizeLegacyLighting(persistentOverrides)));
         PersistentOverrideStore.Validate(persistentOverrides);
         PowerSource = powerSource;
         persistentPerformance = persistentOverrides.Performance is { } performance
@@ -42,6 +43,9 @@ public sealed class ProfileAutomationState
                 performance == PerformancePreset.Custom
                     ? persistentOverrides.CustomPerformance
                     : null)
+            {
+                GpuClockTuning = persistentOverrides.GpuClockTuning,
+            }
             : null;
         persistentFans = persistentOverrides.Fans is { } fans
             ? new ManualOverride<FanMode>(fans, OverrideLifetime.Persistent)
@@ -238,6 +242,19 @@ public sealed class ProfileAutomationState
                     ?? confirmed.CustomPerformance
                     ?? CustomPerformanceSettings.Default
                 : null;
+        GpuClockTuningSettings? gpuClockTuning =
+            activePersistentPerformance?.GpuClockTuning
+            ?? activeTemporaryPerformance?.GpuClockTuning
+            ?? profile.GpuClockTuning;
+        if (gpuClockTuning is null
+            && resolvedPerformance.Value == PerformancePreset.Custom
+            && customPerformance?.GpuClockOffsets is { } legacyOffsets)
+        {
+            gpuClockTuning = new GpuClockTuningSettings(
+                Enabled: true,
+                legacyOffsets);
+            customPerformance = customPerformance with { GpuClockOffsets = null };
+        }
 
         ResolvedSetting<FanMode> resolvedFans = OverrideResolver.Resolve<FanMode>(
             profile.Fans,
@@ -264,6 +281,7 @@ public sealed class ProfileAutomationState
             DesiredBattery)
         {
             CustomPerformance = customPerformance,
+            GpuClockTuning = gpuClockTuning,
             FanControl = selectedFanControl,
         };
     }

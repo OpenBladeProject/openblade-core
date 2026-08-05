@@ -21,12 +21,17 @@ public sealed record PerformanceOverride(
     OverrideLifetime Lifetime,
     CustomPerformanceSettings? CustomPerformance = null)
 {
+    public GpuClockTuningSettings? GpuClockTuning { get; init; }
+
     public bool IsWellFormed() =>
         Enum.IsDefined(Value)
         && Enum.IsDefined(Lifetime)
         && (Value == PerformancePreset.Custom
             ? CustomPerformanceSettings.IsWellFormed(CustomPerformance)
-            : CustomPerformance is null);
+            : CustomPerformance is null)
+        && (GpuClockTuning is null
+            || GpuClockTuningSettings.IsWellFormed(GpuClockTuning)
+                && CustomPerformance?.GpuClockOffsets is null);
 
     public static implicit operator PerformanceOverride?(
         ManualOverride<PerformancePreset>? value) => value is null

@@ -7,7 +7,7 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 {
     [Fact]
-    public async Task ReadCustomPerformance_MergesNvmlClockOffsetsIntoConfirmedState()
+    public async Task ReadCustomPerformance_DoesNotQueryUnmanagedGpuClockOffsets()
     {
         DeviceCapabilities capabilities = ThermalCapabilities(
             new HashSet<PerformancePreset> { PerformancePreset.Custom },
@@ -32,12 +32,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         provider.TryGetVerifiedDevice(out IBladeDevice device);
 
         ConfirmedDeviceState state = await device.ReadStateAsync(default);
-        GpuClockOffsetCapabilities expected = Assert.IsType<GpuClockOffsetCapabilities>(
-            gpu.Capabilities);
-
-        Assert.Equal(1, gpu.QueryCount);
-        Assert.Equal(expected, state.GpuClockOffsets);
-        Assert.Equal(expected.Current, state.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(0, gpu.QueryCount);
+        Assert.Null(state.GpuClockOffsets);
+        Assert.Null(state.CustomPerformance?.GpuClockOffsets);
     }
 
     [Fact]
@@ -62,6 +59,36 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         _ = await device.ReadStateAsync(default);
 
         Assert.Equal(0, gpu.QueryCount);
+    }
+
+    [Fact]
+    public async Task ReadBalancedPerformance_ReportsGpuClockOffsetsAfterManagedWrite()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var gpu = new FakeGpuClockOffsetController();
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, port),
+            gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var requested = new GpuClockOffsetSettings(125, 500);
+
+        await device.SetGpuClockOffsetsAsync(requested, default);
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Equal(2, gpu.QueryCount);
+        Assert.Equal([requested], gpu.Writes);
+        Assert.Equal(PerformancePreset.Balanced, state.Performance);
+        Assert.Equal(gpu.Capabilities, state.GpuClockOffsets);
+        Assert.Null(state.CustomPerformance);
     }
 
     [Fact]

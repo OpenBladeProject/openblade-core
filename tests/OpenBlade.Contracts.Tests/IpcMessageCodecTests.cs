@@ -400,7 +400,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(35, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(36, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -423,7 +423,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionEighteenGpuClockOffsets_RoundTripExactShape()
+    public async Task GpuClockTuning_RoundTripsIndependentlyFromPerformancePreset()
     {
         var offsets = new GpuClockOffsetSettings(125, 500);
         var capabilities = new GpuClockOffsetCapabilities(
@@ -433,25 +433,31 @@ public sealed class IpcMessageCodecTests
         ServiceStatusSnapshot status = CreateStatus() with
         {
             ConfirmedState = new ConfirmedDeviceState(
-                PerformancePreset.Custom,
+                PerformancePreset.Balanced,
                 FanMode.Automatic,
                 null,
                 null)
             {
-                CustomPerformance = new CustomPerformanceSettings(
-                    CustomPerformanceLevel.High,
-                    CustomPerformanceLevel.Medium)
-                {
-                    GpuClockOffsets = offsets,
-                },
                 GpuClockOffsets = capabilities,
+            },
+            DesiredState = CreateStatus().DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Balanced,
+                    SettingValueSource.PowerProfile),
+                GpuClockTuning = new GpuClockTuningSettings(
+                    Enabled: true,
+                    offsets),
             },
         };
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(status);
 
         Assert.Equal(capabilities, actual.ConfirmedState?.GpuClockOffsets);
-        Assert.Equal(offsets, actual.ConfirmedState?.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(PerformancePreset.Balanced, actual.ConfirmedState?.Performance);
+        Assert.Equal(
+            new GpuClockTuningSettings(Enabled: true, offsets),
+            actual.DesiredState.GpuClockTuning);
     }
 
     [Fact]
@@ -655,7 +661,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(35, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(36, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 35;
+    public const int ProtocolVersion = 36;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -329,6 +329,12 @@ public static class IpcMessageCodec
             throw InvalidStatus("desired performance state is inconsistent");
         }
 
+        if (status.DesiredState.GpuClockTuning is { } gpuClockTuning
+            && !GpuClockTuningSettings.IsWellFormed(gpuClockTuning))
+        {
+            throw InvalidStatus("desired GPU clock tuning state is inconsistent");
+        }
+
         if (status.ConfirmedState is { } confirmed
             && !ValidPerformanceState(
                 confirmed.Performance,
@@ -338,10 +344,7 @@ public static class IpcMessageCodec
         }
 
         if (status.ConfirmedState?.GpuClockOffsets is { } gpuClockOffsets
-            && (!gpuClockOffsets.IsWellFormed
-                || status.ConfirmedState.Performance != PerformancePreset.Custom
-                || status.ConfirmedState.CustomPerformance?.GpuClockOffsets
-                    != gpuClockOffsets.Current))
+            && !gpuClockOffsets.IsWellFormed)
         {
             throw InvalidStatus("confirmed GPU clock-offset state is inconsistent");
         }

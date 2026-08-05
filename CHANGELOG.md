@@ -54,6 +54,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a separate GPU tuning switch and clock-offset controls for plugged-in
+  profiles. Offsets now work with Balanced and other power modes, while
+  existing Custom-mode settings migrate automatically.
 - Added exact-source changelog snapshots to nightly prereleases. After each
   successful publication, the workflow reconstructs any unrecorded nightly
   boundaries and opens or updates a guarded draft documentation pull request

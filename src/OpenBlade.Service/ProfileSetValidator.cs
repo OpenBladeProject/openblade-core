@@ -179,6 +179,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 
         ValidateLighting(profile.Lighting, name);
         ValidateCustomPerformance(profile, name);
+        ValidateGpuClockTuning(profile, name);
         ValidateFanControl(profile, name);
         ValidateDisplay(profile.Display, name);
         ValidateLaptopBehavior(profile.LaptopBehavior, name);
@@ -227,6 +228,22 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         {
             throw Invalid(
                 $"The {name} custom performance combination is not supported by this device.");
+        }
+    }
+
+    private static void ValidateGpuClockTuning(PowerProfile profile, string name)
+    {
+        if (profile.GpuClockTuning is not null
+            && !GpuClockTuningSettings.IsWellFormed(profile.GpuClockTuning))
+        {
+            throw Invalid($"The {name} GPU clock tuning settings are invalid.");
+        }
+
+        if (profile.GpuClockTuning is not null
+            && profile.CustomPerformance?.GpuClockOffsets is not null)
+        {
+            throw Invalid(
+                $"The {name} profile contains both current and legacy GPU clock tuning settings.");
         }
     }
 

@@ -439,6 +439,29 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="GPU tuning"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Apply NVIDIA clock offsets independently of Power mode"
+                                                   Style="{StaticResource CardDescriptionStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="GpuClockTuningToggle"
+                                                  Grid.Column="1"
+                                                  IsOn="{Binding IsGpuClockTuningEnabled, Mode=OneWay}"
+                                                  IsEnabled="{Binding CanToggleGpuClockTuning}"
+                                                  AutomationProperties.Name="GPU tuning"
+                                                  Toggled="OnGpuClockTuningToggled" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsSubcardStyle}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="CPU" Style="{StaticResource CardTitleStyle}" />
                                     </StackPanel>
                                     <ComboBox x:Name="DashboardCustomCpuSelector"
@@ -478,7 +501,7 @@
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
+                                    local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -513,7 +536,7 @@
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
+                                    local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />

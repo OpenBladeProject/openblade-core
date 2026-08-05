@@ -8,14 +8,15 @@ public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromIn
 
 public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
 {
-    internal const int CurrentSchemaVersion = 9;
-    internal const int PreviousSchemaVersion = 8;
-    internal const int OlderSchemaVersion = 7;
-    internal const int OldestSupportedSchemaVersion = 6;
-    internal const int EarlierSupportedSchemaVersion = 5;
-    internal const int EarliestSupportedSchemaVersion = 4;
-    internal const int AncientSupportedSchemaVersion = 3;
-    internal const int PrehistoricSupportedSchemaVersion = 2;
+    internal const int CurrentSchemaVersion = 10;
+    internal const int PreviousSchemaVersion = 9;
+    internal const int OlderSchemaVersion = 8;
+    internal const int OldestSupportedSchemaVersion = 7;
+    internal const int EarlierSupportedSchemaVersion = 6;
+    internal const int EarliestSupportedSchemaVersion = 5;
+    internal const int AncientSupportedSchemaVersion = 4;
+    internal const int PrehistoricSupportedSchemaVersion = 3;
+    internal const int ArchaicSupportedSchemaVersion = 2;
     internal const int LegacySchemaVersion = 1;
 
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
@@ -94,7 +95,8 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
             or EarlierSupportedSchemaVersion
             or EarliestSupportedSchemaVersion
             or AncientSupportedSchemaVersion
-            or PrehistoricSupportedSchemaVersion)
+            or PrehistoricSupportedSchemaVersion
+            or ArchaicSupportedSchemaVersion)
         {
             ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
                 json,
@@ -151,6 +153,9 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         battery = NormalizeLegacyDisplay(battery);
         usbC = NormalizeLegacyDisplay(usbC);
         pluggedIn = NormalizeLegacyCustomPerformance(pluggedIn);
+        pluggedIn = NormalizeLegacyGpuClockTuning(pluggedIn);
+        battery = NormalizeLegacyGpuClockTuning(battery);
+        usbC = NormalizeLegacyGpuClockTuning(usbC);
         LightingPowerPolicy legacyLightingPowerPolicy =
             profiles.LightingPowerPolicy ?? LightingPowerPolicy.Disabled;
         pluggedIn = NormalizeLightingPowerPolicy(pluggedIn, legacyLightingPowerPolicy);
@@ -186,6 +191,27 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         profile.CustomPerformance is null
             ? profile with { CustomPerformance = CustomPerformanceSettings.Default }
             : profile;
+
+    private static PowerProfile NormalizeLegacyGpuClockTuning(PowerProfile profile)
+    {
+        if (profile.GpuClockTuning is not null
+            || profile.Performance != PerformancePreset.Custom
+            || profile.CustomPerformance?.GpuClockOffsets is not { } legacyOffsets)
+        {
+            return profile;
+        }
+
+        return profile with
+        {
+            CustomPerformance = profile.CustomPerformance with
+            {
+                GpuClockOffsets = null,
+            },
+            GpuClockTuning = new GpuClockTuningSettings(
+                Enabled: true,
+                legacyOffsets),
+        };
+    }
 
     private static PowerProfile NormalizeLightingPowerPolicy(
         PowerProfile profile,

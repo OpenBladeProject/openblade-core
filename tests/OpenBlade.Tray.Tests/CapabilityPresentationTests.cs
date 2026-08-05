@@ -189,7 +189,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(25, animated.Length);
+        Assert.Equal(26, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -197,6 +197,23 @@ public sealed class CapabilityPresentationTests
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsCustomPerformanceVisible",
                 StringComparison.Ordinal) is true);
+        Assert.Equal(
+            3,
+            animated.Count(element =>
+                Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                    "IsGpuClockTuningVisible",
+                    StringComparison.Ordinal) is true));
+        XElement gpuClockTuningToggle = document.Descendants()
+            .Single(element => Attribute(element, "Name") == "GpuClockTuningToggle");
+        Assert.Equal(
+            "{Binding IsGpuClockTuningEnabled, Mode=OneWay}",
+            Attribute(gpuClockTuningToggle, "IsOn"));
+        Assert.Equal(
+            "{Binding CanToggleGpuClockTuning}",
+            Attribute(gpuClockTuningToggle, "IsEnabled"));
+        Assert.Equal(
+            "OnGpuClockTuningToggled",
+            Attribute(gpuClockTuningToggle, "Toggled"));
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsFixedFanSpeedVisible",

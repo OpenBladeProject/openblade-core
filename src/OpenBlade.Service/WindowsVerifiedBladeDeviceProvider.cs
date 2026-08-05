@@ -237,6 +237,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private Task? deferredDisposal;
         private bool closing;
         private bool disposed;
+        private bool gpuClockOffsetsManaged;
         private IProductionLightingPort? lightingPort;
         // Desired Windows playback state, retained independently of any one
         // renderer port so a recycled exact-device session can reapply it.
@@ -511,18 +512,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     await port.QueryPerformanceFanStateAsync(cancellationToken)
                         .ConfigureAwait(false);
                 GpuClockOffsetCapabilities? gpuOffsets =
-                    performanceFan.Performance == PerformancePreset.Custom
+                    gpuClockOffsetsManaged
                         ? ApplyGpuPolicy(gpuClockOffsets.Query())
                         : null;
                 CustomPerformanceSettings? customPerformance =
                     performanceFan.CustomPerformance;
-                if (customPerformance is not null && gpuOffsets is not null)
-                {
-                    customPerformance = customPerformance with
-                    {
-                        GpuClockOffsets = gpuOffsets.Current,
-                    };
-                }
                 LightingSettings? lighting =
                     await ReadLightingStateCoreAsync(cancellationToken).ConfigureAwait(false);
                 LogoLightingMode? logo =
@@ -899,6 +893,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     // the paired NVML operation even if shutdown cancellation raced
                     // with the successful HID write.
                     gpuClockOffsets.Set(appliedOffsets);
+                    gpuClockOffsetsManaged = true;
                 }
                 catch (BladeWriteException exception)
                 {
@@ -958,6 +953,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
                 cancellationToken.ThrowIfCancellationRequested();
                 gpuClockOffsets.Set(value);
+                gpuClockOffsetsManaged = true;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
