@@ -27,38 +27,6 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(
             "MCU labels may use a different format. OpenBlade never downloads or installs firmware.",
             presentation);
-        Assert.Equal("0", Attribute(card, "Padding"));
-        XElement intervalSection = NamedElement(
-            document,
-            "Border",
-            "FirmwareCheckIntervalSection");
-        XElement versionsSection = NamedElement(
-            document,
-            "Border",
-            "FirmwareVersionsSection");
-        XElement footerSection = NamedElement(
-            document,
-            "Border",
-            "FirmwareFooterSection");
-        Assert.All([intervalSection, versionsSection, footerSection], section =>
-            Assert.Equal("0,1,0,0", Attribute(section, "BorderThickness")));
-
-        XElement versionsGrid = Assert.Single(versionsSection.Elements());
-        Assert.Equal("Left", Attribute(versionsGrid, "HorizontalAlignment"));
-        Assert.Equal(
-            ["120", "140", "Auto"],
-            versionsGrid
-                .Elements()
-                .Single(element => element.Name.LocalName == "Grid.ColumnDefinitions")
-                .Elements()
-                .Select(column => Attribute(column, "Width")));
-        Assert.Contains(versionsGrid.Elements(), element =>
-            Attribute(element, "Text") == "Firmware");
-
-        XElement footerGrid = Assert.Single(footerSection.Elements());
-        XElement officialLink = Assert.Single(footerGrid.Elements(), element =>
-            element.Name.LocalName == "HyperlinkButton");
-        Assert.Equal("1", Attribute(officialLink, "Grid.Column"));
         Assert.Equal(2, document.Descendants().Count(element =>
             Attribute(element, "Text") == "Checks at startup when due."));
         Assert.DoesNotContain(
@@ -84,6 +52,66 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Content") is string content
             && (content.Contains("Download", StringComparison.OrdinalIgnoreCase)
                 || content.Contains("Install", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [Fact]
+    public void MainWindow_FirmwareAssistantUsesResponsiveSettingsGroupLayout()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement card = NamedElement(document, "Border", "OfficialFirmwareUpdatesCard");
+        Assert.Equal("{StaticResource SettingsGroupStyle}", Attribute(card, "Style"));
+        Assert.Null(Attribute(card, "Padding"));
+
+        string[] sectionNames =
+        [
+            "FirmwareHeaderSection",
+            "FirmwareCheckIntervalSection",
+            "FirmwareVersionsSection",
+            "FirmwareFooterSection",
+        ];
+        XElement host = Assert.Single(card.Elements());
+        Assert.Equal(
+            sectionNames,
+            host.Elements().Select(section => Attribute(section, "Name")));
+
+        XElement versionsSection = NamedElement(
+            document,
+            "Border",
+            "FirmwareVersionsSection");
+        XElement versionsGrid = Assert.Single(versionsSection.Elements());
+        Assert.Contains(versionsGrid.Elements(), element =>
+            Attribute(element, "Text") == "Firmware");
+
+        XElement[] valueGrids = versionsGrid.Elements()
+            .Where(element => element.Name.LocalName == "Grid")
+            .ToArray();
+        Assert.Equal(4, valueGrids.Length);
+        Assert.All(valueGrids, grid => Assert.Equal(
+            2,
+            grid.Elements()
+                .Single(element => element.Name.LocalName == "Grid.ColumnDefinitions")
+                .Elements()
+                .Count()));
+
+        Assert.DoesNotContain(
+            versionsSection.Descendants()
+                .Where(element => element.Name.LocalName == "ColumnDefinition"),
+            column => double.TryParse(Attribute(column, "Width"), out _));
+
+        XElement[] versionValues = versionsSection.Descendants()
+            .Where(element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Text") is string text
+                && (text.Contains(
+                        "FirmwareUpdateViewModel.Installed",
+                        StringComparison.Ordinal)
+                    || text.Contains(
+                        "FirmwareUpdateViewModel.Published",
+                        StringComparison.Ordinal)))
+            .ToArray();
+        Assert.Equal(6, versionValues.Length);
+        Assert.All(versionValues, value =>
+            Assert.Equal("Wrap", Attribute(value, "TextWrapping")));
     }
 
     [Fact]
