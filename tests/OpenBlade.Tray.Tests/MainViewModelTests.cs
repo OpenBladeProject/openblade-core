@@ -10,6 +10,36 @@ namespace OpenBlade.Tray.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public async Task FirmwareCards_PresentInstalledMcuVersionConsistently()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "1.6.0.0",
+            "95.04.5C.40.A9",
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber);
+        var client = new FakeServiceClient();
+        await using var mainViewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher());
+        await using var firmwareViewModel = new FirmwareUpdateAssistantViewModel(
+            new RazerFirmwareUpdateClient());
+
+        await mainViewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            Firmware = firmware,
+        });
+        firmwareViewModel.UpdateInstalledFirmware(firmware);
+        await WaitUntilAsync(() => mainViewModel.AboutMcuVersionStatus == "1.06");
+
+        Assert.Equal(
+            firmwareViewModel.InstalledMcuVersion,
+            mainViewModel.AboutMcuVersionStatus);
+        Assert.Equal("1.6.0.0", firmware.McuVersion);
+    }
+
+    [Fact]
     public async Task LightingPowerPolicyEditor_StagesAndSavesRulesToActiveProfile()
     {
         var client = new FakeServiceClient();

@@ -3539,7 +3539,7 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="MCU labels may use a different format. OpenBlade never downloads or installs firmware."
+                                        <TextBlock Text="MCU versions use Razer's updater label format. OpenBlade never downloads or installs firmware."
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    TextWrapping="Wrap"
                                                    VerticalAlignment="Center" />

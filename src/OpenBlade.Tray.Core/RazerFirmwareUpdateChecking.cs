@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
@@ -400,7 +399,8 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     public string InstalledEcVersion => FirmwareValue(installedFirmware?.EcVersion);
 
-    public string InstalledMcuVersion => McuFirmwareValue(installedFirmware?.McuVersion);
+    public string InstalledMcuVersion =>
+        McuFirmwareVersionPresentation.Format(installedFirmware?.McuVersion);
 
     public string PublishedBiosVersion
     {
@@ -678,22 +678,6 @@ public sealed class FirmwareUpdateAssistantViewModel :
             || string.Equals(value.Trim(), "Unavailable", StringComparison.OrdinalIgnoreCase)
             ? "Unavailable"
             : value.Trim();
-
-    private static string McuFirmwareValue(string? value)
-    {
-        string firmwareValue = FirmwareValue(value);
-        if (Version.TryParse(firmwareValue, out Version? version)
-            && version.Build == 0
-            && version.Revision == 0
-            && version.Minor is >= 0 and <= 99)
-        {
-            return string.Create(
-                CultureInfo.InvariantCulture,
-                $"{version.Major}.{version.Minor:D2}");
-        }
-
-        return firmwareValue;
-    }
 
     private static string PublishedValue(
         string? value,

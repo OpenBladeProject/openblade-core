@@ -1214,7 +1214,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string AboutEcVersionStatus => FirmwareValue(latestStatus?.Firmware?.EcVersion);
 
-    public string AboutMcuVersionStatus => FirmwareValue(latestStatus?.Firmware?.McuVersion);
+    public string AboutMcuVersionStatus =>
+        McuFirmwareVersionPresentation.Format(latestStatus?.Firmware?.McuVersion);
 
     public string AboutVbiosVersionStatus => FirmwareValue(latestStatus?.Firmware?.VbiosVersion);
 

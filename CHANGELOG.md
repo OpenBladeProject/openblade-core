@@ -13,6 +13,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Presented the installed MCU firmware consistently in Device information and
+  the official firmware card while preserving the raw version for diagnostics
+  and compatibility checks.
 - Reported a recognized laptop with incompatible firmware as **Incompatible
   firmware** instead of also showing the contradictory **Laptop not found**
   state, using the service's exact BIOS admission result rather than unrelated
