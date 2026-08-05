@@ -280,6 +280,7 @@ type interface OpenBlade.Protocol.IBladeDevice
   method abstract System.Threading.Tasks.Task SetFanTargetsAsync(System.Int32 fan1Rpm, System.Int32 fan2Rpm, System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task SetGpuClockOffsetsAsync(OpenBlade.Contracts.GpuClockOffsetSettings value, System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task SetLightingAsync(OpenBlade.Contracts.LightingSettings value, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetPerformanceAsync(OpenBlade.Contracts.PerformancePreset value, OpenBlade.Contracts.CustomPerformanceSettings customPerformance, OpenBlade.Contracts.GpuClockOffsetSettings gpuClockOffsets, System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task SetPerformanceAsync(OpenBlade.Contracts.PerformancePreset value, OpenBlade.Contracts.CustomPerformanceSettings customPerformance, System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task SetPerformanceAsync(OpenBlade.Contracts.PerformancePreset value, System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task SetPlaybackMuteIndicatorAsync(System.Boolean muted, System.Threading.CancellationToken cancellationToken)

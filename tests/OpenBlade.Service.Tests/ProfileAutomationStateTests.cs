@@ -155,7 +155,7 @@ public sealed class ProfileAutomationStateTests
     }
 
     [Fact]
-    public void GpuClockTuning_ResolvesSeparatelyFromEachPowerProfilePreset()
+    public void GpuClockTuning_ResolvesOnAcAndFailsClosedOnBattery()
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         var pluggedInTuning = new GpuClockTuningSettings(
@@ -187,7 +187,7 @@ public sealed class ProfileAutomationStateTests
         Assert.Equal(PerformancePreset.Balanced, onAc.Performance.Value);
         Assert.Equal(pluggedInTuning, onAc.GpuClockTuning);
         Assert.Equal(PerformancePreset.BatterySaver, onBattery.Performance.Value);
-        Assert.Equal(GpuClockTuningSettings.Disabled, onBattery.GpuClockTuning);
+        Assert.Null(onBattery.GpuClockTuning);
     }
 
     [Fact]

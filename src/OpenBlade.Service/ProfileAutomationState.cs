@@ -242,11 +242,13 @@ public sealed class ProfileAutomationState
                     ?? confirmed.CustomPerformance
                     ?? CustomPerformanceSettings.Default
                 : null;
-        GpuClockTuningSettings? gpuClockTuning =
-            activePersistentPerformance?.GpuClockTuning
-            ?? activeTemporaryPerformance?.GpuClockTuning
-            ?? profile.GpuClockTuning;
-        if (gpuClockTuning is null
+        GpuClockTuningSettings? gpuClockTuning = PowerSource == PowerSource.PluggedIn
+            ? activePersistentPerformance?.GpuClockTuning
+                ?? activeTemporaryPerformance?.GpuClockTuning
+                ?? profile.GpuClockTuning
+            : null;
+        if (PowerSource == PowerSource.PluggedIn
+            && gpuClockTuning is null
             && resolvedPerformance.Value == PerformancePreset.Custom
             && customPerformance?.GpuClockOffsets is { } legacyOffsets)
         {

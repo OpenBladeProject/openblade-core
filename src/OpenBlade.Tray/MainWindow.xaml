@@ -432,7 +432,7 @@
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
+                                    local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -455,7 +455,7 @@
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">
+                                    local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />

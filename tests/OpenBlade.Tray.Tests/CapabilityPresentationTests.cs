@@ -214,6 +214,20 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "OnGpuClockTuningToggled",
             Attribute(gpuClockTuningToggle, "Toggled"));
+        Assert.Equal(
+            "{Binding IsGpuClockTuningVisible}",
+            Attribute(
+                gpuClockTuningToggle.Ancestors()
+                    .First(element => element.Name.LocalName == "Border"),
+                "AnimatedVisibility.IsVisible"));
+        XElement customCpuSelector = document.Descendants()
+            .Single(element => Attribute(element, "Name") == "DashboardCustomCpuSelector");
+        Assert.Equal(
+            "{Binding IsCustomPerformanceVisible}",
+            Attribute(
+                customCpuSelector.Ancestors()
+                    .First(element => element.Name.LocalName == "Border"),
+                "AnimatedVisibility.IsVisible"));
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsFixedFanSpeedVisible",

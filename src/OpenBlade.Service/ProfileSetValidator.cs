@@ -179,7 +179,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 
         ValidateLighting(profile.Lighting, name);
         ValidateCustomPerformance(profile, name);
-        ValidateGpuClockTuning(profile, name);
+        ValidateGpuClockTuning(profile, name, source);
         ValidateFanControl(profile, name);
         ValidateDisplay(profile.Display, name);
         ValidateLaptopBehavior(profile.LaptopBehavior, name);
@@ -231,8 +231,16 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
     }
 
-    private static void ValidateGpuClockTuning(PowerProfile profile, string name)
+    private static void ValidateGpuClockTuning(
+        PowerProfile profile,
+        string name,
+        PowerSource source)
     {
+        if (profile.GpuClockTuning is not null && source != PowerSource.PluggedIn)
+        {
+            throw Invalid($"The {name} profile cannot configure GPU clock tuning.");
+        }
+
         if (profile.GpuClockTuning is not null
             && !GpuClockTuningSettings.IsWellFormed(profile.GpuClockTuning))
         {

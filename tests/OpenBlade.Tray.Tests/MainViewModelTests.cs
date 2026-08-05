@@ -2532,6 +2532,47 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task GpuClockTuning_IsVisibleForWritablePolicyWithoutCustomPreset()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                PerformancePresets = new HashSet<PerformancePreset>
+                {
+                    PerformancePreset.Balanced,
+                },
+                GpuOverclock = new GpuOverclockCapabilities(
+                    new DeviceNumericRange(-100, 400, 5),
+                    new DeviceNumericRange(-200, 1000, 5),
+                    DeviceFeatureAccess.ReadWrite),
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                CustomPerformance = null,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Balanced,
+                    SettingValueSource.PowerProfile),
+                CustomPerformance = null,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsGpuClockTuningVisible);
+
+        Assert.DoesNotContain(
+            PerformancePreset.Custom,
+            viewModel.AvailablePerformancePresets);
+        Assert.True(viewModel.CanToggleGpuClockTuning);
+    }
+
+    [Fact]
     public async Task PerformanceOption_SameValueDoesNotNotifyTwoWayBindingAgain()
     {
         var client = new FakeServiceClient();

@@ -577,6 +577,11 @@ public sealed class ControlRequestHandlerTests
             PerformancePreset value,
             CustomPerformanceSettings? customPerformance,
             CancellationToken cancellationToken) => Count();
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            CancellationToken cancellationToken) => Count();
         public Task SetGpuClockOffsetsAsync(
             GpuClockOffsetSettings value,
             CancellationToken cancellationToken) => Count();

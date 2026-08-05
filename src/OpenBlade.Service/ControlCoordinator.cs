@@ -1308,23 +1308,15 @@ public sealed class ControlCoordinator
                 && confirmed.Cpu == desired.Cpu
                 && confirmed.Gpu == desired.Gpu);
 
-    private async Task ApplyPerformanceAndGpuClockTuningAsync(
+    private Task ApplyPerformanceAndGpuClockTuningAsync(
         PerformancePreset performance,
         CustomPerformanceSettings? customPerformance,
         GpuClockTuningSettings? gpuClockTuning,
-        CancellationToken cancellationToken)
-    {
-        await device.SetPerformanceAsync(
+        CancellationToken cancellationToken) => device.SetPerformanceAsync(
             performance,
             customPerformance,
-            cancellationToken).ConfigureAwait(false);
-        if (gpuClockTuning is not null)
-        {
-            await device.SetGpuClockOffsetsAsync(
-                gpuClockTuning.EffectiveOffsets,
-                cancellationToken).ConfigureAwait(false);
-        }
-    }
+            gpuClockTuning?.EffectiveOffsets,
+            cancellationToken);
 
     private static bool GpuClockTuningSupported(
         DeviceCapabilities capabilities,

@@ -1270,6 +1270,22 @@ public sealed class ControlCoordinatorTests
             return Task.CompletedTask;
         }
 
+        public async Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            CancellationToken cancellationToken)
+        {
+            await SetPerformanceAsync(
+                value,
+                customPerformance,
+                cancellationToken);
+            if (gpuClockOffsets is not null)
+            {
+                await SetGpuClockOffsetsAsync(gpuClockOffsets, cancellationToken);
+            }
+        }
+
         public Task SetGpuClockOffsetsAsync(
             GpuClockOffsetSettings value,
             CancellationToken cancellationToken)

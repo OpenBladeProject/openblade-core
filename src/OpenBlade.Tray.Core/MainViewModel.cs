@@ -1504,7 +1504,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool IsGpuClockTuningVisible =>
         ActivePowerSource == PowerSource.PluggedIn
-        && AvailablePerformancePresets.Contains(PerformancePreset.Custom);
+        && (AvailablePerformancePresets.Contains(PerformancePreset.Custom)
+            || Capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite });
 
     public bool IsGpuClockTuningAvailable =>
         IsGpuClockTuningVisible
@@ -1738,8 +1739,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanEditGpuClockTuning =>
         CanToggleGpuClockTuning
         && IsGpuClockTuningEnabled
-        && IsGpuClockTuningAvailable
-        && GpuClockOffsetCapabilities?.IsWellFormed == true;
+        && IsGpuClockTuningAvailable;
 
     public bool CanToggleGpuClockTuning =>
         CanEditPerformance
@@ -1999,6 +1999,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SupportsStartupAnimation));
             Notify(nameof(SupportsFunctionKeyPrimary));
             Notify(nameof(SupportsGamingMode));
+            Notify(nameof(IsGpuClockTuningVisible));
+            Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(IsSpecialKeyBindingsEditable));

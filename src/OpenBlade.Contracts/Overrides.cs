@@ -30,8 +30,8 @@ public sealed record PerformanceOverride(
             ? CustomPerformanceSettings.IsWellFormed(CustomPerformance)
             : CustomPerformance is null)
         && (GpuClockTuning is null
-            || GpuClockTuningSettings.IsWellFormed(GpuClockTuning)
-                && CustomPerformance?.GpuClockOffsets is null);
+            || (GpuClockTuningSettings.IsWellFormed(GpuClockTuning)
+                && CustomPerformance?.GpuClockOffsets is null));
 
     public static implicit operator PerformanceOverride?(
         ManualOverride<PerformancePreset>? value) => value is null
