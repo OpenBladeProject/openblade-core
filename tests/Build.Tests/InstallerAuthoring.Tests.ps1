@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $installerProject = Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj'
 $bundleSource = Join-Path $repository 'build\installer\Bundle.wxs'
+$setupPathsSource = Join-Path $repository 'src\OpenBlade.Setup\SetupPaths.cs'
 
 function Assert-True {
     param(
@@ -77,6 +78,23 @@ Assert-True ($standardBa.GetAttribute('ThemeFile') -eq 'OpenBladeTheme.xml') `
 Assert-True ([string]::IsNullOrEmpty($standardBa.GetAttribute('LicenseUrl'))) `
     'The free OpenBlade installer must not present a separate license link.'
 
+$setupPaths = Get-Content -LiteralPath $setupPathsSource -Raw
+$installDirectoryMatch = [regex]::Match(
+    $setupPaths,
+    'InstallDirectory\s*=\s*Path\.Combine\(programFilesRoot,\s*"([^"]+)"\);')
+Assert-True $installDirectoryMatch.Success `
+    'SetupPaths.InstallDirectory must combine Program Files with one directory name.'
+$installDirectoryName = $installDirectoryMatch.Groups[1].Value
+$expectedLaunchWorkingFolder = "[ProgramFiles64Folder]$installDirectoryName"
+$expectedLaunchTarget = "$expectedLaunchWorkingFolder\OpenBlade.Tray.exe"
+Assert-True (
+    $standardBa.GetAttribute('LaunchTarget') -eq $expectedLaunchTarget) `
+    'Successful interactive setup must launch the Tray from SetupPaths.InstallDirectory.'
+Assert-True (
+    $standardBa.GetAttribute('LaunchWorkingFolder') -eq
+        $expectedLaunchWorkingFolder) `
+    'The post-setup working directory must match SetupPaths.InstallDirectory.'
+
 $purgeVariable = $bundle.SelectSingleNode(
     "*[local-name()='Variable'][@Name='OpenBladePurgeProfiles']")
 Assert-True ($null -ne $purgeVariable) `
@@ -134,6 +152,14 @@ $purgeCheckbox = $theme.SelectSingleNode(
     "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Modify']/*[local-name()='Checkbox'][@Name='OpenBladePurgeProfiles']")
 Assert-True ($null -ne $purgeCheckbox) `
     'The maintenance page must offer a profile-removal checkbox.'
+$launchButton = $theme.SelectSingleNode(
+    "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Success']/*[local-name()='Button'][@Name='LaunchButton']")
+Assert-True ($null -ne $launchButton) `
+    'The success page must expose the configured OpenBlade launch action.'
+Assert-True (
+    $launchButton.GetAttribute('VisibleCondition') -eq
+        'WixBundleAction = 5 OR WixBundleAction = 7') `
+    'The OpenBlade launch action must be limited to install and repair.'
 
 $payloads = $package.SelectSingleNode("*[local-name()='Payloads']")
 Assert-True ($null -ne $payloads) 'The OpenBlade payload group is missing.'
@@ -212,6 +238,13 @@ Assert-True ($solution.IndexOf(
         'OpenBlade.Installer.wixproj',
         [StringComparison]::OrdinalIgnoreCase) -lt 0) `
     'The release-only installer project must remain outside the normal solution build.'
+
+$installerValidation = Get-Content -LiteralPath (
+    Join-Path $repository 'build\InstallerValidation.ps1') -Raw
+Assert-True ($installerValidation.IndexOf(
+        '-intermediateFolder $intermediateOutput',
+        [StringComparison]::Ordinal) -ge 0) `
+    'Installer extraction must use its isolated validation workspace.'
 
 $publish = Get-Content -LiteralPath (Join-Path $repository 'build\Publish.ps1') -Raw
 foreach ($requiredText in @(

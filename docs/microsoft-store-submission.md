@@ -35,6 +35,12 @@ synchronized with the deployed documentation and Partner Center.
   `/install /quiet /norestart`, which explicitly selects installation, suppresses
   installer UI, and prevents an automatic
   restart.
+- Partner Center owns that quiet invocation and cannot perform the
+  caller-controlled Tray relaunch used by direct automation. A Store install
+  or upgrade can therefore leave the Tray and Session Agent stopped in the
+  current sign-in session. The Store-specific recovery remains tracked in
+  [issue #25](https://github.com/OSSBlade/openblade-core/issues/25); the
+  interactive Launch action from #24 does not solve it.
 - Windows may show UAC because OpenBlade installs a per-machine LocalSystem
   service. UAC is the only permitted Store-install prompt.
 - Exit code `0` means installation succeeded. Until end-to-end Store lifecycle
@@ -96,8 +102,14 @@ test that authoring and manifest checks cannot simulate:
    Verify it replaces the installed files, preserves the profile, leaves one
    Installed apps entry, and updates the installed-version marker under
    `HKLM\SOFTWARE\OSSBlade\OpenBlade\Installer`.
-3. Repeat the upgrade with `/install /quiet /norestart` and verify the same result
-   without an application prompt or automatic restart.
+3. Repeat the direct upgrade from a normal-integrity validation harness with
+   `/install /quiet /norestart`. After setup succeeds, have that same harness
+   start `%ProgramFiles%\OpenBlade\OpenBlade.Tray.exe`. Verify the upgrade
+   replaced the files, preserved the profile, retained one Installed apps
+   entry, updated the installed-version marker, produced no application prompt
+   or automatic restart, and left exactly one usable Tray and one Session
+   Agent. This proves the caller-owned quiet path only; it does not close the
+   Partner Center-owned Store gap in issue #25.
 4. Repair, uninstall, and reinstall the new version. Verify the Microsoft
    Visual C++ prerequisite works both when absent and when the VM has an older
    14.x runtime below 14.50.35719.
