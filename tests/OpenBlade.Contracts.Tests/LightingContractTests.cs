@@ -100,7 +100,7 @@ public sealed class LightingContractTests
             LightingSettingsFactory.AudioMeter(
                 colorBoost: 1.25,
                 brightness: 23,
-                decayMilliseconds: 800),
+                decayMilliseconds: 750),
         ];
 
         Assert.All(settings, value =>
@@ -148,7 +148,7 @@ public sealed class LightingContractTests
         AudioMeterLightingParameters audioMeter =
             Assert.IsType<AudioMeterLightingParameters>(settings[16].Parameters);
         Assert.Equal(1.25, audioMeter.ColorBoost);
-        Assert.Equal(800, audioMeter.DecayMilliseconds);
+        Assert.Equal(750, audioMeter.DecayMilliseconds);
     }
 
     [Fact]
@@ -228,7 +228,7 @@ public sealed class LightingContractTests
             },
             LightingSettingsFactory.AudioMeter(1, 50) with
             {
-                Parameters = new AudioMeterLightingParameters(1, 250),
+                Parameters = new AudioMeterLightingParameters(1, 375),
             },
         ];
 
@@ -285,8 +285,10 @@ public sealed class LightingContractTests
 
     [Theory]
     [InlineData(-1, 0)]
-    [InlineData(249, 200)]
-    [InlineData(250, 300)]
+    [InlineData(124, 0)]
+    [InlineData(125, 250)]
+    [InlineData(374, 250)]
+    [InlineData(375, 500)]
     [InlineData(2501, 2000)]
     public void AudioMeterDecay_NormalizesToBoundedSteps(int input, int expected)
     {

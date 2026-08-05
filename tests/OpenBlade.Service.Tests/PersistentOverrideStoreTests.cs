@@ -276,7 +276,7 @@ public sealed class PersistentOverrideStoreTests : IDisposable
                   "parameters": {
                     "kind": "audioMeter",
                     "colorBoost": 1,
-                    "decayMilliseconds": 250
+                    "decayMilliseconds": 375
                   }
                 },
                 "customPerformance": null,
@@ -290,11 +290,11 @@ public sealed class PersistentOverrideStoreTests : IDisposable
 
         Assert.False(loaded.Recovered);
         Assert.Equal(
-            300,
+            500,
             Assert.IsType<AudioMeterLightingParameters>(
                 loaded.Overrides.Lighting?.Parameters).DecayMilliseconds);
         Assert.Contains(
-            "\"decayMilliseconds\": 300",
+            "\"decayMilliseconds\": 500",
             await File.ReadAllTextAsync(path),
             StringComparison.Ordinal);
     }

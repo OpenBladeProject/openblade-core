@@ -78,7 +78,31 @@ public sealed class ServiceAudioMeterLightingLoopTests
     }
 
     [Fact]
-    public void Decay_SilenceClearsStateImmediately()
+    public void Decay_SilenceFadesToBlackAndClearsState()
+    {
+        var smoother = new AudioMeterDecaySmoother();
+        _ = smoother.Apply(FrameWithColumns(17), TimeSpan.Zero, 1000);
+
+        AmbientLightingFrame fading = smoother.Apply(
+            FrameWithColumns(0),
+            TimeSpan.FromMilliseconds(100),
+            1000);
+        AmbientLightingFrame silent = smoother.Apply(
+            FrameWithColumns(0),
+            TimeSpan.FromMilliseconds(900),
+            1000);
+        AmbientLightingFrame resumed = smoother.Apply(
+            FrameWithColumns(4),
+            TimeSpan.FromMilliseconds(100),
+            1000);
+
+        Assert.Equal(16, CountLitColumns(fading));
+        Assert.Equal(0, CountLitColumns(silent));
+        Assert.Equal(4, CountLitColumns(resumed));
+    }
+
+    [Fact]
+    public void Decay_OffClearsSilenceImmediately()
     {
         var smoother = new AudioMeterDecaySmoother();
         _ = smoother.Apply(FrameWithColumns(17), TimeSpan.Zero, 1000);
@@ -86,22 +110,14 @@ public sealed class ServiceAudioMeterLightingLoopTests
         AmbientLightingFrame silent = smoother.Apply(
             FrameWithColumns(0),
             TimeSpan.FromMilliseconds(100),
-            1000);
-        AmbientLightingFrame resumed = smoother.Apply(
-            FrameWithColumns(4),
-            TimeSpan.FromMilliseconds(100),
-            1000);
+            0);
 
         Assert.Equal(0, CountLitColumns(silent));
-        Assert.Equal(4, CountLitColumns(resumed));
     }
 
-    [Theory]
-    [InlineData("cancellation")]
-    [InlineData("source reconnect")]
-    public void Decay_LifecycleResetDoesNotRetainPriorPeak(string lifecycle)
+    [Fact]
+    public void Decay_ResetDoesNotRetainPriorPeak()
     {
-        Assert.False(string.IsNullOrWhiteSpace(lifecycle));
         var smoother = new AudioMeterDecaySmoother();
         _ = smoother.Apply(FrameWithColumns(17), TimeSpan.Zero, 1000);
 

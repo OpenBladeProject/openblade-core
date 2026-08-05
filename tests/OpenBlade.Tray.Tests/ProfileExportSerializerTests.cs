@@ -145,7 +145,7 @@ public sealed class ProfileExportSerializerTests
         {
             PluggedIn = defaults.PluggedIn with
             {
-                Lighting = LightingSettingsFactory.AudioMeter(1, 50, 250),
+                Lighting = LightingSettingsFactory.AudioMeter(1, 50, 375),
             },
         };
         string json = ProfileExportSerializer.Serialize(
@@ -156,7 +156,7 @@ public sealed class ProfileExportSerializerTests
         ProfileSet imported = ProfileExportSerializer.Deserialize(json);
 
         Assert.Equal(
-            300,
+            500,
             Assert.IsType<AudioMeterLightingParameters>(
                 imported.PluggedIn.Lighting.Parameters).DecayMilliseconds);
     }

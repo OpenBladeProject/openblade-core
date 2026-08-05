@@ -1914,24 +1914,22 @@ public sealed class CapabilityPresentationTests
 
         viewModel.LightingEffectEditor = LightingEffect.AudioMeter;
         viewModel.LightingAudioMeterColorBoostEditor = 1.25;
-        viewModel.LightingAudioMeterDecayMillisecondsEditor = 800;
+        viewModel.LightingAudioMeterDecayMillisecondsEditor = 750;
         Assert.Equal(
             LightingSettingsFactory.AudioMeter(
                 colorBoost: 1.25,
                 brightness: 64,
-                decayMilliseconds: 800),
+                decayMilliseconds: 750),
             viewModel.LightingDraft);
-        Assert.True(viewModel.LightingShowsAudioMeterColorBoost);
-        Assert.True(viewModel.LightingShowsAudioMeterDecay);
-        Assert.Equal("0.8 seconds", viewModel.LightingAudioMeterDecayValue);
+        Assert.True(viewModel.LightingShowsAudioMeterControls);
+        Assert.Equal("Up to 0.8 seconds", viewModel.LightingAudioMeterDecayValue);
         Assert.Equal("Audio Meter", viewModel.SelectedLightingEffectOption?.Label);
 
         viewModel.LightingEffectEditor = LightingEffect.Fire;
         Assert.Equal(
             LightingSettingsFactory.Fire(64),
             viewModel.LightingDraft);
-        Assert.False(viewModel.LightingShowsAudioMeterColorBoost);
-        Assert.False(viewModel.LightingShowsAudioMeterDecay);
+        Assert.False(viewModel.LightingShowsAudioMeterControls);
         Assert.False(viewModel.LightingShowsPrimaryColor);
 
         viewModel.LightingEffectEditor = LightingEffect.Spectrum;
@@ -2049,10 +2047,10 @@ public sealed class CapabilityPresentationTests
             lightingXaml,
             StringComparison.Ordinal);
         Assert.Contains("Audio Meter color boost", lightingXaml, StringComparison.Ordinal);
-        Assert.Contains("LightingShowsAudioMeterColorBoost", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("LightingShowsAudioMeterControls", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Smooth quiet changes", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("when sound gets quieter or pauses", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Louder sounds still respond immediately.", lightingXaml, StringComparison.Ordinal);
-        Assert.Contains("LightingShowsAudioMeterDecay", lightingXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Ripple", lightingXaml, StringComparison.OrdinalIgnoreCase);
     }
 

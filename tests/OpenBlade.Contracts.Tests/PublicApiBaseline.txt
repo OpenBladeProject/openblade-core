@@ -954,7 +954,7 @@ type sealed class OpenBlade.Contracts.LightingSettings
   property System.Nullable<OpenBlade.Contracts.LogoLightingMode> LogoMode { get; init; }
 type static class OpenBlade.Contracts.LightingSettingsFactory
   field const System.Byte DefaultVisibleBrightness = 100
-  field const System.Int32 AudioMeterDecayStepMilliseconds = 100
+  field const System.Int32 AudioMeterDecayStepMilliseconds = 250
   field const System.Int32 DefaultAudioMeterDecayMilliseconds = 0
   field const System.Int32 MaxAudioMeterDecayMilliseconds = 2000
   field const System.Int32 MinAudioMeterDecayMilliseconds = 0

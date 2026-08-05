@@ -1137,7 +1137,7 @@
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsAudioMeterColorBoost, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsAudioMeterControls, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1167,7 +1167,7 @@
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsAudioMeterDecay, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsAudioMeterControls, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1175,7 +1175,7 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Smooth quiet changes" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Keeps the keyboard lit briefly as sound gets quieter. Louder sounds still respond immediately."
+                                            <TextBlock Text="Keeps the keyboard lit for up to the selected time when sound gets quieter or pauses. Louder sounds still respond immediately."
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
@@ -1185,8 +1185,8 @@
                                                        Style="{StaticResource CardTitleStyle}" />
                                             <Slider Minimum="0"
                                                     Maximum="2000"
-                                                    StepFrequency="100"
-                                                    SmallChange="100"
+                                                    StepFrequency="250"
+                                                    SmallChange="250"
                                                     LargeChange="500"
                                                     IsThumbToolTipEnabled="False"
                                                     AutomationProperties.Name="Audio Meter quiet-change smoothing"

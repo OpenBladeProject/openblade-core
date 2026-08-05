@@ -201,14 +201,17 @@ internal sealed class AudioMeterDecaySmoother
         }
 
         int targetColumns = CountLitColumns(frame);
-        if (targetColumns == 0)
+        if (decayMilliseconds == 0)
         {
-            Reset();
+            displayedColumns = targetColumns == 0 ? null : targetColumns;
             return frame;
         }
-        if (decayMilliseconds == 0
-            || displayedColumns is null
-            || targetColumns >= displayedColumns.Value)
+        if (displayedColumns is null)
+        {
+            displayedColumns = targetColumns == 0 ? null : targetColumns;
+            return frame;
+        }
+        if (targetColumns >= displayedColumns.Value)
         {
             displayedColumns = targetColumns;
             return frame;
@@ -220,6 +223,12 @@ internal sealed class AudioMeterDecaySmoother
                 * elapsedMilliseconds
                 / decayMilliseconds);
         displayedColumns = Math.Max(targetColumns, decayedColumns);
+        if (displayedColumns.Value <= 0)
+        {
+            Reset();
+            return frame;
+        }
+
         int litColumns = (int)Math.Ceiling(displayedColumns.Value);
         return litColumns == targetColumns
             ? frame
@@ -442,7 +451,6 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
         }
         finally
         {
-            smoother.Reset();
             ResetSampler(ref sampler);
         }
     }

@@ -110,7 +110,7 @@ public sealed class IpcMessageCodecTests
                 LightingSettingsFactory.AudioMeter(
                     colorBoost: 1.5,
                     brightness: 60,
-                    decayMilliseconds: 800),
+                    decayMilliseconds: 750),
                 OverrideLifetime.Persistent)),
         new StepKeyboardBrightnessRequest(
             OpenBladeIpc.ProtocolVersion,
@@ -169,7 +169,7 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             new ManualOverride<LightingSettings>(
-                LightingSettingsFactory.AudioMeter(1, 50, 800),
+                LightingSettingsFactory.AudioMeter(1, 50, 750),
                 OverrideLifetime.Persistent));
         using var encoded = new MemoryStream();
         await IpcMessageCodec.WriteRequestAsync(encoded, request, CancellationToken.None);

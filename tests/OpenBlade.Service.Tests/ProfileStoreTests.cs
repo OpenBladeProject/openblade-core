@@ -243,7 +243,7 @@ public sealed class ProfileStoreTests : IDisposable
                 Lighting = LightingSettingsFactory.AudioMeter(
                     colorBoost: 1,
                     brightness: 50,
-                    decayMilliseconds: 250),
+                    decayMilliseconds: 375),
             },
         };
         await File.WriteAllBytesAsync(
@@ -267,12 +267,12 @@ public sealed class ProfileStoreTests : IDisposable
 
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.Equal(
-            300,
+            500,
             Assert.IsType<AudioMeterLightingParameters>(
                 result.Profiles.PluggedIn.Lighting.Parameters).DecayMilliseconds);
         string rewritten = await File.ReadAllTextAsync(path);
         Assert.Contains("\"schemaVersion\": 9", rewritten, StringComparison.Ordinal);
-        Assert.Contains("\"decayMilliseconds\": 300", rewritten, StringComparison.Ordinal);
+        Assert.Contains("\"decayMilliseconds\": 500", rewritten, StringComparison.Ordinal);
     }
 
     [Fact]

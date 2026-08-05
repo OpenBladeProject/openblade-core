@@ -103,7 +103,7 @@ public static class LightingSettingsFactory
     public const int DefaultAudioMeterDecayMilliseconds = 0;
     public const int MinAudioMeterDecayMilliseconds = 0;
     public const int MaxAudioMeterDecayMilliseconds = 2000;
-    public const int AudioMeterDecayStepMilliseconds = 100;
+    public const int AudioMeterDecayStepMilliseconds = 250;
     public static RgbColor DefaultVisibleColor { get; } = new(0x47, 0xE1, 0x0C);
 
     public static LightingSettings Off() => new(
