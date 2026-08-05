@@ -167,7 +167,9 @@ submodules.
    generated diff; do not hand-edit the workflow-owned branch or bypass its
    exact-tag and force-with-lease guards. Keep entries as `- ` bullets under
    `### ` categories; continuation paragraphs, nested lists, and fenced blocks
-   remain part of the preceding bullet.
+   remain part of the preceding bullet. Editing a bullet already included in a
+   published nightly creates a new entry at the next nightly boundary while
+   the earlier section retains its exact published wording.
 9. Commit and push coherent slices. Do not bundle capture evidence, product
    code, history maintenance, and unrelated formatting in one commit.
 10. Preserve the line endings declared by `.editorconfig` and `.gitattributes`.
