@@ -15,7 +15,7 @@ public sealed class MainViewModelTests
         var firmware = new FirmwareVersions(
             "3.01",
             "1.04",
-            "1.6.0.0",
+            "1.7.0.0",
             "95.04.5C.40.A9",
             RazerBladeModelCatalog.OpenBladeTargetModelNumber);
         var client = new FakeServiceClient();
@@ -23,7 +23,7 @@ public sealed class MainViewModelTests
             client,
             new RecordingDispatcher());
         await using var firmwareViewModel = new FirmwareUpdateAssistantViewModel(
-            new RazerFirmwareUpdateClient());
+            new StubFirmwareUpdateClient());
 
         await mainViewModel.StartAsync();
         client.Publish(CreateStatus(verified: true, blocked: false) with
@@ -31,12 +31,16 @@ public sealed class MainViewModelTests
             Firmware = firmware,
         });
         firmwareViewModel.UpdateInstalledFirmware(firmware);
-        await WaitUntilAsync(() => mainViewModel.AboutMcuVersionStatus == "1.06");
+        await WaitUntilAsync(() => mainViewModel.IsConnected);
 
+        Assert.Equal("1.07", mainViewModel.AboutMcuVersionStatus);
         Assert.Equal(
             firmwareViewModel.InstalledMcuVersion,
             mainViewModel.AboutMcuVersionStatus);
-        Assert.Equal("1.6.0.0", firmware.McuVersion);
+        Assert.Equal(
+            "OpenBlade has not tested this configuration: MCU 1.07.",
+            mainViewModel.DashboardTestedPlatformWarningMessage);
+        Assert.Equal("1.7.0.0", mainViewModel.DetectedFirmware?.McuVersion);
     }
 
     [Fact]
@@ -4703,7 +4707,7 @@ public sealed class MainViewModelTests
             "Untested platform configuration",
             viewModel.PlatformCompatibilityWarningTitle);
         Assert.Equal(
-            "OpenBlade has not tested this configuration: MCU 1.7.0.0.",
+            "OpenBlade has not tested this configuration: MCU 1.07.",
             viewModel.DashboardTestedPlatformWarningMessage);
         Assert.Contains(
             "This is a compatibility notice, not a hardware failure.",
@@ -5755,6 +5759,14 @@ public sealed class MainViewModelTests
             Interlocked.Increment(ref completedCalls);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class StubFirmwareUpdateClient : IRazerFirmwareUpdateClient
+    {
+        public Task<RazerPublishedFirmwareVersions> GetPublishedVersionsAsync(
+            RazerFirmwareSupportPage supportPage,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new RazerPublishedFirmwareVersions(null, null, null));
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
