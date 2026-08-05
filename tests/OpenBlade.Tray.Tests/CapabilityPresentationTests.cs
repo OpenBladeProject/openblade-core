@@ -1732,7 +1732,7 @@ public sealed class CapabilityPresentationTests
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(
+        await client.PublishAndWaitAsync(CreateStatus(
             verified: true,
             blocked: false,
             capabilities: new DeviceCapabilities(
@@ -1740,7 +1740,6 @@ public sealed class CapabilityPresentationTests
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Static },
                 ChargeLimits(), true, true)));
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
 
         viewModel.LightingEffectEditor = LightingEffect.Static;
         viewModel.LightingBrightnessEditor = 64;
