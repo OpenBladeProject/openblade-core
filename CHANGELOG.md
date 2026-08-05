@@ -15,6 +15,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Shortened the official firmware card and displayed decoded MCU versions in
   the same release format used by Razer's updater labels.
+- Fixed Custom performance controls not appearing until a mode switch when the
+  tray starts with Custom mode already active.
 - Recorded the combined hardware-cleanup result during every graceful service
   stop so deliberate safety skips remain diagnosable without warning noise.
 - Restored firmware-managed Automatic fan control during a graceful service
@@ -91,6 +93,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Added a Launch action after successful graphical install or repair so a
+  normally started upgrade does not leave the Tray and Session Agent stopped
+  until the next sign-in. The launched processes inherit the installer's user
+  context. Quiet callers still relaunch the installed Tray explicitly; the
+  Partner Center-owned Store path remains tracked in issue #25.
 - Made rapid performance-key presses replace the visible Windows notification
   so it immediately reflects the newest selected mode instead of queuing stale
   profile changes.

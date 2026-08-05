@@ -4032,6 +4032,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             AvailablePerformancePresets = performancePresets;
             // WinUI clears a ComboBox selection when ItemsSource is replaced.
             Notify(nameof(SelectedPerformance));
+            Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsGpuClockTuningAvailable));
+            Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(PluggedInPerformanceEditor));
             Notify(nameof(BatteryPerformanceEditor));
             Notify(nameof(UsbCPerformanceEditor));
