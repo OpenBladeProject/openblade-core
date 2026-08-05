@@ -6503,10 +6503,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private static string FormatColor(RgbColor color) =>
         $"#{color.Red:X2}{color.Green:X2}{color.Blue:X2}";
 
-    private static string FormatAudioMeterDecay(int milliseconds) =>
-        milliseconds == 0
-            ? "Off"
-            : $"Up to {milliseconds / 1000d:0.##} seconds";
+    private static string FormatAudioMeterDecay(int milliseconds) => milliseconds switch
+    {
+        0 => "Off",
+        1000 => "Up to 1 second",
+        _ => $"Up to {milliseconds / 1000d:0.##} seconds",
+    };
 
     private static string FormatDisplayProfile(DisplayProfileSettings? display)
     {
