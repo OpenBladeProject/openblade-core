@@ -25,7 +25,7 @@ function Get-WorkflowJobBlock {
     $pattern = '(?ms)^  ' + [Regex]::Escape($Job) +
         ':\r?\n.*?(?=^  [a-z0-9][a-z0-9-]*:\r?\n|\z)'
     $match = [Regex]::Match($Workflow, $pattern)
-    Assert-True $match.Success "Shared build workflow is missing job '$Job'."
+    Assert-True $match.Success "Workflow is missing job '$Job'."
     return $match.Value
 }
 
@@ -135,17 +135,96 @@ Assert-True ($nightly.Contains('id-token: write')) `
     'Nightly provenance attestation requires OIDC permission.'
 Assert-True ($nightly.Contains('attestations: write')) `
     'Nightly provenance attestation requires attestation permission.'
+$publishJob = Get-WorkflowJobBlock `
+    -Workflow $nightly `
+    -Job 'publish-nightly-release'
+$changelogJob = Get-WorkflowJobBlock `
+    -Workflow $nightly `
+    -Job 'update-nightly-changelog'
 foreach ($requiredReleaseContract in @(
         'publish-nightly-release:',
         "if: `${{ github.ref == 'refs/heads/main' }}",
-        'contents: write',
+        'fetch-depth: 0',
+        './build/NightlyChangelog.ps1',
+        'OpenBlade-Nightly-CHANGELOG.md',
         'gh release create',
         '--prerelease',
         '--latest=false',
         'artifacts/OpenBlade-Setup.exe.sha256',
-        'artifacts/OpenBlade-Nightly.json')) {
+        'artifacts/OpenBlade-Nightly.json',
+        'update-nightly-changelog:',
+        'needs: publish-nightly-release',
+        'docs/nightly-changelog-automation',
+        '--force-with-lease=',
+        'gh pr create',
+        '--draft')) {
     Assert-True ($nightly.Contains($requiredReleaseContract)) `
         "Nightly release publishing is missing '$requiredReleaseContract'."
+}
+Assert-True ($publishJob.Contains('contents: write')) `
+    'Only the release job needs permission to publish repository contents.'
+Assert-True (-not $publishJob.Contains('pull-requests: write')) `
+    'The release job must not receive pull-request write permission.'
+Assert-True ($changelogJob.Contains('contents: write')) `
+    'The changelog job needs permission to update its bot branch.'
+Assert-True ($changelogJob.Contains('pull-requests: write')) `
+    'The changelog job needs permission to open or update its draft pull request.'
+Assert-True ($publishJob.Contains(
+        'Nightly changelog tally failed without blocking publication')) `
+    'Changelog tally failures must not prevent nightly publication.'
+Assert-True ($publishJob.Contains(
+        'The attached changelog is the exact source snapshot.')) `
+    'A failed tally must attach and identify the exact source changelog.'
+Assert-True ($publishJob.Contains(
+        'Changelog processing runs independently after publication.')) `
+    'Initial release notes must describe processing without promising an attachment.'
+Assert-True (-not $publishJob.Contains(
+        'changelog tally is attached after publication')) `
+    'Initial release notes must not promise an attachment before upload succeeds.'
+Assert-True ($publishJob.Contains('continue-on-error: true')) `
+    'Attaching the changelog must remain nonfatal after release publication.'
+$publishIndex = $publishJob.IndexOf(
+    'gh release create',
+    [StringComparison]::Ordinal)
+$tallyIndex = $publishJob.IndexOf(
+    'Write-OpenBladeNightlyChangelogSnapshot',
+    [StringComparison]::Ordinal)
+Assert-True ($publishIndex -ge 0 -and $publishIndex -lt $tallyIndex) `
+    'The nightly release must be published before changelog generation begins.'
+Assert-True (-not $nightly.Contains('[DateTimeOffset]::UtcNow')) `
+    'Nightly changelog dates must not depend on a second wall-clock reading.'
+Assert-True (-not $nightly.Contains('metadata.createdAtUtc')) `
+    'Nightly changelog dates must not differ between release and update jobs.'
+Assert-True ([Regex]::Matches(
+        $nightly,
+        '-CurrentPublishedAt \$currentPublishedAt').Count -eq 2) `
+    'Both changelog paths must use the canonical release publication timestamp.'
+Assert-True (-not $nightly.Contains('git push origin main')) `
+    'Nightly changelog automation must never push directly to main.'
+$pwshBlockPattern =
+    '(?ms)^      - name:.*?^        shell: pwsh\r?\n' +
+    '        run: \|\r?\n' +
+    '(?<script>(?:(?: {10}[^\r\n]*)?\r?\n)+)'
+$pwshBlocks = [Regex]::Matches($nightly, $pwshBlockPattern)
+Assert-True ($pwshBlocks.Count -ge 2) `
+    'Nightly workflow tests must parse each multiline PowerShell step.'
+foreach ($pwshBlock in $pwshBlocks) {
+    $scriptText = @(
+        $pwshBlock.Groups['script'].Value -split '\r?\n' |
+            ForEach-Object { $_ -replace '^          ', '' }) -join "`n"
+    $scriptText = [Regex]::Replace(
+        $scriptText,
+        '\$\{\{.*?\}\}',
+        '1')
+    $tokens = $null
+    $parseErrors = $null
+    [void][Management.Automation.Language.Parser]::ParseInput(
+        $scriptText,
+        [ref]$tokens,
+        [ref]$parseErrors)
+    Assert-True ($parseErrors.Count -eq 0) (
+        'Nightly workflow contains invalid embedded PowerShell: ' +
+        (($parseErrors | ForEach-Object Message) -join '; '))
 }
 Assert-True (-not $build.Contains('id-token: write')) `
     'The shared build workflow must not elevate stable CI permissions.'

@@ -198,7 +198,10 @@ The `Nightly` GitHub Actions workflow builds the latest committed `main` every
 day at 09:17 UTC and can also be started manually. It runs the same formatting,
 build, test, authoring, and production-publish gates as CI, retains the Actions
 artifact for 14 days, and publishes each successful `main` build as a GitHub
-prerelease with its installer, checksum, and metadata.
+prerelease with its installer, checksum, metadata, and a changelog snapshot
+generated from the exact build commit. After publishing, the workflow opens or
+updates a draft documentation pull request that records every missing nightly
+boundary while preserving newer `Unreleased` entries from `main`.
 
 Nightlies are test builds, not stable releases. They appear on the Releases
 page and are offered only when **Nightly** is selected as the in-app update
@@ -218,6 +221,14 @@ time, workflow run, installer hash, and Authenticode status. Unless the nightly
 workflow is later connected to the protected release-signing certificate, its
 installer is expected to report `NotSigned` and Windows may show an
 unrecognized-publisher warning.
+
+The changelog update job requires the repository setting **Allow GitHub Actions
+to create and approve pull requests**. Its token is scoped to repository
+contents and pull requests only in that job. If the setting is disabled, the
+nightly release remains published and the failed changelog job can be rerun
+after a maintainer enables it. Changelog tally errors are also isolated from
+publication: the release attaches the exact source changelog and reports the
+tally failure instead of withholding the installer and checksum.
 
 ## Hardware development
 
