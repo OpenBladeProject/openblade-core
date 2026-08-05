@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Simplified the tray right-click menu to **Open** and **Exit**. Exiting now
+  asks whether to leave keyboard lighting, hotkeys, profiles, and automation
+  running in the background or shut down OpenBlade completely.
 - Reduced idle CPU wakeups by replacing hidden live-reading polling with a
   rate-limited on-hover refresh, retaining the last reading between hovers,
   and applying EcoQoS plus an efficient processor selection to the hidden tray
