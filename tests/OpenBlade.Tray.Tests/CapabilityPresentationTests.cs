@@ -8,6 +8,8 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class CapabilityPresentationTests
 {
+    private static readonly TimeSpan TestDeadlockGuard = TimeSpan.FromSeconds(5);
+
     [Fact]
     public void MainWindow_FirmwareAssistantIsReadOnlyAndModelScoped()
     {
@@ -1730,7 +1732,7 @@ public sealed class CapabilityPresentationTests
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(
+        await client.PublishAndWaitAsync(CreateStatus(
             verified: true,
             blocked: false,
             capabilities: new DeviceCapabilities(
@@ -1738,7 +1740,6 @@ public sealed class CapabilityPresentationTests
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Static },
                 ChargeLimits(), true, true)));
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
 
         viewModel.LightingEffectEditor = LightingEffect.Static;
         viewModel.LightingBrightnessEditor = 64;
@@ -1761,7 +1762,7 @@ public sealed class CapabilityPresentationTests
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(
+        await client.PublishAndWaitAsync(CreateStatus(
             verified: true,
             blocked: false,
             capabilities: new DeviceCapabilities(
@@ -1769,10 +1770,10 @@ public sealed class CapabilityPresentationTests
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
                 ChargeLimits(), true, true)));
-        await WaitUntilAsync(() =>
-            viewModel.CanControlHardware
-            && viewModel.AvailableLightingEffectOptions.Count ==
-                Enum.GetValues<LightingEffect>().Length);
+        Assert.True(viewModel.CanControlHardware);
+        Assert.Equal(
+            Enum.GetValues<LightingEffect>().Length,
+            viewModel.AvailableLightingEffectOptions.Count);
         Assert.Equal(LightingEffect.Off, viewModel.AvailableLightingEffectOptions[0].Effect);
         Assert.Equal(
             viewModel.AvailableLightingEffectOptions
@@ -2154,20 +2155,38 @@ public sealed class CapabilityPresentationTests
 
     private sealed class PresentationClient : OpenBlade.Testing.UnavailableServiceClient
     {
-        private readonly Channel<ServiceWatchUpdate> statuses = Channel.CreateUnbounded<ServiceWatchUpdate>();
+        private readonly Channel<PublishedStatus> statuses =
+            Channel.CreateUnbounded<PublishedStatus>();
         public ProfileSet? SavedProfiles { get; private set; }
         public BatteryPolicy? SavedBatteryPolicy { get; private set; }
         public bool? SavedBatteryProtection { get; private set; }
         public void Publish(ServiceStatusSnapshot status) =>
-            statuses.Writer.TryWrite(new ServiceWatchUpdate.Connected(status));
+            Assert.True(statuses.Writer.TryWrite(new(
+                new ServiceWatchUpdate.Connected(status),
+                Delivered: null)));
+        public async Task PublishAndWaitAsync(ServiceStatusSnapshot status)
+        {
+            var delivered = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            Assert.True(statuses.Writer.TryWrite(new(
+                new ServiceWatchUpdate.Connected(status),
+                delivered)));
+            await delivered.Task.WaitAsync(TestDeadlockGuard);
+        }
         public override async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
         {
-            await foreach (ServiceWatchUpdate status in statuses.Reader.ReadAllAsync(token))
+            await foreach (PublishedStatus status in statuses.Reader.ReadAllAsync(token))
             {
-                yield return status;
+                yield return status.Update;
+                status.Delivered?.TrySetResult();
             }
         }
+
+        private sealed record PublishedStatus(
+            ServiceWatchUpdate Update,
+            TaskCompletionSource? Delivered);
+
         public override Task<ControlOperationResult> UpdateProfilesAsync(
             ProfileSet profiles,
             CancellationToken token)
