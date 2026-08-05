@@ -19,6 +19,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Recorded the combined hardware-cleanup result during every graceful service
+  stop so deliberate safety skips remain diagnosable without warning noise.
 - Restored firmware-managed Automatic fan control during a graceful service
   stop when the current service instance owns a fixed, maximum, or
   service-rendered fan curve, while retaining the saved fan intent for the next
