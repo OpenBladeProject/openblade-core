@@ -58,14 +58,20 @@ foreach ($parallelJob in @($qualityJob, $contractJob, $installerJob)) {
 }
 Assert-True ($qualityJob.Contains('dotnet test OpenBlade.slnx')) `
     'The quality lane must own solution tests.'
+Assert-True ($qualityJob.Contains('submodules: recursive')) `
+    'The quality lane must check out capture fixtures used by protocol tests.'
 Assert-True (-not $qualityJob.Contains('Get-ChildItem .\tests\Build.Tests')) `
     'The quality lane must not serialize build contracts after solution tests.'
 Assert-True ($contractJob.Contains('Get-ChildItem .\tests\Build.Tests')) `
     'The build-contract lane must own the PowerShell contract suites.'
+Assert-True ($contractJob.Contains('submodules: recursive')) `
+    'The build-contract lane must check out capture tools used by contract tests.'
 Assert-True (-not $contractJob.Contains('.\build\Publish.ps1')) `
     'The build-contract lane must not serialize installer publication.'
 Assert-True ($installerJob.Contains('.\build\Publish.ps1')) `
     'The installer lane must own production publication.'
+Assert-True ($installerJob.Contains('submodules: false')) `
+    'The installer lane must not fetch the captures submodule it does not consume.'
 foreach ($requiredGateDependency in @(
         '- validate-request',
         '- quality-and-tests',
@@ -93,13 +99,15 @@ foreach ($requiredBuildStep in @(
 }
 foreach ($requiredGateContract in @(
         'if: ${{ inputs.run-installer }}',
-        'if: ${{ always() && !cancelled() }}',
+        'if: ${{ always() }}',
         'OPENBLADE_INSTALLER_RESULT: ${{ needs.installer-validation.result }}',
         'OPENBLADE_RUN_INSTALLER: ${{ inputs.run-installer }}',
-        "'skipped'")) {
+        './build/Assert-CiLaneResults.ps1')) {
     Assert-True ($build.Contains($requiredGateContract)) `
         "Shared build workflow is missing final-gate contract '$requiredGateContract'."
 }
+Assert-True (-not $gateJob.Contains('!cancelled()')) `
+    'Cancellation must reach the final gate and fail its required check.'
 
 Assert-True ($nightly.Contains("cron: '17 9 * * *'")) `
     'Nightly builds must run away from the top-of-hour Actions peak.'

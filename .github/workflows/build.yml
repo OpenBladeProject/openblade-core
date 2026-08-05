@@ -122,6 +122,9 @@ jobs:
       - name: Restore
         run: dotnet restore OpenBlade.slnx -p:NuGetAudit=false
 
+      # This lane intentionally does not build the solution first. Contract
+      # scripts inspect source or produce their own isolated build outputs;
+      # tests that consume shared bin/obj output belong in quality-and-tests.
       - name: Validate installer and Store authoring
         shell: powershell
         run: |
@@ -144,7 +147,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-          submodules: recursive
+          submodules: false
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
@@ -187,10 +190,16 @@ jobs:
       - quality-and-tests
       - build-contracts
       - installer-validation
-    if: ${{ always() && !cancelled() }}
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Check out gate script
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: false
+
       - name: Verify required validation lanes
         shell: pwsh
         env:
@@ -200,22 +209,9 @@ jobs:
           OPENBLADE_INSTALLER_RESULT: ${{ needs.installer-validation.result }}
           OPENBLADE_RUN_INSTALLER: ${{ inputs.run-installer }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          foreach ($requiredResult in @(
-              $env:OPENBLADE_VALIDATE_RESULT,
-              $env:OPENBLADE_QUALITY_RESULT,
-              $env:OPENBLADE_CONTRACT_RESULT)) {
-            if ($requiredResult -ne 'success') {
-              throw "A required validation lane finished with '$requiredResult'."
-            }
-          }
-
-          $expectedInstallerResult = if ($env:OPENBLADE_RUN_INSTALLER -eq 'true') {
-            'success'
-          }
-          else {
-            'skipped'
-          }
-          if ($env:OPENBLADE_INSTALLER_RESULT -ne $expectedInstallerResult) {
-            throw "Installer validation finished with '$env:OPENBLADE_INSTALLER_RESULT'; expected '$expectedInstallerResult'."
-          }
+          ./build/Assert-CiLaneResults.ps1 `
+            -ValidateResult $env:OPENBLADE_VALIDATE_RESULT `
+            -QualityResult $env:OPENBLADE_QUALITY_RESULT `
+            -ContractResult $env:OPENBLADE_CONTRACT_RESULT `
+            -InstallerResult $env:OPENBLADE_INSTALLER_RESULT `
+            -RunInstaller $env:OPENBLADE_RUN_INSTALLER
