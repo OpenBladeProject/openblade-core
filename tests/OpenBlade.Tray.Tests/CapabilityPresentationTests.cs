@@ -27,6 +27,38 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(
             "MCU labels may use a different format. OpenBlade never downloads or installs firmware.",
             presentation);
+        Assert.Equal("0", Attribute(card, "Padding"));
+        XElement intervalSection = NamedElement(
+            document,
+            "Border",
+            "FirmwareCheckIntervalSection");
+        XElement versionsSection = NamedElement(
+            document,
+            "Border",
+            "FirmwareVersionsSection");
+        XElement footerSection = NamedElement(
+            document,
+            "Border",
+            "FirmwareFooterSection");
+        Assert.All([intervalSection, versionsSection, footerSection], section =>
+            Assert.Equal("0,1,0,0", Attribute(section, "BorderThickness")));
+
+        XElement versionsGrid = Assert.Single(versionsSection.Elements());
+        Assert.Equal("Left", Attribute(versionsGrid, "HorizontalAlignment"));
+        Assert.Equal(
+            ["120", "140", "Auto"],
+            versionsGrid
+                .Elements()
+                .Single(element => element.Name.LocalName == "Grid.ColumnDefinitions")
+                .Elements()
+                .Select(column => Attribute(column, "Width")));
+        Assert.Contains(versionsGrid.Elements(), element =>
+            Attribute(element, "Text") == "Firmware");
+
+        XElement footerGrid = Assert.Single(footerSection.Elements());
+        XElement officialLink = Assert.Single(footerGrid.Elements(), element =>
+            element.Name.LocalName == "HyperlinkButton");
+        Assert.Equal("1", Attribute(officialLink, "Grid.Column"));
         Assert.Equal(2, document.Descendants().Count(element =>
             Attribute(element, "Text") == "Checks at startup when due."));
         Assert.DoesNotContain(

@@ -3404,87 +3404,119 @@
                         <Border x:Name="OfficialFirmwareUpdatesCard"
                                 Style="{StaticResource CardStyle}"
                                 Margin="0,18,0,0"
-                                Padding="18"
+                                Padding="0"
                                 Visibility="{x:Bind FirmwareUpdateViewModel.IsSupported, Mode=OneWay}"
                                 AutomationProperties.Name="Official Razer firmware update assistant">
-                            <StackPanel Spacing="12">
-                                <Grid ColumnSpacing="12">
+                            <StackPanel>
+                                <Grid Padding="18,18,18,14" ColumnSpacing="12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Official firmware"
-                                               Style="{StaticResource CardTitleStyle}"
-                                               VerticalAlignment="Center" />
+                                    <StackPanel Spacing="5">
+                                        <Grid ColumnSpacing="8" HorizontalAlignment="Left">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Official firmware"
+                                                       Style="{StaticResource CardTitleStyle}"
+                                                       VerticalAlignment="Center" />
+                                            <ProgressRing Grid.Column="1"
+                                                          Style="{StaticResource FirmwareProgressRingStyle}"
+                                                          IsActive="{x:Bind FirmwareUpdateViewModel.IsChecking, Mode=OneWay}"
+                                                          Visibility="{x:Bind FirmwareUpdateViewModel.IsChecking, Mode=OneWay}"
+                                                          AutomationProperties.Name="Checking Razer for firmware versions" />
+                                        </Grid>
+                                        <TextBlock Text="{x:Bind FirmwareUpdateViewModel.StatusText, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
                                     <Button Grid.Column="1"
                                             Content="Check Razer"
                                             Command="{x:Bind FirmwareUpdateViewModel.CheckCommand}"
                                             AutomationProperties.Name="Check official Razer firmware versions" />
                                 </Grid>
 
-                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                              HorizontalAlignment="Left"
-                                              IsActive="{x:Bind FirmwareUpdateViewModel.IsChecking, Mode=OneWay}"
-                                              Visibility="{x:Bind FirmwareUpdateViewModel.IsChecking, Mode=OneWay}"
-                                              AutomationProperties.Name="Checking Razer for firmware versions" />
-                                <TextBlock Text="{x:Bind FirmwareUpdateViewModel.StatusText, Mode=OneWay}"
-                                           Style="{StaticResource SecondaryTextStyle}"
-                                           TextWrapping="Wrap" />
+                                <Border x:Name="FirmwareCheckIntervalSection"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="0,1,0,0"
+                                        Padding="18,12">
+                                    <Grid ColumnSpacing="18">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Check interval"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Checks at startup when due."
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1"
+                                                  MinWidth="160"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Firmware update check interval"
+                                                  ItemsSource="{x:Bind FirmwareUpdateViewModel.IntervalOptions, Mode=OneWay}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedItem="{x:Bind FirmwareUpdateViewModel.SelectedIntervalOption, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind FirmwareUpdateViewModel.SelectedIntervalOption, Mode=OneWay}" />
+                                    </Grid>
+                                </Border>
 
-                                <Grid ColumnSpacing="18">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Check interval"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Checks at startup when due."
+                                <Border x:Name="FirmwareVersionsSection"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="0,1,0,0"
+                                        Padding="18,14">
+                                    <Grid ColumnSpacing="24" RowSpacing="8" HorizontalAlignment="Left">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="120" />
+                                            <ColumnDefinition Width="140" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="Firmware" Style="{StaticResource SecondaryTextStyle}" />
+                                        <TextBlock Grid.Column="1" Text="Installed" Style="{StaticResource SecondaryTextStyle}" />
+                                        <TextBlock Grid.Column="2" Text="Published updater" Style="{StaticResource SecondaryTextStyle}" />
+                                        <TextBlock Grid.Row="1" Text="BIOS" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind FirmwareUpdateViewModel.InstalledBiosVersion, Mode=OneWay}" />
+                                        <TextBlock Grid.Row="1" Grid.Column="2" Text="{x:Bind FirmwareUpdateViewModel.PublishedBiosVersion, Mode=OneWay}" />
+                                        <TextBlock Grid.Row="2" Text="EC" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind FirmwareUpdateViewModel.InstalledEcVersion, Mode=OneWay}" />
+                                        <TextBlock Grid.Row="2" Grid.Column="2" Text="{x:Bind FirmwareUpdateViewModel.PublishedEcVersion, Mode=OneWay}" />
+                                        <TextBlock Grid.Row="3" Text="MCU" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{x:Bind FirmwareUpdateViewModel.InstalledMcuVersion, Mode=OneWay}" />
+                                        <TextBlock Grid.Row="3" Grid.Column="2" Text="{x:Bind FirmwareUpdateViewModel.PublishedMcuVersion, Mode=OneWay}" />
+                                    </Grid>
+                                </Border>
+
+                                <Border x:Name="FirmwareFooterSection"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="0,1,0,0"
+                                        Padding="18,12,18,14">
+                                    <Grid ColumnSpacing="24">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="MCU labels may use a different format. OpenBlade never downloads or installs firmware."
                                                    Style="{StaticResource SecondaryTextStyle}"
-                                                   TextWrapping="Wrap" />
-                                    </StackPanel>
-                                    <ComboBox Grid.Column="1"
-                                              MinWidth="160"
-                                              Style="{StaticResource SettingsPickerStyle}"
-                                              AutomationProperties.Name="Firmware update check interval"
-                                              ItemsSource="{x:Bind FirmwareUpdateViewModel.IntervalOptions, Mode=OneWay}"
-                                              DisplayMemberPath="Label"
-                                              SelectedItem="{x:Bind FirmwareUpdateViewModel.SelectedIntervalOption, Mode=TwoWay}"
-                                              local:StableComboBoxSelection.Anchor="{x:Bind FirmwareUpdateViewModel.SelectedIntervalOption, Mode=OneWay}" />
-                                </Grid>
-
-                                <Grid ColumnSpacing="18" RowSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="2*" />
-                                        <ColumnDefinition Width="2*" />
-                                        <ColumnDefinition Width="2*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Grid.Column="1" Text="Installed" Style="{StaticResource SecondaryTextStyle}" />
-                                    <TextBlock Grid.Column="2" Text="Published updater" Style="{StaticResource SecondaryTextStyle}" />
-                                    <TextBlock Grid.Row="1" Text="BIOS" Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind FirmwareUpdateViewModel.InstalledBiosVersion, Mode=OneWay}" />
-                                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{x:Bind FirmwareUpdateViewModel.PublishedBiosVersion, Mode=OneWay}" />
-                                    <TextBlock Grid.Row="2" Text="EC" Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind FirmwareUpdateViewModel.InstalledEcVersion, Mode=OneWay}" />
-                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="{x:Bind FirmwareUpdateViewModel.PublishedEcVersion, Mode=OneWay}" />
-                                    <TextBlock Grid.Row="3" Text="MCU" Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{x:Bind FirmwareUpdateViewModel.InstalledMcuVersion, Mode=OneWay}" />
-                                    <TextBlock Grid.Row="3" Grid.Column="2" Text="{x:Bind FirmwareUpdateViewModel.PublishedMcuVersion, Mode=OneWay}" />
-                                </Grid>
-
-                                <TextBlock Text="MCU labels may use a different format. OpenBlade never downloads or installs firmware."
-                                           Style="{StaticResource SecondaryTextStyle}"
-                                           TextWrapping="Wrap" />
-                                <HyperlinkButton Content="Open official Razer page"
-                                                 Padding="0"
-                                                 NavigateUri="{x:Bind FirmwareUpdateViewModel.OfficialSupportUri, Mode=OneWay}"
-                                                 AutomationProperties.Name="Open official Razer firmware support page" />
+                                                   TextWrapping="Wrap"
+                                                   VerticalAlignment="Center" />
+                                        <HyperlinkButton Grid.Column="1"
+                                                         Content="Open official Razer page"
+                                                         Padding="0"
+                                                         VerticalAlignment="Center"
+                                                         NavigateUri="{x:Bind FirmwareUpdateViewModel.OfficialSupportUri, Mode=OneWay}"
+                                                         AutomationProperties.Name="Open official Razer firmware support page" />
+                                    </Grid>
+                                </Border>
                             </StackPanel>
                         </Border>
 
