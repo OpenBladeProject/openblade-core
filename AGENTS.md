@@ -182,6 +182,9 @@ submodules.
     proof that credentials expired when the same output includes config or
     keyring access-denied warnings. Retry the exact read with approved host
     access; ask for reauthentication only if that host-level check also fails.
+12. Prefer the authenticated GitHub CLI (`gh`) over application connectors for
+    GitHub reads and writes. Use a connector only when `gh` cannot perform the
+    needed operation.
 
 ## Versioning and commits
 
