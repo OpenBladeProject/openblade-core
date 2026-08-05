@@ -89,7 +89,7 @@ public sealed class ServiceAudioMeterLightingLoopTests
             1000);
         AmbientLightingFrame silent = smoother.Apply(
             FrameWithColumns(0),
-            TimeSpan.FromMilliseconds(900),
+            TimeSpan.FromMilliseconds(1000),
             1000);
         AmbientLightingFrame resumed = smoother.Apply(
             FrameWithColumns(4),

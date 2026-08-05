@@ -1922,7 +1922,7 @@ public sealed class CapabilityPresentationTests
                 decayMilliseconds: 750),
             viewModel.LightingDraft);
         Assert.True(viewModel.LightingShowsAudioMeterControls);
-        Assert.Equal("Up to 0.8 seconds", viewModel.LightingAudioMeterDecayValue);
+        Assert.Equal("Up to 0.75 seconds", viewModel.LightingAudioMeterDecayValue);
         Assert.Equal("Audio Meter", viewModel.SelectedLightingEffectOption?.Label);
 
         viewModel.LightingEffectEditor = LightingEffect.Fire;

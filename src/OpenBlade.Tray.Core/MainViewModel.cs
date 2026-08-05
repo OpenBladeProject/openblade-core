@@ -6506,7 +6506,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private static string FormatAudioMeterDecay(int milliseconds) =>
         milliseconds == 0
             ? "Off"
-            : $"Up to {milliseconds / 1000d:0.0} seconds";
+            : $"Up to {milliseconds / 1000d:0.##} seconds";
 
     private static string FormatDisplayProfile(DisplayProfileSettings? display)
     {
