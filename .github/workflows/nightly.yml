@@ -45,8 +45,6 @@ jobs:
 
       - name: Prepare nightly release
         id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -67,54 +65,6 @@ jobs:
           "title=OpenBlade $($metadata.informationalVersion)" |
             Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-          $releasePagesJson = gh api --paginate --slurp `
-            "repos/${{ github.repository }}/releases?per_page=100"
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Unable to read the published release history.'
-          }
-          $releasePages = $releasePagesJson | ConvertFrom-Json
-          $publishedReleases = @(
-            foreach ($page in @($releasePages)) {
-              foreach ($release in @($page)) {
-                if ($release.prerelease -and -not $release.draft) {
-                  [ordered]@{
-                    tagName = $release.tag_name
-                    publishedAt = $release.published_at
-                  }
-                }
-              }
-            }
-          )
-          $publishedReleasesPath = Join-Path `
-            $env:RUNNER_TEMP `
-            'OpenBlade-Published-Releases.json'
-          $publishedReleasesJson = if ($publishedReleases.Count -eq 0) {
-            '[]'
-          }
-          else {
-            $publishedReleases | ConvertTo-Json -Depth 3
-          }
-          [IO.File]::WriteAllText(
-            $publishedReleasesPath,
-            $publishedReleasesJson,
-            [Text.UTF8Encoding]::new($false))
-
-          . ./build/NightlyChangelog.ps1
-          $changelogPath = 'artifacts/OpenBlade-Nightly-CHANGELOG.md'
-          $changelog = Write-OpenBladeNightlyChangelogSnapshot `
-            -RepositoryRoot (Get-Location).Path `
-            -ChangelogPath 'CHANGELOG.md' `
-            -OutputPath $changelogPath `
-            -PublishedReleasesPath $publishedReleasesPath `
-            -BaseVersion $metadata.baseVersion `
-            -BuildRevision $metadata.buildRevision `
-            -CurrentTag $tag `
-            -CurrentSourceRevision $metadata.sourceRevision `
-            -CurrentPublishedAt ([DateTimeOffset]::UtcNow)
-          if ([string]::IsNullOrWhiteSpace($changelog.CurrentSection)) {
-            throw 'The generated changelog is missing the current nightly section.'
-          }
-
           $runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
           $notes = @(
             'Automated test build from the latest committed `main`.',
@@ -124,7 +74,7 @@ jobs:
             "- Workflow: [run ${{ github.run_id }}]($runUrl)",
             "- Authenticode: ``$($metadata.installer.authenticodeStatus)``",
             '',
-            $changelog.CurrentSection,
+            'The exact-source nightly changelog tally is attached after publication.',
             '',
             'This is a prerelease and is available only to users who select the Nightly update channel.',
             'Verify `OpenBlade-Setup.exe` with the attached SHA-256 file before installing.'
@@ -143,13 +93,135 @@ jobs:
           artifacts/OpenBlade-Setup.exe
           artifacts/OpenBlade-Setup.exe.sha256
           artifacts/OpenBlade-Nightly.json
-          artifacts/OpenBlade-Nightly-CHANGELOG.md
           --repo '${{ github.repository }}'
           --target '${{ github.sha }}'
           --title '${{ steps.release.outputs.title }}'
           --notes-file artifacts/OpenBlade-Nightly-Release.md
           --prerelease
           --latest=false
+
+      - name: Attach nightly changelog
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $metadata = Get-Content `
+            -LiteralPath 'artifacts/OpenBlade-Nightly.json' `
+            -Raw |
+            ConvertFrom-Json
+          $tag = '${{ steps.release.outputs.tag }}'
+          $changelogPath = 'artifacts/OpenBlade-Nightly-CHANGELOG.md'
+          $changelogSection = $null
+          try {
+            $releasePagesJson = gh api --paginate --slurp `
+              "repos/${{ github.repository }}/releases?per_page=100"
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Unable to read the published release history.'
+            }
+            $releasePages = $releasePagesJson | ConvertFrom-Json
+            $publishedReleases = @(
+              foreach ($page in @($releasePages)) {
+                foreach ($release in @($page)) {
+                  if ($release.prerelease -and -not $release.draft) {
+                    [ordered]@{
+                      tagName = $release.tag_name
+                      publishedAt = $release.published_at
+                    }
+                  }
+                }
+              }
+            )
+            $currentReleaseJson = gh release view $tag `
+              --repo '${{ github.repository }}' `
+              --json publishedAt
+            if ($LASTEXITCODE -ne 0) {
+              throw "Unable to read publication metadata for '$tag'."
+            }
+            $currentPublishedAt = [DateTimeOffset](
+              $currentReleaseJson | ConvertFrom-Json).publishedAt
+            $publishedReleasesPath = Join-Path `
+              $env:RUNNER_TEMP `
+              'OpenBlade-Published-Releases.json'
+            $publishedReleasesJson = if ($publishedReleases.Count -eq 0) {
+              '[]'
+            }
+            else {
+              $publishedReleases | ConvertTo-Json -Depth 3
+            }
+            [IO.File]::WriteAllText(
+              $publishedReleasesPath,
+              $publishedReleasesJson,
+              [Text.UTF8Encoding]::new($false))
+
+            . ./build/NightlyChangelog.ps1
+            $changelog = Write-OpenBladeNightlyChangelogSnapshot `
+              -RepositoryRoot (Get-Location).Path `
+              -ChangelogPath 'CHANGELOG.md' `
+              -OutputPath $changelogPath `
+              -PublishedReleasesPath $publishedReleasesPath `
+              -BaseVersion $metadata.baseVersion `
+              -BuildRevision $metadata.buildRevision `
+              -CurrentTag $tag `
+              -CurrentSourceRevision $metadata.sourceRevision `
+              -CurrentPublishedAt $currentPublishedAt
+            if ([string]::IsNullOrWhiteSpace($changelog.CurrentSection)) {
+              throw 'The generated changelog is missing the current nightly section.'
+            }
+            $changelogSection = $changelog.CurrentSection
+          }
+          catch {
+            Write-Warning (
+              'Nightly changelog tally failed without blocking publication: ' +
+              $_.Exception.Message)
+            [IO.File]::Copy(
+              (Resolve-Path -LiteralPath 'CHANGELOG.md'),
+              (Join-Path (Get-Location).Path $changelogPath),
+              $true)
+          }
+
+          gh release upload $tag $changelogPath `
+            --repo '${{ github.repository }}' `
+            --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to attach the nightly changelog snapshot.'
+          }
+
+          $runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          $changelogNotes = if ($null -ne $changelogSection) {
+            @('', $changelogSection)
+          }
+          else {
+            @(
+              '',
+              '> [!WARNING]',
+              '> The automatic nightly changelog tally failed. The attached changelog is the exact source snapshot.'
+            )
+          }
+          $notes = @(
+            'Automated test build from the latest committed `main`.',
+            '',
+            "- Version: ``$($metadata.informationalVersion)``",
+            "- Source: [$($metadata.sourceRevision.Substring(0, 8))]($($metadata.sourceUrl))",
+            "- Workflow: [run ${{ github.run_id }}]($runUrl)",
+            "- Authenticode: ``$($metadata.installer.authenticodeStatus)``"
+          ) + $changelogNotes + @(
+            '',
+            'This is a prerelease and is available only to users who select the Nightly update channel.',
+            'Verify `OpenBlade-Setup.exe` with the attached SHA-256 file before installing.'
+          )
+          $notesPath = Join-Path $env:RUNNER_TEMP 'OpenBlade-Nightly-Release.md'
+          [IO.File]::WriteAllLines(
+            $notesPath,
+            $notes,
+            [Text.UTF8Encoding]::new($false))
+          gh release edit $tag `
+            --repo '${{ github.repository }}' `
+            --notes-file $notesPath
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to add the nightly changelog to the release notes.'
+          }
 
   update-nightly-changelog:
     if: ${{ github.ref == 'refs/heads/main' }}
@@ -228,6 +300,14 @@ jobs:
             $publishedReleasesPath,
             $publishedReleasesJson,
             [Text.UTF8Encoding]::new($false))
+          $currentReleaseJson = gh release view $tag `
+            --repo '${{ github.repository }}' `
+            --json publishedAt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to read publication metadata for '$tag'."
+          }
+          $currentPublishedAt = [DateTimeOffset](
+            $currentReleaseJson | ConvertFrom-Json).publishedAt
 
           . ./build/NightlyChangelog.ps1
           git switch --force-create `
@@ -247,7 +327,7 @@ jobs:
             -BuildRevision $metadata.buildRevision `
             -CurrentTag $tag `
             -CurrentSourceRevision $metadata.sourceRevision `
-            -CurrentPublishedAt ([DateTimeOffset]$metadata.createdAtUtc)
+            -CurrentPublishedAt $currentPublishedAt
 
           $currentText = [IO.File]::ReadAllText(
             (Resolve-Path -LiteralPath 'CHANGELOG.md'))

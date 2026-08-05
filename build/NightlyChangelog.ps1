@@ -66,6 +66,11 @@ function Get-OpenBladeChangelogEntries {
             return
         }
 
+        while ($entryState.Lines.Count -gt 0 -and
+            [string]::IsNullOrWhiteSpace(
+                $entryState.Lines[$entryState.Lines.Count - 1])) {
+            $entryState.Lines.RemoveAt($entryState.Lines.Count - 1)
+        }
         $entryText = $entryState.Lines -join "`n"
         $entries.Add([pscustomobject]@{
                 Category = $category
@@ -101,14 +106,12 @@ function Get-OpenBladeChangelogEntries {
             continue
         }
 
-        if ($null -ne $entryState.Lines -and
-            $line.StartsWith('  ', [StringComparison]::Ordinal)) {
+        if ($null -ne $entryState.Lines) {
             $entryState.Lines.Add($line)
             continue
         }
 
         if ([string]::IsNullOrWhiteSpace($line)) {
-            Add-CurrentEntry
             continue
         }
 
@@ -127,17 +130,34 @@ function Get-OpenBladeRecordedNightlyRevision {
     )
 
     $escapedBaseVersion = [Regex]::Escape($BaseVersion)
-    $matches = [Regex]::Matches(
+    $revisionMatches = [Regex]::Matches(
         (ConvertTo-OpenBladeNormalizedText -Text $Content),
         "(?m)^## \[$escapedBaseVersion-nightly\.(?<revision>\d+)\] - \d{4}-\d{2}-\d{2}$")
-    if ($matches.Count -eq 0) {
+    if ($revisionMatches.Count -eq 0) {
         return 0
     }
 
     return [int](
-        $matches |
+        $revisionMatches |
             ForEach-Object { [int]$_.Groups['revision'].Value } |
             Measure-Object -Maximum).Maximum
+}
+
+function Get-OpenBladeUnreleasedReferenceTag {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Content,
+        [Parameter(Mandatory)][string]$FallbackVersion
+    )
+
+    $referenceMatch = [Regex]::Match(
+        (ConvertTo-OpenBladeNormalizedText -Text $Content),
+        '(?m)^\[Unreleased\]:\s+\S+/compare/(?<tag>\S+)\.\.\.HEAD$')
+    if ($referenceMatch.Success) {
+        return $referenceMatch.Groups['tag'].Value
+    }
+
+    return "v$FallbackVersion"
 }
 
 function Get-OpenBladeChangelogReferenceTag {
@@ -222,7 +242,15 @@ function Select-OpenBladeNightlyReleaseRecords {
         else {
             $fallbackRecords = @(
                 $group.Group |
-                    Sort-Object PublishedAt, TagName |
+                    Sort-Object `
+                        @{ Expression = { $_.PublishedAt }; Descending = $true }, `
+                        @{ Expression = {
+                                if ($_.TagName -match '-attempt\.(?<attempt>\d+)$') {
+                                    return [int]$Matches['attempt']
+                                }
+                                return 0
+                            }; Descending = $true }, `
+                        TagName |
                     Select-Object -First 1)
             $record = $fallbackRecords[0]
         }
@@ -337,7 +365,15 @@ function New-OpenBladeNightlyChangelogContent {
                 }
             }
             if ($matchIndex -lt 0) {
-                throw "Released entry is missing from the current Unreleased section: $($releasedEntry.Text)"
+                for ($index = 0; $index -lt $currentEntries.Count; $index++) {
+                    if ($currentEntries[$index].Text -eq $releasedEntry.Text) {
+                        $matchIndex = $index
+                        break
+                    }
+                }
+            }
+            if ($matchIndex -lt 0) {
+                continue
             }
             $currentEntries.RemoveAt($matchIndex)
         }
@@ -354,7 +390,12 @@ function New-OpenBladeNightlyChangelogContent {
     else {
         @($lines[0..($unreleasedSection.Start - 1)])
     }
-    $after = @($lines[$unreleasedSection.End..($lines.Count - 1)])
+    $after = if ($unreleasedSection.End -lt $lines.Count) {
+        @($lines[$unreleasedSection.End..($lines.Count - 1)])
+    }
+    else {
+        @()
+    }
     $newLines = [Collections.Generic.List[string]]::new()
     foreach ($line in $before) { $newLines.Add($line) }
     foreach ($line in @(New-OpenBladeChangelogSectionLines `
@@ -452,12 +493,32 @@ function Write-OpenBladeNightlyChangelogSnapshot {
         throw 'The current nightly source revision must be a full Git commit SHA.'
     }
 
-    $currentContent = [IO.File]::ReadAllText($ChangelogPath)
+    $resolvedChangelogPath = if ([IO.Path]::IsPathRooted($ChangelogPath)) {
+        $ChangelogPath
+    }
+    else {
+        Join-Path $RepositoryRoot $ChangelogPath
+    }
+    $resolvedOutputPath = if ([IO.Path]::IsPathRooted($OutputPath)) {
+        $OutputPath
+    }
+    else {
+        Join-Path $RepositoryRoot $OutputPath
+    }
+    $resolvedPublishedReleasesPath = if (
+        [IO.Path]::IsPathRooted($PublishedReleasesPath)) {
+        $PublishedReleasesPath
+    }
+    else {
+        Join-Path $RepositoryRoot $PublishedReleasesPath
+    }
+
+    $currentContent = [IO.File]::ReadAllText($resolvedChangelogPath)
     $newLine = Get-OpenBladeChangelogNewLine -Text $currentContent
     $recordedRevision = Get-OpenBladeRecordedNightlyRevision `
         -Content $currentContent `
         -BaseVersion $BaseVersion
-    $rawManifest = Get-Content -LiteralPath $PublishedReleasesPath -Raw |
+    $rawManifest = Get-Content -LiteralPath $resolvedPublishedReleasesPath -Raw |
         ConvertFrom-Json
     $manifestItems = [Collections.Generic.List[object]]::new()
     foreach ($page in @($rawManifest)) {
@@ -501,7 +562,9 @@ function Write-OpenBladeNightlyChangelogSnapshot {
     }
 
     $baselineTag = if ($recordedRevision -eq 0) {
-        "v$BaseVersion"
+        Get-OpenBladeUnreleasedReferenceTag `
+            -Content $currentContent `
+            -FallbackVersion $BaseVersion
     }
     else {
         Get-OpenBladeChangelogReferenceTag `
@@ -513,9 +576,14 @@ function Write-OpenBladeNightlyChangelogSnapshot {
                 BuildRevision = $recordedRevision
                 TagName = $baselineTag
                 PublishedAt = [DateTimeOffset]::MinValue
-                SourceContent = Get-OpenBladeGitFileContent `
-                    -RepositoryRoot $RepositoryRoot `
-                    -Revision $baselineTag
+                SourceContent = if ($recordedRevision -eq 0) {
+                    "# Changelog`n`n## [Unreleased]`n"
+                }
+                else {
+                    Get-OpenBladeGitFileContent `
+                        -RepositoryRoot $RepositoryRoot `
+                        -Revision $baselineTag
+                }
             })
     }
 
@@ -536,12 +604,12 @@ function Write-OpenBladeNightlyChangelogSnapshot {
 
     $outputContent = (ConvertTo-OpenBladeNormalizedText -Text $result.Content).
         Replace("`n", $newLine)
-    $outputDirectory = Split-Path -Parent $OutputPath
+    $outputDirectory = Split-Path -Parent $resolvedOutputPath
     if (-not [string]::IsNullOrWhiteSpace($outputDirectory)) {
         [IO.Directory]::CreateDirectory($outputDirectory) | Out-Null
     }
     [IO.File]::WriteAllText(
-        $OutputPath,
+        $resolvedOutputPath,
         $outputContent,
         [Text.UTF8Encoding]::new($false))
 

@@ -211,7 +211,9 @@ The changelog update job requires the repository setting **Allow GitHub Actions
 to create and approve pull requests**. Its token is scoped to repository
 contents and pull requests only in that job. If the setting is disabled, the
 nightly release remains published and the failed changelog job can be rerun
-after a maintainer enables it.
+after a maintainer enables it. Changelog tally errors are also isolated from
+publication: the release attaches the exact source changelog and reports the
+tally failure instead of withholding the installer and checksum.
 
 ## Hardware development
 

@@ -29,24 +29,6 @@ function Assert-Equal {
     }
 }
 
-function Assert-Throws {
-    param(
-        [Parameter(Mandatory)][scriptblock]$Action,
-        [Parameter(Mandatory)][string]$ExpectedMessage
-    )
-
-    try {
-        & $Action
-    }
-    catch {
-        Assert-True ($_.Exception.Message -eq $ExpectedMessage) `
-            "Unexpected error message '$($_.Exception.Message)'."
-        return
-    }
-
-    throw "Expected failure '$ExpectedMessage'."
-}
-
 $nightly6Source = @'
 # Changelog
 
@@ -170,6 +152,12 @@ $releaseRecords = @(
         SourceContent = $nightly7Source
     },
     [pscustomobject]@{
+        BuildRevision = 7
+        TagName = 'v0.1.0-nightly.7-attempt.3'
+        PublishedAt = [DateTimeOffset]::Parse('2026-08-05T10:17:00Z')
+        SourceContent = $nightly7Source
+    },
+    [pscustomobject]@{
         BuildRevision = 8
         TagName = 'v0.1.0-nightly.8'
         PublishedAt = [DateTimeOffset]::Parse('2026-08-06T09:17:00Z')
@@ -202,10 +190,10 @@ Assert-True ($result.Content.Contains(
         '[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.8...HEAD')) `
     'Unreleased must compare from the exact latest nightly tag.'
 Assert-True ($result.Content.Contains(
-        '[0.1.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.7-attempt.2...v0.1.0-nightly.8')) `
-    'Nightly comparisons must retain the actual successful attempt tag.'
+        '[0.1.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.7-attempt.3...v0.1.0-nightly.8')) `
+    'Nightly comparisons must retain the latest successful attempt tag.'
 Assert-True ($result.Content.Contains(
-        '[0.1.0-nightly.7]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.7-attempt.2')) `
+        '[0.1.0-nightly.7]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.7-attempt.3')) `
     'The first pending nightly must compare from the recorded baseline tag.'
 Assert-Equal '0.1.0-nightly.7,0.1.0-nightly.8' `
     ($result.PendingVersions -join ',') `
@@ -225,15 +213,100 @@ $missingReleasedEntry = $latestMain -replace (
     '(?ms)### Fixed\r?\n\r?\n' +
     [Regex]::Escape('- Fixed the first nightly regression.') +
     '\r?\n\r?\n'), ''
-Assert-Throws `
-    {
-        New-OpenBladeNightlyChangelogContent `
-            -CurrentContent $missingReleasedEntry `
-            -BaseVersion '0.1.0' `
-            -CurrentBuildRevision 8 `
-            -ReleaseRecord $releaseRecords
-    } `
-    'Released entry is missing from the current Unreleased section: - Fixed the first nightly regression.'
+$missingResult = New-OpenBladeNightlyChangelogContent `
+    -CurrentContent $missingReleasedEntry `
+    -BaseVersion '0.1.0' `
+    -CurrentBuildRevision 8 `
+    -ReleaseRecord $releaseRecords
+Assert-Equal '0.1.0-nightly.7,0.1.0-nightly.8' `
+    ($missingResult.PendingVersions -join ',') `
+    'Editing or removing an earlier bullet must not block changelog reconstruction.'
+
+$editedReleasedEntry = $latestMain.Replace(
+    '- Fixed the first nightly regression.',
+    '- Fixed the first nightly regression typo.')
+$editedResult = New-OpenBladeNightlyChangelogContent `
+    -CurrentContent $editedReleasedEntry `
+    -BaseVersion '0.1.0' `
+    -CurrentBuildRevision 8 `
+    -ReleaseRecord $releaseRecords
+Assert-True ($editedResult.Content.Contains(
+        "## [Unreleased]`n`n### Changed`n`n" +
+        '- Preserved a change merged after the nightly source commit.')) `
+    'Post-source entries must remain Unreleased when an earlier bullet was edited.'
+Assert-True ($editedResult.Content.Contains(
+        '- Fixed the first nightly regression typo.')) `
+    'An edited historical bullet must remain as a new Unreleased correction.'
+
+$movedReleasedEntry = (ConvertTo-OpenBladeNormalizedText -Text $latestMain).Replace(
+    "### Fixed`n`n- Fixed the first nightly regression.`n`n### Added",
+    "### Changed`n`n- Fixed the first nightly regression.`n`n### Added")
+Assert-True ($movedReleasedEntry.Contains(
+        "### Changed`n`n- Fixed the first nightly regression.")) `
+    'The category-move fixture must move the released bullet.'
+$movedResult = New-OpenBladeNightlyChangelogContent `
+    -CurrentContent $movedReleasedEntry `
+    -BaseVersion '0.1.0' `
+    -CurrentBuildRevision 8 `
+    -ReleaseRecord $releaseRecords
+Assert-Equal 1 ([Regex]::Matches(
+        $movedResult.Content,
+        [Regex]::Escape('- Fixed the first nightly regression.')).Count) `
+    'Moving an unchanged bullet between categories must not duplicate it.'
+
+$markdownEntryContent = @'
+# Changelog
+
+## [Unreleased]
+
+### Added
+
+- Documented a command:
+
+  ```powershell
+  Get-OpenBladeStatus
+  ```
+  - Includes nested Markdown.
+'@
+$markdownEntries = @(Get-OpenBladeChangelogEntries `
+        -Content $markdownEntryContent)
+Assert-Equal 1 $markdownEntries.Count `
+    'A changelog bullet may contain fenced and nested Markdown.'
+Assert-True ($markdownEntries[0].Text.Contains('```powershell')) `
+    'Fenced Markdown must remain part of its changelog bullet.'
+
+$finalUnreleasedContent = @'
+# Changelog
+
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...HEAD
+
+## [Unreleased]
+
+### Added
+
+- Kept an Unreleased section at end of file.
+'@
+$finalUnreleasedContent = $finalUnreleasedContent.TrimEnd()
+$finalSectionResult = New-OpenBladeNightlyChangelogContent `
+    -CurrentContent $finalUnreleasedContent `
+    -BaseVersion '0.1.0' `
+    -CurrentBuildRevision 1 `
+    -ReleaseRecord @(
+        [pscustomobject]@{
+            BuildRevision = 0
+            TagName = 'v0.1.0'
+            PublishedAt = [DateTimeOffset]::MinValue
+            SourceContent = "# Changelog`n`n## [Unreleased]`n"
+        },
+        [pscustomobject]@{
+            BuildRevision = 1
+            TagName = 'v0.1.0-nightly.1'
+            PublishedAt = [DateTimeOffset]::Parse('2026-08-05T09:17:00Z')
+            SourceContent = $finalUnreleasedContent
+        })
+Assert-True ($finalSectionResult.CurrentSection.Contains(
+        '- Kept an Unreleased section at end of file.')) `
+    'An Unreleased section at end of file must be sliced without indexing past EOF.'
 
 Assert-Equal "`r`n" (Get-OpenBladeChangelogNewLine -Text "a`r`nb`r`n") `
     'CRLF changelogs must retain CRLF output.'
@@ -291,10 +364,13 @@ try {
             -BuildRevision 7 `
             -CurrentTag 'v0.1.0-nightly.7' `
             -CurrentSourceRevision $sourceRevision `
-            -CurrentPublishedAt ([DateTimeOffset]::Parse('2026-08-05T09:17:00Z'))
+            -CurrentPublishedAt ([DateTimeOffset]::Parse('2026-08-05T23:59:59Z'))
         Assert-True ($wrapperResult.CurrentSection.Contains(
                 '- Fixed the first nightly regression.')) `
             'The file wrapper must load the tagged and source changelog snapshots.'
+        Assert-True ($wrapperResult.CurrentSection.Contains(
+                '## [0.1.0-nightly.7] - 2026-08-05')) `
+            'Nightly dates must come from the canonical release publication timestamp.'
         Assert-True ($wrapperResult.Content.Contains(
                 '- Preserved a change merged after the nightly source commit.')) `
             'The file wrapper must preserve post-source Unreleased entries.'
@@ -308,6 +384,27 @@ try {
         }
         Assert-Equal 0 $bareLfCount `
             'The file wrapper must preserve CRLF without mixed line endings.'
+
+        [IO.File]::WriteAllText(
+            $manifestPath,
+            '[]',
+            [Text.UTF8Encoding]::new($false))
+        $versionBumpResult = Write-OpenBladeNightlyChangelogSnapshot `
+            -RepositoryRoot $temporaryRoot `
+            -ChangelogPath 'CHANGELOG.md' `
+            -OutputPath 'generated\VERSION-BUMP.md' `
+            -PublishedReleasesPath $manifestPath `
+            -BaseVersion '0.2.0' `
+            -BuildRevision 7 `
+            -CurrentTag 'v0.2.0-nightly.7' `
+            -CurrentSourceRevision $sourceRevision `
+            -CurrentPublishedAt ([DateTimeOffset]::Parse('2026-08-05T23:59:59Z'))
+        Assert-True ($versionBumpResult.CurrentSection.Contains(
+                '## [0.2.0-nightly.7] - 2026-08-05')) `
+            'The first nightly after a version bump must not require a base tag.'
+        Assert-True ($versionBumpResult.Content.Contains(
+                '[0.2.0-nightly.7]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.2.0-nightly.7')) `
+            'A version bump must retain the prior Unreleased comparison baseline.'
     }
     finally {
         Pop-Location

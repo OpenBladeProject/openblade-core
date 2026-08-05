@@ -165,7 +165,9 @@ submodules.
    that moves included entries into dated `## [X.Y.Z-nightly.N] - YYYY-MM-DD`
    sections while retaining post-build entries under `Unreleased`. Review that
    generated diff; do not hand-edit the workflow-owned branch or bypass its
-   exact-tag and force-with-lease guards.
+   exact-tag and force-with-lease guards. Keep entries as `- ` bullets under
+   `### ` categories; continuation paragraphs, nested lists, and fenced blocks
+   remain part of the preceding bullet.
 9. Commit and push coherent slices. Do not bundle capture evidence, product
    code, history maintenance, and unrelated formatting in one commit.
 10. Preserve the line endings declared by `.editorconfig` and `.gitattributes`.
