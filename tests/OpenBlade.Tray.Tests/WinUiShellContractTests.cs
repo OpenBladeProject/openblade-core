@@ -340,18 +340,30 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Tested versions", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("AboutTestedPlatformCard", xaml, StringComparison.Ordinal);
 
-        int handler = window.IndexOf(
-            "private void OnTestedPlatformWarningClick",
-            StringComparison.Ordinal);
-        Assert.True(handler >= 0);
-        string handlerSource = window[handler..];
         Assert.Contains(
-            "MainNavigation.SelectedItem = AboutNavigationItem",
-            handlerSource,
+            "private async void OnTestedPlatformWarningClick",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains("ShowTestedPlatformWarningAsync", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "Ignore this firmware mismatch and run anyway",
+            window,
             StringComparison.Ordinal);
         Assert.Contains(
-            "AboutTestedPlatformWarning.StartBringIntoView",
-            handlerSource,
+            "SetFirmwareCompatibilityOverrideAsync",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"Force run on incompatible firmware\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IsOn=\"{x:Bind ViewModel.AllowUntestedFirmware, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Toggled=\"OnFirmwareCompatibilityOverrideToggled\"",
+            xaml,
             StringComparison.Ordinal);
     }
 

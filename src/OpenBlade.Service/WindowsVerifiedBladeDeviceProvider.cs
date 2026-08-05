@@ -27,6 +27,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         ServiceComposition.CreateProductionLightingFactory;
 
     private readonly Func<BatteryValidationProbeResult> probe;
+    private readonly FirmwareCompatibilityPolicy compatibilityPolicy;
     private readonly SerializedBladeDevice device;
     private readonly object providerLifecycleSync = new();
     private long lastReadyProbeTimestamp;
@@ -50,7 +51,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         IGpuClockOffsetController? gpuClockOffsets = null,
         ILogger<WindowsVerifiedBladeDeviceProvider>? logger = null,
         TimeSpan? shutdownBudget = null,
-        Action? onClosing = null)
+        Action? onClosing = null,
+        FirmwareCompatibilityPolicy? compatibilityPolicy = null)
     {
         TimeSpan effectiveShutdownBudget = shutdownBudget ?? DefaultShutdownBudget;
         if (effectiveShutdownBudget <= TimeSpan.Zero ||
@@ -60,6 +62,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         }
 
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
+        this.compatibilityPolicy = compatibilityPolicy
+            ?? new FirmwareCompatibilityPolicy();
         device = new SerializedBladeDevice(
             batteryFactory ?? throw new ArgumentNullException(nameof(batteryFactory)),
             fanRpmFactory ?? throw new ArgumentNullException(nameof(fanRpmFactory)),
@@ -69,6 +73,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             effectiveShutdownBudget,
             onClosing);
     }
+
+    public void SetAllowUntestedFirmware(bool enabled) =>
+        compatibilityPolicy.AllowUntestedFirmware = enabled;
 
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
     {

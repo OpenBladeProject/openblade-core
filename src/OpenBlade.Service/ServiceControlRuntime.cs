@@ -100,6 +100,13 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "External lighting override policy is unavailable."));
 
+    Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Firmware compatibility override is unavailable."));
+
     Task<ControlOperationResult> ReapplyChangedSettingsAsync(
         CancellationToken token) => Task.FromResult(
             new ControlOperationResult(
@@ -511,6 +518,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 persistentOverrides);
             automation = initializedAutomation;
             preferences = configuration.Preferences;
+            deviceProvider.SetAllowUntestedFirmware(
+                configuration.Preferences.AllowUntestedFirmware);
             this.persistentOverrides = persistentOverrides;
             startupProfileReconciliationPending = true;
             startupProfileReconciliationRequested = false;
@@ -592,6 +601,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 powerSource,
                 overrides);
             preferences = context.Configuration.Preferences;
+            deviceProvider.SetAllowUntestedFirmware(
+                context.Configuration.Preferences.AllowUntestedFirmware);
             persistentOverrides = overrides;
             lightingSuppressions.Clear();
             pendingLightingRestore = null;
@@ -620,6 +631,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 LightingOverride = Automation.LightingOverride,
                 FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
                 LightingSuppressions = CurrentLightingSuppressions(),
+                AllowUntestedFirmware =
+                    context.Configuration.Preferences.AllowUntestedFirmware,
                 PerformanceShortcutPreview = null,
             });
 
@@ -1648,6 +1661,66 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             operationGate.Release();
         }
+    }
+
+    public async Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
+        bool enabled,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        string message = enabled
+            ? "OpenBlade will allow this exact laptop model to run on untested firmware."
+            : "OpenBlade will require the tested firmware baseline.";
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            BatteryAutomationPreferences staged = preferences with
+            {
+                AllowUntestedFirmware = enabled,
+            };
+            await ConfigurationStore.SaveConfigurationAsync(
+                    Automation.Profiles,
+                    staged,
+                    token)
+                .ConfigureAwait(false);
+            preferences = staged;
+            deviceProvider.SetAllowUntestedFirmware(enabled);
+            consecutiveDeviceProbeFailures = ObservationFailureThreshold;
+            PublishIfChanged(GetStatus() with
+            {
+                AllowUntestedFirmware = enabled,
+                Message = message,
+            });
+            history.RecordSummary(ControlOperationStatus.Stored, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+
+        try
+        {
+            await ObserveAsync(
+                    includeLiveReadings: false,
+                    token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            string refreshMessage =
+                $"{message} Laptop status will refresh automatically. {exception.Message}";
+            history.RecordSummary(ControlOperationStatus.Stored, refreshMessage);
+            return new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                refreshMessage);
+        }
+
+        return new ControlOperationResult(ControlOperationStatus.Stored, message);
     }
 
     public async Task<ControlOperationResult> SetLightingSuppressionAsync(
@@ -5523,7 +5596,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 preferences.AlwaysOverrideExternalLightingChanges,
             BatteryHealth: batteryHealth,
             KeyboardLightingControlMode:
-                preferences.KeyboardLightingControlMode)
+                preferences.KeyboardLightingControlMode,
+            AllowUntestedFirmware: preferences.AllowUntestedFirmware)
         {
             FanControlOverride = Automation.FanControlOverride,
         };
@@ -5853,6 +5927,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.KeyboardDriverModeActive == right.KeyboardDriverModeActive
         && left.AlwaysOverrideExternalLightingChanges
             == right.AlwaysOverrideExternalLightingChanges
+        && left.AllowUntestedFirmware == right.AllowUntestedFirmware
         && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
         && left.LightingRendererOwnership == right.LightingRendererOwnership
         && (left.LightingSuppressions ?? []).SequenceEqual(

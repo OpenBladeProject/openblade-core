@@ -46,17 +46,42 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     public DeviceCapabilities Capabilities { get; }
 
     public static IProductionLightingPortFactory CreateWindows()
+        => CreateWindowsCore(compatibilityPolicy: null);
+
+    internal static IProductionLightingPortFactory CreateWindows(
+        FirmwareCompatibilityPolicy compatibilityPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        return CreateWindowsCore(compatibilityPolicy);
+    }
+
+    private static IProductionLightingPortFactory CreateWindowsCore(
+        FirmwareCompatibilityPolicy? compatibilityPolicy)
     {
         _ = ProductionLightingEvidenceSource.ReadValidatedOracle();
         return CreateWindows(
             admitted:
                 ProductionLightingEvidenceSource
                     .IsProductionLightingImplementationApproved(),
-            ControllerExclusivityPolicy.Advisory);
+            ControllerExclusivityPolicy.Advisory,
+            compatibilityPolicy);
     }
 
     public static IProductionLightingPortFactory CreateWindowsReadOnly() =>
-        CreateWindows(admitted: false, ControllerExclusivityPolicy.Advisory);
+        CreateWindows(
+            admitted: false,
+            ControllerExclusivityPolicy.Advisory,
+            compatibilityPolicy: null);
+
+    internal static IProductionLightingPortFactory CreateWindowsReadOnly(
+        FirmwareCompatibilityPolicy compatibilityPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        return CreateWindows(
+            admitted: false,
+            ControllerExclusivityPolicy.Advisory,
+            compatibilityPolicy);
+    }
 
     /// <summary>
     /// Developer-only exact-build validation entry point. The Capture assembly
@@ -66,7 +91,10 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     internal static IProductionLightingPortFactory CreateWindowsForExactBuildValidation()
     {
         _ = ProductionLightingEvidenceSource.ReadValidatedOracle();
-        return CreateWindows(admitted: true, ControllerExclusivityPolicy.Strict);
+        return CreateWindows(
+            admitted: true,
+            ControllerExclusivityPolicy.Strict,
+            compatibilityPolicy: null);
     }
 
     public async Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
@@ -186,16 +214,22 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
 
     private static IProductionLightingPortFactory CreateWindows(
         bool admitted,
-        ControllerExclusivityPolicy exclusivityPolicy)
+        ControllerExclusivityPolicy exclusivityPolicy,
+        FirmwareCompatibilityPolicy? compatibilityPolicy)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
         var processSource = new RunningProcessSource();
         var serviceSource = new WindowsServiceSource();
         var guard = new WindowsHardwareAccessGuard(processSource, serviceSource);
-        var hostIdentity = new WindowsHostIdentitySource(
-            registry,
-            new RuntimeWindowsPlatformEvidenceSource(registry));
+        var hostIdentity = compatibilityPolicy is null
+            ? new WindowsHostIdentitySource(
+                registry,
+                new RuntimeWindowsPlatformEvidenceSource(registry))
+            : new WindowsHostIdentitySource(
+                registry,
+                new RuntimeWindowsPlatformEvidenceSource(registry),
+                compatibilityPolicy);
         var sessionOpener = new WindowsRazerHidSessionOpener(
             hostIdentity,
             guard,

@@ -37,6 +37,7 @@ public sealed partial class MainViewModel
         && left.KeyboardDriverModeActive == right.KeyboardDriverModeActive
         && left.AlwaysOverrideExternalLightingChanges
             == right.AlwaysOverrideExternalLightingChanges
+        && left.AllowUntestedFirmware == right.AllowUntestedFirmware
         && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])

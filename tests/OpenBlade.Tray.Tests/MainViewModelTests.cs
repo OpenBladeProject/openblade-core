@@ -3216,6 +3216,27 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task FirmwareCompatibilityOverride_ReflectsStatusAndSendsMutation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: false, blocked: true) with
+        {
+            AllowUntestedFirmware = true,
+        });
+        await WaitUntilAsync(() => viewModel.AllowUntestedFirmware);
+
+        bool accepted = await viewModel.SetFirmwareCompatibilityOverrideAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.True(accepted);
+        Assert.False(viewModel.AllowUntestedFirmware);
+        Assert.False(client.FirmwareCompatibilityOverride);
+    }
+
+    [Fact]
     public async Task SelectingEffectFromUnconfirmedZeroBrightnessUsesMatchingVisibleDefault()
     {
         var client = new FakeServiceClient();
@@ -4641,6 +4662,8 @@ public sealed class MainViewModelTests
         client.Publish(stable with
         {
             Revision = stable.Revision + 1,
+            DeviceVerified = false,
+            WritesBlocked = true,
             Firmware = stable.Firmware! with { McuVersion = "1.7.0.0" },
         });
         await WaitUntilAsync(() => viewModel.HasUntestedPlatformVersion);
@@ -4652,6 +4675,30 @@ public sealed class MainViewModelTests
         Assert.Contains(
             "This is a compatibility notice, not a hardware failure.",
             viewModel.AboutTestedPlatformWarningMessage,
+            StringComparison.Ordinal);
+        Assert.Equal("Incompatible firmware", viewModel.ProfileStateLabel);
+        Assert.Equal("Incompatible firmware", viewModel.ControlAccessStatus);
+        Assert.Equal("Incompatible firmware", viewModel.PerformanceSourceLabel);
+        Assert.Equal("Incompatible firmware", viewModel.FanSourceLabel);
+        Assert.Equal("Incompatible firmware", viewModel.LightingSourceLabel);
+        Assert.Equal("Incompatible firmware", viewModel.BatterySourceLabel);
+        Assert.Equal("Incompatible firmware", viewModel.TroubleshootingControlsStatus);
+        Assert.Contains(
+            "found a supported laptop with incompatible firmware",
+            viewModel.LightingControlUnavailableMessage,
+            StringComparison.Ordinal);
+        Assert.True(viewModel.IsReadinessWarning);
+        Assert.False(viewModel.IsReadinessError);
+        Assert.DoesNotContain(
+            "Laptop not found",
+            string.Join(
+                '|',
+                viewModel.ProfileStateLabel,
+                viewModel.ControlAccessStatus,
+                viewModel.PerformanceSourceLabel,
+                viewModel.FanSourceLabel,
+                viewModel.LightingSourceLabel,
+                viewModel.BatterySourceLabel),
             StringComparison.Ordinal);
 
         client.Publish(stable with
@@ -5675,6 +5722,7 @@ public sealed class MainViewModelTests
         public FanControlSettings? LastFanControlSettings { get; private set; }
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
         public bool? ExternalLightingOverridePolicy { get; private set; }
+        public bool? FirmwareCompatibilityOverride { get; private set; }
         public int ReapplyChangedSettingsCalls { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
@@ -5832,6 +5880,14 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             ExternalLightingOverridePolicy = enabled;
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            FirmwareCompatibilityOverride = enabled;
             return MutateAsync(token);
         }
 

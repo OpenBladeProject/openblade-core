@@ -618,6 +618,37 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
+    public void ProbeWindowsForService_FirmwareOverridePreservesExactHidGeometry()
+    {
+        var policy = new FirmwareCompatibilityPolicy
+        {
+            AllowUntestedFirmware = true,
+        };
+
+        BatteryValidationProbeResult exact = BatteryValidationFactory.ProbeWindowsForService(
+            new ExactRegistryValueSource("3.02"),
+            new ExactPlatformEvidenceSource(),
+            new EmptyProcessSource(),
+            new EmptyServiceSource(),
+            new ExactHidCandidateNative(),
+            policy);
+        BatteryValidationProbeResult wrongGeometry =
+            BatteryValidationFactory.ProbeWindowsForService(
+                new ExactRegistryValueSource("3.02"),
+                new ExactPlatformEvidenceSource(),
+                new EmptyProcessSource(),
+                new EmptyServiceSource(),
+                new ExactHidCandidateNative(
+                    new HidHandleIdentity(0x1532, 0x02E0, 0x0001, 0x0002, 90)),
+                policy);
+
+        Assert.Equal(BatteryValidationProbeClassification.Ready, exact.Classification);
+        Assert.Equal(
+            BatteryValidationProbeClassification.NoExactHandle,
+            wrongGeometry.Classification);
+    }
+
+    [Fact]
     public async Task CreateWindowsQuerySequenceForService_UsesAdvisoryAdmission()
     {
         IBatteryQuerySequenceRunFactory factory =
@@ -722,7 +753,8 @@ public sealed class BatteryValidationFactoryTests
         }
     }
 
-    private sealed class ExactRegistryValueSource : IRegistryValueSource
+    private sealed class ExactRegistryValueSource(string biosVersion = "3.01")
+        : IRegistryValueSource
     {
         public object? Read(
             Microsoft.Win32.RegistryHive hive,
@@ -733,7 +765,7 @@ public sealed class BatteryValidationFactoryTests
                 "SystemManufacturer" => "Razer",
                 "SystemProductName" => "Blade 16 - RZ09-0581",
                 "SystemSKU" => "RZ09-05819EN4",
-                "BIOSVersion" => "3.01",
+                "BIOSVersion" => biosVersion,
                 _ => null,
             };
     }
@@ -762,7 +794,8 @@ public sealed class BatteryValidationFactoryTests
         public IReadOnlyList<WindowsServiceSnapshot> GetServices() => [];
     }
 
-    private sealed class ExactHidCandidateNative : IHidCandidateNative
+    private sealed class ExactHidCandidateNative(HidHandleIdentity? identity = null)
+        : IHidCandidateNative
     {
         public int OpenCount { get; private set; }
 
@@ -777,7 +810,7 @@ public sealed class BatteryValidationFactoryTests
         }
 
         public HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle) =>
-            new(0x1532, 0x02E0, 0x0001, 0x0002, 91);
+            identity ?? new(0x1532, 0x02E0, 0x0001, 0x0002, 91);
 
         public OpenedHidHandle BindSelected(OpenedCandidateHandle handle) => new(
             handle.TransferOwnership(),

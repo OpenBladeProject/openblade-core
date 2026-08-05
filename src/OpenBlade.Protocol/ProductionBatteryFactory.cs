@@ -98,6 +98,17 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         admittedAdapterPowerStates;
 
     public static IProductionBatteryPortFactory CreateWindows()
+        => CreateWindowsCore(compatibilityPolicy: null);
+
+    internal static IProductionBatteryPortFactory CreateWindows(
+        FirmwareCompatibilityPolicy compatibilityPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        return CreateWindowsCore(compatibilityPolicy);
+    }
+
+    private static IProductionBatteryPortFactory CreateWindowsCore(
+        FirmwareCompatibilityPolicy? compatibilityPolicy)
     {
         ReadOnlyMemory<byte>? fixtureBytes = ProductionFixtureSource.Read();
         if (fixtureBytes is null)
@@ -109,11 +120,27 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
             fixtureBytes.Value,
             TrustedFixtureHashRegistry.Production);
-        return CreateWindows(catalog, ProductionBatteryReadEvidence.Production);
+        return CreateWindows(
+            catalog,
+            ProductionBatteryReadEvidence.Production,
+            compatibilityPolicy);
     }
 
     public static IProductionBatteryPortFactory CreateWindowsReadOnly() =>
-        CreateWindows(DeviceCommandCatalog.Empty, ProductionBatteryReadEvidence.Production);
+        CreateWindows(
+            DeviceCommandCatalog.Empty,
+            ProductionBatteryReadEvidence.Production,
+            compatibilityPolicy: null);
+
+    internal static IProductionBatteryPortFactory CreateWindowsReadOnly(
+        FirmwareCompatibilityPolicy compatibilityPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        return CreateWindows(
+            DeviceCommandCatalog.Empty,
+            ProductionBatteryReadEvidence.Production,
+            compatibilityPolicy);
+    }
 
     public async Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
         CancellationToken cancellationToken)
@@ -191,16 +218,22 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 
     private static IProductionBatteryPortFactory CreateWindows(
         DeviceCommandCatalog catalog,
-        ProductionBatteryReadEvidence readEvidence)
+        ProductionBatteryReadEvidence readEvidence,
+        FirmwareCompatibilityPolicy? compatibilityPolicy)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
         var processSource = new RunningProcessSource();
         var serviceSource = new WindowsServiceSource();
         var hardwareAccessGuard = new WindowsHardwareAccessGuard(processSource, serviceSource);
-        var hostIdentity = new WindowsHostIdentitySource(
-            registry,
-            new RuntimeWindowsPlatformEvidenceSource(registry));
+        var hostIdentity = compatibilityPolicy is null
+            ? new WindowsHostIdentitySource(
+                registry,
+                new RuntimeWindowsPlatformEvidenceSource(registry))
+            : new WindowsHostIdentitySource(
+                registry,
+                new RuntimeWindowsPlatformEvidenceSource(registry),
+                compatibilityPolicy);
         var opener = new WindowsRazerHidSessionOpener(
             hostIdentity,
             hardwareAccessGuard,

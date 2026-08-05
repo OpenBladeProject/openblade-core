@@ -15,6 +15,7 @@ public sealed class DiagnosticArchiveProviderTests
         {
             ControllerDetectionWarning = $"Enumeration warning: {secret}",
             AlwaysOverrideExternalLightingChanges = true,
+            AllowUntestedFirmware = true,
             Capabilities = DeviceCapabilities.Unavailable() with
             {
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
@@ -103,6 +104,9 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             bool.TrueString,
             configuration.RootElement.GetProperty("lighting.alwaysOverrideExternalChanges").GetString());
+        Assert.Equal(
+            bool.TrueString,
+            configuration.RootElement.GetProperty("firmware.allowUntested").GetString());
         Assert.Equal(
             "Static, Spectrum",
             configuration.RootElement.GetProperty("capability.observedLightingEffects").GetString());

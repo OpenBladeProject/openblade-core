@@ -167,6 +167,11 @@ public sealed class ControlRequestHandler
                 await runtime.SetExternalLightingOverridePolicyAsync(
                     set.Enabled,
                     cancellationToken)),
+            SetFirmwareCompatibilityOverrideRequest set => Result(
+                request.RequestId,
+                await runtime.SetFirmwareCompatibilityOverrideAsync(
+                    set.Enabled,
+                    cancellationToken)),
             ReapplyChangedSettingsRequest => Result(
                 request.RequestId,
                 await runtime.ReapplyChangedSettingsAsync(cancellationToken)),
@@ -279,6 +284,7 @@ public sealed class ControlRequestHandler
             LightingOverride = null,
             FullChargeOverride = false,
             AlwaysOverrideExternalLightingChanges = false,
+            AllowUntestedFirmware = false,
             KeyboardLightingControlMode = KeyboardLightingControlMode.OpenBlade,
             PerformanceShortcutPreview = null,
             ControlAccess = access,

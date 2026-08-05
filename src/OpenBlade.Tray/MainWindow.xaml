@@ -2877,6 +2877,30 @@
                                                       Toggled="OnStartMinimizedToggled" />
                                     </Grid>
                                 </Border>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Force run on incompatible firmware"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Bypass only the tested firmware check for an exact supported Razer Blade. Other hardware safety checks stay enabled."
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      MinWidth="0"
+                                                      AutomationProperties.Name="Force run on incompatible firmware"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{x:Bind ViewModel.AllowUntestedFirmware, Mode=OneWay}"
+                                                      Toggled="OnFirmwareCompatibilityOverrideToggled" />
+                                    </Grid>
+                                </Border>
                                 <Border Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>

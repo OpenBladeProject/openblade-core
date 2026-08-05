@@ -26,6 +26,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness")]
 [JsonDerivedType(typeof(SetKeyboardLightingControlModeRequest), "setKeyboardLightingControlMode")]
 [JsonDerivedType(typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy")]
+[JsonDerivedType(typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride")]
 [JsonDerivedType(typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings")]
 [JsonDerivedType(typeof(SetLightingSuppressionRequest), "setLightingSuppression")]
 [JsonDerivedType(typeof(PulseReactiveKeyRequest), "pulseReactiveKey")]
@@ -144,6 +145,12 @@ public sealed record SetExternalLightingOverridePolicyRequest(
     bool Enabled)
     : ServiceRequest(Version, RequestId);
 
+public sealed record SetFirmwareCompatibilityOverrideRequest(
+    int Version,
+    Guid RequestId,
+    bool Enabled)
+    : ServiceRequest(Version, RequestId);
+
 public sealed record ReapplyChangedSettingsRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
@@ -231,7 +238,8 @@ public sealed record ServiceStatusSnapshot(
     BatteryHealthStatus? BatteryHealth = null,
     KeyboardLightingControlMode KeyboardLightingControlMode =
         KeyboardLightingControlMode.OpenBlade,
-    SessionControlAccess ControlAccess = SessionControlAccess.Active)
+    SessionControlAccess ControlAccess = SessionControlAccess.Active,
+    bool AllowUntestedFirmware = false)
 {
     public FanControlSettings? FanControlOverride { get; init; }
 

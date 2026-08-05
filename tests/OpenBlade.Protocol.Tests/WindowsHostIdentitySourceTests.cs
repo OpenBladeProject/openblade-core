@@ -138,6 +138,59 @@ public sealed class WindowsHostIdentitySourceTests
         Assert.Null(result.Failure);
     }
 
+    [Fact]
+    public void ReadExactIdentity_UntestedFirmwareRequiresExplicitPolicy()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|BIOSVersion"] = "3.02";
+        registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "3.02";
+        var policy = new FirmwareCompatibilityPolicy();
+        var source = new WindowsHostIdentitySource(
+            registry,
+            new FakeWindowsPlatformEvidenceSource(ExactPlatform),
+            policy);
+
+        AssertIdentityBlocked(source.ReadExactIdentity());
+
+        policy.AllowUntestedFirmware = true;
+        HostIdentityReadResult result = source.ReadExactIdentity();
+
+        Assert.Equal("3.02", result.Evidence?.BiosVersion);
+        Assert.Null(result.Failure);
+    }
+
+    [Fact]
+    public void ReadExactIdentity_UntestedFirmwarePolicyDoesNotRelaxHardwareIdentity()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|SystemProductName"] = "Blade 16 - RZ09-9999";
+        registry.Values[$"{SystemInformationKey}|SystemProductName"] = "Blade 16 - RZ09-9999";
+        var policy = new FirmwareCompatibilityPolicy { AllowUntestedFirmware = true };
+
+        HostIdentityReadResult result = new WindowsHostIdentitySource(
+            registry,
+            new FakeWindowsPlatformEvidenceSource(ExactPlatform),
+            policy).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+    }
+
+    [Fact]
+    public void ReadExactIdentity_UntestedFirmwarePolicyStillRequiresCrossKeyAgreement()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|BIOSVersion"] = "3.02";
+        registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "3.03";
+        var policy = new FirmwareCompatibilityPolicy { AllowUntestedFirmware = true };
+
+        HostIdentityReadResult result = new WindowsHostIdentitySource(
+            registry,
+            new FakeWindowsPlatformEvidenceSource(ExactPlatform),
+            policy).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+    }
+
     [Theory]
     [MemberData(nameof(RegistryValues))]
     public void ReadExactIdentity_BlocksEveryMismatchedValue(string location, string wrongValue)

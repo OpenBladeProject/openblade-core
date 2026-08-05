@@ -58,6 +58,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingGamingModeKeyPolicy;
     private bool changingStartupAnimation;
     private bool changingExternalLightingPolicy;
+    private bool changingFirmwareCompatibilityOverride;
     private bool changingWindowsDynamicLighting;
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
@@ -1027,6 +1028,39 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             toggle.IsOn = ViewModel.AlwaysOverrideExternalLightingChanges;
             toggle.IsEnabled = true;
             changingExternalLightingPolicy = false;
+        }
+    }
+
+    private async void OnFirmwareCompatibilityOverrideToggled(
+        object sender,
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleFirmwareCompatibilityOverrideToggledAsync(sender),
+            nameof(OnFirmwareCompatibilityOverrideToggled));
+
+    private async Task HandleFirmwareCompatibilityOverrideToggledAsync(object sender)
+    {
+        if (changingFirmwareCompatibilityOverride
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.AllowUntestedFirmware)
+        {
+            return;
+        }
+
+        changingFirmwareCompatibilityOverride = true;
+        toggle.IsEnabled = false;
+        try
+        {
+            await ViewModel.SetFirmwareCompatibilityOverrideAsync(
+                toggle.IsOn,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.AllowUntestedFirmware;
+            toggle.IsEnabled = true;
+            changingFirmwareCompatibilityOverride = false;
         }
     }
 
@@ -2262,20 +2296,62 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             });
     }
 
-    private void OnTestedPlatformWarningClick(object sender, RoutedEventArgs args)
+    private async void OnTestedPlatformWarningClick(
+        object sender,
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            ShowTestedPlatformWarningAsync,
+            nameof(OnTestedPlatformWarningClick));
+
+    private async Task ShowTestedPlatformWarningAsync()
     {
-        MainNavigation.SelectedItem = AboutNavigationItem;
-        dispatcherQueue.TryEnqueue(
-            DispatcherQueuePriority.Low,
-            () =>
+        var content = new StackPanel
+        {
+            MaxWidth = 440,
+            Spacing = 12,
+        };
+        content.Children.Add(new TextBlock
+        {
+            Text = ViewModel.DashboardTestedPlatformWarningMessage,
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        Microsoft.UI.Xaml.Controls.CheckBox? runAnyway = null;
+        if (ViewModel.HasIncompatibleFirmware)
+        {
+            content.Children.Add(new TextBlock
             {
-                AboutTestedPlatformWarning.StartBringIntoView(
-                    new BringIntoViewOptions
-                    {
-                        AnimationDesired = true,
-                        VerticalAlignmentRatio = 0,
-                    });
+                Text = "Forcing control may send captured commands to firmware they were not validated against. Exact laptop and USB identity checks remain required.",
+                TextWrapping = TextWrapping.Wrap,
+                Style = (Style)Root.Resources["SecondaryTextStyle"],
             });
+            runAnyway = new Microsoft.UI.Xaml.Controls.CheckBox
+            {
+                Content = "Ignore this firmware mismatch and run anyway",
+                IsChecked = ViewModel.AllowUntestedFirmware,
+            };
+            content.Children.Add(runAnyway);
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = ViewModel.PlatformCompatibilityWarningTitle,
+            Content = content,
+            PrimaryButtonText = runAnyway is null ? string.Empty : "Save",
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary
+            || runAnyway?.IsChecked is not bool enabled
+            || enabled == ViewModel.AllowUntestedFirmware)
+        {
+            return;
+        }
+
+        await ViewModel.SetFirmwareCompatibilityOverrideAsync(
+            enabled,
+            CancellationToken.None);
     }
 
     private async void OnShutdownOpenBlade(object sender, RoutedEventArgs args)

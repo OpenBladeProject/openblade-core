@@ -489,6 +489,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 status.LightingRendererOwnership.ToString(),
             ["lighting.alwaysOverrideExternalChanges"] =
                 status.AlwaysOverrideExternalLightingChanges.ToString(),
+            ["firmware.allowUntested"] = status.AllowUntestedFirmware.ToString(),
             ["confirmed.performance"] = EnumOrUnavailable(confirmed?.Performance),
             ["confirmed.fans"] = EnumOrUnavailable(confirmed?.Fans),
             ["confirmed.battery.chargeLimitPercent"] = NumberOrUnavailable(

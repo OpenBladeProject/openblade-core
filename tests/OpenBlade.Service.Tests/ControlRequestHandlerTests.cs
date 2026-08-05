@@ -34,6 +34,10 @@ public sealed class ControlRequestHandlerTests
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 Enabled: true),
+            new SetFirmwareCompatibilityOverrideRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Enabled: true),
             new ReapplyChangedSettingsRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid()),
@@ -81,7 +85,8 @@ public sealed class ControlRequestHandlerTests
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
             "StepKeyboardBrightness",
-            "SetExternalLightingOverridePolicy", "ReapplyChangedSettings",
+            "SetExternalLightingOverridePolicy", "SetFirmwareCompatibilityOverride",
+            "ReapplyChangedSettings",
             "SetLightingSuppression",
             "PulseReactiveKey", "PushAmbientLightingFrame",
             "SetPlaybackMuteIndicator", "SetBatteryPolicy",
@@ -421,6 +426,14 @@ public sealed class ControlRequestHandlerTests
         {
             Assert.True(enabled);
             return Record("SetExternalLightingOverridePolicy");
+        }
+
+        public Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            Assert.True(enabled);
+            return Record("SetFirmwareCompatibilityOverride");
         }
 
         public Task<ControlOperationResult> ReapplyChangedSettingsAsync(
