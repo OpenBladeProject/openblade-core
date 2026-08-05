@@ -3359,12 +3359,9 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="Official firmware"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Read-only check of Razer's model-specific support page"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
+                                    <TextBlock Text="Official firmware"
+                                               Style="{StaticResource CardTitleStyle}"
+                                               VerticalAlignment="Center" />
                                     <Button Grid.Column="1"
                                             Content="Check Razer"
                                             Command="{x:Bind FirmwareUpdateViewModel.CheckCommand}"
@@ -3385,13 +3382,9 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Check interval"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="OpenBlade checks Razer at startup when this interval is due."
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   TextWrapping="Wrap" />
-                                    </StackPanel>
+                                    <TextBlock Text="Check interval"
+                                               Style="{StaticResource CardTitleStyle}"
+                                               VerticalAlignment="Center" />
                                     <ComboBox Grid.Column="1"
                                               MinWidth="160"
                                               Style="{StaticResource SettingsPickerStyle}"
@@ -3427,7 +3420,7 @@
                                     <TextBlock Grid.Row="3" Grid.Column="2" Text="{x:Bind FirmwareUpdateViewModel.PublishedMcuVersion, Mode=OneWay}" />
                                 </Grid>
 
-                                <TextBlock Text="Updater labels can use different formatting from the installed firmware. OpenBlade does not decide update eligibility, download an updater, or run one."
+                                <TextBlock Text="OpenBlade checks versions only and never downloads or installs firmware."
                                            Style="{StaticResource SecondaryTextStyle}"
                                            TextWrapping="Wrap" />
                                 <HyperlinkButton Content="Open official Razer page"

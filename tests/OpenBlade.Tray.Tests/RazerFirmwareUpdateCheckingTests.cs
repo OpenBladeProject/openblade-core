@@ -187,7 +187,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
     }
 
     [Fact]
-    public async Task ViewModel_ShowsInstalledAndPublishedValuesWithoutComparingThem()
+    public async Task ViewModel_ShowsInstalledAndPublishedValuesWithComparableMcuFormatting()
     {
         var client = new StubClient(new("3.01", "1.04", "1.06"));
         await using var viewModel = new FirmwareUpdateAssistantViewModel(client);
@@ -199,7 +199,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
             RazerBladeModelCatalog.OpenBladeTargetModelNumber));
 
         Assert.True(viewModel.IsSupported);
-        Assert.Equal("1.6.0.0", viewModel.InstalledMcuVersion);
+        Assert.Equal("1.06", viewModel.InstalledMcuVersion);
         await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
 
         Assert.Equal("1.06", viewModel.PublishedMcuVersion);

@@ -399,7 +399,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     public string InstalledEcVersion => FirmwareValue(installedFirmware?.EcVersion);
 
-    public string InstalledMcuVersion => FirmwareValue(installedFirmware?.McuVersion);
+    public string InstalledMcuVersion => McuFirmwareValue(installedFirmware?.McuVersion);
 
     public string PublishedBiosVersion
     {
@@ -677,6 +677,20 @@ public sealed class FirmwareUpdateAssistantViewModel :
             || string.Equals(value.Trim(), "Unavailable", StringComparison.OrdinalIgnoreCase)
             ? "Unavailable"
             : value.Trim();
+
+    private static string McuFirmwareValue(string? value)
+    {
+        string firmwareValue = FirmwareValue(value);
+        if (Version.TryParse(firmwareValue, out Version? version)
+            && version.Build == 0
+            && version.Revision == 0
+            && version.Minor is >= 0 and <= 99)
+        {
+            return $"{version.Major}.{version.Minor:D2}";
+        }
+
+        return firmwareValue;
+    }
 
     private static string PublishedValue(
         string? value,

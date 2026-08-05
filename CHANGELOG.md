@@ -13,6 +13,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Shortened the official firmware card and displayed decoded MCU versions in
+  the same release format used by Razer's updater labels.
 - Recorded the combined hardware-cleanup result during every graceful service
   stop so deliberate safety skips remain diagnosable without warning noise.
 - Restored firmware-managed Automatic fan control during a graceful service

@@ -24,7 +24,15 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("FirmwareUpdateViewModel.OfficialSupportUri", presentation);
         Assert.Contains("FirmwareUpdateViewModel.IntervalOptions", presentation);
         Assert.Contains("FirmwareUpdateViewModel.SelectedIntervalOption", presentation);
-        Assert.Contains("does not decide update eligibility", presentation);
+        Assert.Contains(
+            "OpenBlade checks versions only and never downloads or installs firmware.",
+            presentation);
+        Assert.DoesNotContain(
+            "Read-only check of Razer's model-specific support page",
+            presentation);
+        Assert.DoesNotContain(
+            "OpenBlade checks Razer at startup when this interval is due.",
+            presentation);
         XElement progressRing = Assert.Single(
             card.Descendants(),
             element => element.Name.LocalName == "ProgressRing");
