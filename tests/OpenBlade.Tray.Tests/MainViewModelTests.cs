@@ -4719,6 +4719,26 @@ public sealed class MainViewModelTests
         {
             Revision = stable.Revision + 3,
             DeviceVerified = false,
+            WritesBlocked = true,
+            AllowUntestedFirmware = true,
+            FirmwareCompatibility = FirmwareCompatibilityStatus.UntestedAllowed,
+            Firmware = stable.Firmware! with { BiosVersion = "3.02" },
+        });
+        await WaitUntilAsync(() => viewModel.AllowUntestedFirmware);
+
+        Assert.DoesNotContain(
+            "unless you enable the firmware override",
+            viewModel.LightingControlUnavailableMessage,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "find a supported laptop",
+            viewModel.LightingControlUnavailableMessage,
+            StringComparison.Ordinal);
+
+        client.Publish(stable with
+        {
+            Revision = stable.Revision + 4,
+            DeviceVerified = false,
             FirmwareCompatibility = FirmwareCompatibilityStatus.Unknown,
             Firmware = stable.Firmware! with { ModelNumber = "RZ09-9999ABC" },
         });
@@ -4732,7 +4752,7 @@ public sealed class MainViewModelTests
 
         client.Publish(stable with
         {
-            Revision = stable.Revision + 4,
+            Revision = stable.Revision + 5,
             Firmware = new FirmwareVersions(
                 "2.02",
                 "1.09",

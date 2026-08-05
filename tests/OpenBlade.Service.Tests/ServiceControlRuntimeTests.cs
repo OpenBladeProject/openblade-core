@@ -1906,7 +1906,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task DisablingFirmwareCompatibilityOverride_RevokesOwnedRenderer()
+    public async Task DisablingFirmwareCompatibilityOverride_RevokesOwnedRendererAfterUnknownProbe()
     {
         TestContext context = CreateContext(providerAvailable: false);
         context.Provider.AvailableWhenUntestedFirmwareAllowed = true;
@@ -1915,6 +1915,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
         context.Device.LightingRendererOwnership =
             LightingRendererOwnershipState.Reactive;
+        context.Provider.ReportUnknownFirmwareCompatibility = true;
 
         await context.Runtime.SetFirmwareCompatibilityOverrideAsync(
             false,
@@ -6919,13 +6920,20 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public bool AllowUntestedFirmware { get; private set; }
 
         public FirmwareCompatibilityStatus FirmwareCompatibility =>
-            AvailableWhenUntestedFirmwareAllowed
+            ReportUnknownFirmwareCompatibility
+                ? FirmwareCompatibilityStatus.Unknown
+                : AvailableWhenUntestedFirmwareAllowed
                 ? AllowUntestedFirmware
                     ? FirmwareCompatibilityStatus.UntestedAllowed
                     : FirmwareCompatibilityStatus.UntestedBlocked
                 : Available
                     ? FirmwareCompatibilityStatus.Tested
                     : FirmwareCompatibilityStatus.Unknown;
+
+        public bool RequiresUntestedFirmwareOverride =>
+            AvailableWhenUntestedFirmwareAllowed;
+
+        public bool ReportUnknownFirmwareCompatibility { get; set; }
 
         public int TryGetCount { get; private set; }
 

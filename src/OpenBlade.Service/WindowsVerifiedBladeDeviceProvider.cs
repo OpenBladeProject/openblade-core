@@ -32,6 +32,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
     private readonly object providerLifecycleSync = new();
     private long lastReadyProbeTimestamp;
     private int firmwareCompatibility;
+    private int requiresUntestedFirmwareOverride;
     private int disposed;
 
     public WindowsVerifiedBladeDeviceProvider()
@@ -78,8 +79,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
     public void SetAllowUntestedFirmware(bool enabled)
     {
         compatibilityPolicy.AllowUntestedFirmware = enabled;
-        if (!enabled
-            && FirmwareCompatibility == FirmwareCompatibilityStatus.UntestedAllowed)
+        if (!enabled && RequiresUntestedFirmwareOverride)
         {
             Volatile.Write(
                 ref firmwareCompatibility,
@@ -89,6 +89,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
     public FirmwareCompatibilityStatus FirmwareCompatibility =>
         (FirmwareCompatibilityStatus)Volatile.Read(ref firmwareCompatibility);
+
+    public bool RequiresUntestedFirmwareOverride =>
+        Volatile.Read(ref requiresUntestedFirmwareOverride) != 0;
 
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
     {
@@ -101,9 +104,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         try
         {
             BatteryValidationProbeResult result = probe();
-            Volatile.Write(
-                ref firmwareCompatibility,
-                (int)MapFirmwareCompatibility(result.FirmwareCompatibility));
+            UpdateFirmwareCompatibility(
+                MapFirmwareCompatibility(result.FirmwareCompatibility));
             BatteryValidationProbeClassification classification = result.Classification;
             if (!IsReadyClassification(classification))
             {
@@ -188,11 +190,37 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             _ => FirmwareCompatibilityStatus.Unknown,
         };
 
+    private void UpdateFirmwareCompatibility(FirmwareCompatibilityStatus compatibility)
+    {
+        // Unknown fails closed for renderer reuse, but it must not erase a
+        // previously confirmed override dependency. Otherwise a transient
+        // probe failure immediately before disabling could skip renderer cleanup.
+        if (compatibility == FirmwareCompatibilityStatus.Tested)
+        {
+            Volatile.Write(ref requiresUntestedFirmwareOverride, 0);
+        }
+        else if (compatibility is FirmwareCompatibilityStatus.UntestedBlocked
+            or FirmwareCompatibilityStatus.UntestedAllowed)
+        {
+            Volatile.Write(ref requiresUntestedFirmwareOverride, 1);
+        }
+
+        Volatile.Write(ref firmwareCompatibility, (int)compatibility);
+    }
+
+    private bool IsOwnedRendererFirmwareAccessAllowed()
+    {
+        FirmwareCompatibilityStatus compatibility = FirmwareCompatibility;
+        return compatibility == FirmwareCompatibilityStatus.Tested
+            || compatibility == FirmwareCompatibilityStatus.UntestedAllowed
+                && compatibilityPolicy.AllowUntestedFirmware;
+    }
+
     public bool TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice verifiedDevice)
     {
         verifiedDevice = null!;
         if (Volatile.Read(ref disposed) != 0
-            || FirmwareCompatibility == FirmwareCompatibilityStatus.UntestedBlocked
+            || !IsOwnedRendererFirmwareAccessAllowed()
             || !device.HasOwnedKeyTriggeredRenderer)
         {
             return false;
@@ -201,7 +229,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         lock (providerLifecycleSync)
         {
             if (disposed != 0
-                || FirmwareCompatibility == FirmwareCompatibilityStatus.UntestedBlocked
+                || !IsOwnedRendererFirmwareAccessAllowed()
                 || !device.HasOwnedKeyTriggeredRenderer)
             {
                 return false;
@@ -219,7 +247,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
     {
         verifiedDevice = null!;
         if (Volatile.Read(ref disposed) != 0
-            || FirmwareCompatibility == FirmwareCompatibilityStatus.UntestedBlocked
+            || !IsOwnedRendererFirmwareAccessAllowed()
             || !device.HasOwnedAmbientRenderer)
         {
             return false;
@@ -228,7 +256,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         lock (providerLifecycleSync)
         {
             if (disposed != 0
-                || FirmwareCompatibility == FirmwareCompatibilityStatus.UntestedBlocked
+                || !IsOwnedRendererFirmwareAccessAllowed()
                 || !device.HasOwnedAmbientRenderer)
             {
                 return false;

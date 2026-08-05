@@ -1687,8 +1687,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             Exception? cleanupFailure = null;
             if (!enabled
-                && deviceProvider.FirmwareCompatibility
-                    == FirmwareCompatibilityStatus.UntestedAllowed)
+                && deviceProvider.RequiresUntestedFirmwareOverride)
             {
                 try
                 {

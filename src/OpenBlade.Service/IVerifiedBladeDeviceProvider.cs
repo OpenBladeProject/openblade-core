@@ -9,12 +9,11 @@ public sealed record LightingRendererInvalidationResult(
 
 public interface IVerifiedBladeDeviceProvider
 {
-    FirmwareCompatibilityStatus FirmwareCompatibility =>
-        FirmwareCompatibilityStatus.Unknown;
+    FirmwareCompatibilityStatus FirmwareCompatibility { get; }
 
-    void SetAllowUntestedFirmware(bool enabled)
-    {
-    }
+    bool RequiresUntestedFirmwareOverride { get; }
+
+    void SetAllowUntestedFirmware(bool enabled);
 
     bool TryGetVerifiedDevice(out IBladeDevice device);
 

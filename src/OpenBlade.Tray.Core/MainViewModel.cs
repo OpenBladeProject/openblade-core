@@ -1475,7 +1475,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             if (latestStatus?.DeviceVerified != true)
             {
-                return HasIncompatibleFirmware
+                return IsFirmwareAdmissionBlocked
                     ? "OpenBlade found a supported laptop with incompatible firmware, so lighting controls are unavailable unless you enable the firmware override."
                     : "OpenBlade can’t find a supported laptop, so lighting controls are unavailable.";
             }

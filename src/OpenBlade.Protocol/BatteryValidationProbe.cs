@@ -190,7 +190,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 return Failure(
                     BatteryValidationProbeStage.ConflictCheck,
                     BatteryValidationProbeClassification.ConflictDetectionFailed,
-                    hostIdentityMatched: true);
+                    hostIdentityMatched: true,
+                    firmwareCompatibility: firmwareCompatibility);
             }
 
             if (access.DetectionFailure is not null)
@@ -198,7 +199,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 return Failure(
                     BatteryValidationProbeStage.ConflictCheck,
                     BatteryValidationProbeClassification.ConflictDetectionFailed,
-                    hostIdentityMatched: true);
+                    hostIdentityMatched: true,
+                    firmwareCompatibility: firmwareCompatibility);
             }
 
             if (access.Conflicts.Count != 0)
@@ -206,7 +208,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 return Failure(
                     BatteryValidationProbeStage.ConflictCheck,
                     BatteryValidationProbeClassification.ConflictBlocked,
-                    hostIdentityMatched: true);
+                    hostIdentityMatched: true,
+                    firmwareCompatibility: firmwareCompatibility);
             }
         }
 
@@ -221,7 +224,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 BatteryValidationProbeStage.Enumeration,
                 BatteryValidationProbeClassification.EnumerationFailed,
                 hostIdentityMatched: true,
-                conflictCheckPassed: conflictCheckPassed);
+                conflictCheckPassed: conflictCheckPassed,
+                firmwareCompatibility: firmwareCompatibility);
         }
 
         int openAttempts = 0;

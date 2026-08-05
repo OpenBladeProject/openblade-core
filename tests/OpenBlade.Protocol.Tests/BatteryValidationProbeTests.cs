@@ -9,6 +9,11 @@ public sealed class BatteryValidationProbeTests
         new HostIdentityEvidence("Razer", "Blade 16 - RZ09-0581", "RZ09-05819EN4", "3.01"),
         null);
 
+    private static readonly HostIdentityReadResult UntestedAllowedHost = new(
+        new HostIdentityEvidence("Razer", "Blade 16 - RZ09-0581", "RZ09-05819EN4", "3.02"),
+        null,
+        HostFirmwareCompatibility.UntestedAllowed);
+
     private static readonly HidHandleIdentity ExactHandle = new(
         0x1532, 0x02E0, 0x0001, 0x0002, 91);
 
@@ -81,6 +86,45 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(["identity", "guard"], events);
         Assert.Equal(0, native.EnumerateCalls);
         Assert.Equal(0, native.BindCalls);
+    }
+
+    [Fact]
+    public void Evaluate_PostIdentityConflictFailurePreservesFirmwareCompatibility()
+    {
+        var evaluator = new WindowsRazerHidEvidenceEvaluator(
+            new ScriptedIdentitySource(UntestedAllowedHost, null),
+            new ScriptedGuard(new HardwareAccessDecision(["controller"], null), null),
+            new ScriptedNative([]),
+            ControllerExclusivityPolicy.Strict);
+
+        using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
+
+        Assert.Equal(
+            BatteryValidationProbeClassification.ConflictBlocked,
+            evaluation.Result.Classification);
+        Assert.Equal(
+            BatteryValidationFirmwareCompatibility.UntestedAllowed,
+            evaluation.Result.FirmwareCompatibility);
+    }
+
+    [Fact]
+    public void Evaluate_PostIdentityEnumerationFailurePreservesFirmwareCompatibility()
+    {
+        var native = new ScriptedNative([]) { ThrowOnEnumeration = true };
+        var evaluator = new WindowsRazerHidEvidenceEvaluator(
+            new ScriptedIdentitySource(UntestedAllowedHost, null),
+            new ScriptedGuard(new HardwareAccessDecision([], null), null),
+            native,
+            ControllerExclusivityPolicy.Advisory);
+
+        using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
+
+        Assert.Equal(
+            BatteryValidationProbeClassification.EnumerationFailed,
+            evaluation.Result.Classification);
+        Assert.Equal(
+            BatteryValidationFirmwareCompatibility.UntestedAllowed,
+            evaluation.Result.FirmwareCompatibility);
     }
 
     [Theory]

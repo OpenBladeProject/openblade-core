@@ -567,7 +567,19 @@ public sealed class ControlRequestHandlerTests
     private sealed class CountingProvider(bool available, IBladeDevice device)
         : IVerifiedBladeDeviceProvider
     {
+        public FirmwareCompatibilityStatus FirmwareCompatibility =>
+            available
+                ? FirmwareCompatibilityStatus.Tested
+                : FirmwareCompatibilityStatus.Unknown;
+
+        public bool RequiresUntestedFirmwareOverride => false;
+
         public int Calls { get; private set; }
+
+        public void SetAllowUntestedFirmware(bool enabled)
+        {
+        }
+
         public bool TryGetVerifiedDevice(out IBladeDevice verified)
         {
             Calls++;
