@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
@@ -686,7 +687,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
             && version.Revision == 0
             && version.Minor is >= 0 and <= 99)
         {
-            return $"{version.Major}.{version.Minor:D2}";
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"{version.Major}.{version.Minor:D2}");
         }
 
         return firmwareValue;

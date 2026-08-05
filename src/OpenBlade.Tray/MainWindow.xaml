@@ -3103,7 +3103,7 @@
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Check interval"
                                                        Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="After you choose an interval, OpenBlade checks GitHub at startup when that interval is due."
+                                            <TextBlock Text="Checks at startup when due."
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
@@ -3382,9 +3382,13 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Check interval"
-                                               Style="{StaticResource CardTitleStyle}"
-                                               VerticalAlignment="Center" />
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Check interval"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Checks at startup when due."
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
                                     <ComboBox Grid.Column="1"
                                               MinWidth="160"
                                               Style="{StaticResource SettingsPickerStyle}"
@@ -3420,7 +3424,7 @@
                                     <TextBlock Grid.Row="3" Grid.Column="2" Text="{x:Bind FirmwareUpdateViewModel.PublishedMcuVersion, Mode=OneWay}" />
                                 </Grid>
 
-                                <TextBlock Text="OpenBlade checks versions only and never downloads or installs firmware."
+                                <TextBlock Text="MCU labels may use a different format. OpenBlade never downloads or installs firmware."
                                            Style="{StaticResource SecondaryTextStyle}"
                                            TextWrapping="Wrap" />
                                 <HyperlinkButton Content="Open official Razer page"

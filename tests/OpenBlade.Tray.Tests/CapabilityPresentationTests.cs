@@ -25,14 +25,16 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("FirmwareUpdateViewModel.IntervalOptions", presentation);
         Assert.Contains("FirmwareUpdateViewModel.SelectedIntervalOption", presentation);
         Assert.Contains(
-            "OpenBlade checks versions only and never downloads or installs firmware.",
+            "MCU labels may use a different format. OpenBlade never downloads or installs firmware.",
             presentation);
+        Assert.Equal(2, document.Descendants().Count(element =>
+            Attribute(element, "Text") == "Checks at startup when due."));
         Assert.DoesNotContain(
             "Read-only check of Razer's model-specific support page",
             presentation);
         Assert.DoesNotContain(
-            "OpenBlade checks Razer at startup when this interval is due.",
-            presentation);
+            "After you choose an interval, OpenBlade checks GitHub at startup when that interval is due.",
+            document.ToString());
         XElement progressRing = Assert.Single(
             card.Descendants(),
             element => element.Name.LocalName == "ProgressRing");

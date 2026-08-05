@@ -207,6 +207,28 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.NotNull(viewModel.OfficialSupportUri);
     }
 
+    [Theory]
+    [InlineData("1.6.0.0", "1.06")]
+    [InlineData("1.6.2.0", "1.6.2.0")]
+    [InlineData("1.100.0.0", "1.100.0.0")]
+    [InlineData("Unavailable", "Unavailable")]
+    [InlineData("1.06", "1.06")]
+    public async Task ViewModel_FormatsOnlyPaddedFourPartMcuVersions(
+        string installedVersion,
+        string expectedPresentation)
+    {
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            new StubClient(new("3.01", "1.04", "1.06")));
+        viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "3.01",
+            "1.04",
+            installedVersion,
+            "95.04.5C.40.A9",
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber));
+
+        Assert.Equal(expectedPresentation, viewModel.InstalledMcuVersion);
+    }
+
     [Fact]
     public async Task ViewModel_DistinguishesUnreadableAndUnlistedPublishedVersions()
     {
