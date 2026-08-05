@@ -183,6 +183,15 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 enabled),
             token);
 
+    public Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
+        bool enabled,
+        CancellationToken token) => SendMutationAsync(
+            new SetFirmwareCompatibilityOverrideRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                enabled),
+            token);
+
     public Task<ControlOperationResult> ReapplyChangedSettingsAsync(
         CancellationToken token) => SendMutationAsync(
             new ReapplyChangedSettingsRequest(

@@ -147,6 +147,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool hasExternalChanges;
     private string externalChangesText = string.Empty;
     private bool alwaysOverrideExternalLightingChanges;
+    private bool allowUntestedFirmware;
     private KeyboardLightingControlMode keyboardLightingControlMode;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
@@ -856,7 +857,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         : IsCheckingLaptopConnection(latestStatus)
             ? "Checking laptop"
             : latestStatus?.DeviceVerified == false
-                ? "Laptop not found"
+                ? UnavailableLaptopReason
                 : ActivePowerSource == PowerSource.ExternalUnknown
                     ? "Checking power source"
                     : CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus)
@@ -874,15 +875,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && ActivePowerSource == PowerSource.ExternalUnknown);
 
     public bool IsReadinessWarning => IsConnected
-        && latestStatus?.DeviceVerified == true
-        && ActivePowerSource != PowerSource.ExternalUnknown
-        && !IsCheckingLaptopConnection(latestStatus)
-        && !IsRetainedPowerSourceRecheck(latestStatus)
-        && !CanControlHardware;
+        && (IsFirmwareAdmissionBlocked
+            || latestStatus?.DeviceVerified == true
+                && ActivePowerSource != PowerSource.ExternalUnknown
+                && !IsCheckingLaptopConnection(latestStatus)
+                && !IsRetainedPowerSourceRecheck(latestStatus)
+                && !CanControlHardware);
 
     public bool IsReadinessError => !IsConnected
         || (!IsCheckingLaptopConnection(latestStatus)
-            && latestStatus?.DeviceVerified != true);
+            && latestStatus?.DeviceVerified != true
+            && !IsFirmwareAdmissionBlocked);
 
     public string PerformanceSourceLabel
     {
@@ -1007,6 +1010,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         private set => SetField(ref alwaysOverrideExternalLightingChanges, value);
     }
 
+    public bool AllowUntestedFirmware
+    {
+        get => allowUntestedFirmware;
+        private set => SetField(ref allowUntestedFirmware, value);
+    }
+
     public KeyboardLightingControlMode KeyboardLightingControlMode
     {
         get => keyboardLightingControlMode;
@@ -1063,6 +1072,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             await dispatcher.InvokeAsync(
                 () => AlwaysOverrideExternalLightingChanges = enabled,
+                cancellationToken);
+        }
+
+        return accepted;
+    }
+
+    public async Task<bool> SetFirmwareCompatibilityOverrideAsync(
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        bool accepted = await RunOperationAsync(
+            token => serviceClient.SetFirmwareCompatibilityOverrideAsync(enabled, token),
+            cancellationToken);
+        if (accepted)
+        {
+            await dispatcher.InvokeAsync(
+                () => AllowUntestedFirmware = enabled,
                 cancellationToken);
         }
 
@@ -1208,6 +1234,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             MatchesTestedConfiguration: false,
         };
 
+    public bool HasIncompatibleFirmware => latestStatus?.FirmwareCompatibility is
+        FirmwareCompatibilityStatus.UntestedBlocked
+        or FirmwareCompatibilityStatus.UntestedAllowed;
+
+    private string UnavailableLaptopReason => IsFirmwareAdmissionBlocked
+        ? "Incompatible firmware"
+        : "Laptop not found";
+
+    private bool IsFirmwareAdmissionBlocked =>
+        latestStatus?.FirmwareCompatibility
+            == FirmwareCompatibilityStatus.UntestedBlocked;
+
     public string PlatformCompatibilityWarningTitle =>
         CurrentTestedPlatformAssessment.Mismatches.Any(mismatch =>
             string.Equals(
@@ -1215,7 +1253,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 "Model",
                 StringComparison.OrdinalIgnoreCase))
             ? "Incompatible hardware"
-            : "Incompatible firmware";
+            : HasIncompatibleFirmware
+                ? "Incompatible firmware"
+                : "Untested platform configuration";
 
     public string DashboardTestedPlatformWarningMessage =>
         FormatTestedPlatformWarning(CurrentTestedPlatformAssessment);
@@ -1227,8 +1267,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             string warning = DashboardTestedPlatformWarningMessage;
             return string.IsNullOrEmpty(warning)
                 ? string.Empty
-                : $"{warning} This is a compatibility notice, not a hardware failure. "
-                    + "Controls remain available, but behavior may differ.";
+                : HasIncompatibleFirmware && latestStatus?.DeviceVerified != true
+                    ? $"{warning} This is a compatibility notice, not a hardware failure. "
+                        + (AllowUntestedFirmware
+                            ? "The firmware override is enabled, and OpenBlade is checking control access."
+                            : "Controls remain blocked unless you explicitly enable the firmware override.")
+                    : $"{warning} This is a compatibility notice, not a hardware failure. "
+                        + "Controls remain available, but behavior may differ.";
         }
     }
 
@@ -1435,7 +1480,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             if (latestStatus?.DeviceVerified != true)
             {
-                return "OpenBlade can’t find a supported laptop, so lighting controls are unavailable.";
+                return IsFirmwareAdmissionBlocked
+                    ? "OpenBlade found a supported laptop with incompatible firmware, so lighting controls are unavailable unless you enable the firmware override."
+                    : "OpenBlade can’t find a supported laptop, so lighting controls are unavailable.";
             }
 
             if (!HasLightingCapability && latestStatus.PotentialControllers.Count > 0)
@@ -4046,6 +4093,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : string.Empty;
         AlwaysOverrideExternalLightingChanges =
             status.AlwaysOverrideExternalLightingChanges;
+        AllowUntestedFirmware = status.AllowUntestedFirmware;
         KeyboardLightingControlMode = status.KeyboardLightingControlMode;
         Profiles = status.Profiles;
         if (!lightingPowerPolicyEditorDirty)
@@ -7208,7 +7256,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(HasLightingProfileActionOpportunity));
     }
 
-    private static string SourceLabel(
+    private string SourceLabel(
         DeviceSubsystem subsystem,
         bool confirmed,
         ServiceStatusSnapshot status,
@@ -7216,14 +7264,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IsCheckingLaptopConnection(status)
             ? "Checking laptop"
             : !status.DeviceVerified
-            ? "Laptop not found"
+            ? UnavailableLaptopReason
             : externalChanges.Contains(subsystem)
             ? "Changed outside OpenBlade"
             : confirmed
                 ? "Current setting"
                 : "Controls unavailable";
 
-    private static string FormatBatterySource(
+    private string FormatBatterySource(
         ConfirmedBatteryState? battery,
         bool changedOutside,
         ServiceStatusSnapshot status)
@@ -7234,7 +7282,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         if (!status.DeviceVerified)
         {
-            return "Laptop not found";
+            return UnavailableLaptopReason;
         }
         if (battery is null)
         {
@@ -7552,7 +7600,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    private static string FormatControlAccessStatus(ServiceStatusSnapshot status)
+    private string FormatControlAccessStatus(ServiceStatusSnapshot status)
     {
         if (status.ControlAccess != SessionControlAccess.Active)
         {
@@ -7568,7 +7616,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         if (!status.DeviceVerified)
         {
-            return "Laptop not found";
+            return UnavailableLaptopReason;
         }
 
         if (status.ActivePowerSource == PowerSource.ExternalUnknown)
@@ -7798,6 +7846,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(AboutVbiosVersionStatus));
         Notify(nameof(AboutBatteryHealthStatus));
         Notify(nameof(HasUntestedPlatformVersion));
+        Notify(nameof(HasIncompatibleFirmware));
         Notify(nameof(PlatformCompatibilityWarningTitle));
         Notify(nameof(DashboardTestedPlatformWarningMessage));
         Notify(nameof(AboutTestedPlatformWarningMessage));

@@ -64,7 +64,8 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         var preferences = new BatteryAutomationPreferences(
             ProtectionEnabled: true,
             AlwaysOverrideExternalLightingChanges: true,
-            LastKnownLighting: lastKnown);
+            LastKnownLighting: lastKnown,
+            AllowUntestedFirmware: true);
 
         await store.SaveConfigurationAsync(
             initial.Profiles,
@@ -81,6 +82,10 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.True(
             persisted.RootElement.GetProperty("preferences")
                 .GetProperty("alwaysOverrideExternalLightingChanges")
+                .GetBoolean());
+        Assert.True(
+            persisted.RootElement.GetProperty("preferences")
+                .GetProperty("allowUntestedFirmware")
                 .GetBoolean());
         Assert.Equal(
             (int)LightingEffect.Off,

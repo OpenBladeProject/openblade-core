@@ -34,6 +34,10 @@ public sealed class ControlRequestHandlerTests
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 Enabled: true),
+            new SetFirmwareCompatibilityOverrideRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Enabled: true),
             new ReapplyChangedSettingsRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid()),
@@ -81,7 +85,8 @@ public sealed class ControlRequestHandlerTests
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
             "StepKeyboardBrightness",
-            "SetExternalLightingOverridePolicy", "ReapplyChangedSettings",
+            "SetExternalLightingOverridePolicy", "SetFirmwareCompatibilityOverride",
+            "ReapplyChangedSettings",
             "SetLightingSuppression",
             "PulseReactiveKey", "PushAmbientLightingFrame",
             "SetPlaybackMuteIndicator", "SetBatteryPolicy",
@@ -423,6 +428,14 @@ public sealed class ControlRequestHandlerTests
             return Record("SetExternalLightingOverridePolicy");
         }
 
+        public Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            Assert.True(enabled);
+            return Record("SetFirmwareCompatibilityOverride");
+        }
+
         public Task<ControlOperationResult> ReapplyChangedSettingsAsync(
             CancellationToken token) => Record("ReapplyChangedSettings");
 
@@ -554,7 +567,19 @@ public sealed class ControlRequestHandlerTests
     private sealed class CountingProvider(bool available, IBladeDevice device)
         : IVerifiedBladeDeviceProvider
     {
+        public FirmwareCompatibilityStatus FirmwareCompatibility =>
+            available
+                ? FirmwareCompatibilityStatus.Tested
+                : FirmwareCompatibilityStatus.Unknown;
+
+        public bool RequiresUntestedFirmwareOverride => false;
+
         public int Calls { get; private set; }
+
+        public void SetAllowUntestedFirmware(bool enabled)
+        {
+        }
+
         public bool TryGetVerifiedDevice(out IBladeDevice verified)
         {
             Calls++;

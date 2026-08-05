@@ -7,7 +7,18 @@ internal readonly record struct HostIdentityEvidence(
     string Manufacturer, string ProductName, string Sku, string BiosVersion);
 
 internal readonly record struct HostIdentityReadResult(
-    HostIdentityEvidence? Evidence, HidSessionFailureKind? Failure);
+    HostIdentityEvidence? Evidence,
+    HidSessionFailureKind? Failure,
+    HostFirmwareCompatibility FirmwareCompatibility =
+        HostFirmwareCompatibility.Unknown);
+
+internal enum HostFirmwareCompatibility
+{
+    Unknown,
+    Tested,
+    UntestedBlocked,
+    UntestedAllowed,
+}
 
 internal readonly record struct WindowsPlatformEvidence(
     bool IsWindows,
@@ -85,18 +96,28 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
     private readonly IRegistryValueSource registry;
     private readonly IWindowsPlatformEvidenceSource platform;
     private readonly ExpectedHostIdentity expected;
+    private readonly FirmwareCompatibilityPolicy? compatibilityPolicy;
 
     internal WindowsHostIdentitySource(
         IRegistryValueSource registry,
         IWindowsPlatformEvidenceSource platform)
-        : this(registry, platform, ProductionIdentity)
+        : this(registry, platform, ProductionIdentity, compatibilityPolicy: null)
     {
     }
 
     internal WindowsHostIdentitySource(
         IRegistryValueSource registry,
         IWindowsPlatformEvidenceSource platform,
-        ExpectedHostIdentity expected)
+        FirmwareCompatibilityPolicy compatibilityPolicy)
+        : this(registry, platform, ProductionIdentity, compatibilityPolicy)
+    {
+    }
+
+    internal WindowsHostIdentitySource(
+        IRegistryValueSource registry,
+        IWindowsPlatformEvidenceSource platform,
+        ExpectedHostIdentity expected,
+        FirmwareCompatibilityPolicy? compatibilityPolicy = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(platform);
@@ -111,6 +132,7 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
         this.registry = registry;
         this.platform = platform;
         this.expected = expected;
+        this.compatibilityPolicy = compatibilityPolicy;
     }
 
     public HostIdentityReadResult ReadExactIdentity()
@@ -119,10 +141,10 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
             || !TryReadExact(BiosKey, "SystemManufacturer", expected.Manufacturer, out string biosManufacturer)
             || !TryReadExact(BiosKey, "SystemProductName", expected.ProductName, out string biosProductName)
             || !TryReadExact(BiosKey, "SystemSKU", expected.Sku, out string sku)
-            || !TryReadExact(BiosKey, "BIOSVersion", expected.BiosVersion, out string biosVersion)
+            || !TryReadValue(BiosKey, "BIOSVersion", out string biosVersion)
             || !TryReadExact(SystemInformationKey, "SystemManufacturer", expected.Manufacturer, out string systemManufacturer)
             || !TryReadExact(SystemInformationKey, "SystemProductName", expected.ProductName, out string systemProductName)
-            || !TryReadExact(SystemInformationKey, "BIOSVersion", expected.BiosVersion, out string systemBiosVersion)
+            || !TryReadValue(SystemInformationKey, "BIOSVersion", out string systemBiosVersion)
             || !string.Equals(biosManufacturer, systemManufacturer, StringComparison.Ordinal)
             || !string.Equals(biosProductName, systemProductName, StringComparison.Ordinal)
             || !string.Equals(biosVersion, systemBiosVersion, StringComparison.Ordinal))
@@ -130,18 +152,41 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
             return new(null, HidSessionFailureKind.IdentityBlocked);
         }
 
+        bool testedFirmware = string.Equals(
+            biosVersion,
+            expected.BiosVersion,
+            StringComparison.Ordinal);
+        if (!testedFirmware && compatibilityPolicy?.AllowUntestedFirmware != true)
+        {
+            return new(
+                null,
+                HidSessionFailureKind.IdentityBlocked,
+                HostFirmwareCompatibility.UntestedBlocked);
+        }
+
         return new(
             new HostIdentityEvidence(biosManufacturer, biosProductName, sku, biosVersion),
-            null);
+            null,
+            testedFirmware
+                ? HostFirmwareCompatibility.Tested
+                : HostFirmwareCompatibility.UntestedAllowed);
     }
 
-    internal static bool IsExactRz090528WindowsHost()
+    internal static bool IsExactRz090528WindowsHost() =>
+        IsRz090528WindowsHost(allowUntestedFirmware: false);
+
+    internal static bool IsRz090528WindowsHost(bool allowUntestedFirmware)
     {
         var registry = new WindowsRegistryValueSource();
+        var compatibilityPolicy = new FirmwareCompatibilityPolicy
+        {
+            AllowUntestedFirmware = allowUntestedFirmware,
+        };
         return new WindowsHostIdentitySource(
             registry,
             new RuntimeWindowsPlatformEvidenceSource(registry),
-            Rz090528Identity).ReadExactIdentity() is
+            Rz090528Identity,
+            compatibilityPolicy).ReadExactIdentity() is
         {
             Evidence: not null,
             Failure: null,
@@ -168,6 +213,12 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
 
     private bool TryReadExact(string key, string valueName, string expected, out string actual)
     {
+        return TryReadValue(key, valueName, out actual)
+            && string.Equals(actual, expected, StringComparison.Ordinal);
+    }
+
+    private bool TryReadValue(string key, string valueName, out string actual)
+    {
         try
         {
             object? value = registry.Read(
@@ -176,7 +227,7 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
                 key,
                 valueName);
             actual = value as string ?? string.Empty;
-            return string.Equals(actual, expected, StringComparison.Ordinal);
+            return !string.IsNullOrWhiteSpace(actual);
         }
         catch (Exception)
         {

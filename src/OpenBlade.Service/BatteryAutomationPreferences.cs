@@ -7,7 +7,8 @@ public sealed record BatteryAutomationPreferences(
     bool AlwaysOverrideExternalLightingChanges = false,
     LightingSettings? LastKnownLighting = null,
     KeyboardLightingControlMode KeyboardLightingControlMode =
-        KeyboardLightingControlMode.OpenBlade);
+        KeyboardLightingControlMode.OpenBlade,
+    bool AllowUntestedFirmware = false);
 
 public sealed record BatteryConfiguration(
     ProfileSet Profiles,

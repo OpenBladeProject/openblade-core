@@ -1875,6 +1875,60 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task FirmwareCompatibilityOverride_PersistsAndRefreshesDeviceAdmission()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        context.Provider.AvailableWhenUntestedFirmwareAllowed = true;
+
+        ControlOperationResult enabled =
+            await context.Runtime.SetFirmwareCompatibilityOverrideAsync(
+                true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, enabled.Status);
+        Assert.True(context.Provider.AllowUntestedFirmware);
+        Assert.True(context.Runtime.GetStatus().AllowUntestedFirmware);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.True(saved.Preferences.AllowUntestedFirmware);
+
+        ControlOperationResult disabled =
+            await context.Runtime.SetFirmwareCompatibilityOverrideAsync(
+                false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, disabled.Status);
+        Assert.False(context.Provider.AllowUntestedFirmware);
+        Assert.False(context.Runtime.GetStatus().AllowUntestedFirmware);
+        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+        saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.False(saved.Preferences.AllowUntestedFirmware);
+    }
+
+    [Fact]
+    public async Task DisablingFirmwareCompatibilityOverride_RevokesOwnedRendererAfterUnknownProbe()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        context.Provider.AvailableWhenUntestedFirmwareAllowed = true;
+        await context.Runtime.SetFirmwareCompatibilityOverrideAsync(
+            true,
+            CancellationToken.None);
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.Reactive;
+        context.Provider.ReportUnknownFirmwareCompatibility = true;
+
+        await context.Runtime.SetFirmwareCompatibilityOverrideAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Provider.InvalidationCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Device.LightingRendererOwnership);
+        Assert.False(context.Provider.TryGetOwnedKeyTriggeredLightingDevice(out _));
+    }
+
+    [Fact]
     public async Task WindowsDynamicLightingMode_PersistsAndBlocksKeyboardWrites()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -6861,6 +6915,26 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         public bool Available { get; set; } = available;
 
+        public bool AvailableWhenUntestedFirmwareAllowed { get; set; }
+
+        public bool AllowUntestedFirmware { get; private set; }
+
+        public FirmwareCompatibilityStatus FirmwareCompatibility =>
+            ReportUnknownFirmwareCompatibility
+                ? FirmwareCompatibilityStatus.Unknown
+                : AvailableWhenUntestedFirmwareAllowed
+                ? AllowUntestedFirmware
+                    ? FirmwareCompatibilityStatus.UntestedAllowed
+                    : FirmwareCompatibilityStatus.UntestedBlocked
+                : Available
+                    ? FirmwareCompatibilityStatus.Tested
+                    : FirmwareCompatibilityStatus.Unknown;
+
+        public bool RequiresUntestedFirmwareOverride =>
+            AvailableWhenUntestedFirmwareAllowed;
+
+        public bool ReportUnknownFirmwareCompatibility { get; set; }
+
         public int TryGetCount { get; private set; }
 
         public Action? AfterTryGet { get; set; }
@@ -6876,8 +6950,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             TryGetCount++;
             verifiedDevice = device;
             AfterTryGet?.Invoke();
-            return Available;
+            return Available
+                || (AvailableWhenUntestedFirmwareAllowed && AllowUntestedFirmware);
         }
+
+        public void SetAllowUntestedFirmware(bool enabled) =>
+            AllowUntestedFirmware = enabled;
 
         public bool TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice verifiedDevice)
         {
