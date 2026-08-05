@@ -96,13 +96,7 @@ public sealed class Worker(
             ControlOperationResult result = await runtime
                 .PrepareForShutdownAsync(cancellationToken)
                 .ConfigureAwait(false);
-            if (result.Status is not (
-                ControlOperationStatus.Applied or ControlOperationStatus.Stored))
-            {
-                logger.LogWarning(
-                    "Hardware cleanup did not complete during service stop: {Message}",
-                    result.Message);
-            }
+            LogShutdownCleanupResult(logger, result);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -114,6 +108,24 @@ public sealed class Worker(
             logger.LogWarning(
                 exception,
                 "Hardware cleanup failed during service stop.");
+        }
+    }
+
+    internal static void LogShutdownCleanupResult(
+        ILogger logger,
+        ControlOperationResult result)
+    {
+        logger.LogInformation(
+            "Hardware cleanup during service stop reported {Status}: {Message}",
+            result.Status,
+            result.Message);
+
+        if (result.Status is not (
+            ControlOperationStatus.Applied or ControlOperationStatus.Stored))
+        {
+            logger.LogWarning(
+                "Hardware cleanup did not complete during service stop: {Message}",
+                result.Message);
         }
     }
 
