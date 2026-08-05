@@ -50,6 +50,87 @@ public sealed class ServiceAudioMeterLightingLoopTests
     }
 
     [Fact]
+    public void Decay_AttackRemainsImmediate()
+    {
+        var smoother = new AudioMeterDecaySmoother();
+        _ = smoother.Apply(FrameWithColumns(4), TimeSpan.Zero, 1000);
+
+        AmbientLightingFrame attacked = smoother.Apply(
+            FrameWithColumns(15),
+            TimeSpan.FromMilliseconds(100),
+            1000);
+
+        Assert.Equal(15, CountLitColumns(attacked));
+    }
+
+    [Fact]
+    public void Decay_SmoothsOnlyFallingFrames()
+    {
+        var smoother = new AudioMeterDecaySmoother();
+        _ = smoother.Apply(FrameWithColumns(17), TimeSpan.Zero, 1000);
+
+        AmbientLightingFrame decayed = smoother.Apply(
+            FrameWithColumns(4),
+            TimeSpan.FromMilliseconds(100),
+            1000);
+
+        Assert.Equal(16, CountLitColumns(decayed));
+    }
+
+    [Fact]
+    public void Decay_SilenceFadesToBlackAndClearsState()
+    {
+        var smoother = new AudioMeterDecaySmoother();
+        _ = smoother.Apply(FrameWithColumns(17), TimeSpan.Zero, 1000);
+
+        AmbientLightingFrame fading = smoother.Apply(
+            FrameWithColumns(0),
+            TimeSpan.FromMilliseconds(100),
+            1000);
+        AmbientLightingFrame silent = smoother.Apply(
+            FrameWithColumns(0),
+            TimeSpan.FromMilliseconds(1000),
+            1000);
+        AmbientLightingFrame resumed = smoother.Apply(
+            FrameWithColumns(4),
+            TimeSpan.FromMilliseconds(100),
+            1000);
+
+        Assert.Equal(16, CountLitColumns(fading));
+        Assert.Equal(0, CountLitColumns(silent));
+        Assert.Equal(4, CountLitColumns(resumed));
+    }
+
+    [Fact]
+    public void Decay_OffClearsSilenceImmediately()
+    {
+        var smoother = new AudioMeterDecaySmoother();
+        _ = smoother.Apply(FrameWithColumns(17), TimeSpan.Zero, 1000);
+
+        AmbientLightingFrame silent = smoother.Apply(
+            FrameWithColumns(0),
+            TimeSpan.FromMilliseconds(100),
+            0);
+
+        Assert.Equal(0, CountLitColumns(silent));
+    }
+
+    [Fact]
+    public void Decay_ResetDoesNotRetainPriorPeak()
+    {
+        var smoother = new AudioMeterDecaySmoother();
+        _ = smoother.Apply(FrameWithColumns(17), TimeSpan.Zero, 1000);
+
+        smoother.Reset();
+        AmbientLightingFrame resumed = smoother.Apply(
+            FrameWithColumns(4),
+            TimeSpan.FromMilliseconds(100),
+            1000);
+
+        Assert.Equal(4, CountLitColumns(resumed));
+    }
+
+    [Fact]
     public async Task ConstantFrameIsSuppressedUntilKeepalive()
     {
         var time = new ManualTimeProvider();
@@ -114,6 +195,41 @@ public sealed class ServiceAudioMeterLightingLoopTests
         _ = await client.ReadRequestAsync(cancellation.Token);
         Assert.Equal(2, factory.CreateCount);
         Assert.Contains(failures, exception => exception.Message == "Capture failed.");
+
+        await CancelAndAwaitAsync(cancellation, running);
+        Assert.True(replacement.Disposed);
+    }
+
+    [Fact]
+    public async Task SourceReconnectStartsDecayFromTheNewLevel()
+    {
+        var time = new ManualTimeProvider();
+        var delays = new ControlledDelay();
+        var first = new ConstantSampler(FrameWithColumns(17));
+        var replacement = new ConstantSampler(FrameWithColumns(4));
+        var factory = new SequenceSamplerFactory(
+            () => first,
+            () => replacement);
+        var client = new WatchClient();
+        await using var loop = new ServiceAudioMeterLightingLoop(
+            client,
+            factory,
+            delay: delays.DelayAsync,
+            statusWatcher: client,
+            timeProvider: time);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.PublishConnected(decayMilliseconds: 1000);
+        Assert.Equal(17, CountLitColumns(
+            await client.ReadRequestAsync(cancellation.Token)));
+        _ = await delays.ReadAsync(cancellation.Token);
+        client.PublishReconnecting();
+        client.PublishConnected(decayMilliseconds: 1000);
+
+        Assert.Equal(4, CountLitColumns(
+            await client.ReadRequestAsync(cancellation.Token)));
+        Assert.True(first.Disposed);
 
         await CancelAndAwaitAsync(cancellation, running);
         Assert.True(replacement.Disposed);
@@ -233,6 +349,27 @@ public sealed class ServiceAudioMeterLightingLoopTests
         return new(slots);
     }
 
+    private static AmbientLightingFrame FrameWithColumns(int columns) =>
+        WindowsAudioMeterLightingSampler.RenderColumns(columns);
+
+    private static int CountLitColumns(AmbientLightingFrame frame)
+    {
+        int litColumns = 0;
+        for (int column = 0; column < AmbientLightingFrame.Columns; column++)
+        {
+            bool lit = Enumerable.Range(0, AmbientLightingFrame.Rows).Any(row =>
+            {
+                int slot = (row * AmbientLightingFrame.Columns) + column;
+                return !AmbientLightingFrame.IsHole(slot) && frame.Slots[slot] != default;
+            });
+            if (lit)
+            {
+                litColumns = column + 1;
+            }
+        }
+        return litColumns;
+    }
+
     private sealed class WatchClient : OpenBlade.Testing.UnavailableServiceClient
     {
         private readonly Channel<ServiceWatchUpdate> updates =
@@ -249,8 +386,9 @@ public sealed class ServiceAudioMeterLightingLoopTests
         internal TaskCompletionSource RequestCancellationObserved { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        internal void PublishConnected() =>
-            updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(Status()));
+        internal void PublishConnected(int decayMilliseconds = 0) =>
+            updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(
+                Status(decayMilliseconds)));
 
         internal void PublishReconnecting() =>
             updates.Writer.TryWrite(new ServiceWatchUpdate.Reconnecting());
@@ -392,12 +530,13 @@ public sealed class ServiceAudioMeterLightingLoopTests
         internal void Advance(TimeSpan elapsed) => now += elapsed;
     }
 
-    private static ServiceStatusSnapshot Status()
+    private static ServiceStatusSnapshot Status(int decayMilliseconds = 0)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         LightingSettings lighting = LightingSettingsFactory.AudioMeter(
             colorBoost: 1,
-            brightness: 50);
+            brightness: 50,
+            decayMilliseconds);
         return new ServiceStatusSnapshot(
             1,
             DeviceVerified: true,

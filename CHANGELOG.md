@@ -60,6 +60,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   while preserving changes merged after the build under `Unreleased`. A
   malformed or temporarily inconsistent changelog no longer prevents the
   installer and checksum from being published.
+- Added optional Audio Meter smoothing for quieter moments and brief pauses while
+  keeping louder responses immediate. Existing profiles keep the current
+  unsmoothed behavior;
+  service IPC is now version 35, stored profiles use schema 9, and profile
+  exports use schema 5.
 - Added multi-user Windows support. The LocalSystem service authenticates each
   named-pipe client from its Windows token, permits hardware mutation only from
   the active interactive session, keeps profiles and persistent overrides

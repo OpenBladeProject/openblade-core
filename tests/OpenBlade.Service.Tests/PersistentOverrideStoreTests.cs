@@ -256,6 +256,49 @@ public sealed class PersistentOverrideStoreTests : IDisposable
             loaded.Overrides.Lighting?.Color);
     }
 
+    [Fact]
+    public async Task Load_CurrentSchemaInvalidAudioMeterDecayNormalizesAndRewrites()
+    {
+        string path = Path.Combine(directory, "manual-overrides.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "schemaVersion": 5,
+              "overrides": {
+                "performance": null,
+                "fans": null,
+                "lighting": {
+                  "effect": 11,
+                  "color": { "red": 0, "green": 0, "blue": 0 },
+                  "brightness": 50,
+                  "parameters": {
+                    "kind": "audioMeter",
+                    "colorBoost": 1,
+                    "decayMilliseconds": 375
+                  }
+                },
+                "customPerformance": null,
+                "fanControl": null
+              }
+            }
+            """);
+
+        PersistentOverrideLoadResult loaded = await new PersistentOverrideStore(path)
+            .LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Recovered);
+        Assert.Equal(
+            500,
+            Assert.IsType<AudioMeterLightingParameters>(
+                loaded.Overrides.Lighting?.Parameters).DecayMilliseconds);
+        Assert.Contains(
+            "\"decayMilliseconds\": 500",
+            await File.ReadAllTextAsync(path),
+            StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))

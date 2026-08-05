@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -64,6 +64,7 @@ public static class ProfileExportSerializer
             2 => DeserializeVersion2(json),
             3 => DeserializeVersion3(json),
             4 => DeserializeVersion4(json),
+            5 => DeserializeVersion5(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
@@ -99,23 +100,40 @@ public static class ProfileExportSerializer
     // its own DTO and migrate to ProfileSet before returning from Deserialize.
     private static ProfileSet DeserializeVersion1(string json)
     {
-        return DeserializeDocument(json).Profiles;
+        return NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles);
     }
 
     private static ProfileSet DeserializeVersion2(string json)
     {
-        return DeserializeDocument(json).Profiles;
+        return NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles);
     }
 
     private static ProfileSet DeserializeVersion3(string json)
     {
-        return DeserializeDocument(json).Profiles;
+        return NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles);
     }
 
     private static ProfileSet DeserializeVersion4(string json)
     {
-        return DeserializeDocument(json).Profiles;
+        return NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles);
     }
+
+    private static ProfileSet DeserializeVersion5(string json)
+    {
+        return NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles);
+    }
+
+    private static ProfileSet NormalizeAudioMeterDecay(ProfileSet profiles) => profiles with
+    {
+        PluggedIn = NormalizeAudioMeterDecay(profiles.PluggedIn),
+        Battery = NormalizeAudioMeterDecay(profiles.Battery),
+        UsbC = NormalizeAudioMeterDecay(profiles.UsbC),
+    };
+
+    private static PowerProfile NormalizeAudioMeterDecay(PowerProfile profile) => profile with
+    {
+        Lighting = LightingSettingsFactory.NormalizeAudioMeterDecay(profile.Lighting),
+    };
 
     private static ProfileExportDocument DeserializeDocument(string json)
     {

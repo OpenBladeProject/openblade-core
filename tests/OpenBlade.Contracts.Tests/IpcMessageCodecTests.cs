@@ -103,6 +103,15 @@ public sealed class IpcMessageCodecTests
                     new RgbColor(78, 90, 123),
                     65),
                 OverrideLifetime.UntilPowerSourceChange)),
+        new SetLightingOverrideRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.AudioMeter(
+                    colorBoost: 1.5,
+                    brightness: 60,
+                    decayMilliseconds: 750),
+                OverrideLifetime.Persistent)),
         new StepKeyboardBrightnessRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -152,6 +161,40 @@ public sealed class IpcMessageCodecTests
                 FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys)),
         new ShutdownOpenBladeRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
     };
+
+    [Fact]
+    public async Task AudioMeterDecay_DefaultsToOffWhenOlderPeerOmitsProperty()
+    {
+        var request = new SetLightingOverrideRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.AudioMeter(1, 50, 750),
+                OverrideLifetime.Persistent));
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(encoded, request, CancellationToken.None);
+        byte[] framedBytes = encoded.ToArray();
+        int payloadLength = BinaryPrimitives.ReadInt32LittleEndian(framedBytes);
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(Encoding.UTF8.GetString(
+                framedBytes,
+                sizeof(int),
+                payloadLength)));
+        JsonObject value = Assert.IsType<JsonObject>(root["value"]);
+        JsonObject lighting = Assert.IsType<JsonObject>(value["value"]);
+        JsonObject parameters = Assert.IsType<JsonObject>(lighting["parameters"]);
+        Assert.True(parameters.Remove("decayMilliseconds"));
+
+        SetLightingOverrideRequest decoded = Assert.IsType<SetLightingOverrideRequest>(
+            await IpcMessageCodec.ReadRequestAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Equal(
+            LightingSettingsFactory.DefaultAudioMeterDecayMilliseconds,
+            Assert.IsType<AudioMeterLightingParameters>(decoded.Value?.Value.Parameters)
+                .DecayMilliseconds);
+    }
 
     [Fact]
     public async Task ReactivePulseRequest_RejectsSlotOutsideCapturedMatrix()
@@ -357,7 +400,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(34, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(35, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -612,7 +655,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(34, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(35, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

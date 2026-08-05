@@ -97,6 +97,10 @@ public sealed class LightingContractTests
             LightingSettingsFactory.AmbientAwareness(
                 AmbientAwarenessRegion.Right,
                 24),
+            LightingSettingsFactory.AudioMeter(
+                colorBoost: 1.25,
+                brightness: 23,
+                decayMilliseconds: 750),
         ];
 
         Assert.All(settings, value =>
@@ -141,6 +145,10 @@ public sealed class LightingContractTests
         Assert.Equal(
             AmbientAwarenessRegion.Right,
             Assert.IsType<AmbientAwarenessLightingParameters>(settings[15].Parameters).Region);
+        AudioMeterLightingParameters audioMeter =
+            Assert.IsType<AudioMeterLightingParameters>(settings[16].Parameters);
+        Assert.Equal(1.25, audioMeter.ColorBoost);
+        Assert.Equal(750, audioMeter.DecayMilliseconds);
     }
 
     [Fact]
@@ -218,6 +226,10 @@ public sealed class LightingContractTests
                 Parameters = new AmbientAwarenessLightingParameters(
                     (AmbientAwarenessRegion)999),
             },
+            LightingSettingsFactory.AudioMeter(1, 50) with
+            {
+                Parameters = new AudioMeterLightingParameters(1, 375),
+            },
         ];
 
         Assert.All(invalid, value =>
@@ -268,6 +280,30 @@ public sealed class LightingContractTests
         Assert.Equal(LightingEffect.Breathing, normalized.Effect);
         Assert.Equal(LightingSettingsFactory.DefaultVisibleBrightness, normalized.Brightness);
         Assert.Equal(LightingSettingsFactory.DefaultVisibleColor, normalized.Color);
+        Assert.True(LightingSettingsValidation.IsWellFormed(normalized));
+    }
+
+    [Theory]
+    [InlineData(-1, 0)]
+    [InlineData(124, 0)]
+    [InlineData(125, 250)]
+    [InlineData(374, 250)]
+    [InlineData(375, 500)]
+    [InlineData(2501, 2000)]
+    public void AudioMeterDecay_NormalizesToBoundedSteps(int input, int expected)
+    {
+        LightingSettings settings = LightingSettingsFactory.AudioMeter(
+            colorBoost: 1,
+            brightness: 50,
+            decayMilliseconds: input);
+
+        LightingSettings normalized =
+            LightingSettingsFactory.NormalizeAudioMeterDecay(settings);
+
+        Assert.Equal(
+            expected,
+            Assert.IsType<AudioMeterLightingParameters>(normalized.Parameters)
+                .DecayMilliseconds);
         Assert.True(LightingSettingsValidation.IsWellFormed(normalized));
     }
 }

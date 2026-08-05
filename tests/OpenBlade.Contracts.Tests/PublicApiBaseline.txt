@@ -93,10 +93,12 @@ type sealed class OpenBlade.Contracts.ApplyOneShotLaptopControlRequest
 type sealed class OpenBlade.Contracts.AudioMeterLightingParameters
   base OpenBlade.Contracts.LightingEffectParameters
   interface System.IEquatable<OpenBlade.Contracts.AudioMeterLightingParameters>
-  ctor (System.Double ColorBoost)
+  ctor (System.Double ColorBoost, System.Int32 DecayMilliseconds = 0)
   method System.Double get_ColorBoost()
-  method System.Void Deconstruct(out System.Double ColorBoost)
+  method System.Int32 get_DecayMilliseconds()
+  method System.Void Deconstruct(out System.Double ColorBoost, out System.Int32 DecayMilliseconds)
   method System.Void set_ColorBoost(System.Double value)
+  method System.Void set_DecayMilliseconds(System.Int32 value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
@@ -106,6 +108,7 @@ type sealed class OpenBlade.Contracts.AudioMeterLightingParameters
   method virtual OpenBlade.Contracts.AudioMeterLightingParameters <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.AudioMeterLightingParameters other)
   property System.Double ColorBoost { get; init; }
+  property System.Int32 DecayMilliseconds { get; init; }
 type sealed class OpenBlade.Contracts.BatteryHealthStatus
   interface System.IEquatable<OpenBlade.Contracts.BatteryHealthStatus>
   ctor (System.Int32 DesignCapacityMilliwattHours, System.Int32 FullChargeCapacityMilliwattHours)
@@ -951,12 +954,17 @@ type sealed class OpenBlade.Contracts.LightingSettings
   property System.Nullable<OpenBlade.Contracts.LogoLightingMode> LogoMode { get; init; }
 type static class OpenBlade.Contracts.LightingSettingsFactory
   field const System.Byte DefaultVisibleBrightness = 100
+  field const System.Int32 AudioMeterDecayStepMilliseconds = 250
+  field const System.Int32 DefaultAudioMeterDecayMilliseconds = 0
+  field const System.Int32 MaxAudioMeterDecayMilliseconds = 2000
+  field const System.Int32 MinAudioMeterDecayMilliseconds = 0
   method static OpenBlade.Contracts.LightingSettings AmbientAwareness(OpenBlade.Contracts.AmbientAwarenessRegion region, System.Byte brightness)
-  method static OpenBlade.Contracts.LightingSettings AudioMeter(System.Double colorBoost, System.Byte brightness)
+  method static OpenBlade.Contracts.LightingSettings AudioMeter(System.Double colorBoost, System.Byte brightness, System.Int32 decayMilliseconds = 0)
   method static OpenBlade.Contracts.LightingSettings BreathingDual(OpenBlade.Contracts.RgbColor primaryColor, OpenBlade.Contracts.RgbColor secondaryColor, System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings BreathingRandom(System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings BreathingSingle(OpenBlade.Contracts.RgbColor color, System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings Fire(System.Byte brightness)
+  method static OpenBlade.Contracts.LightingSettings NormalizeAudioMeterDecay(OpenBlade.Contracts.LightingSettings settings)
   method static OpenBlade.Contracts.LightingSettings NormalizeLegacyInvisibleEffect(OpenBlade.Contracts.LightingSettings settings)
   method static OpenBlade.Contracts.LightingSettings NormalizeLegacyOff(OpenBlade.Contracts.LightingSettings settings)
   method static OpenBlade.Contracts.LightingSettings Off()
@@ -1092,7 +1100,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 34
+  field const System.Int32 ProtocolVersion = 35
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)

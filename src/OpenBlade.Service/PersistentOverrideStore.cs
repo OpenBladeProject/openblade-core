@@ -43,7 +43,8 @@ internal sealed record LegacyPersistentOverrideDocument(
 
 public sealed class PersistentOverrideStore
 {
-    private const int CurrentSchemaVersion = 4;
+    private const int CurrentSchemaVersion = 5;
+    private const int SchemaFourVersion = 4;
     private const int SchemaThreeVersion = 3;
     private const int SchemaTwoVersion = 2;
     private const int LegacySchemaVersion = 1;
@@ -89,7 +90,11 @@ public sealed class PersistentOverrideStore
             try
             {
                 byte[] json = await File.ReadAllBytesAsync(path, cancellationToken);
-                PersistentOverrideState overrides = Deserialize(json);
+                PersistentOverrideState overrides = Deserialize(json, out bool migrated);
+                if (migrated)
+                {
+                    await WriteCoreAsync(overrides, cancellationToken);
+                }
                 return new PersistentOverrideLoadResult(overrides, Recovered: false);
             }
             catch (Exception exception)
@@ -160,7 +165,9 @@ public sealed class PersistentOverrideStore
         }
     }
 
-    private static PersistentOverrideState Deserialize(ReadOnlySpan<byte> json)
+    private static PersistentOverrideState Deserialize(
+        ReadOnlySpan<byte> json,
+        out bool migrated)
     {
         BatteryConfigurationStore.RejectDuplicateMembers(json);
         using JsonDocument parsed = JsonDocument.Parse(json.ToArray());
@@ -172,7 +179,7 @@ public sealed class PersistentOverrideStore
 
 
         PersistentOverrideState overrides;
-        if (schemaVersion is CurrentSchemaVersion or SchemaThreeVersion)
+        if (schemaVersion is CurrentSchemaVersion or SchemaFourVersion or SchemaThreeVersion)
         {
             PersistentOverrideDocument? document =
                 JsonSerializer.Deserialize<PersistentOverrideDocument>(json, SerializerOptions);
@@ -213,7 +220,10 @@ public sealed class PersistentOverrideStore
             throw new InvalidDataException("The persistent override schema is unsupported.");
         }
 
-        overrides = NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides));
+        PersistentOverrideState normalized =
+            NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides));
+        migrated = schemaVersion != CurrentSchemaVersion || normalized != overrides;
+        overrides = normalized;
         Validate(overrides);
         return overrides;
     }

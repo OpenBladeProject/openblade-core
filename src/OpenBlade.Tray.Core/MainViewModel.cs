@@ -247,6 +247,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private AmbientAwarenessRegion lightingAmbientAwarenessRegionEditor =
         AmbientAwarenessRegion.Full;
     private double lightingAudioMeterColorBoostEditor = 1;
+    private int lightingAudioMeterDecayMillisecondsEditor =
+        LightingSettingsFactory.DefaultAudioMeterDecayMilliseconds;
     private LogoLightingMode? logoLightingModeEditor;
     private bool lightingEditorDirty;
     private bool lightingTurnOffWithDisplayEditor;
@@ -2919,6 +2921,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    public int LightingAudioMeterDecayMillisecondsEditor
+    {
+        get => lightingAudioMeterDecayMillisecondsEditor;
+        set
+        {
+            if (value is
+                    < LightingSettingsFactory.MinAudioMeterDecayMilliseconds
+                    or > LightingSettingsFactory.MaxAudioMeterDecayMilliseconds
+                || value % LightingSettingsFactory.AudioMeterDecayStepMilliseconds != 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+            if (SetLightingEditorField(
+                ref lightingAudioMeterDecayMillisecondsEditor,
+                value))
+            {
+                Notify(nameof(LightingAudioMeterDecayValue));
+            }
+        }
+    }
+
+    public string LightingAudioMeterDecayValue => FormatAudioMeterDecay(
+        lightingAudioMeterDecayMillisecondsEditor);
+
     public AmbientAwarenessRegionOption? SelectedAmbientAwarenessRegionOption
     {
         get => AvailableAmbientAwarenessRegionOptions.FirstOrDefault(
@@ -3016,7 +3042,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool LightingShowsAmbientAwarenessRegion =>
         LightingEffectEditor == LightingEffect.AmbientAwareness;
 
-    public bool LightingShowsAudioMeterColorBoost =>
+    public bool LightingShowsAudioMeterControls =>
         LightingEffectEditor == LightingEffect.AudioMeter;
 
     public LightingSettings LightingDraft => CreateLightingDraft();
@@ -5664,6 +5690,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ref lightingAudioMeterColorBoostEditor,
             audioMeterColorBoost,
             nameof(LightingAudioMeterColorBoostEditor));
+        int audioMeterDecayMilliseconds =
+            value.Parameters is AudioMeterLightingParameters audioMeterDecay
+                ? audioMeterDecay.DecayMilliseconds
+                : LightingSettingsFactory.DefaultAudioMeterDecayMilliseconds;
+        SetField(
+            ref lightingAudioMeterDecayMillisecondsEditor,
+            audioMeterDecayMilliseconds,
+            nameof(LightingAudioMeterDecayMillisecondsEditor));
+        Notify(nameof(LightingAudioMeterDecayValue));
         SetField(
             ref logoLightingModeEditor,
             value.LogoMode,
@@ -6455,7 +6490,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     ? "full screen"
                     : ambient.Region.ToString().ToLowerInvariant(),
             AudioMeterLightingParameters audioMeter =>
-                $"color boost {audioMeter.ColorBoost}",
+                $"color boost {audioMeter.ColorBoost}, smoothing: "
+                    + FormatAudioMeterDecay(audioMeter.DecayMilliseconds),
             _ when lighting.Effect == LightingEffect.Static => FormatColor(lighting.Color),
             _ => string.Empty,
         };
@@ -6466,6 +6502,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static string FormatColor(RgbColor color) =>
         $"#{color.Red:X2}{color.Green:X2}{color.Blue:X2}";
+
+    private static string FormatAudioMeterDecay(int milliseconds) => milliseconds switch
+    {
+        0 => "Off",
+        1000 => "Up to 1 second",
+        _ => $"Up to {milliseconds / 1000d:0.##} seconds",
+    };
 
     private static string FormatDisplayProfile(DisplayProfileSettings? display)
     {
@@ -6593,7 +6636,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             Effect: LightingEffect.AudioMeter,
             Parameters: AudioMeterLightingParameters audioMeter,
-        } => $"Audio Meter, color boost {audioMeter.ColorBoost}",
+        } => $"Audio Meter, color boost {audioMeter.ColorBoost}, smoothing: "
+            + FormatAudioMeterDecay(audioMeter.DecayMilliseconds),
         {
             Effect: LightingEffect.AmbientAwareness,
             Parameters: AmbientAwarenessLightingParameters ambient,
@@ -6812,7 +6856,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 brightness),
             LightingEffect.AudioMeter => LightingSettingsFactory.AudioMeter(
                 LightingAudioMeterColorBoostEditor,
-                brightness),
+                brightness,
+                LightingAudioMeterDecayMillisecondsEditor),
             LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
             _ => new LightingSettings(LightingEffectEditor, default, brightness),
         };
@@ -7921,7 +7966,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(SelectedLightingDirectionOption));
         Notify(nameof(LightingShowsRotationDirection));
         Notify(nameof(LightingShowsAmbientAwarenessRegion));
-        Notify(nameof(LightingShowsAudioMeterColorBoost));
+        Notify(nameof(LightingShowsAudioMeterControls));
     }
 
 }

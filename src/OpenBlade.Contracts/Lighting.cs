@@ -90,7 +90,9 @@ public sealed record RippleLightingParameters(RgbColor Color)
 public sealed record AmbientAwarenessLightingParameters(AmbientAwarenessRegion Region)
     : LightingEffectParameters;
 
-public sealed record AudioMeterLightingParameters(double ColorBoost)
+public sealed record AudioMeterLightingParameters(
+    double ColorBoost,
+    int DecayMilliseconds = LightingSettingsFactory.DefaultAudioMeterDecayMilliseconds)
     : LightingEffectParameters;
 
 public sealed record FireLightingParameters : LightingEffectParameters;
@@ -98,6 +100,10 @@ public sealed record FireLightingParameters : LightingEffectParameters;
 public static class LightingSettingsFactory
 {
     public const byte DefaultVisibleBrightness = 100;
+    public const int DefaultAudioMeterDecayMilliseconds = 0;
+    public const int MinAudioMeterDecayMilliseconds = 0;
+    public const int MaxAudioMeterDecayMilliseconds = 2000;
+    public const int AudioMeterDecayStepMilliseconds = 250;
     public static RgbColor DefaultVisibleColor { get; } = new(0x47, 0xE1, 0x0C);
 
     public static LightingSettings Off() => new(
@@ -275,12 +281,15 @@ public static class LightingSettingsFactory
 
     public static LightingSettings AudioMeter(
         double colorBoost,
-        byte brightness) => new(
+        byte brightness,
+        int decayMilliseconds = DefaultAudioMeterDecayMilliseconds) => new(
             LightingEffect.AudioMeter,
             default,
             brightness)
         {
-            Parameters = new AudioMeterLightingParameters(colorBoost),
+            Parameters = new AudioMeterLightingParameters(
+                colorBoost,
+                decayMilliseconds),
         };
 
     public static LightingSettings Fire(byte brightness) => new(
@@ -305,7 +314,7 @@ public static class LightingSettingsFactory
     public static LightingSettings NormalizeLegacyInvisibleEffect(
         LightingSettings settings)
     {
-        settings = NormalizeLegacyOff(settings);
+        settings = NormalizeAudioMeterDecay(settings);
         if (settings.Effect == LightingEffect.Off || settings.Brightness != 0)
         {
             return settings;
@@ -367,7 +376,8 @@ public static class LightingSettingsFactory
                 DefaultVisibleBrightness),
             AudioMeterLightingParameters audioMeter => AudioMeter(
                 audioMeter.ColorBoost,
-                DefaultVisibleBrightness),
+                DefaultVisibleBrightness,
+                audioMeter.DecayMilliseconds),
             FireLightingParameters => Fire(DefaultVisibleBrightness),
             StarlightLightingParameters
             {
@@ -399,6 +409,30 @@ public static class LightingSettingsFactory
             },
             _ => settings,
         };
+    }
+
+    public static LightingSettings NormalizeAudioMeterDecay(
+        LightingSettings settings)
+    {
+        settings = NormalizeLegacyOff(settings);
+        if (settings.Parameters is not AudioMeterLightingParameters parameters)
+        {
+            return settings;
+        }
+
+        int clamped = Math.Clamp(
+            parameters.DecayMilliseconds,
+            MinAudioMeterDecayMilliseconds,
+            MaxAudioMeterDecayMilliseconds);
+        int normalized = checked((int)Math.Round(
+            clamped / (double)AudioMeterDecayStepMilliseconds,
+            MidpointRounding.AwayFromZero)) * AudioMeterDecayStepMilliseconds;
+        return normalized == parameters.DecayMilliseconds
+            ? settings
+            : settings with
+            {
+                Parameters = parameters with { DecayMilliseconds = normalized },
+            };
     }
 }
 
@@ -462,6 +496,11 @@ public static class LightingSettingsValidation
                 double.IsFinite(parameters.ColorBoost)
                 && parameters.ColorBoost is >= 1 and <= 4
                 && parameters.ColorBoost * 4 == Math.Truncate(parameters.ColorBoost * 4)
+                && parameters.DecayMilliseconds is
+                    >= LightingSettingsFactory.MinAudioMeterDecayMilliseconds
+                    and <= LightingSettingsFactory.MaxAudioMeterDecayMilliseconds
+                && parameters.DecayMilliseconds
+                    % LightingSettingsFactory.AudioMeterDecayStepMilliseconds == 0
                 && settings.Color == default,
             (LightingEffect.Fire, FireLightingParameters) =>
                 settings.Color == default,
