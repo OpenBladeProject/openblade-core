@@ -13,12 +13,22 @@ public sealed class SessionAgentPipeTests
     {
         SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;
 
-        SessionAgentPipeEndpoint first = SessionAgentPipeEndpoint.Create(sid);
-        SessionAgentPipeEndpoint second = SessionAgentPipeEndpoint.Create(sid);
+        SessionAgentPipeEndpoint first = SessionAgentPipeEndpoint.Create(sid, 3);
+        SessionAgentPipeEndpoint second = SessionAgentPipeEndpoint.Create(sid, 3);
 
         Assert.Equal(first, second);
         Assert.StartsWith(SessionDisplayIpc.PipeNamePrefix + ".", first.PipeName);
         Assert.DoesNotContain(sid.Value, first.PipeName, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Endpoint_IsIsolatedByWindowsSession()
+    {
+        SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;
+
+        Assert.NotEqual(
+            SessionAgentPipeEndpoint.Create(sid, 3),
+            SessionAgentPipeEndpoint.Create(sid, 4));
     }
 
     [Fact]

@@ -18,6 +18,7 @@ jobs:
     with:
       channel: Nightly
       build-revision: ${{ fromJSON(github.run_number) }}
+      run-installer: true
     permissions:
       contents: read
 

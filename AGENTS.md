@@ -55,7 +55,12 @@ be copied to the other.
    mode until Windows reports that the system is active again. The Session
    Agent consumes confirmed status only and must pass function-row keys through
    whenever Driver-mode status is unknown. During coordinated shutdown, the
-   service uses the same guarded Normal-mode release.
+   service uses the same guarded Normal-mode release before bounded fan cleanup
+   so a fan failure cannot skip keyboard cleanup. It hands OpenBlade-owned
+   manual fan control back to firmware Automatic only after confirmed-state,
+   exact-device, and competing-controller safety checks pass, without changing
+   the saved fan intent. A first observation or matching desired state does not
+   establish fan ownership; only a successful service fan write does.
    Production lighting admission is owned by the approved embedded oracle and
    the reviewed semantic admission manifest. The manifest compares the actual
    device identity, command contracts, report geometry, layout mask, supported
@@ -142,19 +147,25 @@ submodules.
 
 1. Inspect `git status`, the affected contracts, and existing tests before
    editing. User changes and unrelated dirty files are not cleanup targets.
-2. Update the smallest authoritative layer. Do not duplicate state between the
+2. Whenever creating an issue, apply the relevant repository labels.
+3. For every fix, create the tracking issue before implementing the change,
+   then deliver the implementation through a pull request.
+4. Update the smallest authoritative layer. Do not duplicate state between the
    service, Session Agent, and tray.
-3. Add focused tests for parsing, normalization, failure handling, and shared UI
+5. Add focused tests for parsing, normalization, failure handling, and shared UI
    contracts. Run the affected project tests before the full solution.
-4. For WinUI changes, build `OpenBlade.Tray` and inspect the rendered app when
+6. For WinUI changes, build `OpenBlade.Tray` and inspect the rendered app when
    interactive access is available. XAML contract tests do not prove visual
    quality.
-5. For hardware changes, complete the documented interactive validation before
+7. For hardware changes, complete the documented interactive validation before
    marking support production-ready.
-6. Update `CHANGELOG.md` under `Unreleased` for user-visible changes.
-7. Commit and push coherent slices. Do not bundle capture evidence, product
+8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes. Treat each
+   published nightly tag as a release boundary: move its included entries into
+   a dated `## [X.Y.Z-nightly.N] - YYYY-MM-DD` section, update the comparison
+   links, and leave `Unreleased` for changes merged after that exact tag.
+9. Commit and push coherent slices. Do not bundle capture evidence, product
    code, history maintenance, and unrelated formatting in one commit.
-8. Preserve the line endings declared by `.editorconfig` and `.gitattributes`.
+10. Preserve the line endings declared by `.editorconfig` and `.gitattributes`.
    Patch application can insert LF-only lines into an existing CRLF file, and
    `git diff --check` does not detect that mixed state. Before committing,
    inspect every touched text file for mixed endings and normalize the complete
@@ -165,6 +176,11 @@ submodules.
 
 Follow [VERSIONING.md](VERSIONING.md). The short form is:
 
+- Name branches for the work, not the agent or vendor. Use purpose prefixes
+  such as `feat/`, `fix/`, `docs/`, `chore/`, or `refactor/`; do not use
+  prefixes such as `codex/` or `claude/`.
+- Base new work branches on `main` by default. Use a different base only when
+  the user explicitly requests one.
 - `Directory.Build.props` is the product-version source of truth.
 - Profile/config schema and IPC protocol versions are independent integers with
   explicit compatibility rules and migrations.
@@ -187,6 +203,14 @@ dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
 
 Use `build/Publish.ps1` and the payload validation tests for release or setup
 changes. Do not install or request UAC when the user is unavailable.
+
+On Windows hosts where local execution policy blocks repository `.ps1` files,
+run them in a child process with
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File <script>`. This bypass
+is process-scoped and must not be replaced by a machine policy change. When
+running multiple scripts, check and propagate each child exit code; a parent
+pipeline can otherwise return success after printing script-load errors, which
+is not a valid test result.
 
 ## Live tray patching on the installed machine
 

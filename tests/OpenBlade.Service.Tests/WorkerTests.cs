@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using OpenBlade.Contracts;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -46,4 +48,73 @@ public sealed class WorkerTests
 
         Assert.True(cleanupRan);
     }
+
+    [Fact]
+    public void ShutdownCleanup_StoredSkipLogsReasonOnceWithoutWarning()
+    {
+        const string reason = "Razer Synapse is active, so cleanup was skipped.";
+        var logger = new RecordingLogger();
+
+        Worker.LogShutdownCleanupResult(
+            logger,
+            new ControlOperationResult(ControlOperationStatus.Stored, reason));
+
+        LogEntry entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Information, entry.Level);
+        Assert.Equal(
+            ControlOperationStatus.Stored,
+            Assert.IsType<ControlOperationStatus>(entry.Properties["Status"]));
+        Assert.Equal(reason, entry.Properties["Message"]);
+    }
+
+    [Fact]
+    public void ShutdownCleanup_FailedResultLogsInformationAndWarning()
+    {
+        const string reason = "Automatic fan control could not be confirmed.";
+        var logger = new RecordingLogger();
+
+        Worker.LogShutdownCleanupResult(
+            logger,
+            new ControlOperationResult(ControlOperationStatus.Failed, reason));
+
+        LogEntry information = Assert.Single(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Information);
+        Assert.Equal(
+            ControlOperationStatus.Failed,
+            Assert.IsType<ControlOperationStatus>(information.Properties["Status"]));
+        Assert.Equal(reason, information.Properties["Message"]);
+        LogEntry warning = Assert.Single(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning);
+        Assert.Contains(reason, warning.Message, StringComparison.Ordinal);
+    }
+
+    private sealed class RecordingLogger : ILogger
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Dictionary<string, object?> properties = state is
+                IEnumerable<KeyValuePair<string, object?>> values
+                    ? values.ToDictionary(pair => pair.Key, pair => pair.Value)
+                    : [];
+            Entries.Add(new LogEntry(logLevel, formatter(state, exception), properties));
+        }
+    }
+
+    private sealed record LogEntry(
+        LogLevel Level,
+        string Message,
+        IReadOnlyDictionary<string, object?> Properties);
 }

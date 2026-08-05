@@ -7,6 +7,7 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsVerifiedBladeDeviceProviderTests
 {
+    private static readonly TimeSpan TestDeadlockGuard = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan TestShutdownBudget = TimeSpan.FromMilliseconds(50);
 
     [Fact]
@@ -1541,8 +1542,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         internal async Task ReleaseAndDrainAsync()
         {
             BlockedPort.Release();
-            await HardwareOperation.WaitAsync(TimeSpan.FromSeconds(1));
-            await LightingPort.DrainStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+            await Task.WhenAll(HardwareOperation, LightingPort.DrainStarted.Task)
+                .WaitAsync(TestDeadlockGuard);
         }
     }
 

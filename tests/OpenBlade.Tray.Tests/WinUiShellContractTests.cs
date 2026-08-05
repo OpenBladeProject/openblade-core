@@ -282,6 +282,7 @@ public sealed class WinUiShellContractTests
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
 
         Assert.Contains("x:Name=\"AboutNavigationItem\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<NavigationView.FooterMenuItems>", xaml, StringComparison.Ordinal);
@@ -302,8 +303,9 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Content=\"Open\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"View\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnShutdownOpenBlade\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.ShutdownOpenBladeAsync", window, StringComparison.Ordinal);
-        Assert.Contains("SessionAgentLauncher.TryStopSibling()", window, StringComparison.Ordinal);
+        Assert.Contains("app.ShutdownOpenBladeAsync()", window, StringComparison.Ordinal);
+        Assert.Contains("window.ViewModel.ShutdownOpenBladeAsync", app, StringComparison.Ordinal);
+        Assert.Contains("SessionAgentLauncher.TryStopSibling()", app, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -976,15 +978,26 @@ public sealed class WinUiShellContractTests
         Assert.Contains("completion.TrySetException(exception)", dispatcher, StringComparison.Ordinal);
 
         string trayHost = ReadRepositoryFile("src", "OpenBlade.Tray", "WinFormsTrayIconHost.cs");
-        Assert.Contains("menu.Opening +=", trayHost, StringComparison.Ordinal);
-        Assert.Contains("view.Enabled = model.IsEnabled", trayHost, StringComparison.Ordinal);
+        Assert.Contains("new ToolStripMenuItem(\"Open\")", trayHost, StringComparison.Ordinal);
+        Assert.Contains("new ToolStripMenuItem(\"Exit\")", trayHost, StringComparison.Ordinal);
+        Assert.Contains("menu.Items.Add(new ToolStripSeparator())", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.DoubleClick +=", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.TrayHoverLabelText", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.PropertyChanged +=", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.PropertyChanged -=", trayHost, StringComparison.Ordinal);
         Assert.Contains("nameof(MainViewModel.TrayIconState)", trayHost, StringComparison.Ordinal);
         Assert.Contains("OpenBladeIconAssets.LoadTrayIcon", trayHost, StringComparison.Ordinal);
-        Assert.Contains("open.Invoke()", trayHost, StringComparison.Ordinal);
+        int doubleClickHandlerStart = trayHost.IndexOf(
+            "trayIcon.DoubleClick +=",
+            StringComparison.Ordinal);
+        int mouseMoveHandlerStart = trayHost.IndexOf(
+            "trayIcon.MouseMove +=",
+            doubleClickHandlerStart,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "openTray()",
+            trayHost[doubleClickHandlerStart..mouseMoveHandlerStart],
+            StringComparison.Ordinal);
         Assert.Contains("Interlocked.Exchange(ref disposed, 1)", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Visible = false", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Dispose()", trayHost, StringComparison.Ordinal);
@@ -1070,9 +1083,16 @@ public sealed class WinUiShellContractTests
         Assert.Contains("exitLifecycle.ExitAsync()", app, StringComparison.Ordinal);
         Assert.Contains("exitLifecycle.TryRunWhileActive", app, StringComparison.Ordinal);
         Assert.Contains("Trace.TraceError", app, StringComparison.Ordinal);
+        Assert.Contains("RequestTrayExitAsync()", app, StringComparison.Ordinal);
+        Assert.Contains("Keep background features running", app, StringComparison.Ordinal);
+        Assert.Contains("Shut down completely", app, StringComparison.Ordinal);
+        Assert.Contains("System.Windows.Forms.Application.EnableVisualStyles()", app, StringComparison.Ordinal);
+        Assert.Contains("ShowTrayTaskDialog", app, StringComparison.Ordinal);
+        Assert.Contains("WindowNative.GetWindowHandle(window)", app, StringComparison.Ordinal);
+        Assert.Contains("main window is unavailable", app, StringComparison.Ordinal);
         Assert.True(
             CountOccurrences(app, "ExitTrayAsync()") >= 3,
-            "The setup event, tray command, and shared method must all reference ExitTrayAsync().");
+            "The setup event and both exit choices must route through ExitTrayAsync().");
     }
 
     [Fact]

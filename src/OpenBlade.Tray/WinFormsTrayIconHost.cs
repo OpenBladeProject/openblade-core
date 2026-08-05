@@ -16,20 +16,21 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private int disposed;
 
     public WinFormsTrayIconHost(
-        TrayMenuController controller,
+        Action openTray,
+        Action exitTray,
         MainViewModel viewModel,
         ITrayIconThemeSource themeSource,
         Action hoverTelemetryRefreshRequested)
     {
-        ArgumentNullException.ThrowIfNull(controller);
+        ArgumentNullException.ThrowIfNull(openTray);
+        ArgumentNullException.ThrowIfNull(exitTray);
         this.viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         this.themeSource = themeSource ?? throw new ArgumentNullException(nameof(themeSource));
         this.hoverTelemetryRefreshRequested = hoverTelemetryRefreshRequested
             ?? throw new ArgumentNullException(nameof(hoverTelemetryRefreshRequested));
         liveReadingsObservationIntervalTicks = viewModel.LiveReadingsObservationInterval.Ticks;
 
-        menu = BuildTrayMenu(controller);
-        TrayMenuItem open = controller.Find("Open");
+        menu = BuildTrayMenu(openTray, exitTray);
         currentIcon = OpenBladeIconAssets.LoadTrayIcon(
             viewModel.TrayIconState,
             themeSource.UseLightTrayIconGlyphs);
@@ -40,7 +41,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             ContextMenuStrip = menu,
             Visible = true,
         };
-        trayIcon.DoubleClick += (_, _) => open.Invoke();
+        trayIcon.DoubleClick += (_, _) => openTray();
         trayIcon.MouseMove += OnTrayIconMouseMove;
         notificationPresenter = WindowsAppNotificationPresenter.CreateBestEffort(
             exception => System.Diagnostics.Trace.TraceWarning(
@@ -143,34 +144,16 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         previous?.Dispose();
     }
 
-    private static ContextMenuStrip BuildTrayMenu(TrayMenuController controller)
+    private static ContextMenuStrip BuildTrayMenu(Action openTray, Action exitTray)
     {
         var menu = new ContextMenuStrip();
-        var bindings = new List<(TrayMenuItem Model, ToolStripMenuItem View)>();
-        TrayMenuGroup? previousGroup = null;
-        foreach (TrayMenuItem item in controller.Items)
-        {
-            if (previousGroup is not null && previousGroup != item.Group)
-            {
-                menu.Items.Add(new ToolStripSeparator());
-            }
-
-            TrayMenuItem captured = item;
-            var view = new ToolStripMenuItem(item.Label);
-            view.Click += (_, _) => captured.Invoke();
-            menu.Items.Add(view);
-            bindings.Add((item, view));
-            previousGroup = item.Group;
-        }
-
-        menu.Opening += (_, _) =>
-        {
-            foreach ((TrayMenuItem model, ToolStripMenuItem view) in bindings)
-            {
-                view.Visible = model.IsVisible;
-                view.Enabled = model.IsEnabled;
-            }
-        };
+        var open = new ToolStripMenuItem("Open");
+        open.Click += (_, _) => openTray();
+        var exit = new ToolStripMenuItem("Exit");
+        exit.Click += (_, _) => exitTray();
+        menu.Items.Add(open);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(exit);
         return menu;
     }
 }
