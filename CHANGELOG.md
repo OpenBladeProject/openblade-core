@@ -13,6 +13,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Shortened the official firmware card and displayed decoded MCU versions in
+  the same release format used by Razer's updater labels.
 - Fixed Custom performance controls not appearing until a mode switch when the
   tray starts with Custom mode already active.
 - Recorded the combined hardware-cleanup result during every graceful service
