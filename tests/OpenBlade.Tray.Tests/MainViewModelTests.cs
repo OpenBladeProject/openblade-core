@@ -3012,7 +3012,8 @@ public sealed class MainViewModelTests
             LightingRendererOwnership = LightingRendererOwnershipState.Spectrum,
         });
         await WaitUntilAsync(() =>
-            viewModel.SelectedLightingEffectOption?.Effect == LightingEffect.Spectrum);
+            viewModel.SelectedLightingEffectOption?.Effect == LightingEffect.Spectrum
+            && viewModel.LogoLightingModeEditor == LogoLightingMode.Static);
 
         Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
         Assert.Equal(LogoLightingMode.Static, viewModel.LogoLightingModeEditor);
@@ -4687,7 +4688,8 @@ public sealed class MainViewModelTests
             FirmwareCompatibility = FirmwareCompatibilityStatus.UntestedBlocked,
             Firmware = stable.Firmware! with { BiosVersion = "3.02" },
         });
-        await WaitUntilAsync(() => viewModel.HasIncompatibleFirmware);
+        await WaitUntilAsync(() =>
+            viewModel.BatterySourceLabel == "Incompatible firmware");
 
         Assert.Equal("Incompatible firmware", viewModel.PlatformCompatibilityWarningTitle);
         Assert.Equal("Incompatible firmware", viewModel.ProfileStateLabel);
