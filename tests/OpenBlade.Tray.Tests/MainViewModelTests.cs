@@ -2161,7 +2161,104 @@ public sealed class MainViewModelTests
         Assert.Equal(PerformancePreset.Custom, client.PerformanceOverride!.Value);
         Assert.Equal(requested, client.PerformanceOverride.CustomPerformance);
         Assert.Equal(OverrideLifetime.UntilPowerSourceChange, client.PerformanceOverride.Lifetime);
+        Assert.Equal(requested.Cpu, viewModel.SelectedCustomCpuLevel);
+        Assert.Equal(requested.Gpu, viewModel.SelectedCustomGpuLevel);
         Assert.True(viewModel.HasThermalProfileDraft);
+    }
+
+    [Fact]
+    public async Task PerformanceSelection_StaysRequestedAcrossInFlightStaleStatus()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+            Message = "Intermediate status",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Intermediate status");
+
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+
+        client.CompleteMutation();
+        await apply;
+
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            viewModel.SelectedPerformanceOption?.Value);
+    }
+
+    [Fact]
+    public async Task FailedPerformanceSelection_RestoresPreviousPresentation()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Performance was not applied."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+
+        Assert.Equal(PerformancePreset.Balanced, viewModel.SelectedPerformance);
+    }
+
+    [Fact]
+    public async Task ManualFanSelector_RequiresBalancedAutomaticBaseline()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                Fans = FanMode.Automatic,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Custom,
+                    SettingValueSource.TemporaryOverride),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Custom);
+
+        Assert.False(viewModel.CanEditFanControl);
+        Assert.True(viewModel.IsManualFanControlUnavailable);
+
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Balanced);
+
+        Assert.True(viewModel.CanEditFanControl);
+        Assert.False(viewModel.IsManualFanControlUnavailable);
     }
 
     [Fact]
@@ -5153,6 +5250,75 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task InactiveSessionStatusStaysConnectedAndRestoresControl()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 10,
+            ControlAccess = SessionControlAccess.InactiveSession,
+        };
+
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Another user is controlling OpenBlade");
+
+        Assert.True(viewModel.IsConnected);
+        Assert.False(viewModel.CanControlHardware);
+
+        client.Publish(status with
+        {
+            Revision = 11,
+            ControlAccess = SessionControlAccess.Active,
+            Message = "Ready",
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Ready"
+            && viewModel.CanControlHardware);
+
+        Assert.True(viewModel.IsConnected);
+    }
+
+    [Fact]
+    public async Task InactiveSessionObservationRefreshesAccessBeforeHardwareObservation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot inactive = CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 10,
+            ControlAccess = SessionControlAccess.InactiveSession,
+        };
+        ServiceStatusSnapshot active = inactive with
+        {
+            ControlAccess = SessionControlAccess.Active,
+            Message = "Ready",
+        };
+        client.Publish(inactive);
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Another user is controlling OpenBlade");
+        client.GetStatusResponse = active;
+
+        await viewModel.ObserveStateAsync(CancellationToken.None);
+
+        Assert.Equal(1, client.GetStatusCalls);
+        Assert.Equal(0, client.ObservationCalls);
+        Assert.True(viewModel.CanControlHardware);
+        Assert.Equal("Ready", viewModel.ControlAccessStatus);
+
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        client.PendingObservation.SetResult(active with { Revision = 11 });
+
+        await viewModel.ObserveStateAsync(CancellationToken.None);
+
+        Assert.Equal(1, client.ObservationCalls);
+    }
+
+    [Fact]
     public async Task ReconnectingUpdate_RetainsLastSnapshotAndCommandsDuringGrace()
     {
         var client = new FakeServiceClient();
@@ -5495,6 +5661,7 @@ public sealed class MainViewModelTests
         public int ExportCalls { get; private set; }
         public bool? LastExportLiveReadingsEnabled { get; private set; }
         public int ObservationCalls { get; private set; }
+        public int GetStatusCalls { get; private set; }
         public List<bool> IncludeLiveReadingsRequests { get; } = [];
         public List<LiveReadingSensors> RequestedLiveReadings { get; } = [];
         public TaskCompletionSource<ServiceStatusSnapshot>? PendingObservation { get; set; }
@@ -5518,6 +5685,7 @@ public sealed class MainViewModelTests
         public ControlOperationResult NextResult { get; set; } = new(ControlOperationStatus.Applied, "Applied");
         public Queue<ControlOperationResult> MutationResults { get; } = [];
         public ServiceStatusSnapshot? CurrentStatus { get; private set; }
+        public ServiceStatusSnapshot? GetStatusResponse { get; set; }
         public DiagnosticArchive NextArchive { get; init; } = new(
             "OpenBlade-diagnostics.zip",
             [0x50, 0x4B, 0x03, 0x04]);
@@ -5551,7 +5719,8 @@ public sealed class MainViewModelTests
         public override Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            return Task.FromResult(CurrentStatus ?? throw new InvalidOperationException(
+            GetStatusCalls++;
+            return Task.FromResult(GetStatusResponse ?? CurrentStatus ?? throw new InvalidOperationException(
                 "No status has been published."));
         }
 

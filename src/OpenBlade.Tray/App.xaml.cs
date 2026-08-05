@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using OpenBlade.Contracts;
 using OpenBlade.Platform;
 using OpenBlade.Session;
+using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
@@ -21,6 +22,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private WindowsShellThemeSource? trayIconThemeSource;
     private ITrayIconHost? trayIconHost;
     private TrayExitLifecycle? exitLifecycle;
+    private TrayExitController? trayExitController;
     private Task windowInitializationTask = Task.CompletedTask;
     private DispatcherQueue uiDispatcherQueue = null!;
     private WindowsProcessorEfficiencyPolicy processorPolicy = null!;
@@ -31,6 +33,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         base.OnLaunched(args);
+        System.Windows.Forms.Application.EnableVisualStyles();
         RegisterCrashReporting();
         traceLogRegistration ??= PersistentTraceLog.RegisterDefault(
             "OpenBlade.Tray",
@@ -44,7 +47,9 @@ public partial class App : Microsoft.UI.Xaml.Application
             ?? throw new InvalidOperationException("Tray executable path is unavailable.");
         string userSid = WindowsIdentity.GetCurrent().User?.Value
             ?? throw new InvalidOperationException("Current user SID is unavailable.");
-        TrayInstanceEndpoint instanceEndpoint = TrayInstanceEndpoint.Create(userSid);
+        using Process currentProcess = Process.GetCurrentProcess();
+        int sessionId = currentProcess.SessionId;
+        TrayInstanceEndpoint instanceEndpoint = TrayInstanceEndpoint.Create(userSid, sessionId);
         if (!TrayInstanceCoordinator.TryStart(
             instanceEndpoint,
             () => Enqueue(ShowMainWindow),
@@ -56,7 +61,9 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         mainWindow = CreateMainWindow();
         SessionAgentEventEndpoint sessionEventEndpoint =
-            SessionAgentEventEndpoint.Create(new SecurityIdentifier(userSid));
+            SessionAgentEventEndpoint.Create(
+                new SecurityIdentifier(userSid),
+                sessionId);
         brightnessOsdHost = WindowsTrayBrightnessOsdHost.CreateBestEffort(
             mainWindow,
             sessionEventEndpoint,
@@ -155,12 +162,13 @@ public partial class App : Microsoft.UI.Xaml.Application
             return;
         }
 
-        var trayMenuController = new TrayMenuController(
-            mainWindow.ViewModel,
-            () => Enqueue(ShowMainWindow),
-            () => Enqueue(() => _ = ExitTrayAsync()));
+        trayExitController = new TrayExitController(
+            ShowTrayExitDialog,
+            ExitTrayAsync,
+            ShutdownOpenBladeAsync);
         trayIconHost = new WinFormsTrayIconHost(
-            trayMenuController,
+            () => Enqueue(ShowMainWindow),
+            () => Enqueue(() => _ = RequestTrayExitAsync()),
             mainWindow.ViewModel,
             trayIconThemeSource,
             () => Enqueue(mainWindow.RequestTrayTelemetryRefresh));
@@ -229,6 +237,107 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         return exitLifecycle.ExitAsync();
+    }
+
+    public async Task ShutdownOpenBladeAsync()
+    {
+        MainWindow? window = mainWindow;
+        if (window is null)
+        {
+            Trace.TraceWarning(
+                "OpenBlade could not request service shutdown because the main window is unavailable.");
+        }
+        else
+        {
+            await window.ViewModel.ShutdownOpenBladeAsync(CancellationToken.None);
+        }
+
+        _ = SessionAgentLauncher.TryStopSibling();
+        await ExitTrayAsync();
+    }
+
+    private async Task RequestTrayExitAsync()
+    {
+        try
+        {
+            if (trayExitController is null)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade ignored a tray exit request before exit controls were initialized.");
+                return;
+            }
+
+            await trayExitController.RequestExitAsync();
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade shutdown failed: {0}", exception);
+            try
+            {
+                ShowTrayTaskDialog(new TaskDialogPage
+                {
+                    Caption = "OpenBlade",
+                    Heading = "OpenBlade could not shut down",
+                    Text = exception.Message,
+                    Buttons = { TaskDialogButton.Close },
+                    DefaultButton = TaskDialogButton.Close,
+                });
+            }
+            catch (Exception dialogException)
+            {
+                Trace.TraceError(
+                    "OpenBlade could not show the shutdown error dialog: {0}",
+                    dialogException);
+            }
+        }
+    }
+
+    private TrayExitChoice ShowTrayExitDialog()
+    {
+        var keepRunning = new TaskDialogButton("Keep background features running");
+        var shutDown = new TaskDialogButton("Shut down completely");
+        var page = new TaskDialogPage
+        {
+            Caption = "OpenBlade",
+            Heading = "Exit OpenBlade?",
+            Text = "Choose whether keyboard lighting, hotkeys, profiles, and automation "
+                + "should keep running in the background.",
+            AllowCancel = true,
+            DefaultButton = TaskDialogButton.Cancel,
+            Buttons =
+            {
+                keepRunning,
+                shutDown,
+                TaskDialogButton.Cancel,
+            },
+        };
+
+        TaskDialogButton result = ShowTrayTaskDialog(page);
+        if (result == keepRunning)
+        {
+            return TrayExitChoice.KeepBackgroundRunning;
+        }
+
+        if (result == shutDown)
+        {
+            return TrayExitChoice.ShutDownCompletely;
+        }
+
+        return TrayExitChoice.Cancel;
+    }
+
+    private TaskDialogButton ShowTrayTaskDialog(TaskDialogPage page)
+    {
+        MainWindow? window = mainWindow;
+        if (window?.IsWindowVisible == true)
+        {
+            return TaskDialog.ShowDialog(
+                WindowNative.GetWindowHandle(window),
+                page,
+                TaskDialogStartupLocation.CenterOwner);
+        }
+
+        return TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen);
     }
 
     private void ShowMainWindow() => _ = ShowMainWindowWhenReadyAsync(initialLaunch: false);

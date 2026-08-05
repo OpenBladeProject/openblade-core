@@ -120,7 +120,6 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 {
                     await platform.InstallUninstallerAsync(cancellationToken);
                 }
-                await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
                 await platform.InstallServiceAsync(cancellationToken);
                 await platform.VerifyServiceHealthAsync(cancellationToken);
                 await platform.InstallSessionAgentStartupShortcutAsync(cancellationToken);
@@ -130,10 +129,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                     await platform.InstallUninstallShortcutAsync(cancellationToken);
                     await platform.InstallUninstallRegistrationAsync(cancellationToken);
                 }
-                if (!transaction.HadExistingInstall || priorLifecycle.Startup.TrayShortcutExisted)
-                {
-                    await platform.InstallStartupShortcutAsync(cancellationToken);
-                }
+                await platform.InstallStartupShortcutAsync(cancellationToken);
                 if (invocation.BundleManaged)
                 {
                     await platform.InstallBundleOwnershipAsync(cancellationToken);

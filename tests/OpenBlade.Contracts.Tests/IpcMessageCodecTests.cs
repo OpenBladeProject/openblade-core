@@ -357,7 +357,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(33, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(34, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -558,6 +558,24 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task ReadServerFrameAsync_RejectsUnknownSessionControlAccess()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
+        JsonObject status = Assert.IsType<JsonObject>(
+            root[nameof(ServiceStatusEvent.Status)]);
+        status[nameof(ServiceStatusSnapshot.ControlAccess)] = 999;
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ReadServerFrameAsync_RejectsDuplicateObservedPowerSourceBehaviors()
     {
         var observation = new PowerSourceBehaviorObservation(
@@ -594,7 +612,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(33, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(34, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
