@@ -7,23 +7,31 @@ public sealed class TrayInstanceCoordinatorTests
     [Fact]
     public void Endpoint_IsStableForSameUserAcrossBuildLocations()
     {
-        TrayInstanceEndpoint installed = TrayInstanceEndpoint.Create("S-1-5-21-1000");
-        TrayInstanceEndpoint development = TrayInstanceEndpoint.Create("S-1-5-21-1000");
+        TrayInstanceEndpoint installed = TrayInstanceEndpoint.Create("S-1-5-21-1000", 3);
+        TrayInstanceEndpoint development = TrayInstanceEndpoint.Create("S-1-5-21-1000", 3);
 
         Assert.Equal(installed, development);
         Assert.Equal(
-            @"Local\OpenBlade.Tray.Instance.S-1-5-21-1000",
+            @"Local\OpenBlade.Tray.Instance.S-1-5-21-1000.3",
             installed.InstanceEventName);
     }
 
     [Fact]
     public void Endpoint_DiffersAcrossUsers()
     {
-        TrayInstanceEndpoint baseline = TrayInstanceEndpoint.Create("S-1-5-21-1000");
+        TrayInstanceEndpoint baseline = TrayInstanceEndpoint.Create("S-1-5-21-1000", 3);
 
         Assert.NotEqual(
             baseline,
-            TrayInstanceEndpoint.Create("S-1-5-21-2000"));
+            TrayInstanceEndpoint.Create("S-1-5-21-2000", 3));
+    }
+
+    [Fact]
+    public void Endpoint_DiffersAcrossSessions()
+    {
+        Assert.NotEqual(
+            TrayInstanceEndpoint.Create("S-1-5-21-1000", 3),
+            TrayInstanceEndpoint.Create("S-1-5-21-1000", 4));
     }
 
     [Fact]
@@ -53,5 +61,5 @@ public sealed class TrayInstanceCoordinatorTests
     }
 
     private static TrayInstanceEndpoint UniqueEndpoint() =>
-        TrayInstanceEndpoint.Create($"S-1-5-21-TEST-{Guid.NewGuid():N}");
+        TrayInstanceEndpoint.Create($"S-1-5-21-TEST-{Guid.NewGuid():N}", 3);
 }

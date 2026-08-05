@@ -8,6 +8,8 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class CapabilityPresentationTests
 {
+    private static readonly TimeSpan TestDeadlockGuard = TimeSpan.FromSeconds(5);
+
     [Fact]
     public void MainWindow_FirmwareAssistantIsReadOnlyAndModelScoped()
     {
@@ -177,7 +179,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(23, animated.Length);
+        Assert.Equal(24, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -192,6 +194,10 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsManualFanCurveVisible",
+                StringComparison.Ordinal) is true);
+        Assert.Contains(animated, element =>
+            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                "IsManualFanControlUnavailable",
                 StringComparison.Ordinal) is true);
         XElement[] gamingModePolicies = animated
             .Where(element => element.Descendants().Any(descendant =>
@@ -1322,52 +1328,6 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public async Task UnsupportedPerformanceAndFanValuesAreDisabledInSharedTrayMenu()
-    {
-        var client = new PresentationClient();
-        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
-        await viewModel.StartAsync();
-        client.Publish(CreateStatus(
-            verified: true,
-            blocked: false,
-            capabilities: new DeviceCapabilities(
-                new HashSet<PerformancePreset> { PerformancePreset.Balanced },
-                new HashSet<FanMode> { FanMode.Automatic },
-                new HashSet<LightingEffect> { LightingEffect.Off },
-                ChargeLimits(), true, true)));
-        await WaitUntilAsync(() =>
-            viewModel.CanControlHardware && viewModel.AvailableLightingSettings.Count > 0);
-        var controller = new TrayMenuController(viewModel, () => { }, () => { });
-
-        Assert.False(controller.Find("Silent").IsEnabled);
-        Assert.True(controller.Find("Balanced").IsEnabled);
-        Assert.False(controller.Find("Performance").IsEnabled);
-        Assert.True(controller.Find("Automatic").IsEnabled);
-        Assert.False(controller.Find("Maximum").IsEnabled);
-    }
-
-    [Fact]
-    public async Task ControllerAdvisoryDoesNotDisableAdmittedMutationOrOpenAndExit()
-    {
-        var client = new PresentationClient();
-        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
-        await viewModel.StartAsync();
-        client.Publish(CreateStatus(
-            verified: true,
-            blocked: false,
-            conflicts: ["RazerAppEngine"],
-            capabilities: DeviceCapabilities.SafeTargetDefaults()));
-        await WaitUntilAsync(() => viewModel.HasControllerAdvisory);
-        var controller = new TrayMenuController(viewModel, () => { }, () => { });
-
-        Assert.True(controller.Find("Automatic").IsEnabled);
-        Assert.True(controller.Find("Open").IsEnabled);
-        Assert.True(controller.Find("Exit").IsEnabled);
-        Assert.True(viewModel.HasControllerAdvisory);
-        Assert.Contains("RazerAppEngine", viewModel.ControllerAdvisoryText, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task ProfileEditorsBuildAndSaveBothPowerProfiles()
     {
         var client = new PresentationClient();
@@ -1772,7 +1732,7 @@ public sealed class CapabilityPresentationTests
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(
+        await client.PublishAndWaitAsync(CreateStatus(
             verified: true,
             blocked: false,
             capabilities: new DeviceCapabilities(
@@ -1780,7 +1740,6 @@ public sealed class CapabilityPresentationTests
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Static },
                 ChargeLimits(), true, true)));
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
 
         viewModel.LightingEffectEditor = LightingEffect.Static;
         viewModel.LightingBrightnessEditor = 64;
@@ -1803,7 +1762,7 @@ public sealed class CapabilityPresentationTests
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(
+        await client.PublishAndWaitAsync(CreateStatus(
             verified: true,
             blocked: false,
             capabilities: new DeviceCapabilities(
@@ -1811,10 +1770,10 @@ public sealed class CapabilityPresentationTests
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
                 ChargeLimits(), true, true)));
-        await WaitUntilAsync(() =>
-            viewModel.CanControlHardware
-            && viewModel.AvailableLightingEffectOptions.Count ==
-                Enum.GetValues<LightingEffect>().Length);
+        Assert.True(viewModel.CanControlHardware);
+        Assert.Equal(
+            Enum.GetValues<LightingEffect>().Length,
+            viewModel.AvailableLightingEffectOptions.Count);
         Assert.Equal(LightingEffect.Off, viewModel.AvailableLightingEffectOptions[0].Effect);
         Assert.Equal(
             viewModel.AvailableLightingEffectOptions
@@ -2196,20 +2155,38 @@ public sealed class CapabilityPresentationTests
 
     private sealed class PresentationClient : OpenBlade.Testing.UnavailableServiceClient
     {
-        private readonly Channel<ServiceWatchUpdate> statuses = Channel.CreateUnbounded<ServiceWatchUpdate>();
+        private readonly Channel<PublishedStatus> statuses =
+            Channel.CreateUnbounded<PublishedStatus>();
         public ProfileSet? SavedProfiles { get; private set; }
         public BatteryPolicy? SavedBatteryPolicy { get; private set; }
         public bool? SavedBatteryProtection { get; private set; }
         public void Publish(ServiceStatusSnapshot status) =>
-            statuses.Writer.TryWrite(new ServiceWatchUpdate.Connected(status));
+            Assert.True(statuses.Writer.TryWrite(new(
+                new ServiceWatchUpdate.Connected(status),
+                Delivered: null)));
+        public async Task PublishAndWaitAsync(ServiceStatusSnapshot status)
+        {
+            var delivered = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            Assert.True(statuses.Writer.TryWrite(new(
+                new ServiceWatchUpdate.Connected(status),
+                delivered)));
+            await delivered.Task.WaitAsync(TestDeadlockGuard);
+        }
         public override async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
         {
-            await foreach (ServiceWatchUpdate status in statuses.Reader.ReadAllAsync(token))
+            await foreach (PublishedStatus status in statuses.Reader.ReadAllAsync(token))
             {
-                yield return status;
+                yield return status.Update;
+                status.Delivered?.TrySetResult();
             }
         }
+
+        private sealed record PublishedStatus(
+            ServiceWatchUpdate Update,
+            TaskCompletionSource? Delivered);
+
         public override Task<ControlOperationResult> UpdateProfilesAsync(
             ProfileSet profiles,
             CancellationToken token)

@@ -70,6 +70,11 @@ internal sealed class WindowsAppNotificationPresenter : IDisposable
                 builder.SetAppLogoOverride(logoUri);
             }
 
+            if (!string.IsNullOrWhiteSpace(notification.ReplacementTag))
+            {
+                builder.SetTag(notification.ReplacementTag);
+            }
+
             manager.Show(builder.BuildNotification());
             return true;
         }

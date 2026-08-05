@@ -237,6 +237,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public Microsoft.UI.Xaml.Media.Brush AccentColorPreviewBrush =>
         new Microsoft.UI.Xaml.Media.SolidColorBrush(accentColorManager.CurrentColor);
 
+    public bool IsWindowVisible => windowVisible;
+
     public Visibility CustomAccentColorVisibility => accentColorMode == AppAccentColorMode.Custom
         ? Visibility.Visible
         : Visibility.Collapsed;
@@ -2296,11 +2298,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
-            await ViewModel.ShutdownOpenBladeAsync(CancellationToken.None);
-            _ = SessionAgentLauncher.TryStopSibling();
             if (Microsoft.UI.Xaml.Application.Current is App app)
             {
-                await app.ExitTrayAsync();
+                await app.ShutdownOpenBladeAsync();
             }
         }
         catch (Exception exception)
