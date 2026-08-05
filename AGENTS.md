@@ -159,7 +159,10 @@ submodules.
    quality.
 7. For hardware changes, complete the documented interactive validation before
    marking support production-ready.
-8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes.
+8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes. Treat each
+   published nightly tag as a release boundary: move its included entries into
+   a dated `## [X.Y.Z-nightly.N] - YYYY-MM-DD` section, update the comparison
+   links, and leave `Unreleased` for changes merged after that exact tag.
 9. Commit and push coherent slices. Do not bundle capture evidence, product
    code, history maintenance, and unrelated formatting in one commit.
 10. Preserve the line endings declared by `.editorconfig` and `.gitattributes`.

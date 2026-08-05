@@ -10,12 +10,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Simplified the tray right-click menu to **Open** and **Exit**. Exiting now
   asks whether to leave keyboard lighting, hotkeys, profiles, and automation
   running in the background or shut down OpenBlade completely.
-- Reduced idle CPU wakeups by replacing hidden live-reading polling with a
-  rate-limited on-hover refresh, retaining the last reading between hovers,
-  and applying EcoQoS plus an efficient processor selection to the hidden tray
-  UI thread when Windows reports a hybrid topology. Service and Session Agent
-  scheduling remains under Windows control so latency-sensitive hardware and
-  input work can use any processor.
 
 ### Fixed
 
@@ -53,6 +47,48 @@ All notable changes to OpenBlade are documented in this file. The project follow
   service status catches up, restored the previous selection after real
   failures, and disabled fixed/manual fan choices until the required Balanced
   Automatic baseline is confirmed.
+
+### Added
+
+- Added multi-user Windows support. The LocalSystem service authenticates each
+  named-pipe client from its Windows token, permits hardware mutation only from
+  the active interactive session, keeps profiles and persistent overrides
+  isolated by user SID, migrates the legacy owner's saved configuration, and
+  starts the per-session Session Agent for every user. The agent registers its
+  Dynamic Lighting identity on first use and relaunches once under that
+  identity. Tray and Session Agent endpoints now include the Windows session
+  ID, background sessions lose control without exposing another user's
+  profiles, service shutdown requires an administrator, and service IPC is now
+  version 34.
+
+## [0.1.0-nightly.6] - 2026-08-04
+
+### Added
+
+- Added a read-only firmware assistant for admitted Blade models that shows
+  installed BIOS, EC, and MCU values beside versions published on the model's
+  official Razer support page without downloading or running firmware tools,
+  with a separate user-configurable check interval.
+- Added read-only resume validation records to diagnostic bundles. OpenBlade
+  now compares confirmed pre-suspend and post-resume control state, names any
+  changed subsystems, and does not add validation-driven recovery writes.
+  Diagnostics separately disclose the existing owned-lighting restoration and
+  whether that lifecycle action applied a control write. Pending validation is
+  discarded after one minute or an unrelated post-resume power-source change.
+
+## [0.1.0-nightly.5] - 2026-08-03
+
+### Changed
+
+- Reduced idle CPU wakeups by replacing hidden live-reading polling with a
+  rate-limited on-hover refresh, retaining the last reading between hovers,
+  and applying EcoQoS plus an efficient processor selection to the hidden tray
+  UI thread when Windows reports a hybrid topology. Service and Session Agent
+  scheduling remains under Windows control so latency-sensitive hardware and
+  input work can use any processor.
+
+### Fixed
+
 - Kept manual and automatic update checks nonfatal when the computer is
   offline, with a clear connectivity status and bounded retry delay.
 - Fixed the graphical uninstaller so it detects a same-version OpenBlade
@@ -78,26 +114,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Added multi-user Windows support. The LocalSystem service authenticates each
-  named-pipe client from its Windows token, permits hardware mutation only from
-  the active interactive session, keeps profiles and persistent overrides
-  isolated by user SID, migrates the legacy owner's saved configuration, and
-  starts the per-session Session Agent for every user. The agent registers its
-  Dynamic Lighting identity on first use and relaunches once under that
-  identity. Tray and Session Agent endpoints now include the Windows session
-  ID, background sessions lose control without exposing another user's
-  profiles, service shutdown requires an administrator, and service IPC is now
-  version 34.
-- Added a read-only firmware assistant for admitted Blade models that shows
-  installed BIOS, EC, and MCU values beside versions published on the model's
-  official Razer support page without downloading or running firmware tools,
-  with a separate user-configurable check interval.
-- Added read-only resume validation records to diagnostic bundles. OpenBlade
-  now compares confirmed pre-suspend and post-resume control state, names any
-  changed subsystems, and does not add validation-driven recovery writes.
-  Diagnostics separately disclose the existing owned-lighting restoration and
-  whether that lifecycle action applied a control write. Pending validation is
-  discarded after one minute or an unrelated post-resume power-source change.
 - Licensed OpenBlade under the GNU General Public License version 3 or later.
 - Added an uninstall choice to keep saved profiles and settings by default or
   remove them explicitly from the graphical maintenance screen.
@@ -939,5 +955,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...HEAD
+[0.1.0-nightly.6]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.5...v0.1.0-nightly.6
+[0.1.0-nightly.5]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...v0.1.0-nightly.5
 [0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
