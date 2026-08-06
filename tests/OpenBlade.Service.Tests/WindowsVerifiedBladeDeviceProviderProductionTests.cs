@@ -40,7 +40,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     [Fact]
     public async Task ReadBalancedPerformance_DoesNotWakeGpuForClockOffsetQuery()
     {
-        DeviceCapabilities capabilities = ThermalCapabilities(
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
             new HashSet<PerformancePreset> { PerformancePreset.Balanced },
             new HashSet<FanMode> { FanMode.Automatic });
         var port = new FakeProductionPort(
@@ -64,7 +64,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     [Fact]
     public async Task ReadBalancedPerformance_ReportsGpuClockOffsetsAfterManagedWrite()
     {
-        DeviceCapabilities capabilities = ThermalCapabilities(
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
             new HashSet<PerformancePreset> { PerformancePreset.Balanced },
             new HashSet<FanMode> { FanMode.Automatic });
         var port = new FakeProductionPort(
@@ -87,14 +87,20 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(2, gpu.QueryCount);
         Assert.Equal([requested], gpu.Writes);
         Assert.Equal(PerformancePreset.Balanced, state.Performance);
-        Assert.Equal(gpu.Capabilities, state.GpuClockOffsets);
+        Assert.Equal(requested, state.GpuClockOffsets?.Current);
+        Assert.Equal(
+            new GpuClockOffsetRange(-1000, 400, requested.CoreMegahertz),
+            state.GpuClockOffsets?.Core);
+        Assert.Equal(
+            new GpuClockOffsetRange(-1000, 3000, requested.MemoryMegahertz),
+            state.GpuClockOffsets?.Memory);
         Assert.Null(state.CustomPerformance);
     }
 
     [Fact]
     public async Task SetCustomPerformance_PreflightsThenAppliesFirmwareAndGpuOffsets()
     {
-        DeviceCapabilities capabilities = ThermalCapabilities(
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
             new HashSet<PerformancePreset> { PerformancePreset.Custom },
             new HashSet<FanMode> { FanMode.Automatic });
         var port = new FakeProductionPort(
@@ -129,7 +135,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     [Fact]
     public async Task SetCustomPerformance_UnavailableGpuTuningRejectsBeforeFirmwareWrite()
     {
-        DeviceCapabilities capabilities = ThermalCapabilities(
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
             new HashSet<PerformancePreset> { PerformancePreset.Custom },
             new HashSet<FanMode> { FanMode.Automatic });
         var port = new FakeProductionPort(
@@ -229,7 +235,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     [Fact]
     public async Task SetCustomPerformance_GpuWriteFailureReportsPartialOperationAsIndeterminate()
     {
-        DeviceCapabilities capabilities = ThermalCapabilities(
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
             new HashSet<PerformancePreset> { PerformancePreset.Custom },
             new HashSet<FanMode> { FanMode.Automatic });
         var port = new FakeProductionPort(
@@ -265,7 +271,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     [Fact]
     public async Task SetBalancedPerformance_CompletesGpuWriteAfterCancellationRacesWithFirmware()
     {
-        DeviceCapabilities capabilities = ThermalCapabilities(
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
             new HashSet<PerformancePreset> { PerformancePreset.Balanced },
             new HashSet<FanMode> { FanMode.Automatic });
         using var cancellation = new CancellationTokenSource();
@@ -297,7 +303,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     [Fact]
     public async Task SetBalancedPerformance_GpuFailureAfterFirmwareIsIndeterminate()
     {
-        DeviceCapabilities capabilities = ThermalCapabilities(
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
             new HashSet<PerformancePreset> { PerformancePreset.Balanced },
             new HashSet<FanMode> { FanMode.Automatic });
         var port = new FakeProductionPort(
@@ -406,7 +412,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     [Fact]
     public async Task SetGpuClockOffsets_PreflightsAndWritesWithoutOpeningFirmwarePort()
     {
-        DeviceCapabilities capabilities = ThermalCapabilities(
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
             new HashSet<PerformancePreset> { PerformancePreset.Custom },
             new HashSet<FanMode> { FanMode.Automatic });
         var factory = new FakeProductionFactory(capabilities);
@@ -419,6 +425,25 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
         Assert.Equal(1, gpu.QueryCount);
         Assert.Equal([requested], gpu.Writes);
+        Assert.Equal(0, factory.OpenCount);
+    }
+
+    [Fact]
+    public async Task SetGpuClockOffsets_NullModelPolicyRejectsWithoutDriverQuery()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var factory = new FakeProductionFactory(capabilities);
+        var gpu = new FakeGpuClockOffsetController();
+        using var provider = ReadyProvider(factory, gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            device.SetGpuClockOffsetsAsync(new GpuClockOffsetSettings(5, 0), default));
+
+        Assert.Equal(0, gpu.QueryCount);
+        Assert.Empty(gpu.Writes);
         Assert.Equal(0, factory.OpenCount);
     }
 
@@ -1208,6 +1233,16 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             new HashSet<int>(),
             SupportsBatteryProtectionOff: false,
             SupportsTemporaryFullCharge: false);
+
+    private static DeviceCapabilities WritableGpuCapabilities(
+        IReadOnlySet<PerformancePreset> presets,
+        IReadOnlySet<FanMode> fanModes) => ThermalCapabilities(presets, fanModes) with
+        {
+            GpuOverclock = new(
+                new DeviceNumericRange(-1000, 400, null),
+                new DeviceNumericRange(-1000, 3000, null),
+                DeviceFeatureAccess.ReadWrite),
+        };
 
     private static BatteryValidationProbeResult Probe(
         BatteryValidationProbeClassification classification) => new(

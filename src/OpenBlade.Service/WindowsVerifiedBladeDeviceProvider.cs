@@ -959,11 +959,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
             if (gpuClockOffsets is { } preflightOffsets)
             {
-                GpuClockOffsetCapabilities? driver =
-                    batteryFactory.Capabilities.GpuOverclock is null
-                        or { Access: DeviceFeatureAccess.ReadWrite }
-                        ? this.gpuClockOffsets.Query()
-                        : null;
+                GpuClockOffsetCapabilities? driver = batteryFactory.Capabilities.GpuOverclock
+                    is { Access: DeviceFeatureAccess.ReadWrite }
+                    ? this.gpuClockOffsets.Query()
+                    : null;
                 if (!GpuClockOffsetsSupported(driver, preflightOffsets))
                 {
                     await RejectProductionWrite(
@@ -1034,11 +1033,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                GpuClockOffsetCapabilities? driver =
-                    batteryFactory.Capabilities.GpuOverclock is null
-                        or { Access: DeviceFeatureAccess.ReadWrite }
-                        ? gpuClockOffsets.Query()
-                        : null;
+                GpuClockOffsetCapabilities? driver = batteryFactory.Capabilities.GpuOverclock
+                    is { Access: DeviceFeatureAccess.ReadWrite }
+                    ? gpuClockOffsets.Query()
+                    : null;
                 if (!GpuClockOffsetsSupported(driver, value))
                 {
                     throw new CapabilityUnavailableException(
@@ -1128,12 +1126,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
 
             GpuOverclockCapabilities? policy = batteryFactory.Capabilities.GpuOverclock;
-            return policy?.IsWellFormed != true
-                || policy.Access == DeviceFeatureAccess.ReadWrite
-                    && requested.CoreMegahertz >= policy.CoreOffsetMegahertz.Minimum
-                    && requested.CoreMegahertz <= policy.CoreOffsetMegahertz.Maximum
-                    && requested.MemoryMegahertz >= policy.MemoryOffsetMegahertz.Minimum
-                    && requested.MemoryMegahertz <= policy.MemoryOffsetMegahertz.Maximum;
+            return policy?.IsWellFormed == true
+                && policy.Access == DeviceFeatureAccess.ReadWrite
+                && requested.CoreMegahertz >= policy.CoreOffsetMegahertz.Minimum
+                && requested.CoreMegahertz <= policy.CoreOffsetMegahertz.Maximum
+                && requested.MemoryMegahertz >= policy.MemoryOffsetMegahertz.Minimum
+                && requested.MemoryMegahertz <= policy.MemoryOffsetMegahertz.Maximum;
         }
 
         public Task SetFanControlAsync(

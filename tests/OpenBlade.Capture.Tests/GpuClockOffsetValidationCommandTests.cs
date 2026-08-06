@@ -97,12 +97,58 @@ public sealed class GpuClockOffsetValidationCommandTests
     }
 
     [Fact]
+    public void Run_Rz090581PlanUsesFifteenMegahertzStepAndRestores()
+    {
+        var controller = new FakeController();
+        var output = new StringWriter();
+
+        int result = GpuClockOffsetValidationCommand.Run(
+            controller,
+            output,
+            GpuClockOffsetValidationPlan.Rz090581Bios400);
+
+        Assert.Equal(0, result);
+        Assert.Equal(
+            [
+                new GpuClockOffsetValidationSettings(15, 15),
+                new GpuClockOffsetValidationSettings(0, 0),
+            ],
+            controller.Writes);
+        Assert.Contains(
+            "Target=RZ09-0581 1532:02E0 BIOS 4.00",
+            output.ToString());
+        Assert.Contains("Requested=Core=15;Memory=15", output.ToString());
+        Assert.Contains("Restored=True", output.ToString());
+        Assert.Contains("Success=True", output.ToString());
+    }
+
+    [Fact]
+    public void Run_Rz090581PlanRejectsNonzeroBaselineWithoutWriting()
+    {
+        var controller = new FakeController
+        {
+            Current = new(5, 0),
+        };
+        var output = new StringWriter();
+
+        int result = GpuClockOffsetValidationCommand.Run(
+            controller,
+            output,
+            GpuClockOffsetValidationPlan.Rz090581Bios400);
+
+        Assert.Equal(2, result);
+        Assert.Empty(controller.Writes);
+        Assert.Contains("required safe baseline", output.ToString());
+        Assert.Contains("Success=False", output.ToString());
+    }
+
+    [Fact]
     public void Controller_PartialMemoryFailureRestoresBothPriorOffsets()
     {
         var api = new FakeApi
         {
             CoreCurrent = 10,
-            MemoryCurrent = 20,
+            MemoryCurrent = 40,
             FailFirstMemoryWrite = true,
         };
         var controller = new NvidiaNvmlGpuClockOffsetValidationController(api);
@@ -112,13 +158,13 @@ public sealed class GpuClockOffsetValidationCommandTests
 
         Assert.Contains("prior offsets were restored", exception.Message);
         Assert.Equal(10, api.CoreCurrent);
-        Assert.Equal(20, api.MemoryCurrent);
+        Assert.Equal(40, api.MemoryCurrent);
         Assert.Equal(
             [
                 (NvmlValidationClockType.Graphics, 11),
-                (NvmlValidationClockType.Memory, 21),
+                (NvmlValidationClockType.Memory, 42),
                 (NvmlValidationClockType.Graphics, 10),
-                (NvmlValidationClockType.Memory, 20),
+                (NvmlValidationClockType.Memory, 40),
             ],
             api.Writes);
         Assert.Equal(1, api.InitializeCalls);
@@ -132,7 +178,7 @@ public sealed class GpuClockOffsetValidationCommandTests
         internal string DeviceName { get; set; } =
             "NVIDIA GeForce RTX 5090 Laptop GPU";
 
-        internal GpuClockOffsetValidationSettings Current { get; private set; } =
+        internal GpuClockOffsetValidationSettings Current { get; set; } =
             new(0, 0);
 
         internal bool ThrowAfterFirstWrite { get; set; }
@@ -144,7 +190,7 @@ public sealed class GpuClockOffsetValidationCommandTests
         public GpuClockOffsetCapabilities Query() => new(
             DeviceName,
             new GpuClockOffsetRange(-1000, 1000, Current.CoreMegahertz),
-            new GpuClockOffsetRange(-2000, 6000, Current.MemoryMegahertz));
+            new GpuClockOffsetRange(-1000, 3000, Current.MemoryMegahertz));
 
         public void Set(GpuClockOffsetValidationSettings settings)
         {

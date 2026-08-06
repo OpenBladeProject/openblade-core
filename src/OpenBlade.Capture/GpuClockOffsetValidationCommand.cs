@@ -9,6 +9,36 @@ internal readonly record struct GpuClockOffsetValidationSettings(
     int CoreMegahertz,
     int MemoryMegahertz);
 
+internal sealed record GpuClockOffsetValidationPlan(
+    string Target,
+    string ExpectedDeviceName,
+    int CoreMinimumMegahertz,
+    int CoreMaximumMegahertz,
+    int MemoryMinimumMegahertz,
+    int MemoryMaximumMegahertz,
+    int AdjacentStepMegahertz,
+    GpuClockOffsetValidationSettings? RequiredBaseline = null)
+{
+    internal static GpuClockOffsetValidationPlan Rz090528 { get; } = new(
+        "RZ09-0528 1532:02C6 BIOS 2.02",
+        "NVIDIA GeForce RTX 5090 Laptop GPU",
+        CoreMinimumMegahertz: -1000,
+        CoreMaximumMegahertz: 400,
+        MemoryMinimumMegahertz: -1000,
+        MemoryMaximumMegahertz: 3000,
+        AdjacentStepMegahertz: 1);
+
+    internal static GpuClockOffsetValidationPlan Rz090581Bios400 { get; } = new(
+        "RZ09-0581 1532:02E0 BIOS 4.00",
+        "NVIDIA GeForce RTX 5090 Laptop GPU",
+        CoreMinimumMegahertz: -15,
+        CoreMaximumMegahertz: 15,
+        MemoryMinimumMegahertz: -15,
+        MemoryMaximumMegahertz: 15,
+        AdjacentStepMegahertz: 15,
+        RequiredBaseline: new(0, 0));
+}
+
 internal interface IGpuClockOffsetValidationController
 {
     GpuClockOffsetCapabilities Query();
@@ -20,9 +50,25 @@ internal static class GpuClockOffsetValidationEnvironment
 {
     internal const string Confirmation =
         "RZ09-0528:1532:02C6:GPU-OFFSETS:RESTORE";
+    internal const string Rz090581Bios400Confirmation =
+        "RZ09-0581:1532:02E0:BIOS-4.00:GPU-OFFSETS:RESTORE";
 
     internal static bool IsExactHost() =>
         WindowsHostIdentitySource.IsExactRz090528WindowsHost();
+
+    internal static bool IsExactRz090581Bios400Host()
+    {
+        var registry = new WindowsRegistryValueSource();
+        HostIdentityReadResult identity = new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry))
+            .ReadExactIdentity();
+        return identity is
+        {
+            Evidence.BiosVersion: "4.00",
+            Failure: null,
+        };
+    }
 
     internal static bool HasOneExactProtocolCollection()
     {
@@ -41,6 +87,26 @@ internal static class GpuClockOffsetValidationEnvironment
         }
     }
 
+    internal static bool HasOneExactRz090581ProtocolCollection()
+    {
+        try
+        {
+            return WindowsHidEnumerator
+                .FindCollections(
+                    TargetBladeDevice.VendorId,
+                    TargetBladeDevice.ProductId)
+                .Count(collection =>
+                    collection.UsagePage == TargetBladeDevice.UsagePage
+                    && collection.Usage == TargetBladeDevice.Usage
+                    && TargetBladeDevice.CanCarryProtocolReport(
+                        collection.FeatureReportByteLength)) == 1;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     internal static bool IsSynapseInactive() =>
         HasNoProcess("RazerAppEngine")
         && HasNoProcess("GameManagerService3")
@@ -48,6 +114,10 @@ internal static class GpuClockOffsetValidationEnvironment
 
     internal static bool IsOpenBladeServiceInactive() =>
         HasNoProcess("OpenBlade.Service");
+
+    internal static bool AreGpuTuningToolsInactive() =>
+        HasNoProcess("MSIAfterburner")
+        && HasNoProcess("RTSS");
 
     private static bool HasNoProcess(string name)
     {
@@ -77,20 +147,25 @@ internal static class GpuClockOffsetValidationEnvironment
 
 internal static class GpuClockOffsetValidationCommand
 {
-    private const string ExpectedDeviceName =
-        "NVIDIA GeForce RTX 5090 Laptop GPU";
-    private const int CorePolicyMinimum = -1000;
-    private const int CorePolicyMaximum = 400;
-    private const int MemoryPolicyMinimum = -1000;
-    private const int MemoryPolicyMaximum = 3000;
+    internal static int Run(
+        IGpuClockOffsetValidationController controller,
+        TextWriter output,
+        Func<bool>? mutationAllowed = null) =>
+        Run(
+            controller,
+            output,
+            GpuClockOffsetValidationPlan.Rz090528,
+            mutationAllowed);
 
     internal static int Run(
         IGpuClockOffsetValidationController controller,
         TextWriter output,
+        GpuClockOffsetValidationPlan plan,
         Func<bool>? mutationAllowed = null)
     {
         ArgumentNullException.ThrowIfNull(controller);
         ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(plan);
         mutationAllowed ??= static () => true;
 
         GpuClockOffsetCapabilities? baseline = null;
@@ -106,16 +181,18 @@ internal static class GpuClockOffsetValidationCommand
         try
         {
             baseline = controller.Query();
-            ValidateBaseline(baseline);
+            ValidateBaseline(baseline, plan);
             target = new(
                 ChooseAdjacent(
                     baseline.Core.CurrentMegahertz,
-                    CorePolicyMinimum,
-                    CorePolicyMaximum),
+                    plan.CoreMinimumMegahertz,
+                    plan.CoreMaximumMegahertz,
+                    plan.AdjacentStepMegahertz),
                 ChooseAdjacent(
                     baseline.Memory.CurrentMegahertz,
-                    MemoryPolicyMinimum,
-                    MemoryPolicyMaximum));
+                    plan.MemoryMinimumMegahertz,
+                    plan.MemoryMaximumMegahertz,
+                    plan.AdjacentStepMegahertz));
             if (!mutationAllowed())
             {
                 throw new InvalidOperationException(
@@ -164,7 +241,7 @@ internal static class GpuClockOffsetValidationCommand
         }
 
         bool success = applied && readBack && restored && failure is null;
-        output.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+        output.WriteLine($"Target={plan.Target}");
         output.WriteLine("MutationPolicy=SaveSetReadbackRestore");
         output.WriteLine($"Device={baseline?.DeviceName ?? "Unavailable"}");
         output.WriteLine($"Original={Format(baseline)}");
@@ -179,11 +256,13 @@ internal static class GpuClockOffsetValidationCommand
         return success ? 0 : 2;
     }
 
-    private static void ValidateBaseline(GpuClockOffsetCapabilities baseline)
+    private static void ValidateBaseline(
+        GpuClockOffsetCapabilities baseline,
+        GpuClockOffsetValidationPlan plan)
     {
         if (!string.Equals(
                 baseline.DeviceName,
-                ExpectedDeviceName,
+                plan.ExpectedDeviceName,
                 StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
@@ -191,15 +270,22 @@ internal static class GpuClockOffsetValidationCommand
         }
         if (!Contains(
                 baseline.Core,
-                CorePolicyMinimum,
-                CorePolicyMaximum)
+                plan.CoreMinimumMegahertz,
+                plan.CoreMaximumMegahertz)
             || !Contains(
                 baseline.Memory,
-                MemoryPolicyMinimum,
-                MemoryPolicyMaximum))
+                plan.MemoryMinimumMegahertz,
+                plan.MemoryMaximumMegahertz))
         {
             throw new InvalidOperationException(
-                "The current offsets or driver ranges do not contain the exact-model policy.");
+                "The current offsets or driver ranges do not contain the validation bounds.");
+        }
+        if (plan.RequiredBaseline is { } required
+            && (baseline.Core.CurrentMegahertz != required.CoreMegahertz
+                || baseline.Memory.CurrentMegahertz != required.MemoryMegahertz))
+        {
+            throw new InvalidOperationException(
+                "The current GPU clock offsets do not match the required safe baseline.");
         }
     }
 
@@ -212,11 +298,15 @@ internal static class GpuClockOffsetValidationCommand
         && range.CurrentMegahertz >= policyMinimum
         && range.CurrentMegahertz <= policyMaximum;
 
-    private static int ChooseAdjacent(int current, int minimum, int maximum) =>
-        current < maximum
-            ? checked(current + 1)
-            : current > minimum
-                ? checked(current - 1)
+    private static int ChooseAdjacent(
+        int current,
+        int minimum,
+        int maximum,
+        int step) =>
+        current <= maximum - step
+            ? checked(current + step)
+            : current >= minimum + step
+                ? checked(current - step)
                 : throw new InvalidOperationException(
                     "The exact-model GPU offset policy has no adjacent validation value.");
 
@@ -246,6 +336,7 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
     private const int Success = 0;
     private const uint ClockOffsetStructVersion = (1u << 24) | 24u;
     private const int PerformanceStateZero = 0;
+    private const int NvmlMemoryOffsetMultiplier = 2;
     private readonly INvidiaNvmlGpuClockOffsetValidationApi api;
 
     internal NvidiaNvmlGpuClockOffsetValidationController()
@@ -317,7 +408,9 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
                 || confirmed.Memory.CurrentMegahertz != settings.MemoryMegahertz)
             {
                 throw new InvalidOperationException(
-                    "NVIDIA did not confirm the requested GPU offsets.");
+                    "NVIDIA confirmed "
+                    + $"Core={confirmed.Core.CurrentMegahertz};"
+                    + $"Memory={confirmed.Memory.CurrentMegahertz} instead of the requested offsets.");
             }
         }
         catch (Exception exception)
@@ -378,10 +471,21 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
         EnsureSuccess(
             api.GetClockOffsets(device, ref info),
             $"read the GPU {label} clock offset");
+        int divisor = type == NvmlValidationClockType.Memory
+            ? NvmlMemoryOffsetMultiplier
+            : 1;
+        if (info.MinimumMegahertz % divisor != 0
+            || info.MaximumMegahertz % divisor != 0
+            || info.CurrentMegahertz % divisor != 0)
+        {
+            throw new InvalidOperationException(
+                $"NVIDIA returned an unrepresentable GPU {label} clock-offset value.");
+        }
+
         var range = new GpuClockOffsetRange(
-            info.MinimumMegahertz,
-            info.MaximumMegahertz,
-            info.CurrentMegahertz);
+            info.MinimumMegahertz / divisor,
+            info.MaximumMegahertz / divisor,
+            info.CurrentMegahertz / divisor);
         if (range.MinimumMegahertz > range.MaximumMegahertz
             || range.CurrentMegahertz < range.MinimumMegahertz
             || range.CurrentMegahertz > range.MaximumMegahertz)
@@ -445,7 +549,9 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
             Version = ClockOffsetStructVersion,
             Type = type,
             PerformanceState = PerformanceStateZero,
-            CurrentMegahertz = currentMegahertz,
+            CurrentMegahertz = type == NvmlValidationClockType.Memory
+                ? checked(currentMegahertz * NvmlMemoryOffsetMultiplier)
+                : currentMegahertz,
         };
 
     private static void EnsureSuccess(int status, string action)

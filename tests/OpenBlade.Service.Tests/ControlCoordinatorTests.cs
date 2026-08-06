@@ -448,6 +448,10 @@ public sealed class ControlCoordinatorTests
             GpuClockOffsets = new GpuClockOffsetSettings(5, 0),
         };
         RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            GpuOverclock = WritableGpuOverclockCapabilities,
+        };
         device.State = device.State with
         {
             Performance = PerformancePreset.Custom,
@@ -496,6 +500,7 @@ public sealed class ControlCoordinatorTests
                 PerformancePreset.Balanced,
             },
             FanModes = new HashSet<FanMode> { FanMode.Automatic },
+            GpuOverclock = WritableGpuOverclockCapabilities,
         };
         var desired = new DesiredDeviceState(
             new ResolvedSetting<PerformancePreset>(
@@ -1119,6 +1124,12 @@ public sealed class ControlCoordinatorTests
         LightingEffect.Static,
         new RgbColor(10, 20, 30),
         40);
+
+    private static GpuOverclockCapabilities WritableGpuOverclockCapabilities { get; } =
+        new(
+            new DeviceNumericRange(-1000, 400, null),
+            new DeviceNumericRange(-1000, 3000, null),
+            DeviceFeatureAccess.ReadWrite);
 
     private sealed class RecordingBladeDevice : IBladeDevice
     {

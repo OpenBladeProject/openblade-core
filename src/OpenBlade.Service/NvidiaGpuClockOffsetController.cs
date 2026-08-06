@@ -28,6 +28,7 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
     private const int Success = 0;
     private const uint ClockOffsetStructVersion = (1u << 24) | 24u;
     private const int PerformanceStateZero = 0;
+    private const int NvmlMemoryOffsetMultiplier = 2;
 
     private readonly INvidiaNvmlClockOffsetApi api;
 
@@ -111,7 +112,11 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
             {
                 throw new NvmlClockOffsetException(
                     status: -1,
-                    "NVIDIA did not confirm the requested GPU clock offsets.");
+                    "NVIDIA confirmed "
+                    + $"Core={confirmed.Current.CoreMegahertz};"
+                    + $"Memory={confirmed.Current.MemoryMegahertz} instead of "
+                    + $"Core={settings.CoreMegahertz};"
+                    + $"Memory={settings.MemoryMegahertz}.");
             }
         }
         catch (BladeWriteException)
@@ -185,10 +190,22 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
     {
         NvmlClockOffset info = CreateWrite(type, currentMegahertz: 0);
         EnsureSuccess(api.GetClockOffsets(device, ref info), $"read the {label}");
+        int divisor = type == NvmlClockType.Memory
+            ? NvmlMemoryOffsetMultiplier
+            : 1;
+        if (info.MinimumMegahertz % divisor != 0
+            || info.MaximumMegahertz % divisor != 0
+            || info.CurrentMegahertz % divisor != 0)
+        {
+            throw new NvmlClockOffsetException(
+                status: -1,
+                $"NVIDIA returned an unrepresentable {label} value.");
+        }
+
         var range = new GpuClockOffsetRange(
-            info.MinimumMegahertz,
-            info.MaximumMegahertz,
-            info.CurrentMegahertz);
+            info.MinimumMegahertz / divisor,
+            info.MaximumMegahertz / divisor,
+            info.CurrentMegahertz / divisor);
         if (!range.IsWellFormed)
         {
             throw new NvmlClockOffsetException(
@@ -243,7 +260,11 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
             Version = ClockOffsetStructVersion,
             Type = type,
             PerformanceState = PerformanceStateZero,
-            CurrentMegahertz = currentMegahertz,
+            // NVML exposes GDDR memory offsets at twice the editable P-state
+            // delta reported by NVAPI and displayed by tuning applications.
+            CurrentMegahertz = type == NvmlClockType.Memory
+                ? checked(currentMegahertz * NvmlMemoryOffsetMultiplier)
+                : currentMegahertz,
         };
 
     private static void EnsureSuccess(int status, string action)

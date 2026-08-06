@@ -1322,8 +1322,7 @@ public sealed class ControlCoordinator
         DeviceCapabilities capabilities,
         GpuClockTuningSettings? gpuClockTuning) =>
         gpuClockTuning is null
-        || capabilities.GpuOverclock is null
-        or { Access: DeviceFeatureAccess.ReadWrite };
+        || capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite };
 
     private static void NormalizeLegacyGpuClockTuning(
         ref CustomPerformanceSettings? customPerformance,

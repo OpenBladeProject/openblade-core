@@ -1792,8 +1792,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanToggleGpuClockTuning =>
         CanEditPerformance
         && IsGpuClockTuningVisible
-        && Capabilities.GpuOverclock
-            is not { Access: not DeviceFeatureAccess.ReadWrite };
+        && Capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite };
 
     public bool IsPerformanceOperationInProgress
     {

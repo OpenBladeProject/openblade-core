@@ -2481,10 +2481,17 @@ public sealed class MainViewModelTests
         var gpuCapabilities = new GpuClockOffsetCapabilities(
             "NVIDIA GeForce RTX 5090 Laptop GPU",
             new GpuClockOffsetRange(-1000, 1000, current.CoreMegahertz),
-            new GpuClockOffsetRange(-2000, 6000, current.MemoryMegahertz));
+            new GpuClockOffsetRange(-1000, 3000, current.MemoryMegahertz));
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(baseline with
         {
+            Capabilities = baseline.Capabilities! with
+            {
+                GpuOverclock = new GpuOverclockCapabilities(
+                    new DeviceNumericRange(-1000, 400, null),
+                    new DeviceNumericRange(-1000, 3000, null),
+                    DeviceFeatureAccess.ReadWrite),
+            },
             ConfirmedState = baseline.ConfirmedState! with
             {
                 Performance = PerformancePreset.Balanced,
@@ -2506,8 +2513,8 @@ public sealed class MainViewModelTests
 
         Assert.Equal(-1000, viewModel.GpuCoreClockOffsetMinimum);
         Assert.Equal(1000, viewModel.GpuCoreClockOffsetMaximum);
-        Assert.Equal(-2000, viewModel.GpuMemoryClockOffsetMinimum);
-        Assert.Equal(6000, viewModel.GpuMemoryClockOffsetMaximum);
+        Assert.Equal(-1000, viewModel.GpuMemoryClockOffsetMinimum);
+        Assert.Equal(3000, viewModel.GpuMemoryClockOffsetMaximum);
         Assert.True(viewModel.IsGpuClockTuningVisible);
         Assert.True(viewModel.IsGpuClockTuningEnabled);
         Assert.True(viewModel.CanEditGpuClockTuning);
@@ -2531,6 +2538,13 @@ public sealed class MainViewModelTests
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(baseline with
         {
+            Capabilities = baseline.Capabilities! with
+            {
+                GpuOverclock = new GpuOverclockCapabilities(
+                    new DeviceNumericRange(-1000, 400, null),
+                    new DeviceNumericRange(-1000, 3000, null),
+                    DeviceFeatureAccess.ReadWrite),
+            },
             ConfirmedState = baseline.ConfirmedState! with
             {
                 Performance = PerformancePreset.Balanced,

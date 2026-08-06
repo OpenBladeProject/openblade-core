@@ -4,6 +4,7 @@ namespace OpenBlade.Protocol;
 
 public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 {
+    private const string Rz090581GpuOverclockBiosVersion = "4.00";
     private static readonly TimeSpan DefaultExchangeTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan DefaultCleanupDrainTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BatteryFeatureReportSettleDelay =
@@ -123,14 +124,16 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         return CreateWindows(
             catalog,
             ProductionBatteryReadEvidence.Production,
-            compatibilityPolicy);
+            compatibilityPolicy,
+            admitGpuOverclock: true);
     }
 
     public static IProductionBatteryPortFactory CreateWindowsReadOnly() =>
         CreateWindows(
             DeviceCommandCatalog.Empty,
             ProductionBatteryReadEvidence.Production,
-            compatibilityPolicy: null);
+            compatibilityPolicy: null,
+            admitGpuOverclock: false);
 
     internal static IProductionBatteryPortFactory CreateWindowsReadOnly(
         FirmwareCompatibilityPolicy compatibilityPolicy)
@@ -139,7 +142,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         return CreateWindows(
             DeviceCommandCatalog.Empty,
             ProductionBatteryReadEvidence.Production,
-            compatibilityPolicy);
+            compatibilityPolicy,
+            admitGpuOverclock: false);
     }
 
     public async Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
@@ -219,7 +223,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private static IProductionBatteryPortFactory CreateWindows(
         DeviceCommandCatalog catalog,
         ProductionBatteryReadEvidence readEvidence,
-        FirmwareCompatibilityPolicy? compatibilityPolicy)
+        FirmwareCompatibilityPolicy? compatibilityPolicy,
+        bool admitGpuOverclock)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -239,6 +244,10 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             hardwareAccessGuard,
             native,
             ControllerExclusivityPolicy.Advisory);
+        GpuOverclockCapabilities? gpuOverclockCapabilities = admitGpuOverclock
+            ? GetRz090581GpuOverclockCapabilities(
+                hostIdentity.ReadExactIdentity().Evidence?.BiosVersion)
+            : null;
         return new ProductionBatteryFactory(
             catalog,
             readEvidence,
@@ -254,8 +263,23 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout,
-            PendingDisposalRegistry.Shared);
+            PendingDisposalRegistry.Shared,
+            gpuOverclockCapabilities: gpuOverclockCapabilities);
     }
+
+    internal static GpuOverclockCapabilities? GetRz090581GpuOverclockCapabilities(
+        string? biosVersion) => string.Equals(
+            biosVersion,
+            Rz090581GpuOverclockBiosVersion,
+            StringComparison.Ordinal)
+            ? new GpuOverclockCapabilities(
+                new DeviceNumericRange(-1000, 400, null),
+                new DeviceNumericRange(-1000, 3000, null),
+                DeviceFeatureAccess.ReadWrite)
+            {
+                SupportsEnableDisable = true,
+            }
+            : null;
 
     private static HidSessionResult<IProductionBatteryPort> Failure(
         HidSessionFailureKind failure) => new(null, failure);

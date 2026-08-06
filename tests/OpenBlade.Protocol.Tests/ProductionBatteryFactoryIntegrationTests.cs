@@ -9,6 +9,20 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(1);
 
     [Fact]
+    public void Rz090581GpuOverclockPolicy_AdmitsOnlyBios400()
+    {
+        GpuOverclockCapabilities policy = Assert.IsType<GpuOverclockCapabilities>(
+            ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities("4.00"));
+
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, policy.Access);
+        Assert.Equal(new DeviceNumericRange(-1000, 400, null), policy.CoreOffsetMegahertz);
+        Assert.Equal(new DeviceNumericRange(-1000, 3000, null), policy.MemoryOffsetMegahertz);
+        Assert.True(policy.SupportsEnableDisable);
+        Assert.Null(ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities("3.01"));
+        Assert.Null(ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities(null));
+    }
+
+    [Fact]
     public async Task ProductionCompositionPassesThirtyMillisecondSettleToOpenedActorFactory()
     {
         TimeSpan? configuredSettle = null;
