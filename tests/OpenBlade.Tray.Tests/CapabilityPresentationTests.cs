@@ -1498,8 +1498,7 @@ public sealed class CapabilityPresentationTests
             {
                 ChargeLimits = ChargeLimits(),
             });
-        client.Publish(initial);
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        await client.PublishAndWaitAsync(initial);
 
         viewModel.PluggedInPerformanceEditor = PerformancePreset.Balanced;
         viewModel.PluggedInFanModeEditor = FanMode.Maximum;
@@ -1545,14 +1544,13 @@ public sealed class CapabilityPresentationTests
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(
+        await client.PublishAndWaitAsync(CreateStatus(
             verified: true,
             blocked: false,
             capabilities: DeviceCapabilities.SafeTargetDefaults() with
             {
                 ChargeLimits = ChargeLimits(),
             }));
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
         viewModel.PluggedInPerformanceEditor = performance;
         viewModel.PluggedInFanModeEditor = FanMode.Maximum;
         AsyncRelayCommand save = Assert.IsType<AsyncRelayCommand>(
@@ -1595,7 +1593,7 @@ public sealed class CapabilityPresentationTests
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(
+        await client.PublishAndWaitAsync(CreateStatus(
             verified: true,
             blocked: false,
             capabilities: new DeviceCapabilities(
@@ -1603,7 +1601,6 @@ public sealed class CapabilityPresentationTests
                 new HashSet<FanMode>(),
                 new HashSet<LightingEffect>(),
                 ChargeLimits(), true, true)));
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
         viewModel.ProfileChargeLimitEditor = 75;
         AsyncRelayCommand save = Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand);
 
