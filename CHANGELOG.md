@@ -5,6 +5,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Dismissed the dashboard warning flyout when its underlying status clears,
+  preventing a mostly empty popup after reapplying settings or accepting an
+  incompatible firmware override.
+
 ## [0.1.0-nightly.9] - 2026-08-06
 
 ### Added

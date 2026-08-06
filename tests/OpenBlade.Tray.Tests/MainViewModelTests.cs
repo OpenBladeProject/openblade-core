@@ -1019,6 +1019,29 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AttentionTextClearsWhenTheLastWarningClears()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            conflicts: ["RazerAppEngine"]));
+        await WaitUntilAsync(() => viewModel.HasAttention);
+        Assert.Equal("Another Razer app is running", viewModel.AttentionSummary);
+        Assert.Equal("Razer app active", viewModel.AttentionBadgeLabel);
+
+        client.Publish(CreateStatus(verified: true, blocked: false) with { Revision = 2 });
+        await WaitUntilAsync(() => !viewModel.HasAttention);
+
+        Assert.Empty(viewModel.AttentionSummary);
+        Assert.Empty(viewModel.AttentionBadgeLabel);
+        Assert.Empty(viewModel.AttentionDetails);
+    }
+
+    [Fact]
     public async Task TroubleshootingOtherRazerSoftware_IncludesDetectionFailureAndRecovers()
     {
         var client = new FakeServiceClient();

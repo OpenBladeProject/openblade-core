@@ -1128,7 +1128,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 return "Controller detection needs attention";
             }
-            return "Another Razer app is running";
+            return HasControllerAdvisory
+                ? "Another Razer app is running"
+                : string.Empty;
         }
     }
 
@@ -1136,7 +1138,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ? "Changed outside OpenBlade"
         : HasControllerDetectionWarning
             ? "Check status"
-            : "Razer app active";
+            : HasControllerAdvisory
+                ? "Razer app active"
+                : string.Empty;
 
     public string AttentionDetails
     {

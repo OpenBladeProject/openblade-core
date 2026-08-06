@@ -784,6 +784,13 @@ public sealed class WinUiShellContractTests
             "ViewModel.ReapplyChangedSettingsAsync(CancellationToken.None)",
             window,
             StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"AttentionFlyout\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "args.PropertyName == nameof(MainViewModel.HasAttention)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains("!ViewModel.HasAttention", window, StringComparison.Ordinal);
+        Assert.Contains("AttentionFlyout.Hide()", window, StringComparison.Ordinal);
     }
 
     [Fact]
