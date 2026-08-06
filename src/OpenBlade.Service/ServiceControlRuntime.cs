@@ -932,9 +932,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             token,
             value is null
                 ? "Fan override was cleared."
-                : "Fan override intent was stored.",
-            coupledIntentionalSubsystems:
-                new HashSet<DeviceSubsystem> { DeviceSubsystem.Performance });
+                : "Fan override intent was stored.");
     }
 
     public async Task MaintainFanCurveAsync(CancellationToken cancellationToken)
@@ -3577,8 +3575,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
         CancellationToken token,
         string committedMessage,
-        Func<PowerSource, ServiceStatusSnapshot, string?>? deferHardwareApply = null,
-        IReadOnlySet<DeviceSubsystem>? coupledIntentionalSubsystems = null)
+        Func<PowerSource, ServiceStatusSnapshot, string?>? deferHardwareApply = null)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(token);
@@ -3633,8 +3630,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 subsystem,
                 powerSource,
                 apply,
-                token,
-                coupledIntentionalSubsystems: coupledIntentionalSubsystems);
+                token);
             return result.Status == ControlOperationStatus.Applied
                 ? result
                 : result with { Message = $"{committedMessage} Hardware result: {result.Message}" };
@@ -3725,8 +3721,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
         CancellationToken token,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired = null,
-        Func<CancellationToken, Task>? commitIntent = null,
-        IReadOnlySet<DeviceSubsystem>? coupledIntentionalSubsystems = null)
+        Func<CancellationToken, Task>? commitIntent = null)
     {
         if (subsystem == DeviceSubsystem.Lighting && IsKeyboardLightingDelegated)
         {
@@ -3827,9 +3822,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         if (outcome.Result.Status is
                 ControlResultStatus.Applied or ControlResultStatus.Unchanged
-            && coupledIntentionalSubsystems is not null)
+            && outcome.ConfirmedCoupledWrites is not null)
         {
-            foreach (DeviceSubsystem coupled in coupledIntentionalSubsystems)
+            foreach (DeviceSubsystem coupled in outcome.ConfirmedCoupledWrites)
             {
                 driftTracker.ConfirmIntentional(coupled, matched: true);
             }

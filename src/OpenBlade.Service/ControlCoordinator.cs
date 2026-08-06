@@ -9,7 +9,8 @@ internal sealed record ScopedApplyOutcome(
     bool WriteAttempted,
     bool ReadbackMatched,
     DeviceCapabilities? Capabilities,
-    bool DeviceAccessFailed);
+    bool DeviceAccessFailed,
+    IReadOnlySet<DeviceSubsystem>? ConfirmedCoupledWrites = null);
 
 internal sealed record FullTransitionApplyOutcome(
     SubsystemApplyResults Results,
@@ -161,15 +162,22 @@ public sealed class ControlCoordinator
         CancellationToken cancellationToken)
     {
         var writeAttempted = new HashSet<DeviceSubsystem>();
+        var confirmedCoupledWrites = new HashSet<DeviceSubsystem>();
         try
         {
-            return await ApplyFanControlTransitionCoreOutcomeAsync(
+            ScopedApplyOutcome outcome = await ApplyFanControlTransitionCoreOutcomeAsync(
                 previous,
                 requested,
                 performanceIntent,
                 customPerformanceIntent,
                 writeAttempted,
+                confirmedCoupledWrites,
                 cancellationToken).ConfigureAwait(false);
+            return outcome with
+            {
+                ConfirmedCoupledWrites = new HashSet<DeviceSubsystem>(
+                    confirmedCoupledWrites),
+            };
         }
         catch (IntentionalWriteCanceledException exception)
             when (cancellationToken.IsCancellationRequested)
@@ -196,15 +204,18 @@ public sealed class ControlCoordinator
         PerformancePreset performanceIntent,
         CustomPerformanceSettings? customPerformanceIntent,
         HashSet<DeviceSubsystem> writeAttempted,
+        HashSet<DeviceSubsystem> confirmedCoupledWrites,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(requested);
 
+        bool requestedManual = DeviceSubsystemOrder.IsManualFanMode(requested.Mode);
+        bool previousManual = DeviceSubsystemOrder.IsManualFanMode(previous.Mode);
+        bool requiresAutomaticBridge = requestedManual
+            && (!previousManual || previous.Mode != requested.Mode);
         ScopedApplyOutcome? automaticBridge = null;
-        if (previous.Mode != requested.Mode
-            && DeviceSubsystemOrder.IsManualFanMode(previous.Mode)
-            && DeviceSubsystemOrder.IsManualFanMode(requested.Mode))
+        if (requiresAutomaticBridge)
         {
             automaticBridge = await ApplyFanControlOutcomeAsync(
                 FanControlSettings.FromLegacy(FanMode.Automatic),
@@ -223,16 +234,18 @@ public sealed class ControlCoordinator
             }
         }
 
-        bool requestedManual = DeviceSubsystemOrder.IsManualFanMode(requested.Mode);
-        bool previousManual = DeviceSubsystemOrder.IsManualFanMode(previous.Mode);
         ScopedApplyOutcome? balancedBridge = null;
-        if (requestedManual && (!previousManual || previous.Mode != requested.Mode))
+        if (requiresAutomaticBridge)
         {
             balancedBridge = await ApplyPerformanceOutcomeAsync(
                 PerformancePreset.Balanced,
                 customPerformance: null,
                 cancellationToken).ConfigureAwait(false);
             RecordWriteAttempt(writeAttempted, DeviceSubsystem.Performance, balancedBridge);
+            RecordConfirmedCoupledWrite(
+                confirmedCoupledWrites,
+                DeviceSubsystem.Performance,
+                balancedBridge);
             if (balancedBridge.Result.Status is not (
                     ControlResultStatus.Applied or ControlResultStatus.Unchanged))
             {
@@ -267,6 +280,10 @@ public sealed class ControlCoordinator
                     customPerformanceIntent,
                     cancellationToken).ConfigureAwait(false);
                 RecordWriteAttempt(writeAttempted, DeviceSubsystem.Performance, restored);
+                RecordConfirmedCoupledWrite(
+                    confirmedCoupledWrites,
+                    DeviceSubsystem.Performance,
+                    restored);
                 string restoration = restored.Result.Status is
                         ControlResultStatus.Applied or ControlResultStatus.Unchanged
                     ? " The previous performance intent was restored."
@@ -307,6 +324,10 @@ public sealed class ControlCoordinator
             customPerformanceIntent,
             cancellationToken).ConfigureAwait(false);
         RecordWriteAttempt(writeAttempted, DeviceSubsystem.Performance, performance);
+        RecordConfirmedCoupledWrite(
+            confirmedCoupledWrites,
+            DeviceSubsystem.Performance,
+            performance);
         if (performance.Result.Status is not (
                 ControlResultStatus.Applied or ControlResultStatus.Unchanged))
         {
@@ -348,6 +369,17 @@ public sealed class ControlCoordinator
         if (outcome.WriteAttempted)
         {
             writeAttempted.Add(subsystem);
+        }
+    }
+
+    private static void RecordConfirmedCoupledWrite(
+        HashSet<DeviceSubsystem> confirmedCoupledWrites,
+        DeviceSubsystem subsystem,
+        ScopedApplyOutcome outcome)
+    {
+        if (outcome.WriteAttempted && outcome.ReadbackMatched)
+        {
+            confirmedCoupledWrites.Add(subsystem);
         }
     }
 

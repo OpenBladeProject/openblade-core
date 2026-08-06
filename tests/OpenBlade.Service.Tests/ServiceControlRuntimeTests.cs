@@ -5503,6 +5503,89 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.DoesNotContain(DeviceSubsystem.Fans, restored.ExternalChanges);
     }
 
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.Performance)]
+    [InlineData(PowerSource.Battery, PerformancePreset.BatteryBalanced)]
+    public async Task UnchangedAutomaticFanIntent_PreservesExternalPerformanceDrift(
+        PowerSource powerSource,
+        PerformancePreset externalPerformance)
+    {
+        TestContext context = CreateWritableContext(initialPowerSource: powerSource);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = externalPerformance,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            [DeviceSubsystem.Performance],
+            context.Runtime.GetStatus().ExternalChanges);
+        int writesBeforeCommand = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Automatic,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(writesBeforeCommand, context.Device.TotalSetterCalls);
+        Assert.Equal(
+            [DeviceSubsystem.Performance],
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(
+            externalPerformance,
+            context.Runtime.GetStatus().ConfirmedState!.Performance);
+    }
+
+    [Fact]
+    public async Task AcManualFanEntry_ReclaimsExternallyManualFirmwareState()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem != DeviceSubsystem.Fans)
+            {
+                return;
+            }
+
+            context.Device.ConfirmedState = context.Device.ConfirmedState.Fans
+                == FanMode.Automatic
+                    ? context.Device.ConfirmedState with
+                    {
+                        Performance = PerformancePreset.Balanced,
+                    }
+                    : context.Device.ConfirmedState with { Performance = null };
+        };
+        int performanceWritesBeforeCommand = context.Device.PerformanceSetCalls;
+        int fanWritesBeforeCommand = context.Device.FanSetCalls;
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(performanceWritesBeforeCommand, context.Device.PerformanceSetCalls);
+        Assert.Equal(fanWritesBeforeCommand + 2, context.Device.FanSetCalls);
+        Assert.Equal(
+            [FanMode.Automatic, FanMode.Fixed],
+            context.Device.FanWrites.Skip(fanWritesBeforeCommand));
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(FanMode.Fixed, status.ConfirmedState!.Fans);
+        Assert.Null(status.ConfirmedState.Performance);
+        Assert.Empty(status.ExternalChanges);
+    }
+
     [Fact]
     public async Task PerformanceShortcut_WithAcManualFansStoresIntentWithoutHardwareWrite()
     {
