@@ -843,7 +843,7 @@ public static class BatteryValidationFactory
                 "Razer",
                 "Blade 16 - RZ09-0528",
                 "RZ09-05289EN4",
-                "2.02"));
+                Array.AsReadOnly(new[] { "2.02" })));
         var opener = new WindowsRazerHidSessionOpener(
             hostIdentity,
             hardwareAccessGuard,

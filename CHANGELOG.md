@@ -5,6 +5,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Added Razer Blade 16 RZ09-0581 BIOS 4.00 to the tested production firmware
+  set while retaining BIOS 3.01 support and keeping other BIOS versions behind
+  the explicit untested-firmware override.
+
 ## [0.1.0-nightly.8] - 2026-08-06
 
 ### Changed

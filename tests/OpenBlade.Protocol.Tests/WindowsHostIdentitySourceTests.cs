@@ -108,6 +108,22 @@ public sealed class WindowsHostIdentitySourceTests
         });
     }
 
+    [Theory]
+    [InlineData("3.01")]
+    [InlineData("4.00")]
+    public void ReadExactIdentity_AcceptsEachSupportedProductionBios(string biosVersion)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|BIOSVersion"] = biosVersion;
+        registry.Values[$"{SystemInformationKey}|BIOSVersion"] = biosVersion;
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        Assert.Equal(biosVersion, result.Evidence?.BiosVersion);
+        Assert.Null(result.Failure);
+        Assert.Equal(HostFirmwareCompatibility.Tested, result.FirmwareCompatibility);
+    }
+
     [Fact]
     public void ReadExactIdentity_AcceptsExplicitRz090528Identity()
     {
@@ -125,7 +141,7 @@ public sealed class WindowsHostIdentitySourceTests
                 "Razer",
                 "Blade 16 - RZ09-0528",
                 "RZ09-05289EN4",
-                "2.02"));
+                Array.AsReadOnly(new[] { "2.02" })));
 
         HostIdentityReadResult result = source.ReadExactIdentity();
 

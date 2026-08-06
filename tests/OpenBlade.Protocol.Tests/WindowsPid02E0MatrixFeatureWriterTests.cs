@@ -49,6 +49,45 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         Assert.Equal(1, native.BoundDisposeCount);
     }
 
+    [Theory]
+    [InlineData("3.01", true)]
+    [InlineData("4.00", true)]
+    [InlineData("4.01", false)]
+    public async Task Opener_RequiresSupportedFirmwareWhenIdentityIsMarkedTested(
+        string biosVersion,
+        bool expectedToOpen)
+    {
+        var native = new ScriptedCandidateNative();
+        OpenedCandidateHandle candidate = native.Add("mi03", ExactMatrix);
+        var opener = new WindowsPid02E0MatrixFeatureOpener(
+            new ScriptedHost(ExactHost with
+            {
+                Evidence = ExactHost.Evidence!.Value with { BiosVersion = biosVersion },
+            }),
+            new ScriptedGuard(),
+            native,
+            ControllerExclusivityPolicy.Strict);
+
+        HidSessionResult<OpenedHidHandle> result = opener.Open();
+
+        if (expectedToOpen)
+        {
+            Assert.Null(result.Failure);
+            Assert.NotNull(result.Value);
+            await result.Value.DisposeAsync();
+            Assert.True(candidate.FileHandle.IsClosed);
+        }
+        else
+        {
+            Assert.Equal(HidSessionFailureKind.IdentityBlocked, result.Failure);
+            Assert.Null(result.Value);
+            Assert.Equal(0, native.EnumerateCalls);
+            Assert.False(candidate.FileHandle.IsClosed);
+            candidate.Dispose();
+            Assert.True(candidate.FileHandle.IsClosed);
+        }
+    }
+
     [Fact]
     public async Task Opener_AcceptsUntestedFirmwareOnlyWhenExplicitlyAllowed()
     {
@@ -57,7 +96,7 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         var allowed = new WindowsPid02E0MatrixFeatureOpener(
             new ScriptedHost(ExactHost with
             {
-                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "4.00" },
+                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "4.01" },
                 FirmwareCompatibility = HostFirmwareCompatibility.UntestedAllowed,
             }),
             new ScriptedGuard(),
@@ -76,7 +115,7 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         var blocked = new WindowsPid02E0MatrixFeatureOpener(
             new ScriptedHost(ExactHost with
             {
-                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "4.00" },
+                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "4.01" },
                 FirmwareCompatibility = HostFirmwareCompatibility.UntestedBlocked,
             }),
             new ScriptedGuard(),
