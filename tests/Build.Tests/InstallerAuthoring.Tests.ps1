@@ -5,6 +5,8 @@ Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $installerProject = Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj'
+$installerUiProject = Join-Path $repository (
+    'build\installer\OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj')
 $bundleSource = Join-Path $repository 'build\installer\Bundle.wxs'
 $setupPathsSource = Join-Path $repository 'src\OpenBlade.Setup\SetupPaths.cs'
 
@@ -30,10 +32,19 @@ Assert-True ($project.Project.PropertyGroup.AcceptEula -eq 'wix7') `
 $packageReferences = @($project.SelectNodes(
         "/*[local-name()='Project']/*[local-name()='ItemGroup']/*[local-name()='PackageReference']") |
     ForEach-Object { [string]$_.GetAttribute('Include') })
-Assert-True ($packageReferences -contains 'WixToolset.BootstrapperApplications.wixext') `
-    'The installer must reference the standard bootstrapper application extension.'
 Assert-True ($packageReferences -contains 'WixToolset.Util.wixext') `
     'The installer must reference the WiX utility extension.'
+
+[xml]$installerUi = Get-Content -LiteralPath $installerUiProject
+Assert-True ($installerUi.Project.PropertyGroup.TargetFramework -eq 'net472') `
+    'The installer UI must use the Windows-inbox .NET Framework runtime.'
+Assert-True ($installerUi.Project.PropertyGroup.UseWPF -eq 'true') `
+    'The managed installer UI must remain a WPF application.'
+$installerUiReferences = @($installerUi.SelectNodes(
+        "/*[local-name()='Project']/*[local-name()='ItemGroup']/*[local-name()='PackageReference']") |
+    ForEach-Object { [string]$_.GetAttribute('Include') })
+Assert-True ($installerUiReferences -contains 'WixToolset.BootstrapperApplicationApi') `
+    'The installer UI must use the supported WiX managed bootstrapper API.'
 
 [xml]$packages = Get-Content -LiteralPath (Join-Path $repository 'Directory.Packages.props')
 $packageVersions = @{}
@@ -43,8 +54,8 @@ foreach ($package in $packages.SelectNodes(
         [string]$package.GetAttribute('Version')
 }
 Assert-True (
-    $packageVersions['WixToolset.BootstrapperApplications.wixext'] -eq '7.0.0') `
-    'The bootstrapper application extension version must match the WiX SDK.'
+    $packageVersions['WixToolset.BootstrapperApplicationApi'] -eq '7.0.0') `
+    'The managed bootstrapper API version must match the WiX SDK.'
 Assert-True ($packageVersions['WixToolset.Util.wixext'] -eq '7.0.0') `
     'The utility extension version must match the WiX SDK.'
 
@@ -67,16 +78,15 @@ Assert-True (
         'VersionNT64 >= v10.0 AND WindowsBuildNumber >= 26100') `
     'The Burn bundle must require Windows 11 version 24H2 x64.'
 
-$standardBa = $bundle.SelectSingleNode(
-    "*[local-name()='BootstrapperApplication']/*[local-name()='WixStandardBootstrapperApplication']")
-Assert-True ($null -ne $standardBa) `
-    'The Burn bundle must use WixStandardBootstrapperApplication.'
-Assert-True ($standardBa.GetAttribute('Theme') -eq 'hyperlinkLargeLicense') `
-    'The installer must retain the branded standard large-license theme.'
-Assert-True ($standardBa.GetAttribute('ThemeFile') -eq 'OpenBladeTheme.xml') `
-    'The installer must use the custom maintenance theme.'
-Assert-True ([string]::IsNullOrEmpty($standardBa.GetAttribute('LicenseUrl'))) `
-    'The free OpenBlade installer must not present a separate license link.'
+$bootstrapper = $bundle.SelectSingleNode("*[local-name()='BootstrapperApplication']")
+Assert-True ($null -ne $bootstrapper) 'The Burn bootstrapper application is missing.'
+Assert-True ($bootstrapper.GetAttribute('SourceFile').EndsWith(
+        '\OpenBlade.Installer.UI.exe',
+        [StringComparison]::Ordinal)) `
+    'The Burn bundle must host the OpenBlade managed installer UI.'
+$bootstrapperPayloads = $bootstrapper.SelectSingleNode("*[local-name()='Payloads']")
+Assert-True ($null -ne $bootstrapperPayloads) `
+    'The installer UI runtime payloads must be embedded with the bootstrapper.'
 
 $setupPaths = Get-Content -LiteralPath $setupPathsSource -Raw
 $installDirectoryMatch = [regex]::Match(
@@ -88,10 +98,11 @@ $installDirectoryName = $installDirectoryMatch.Groups[1].Value
 $expectedLaunchWorkingFolder = "[ProgramFiles64Folder]$installDirectoryName"
 $expectedLaunchTarget = "$expectedLaunchWorkingFolder\OpenBlade.Tray.exe"
 Assert-True (
-    $standardBa.GetAttribute('LaunchTarget') -eq $expectedLaunchTarget) `
+    $bundle.SelectSingleNode("*[local-name()='Variable'][@Name='LaunchTarget']").GetAttribute('Value') -eq
+        $expectedLaunchTarget) `
     'Successful interactive setup must launch the Tray from SetupPaths.InstallDirectory.'
 Assert-True (
-    $standardBa.GetAttribute('LaunchWorkingFolder') -eq
+    $bundle.SelectSingleNode("*[local-name()='Variable'][@Name='LaunchWorkingFolder']").GetAttribute('Value') -eq
         $expectedLaunchWorkingFolder) `
     'The post-setup working directory must match SetupPaths.InstallDirectory.'
 
@@ -146,20 +157,63 @@ Assert-True ($null -ne $purgeCommandLine) `
 Assert-True ($purgeCommandLine.GetAttribute('Condition') -eq 'OpenBladePurgeProfiles') `
     'The purge argument must be controlled by the maintenance checkbox.'
 
-[xml]$theme = Get-Content -LiteralPath (
-    Join-Path $repository 'build\installer\OpenBladeTheme.xml')
-$purgeCheckbox = $theme.SelectSingleNode(
-    "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Modify']/*[local-name()='Checkbox'][@Name='OpenBladePurgeProfiles']")
+$progressCommandLine = $package.SelectSingleNode(
+    "*[local-name()='CommandLine'][@Condition='OpenBladeSetupProgressPipe']")
+Assert-True ($null -ne $progressCommandLine) `
+    'The setup package must receive the private progress-pipe name.'
+foreach ($argument in @('InstallArgument', 'RepairArgument', 'UninstallArgument')) {
+    Assert-True ($progressCommandLine.GetAttribute($argument).Contains(
+            '--progress-pipe "[OpenBladeSetupProgressPipe]"')) `
+        "The setup package $argument must append the private progress pipe."
+}
+
+[xml]$window = Get-Content -LiteralPath (
+    Join-Path $repository 'build\installer\OpenBlade.Installer.UI\InstallerWindow.xaml')
+$purgeCheckbox = $window.SelectSingleNode(
+    "/*[local-name()='Window']//*[local-name()='CheckBox'][@*[local-name()='Name']='PurgeProfilesCheckBox']")
 Assert-True ($null -ne $purgeCheckbox) `
     'The maintenance page must offer a profile-removal checkbox.'
-$launchButton = $theme.SelectSingleNode(
-    "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Success']/*[local-name()='Button'][@Name='LaunchButton']")
+$launchButton = $window.SelectSingleNode(
+    "/*[local-name()='Window']//*[local-name()='Button'][@*[local-name()='Name']='LaunchButton']")
 Assert-True ($null -ne $launchButton) `
     'The success page must expose the configured OpenBlade launch action.'
-Assert-True (
-    $launchButton.GetAttribute('VisibleCondition') -eq
-        'WixBundleAction = 5 OR WixBundleAction = 7') `
-    'The OpenBlade launch action must be limited to install and repair.'
+$detailsToggle = $window.SelectSingleNode(
+    "/*[local-name()='Window']//*[local-name()='ToggleButton'][@*[local-name()='Name']='DetailsToggle']")
+Assert-True ($null -ne $detailsToggle) `
+    'The progress page must expose a Show details toggle.'
+Assert-True ($detailsToggle.GetAttribute('Content') -eq 'Show details') `
+    'The collapsed progress action must be labeled Show details.'
+$detailsText = $window.SelectSingleNode(
+    "/*[local-name()='Window']//*[local-name()='TextBox'][@*[local-name()='Name']='DetailsText']")
+Assert-True (($null -ne $detailsText) -and ($detailsText.GetAttribute('IsReadOnly') -eq 'True')) `
+    'Expanded progress details must be read-only and scrollable.'
+
+$themeSource = Get-Content -LiteralPath (
+    Join-Path $repository 'build\installer\OpenBlade.Installer.UI\InstallerTheme.cs') -Raw
+Assert-True ($themeSource.Contains('AppsUseLightTheme')) `
+    'The installer theme must follow the Windows app-mode preference.'
+Assert-True ($themeSource.Contains('DwmUseImmersiveDarkMode')) `
+    'The installer must apply dark mode to its native title bar.'
+$windowSource = Get-Content -LiteralPath (
+    Join-Path $repository (
+        'build\installer\OpenBlade.Installer.UI\InstallerWindow.xaml.cs')) -Raw
+Assert-True ($windowSource.Contains(
+        'action is LaunchAction.Install or LaunchAction.Repair')) `
+    'Launch OpenBlade must remain limited to successful install and repair.'
+$bootstrapperSource = Get-Content -LiteralPath (
+    Join-Path $repository (
+        'build\installer\OpenBlade.Installer.UI\OpenBladeBootstrapperApplication.cs')) -Raw
+Assert-True ($bootstrapperSource.Contains('OpenBladeSetupProgressPipe')) `
+    'The managed bootstrapper must create the private setup progress channel.'
+$programSource = Get-Content -LiteralPath (
+    Join-Path $repository 'build\installer\OpenBlade.Installer.UI\Program.cs') -Raw
+Assert-True (-not $programSource.Contains('[STAThread]')) `
+    'The managed BA entry point must let the WiX native host initialize COM.'
+$progressPipeSource = Get-Content -LiteralPath (
+    Join-Path $repository (
+        'build\installer\OpenBlade.Installer.UI\InstallerProgressPipe.cs')) -Raw
+Assert-True ($progressPipeSource.Contains('BuiltinAdministratorsSid')) `
+    'The elevated setup package must be able to write to the private progress channel.'
 
 $payloads = $package.SelectSingleNode("*[local-name()='Payloads']")
 Assert-True ($null -ne $payloads) 'The OpenBlade payload group is missing.'
@@ -238,6 +292,10 @@ Assert-True ($solution.IndexOf(
         'OpenBlade.Installer.wixproj',
         [StringComparison]::OrdinalIgnoreCase) -lt 0) `
     'The release-only installer project must remain outside the normal solution build.'
+Assert-True ($solution.IndexOf(
+        'OpenBlade.Installer.UI.csproj',
+        [StringComparison]::OrdinalIgnoreCase) -lt 0) `
+    'The release-only installer UI must remain outside the normal solution build.'
 
 $installerValidation = Get-Content -LiteralPath (
     Join-Path $repository 'build\InstallerValidation.ps1') -Raw
@@ -245,6 +303,10 @@ Assert-True ($installerValidation.IndexOf(
         '-intermediateFolder $intermediateOutput',
         [StringComparison]::Ordinal) -ge 0) `
     'Installer extraction must use its isolated validation workspace.'
+Assert-True (
+    $installerValidation.Contains("@('-quiet', '-help')") -and
+    $installerValidation.Contains('WaitForExit(30000)')) `
+    'Installer validation must launch the managed BA through a bounded quiet smoke test.'
 
 $publish = Get-Content -LiteralPath (Join-Path $repository 'build\Publish.ps1') -Raw
 foreach ($requiredText in @(
@@ -253,6 +315,8 @@ foreach ($requiredText in @(
         'InstallerPrerequisites.ps1',
         'StoreSubmissionValidation.ps1',
         'build\installer\OpenBlade.Installer.wixproj',
+        'OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj',
+        'OpenBladeInstallerUi',
         'OpenBlade-Setup.exe',
         'OpenBlade-Store-Readiness.json',
         'Assert-OpenBladeInstallerBundle',

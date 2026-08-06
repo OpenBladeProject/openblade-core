@@ -68,6 +68,28 @@ function Assert-OpenBladeInstallerBundle {
         throw "OpenBlade installer version '$($versionInfo.ProductVersion)' does not match '$ExpectedVersion'."
     }
 
+    $smokeProcess = $null
+    try {
+        $smokeProcess = Start-Process `
+            -FilePath $Installer `
+            -ArgumentList @('-quiet', '-help') `
+            -WindowStyle Hidden `
+            -PassThru
+        if (-not $smokeProcess.WaitForExit(30000)) {
+            $smokeProcess.Kill()
+            $smokeProcess.WaitForExit()
+            throw 'The managed installer UI did not finish its quiet startup smoke test.'
+        }
+        if ($smokeProcess.ExitCode -ne 0) {
+            throw "The managed installer UI startup smoke test failed with exit code $($smokeProcess.ExitCode)."
+        }
+    }
+    finally {
+        if ($null -ne $smokeProcess) {
+            $smokeProcess.Dispose()
+        }
+    }
+
     $canonicalRoot = Get-CanonicalPublishPath -Path $PermittedRoot -MustExist
     $canonicalValidation = Get-CanonicalPublishPath -Path $ValidationRoot
     Assert-StrictPublishDescendant `
@@ -212,20 +234,38 @@ function Assert-OpenBladeInstallerBundle {
             throw "The extracted installer does not launch the installed OpenBlade Tray."
         }
 
-        $themePath = Join-Path $bootstrapperOutput 'thm.xml'
-        [xml]$theme = Get-Content -LiteralPath $themePath
-        $purgeCheckbox = $theme.SelectSingleNode(
-            "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Modify']/*[local-name()='Checkbox'][@Name='OpenBladePurgeProfiles']")
-        if ($null -eq $purgeCheckbox) {
-            throw "The extracted maintenance UI does not contain the profile-removal checkbox."
+        foreach ($bootstrapperFile in @(
+                'OpenBlade.Installer.UI.exe',
+                'OpenBlade.Installer.UI.exe.config',
+                'WixToolset.BootstrapperApplicationApi.dll',
+                'mbanative.dll')) {
+            if (-not (Test-Path -LiteralPath (
+                        Join-Path $bootstrapperOutput $bootstrapperFile) -PathType Leaf)) {
+                throw "The extracted installer UI is missing $bootstrapperFile."
+            }
         }
 
-        $launchButton = $theme.SelectSingleNode(
-            "/*[local-name()='Theme']/*[local-name()='Window']/*[local-name()='Page'][@Name='Success']/*[local-name()='Button'][@Name='LaunchButton']")
-        if (($null -eq $launchButton) -or
-            ($launchButton.GetAttribute('VisibleCondition') -ne
-                'WixBundleAction = 5 OR WixBundleAction = 7')) {
-            throw "The extracted installer does not limit Launch to install and repair."
+        $progressPipe = $manifest.SelectSingleNode(
+            '/burn:BurnManifest/burn:Variable[@Id="OpenBladeSetupProgressPipe"]',
+            $namespaces)
+        if (($null -eq $progressPipe) -or
+            ($progressPipe.GetAttribute('Type') -ne 'string') -or
+            ($progressPipe.GetAttribute('Hidden') -ne 'yes') -or
+            ($progressPipe.GetAttribute('Persisted') -ne 'no')) {
+            throw "The Burn manifest does not protect the private setup progress channel."
+        }
+
+        $progressCommandLine = $package.SelectSingleNode(
+            'burn:CommandLine[@Condition="OpenBladeSetupProgressPipe"]',
+            $namespaces)
+        if (($null -eq $progressCommandLine) -or
+            ($progressCommandLine.GetAttribute('InstallArgument') -ne
+                '--progress-pipe "[OpenBladeSetupProgressPipe]"') -or
+            ($progressCommandLine.GetAttribute('RepairArgument') -ne
+                '--progress-pipe "[OpenBladeSetupProgressPipe]"') -or
+            ($progressCommandLine.GetAttribute('UninstallArgument') -ne
+                '--progress-pipe "[OpenBladeSetupProgressPipe]"')) {
+            throw "The extracted installer does not forward its private progress channel."
         }
 
         $search = $manifest.SelectSingleNode(

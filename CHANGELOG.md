@@ -64,6 +64,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a graphical installer that follows the Windows app theme, keeps a
+  compact progress view with expandable file, registry, shortcut, and service
+  activity, and continues to offer **Launch OpenBlade** after install or repair.
 - Added exact-source changelog snapshots to nightly prereleases. After each
   successful publication, the workflow reconstructs any unrecorded nightly
   boundaries and opens or updates a guarded draft documentation pull request

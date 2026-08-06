@@ -796,6 +796,30 @@ public sealed class SetupCommandRunnerTests
         }
     }
 
+    [Fact]
+    public async Task Install_ReportsConcreteTransactionalWorkInExecutionOrder()
+    {
+        RecordingSetupPlatform platform = new();
+        RecordingSetupProgressReporter progress = new();
+
+        int exitCode = await new SetupCommandRunner(platform, progress)
+            .RunAsync(["install", "--bundle-managed"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("Inspecting and staging the OpenBlade payload", progress.Messages[0]);
+        Assert.Contains("Stopping Windows service OpenBlade for replacement", progress.Messages);
+        Assert.Contains(
+            "Creating and starting Windows service OpenBlade as LocalSystem",
+            progress.Messages);
+        Assert.Contains(
+            @"Writing HKLM\SOFTWARE\OSSBlade\OpenBlade\Installer registry values",
+            progress.Messages);
+        Assert.True(
+            progress.Messages.IndexOf("Stopping Windows service OpenBlade for replacement")
+            < progress.Messages.IndexOf(
+                "Creating and starting Windows service OpenBlade as LocalSystem"));
+    }
+
     private static void AssertEndsWith(IReadOnlyList<string> actual, IReadOnlyList<string> expected)
     {
         Assert.True(actual.Count >= expected.Count);

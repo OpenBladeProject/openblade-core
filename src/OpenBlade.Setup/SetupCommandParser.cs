@@ -10,7 +10,8 @@ public enum SetupCommand
 public readonly record struct SetupInvocation(
     SetupCommand Command,
     bool BundleManaged,
-    bool RecoverOrphanedBundle = false);
+    bool RecoverOrphanedBundle = false,
+    string? ProgressPipeName = null);
 
 public static class SetupCommandParser
 {
@@ -25,9 +26,17 @@ public static class SetupCommandParser
             return true;
         }
 
-        if (IsBundleManaged(arguments, "install"))
+        if (TryParseBundleManaged(
+                arguments,
+                "install",
+                allowPurge: false,
+                out _,
+                out string? installProgressPipe))
         {
-            invocation = new(SetupCommand.Install, BundleManaged: true);
+            invocation = new(
+                SetupCommand.Install,
+                BundleManaged: true,
+                ProgressPipeName: installProgressPipe);
             return true;
         }
 
@@ -44,18 +53,17 @@ public static class SetupCommandParser
             return true;
         }
 
-        if (IsBundleManaged(arguments, "uninstall"))
+        if (TryParseBundleManaged(
+                arguments,
+                "uninstall",
+                allowPurge: true,
+                out bool purge,
+                out string? uninstallProgressPipe))
         {
-            invocation = new(SetupCommand.Uninstall, BundleManaged: true);
-            return true;
-        }
-
-        if (arguments.Count == 3
-            && string.Equals(arguments[0], "uninstall", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(arguments[1], "--bundle-managed", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(arguments[2], "--purge", StringComparison.OrdinalIgnoreCase))
-        {
-            invocation = new(SetupCommand.UninstallAndPurge, BundleManaged: true);
+            invocation = new(
+                purge ? SetupCommand.UninstallAndPurge : SetupCommand.Uninstall,
+                BundleManaged: true,
+                ProgressPipeName: uninstallProgressPipe);
             return true;
         }
 
@@ -90,8 +98,50 @@ public static class SetupCommandParser
         && string.Equals(arguments[0], "uninstall", StringComparison.OrdinalIgnoreCase)
         && string.Equals(arguments[1], "--interactive", StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsBundleManaged(IReadOnlyList<string> arguments, string command) =>
-        arguments.Count == 2
-        && string.Equals(arguments[0], command, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(arguments[1], "--bundle-managed", StringComparison.OrdinalIgnoreCase);
+    private static bool TryParseBundleManaged(
+        IReadOnlyList<string> arguments,
+        string command,
+        bool allowPurge,
+        out bool purge,
+        out string? progressPipeName)
+    {
+        purge = false;
+        progressPipeName = null;
+        if (arguments.Count < 2
+            || !string.Equals(arguments[0], command, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                arguments[1],
+                "--bundle-managed",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        int index = 2;
+        if (allowPurge
+            && index < arguments.Count
+            && string.Equals(arguments[index], "--purge", StringComparison.OrdinalIgnoreCase))
+        {
+            purge = true;
+            index++;
+        }
+
+        if (index < arguments.Count
+            && string.Equals(
+                arguments[index],
+                "--progress-pipe",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (index + 1 >= arguments.Count
+                || string.IsNullOrWhiteSpace(arguments[index + 1]))
+            {
+                return false;
+            }
+
+            progressPipeName = arguments[index + 1];
+            index += 2;
+        }
+
+        return index == arguments.Count;
+    }
 }

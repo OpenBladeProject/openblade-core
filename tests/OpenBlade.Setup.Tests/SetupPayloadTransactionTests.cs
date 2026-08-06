@@ -7,6 +7,26 @@ namespace OpenBlade.Setup.Tests;
 
 public sealed class SetupPayloadTransactionTests
 {
+    [Fact]
+    public async Task StagePayload_ReportsEveryCopiedRelativePathAndTransactionPhase()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        RecordingSetupProgressReporter progress = new();
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(progressReporter: progress)
+                .StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+        await transaction.CommitAsync(CancellationToken.None);
+
+        Assert.Contains("Copying OpenBlade.Service.exe", progress.Messages);
+        Assert.Contains("Copying OpenBlade.Tray.exe", progress.Messages);
+        Assert.Contains("Activating the staged OpenBlade files", progress.Messages);
+        Assert.Contains("Committing the OpenBlade file transaction", progress.Messages);
+        Assert.DoesNotContain(progress.Messages, message => message.Contains(tree.Root, StringComparison.OrdinalIgnoreCase));
+    }
+
     [Theory]
     [InlineData("OpenBlade.Service.exe")]
     [InlineData("OpenBlade.Platform.dll")]
@@ -899,11 +919,14 @@ public sealed class SetupPayloadTransactionTests
 
         public void WriteInstall(string relativePath, byte[] bytes) => Write(Install, relativePath, bytes);
 
-        public WindowsSetupPlatform CreatePlatform(ISetupPayloadFileSystem? files = null) =>
+        public WindowsSetupPlatform CreatePlatform(
+            ISetupPayloadFileSystem? files = null,
+            ISetupProgressReporter? progressReporter = null) =>
             WindowsSetupPlatformTestFactory.Create(
                 paths: Paths,
                 payloadDirectory: Payload,
-                payloadFileSystem: files);
+                payloadFileSystem: files,
+                progressReporter: progressReporter);
 
         public void Dispose()
         {

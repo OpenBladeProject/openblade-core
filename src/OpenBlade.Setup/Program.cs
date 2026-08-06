@@ -36,8 +36,16 @@ try
         await InstalledUninstallBootstrapper.WaitForInstalledParentExitAsync(CancellationToken.None);
     }
 
+    _ = SetupCommandParser.TryParseInvocation(
+        effectiveArguments,
+        out SetupInvocation invocation);
+    using ISetupProgressReporter progress = SetupProgressReporter.Create(
+        invocation.ProgressPipeName);
     int exitCode = await new SetupCommandRunner(
-        new WindowsSetupPlatform(new WindowsSetupPlatformOptions(Paths: paths)))
+        new WindowsSetupPlatform(new WindowsSetupPlatformOptions(
+            Paths: paths,
+            ProgressReporter: progress)),
+        progress)
         .RunAsync(effectiveArguments, CancellationToken.None);
     if ((interactiveRequested || interactiveRelay) && exitCode == 0)
     {

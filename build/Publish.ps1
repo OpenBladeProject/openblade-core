@@ -46,6 +46,7 @@ $stagingRoot = [IO.Path]::GetFullPath((Join-Path $artifacts ('.staging\' + [Guid
 $stagingBundle = Join-Path $stagingRoot 'OpenBlade'
 $stagingDeveloperTools = Join-Path $stagingRoot 'OpenBlade.DeveloperTools'
 $stagingInstallerOutput = Join-Path $stagingRoot 'installer'
+$stagingInstallerUi = Join-Path $stagingRoot 'installer-ui'
 $stagingUpgradeProbeOutput = Join-Path $stagingRoot 'installer-upgrade-probe'
 $stagingUpgradeProbe = Join-Path $stagingUpgradeProbeOutput 'OpenBlade-Setup.exe'
 $stagingUpgradeProbeObj = (
@@ -184,6 +185,20 @@ try {
         $stagingDeveloperTools $productionPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj') `
         $stagingBundle ($productionPublishArguments + $setupPublishArguments)
+    $installerUiProject = Join-Path $repository (
+        'build\installer\OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj')
+    & dotnet publish $installerUiProject `
+        --configuration $Configuration `
+        --framework net472 `
+        --runtime win-x64 `
+        --self-contained false `
+        --property:NuGetAudit=false `
+        --property:DebugType=None `
+        --property:DebugSymbols=false `
+        --output $stagingInstallerUi
+    if ($LASTEXITCODE -ne 0) {
+        throw "OpenBlade installer UI publish failed with exit code $LASTEXITCODE"
+    }
 
     $captureExecutable = Join-Path $stagingDeveloperTools 'OpenBlade.Capture.exe'
     if (-not (Test-Path -LiteralPath $captureExecutable -PathType Leaf)) {
@@ -207,6 +222,9 @@ try {
             }) {
             Invoke-OpenBladeSigning -Path $file.FullName -ResolvedSignTool $resolvedSignTool
         }
+        Invoke-OpenBladeSigning `
+            -Path (Join-Path $stagingInstallerUi 'OpenBlade.Installer.UI.exe') `
+            -ResolvedSignTool $resolvedSignTool
     }
 
     New-Item -ItemType Directory -Path $stagingInstallerOutput -Force | Out-Null
@@ -217,6 +235,7 @@ try {
         '--property:NuGetAudit=false',
         "--property:OpenBladeBundle=$stagingBundle",
         "--property:OpenBladePrerequisites=$stagingPrerequisites",
+        "--property:OpenBladeInstallerUi=$stagingInstallerUi",
         "--property:OpenBladeVersion=$($buildIdentity.BundleVersion)",
         '--output', $stagingInstallerOutput
     )
@@ -252,6 +271,7 @@ try {
         --property:NuGetAudit=false `
         --property:OpenBladeBundle=$stagingBundle `
         --property:OpenBladePrerequisites=$stagingPrerequisites `
+        --property:OpenBladeInstallerUi=$stagingInstallerUi `
         --property:OpenBladeVersion=$upgradeProbeVersion `
         --property:BaseIntermediateOutputPath=$stagingUpgradeProbeObj `
         --property:MSBuildProjectExtensionsPath=$stagingUpgradeProbeObj `
