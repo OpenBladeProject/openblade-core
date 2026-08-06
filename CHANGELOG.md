@@ -5,6 +5,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Added per-user notification controls for performance and power-profile changes,
+  app and Razer firmware updates, controller advisories, and operation failures.
+  Repeated toasts are coalesced, update versions notify once, and opening a
+  notification routes to the relevant OpenBlade status while durable errors and
+  advisories remain available in the app.
+
 ### Fixed
 
 - Kept newly applied Power mode and Custom CPU/GPU selections from briefly

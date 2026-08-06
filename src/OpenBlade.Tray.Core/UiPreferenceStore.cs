@@ -46,7 +46,10 @@ public sealed record UiPreferences(
     string? LastKnownPublishedMcuVersion = null,
     RazerPublishedFirmwareVersionStatus? LastKnownPublishedBiosStatus = null,
     RazerPublishedFirmwareVersionStatus? LastKnownPublishedEcStatus = null,
-    RazerPublishedFirmwareVersionStatus? LastKnownPublishedMcuStatus = null)
+    RazerPublishedFirmwareVersionStatus? LastKnownPublishedMcuStatus = null,
+    NotificationPreferences? Notifications = null,
+    string? LastNotifiedReleaseTag = null,
+    string? LastNotifiedFirmwareSignature = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -79,7 +82,10 @@ public sealed record UiPreferences(
         LastKnownPublishedMcuVersion: null,
         LastKnownPublishedBiosStatus: null,
         LastKnownPublishedEcStatus: null,
-        LastKnownPublishedMcuStatus: null);
+        LastKnownPublishedMcuStatus: null,
+        Notifications: NotificationPreferences.Default,
+        LastNotifiedReleaseTag: null,
+        LastNotifiedFirmwareSignature: null);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled
@@ -133,6 +139,9 @@ public sealed record UiPreferences(
         Enum.IsDefined(FirmwareUpdateCheckInterval)
             ? FirmwareUpdateCheckInterval
             : UpdateCheckInterval.ManualOnly;
+
+    public NotificationPreferences EffectiveNotifications =>
+        Notifications ?? NotificationPreferences.Default;
 }
 
 public sealed class UiPreferenceStore

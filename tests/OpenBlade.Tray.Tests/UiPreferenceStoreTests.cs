@@ -31,6 +31,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             UpdateCheckInterval.ManualOnly,
             preferences.EffectiveFirmwareUpdateCheckInterval);
+        Assert.Equal(
+            NotificationPreferences.Default,
+            preferences.EffectiveNotifications);
         Assert.False(preferences.UpdateCheckPromptShown);
         Assert.Null(preferences.LastSuccessfulUpdateCheckAt);
         Assert.Null(preferences.UpdateCheckRetryAfter);
@@ -152,7 +155,15 @@ public sealed class UiPreferenceStoreTests : IDisposable
             LastKnownPublishedMcuVersion: "1.06",
             LastKnownPublishedBiosStatus: RazerPublishedFirmwareVersionStatus.Listed,
             LastKnownPublishedEcStatus: RazerPublishedFirmwareVersionStatus.Listed,
-            LastKnownPublishedMcuStatus: RazerPublishedFirmwareVersionStatus.Listed));
+            LastKnownPublishedMcuStatus: RazerPublishedFirmwareVersionStatus.Listed,
+            Notifications: NotificationPreferences.Default with
+            {
+                PerformanceChangesEnabled = false,
+                ProfileAndPowerSourceChangesEnabled = true,
+                AppUpdatesEnabled = false,
+            },
+            LastNotifiedReleaseTag: "v1.2.0",
+            LastNotifiedFirmwareSignature: "RZ09-0581|bios=3.01|ec=1.04|mcu=1.06"));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -238,6 +249,14 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             RazerPublishedFirmwareVersionStatus.Listed,
             reloaded.LastKnownPublishedMcuStatus);
+        Assert.False(reloaded.EffectiveNotifications.PerformanceChangesEnabled);
+        Assert.True(reloaded.EffectiveNotifications.ProfileAndPowerSourceChangesEnabled);
+        Assert.False(reloaded.EffectiveNotifications.AppUpdatesEnabled);
+        Assert.True(reloaded.EffectiveNotifications.FirmwareUpdatesEnabled);
+        Assert.Equal("v1.2.0", reloaded.LastNotifiedReleaseTag);
+        Assert.Equal(
+            "RZ09-0581|bios=3.01|ec=1.04|mcu=1.06",
+            reloaded.LastNotifiedFirmwareSignature);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -334,6 +353,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             UpdateCheckInterval.ManualOnly,
             preferences.EffectiveFirmwareUpdateCheckInterval);
+        Assert.Equal(
+            NotificationPreferences.Default,
+            preferences.EffectiveNotifications);
     }
 
     [Fact]
