@@ -30,7 +30,7 @@ internal readonly record struct ExpectedHostIdentity(
     string Manufacturer,
     string ProductName,
     string Sku,
-    string BiosVersion);
+    IReadOnlyList<string> BiosVersions);
 
 internal interface IRegistryValueSource
 {
@@ -87,12 +87,12 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
         "Razer",
         "Blade 16 - RZ09-0581",
         "RZ09-05819EN4",
-        "3.01");
+        TargetBladeDevice.SupportedBiosVersions);
     internal static readonly ExpectedHostIdentity Rz090528Identity = new(
         "Razer",
         "Blade 16 - RZ09-0528",
         "RZ09-05289EN4",
-        "2.02");
+        Array.AsReadOnly(new[] { "2.02" }));
     private readonly IRegistryValueSource registry;
     private readonly IWindowsPlatformEvidenceSource platform;
     private readonly ExpectedHostIdentity expected;
@@ -124,7 +124,9 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
         if (string.IsNullOrWhiteSpace(expected.Manufacturer)
             || string.IsNullOrWhiteSpace(expected.ProductName)
             || string.IsNullOrWhiteSpace(expected.Sku)
-            || string.IsNullOrWhiteSpace(expected.BiosVersion))
+            || expected.BiosVersions is null
+            || expected.BiosVersions.Count == 0
+            || expected.BiosVersions.Any(string.IsNullOrWhiteSpace))
         {
             throw new ArgumentException("Expected host identity must be complete.", nameof(expected));
         }
@@ -152,10 +154,9 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
             return new(null, HidSessionFailureKind.IdentityBlocked);
         }
 
-        bool testedFirmware = string.Equals(
+        bool testedFirmware = expected.BiosVersions.Contains(
             biosVersion,
-            expected.BiosVersion,
-            StringComparison.Ordinal);
+            StringComparer.Ordinal);
         if (!testedFirmware && compatibilityPolicy?.AllowUntestedFirmware != true)
         {
             return new(

@@ -95,14 +95,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public MainWindow()
-        : this(WindowsProcessorEfficiencyPolicy.Discover())
+        : this(
+            WindowsProcessorEfficiencyPolicy.Discover(),
+            new WindowsStartupRegistration())
     {
     }
 
-    internal MainWindow(WindowsProcessorEfficiencyPolicy processorPolicy)
+    internal MainWindow(
+        WindowsProcessorEfficiencyPolicy processorPolicy,
+        IStartupRegistration startupRegistration)
     {
         this.processorPolicy = processorPolicy
             ?? throw new ArgumentNullException(nameof(processorPolicy));
+        ArgumentNullException.ThrowIfNull(startupRegistration);
         dispatcherQueue = DispatcherQueue.GetForCurrentThread()
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         dispatcherQueue.EnsureSystemDispatcherQueue();
@@ -112,7 +117,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             serviceClient,
             new WinUiDispatcher(dispatcherQueue),
             new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)),
-            new WindowsStartupRegistration(),
+            startupRegistration,
             uiVersion: uiVersion,
             sessionAgentVersion: InstalledComponentVersion.ReadSibling(
                 "OpenBlade.SessionAgent.exe"),

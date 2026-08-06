@@ -2,6 +2,11 @@ using System.Runtime.InteropServices;
 
 namespace OpenBlade.Setup;
 
+internal static class StartupShortcutArguments
+{
+    public const string Tray = "--startup";
+}
+
 public sealed record ShortcutRequest(
     string ShortcutPath,
     string TargetPath,

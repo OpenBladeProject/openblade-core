@@ -1491,6 +1491,28 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void DisabledStartupLaunchExitsBeforeClaimingTheTrayInstance()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        int startupGate = app.IndexOf(
+            "startupRegistration.ShouldStartForLaunchArguments(",
+            StringComparison.Ordinal);
+        int commandLineArguments = app.IndexOf(
+            "Environment.GetCommandLineArgs()",
+            startupGate,
+            StringComparison.Ordinal);
+        int instanceClaim = app.IndexOf(
+            "TrayInstanceCoordinator.TryStart",
+            StringComparison.Ordinal);
+
+        Assert.True(
+            startupGate >= 0
+            && commandLineArguments > startupGate
+            && commandLineArguments < instanceClaim);
+        Assert.DoesNotContain("args.Arguments", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void InitialPlacementUsesWindowDpiAndDisplayRelativeMoveAndResize()
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");

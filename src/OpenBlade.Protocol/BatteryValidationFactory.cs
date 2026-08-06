@@ -839,11 +839,7 @@ public static class BatteryValidationFactory
         var hostIdentity = new WindowsHostIdentitySource(
             registry,
             platform,
-            new ExpectedHostIdentity(
-                "Razer",
-                "Blade 16 - RZ09-0528",
-                "RZ09-05289EN4",
-                "2.02"));
+            WindowsHostIdentitySource.Rz090528Identity);
         var opener = new WindowsRazerHidSessionOpener(
             hostIdentity,
             hardwareAccessGuard,

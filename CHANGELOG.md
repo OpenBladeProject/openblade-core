@@ -5,22 +5,50 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Added Razer Blade 16 RZ09-0581 BIOS 4.00 to the tested production firmware
+  set while retaining BIOS 3.01 support and keeping other BIOS versions behind
+  the explicit untested-firmware override.
+- Added a graphical installer that follows the Windows app theme, keeps a fixed
+  compact progress view with expandable wrapped details for file, registry,
+  shortcut, and service activity, asks before replacing a newer local version,
+  and offers **Launch OpenBlade** after install or repair. It consistently uses
+  the installer artwork and **OpenBlade Setup** identity, labels version-removal
+  work clearly, avoids stale equal-version replacement cycles, and gives quiet
+  and embedded installs a valid native apply owner.
+
+## [0.1.0-nightly.8] - 2026-08-06
+
 ### Changed
 
+- Generalized the developer firmware-smoke workflow for BIOS, EC, MCU, and
+  VBIOS updates. Pre-update rehearsals now declare and verify the components
+  under test, operator confirmation uses `<MODEL>-FIRMWARE-SMOKE`, and reports
+  use `firmware.inventory.available` instead of `firmware.mcu.available`.
 - Simplified the tray right-click menu to **Open** and **Exit**. Exiting now
   asks whether to leave keyboard lighting, hotkeys, profiles, and automation
   running in the background or shut down OpenBlade completely.
+- Gave the OpenBlade installer a dedicated adaptive file and taskbar icon with
+  a Blade-green download badge, while retaining the existing installed-app
+  identity.
 
 ### Fixed
 
+- Presented the installed MCU firmware consistently in Device information and
+  the official firmware card while preserving the raw version for diagnostics
+  and compatibility checks.
+- Made **Start at sign-in** reflect the effective all-users Tray launcher and
+  honor a per-user opt-out while keeping the Session Agent running at sign-in.
 - Reported a recognized laptop with incompatible firmware as **Incompatible
   firmware** instead of also showing the contradictory **Laptop not found**
   state, using the service's exact BIOS admission result rather than unrelated
   EC or MCU version notices. Disabling the override now also relinquishes any
   owned reactive or ambient lighting renderer immediately, including after a
   transient post-identity probe failure.
-- Shortened the official firmware card and displayed decoded MCU versions in
-  the same release format used by Razer's updater labels.
+- Tightened the official firmware card into aligned header, interval, version,
+  and footer sections, and displayed decoded MCU versions in the same release
+  format used by Razer's updater labels.
 - Fixed Custom performance controls not appearing until a mode switch when the
   tray starts with Custom mode already active.
 - Recorded the combined hardware-cleanup result during every graceful service
@@ -991,7 +1019,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.8...HEAD
+[0.1.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.8
 [0.1.0-nightly.6]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.5...v0.1.0-nightly.6
 [0.1.0-nightly.5]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...v0.1.0-nightly.5
 [0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0

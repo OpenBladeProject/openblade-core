@@ -8,7 +8,9 @@ param(
 
     [string] $OutputDirectory,
 
-    [string] $ConfirmTarget
+    [string] $ConfirmTarget,
+
+    [string[]] $ExpectedFirmwareChanges
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,15 +33,34 @@ $command = switch ($Phase) {
 $toolArguments = @($command, '--output', $OutputDirectory)
 if ($Phase -ne 'Baseline') {
     if ([string]::IsNullOrWhiteSpace($BaselinePath)) {
-        throw '-BaselinePath is required for PostUpdate, Rehearsal, and Reversible.'
+        throw '-BaselinePath is required for every phase except Baseline.'
     }
 
     $toolArguments += @('--baseline', (Resolve-Path -LiteralPath $BaselinePath).Path)
 }
 
+$expectedChanges = @(
+    $ExpectedFirmwareChanges |
+        ForEach-Object { $_ -split ',' } |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Unique
+)
+
+if ($Phase -in @('PostUpdate', 'Rehearsal', 'Reversible')) {
+    if ($expectedChanges.Count -eq 0) {
+        throw '-ExpectedFirmwareChanges is required for PostUpdate, Rehearsal, and Reversible.'
+    }
+
+    $toolArguments += @('--expect-firmware-changes', ($expectedChanges -join ','))
+}
+elseif ($expectedChanges.Count -gt 0) {
+    throw '-ExpectedFirmwareChanges is valid only for PostUpdate, Rehearsal, and Reversible.'
+}
+
 if ($Phase -in @('Rehearsal', 'Reversible', 'Recover')) {
     if ([string]::IsNullOrWhiteSpace($ConfirmTarget)) {
-        throw 'Reversible checks require -ConfirmTarget RZ09-0581-MCU-SMOKE.'
+        throw 'Write-capable phases require -ConfirmTarget <MODEL>-FIRMWARE-SMOKE.'
     }
 
     $toolArguments += @('--confirm-target', $ConfirmTarget)

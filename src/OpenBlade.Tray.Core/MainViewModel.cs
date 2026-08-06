@@ -1219,7 +1219,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string AboutEcVersionStatus => FirmwareValue(latestStatus?.Firmware?.EcVersion);
 
-    public string AboutMcuVersionStatus => FirmwareValue(latestStatus?.Firmware?.McuVersion);
+    public string AboutMcuVersionStatus =>
+        McuFirmwareVersionPresentation.Format(latestStatus?.Firmware?.McuVersion);
 
     public string AboutVbiosVersionStatus => FirmwareValue(latestStatus?.Firmware?.VbiosVersion);
 
@@ -7720,8 +7721,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         string versions = string.Join(
             ", ",
-            assessment.Mismatches.Select(mismatch =>
-                $"{mismatch.Component} {mismatch.CurrentValue}"));
+            assessment.Mismatches.Select(FormatTestedPlatformMismatch));
         bool hasUnavailableValue = assessment.Mismatches.Any(mismatch =>
             string.Equals(
                 mismatch.CurrentValue,
@@ -7730,6 +7730,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return hasUnavailableValue
             ? $"OpenBlade could not verify this configuration: {versions}."
             : $"OpenBlade has not tested this configuration: {versions}.";
+    }
+
+    private static string FormatTestedPlatformMismatch(
+        TestedPlatformVersionMismatch mismatch)
+    {
+        string currentValue = string.Equals(
+            mismatch.Component,
+            "MCU",
+            StringComparison.OrdinalIgnoreCase)
+            ? McuFirmwareVersionPresentation.Format(mismatch.CurrentValue)
+            : mismatch.CurrentValue;
+        return $"{mismatch.Component} {currentValue}";
     }
 
     private static string FormatOperationResult(ControlOperationResult result) => result.Status switch

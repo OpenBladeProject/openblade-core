@@ -85,6 +85,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
     private readonly string stagingDirectory;
     private readonly string backupDirectory;
     private readonly string failedDirectory;
+    private readonly ISetupProgressReporter progressReporter;
     private TransactionState state = TransactionState.Staged;
 
     private SetupPayloadTransaction(
@@ -93,13 +94,15 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         string stagingDirectory,
         string backupDirectory,
         string failedDirectory,
-        bool hadExistingInstall)
+        bool hadExistingInstall,
+        ISetupProgressReporter progressReporter)
     {
         this.paths = paths;
         this.files = files;
         this.stagingDirectory = stagingDirectory;
         this.backupDirectory = backupDirectory;
         this.failedDirectory = failedDirectory;
+        this.progressReporter = progressReporter;
         HadExistingInstall = hadExistingInstall;
     }
 
@@ -115,11 +118,13 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         SetupPaths paths,
         string payloadDirectory,
         ISetupPayloadFileSystem files,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ISetupProgressReporter? progressReporter = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentException.ThrowIfNullOrWhiteSpace(payloadDirectory);
         ArgumentNullException.ThrowIfNull(files);
+        progressReporter ??= NullSetupProgressReporter.Instance;
 
         string payloadRoot = NormalizeRoot(payloadDirectory);
         IReadOnlyDictionary<string, PayloadEntry> sourceManifest =
@@ -144,6 +149,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             foreach (PayloadEntry entry in sourceManifest.Values.OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                progressReporter.Report($"Copying {entry.RelativePath}");
                 string source = ResolveContainedPath(payloadRoot, entry.RelativePath);
                 string destination = ResolveContainedPath(staging, entry.RelativePath);
                 files.CreateDirectory(Path.GetDirectoryName(destination)!);
@@ -168,7 +174,8 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
                 staging,
                 backup,
                 failed,
-                files.DirectoryExists(paths.InstallDirectory));
+                files.DirectoryExists(paths.InstallDirectory),
+                progressReporter);
         }
         catch (Exception failure)
         {
@@ -202,6 +209,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        progressReporter.Report("Activating the staged OpenBlade files");
         EnsureTransactionPaths(paths, stagingDirectory, backupDirectory, failedDirectory);
         bool liveExists = files.DirectoryExists(paths.InstallDirectory);
         if (liveExists != HadExistingInstall)
@@ -292,6 +300,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        progressReporter.Report("Committing the OpenBlade file transaction");
         state = TransactionState.Committed;
         if (HadExistingInstall && files.DirectoryExists(backupDirectory))
         {
@@ -324,6 +333,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        progressReporter.Report("Restoring the previous OpenBlade files");
         switch (state)
         {
             case TransactionState.Staged:

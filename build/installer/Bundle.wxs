@@ -1,5 +1,4 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Bundle
       Id="OSSBlade.OpenBlade"
@@ -10,20 +9,37 @@
       Manufacturer="OSSBlade"
       AboutUrl="https://github.com/OSSBlade/openblade-core"
       HelpUrl="https://github.com/OSSBlade/openblade-docs"
-      IconSourceFile="!(bindpath.BrandAssets)\OpenBlade.ico"
+      IconSourceFile="!(bindpath.BrandAssets)\OpenBlade.Installer.ico"
       Condition="VersionNT64 &gt;= v10.0 AND WindowsBuildNumber &gt;= 26100"
       Compressed="yes">
-    <BootstrapperApplication>
-      <bal:WixStandardBootstrapperApplication
-          Theme="hyperlinkLargeLicense"
-          ThemeFile="OpenBladeTheme.xml"
-          LicenseUrl=""
-          LogoFile="!(bindpath.BrandAssets)\OpenBlade.png"
-          LaunchTarget="[ProgramFiles64Folder]OpenBlade\OpenBlade.Tray.exe"
-          LaunchWorkingFolder="[ProgramFiles64Folder]OpenBlade"
-          ShowVersion="yes"
-          SuppressOptionsUI="yes" />
+    <BootstrapperApplication
+        SourceFile="!(bindpath.OpenBladeInstallerUi)\OpenBlade.Installer.UI.exe">
+      <Payloads Include="!(bindpath.OpenBladeInstallerUi)\**">
+        <Exclude Files="!(bindpath.OpenBladeInstallerUi)\OpenBlade.Installer.UI.exe" />
+        <Exclude Files="!(bindpath.OpenBladeInstallerUi)\*.pdb" />
+      </Payloads>
     </BootstrapperApplication>
+
+    <Variable
+        Name="LaunchTarget"
+        Type="formatted"
+        Value="[ProgramFiles64Folder]OpenBlade\OpenBlade.Tray.exe"
+        Hidden="no"
+        Persisted="no" />
+
+    <Variable
+        Name="LaunchWorkingFolder"
+        Type="formatted"
+        Value="[ProgramFiles64Folder]OpenBlade"
+        Hidden="no"
+        Persisted="no" />
+
+    <Variable
+        Name="OpenBladeSetupProgressPipe"
+        Type="string"
+        Value=""
+        Hidden="yes"
+        Persisted="no" />
 
     <Variable
         Name="OpenBladePurgeProfiles"
@@ -105,6 +121,11 @@
         <CommandLine
             Condition="OpenBladePurgeProfiles"
             UninstallArgument="--purge" />
+        <CommandLine
+            Condition="OpenBladeSetupProgressPipe"
+            InstallArgument="--progress-pipe &quot;[OpenBladeSetupProgressPipe]&quot;"
+            RepairArgument="--progress-pipe &quot;[OpenBladeSetupProgressPipe]&quot;"
+            UninstallArgument="--progress-pipe &quot;[OpenBladeSetupProgressPipe]&quot;" />
         <Payloads Include="!(bindpath.OpenBladeBundle)\**">
           <Exclude Files="!(bindpath.OpenBladeBundle)\OpenBlade.Setup.exe" />
         </Payloads>

@@ -31,7 +31,8 @@ public sealed record WindowsSetupPlatformOptions(
     IBundleOwnershipRegistration? BundleOwnershipRegistration = null,
     IInstalledUninstallerWriter? InstalledUninstallerWriter = null,
     IDynamicLightingIdentityRegistration? DynamicLightingIdentityRegistration = null,
-    string? SetupExecutablePath = null);
+    string? SetupExecutablePath = null,
+    ISetupProgressReporter? ProgressReporter = null);
 
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {
@@ -52,6 +53,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly IBundleOwnershipRegistration bundleOwnershipRegistration;
     private readonly IInstalledUninstallerWriter installedUninstallerWriter;
     private readonly IDynamicLightingIdentityRegistration dynamicLightingIdentityRegistration;
+    private readonly ISetupProgressReporter progressReporter;
     private readonly string setupExecutablePath;
 
     public WindowsSetupPlatform(WindowsSetupPlatformOptions? options = null)
@@ -75,6 +77,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             ?? new VerifiedInstalledUninstallerWriter();
         dynamicLightingIdentityRegistration = options.DynamicLightingIdentityRegistration
             ?? new DynamicLightingIdentityRegistration();
+        progressReporter = options.ProgressReporter ?? NullSetupProgressReporter.Instance;
         setupExecutablePath = options.SetupExecutablePath
             ?? Environment.ProcessPath
             ?? throw new InvalidOperationException("The OpenBlade setup executable path is unavailable.");
@@ -139,7 +142,12 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     }
 
     public Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken) =>
-        SetupPayloadTransaction.StageAsync(paths, payloadDirectory, payloadFileSystem, cancellationToken);
+        SetupPayloadTransaction.StageAsync(
+            paths,
+            payloadDirectory,
+            payloadFileSystem,
+            cancellationToken,
+            progressReporter);
 
     public async Task RestoreServiceInstallStateAsync(
         SetupServiceInstallState priorState,
@@ -272,7 +280,11 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         string trayExecutable = Path.Combine(paths.InstallDirectory, "OpenBlade.Tray.exe");
         await shortcutWriter.CreateAsync(
-            new ShortcutRequest(paths.StartupFile, trayExecutable, paths.InstallDirectory),
+            new ShortcutRequest(
+                paths.StartupFile,
+                trayExecutable,
+                paths.InstallDirectory,
+                Arguments: StartupShortcutArguments.Tray),
             cancellationToken);
         if (!string.Equals(
                 paths.LegacyTrayStartupFile,

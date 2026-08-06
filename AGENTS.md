@@ -178,7 +178,11 @@ submodules.
    inspect every touched text file for mixed endings and normalize the complete
    file to its declared convention. Treat Git's `LF will be replaced by CRLF`
    warning as unfinished work, not as a harmless staging detail.
-11. On managed hosts, do not treat a sandboxed `gh auth status` failure as
+11. Prefer the authenticated GitHub CLI (`gh`) over application connectors for
+    GitHub reads and writes. Use a connector only when `gh` cannot perform the
+    needed operation. If `gh` is available but genuinely unauthenticated, ask
+    the user before falling back to a connector.
+12. On managed hosts, do not treat a sandboxed `gh auth status` failure as
     proof that credentials expired when the same output includes config or
     keyring access-denied warnings. Retry the exact read with approved host
     access; ask for reauthentication only if that host-level check also fails.

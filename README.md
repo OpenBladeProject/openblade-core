@@ -27,7 +27,7 @@ exact laptop and firmware.
 
 | Laptop | USB identity | BIOS | EC | MCU |
 | --- | --- | --- | --- | --- |
-| Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` | `3.01` | `1.04` | `1.5.0.0`, `1.6.0.0` |
+| Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` | `3.01`, `4.00` | `1.04` | `1.5.0.0`, `1.6.0.0` |
 | Razer Blade 16 (2025), `RZ09-0528` | `1532:02C6` | `2.02` | `1.09` | `1.9.0.0` |
 
 The exact-device `RZ09-0528` admission includes AC performance and custom
@@ -143,8 +143,11 @@ and separate developer tools:
 The user-facing installer is written to
 `artifacts\win-x64\OpenBlade-Setup.exe`. Double-click it and choose Install;
 Windows requests administrator approval only when setup is ready to make
-system changes. After a successful install or repair, choose **Launch** to
-start the Tray; the Tray starts the Session Agent. In the ordinary
+system changes. The installer follows the Windows app theme. During install,
+repair, or removal, choose **Show details** below the progress bar to see the
+files, registry entries, shortcuts, and services being changed. After a
+successful install or repair, choose **Launch OpenBlade** to start the Tray;
+the Tray starts the Session Agent. In the ordinary
 double-click flow, both run in the normal user session. If you explicitly
 start the installer with **Run as administrator**, they inherit that elevated
 context, so close them and start OpenBlade normally instead.
