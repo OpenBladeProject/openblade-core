@@ -4,10 +4,7 @@ namespace OpenBlade.FirmwareSmoke;
 
 public static class FirmwareSmokeProgram
 {
-    public const string TargetConfirmationFormat = "<MODEL>-MCU-SMOKE";
-
-    [Obsolete("Use the baseline-specific <MODEL>-MCU-SMOKE confirmation.")]
-    public const string ExactTargetConfirmation = "RZ09-0581-MCU-SMOKE";
+    public const string TargetConfirmationFormat = "<MODEL>-FIRMWARE-SMOKE";
 
     public static async Task<int> RunAsync(
         string[] args,
@@ -36,21 +33,21 @@ public static class FirmwareSmokeProgram
                     args,
                     outputDirectory,
                     collector,
-                    requireMcuChange: true,
+                    ReadExpectedFirmwareChanges(args),
                     cancellationToken).ConfigureAwait(false),
                 "rehearsal" => await RunReversibleAsync(
                     args,
                     outputDirectory,
                     collector,
                     client,
-                    requireMcuChange: false,
+                    expectedChangedComponents: new HashSet<FirmwareComponent>(),
                     cancellationToken).ConfigureAwait(false),
                 "reversible" => await RunReversibleAsync(
                     args,
                     outputDirectory,
                     collector,
                     client,
-                    requireMcuChange: true,
+                    ReadExpectedFirmwareChanges(args),
                     cancellationToken).ConfigureAwait(false),
                 "recover" => await RecoverAsync(
                     args,
@@ -100,7 +97,7 @@ public static class FirmwareSmokeProgram
         string[] args,
         string outputDirectory,
         FirmwareSmokeSnapshotCollector collector,
-        bool requireMcuChange,
+        IReadOnlySet<FirmwareComponent> expectedChangedComponents,
         CancellationToken cancellationToken)
     {
         FirmwareSmokeSnapshot baseline = await ReadBaselineAsync(
@@ -111,7 +108,7 @@ public static class FirmwareSmokeProgram
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
             baseline,
             current,
-            requireMcuChange);
+            expectedChangedComponents);
 
         Directory.CreateDirectory(outputDirectory);
         string snapshotPath = Path.Combine(outputDirectory, "post-update.json");
@@ -140,7 +137,7 @@ public static class FirmwareSmokeProgram
         string outputDirectory,
         FirmwareSmokeSnapshotCollector collector,
         IFirmwareSmokeClient client,
-        bool requireMcuChange,
+        IReadOnlySet<FirmwareComponent> expectedChangedComponents,
         CancellationToken cancellationToken)
     {
         FirmwareSmokeSnapshot baseline = await ReadBaselineAsync(
@@ -163,7 +160,7 @@ public static class FirmwareSmokeProgram
         FirmwareSmokeReport preflight = FirmwareSmokeAssessment.ComparePostUpdate(
             baseline,
             current,
-            requireMcuChange);
+            expectedChangedComponents);
         if (!preflight.Succeeded)
         {
             Directory.CreateDirectory(outputDirectory);
@@ -181,7 +178,9 @@ public static class FirmwareSmokeProgram
             await new ReversibleSmokeRunner(client).RunAsync(cancellationToken)
                 .ConfigureAwait(false);
         var report = new FirmwareSmokeReport(
-            requireMcuChange ? "post-update reversible writes" : "pre-update rehearsal",
+            expectedChangedComponents.Count > 0
+                ? "post-update reversible writes"
+                : "pre-update rehearsal",
             DateTimeOffset.UtcNow,
             preflight.Checks.Concat(mutationChecks).ToArray(),
             FirmwareSmokeAssessment.ManualChecks);
@@ -323,7 +322,43 @@ public static class FirmwareSmokeProgram
     {
         string canonical = RazerBladeModelCatalog.Find(targetModel)?.ModelNumber
             ?? targetModel.Trim().ToUpperInvariant();
-        return $"{canonical}-MCU-SMOKE";
+        return $"{canonical}-FIRMWARE-SMOKE";
+    }
+
+    public static IReadOnlySet<FirmwareComponent> ParseExpectedFirmwareChanges(
+        string value)
+    {
+        var components = new HashSet<FirmwareComponent>();
+        foreach (string item in value.Split(
+            ',',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!Enum.TryParse(item, ignoreCase: true, out FirmwareComponent component))
+            {
+                throw new ArgumentException(
+                    $"Unsupported firmware component '{item}'. " +
+                    "Expected BIOS, EC, MCU, or VBIOS.");
+            }
+
+            components.Add(component);
+        }
+
+        if (components.Count == 0)
+        {
+            throw new ArgumentException(
+                "--expect-firmware-changes requires at least one component.");
+        }
+
+        return components;
+    }
+
+    private static IReadOnlySet<FirmwareComponent> ReadExpectedFirmwareChanges(
+        string[] args)
+    {
+        string value = ReadOption(args, "--expect-firmware-changes")
+            ?? throw new ArgumentException(
+                "--expect-firmware-changes <BIOS,EC,MCU,VBIOS> is required.");
+        return ParseExpectedFirmwareChanges(value);
     }
 
     private static void PrintSummary(
@@ -362,18 +397,21 @@ public static class FirmwareSmokeProgram
         Console.WriteLine("OpenBlade firmware smoke utility");
         Console.WriteLine("  baseline [--output <directory>]");
         Console.WriteLine(
-            "  post-update --baseline <baseline.json> [--output <directory>]");
+            "  post-update --baseline <baseline.json> " +
+            "--expect-firmware-changes <components> [--output <directory>]");
         Console.WriteLine(
             "  rehearsal --baseline <baseline.json> --confirm-target " +
             TargetConfirmationFormat + " [--output <directory>]");
         Console.WriteLine(
             "  reversible --baseline <baseline.json> --confirm-target " +
-            TargetConfirmationFormat + " [--output <directory>]");
+            TargetConfirmationFormat + " --expect-firmware-changes <components> " +
+            "[--output <directory>]");
         Console.WriteLine(
             "  recover --baseline <baseline.json> --confirm-target " +
             TargetConfirmationFormat + " [--output <directory>]");
         Console.WriteLine();
         Console.WriteLine(
-            "Rehearsal permits an unchanged MCU version. Reversible requires a changed MCU.");
+            "Components are a comma-separated subset of BIOS, EC, MCU, and VBIOS. " +
+            "Rehearsal requires all firmware versions to remain unchanged.");
     }
 }

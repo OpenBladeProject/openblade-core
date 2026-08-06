@@ -8,7 +8,9 @@ param(
 
     [string] $OutputDirectory,
 
-    [string] $ConfirmTarget
+    [string] $ConfirmTarget,
+
+    [string[]] $ExpectedFirmwareChanges
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,15 +33,41 @@ $command = switch ($Phase) {
 $toolArguments = @($command, '--output', $OutputDirectory)
 if ($Phase -ne 'Baseline') {
     if ([string]::IsNullOrWhiteSpace($BaselinePath)) {
-        throw '-BaselinePath is required for PostUpdate, Rehearsal, and Reversible.'
+        throw '-BaselinePath is required for every phase except Baseline.'
     }
 
     $toolArguments += @('--baseline', (Resolve-Path -LiteralPath $BaselinePath).Path)
 }
 
+$expectedChanges = @(
+    $ExpectedFirmwareChanges |
+        ForEach-Object { $_ -split ',' } |
+        ForEach-Object { $_.Trim().ToUpperInvariant() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Unique
+)
+$allowedComponents = @('BIOS', 'EC', 'MCU', 'VBIOS')
+$unsupportedComponents = @(
+    $expectedChanges | Where-Object { $_ -notin $allowedComponents }
+)
+if ($unsupportedComponents.Count -gt 0) {
+    throw "Unsupported firmware component: $($unsupportedComponents -join ', '). Expected BIOS, EC, MCU, or VBIOS."
+}
+
+if ($Phase -in @('PostUpdate', 'Reversible')) {
+    if ($expectedChanges.Count -eq 0) {
+        throw '-ExpectedFirmwareChanges is required for PostUpdate and Reversible.'
+    }
+
+    $toolArguments += @('--expect-firmware-changes', ($expectedChanges -join ','))
+}
+elseif ($expectedChanges.Count -gt 0) {
+    throw '-ExpectedFirmwareChanges is valid only for PostUpdate and Reversible.'
+}
+
 if ($Phase -in @('Rehearsal', 'Reversible', 'Recover')) {
     if ([string]::IsNullOrWhiteSpace($ConfirmTarget)) {
-        throw 'Reversible checks require -ConfirmTarget RZ09-0581-MCU-SMOKE.'
+        throw 'Write-capable phases require -ConfirmTarget <MODEL>-FIRMWARE-SMOKE.'
     }
 
     $toolArguments += @('--confirm-target', $ConfirmTarget)

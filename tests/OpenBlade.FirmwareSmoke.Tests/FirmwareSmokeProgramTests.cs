@@ -6,9 +6,9 @@ namespace OpenBlade.FirmwareSmoke.Tests;
 public sealed class FirmwareSmokeProgramTests
 {
     [Theory]
-    [InlineData("RZ09-0581", "RZ09-0581-MCU-SMOKE")]
-    [InlineData("RZ09-0528", "RZ09-0528-MCU-SMOKE")]
-    [InlineData("rz09-05289en4", "RZ09-0528-MCU-SMOKE")]
+    [InlineData("RZ09-0581", "RZ09-0581-FIRMWARE-SMOKE")]
+    [InlineData("RZ09-0528", "RZ09-0528-FIRMWARE-SMOKE")]
+    [InlineData("rz09-05289en4", "RZ09-0528-FIRMWARE-SMOKE")]
     public void TargetConfirmation_UsesCanonicalExactModel(
         string modelNumber,
         string expected)
@@ -19,10 +19,66 @@ public sealed class FirmwareSmokeProgramTests
     [Fact]
     public void TargetConfirmationFormat_DocumentsModelSpecificToken()
     {
-        Assert.Equal("<MODEL>-MCU-SMOKE", FirmwareSmokeProgram.TargetConfirmationFormat);
         Assert.Equal(
-            "RZ09-0528-MCU-SMOKE",
+            "<MODEL>-FIRMWARE-SMOKE",
+            FirmwareSmokeProgram.TargetConfirmationFormat);
+        Assert.Equal(
+            "RZ09-0528-FIRMWARE-SMOKE",
             FirmwareSmokeProgram.TargetConfirmation(
                 RazerBladeModelCatalog.Rz090528ModelNumber));
+    }
+
+    [Fact]
+    public void ParseExpectedFirmwareChanges_AcceptsAnySupportedCombination()
+    {
+        IReadOnlySet<FirmwareComponent> result =
+            FirmwareSmokeProgram.ParseExpectedFirmwareChanges("bios, EC,mcu,VBIOS");
+
+        Assert.Equal(
+            new HashSet<FirmwareComponent>(Enum.GetValues<FirmwareComponent>()),
+            result);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(",")]
+    [InlineData("touchpad")]
+    [InlineData("BIOS,touchpad")]
+    public void ParseExpectedFirmwareChanges_RejectsMissingOrUnknownComponents(
+        string value)
+    {
+        Assert.Throws<ArgumentException>(() =>
+            FirmwareSmokeProgram.ParseExpectedFirmwareChanges(value));
+    }
+
+    [Fact]
+    public void FirmwareUpdateScriptContainsNoModelOrVersionSpecificGate()
+    {
+        string script = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "scripts",
+            "Test-FirmwareUpdate.ps1"));
+
+        Assert.DoesNotContain("RZ09-", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("-MCU-SMOKE", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotMatch(
+            @"(?<![A-Za-z0-9])v?\d+\.\d+(?:\.\d+)*(?![A-Za-z0-9])",
+            script);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate the repository root.");
     }
 }

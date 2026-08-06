@@ -12,6 +12,14 @@ public enum FirmwareSmokeOutcome
     Skipped,
 }
 
+public enum FirmwareComponent
+{
+    Bios,
+    Ec,
+    Mcu,
+    Vbios,
+}
+
 public sealed record FirmwareIdentity(
     string Bios,
     string Ec,
