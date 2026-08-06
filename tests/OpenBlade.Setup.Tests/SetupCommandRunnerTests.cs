@@ -681,7 +681,7 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
-    public async Task Uninstall_SupersededBundleManagedCommandLeavesNewerPayloadUntouched()
+    public async Task Uninstall_SupersededBundleManagedCommandLeavesDifferentPayloadUntouched()
     {
         RecordingSetupPlatform platform = new()
         {

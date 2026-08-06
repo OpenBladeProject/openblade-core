@@ -59,6 +59,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         ExecutePackageComplete += OnExecutePackageComplete;
         Progress += OnProgress;
         Error += OnError;
+        ApplyDowngrade += OnApplyDowngrade;
         ApplyComplete += OnApplyComplete;
     }
 
@@ -76,6 +77,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             && action is LaunchAction.Install or LaunchAction.Repair
             && (!overwriteNewerVersion || command.Display != Display.Full))
         {
+            RequireNewerVersionOverwriteConfirmation();
             return;
         }
 
@@ -290,20 +292,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         if (newerRelatedBundleVersion is not null
             && command.Action is LaunchAction.Install or LaunchAction.Repair)
         {
-            if (command.Display == Display.Full)
-            {
-                Ui(() => window?.ShowNewerVersionConfirmation(
-                    newerRelatedBundleVersion,
-                    bundleVersion));
-            }
-            else
-            {
-                CompleteWithFailure(
-                    NewerVersionInstalled,
-                    $"OpenBlade {newerRelatedBundleVersion} is already installed. "
-                    + "Run this installer interactively to confirm overwriting it.");
-            }
-
+            RequireNewerVersionOverwriteConfirmation();
             return;
         }
 
@@ -442,6 +431,16 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
     }
 
+    private void OnApplyDowngrade(object? sender, ApplyDowngradeEventArgs e)
+    {
+        int selected = SelectApplyDowngradeStatus(allowNewerVersionOverwrite, e.Status);
+        if (selected != e.Status)
+        {
+            e.Status = selected;
+            AddDetail("Continuing with the confirmed OpenBlade version replacement.");
+        }
+    }
+
     private void OnApplyComplete(object? sender, ApplyCompleteEventArgs e)
     {
         applying = false;
@@ -479,6 +478,23 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         else
         {
             dispatcher?.BeginInvokeShutdown(DispatcherPriority.Normal);
+        }
+    }
+
+    private void RequireNewerVersionOverwriteConfirmation()
+    {
+        string installedVersion = newerRelatedBundleVersion
+            ?? throw new InvalidOperationException("The newer OpenBlade version is unavailable.");
+        if (command?.Display == Display.Full)
+        {
+            Ui(() => window?.ShowNewerVersionConfirmation(installedVersion, bundleVersion));
+        }
+        else
+        {
+            CompleteWithFailure(
+                NewerVersionInstalled,
+                $"OpenBlade {installedVersion} is already installed. "
+                + "Run this installer interactively to confirm overwriting it.");
         }
     }
 
@@ -572,10 +588,26 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private static bool Failed(int status) => status < 0;
 
-    internal static bool IsNewerVersion(string currentVersion, string relatedVersion) =>
-        Version.TryParse(currentVersion, out Version? current)
-        && Version.TryParse(relatedVersion, out Version? related)
-        && related > current;
+    internal static bool IsNewerVersion(string currentVersion, string relatedVersion)
+    {
+        Version? current = ParseBurnComparableVersion(currentVersion);
+        Version? related = ParseBurnComparableVersion(relatedVersion);
+        return current is not null && related is not null && related > current;
+    }
+
+    private static Version? ParseBurnComparableVersion(string value)
+    {
+        if (!Version.TryParse(value, out Version? parsed))
+        {
+            return null;
+        }
+
+        return new Version(
+            parsed.Major,
+            parsed.Minor,
+            Math.Max(0, parsed.Build),
+            Math.Max(0, parsed.Revision));
+    }
 
     internal static RelatedBundlePlanType SelectRelatedBundlePlanType(
         bool allowOverwrite,
@@ -597,6 +629,9 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             && string.Equals(packageId, OpenBladeSetupPackage, StringComparison.Ordinal)
                 ? RequestState.ForcePresent
                 : recommendedState;
+
+    internal static int SelectApplyDowngradeStatus(bool allowOverwrite, int status) =>
+        allowOverwrite ? 0 : status;
 
     private static int NormalizeExitCode(int status) =>
         (status & unchecked((int)0xFFFF0000)) == unchecked((int)0x80070000)

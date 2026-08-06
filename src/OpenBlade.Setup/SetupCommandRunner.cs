@@ -303,7 +303,7 @@ public sealed class SetupCommandRunner(
             && !uninstallLifecycle.BundleOwnershipMatchesCurrentBuild)
         {
             Console.WriteLine(
-                "A newer OpenBlade payload owns this installation; "
+                "A different OpenBlade payload owns this installation; "
                 + "the superseded bundle uninstall was ignored.");
             return 0;
         }

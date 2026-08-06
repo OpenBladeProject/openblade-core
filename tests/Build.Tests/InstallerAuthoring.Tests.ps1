@@ -233,6 +233,8 @@ Assert-True ($bootstrapperSource.Contains('PlanRelatedBundleType += OnPlanRelate
     'A confirmed overwrite must convert Burn downgrade planning into replacement planning.'
 Assert-True ($bootstrapperSource.Contains('RequestState.ForcePresent')) `
     'A confirmed overwrite must execute the selected OpenBlade setup package.'
+Assert-True ($bootstrapperSource.Contains('ApplyDowngrade += OnApplyDowngrade')) `
+    'A confirmed overwrite must clear Burn''s Apply-stage downgrade veto.'
 Assert-True (-not $bootstrapperSource.Contains('new WindowInteropHelper(window)')) `
     'Burn callbacks must not read the WPF window handle from a worker thread.'
 $programSource = Get-Content -LiteralPath (

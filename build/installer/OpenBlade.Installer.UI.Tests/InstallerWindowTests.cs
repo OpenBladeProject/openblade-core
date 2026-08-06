@@ -75,6 +75,8 @@ public sealed class InstallerWindowTests
     [InlineData("1.2.3", "1.2.4", true)]
     [InlineData("1.2.3.4", "1.2.3.5", true)]
     [InlineData("1.2.3", "1.2.3", false)]
+    [InlineData("0.1.0", "0.1.0.0", false)]
+    [InlineData("0.1.0.0", "0.1.0", false)]
     [InlineData("2.0.0", "1.9.9", false)]
     [InlineData("invalid", "2.0.0", false)]
     public void NewerVersionDetectionUsesBurnComparableVersions(
@@ -137,6 +139,18 @@ public sealed class InstallerWindowTests
                 LaunchAction.Install,
                 "OpenBladeVcRuntime",
                 RequestState.Present));
+
+        const int productVersionError = unchecked((int)0x80070666);
+        Assert.Equal(
+            0,
+            OpenBladeBootstrapperApplication.SelectApplyDowngradeStatus(
+                allowOverwrite: true,
+                productVersionError));
+        Assert.Equal(
+            productVersionError,
+            OpenBladeBootstrapperApplication.SelectApplyDowngradeStatus(
+                allowOverwrite: false,
+                productVersionError));
     }
 
     [Fact]
