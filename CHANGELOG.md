@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.1.0-nightly.8] - 2026-08-06
+
 ### Changed
 
 - Generalized the developer firmware-smoke workflow for BIOS, EC, MCU, and
@@ -998,7 +1000,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.8...HEAD
+[0.1.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.8
 [0.1.0-nightly.6]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.5...v0.1.0-nightly.6
 [0.1.0-nightly.5]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...v0.1.0-nightly.5
 [0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
