@@ -2167,6 +2167,10 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
+        Assert.Equal(
+            [FanMode.Automatic],
+            viewModel.AvailableActiveFanModeOptions.Select(option => option.Value));
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.Equal("Save to battery profile", viewModel.SaveToActiveProfileLabel);
 
         client.Publish(pluggedIn with
@@ -2593,7 +2597,43 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ManualFanSelector_RequiresBalancedAutomaticBaseline()
+    public async Task StoredPerformanceIntent_RemainsPresentedDuringManualFans()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                "Performance intent will apply with Automatic fans."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status with
+        {
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            },
+            DesiredState = status.DesiredState with
+            {
+                Fans = new ResolvedSetting<FanMode>(
+                    FanMode.Fixed,
+                    SettingValueSource.TemporaryOverride),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.Fixed);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Silent);
+
+        Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
+        Assert.Equal(PerformancePreset.Silent, client.PerformanceOverride!.Value);
+        Assert.True(viewModel.HasThermalProfileDraft);
+    }
+
+    [Fact]
+    public async Task ManualFanSelector_RemainsAvailableAcrossAcPerformanceModes()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -2615,8 +2655,10 @@ public sealed class MainViewModelTests
         });
         await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Custom);
 
-        Assert.False(viewModel.CanEditFanControl);
-        Assert.True(viewModel.IsManualFanControlUnavailable);
+        Assert.True(viewModel.CanEditFanControl);
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
 
         client.Publish(baseline with
         {
@@ -2630,7 +2672,7 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Balanced);
 
         Assert.True(viewModel.CanEditFanControl);
-        Assert.False(viewModel.IsManualFanControlUnavailable);
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
     }
 
     [Fact]
@@ -5235,7 +5277,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ThermalCommands_BlockPerformanceDuringManualFansButAllowFanTargetChanges()
+    public async Task ThermalCommands_KeepPerformanceIntentAndFanTargetsEditableDuringManualFans()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -5251,9 +5293,9 @@ public sealed class MainViewModelTests
         client.Publish(status);
         await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.Maximum);
 
-        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
-        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
-        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
@@ -5360,7 +5402,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ThermalCommands_BlockPerformanceWhenMaximumIsEffectiveButNotConfirmed()
+    public async Task PerformanceIntent_RemainsEditableWhenMaximumIsEffectiveButNotConfirmed()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -5377,12 +5419,12 @@ public sealed class MainViewModelTests
         });
         await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.Maximum);
 
-        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
     }
 
     [Fact]
-    public async Task MaximumFans_RequireBalancedAutomaticEffectiveAndConfirmedState()
+    public async Task MaximumFans_RemainAvailableAcrossAcPerformanceIntents()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -5413,11 +5455,11 @@ public sealed class MainViewModelTests
         });
         await WaitUntilAsync(() => viewModel.ConnectionStatus == "Performance active");
 
-        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
     }
 
     [Fact]
-    public async Task MaximumFans_AreDisabledWhenConfirmedThermalStateIsUnavailable()
+    public async Task MaximumFans_RemainAvailableWhenCachedThermalStateIsUnavailable()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -5426,7 +5468,7 @@ public sealed class MainViewModelTests
         client.Publish(status with { ConfirmedState = null });
         await WaitUntilAsync(() => viewModel.CanControlHardware);
 
-        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
     }
 

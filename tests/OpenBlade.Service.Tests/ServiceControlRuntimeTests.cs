@@ -5425,6 +5425,123 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task AcManualFans_PreserveAndRestoreIndependentPerformanceIntent()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem != DeviceSubsystem.Fans)
+            {
+                return;
+            }
+
+            context.Device.ConfirmedState = context.Device.ConfirmedState.Fans
+                == FanMode.Automatic
+                    ? context.Device.ConfirmedState with
+                    {
+                        Performance = PerformancePreset.Balanced,
+                    }
+                    : context.Device.ConfirmedState with { Performance = null };
+        };
+        int performanceWritesBeforeManual = context.Device.PerformanceSetCalls;
+        int fanWritesBeforeManual = context.Device.FanSetCalls;
+
+        ControlOperationResult manual = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, manual.Status);
+        Assert.Equal(performanceWritesBeforeManual + 1, context.Device.PerformanceSetCalls);
+        Assert.Equal(fanWritesBeforeManual + 1, context.Device.FanSetCalls);
+        Assert.Equal(
+            [PerformancePreset.Balanced],
+            context.Device.PerformanceWrites.Skip(performanceWritesBeforeManual));
+        ServiceStatusSnapshot manualStatus = context.Runtime.GetStatus();
+        Assert.Equal(PerformancePreset.Performance, manualStatus.DesiredState.Performance.Value);
+        Assert.Equal(FanMode.Fixed, manualStatus.DesiredState.Fans.Value);
+        Assert.Null(manualStatus.ConfirmedState!.Performance);
+
+        int writesBeforeDeferredIntent = context.Device.TotalSetterCalls;
+        ControlOperationResult deferred = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, deferred.Status);
+        Assert.Equal(writesBeforeDeferredIntent, context.Device.TotalSetterCalls);
+        Assert.Equal(
+            PerformancePreset.Silent,
+            context.Runtime.GetStatus().DesiredState.Performance.Value);
+
+        int performanceWritesBeforeAutomatic = context.Device.PerformanceSetCalls;
+        int fanWritesBeforeAutomatic = context.Device.FanSetCalls;
+        ControlOperationResult automatic = await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Automatic,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, automatic.Status);
+        Assert.Equal(performanceWritesBeforeAutomatic + 1, context.Device.PerformanceSetCalls);
+        Assert.Equal(fanWritesBeforeAutomatic + 1, context.Device.FanSetCalls);
+        Assert.Equal(PerformancePreset.Silent, context.Device.PerformanceWrites[^1]);
+        Assert.Equal(FanMode.Automatic, context.Device.FanWrites[^1]);
+        ServiceStatusSnapshot restored = context.Runtime.GetStatus();
+        Assert.Equal(PerformancePreset.Silent, restored.ConfirmedState!.Performance);
+        Assert.Equal(FanMode.Automatic, restored.ConfirmedState.Fans);
+        Assert.DoesNotContain(DeviceSubsystem.Performance, restored.ExternalChanges);
+        Assert.DoesNotContain(DeviceSubsystem.Fans, restored.ExternalChanges);
+    }
+
+    [Fact]
+    public async Task PerformanceShortcut_WithAcManualFansStoresIntentWithoutHardwareWrite()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    Performance = null,
+                };
+            }
+        };
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        int writesBeforeShortcut = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await context.Runtime.CyclePerformanceShortcutAsync(
+            PerformanceShortcutSource.FunctionP,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(
+            "Fn+P selected Silent. It will be applied when fans return to Automatic.",
+            result.Message);
+        Assert.Equal(writesBeforeShortcut, context.Device.TotalSetterCalls);
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(
+            PerformancePreset.Silent,
+            status.PerformanceOverride!.Value);
+        Assert.Equal(FanMode.Maximum, status.ConfirmedState!.Fans);
+        Assert.Null(status.ConfirmedState.Performance);
+    }
+
+    [Fact]
     public async Task SwitchingPersistentOverrideToTemporary_RemovesDurableValue()
     {
         string overridePath = Path.Combine(directory, "replacement-overrides.json");
@@ -5497,7 +5614,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task InvalidThermalOverrideCombination_IsRejectedBeforePersistence()
+    public async Task IndependentAcThermalOverrides_PersistBeforeUnavailableHardwareResult()
     {
         string overridePath = Path.Combine(directory, "thermal-safety-overrides.json");
         TestContext context = CreateContext(
@@ -5514,14 +5631,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 OverrideLifetime.Persistent),
             CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Failed, result.Status);
-        Assert.Null(context.Runtime.GetStatus().PerformanceOverride);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            context.Runtime.GetStatus().PerformanceOverride!.Value);
         Assert.Equal(FanMode.Maximum, context.Runtime.GetStatus().FanOverride!.Value);
         TestContext restarted = CreateContext(
             providerAvailable: false,
             persistentOverridePath: overridePath,
             loadPersistentOverrides: true);
-        Assert.Null(restarted.Runtime.GetStatus().PerformanceOverride);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            restarted.Runtime.GetStatus().PerformanceOverride!.Value);
         Assert.Equal(FanMode.Maximum, restarted.Runtime.GetStatus().FanOverride!.Value);
     }
 
@@ -7011,7 +7132,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int PerformanceSetCalls { get; private set; }
 
+        public List<PerformancePreset> PerformanceWrites { get; } = [];
+
         public int FanSetCalls { get; private set; }
+
+        public List<FanMode> FanWrites { get; } = [];
 
         public int BatterySetCalls { get; private set; }
 
@@ -7212,6 +7337,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             TotalCalls++;
             PerformanceSetCalls++;
+            PerformanceWrites.Add(value);
             if (PerformanceFailure is not null)
             {
                 throw PerformanceFailure;
@@ -7233,6 +7359,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             TotalCalls++;
             PerformanceSetCalls++;
+            PerformanceWrites.Add(value);
             if (PerformanceFailure is not null)
             {
                 throw PerformanceFailure;
@@ -7264,6 +7391,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             TotalCalls++;
             FanSetCalls++;
+            FanWrites.Add(value);
             if (FanFailure is not null)
             {
                 throw FanFailure;
