@@ -370,6 +370,50 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task UseLightingProfileSettings_RestoresUnreadableExternalDifferenceWithoutDraft()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+            });
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.IsKeyboardEffectUnconfirmed);
+
+        Assert.False(viewModel.HasLightingProfileDifference);
+
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+            ExternalChanges = [DeviceSubsystem.Lighting],
+        });
+        await WaitUntilAsync(() =>
+            viewModel.LightingSourceLabel == "Changed outside OpenBlade");
+
+        Assert.False(viewModel.HasLightingProfileDraft);
+        Assert.True(viewModel.IsKeyboardEffectUnconfirmed);
+        Assert.True(viewModel.HasLightingProfileDifference);
+        Assert.True(viewModel.DiscardLightingProfileDraftCommand.CanExecute(null));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardLightingProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Contains("lighting:<clear>", client.MutationOperations);
+
+        client.Publish(baseline with { Revision = baseline.Revision + 2 });
+        await WaitUntilAsync(() =>
+            viewModel.LightingSourceLabel != "Changed outside OpenBlade");
+
+        Assert.False(viewModel.HasLightingProfileDifference);
+    }
+
+    [Fact]
     public async Task PowerSourceRefresh_DoesNotPublishTransientProfileDifference()
     {
         var client = new FakeServiceClient();
