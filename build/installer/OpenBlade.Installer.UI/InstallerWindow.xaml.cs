@@ -15,6 +15,7 @@ internal partial class InstallerWindow : Window
     private readonly bool allowInteraction;
     private readonly Queue<string> detailLines = new();
     private bool overwriteNewerVersion;
+    private bool readyInstalled;
     private string? logPath;
 
     internal InstallerWindow(
@@ -38,6 +39,7 @@ internal partial class InstallerWindow : Window
     {
         ShowOnly(ReadyPanel);
         overwriteNewerVersion = false;
+        readyInstalled = installed;
         HeaderSubtitle.Text = installed ? "Maintenance" : "Setup";
         ReadyHeading.Text = installed ? "OpenBlade is installed" : "Install OpenBlade";
         ReadyMessage.Text = installed
@@ -50,10 +52,14 @@ internal partial class InstallerWindow : Window
         PurgeProfilesCheckBox.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    public void ShowNewerVersionConfirmation(string installedVersion, string installerVersion)
+    public void ShowNewerVersionConfirmation(
+        string installedVersion,
+        string installerVersion,
+        bool returnToInstalledState)
     {
         ShowOnly(ReadyPanel);
         overwriteNewerVersion = true;
+        readyInstalled = returnToInstalledState;
         HeaderSubtitle.Text = "Newer version installed";
         ReadyHeading.Text = "Replace the newer OpenBlade version?";
         ReadyMessage.Text =
@@ -197,6 +203,18 @@ internal partial class InstallerWindow : Window
     {
         CancelConfirmationPanel.Visibility = Visibility.Collapsed;
         bootstrapper.RequestCancel();
+    }
+
+    private void ReadyCancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (overwriteNewerVersion)
+        {
+            ShowReady(readyInstalled);
+        }
+        else
+        {
+            Close();
+        }
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();

@@ -36,12 +36,22 @@ public sealed class InstallerWindowTests
             Assert.Equal(Visibility.Visible, window.UninstallButton.Visibility);
             Assert.Equal(Visibility.Visible, window.PurgeProfilesCheckBox.Visibility);
 
-            window.ShowNewerVersionConfirmation("2.0.0", "1.2.3");
+            window.ShowNewerVersionConfirmation(
+                "2.0.0",
+                "1.2.3",
+                returnToInstalledState: true);
             Assert.Equal("Overwrite", window.InstallButton.Content);
             Assert.Contains("2.0.0", window.ReadyMessage.Text);
             Assert.Contains("1.2.3", window.ReadyMessage.Text);
             Assert.Equal(Visibility.Collapsed, window.RepairButton.Visibility);
             Assert.Equal(Visibility.Collapsed, window.UninstallButton.Visibility);
+
+            window.ReadyCancelButton.RaiseEvent(
+                new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            Assert.Equal("Maintenance", window.HeaderSubtitle.Text);
+            Assert.Equal("Install", window.InstallButton.Content);
+            Assert.Equal(Visibility.Visible, window.RepairButton.Visibility);
+            Assert.Equal(Visibility.Visible, window.UninstallButton.Visibility);
 
             window.ShowProgress(LaunchAction.Install);
             window.SetProgress(42, "Copying OpenBlade.Tray.exe");
@@ -151,6 +161,12 @@ public sealed class InstallerWindowTests
             OpenBladeBootstrapperApplication.SelectApplyDowngradeStatus(
                 allowOverwrite: false,
                 productVersionError));
+        const int unexpectedFailure = unchecked((int)0x80004005);
+        Assert.Equal(
+            unexpectedFailure,
+            OpenBladeBootstrapperApplication.SelectApplyDowngradeStatus(
+                allowOverwrite: true,
+                unexpectedFailure));
     }
 
     [Fact]

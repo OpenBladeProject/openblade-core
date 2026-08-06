@@ -487,7 +487,10 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             ?? throw new InvalidOperationException("The newer OpenBlade version is unavailable.");
         if (command?.Display == Display.Full)
         {
-            Ui(() => window?.ShowNewerVersionConfirmation(installedVersion, bundleVersion));
+            Ui(() => window?.ShowNewerVersionConfirmation(
+                installedVersion,
+                bundleVersion,
+                installed));
         }
         else
         {
@@ -631,7 +634,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
                 : recommendedState;
 
     internal static int SelectApplyDowngradeStatus(bool allowOverwrite, int status) =>
-        allowOverwrite ? 0 : status;
+        allowOverwrite && status == NewerVersionInstalled ? 0 : status;
 
     private static int NormalizeExitCode(int status) =>
         (status & unchecked((int)0xFFFF0000)) == unchecked((int)0x80070000)

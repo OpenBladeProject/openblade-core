@@ -255,7 +255,8 @@
                     Visibility="Collapsed" />
             <Button x:Name="InstallButton" Content="Install" Click="InstallButton_Click"
                     Visibility="Collapsed" />
-            <Button Content="Cancel" Click="CloseButton_Click" />
+            <Button x:Name="ReadyCancelButton" Content="Cancel"
+                    Click="ReadyCancelButton_Click" />
           </StackPanel>
         </Grid>
 
