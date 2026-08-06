@@ -9,18 +9,45 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(1);
 
     [Fact]
-    public void Rz090581GpuOverclockPolicy_AdmitsOnlyBios400()
+    public void Rz090581GpuOverclockPolicy_RequiresExactIdentityButNotSpecificBios()
     {
+        HostIdentityReadResult bios301 = ExactRz090581Identity("3.01");
+        HostIdentityReadResult bios400 = ExactRz090581Identity("4.00");
+        HostIdentityReadResult futureBios = ExactRz090581Identity(
+            "99.99",
+            HostFirmwareCompatibility.UntestedAllowed);
+
         GpuOverclockCapabilities policy = Assert.IsType<GpuOverclockCapabilities>(
-            ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities("4.00"));
+            ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities(bios301));
 
         Assert.Equal(DeviceFeatureAccess.ReadWrite, policy.Access);
         Assert.Equal(new DeviceNumericRange(-1000, 400, null), policy.CoreOffsetMegahertz);
         Assert.Equal(new DeviceNumericRange(-1000, 3000, null), policy.MemoryOffsetMegahertz);
         Assert.True(policy.SupportsEnableDisable);
-        Assert.Null(ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities("3.01"));
-        Assert.Null(ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities(null));
+        Assert.Equal(
+            policy,
+            ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities(bios400));
+        Assert.Equal(
+            policy,
+            ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities(futureBios));
+        Assert.Null(ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities(
+            new HostIdentityReadResult(null, HidSessionFailureKind.IdentityBlocked)));
+        Assert.Null(ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities(
+            ExactRz090581Identity(
+                "99.99",
+                HostFirmwareCompatibility.UntestedBlocked)));
     }
+
+    private static HostIdentityReadResult ExactRz090581Identity(
+        string biosVersion,
+        HostFirmwareCompatibility compatibility = HostFirmwareCompatibility.Tested) => new(
+            new HostIdentityEvidence(
+                "Razer",
+                "Blade 16 - RZ09-0581",
+                "RZ09-05819EN4",
+                biosVersion),
+            null,
+            compatibility);
 
     [Fact]
     public async Task ProductionCompositionPassesThirtyMillisecondSettleToOpenedActorFactory()

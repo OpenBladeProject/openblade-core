@@ -4,7 +4,6 @@ namespace OpenBlade.Protocol;
 
 public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 {
-    private const string Rz090581GpuOverclockBiosVersion = "4.00";
     private static readonly TimeSpan DefaultExchangeTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan DefaultCleanupDrainTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BatteryFeatureReportSettleDelay =
@@ -245,8 +244,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             native,
             ControllerExclusivityPolicy.Advisory);
         GpuOverclockCapabilities? gpuOverclockCapabilities = admitGpuOverclock
-            ? GetRz090581GpuOverclockCapabilities(
-                hostIdentity.ReadExactIdentity().Evidence?.BiosVersion)
+            ? GetRz090581GpuOverclockCapabilities(hostIdentity.ReadExactIdentity())
             : null;
         return new ProductionBatteryFactory(
             catalog,
@@ -268,15 +266,19 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     }
 
     internal static GpuOverclockCapabilities? GetRz090581GpuOverclockCapabilities(
-        string? biosVersion) => string.Equals(
-            biosVersion,
-            Rz090581GpuOverclockBiosVersion,
-            StringComparison.Ordinal)
-            // These are the exact Synapse-visible policy-envelope bounds on
-            // RZ09-0581 BIOS 4.00. NVIDIA's independently queried driver range
-            // remains a second per-write gate; bounded reversible validation
-            // establishes the 5 MHz UI step inside this envelope, but not every
-            // endpoint.
+        HostIdentityReadResult exactIdentity) => exactIdentity is
+        {
+            Evidence: not null,
+            Failure: null,
+            FirmwareCompatibility: HostFirmwareCompatibility.Tested
+                or HostFirmwareCompatibility.UntestedAllowed,
+        }
+            // These are the Synapse-visible policy-envelope bounds observed on
+            // the exact RZ09-0581. GPU tuning is performed through NVIDIA's API,
+            // so admission is independent of BIOS version after exact-device
+            // identity succeeds. The independently queried driver range remains
+            // a second per-write gate; bounded reversible validation establishes
+            // the 5 MHz UI step inside this envelope, but not every endpoint.
             ? new GpuOverclockCapabilities(
                 new DeviceNumericRange(-1000, 400, null),
                 new DeviceNumericRange(-1000, 3000, null),

@@ -90,9 +90,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Added a separate GPU tuning switch and clock-offset controls for plugged-in
   profiles. Offsets now work with Balanced and other power modes, while
-  existing Custom-mode settings migrate automatically. Razer Blade 16
-  RZ09-0581 systems on BIOS 4.00 use the exact Synapse-visible policy ranges
-  validated against NVIDIA readback.
+  existing Custom-mode settings migrate automatically. Exact Razer Blade 16
+  RZ09-0581 systems use the Synapse-visible policy ranges regardless of BIOS
+  version, with NVIDIA capability and readback checks gating every write.
 - Added exact-source changelog snapshots to nightly prereleases. After each
   successful publication, the workflow reconstructs any unrecorded nightly
   boundaries and opens or updates a guarded draft documentation pull request
