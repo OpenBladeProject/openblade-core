@@ -2938,7 +2938,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Performance changes" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Show the confirmed result of the Fn+P performance shortcut."
+                                            <TextBlock Text="Confirmed Fn+P results."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch Grid.Column="1" MinWidth="0"
@@ -2954,7 +2954,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Power profile changes" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Show when AC, USB-C, or Battery becomes the active profile. Off by default."
+                                            <TextBlock Text="Active AC, USB-C, or Battery profile."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch Grid.Column="1" MinWidth="0"
@@ -2970,7 +2970,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="App updates" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Show once when a new OpenBlade release is available."
+                                            <TextBlock Text="New OpenBlade releases."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch Grid.Column="1" MinWidth="0"
@@ -2986,7 +2986,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Firmware updates" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Show once when Razer lists newer BIOS, EC, or MCU firmware."
+                                            <TextBlock Text="New Razer BIOS, EC, or MCU firmware."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch Grid.Column="1" MinWidth="0"
@@ -3002,7 +3002,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Controller advisories" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Show when another Razer controller is newly detected. The advisory remains in OpenBlade when this is off."
+                                            <TextBlock Text="New Razer controllers. Advisories stay visible."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch Grid.Column="1" MinWidth="0"
@@ -3018,7 +3018,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Operation failures" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Show failed control operations. Recent errors and diagnostics remain available when this is off."
+                                            <TextBlock Text="Failed control operations. Details stay visible."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch Grid.Column="1" MinWidth="0"
