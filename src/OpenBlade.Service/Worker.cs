@@ -8,6 +8,7 @@ public sealed class Worker(
     IStatusSubscriptionHub subscriptionHub,
     MachineProfileBootstrapper profileBootstrapper,
     PersistentOverrideStore overrideStore,
+    ServiceRunMarkerStore runMarkerStore,
     IPowerStateProvider powerStateProvider,
     IServiceLifecycleEventSource lifecycleEventSource,
     LowPowerGate lowPowerGate,
@@ -22,6 +23,7 @@ public sealed class Worker(
         var startupCoordinator = new ServiceStartupCoordinator(
             profileBootstrapper,
             overrideStore,
+            runMarkerStore,
             runtime,
             powerStateProvider,
             logger);
@@ -30,13 +32,15 @@ public sealed class Worker(
                 startupCoordinator.InitializeAsync,
                 RunBackgroundAsync,
                 token),
-            PrepareForShutdownAsync,
+            (intentionalStop, token) => PrepareForShutdownAsync(
+                intentionalStop,
+                token),
             stoppingToken);
     }
 
     internal static async Task RunWithShutdownCleanupAsync(
         Func<CancellationToken, Task> runAsync,
-        Func<CancellationToken, Task> cleanupAsync,
+        Func<bool, CancellationToken, Task> cleanupAsync,
         CancellationToken stoppingToken)
     {
         try
@@ -47,7 +51,9 @@ public sealed class Worker(
         {
             using var cleanupTimeout = new CancellationTokenSource(
                 ShutdownCleanupTimeout);
-            await cleanupAsync(cleanupTimeout.Token).ConfigureAwait(false);
+            await cleanupAsync(
+                stoppingToken.IsCancellationRequested,
+                cleanupTimeout.Token).ConfigureAwait(false);
         }
     }
 
@@ -89,14 +95,25 @@ public sealed class Worker(
         await ServiceBackgroundTaskGroup.RunAsync(operations, stoppingToken);
     }
 
-    private async Task PrepareForShutdownAsync(CancellationToken cancellationToken)
+    private async Task PrepareForShutdownAsync(
+        bool intentionalStop,
+        CancellationToken cancellationToken)
     {
+        if (!intentionalStop)
+        {
+            logger.LogWarning(
+                "The service stopped unexpectedly; graceful hardware cleanup was skipped and the run marker was retained for bounded recovery on the next SCM start.");
+            return;
+        }
+
+        bool cleanupCompleted = false;
         try
         {
             ControlOperationResult result = await runtime
                 .PrepareForShutdownAsync(cancellationToken)
                 .ConfigureAwait(false);
             LogShutdownCleanupResult(logger, result);
+            cleanupCompleted = ShouldClearRunMarker(result);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -109,7 +126,34 @@ public sealed class Worker(
                 exception,
                 "Hardware cleanup failed during service stop.");
         }
+
+        if (!cleanupCompleted)
+        {
+            logger.LogWarning(
+                "The service run marker was retained because intentional-stop hardware cleanup was not confirmed; the next start will use the safer recovery path.");
+            return;
+        }
+
+        try
+        {
+            await runMarkerStore.CompleteRunAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "The service run marker was retained because intentional-stop cleanup timed out.");
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "The service run marker could not be cleared after an intentional stop; the next start will use the safer recovery path.");
+        }
     }
+
+    internal static bool ShouldClearRunMarker(ControlOperationResult result) =>
+        result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored;
 
     internal static void LogShutdownCleanupResult(
         ILogger logger,

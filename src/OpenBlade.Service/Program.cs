@@ -14,6 +14,8 @@ builder.Services.AddSingleton(provider => new BatteryConfigurationStore(
     provider.GetRequiredService<ProfileSetValidator>()));
 builder.Services.AddSingleton(new PersistentOverrideStore(
     Path.Combine(machineDataDirectory, "manual-overrides.json")));
+builder.Services.AddSingleton(new ServiceRunMarkerStore(
+    Path.Combine(machineDataDirectory, "service-running.json")));
 builder.Services.AddSingleton<IUserConfigurationRepository>(provider =>
     new UserConfigurationRepository(
         machineDataDirectory,

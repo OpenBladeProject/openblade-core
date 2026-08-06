@@ -36,6 +36,38 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task InitializeAsync_UnclearedRunMarkerUsesOwnedRecoverySequence()
+    {
+        string path = Path.Combine(directory, "profiles.json");
+        var runMarker = new ServiceRunMarkerStore(
+            Path.Combine(directory, "service-running.json"));
+        Assert.Equal(
+            ServiceStartupKind.Normal,
+            await runMarker.BeginRunAsync(CancellationToken.None));
+        var runtime = new RecordingRuntime(path);
+        var coordinator = CreateCoordinator(
+            path,
+            runtime,
+            new RecordingLogger(),
+            runMarker);
+
+        Assert.True(await coordinator.InitializeAsync(CancellationToken.None));
+
+        Assert.True(runtime.RecoveringUnexpectedExit);
+        Assert.Equal(
+            [
+                "Initialize",
+                "Observe",
+                "MaintainDriverMode",
+                "ReconcileUnexpectedExit",
+                "PrepareManualFanCurveRecovery",
+                "MaintainFanCurve",
+                "RestoreLighting",
+            ],
+            runtime.Calls);
+    }
+
+    [Fact]
     public async Task InitializeAsync_ObservationFailureLogsErrorAndAllowsIpcStartup()
     {
         string path = Path.Combine(directory, "profiles.json");
@@ -120,7 +152,8 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
     private static ServiceStartupCoordinator CreateCoordinator(
         string path,
         IServiceControlRuntime runtime,
-        ILogger logger)
+        ILogger logger,
+        ServiceRunMarkerStore? runMarkerStore = null)
     {
         string directory = Path.GetDirectoryName(path)!;
         var store = new BatteryConfigurationStore(
@@ -130,6 +163,8 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         return new ServiceStartupCoordinator(
             new MachineProfileBootstrapper(store),
             new PersistentOverrideStore(Path.Combine(directory, "manual-overrides.json")),
+            runMarkerStore ?? new ServiceRunMarkerStore(
+                Path.Combine(directory, "service-running.json")),
             runtime,
             new FixedPowerStateProvider(),
             logger);
@@ -144,6 +179,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         public bool ProfileFileExistedDuringInitialize { get; private set; }
         public PowerSource? InitialPowerSource { get; private set; }
         public PersistentOverrideState? PersistentOverrides { get; private set; }
+        public bool RecoveringUnexpectedExit { get; private set; }
 
         public void Initialize(BatteryConfiguration configuration, PowerSource powerSource)
         {
@@ -160,6 +196,16 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         {
             PersistentOverrides = persistentOverrides;
             Initialize(configuration, powerSource);
+        }
+
+        public void Initialize(
+            BatteryConfiguration configuration,
+            PowerSource powerSource,
+            PersistentOverrideState persistentOverrides,
+            bool recoveringUnexpectedExit)
+        {
+            RecoveringUnexpectedExit = recoveringUnexpectedExit;
+            Initialize(configuration, powerSource, persistentOverrides);
         }
 
         public Task ObserveAsync(bool includeLiveReadings, CancellationToken cancellationToken)
@@ -186,6 +232,25 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         public Task ReconcileStartupProfileAsync(CancellationToken cancellationToken)
         {
             Calls.Add("ReconcileStartupProfile");
+            return Task.CompletedTask;
+        }
+
+        public Task ReconcileUnexpectedExitAsync(CancellationToken cancellationToken)
+        {
+            Calls.Add("ReconcileUnexpectedExit");
+            return Task.CompletedTask;
+        }
+
+        public Task MaintainFanCurveAsync(CancellationToken cancellationToken)
+        {
+            Calls.Add("MaintainFanCurve");
+            return Task.CompletedTask;
+        }
+
+        public Task PrepareManualFanCurveRecoveryAsync(
+            CancellationToken cancellationToken)
+        {
+            Calls.Add("PrepareManualFanCurveRecovery");
             return Task.CompletedTask;
         }
 

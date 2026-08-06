@@ -16,6 +16,13 @@ public interface IServiceControlRuntime
         PersistentOverrideState persistentOverrides) =>
         Initialize(configuration, powerSource);
 
+    void Initialize(
+        BatteryConfiguration configuration,
+        PowerSource powerSource,
+        PersistentOverrideState persistentOverrides,
+        bool recoveringUnexpectedExit) =>
+        Initialize(configuration, powerSource, persistentOverrides);
+
     ServiceStatusSnapshot GetStatus();
 
     Task ActivateUserAsync(
@@ -174,6 +181,12 @@ public interface IServiceControlRuntime
     Task ReconcileStartupProfileAsync(CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
+    Task ReconcileUnexpectedExitAsync(CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    Task PrepareManualFanCurveRecoveryAsync(CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
     Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken);
 
     Task RefreshPowerSourceClassificationAsync(CancellationToken cancellationToken) =>
@@ -285,6 +298,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool batteryHealthVerificationRetryPending;
     private bool startupProfileReconciliationPending;
     private bool startupProfileReconciliationRequested;
+    private bool unexpectedExitRecoveryPending;
+    private bool manualFanCurveRecoveryPending;
     private string? activeUserSid;
     private ResumeStateBaseline? pendingResumeStateBaseline;
 
@@ -489,6 +504,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         BatteryConfiguration configuration,
         PowerSource powerSource,
         PersistentOverrideState persistentOverrides)
+        => Initialize(
+            configuration,
+            powerSource,
+            persistentOverrides,
+            recoveringUnexpectedExit: false);
+
+    public void Initialize(
+        BatteryConfiguration configuration,
+        PowerSource powerSource,
+        PersistentOverrideState persistentOverrides,
+        bool recoveringUnexpectedExit)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ProfileSet profiles = ProfileStore.NormalizeLegacyBatteryProfile(
@@ -523,10 +549,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             this.persistentOverrides = persistentOverrides;
             startupProfileReconciliationPending = true;
             startupProfileReconciliationRequested = false;
-            pendingLightingRestore = initializedAutomation
-                .Resolve(UnknownConfirmedState)
-                .Lighting
-                .Value;
+            unexpectedExitRecoveryPending = recoveringUnexpectedExit;
+            manualFanCurveRecoveryPending = recoveringUnexpectedExit;
+            pendingLightingRestore = recoveringUnexpectedExit
+                ? configuration.Preferences.LastKnownLighting
+                : initializedAutomation
+                    .Resolve(UnknownConfirmedState)
+                    .Lighting
+                    .Value;
             Volatile.Write(ref status, CreateInitialSnapshot(powerSource));
         }
     }
@@ -955,7 +985,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await fanTemperatureSource.ReadAsync(cancellationToken);
         FanTargetSpeeds targets = FanCurveCalculator.Calculate(
             settings.ManualCurve,
-            temperatures);
+            temperatures,
+            snapshot.Capabilities?.FanSpeedRange?.MaximumRpm
+                ?? FanControlSettings.MaximumSpeedRpm);
         if (lastCurveFan1Rpm == targets.Fan1Rpm
             && lastCurveFan2Rpm == targets.Fan2Rpm)
         {
@@ -2509,6 +2541,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             if (startupProfileReconciliationPending
                 && startupProfileReconciliationRequested
+                && !unexpectedExitRecoveryPending
                 && powerSource != PowerSource.ExternalUnknown)
             {
                 await ReconcileStartupProfileCoreAsync(
@@ -2575,6 +2608,109 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await ReconcileStartupProfileCoreAsync(
                 powerSource,
                 cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task ReconcileUnexpectedExitAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!unexpectedExitRecoveryPending)
+            {
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            RefreshControllerPresenceCore(cancellationToken);
+            startupProfileReconciliationRequested = true;
+            if (GetStatus() is { DeviceVerified: true, WritesBlocked: false })
+            {
+                CompleteUnexpectedExitRecoveryCore();
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task PrepareManualFanCurveRecoveryAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!manualFanCurveRecoveryPending)
+            {
+                return;
+            }
+
+            // Consume the recovery attempt before any write. A persistent
+            // device or protocol failure must not become a new retry loop.
+            manualFanCurveRecoveryPending = false;
+            ServiceStatusSnapshot current = GetStatus();
+            FanControlSettings settings = current.DesiredState.FanControl
+                ?? FanControlSettings.FromLegacy(current.DesiredState.Fans.Value);
+            if (settings.Mode != FanMode.ManualCurve)
+            {
+                return;
+            }
+
+            if (!current.DeviceVerified
+                || current.WritesBlocked
+                || current.ExternalChanges.Contains(DeviceSubsystem.Fans)
+                || !DeviceSubsystemOrder.IsManualFanMode(
+                    current.ConfirmedState?.Fans ?? FanMode.Automatic))
+            {
+                if (!current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+                {
+                    const string message =
+                        "Manual fan-curve crash recovery could not confirm existing fan ownership; automatic recovery is blocked.";
+                    initialAutomaticComparisons.Add(DeviceSubsystem.Fans);
+                    driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
+                    history.RecordSummary(ControlOperationStatus.Blocked, message);
+                    PublishIfChanged(current with
+                    {
+                        ExternalChanges = driftTracker.ExternalChanges,
+                        Message = message,
+                    });
+                }
+
+                return;
+            }
+
+            RefreshControllerPresenceCore(cancellationToken);
+            ControlOperationResult result = await ApplyScopedIntentAsync(
+                DeviceSubsystem.Fans,
+                current.ActivePowerSource,
+                (coordinator, _, token) =>
+                    coordinator.ApplyFanControlOutcomeAsync(settings, token),
+                cancellationToken).ConfigureAwait(false);
+            if (result.Status == ControlOperationStatus.Applied)
+            {
+                const string message =
+                    "Manual fan-curve crash recovery entered maximum speed before resuming host temperature calculations.";
+                history.RecordSummary(ControlOperationStatus.Applied, message);
+                PublishIfChanged(GetStatus() with { Message = message });
+            }
+            else
+            {
+                initialAutomaticComparisons.Add(DeviceSubsystem.Fans);
+                driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
+                PublishIfChanged(GetStatus() with
+                {
+                    ExternalChanges = driftTracker.ExternalChanges,
+                    Message = result.Message,
+                });
+            }
         }
         finally
         {
@@ -4621,7 +4757,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 includeLiveReadings,
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            if (startupProfileReconciliationPending)
+            if (startupProfileReconciliationPending
+                && !unexpectedExitRecoveryPending)
             {
                 // A first sample has no preceding OpenBlade observation, so it
                 // cannot prove an external change. Establish a baseline; the
@@ -4644,6 +4781,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 batteryPowerFlowMilliwatts,
                 observation,
                 batteryHealth);
+
+            if (unexpectedExitRecoveryPending
+                && startupProfileReconciliationRequested
+                && powerSourceConfirmed)
+            {
+                CompleteUnexpectedExitRecoveryCore();
+            }
 
             if (powerSourceConfirmed)
             {
@@ -5229,6 +5373,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    private void CompleteUnexpectedExitRecoveryCore()
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (!unexpectedExitRecoveryPending
+            || !current.DeviceVerified
+            || current.WritesBlocked)
+        {
+            return;
+        }
+
+        startupProfileReconciliationPending = false;
+        unexpectedExitRecoveryPending = false;
+        string result = current.ExternalChanges.Count == 0
+            ? "No external control changes were observed. Owned long-running behavior is eligible for bounded recovery."
+            : $"External control changes remain latched for {string.Join(", ", current.ExternalChanges)}; ordinary profile writes were skipped.";
+        const string prefix =
+            "Unexpected service-exit recovery observed fresh exact-device state before any recovery write.";
+        history.RecordSummary(ControlOperationStatus.Stored, $"{prefix} {result}");
+        PublishIfChanged(current with { Message = $"{prefix} {result}" });
+    }
+
     private async Task ReconcileStartupProfileCoreAsync(
         PowerSource powerSource,
         CancellationToken cancellationToken)
@@ -5406,10 +5571,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         CompareInitialAutomaticPerformance(confirmed, desired);
-        CompareInitialAutomaticValue(
-            DeviceSubsystem.Fans,
-            confirmed.Fans,
-            desired.Fans.Value);
+        CompareInitialAutomaticFans(confirmed.Fans, desired.Fans.Value);
         CompareInitialAutomaticValue(
             DeviceSubsystem.Lighting,
             confirmed.Lighting,
@@ -5497,6 +5659,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         driftTracker.ConfirmIntentional(
             DeviceSubsystem.Performance,
             PerformanceMatchesDesired(confirmed, desired));
+    }
+
+    private void CompareInitialAutomaticFans(
+        FanMode? confirmed,
+        FanMode desired)
+    {
+        if (confirmed is null
+            || !initialAutomaticComparisons.Add(DeviceSubsystem.Fans))
+        {
+            return;
+        }
+
+        bool matches = confirmed == desired
+            || DeviceSubsystemOrder.IsManualFanMode(confirmed.Value)
+                && DeviceSubsystemOrder.IsManualFanMode(desired);
+        driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matches);
     }
 
     private void CompareTransitionAutomaticPerformance(

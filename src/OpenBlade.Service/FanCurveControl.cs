@@ -17,14 +17,19 @@ public static class FanCurveCalculator
 {
     public static FanTargetSpeeds Calculate(
         ManualFanCurve curve,
-        FanTemperatureReadings temperatures)
+        FanTemperatureReadings temperatures,
+        int maximumRpm = FanControlSettings.MaximumSpeedRpm)
     {
         ArgumentNullException.ThrowIfNull(curve);
+        if (maximumRpm <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumRpm));
+        }
         if (temperatures.CpuCelsius is not int cpu)
         {
             return new FanTargetSpeeds(
-                FanControlSettings.MaximumSpeedRpm,
-                FanControlSettings.MaximumSpeedRpm,
+                maximumRpm,
+                maximumRpm,
                 FailSafe: true);
         }
 
@@ -43,8 +48,8 @@ public static class FanCurveCalculator
         else
         {
             return new FanTargetSpeeds(
-                FanControlSettings.MaximumSpeedRpm,
-                FanControlSettings.MaximumSpeedRpm,
+                maximumRpm,
+                maximumRpm,
                 FailSafe: true);
         }
 
@@ -53,8 +58,8 @@ public static class FanCurveCalculator
         if (cpu >= 95 || gpu >= 87)
         {
             return new FanTargetSpeeds(
-                FanControlSettings.MaximumSpeedRpm,
-                FanControlSettings.MaximumSpeedRpm,
+                maximumRpm,
+                maximumRpm,
                 FailSafe: true);
         }
 

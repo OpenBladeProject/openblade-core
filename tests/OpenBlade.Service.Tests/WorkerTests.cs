@@ -38,8 +38,9 @@ public sealed class WorkerTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             Worker.RunWithShutdownCleanupAsync(
                 token => Task.FromCanceled(token),
-                token =>
+                (intentionalStop, token) =>
                 {
+                    Assert.True(intentionalStop);
                     Assert.False(token.IsCancellationRequested);
                     cleanupRan = true;
                     return Task.CompletedTask;
@@ -47,6 +48,24 @@ public sealed class WorkerTests
                 stopping.Token));
 
         Assert.True(cleanupRan);
+    }
+
+    [Fact]
+    public async Task UnexpectedBackgroundFailure_IsReportedToCleanup()
+    {
+        bool? intentionalStop = null;
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            Worker.RunWithShutdownCleanupAsync(
+                _ => Task.FromException(new IOException("background failed")),
+                (intentional, _) =>
+                {
+                    intentionalStop = intentional;
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None));
+
+        Assert.Equal(false, intentionalStop);
     }
 
     [Fact]
@@ -88,6 +107,20 @@ public sealed class WorkerTests
             logger.Entries,
             entry => entry.Level == LogLevel.Warning);
         Assert.Contains(reason, warning.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ControlOperationStatus.Applied, true)]
+    [InlineData(ControlOperationStatus.Stored, true)]
+    [InlineData(ControlOperationStatus.Blocked, false)]
+    [InlineData(ControlOperationStatus.Failed, false)]
+    public void RunMarker_IsClearedOnlyAfterConfirmedOrDeliberatelySkippedCleanup(
+        ControlOperationStatus status,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            Worker.ShouldClearRunMarker(new ControlOperationResult(status, "result")));
     }
 
     private sealed class RecordingLogger : ILogger
