@@ -106,6 +106,17 @@ public sealed class ControlCoordinator
         CancellationToken cancellationToken)
     {
         NormalizeLegacyGpuClockTuning(ref customPerformance, ref gpuClockTuning);
+        GpuClockTuningSettings? effectiveGpuClockTuning = gpuClockTuning;
+        bool PerformanceSupported(DeviceCapabilities capabilities)
+        {
+            effectiveGpuClockTuning = FilterUnsupportedGpuClockTuning(
+                gpuClockTuning,
+                capabilities);
+            return capabilities.PerformancePresets.Contains(value)
+                && (value != PerformancePreset.Custom
+                    || capabilities.CustomPerformance?.Supports(customPerformance) != false);
+        }
+
         return ApplyScopedAsync(
             DeviceSubsystem.Performance,
             "Performance",
@@ -115,29 +126,34 @@ public sealed class ControlCoordinator
                     : customPerformance is null)
                 && (gpuClockTuning is null
                     || GpuClockTuningSettings.IsWellFormed(gpuClockTuning)),
-            capabilities => capabilities.PerformancePresets.Contains(value)
-                && (value != PerformancePreset.Custom
-                    || capabilities.CustomPerformance?.Supports(customPerformance) != false)
-                && GpuClockTuningSupported(capabilities, gpuClockTuning),
-            state => PerformanceMatches(state, value, customPerformance, gpuClockTuning),
+            PerformanceSupported,
+            state => PerformanceMatches(
+                state,
+                value,
+                customPerformance,
+                effectiveGpuClockTuning),
             token => ApplyPerformanceAndGpuClockTuningAsync(
                 value,
                 customPerformance,
-                gpuClockTuning,
+                effectiveGpuClockTuning,
                 token),
             cancellationToken,
             state => DeviceSubsystemOrder.IsManualFanMode(state.Fans)
                 ? "Performance changes require Automatic fan mode."
                 : null,
             stateAwareSetter: (state, token) =>
-                CanApplyGpuClockOffsetsOnly(state, value, customPerformance, gpuClockTuning)
+                CanApplyGpuClockOffsetsOnly(
+                    state,
+                    value,
+                    customPerformance,
+                    effectiveGpuClockTuning)
                     ? device.SetGpuClockOffsetsAsync(
-                        gpuClockTuning!.EffectiveOffsets,
+                        effectiveGpuClockTuning!.EffectiveOffsets,
                         token)
                     : ApplyPerformanceAndGpuClockTuningAsync(
                         value,
                         customPerformance,
-                        gpuClockTuning,
+                        effectiveGpuClockTuning,
                         token));
     }
 
@@ -1329,16 +1345,31 @@ public sealed class ControlCoordinator
         DesiredDeviceState desired,
         DeviceCapabilities capabilities)
     {
-        if (desired.GpuClockTuning is null
-            || capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite })
+        GpuClockTuningSettings? gpuClockTuning = FilterUnsupportedGpuClockTuning(
+            desired.GpuClockTuning,
+            capabilities);
+        if (ReferenceEquals(gpuClockTuning, desired.GpuClockTuning))
         {
             return desired;
+        }
+
+        return desired with { GpuClockTuning = gpuClockTuning };
+    }
+
+    private static GpuClockTuningSettings? FilterUnsupportedGpuClockTuning(
+        GpuClockTuningSettings? gpuClockTuning,
+        DeviceCapabilities capabilities)
+    {
+        if (gpuClockTuning is null
+            || capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite })
+        {
+            return gpuClockTuning;
         }
 
         // Legacy profiles may retain GPU offsets on firmware where the model
         // policy is unavailable. Ignore only that optional component so power
         // mode and fan reconciliation can continue safely.
-        return desired with { GpuClockTuning = null };
+        return null;
     }
 
     private static void NormalizeLegacyGpuClockTuning(

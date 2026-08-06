@@ -479,6 +479,31 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task ScopedPerformance_UnsupportedGpuTuningDropsOnlyGpuComponent()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Balanced,
+            customPerformance: null,
+            new GpuClockTuningSettings(
+                Enabled: true,
+                new GpuClockOffsetSettings(5, 10)),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.True(outcome.ReadbackMatched);
+        Assert.Equal(1, device.PerformanceSetCalls);
+        Assert.Equal(0, device.GpuClockSetCalls);
+        Assert.Equal(PerformancePreset.Balanced, device.State.Performance);
+        Assert.Equal(
+            ["Capabilities", "State", "SetPerformance", "State"],
+            device.Calls);
+    }
+
+    [Fact]
     public async Task FullReconcile_BalancedClockOnlyChangeSkipsFirmwareWrite()
     {
         var requestedOffsets = new GpuClockOffsetSettings(5, 0);
