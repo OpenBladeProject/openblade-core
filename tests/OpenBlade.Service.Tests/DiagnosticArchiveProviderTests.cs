@@ -16,6 +16,8 @@ public sealed class DiagnosticArchiveProviderTests
             ControllerDetectionWarning = $"Enumeration warning: {secret}",
             AlwaysOverrideExternalLightingChanges = true,
             AllowUntestedFirmware = true,
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.MultimediaKeys,
+            KeyboardDriverModeActive = true,
             Capabilities = DeviceCapabilities.Unavailable() with
             {
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
@@ -95,6 +97,12 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             "Fans",
             configuration.RootElement.GetProperty("status.externalChanges").GetString());
+        Assert.Equal(
+            FunctionKeyPrimaryMode.MultimediaKeys.ToString(),
+            configuration.RootElement.GetProperty("laptop.functionKeyPrimary").GetString());
+        Assert.Equal(
+            bool.TrueString,
+            configuration.RootElement.GetProperty("laptop.keyboardDriverModeActive").GetString());
         Assert.Equal(
             PerformancePreset.Balanced.ToString(),
             configuration.RootElement.GetProperty("profile.usbC.performance").GetString());

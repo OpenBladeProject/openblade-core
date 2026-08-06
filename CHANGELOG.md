@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Made function-row brightness failures identify the logical key action and
+  sanitized lighting-session failure, and added the active function-key and
+  keyboard Driver-mode state to diagnostic archives.
 - Kept newly applied Power mode and Custom CPU/GPU selections from briefly
   reverting after the progress spinner finishes while confirmed status catches
   up.

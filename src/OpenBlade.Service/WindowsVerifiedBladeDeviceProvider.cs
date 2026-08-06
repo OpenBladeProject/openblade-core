@@ -1585,13 +1585,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
             try
             {
-                port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
-                if (port is null
-                    || !port.Capabilities.SupportsKeyboardBrightness)
+                port = await GetLightingPortForWriteCoreAsync(
+                    "keyboard brightness change",
+                    cancellationToken).ConfigureAwait(false);
+                if (!port.Capabilities.SupportsKeyboardBrightness)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
-                        "The lighting writer could not open an exact-device session.");
+                        "The exact-device lighting session does not support keyboard brightness.");
                 }
 
                 return await port.StepBrightnessAsync(direction, cancellationToken)
@@ -1904,7 +1905,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         }
 
         private async Task<IProductionLightingPort?> GetLightingPortCoreAsync(
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Action<LightingPortOpenFailure>? reportOpenFailure = null)
         {
             if (lightingPort is not null)
             {
@@ -1921,8 +1923,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             {
                 throw;
             }
-            catch
+            catch (Exception exception)
             {
+                logger?.LogWarning(
+                    "The production lighting port threw {ExceptionType} while opening.",
+                    exception.GetType().Name);
+                reportOpenFailure?.Invoke(new(
+                    HidSessionFailureKind.NativeIoFailure,
+                    Diagnostic: null));
                 return null;
             }
 
@@ -1934,6 +1942,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     await port.DisposeAsync().ConfigureAwait(false);
                 }
 
+                reportOpenFailure?.Invoke(new(
+                    opened.Failure ?? HidSessionFailureKind.NativeIoFailure,
+                    opened.Diagnostic));
                 return null;
             }
 
@@ -1956,6 +1967,46 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             lightingPort = port;
             return port;
         }
+
+        private async Task<IProductionLightingPort> GetLightingPortForWriteCoreAsync(
+            string operation,
+            CancellationToken cancellationToken)
+        {
+            LightingPortOpenFailure? openFailure = null;
+            IProductionLightingPort? port = await GetLightingPortCoreAsync(
+                cancellationToken,
+                failure => openFailure = failure).ConfigureAwait(false);
+            if (port is not null)
+            {
+                return port;
+            }
+
+            throw new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                FormatLightingPortOpenFailure(operation, openFailure));
+        }
+
+        private static string FormatLightingPortOpenFailure(
+            string operation,
+            LightingPortOpenFailure? failure)
+        {
+            if (failure is not { } available)
+            {
+                return $"The {operation} could not open an exact-device lighting session.";
+            }
+
+            HidSessionFailureDiagnostic? diagnostic = available.Diagnostic;
+            return $"The {operation} could not open an exact-device lighting session "
+                + $"(failure={available.Failure}, "
+                + $"phase={diagnostic?.Phase.ToString() ?? "None"}, "
+                + $"nativeError={diagnostic?.NativeWin32Error?.ToString() ?? "None"}, "
+                + $"bytes={diagnostic?.TransferredByteCount?.ToString() ?? "None"}, "
+                + $"validation={diagnostic?.ProtocolValidationFailure?.ToString() ?? "None"}).";
+        }
+
+        private readonly record struct LightingPortOpenFailure(
+            HidSessionFailureKind Failure,
+            HidSessionFailureDiagnostic? Diagnostic);
 
         private async Task<LightingSettings?> ReadLightingStateCoreAsync(
             CancellationToken cancellationToken)

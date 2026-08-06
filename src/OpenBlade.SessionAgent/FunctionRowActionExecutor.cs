@@ -43,6 +43,31 @@ public sealed class FunctionRowActionExecutor
         FunctionRowAction action,
         CancellationToken cancellationToken)
     {
+        if (!Enum.IsDefined(action))
+        {
+            throw new ArgumentOutOfRangeException(nameof(action));
+        }
+
+        try
+        {
+            await ExecuteCoreAsync(action, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException(
+                $"Function-row action {action} failed: {exception.Message}",
+                exception);
+        }
+    }
+
+    private async Task ExecuteCoreAsync(
+        FunctionRowAction action,
+        CancellationToken cancellationToken)
+    {
         switch (action)
         {
             case FunctionRowAction.VolumeMute:
@@ -90,7 +115,7 @@ public sealed class FunctionRowActionExecutor
                 input.SendKeyboardShortcut("PrintScreen");
                 return;
             default:
-                throw new ArgumentOutOfRangeException(nameof(action));
+                throw new InvalidOperationException("The function-row action was not recognized.");
         }
     }
 

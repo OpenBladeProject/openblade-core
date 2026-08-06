@@ -346,6 +346,41 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task KeyboardBrightness_OpenFailureReportsSanitizedTransportDiagnostic()
+    {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.SetSubmit,
+            HidSessionFailureKind.NativeIoFailure,
+            NativeWin32Error: 5,
+            TransferredByteCount: 0);
+        var failedOpen = new HidSessionResult<IProductionLightingPort>(
+            null,
+            HidSessionFailureKind.NativeIoFailure)
+        {
+            Diagnostic = diagnostic,
+        };
+        var lightingFactory = new FakeLightingFactory(failedOpen);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Increase,
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(
+            "The keyboard brightness change could not open an exact-device lighting session "
+            + "(failure=NativeIoFailure, phase=SetSubmit, nativeError=5, bytes=0, validation=None).",
+            error.Message);
+        Assert.Equal(1, lightingFactory.OpenCount);
+    }
+
+    [Fact]
     public async Task DisposeWhileProbeIsBlocked_PreventsStaleDevicePublication()
     {
         var probeStarted = new TaskCompletionSource(
@@ -1462,10 +1497,22 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         }
     }
 
-    private sealed class FakeLightingFactory(params FakeLightingPort[] ports)
-        : IProductionLightingPortFactory
+    private sealed class FakeLightingFactory : IProductionLightingPortFactory
     {
+        private readonly HidSessionResult<IProductionLightingPort>[] results;
         private int nextPort;
+
+        public FakeLightingFactory(params FakeLightingPort[] ports)
+        {
+            results = ports
+                .Select(port => new HidSessionResult<IProductionLightingPort>(port, null))
+                .ToArray();
+        }
+
+        public FakeLightingFactory(params HidSessionResult<IProductionLightingPort>[] results)
+        {
+            this.results = results;
+        }
 
         public DeviceCapabilities Capabilities { get; } = new(
             new HashSet<PerformancePreset>(),
@@ -1492,10 +1539,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             CancellationToken cancellationToken)
         {
             OpenCount++;
-            FakeLightingPort port = ports[Math.Min(nextPort, ports.Length - 1)];
+            HidSessionResult<IProductionLightingPort> result =
+                results[Math.Min(nextPort, results.Length - 1)];
             nextPort++;
-            return Task.FromResult(
-                new HidSessionResult<IProductionLightingPort>(port, null));
+            return Task.FromResult(result);
         }
     }
 
