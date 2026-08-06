@@ -288,6 +288,7 @@ public sealed class WindowsSetupPlatformServiceTests
             request.ShortcutPath);
         Assert.Equal(Path.Combine(installDirectory, "OpenBlade.Tray.exe"), request.TargetPath);
         Assert.Equal(installDirectory, request.WorkingDirectory);
+        Assert.Equal(StartupShortcutArguments.Tray, request.Arguments);
     }
 
     [Fact]

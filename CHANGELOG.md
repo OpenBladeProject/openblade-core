@@ -16,6 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Presented the installed MCU firmware consistently in Device information and
   the official firmware card while preserving the raw version for diagnostics
   and compatibility checks.
+- Made **Start at sign-in** reflect the effective all-users Tray launcher and
+  honor a per-user opt-out while keeping the Session Agent running at sign-in.
 - Reported a recognized laptop with incompatible firmware as **Incompatible
   firmware** instead of also showing the contradictory **Laptop not found**
   state, using the service's exact BIOS admission result rather than unrelated

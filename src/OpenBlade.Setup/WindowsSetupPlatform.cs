@@ -272,7 +272,11 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         string trayExecutable = Path.Combine(paths.InstallDirectory, "OpenBlade.Tray.exe");
         await shortcutWriter.CreateAsync(
-            new ShortcutRequest(paths.StartupFile, trayExecutable, paths.InstallDirectory),
+            new ShortcutRequest(
+                paths.StartupFile,
+                trayExecutable,
+                paths.InstallDirectory,
+                Arguments: StartupShortcutArguments.Tray),
             cancellationToken);
         if (!string.Equals(
                 paths.LegacyTrayStartupFile,
