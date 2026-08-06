@@ -40,7 +40,8 @@ public static class FirmwareSmokeProgram
                     outputDirectory,
                     collector,
                     client,
-                    expectedChangedComponents: new HashSet<FirmwareComponent>(),
+                    ReadExpectedFirmwareChanges(args),
+                    isRehearsal: true,
                     cancellationToken).ConfigureAwait(false),
                 "reversible" => await RunReversibleAsync(
                     args,
@@ -48,6 +49,7 @@ public static class FirmwareSmokeProgram
                     collector,
                     client,
                     ReadExpectedFirmwareChanges(args),
+                    isRehearsal: false,
                     cancellationToken).ConfigureAwait(false),
                 "recover" => await RecoverAsync(
                     args,
@@ -137,7 +139,8 @@ public static class FirmwareSmokeProgram
         string outputDirectory,
         FirmwareSmokeSnapshotCollector collector,
         IFirmwareSmokeClient client,
-        IReadOnlySet<FirmwareComponent> expectedChangedComponents,
+        IReadOnlySet<FirmwareComponent> componentsUnderTest,
+        bool isRehearsal,
         CancellationToken cancellationToken)
     {
         FirmwareSmokeSnapshot baseline = await ReadBaselineAsync(
@@ -157,10 +160,15 @@ public static class FirmwareSmokeProgram
 
         FirmwareSmokeSnapshot current = await collector.CaptureAsync(
             cancellationToken).ConfigureAwait(false);
-        FirmwareSmokeReport preflight = FirmwareSmokeAssessment.ComparePostUpdate(
-            baseline,
-            current,
-            expectedChangedComponents);
+        FirmwareSmokeReport preflight = isRehearsal
+            ? FirmwareSmokeAssessment.CompareRehearsal(
+                baseline,
+                current,
+                componentsUnderTest)
+            : FirmwareSmokeAssessment.ComparePostUpdate(
+                baseline,
+                current,
+                componentsUnderTest);
         if (!preflight.Succeeded)
         {
             Directory.CreateDirectory(outputDirectory);
@@ -178,9 +186,9 @@ public static class FirmwareSmokeProgram
             await new ReversibleSmokeRunner(client).RunAsync(cancellationToken)
                 .ConfigureAwait(false);
         var report = new FirmwareSmokeReport(
-            expectedChangedComponents.Count > 0
-                ? "post-update reversible writes"
-                : "pre-update rehearsal",
+            isRehearsal
+                ? "pre-update rehearsal"
+                : "post-update reversible writes",
             DateTimeOffset.UtcNow,
             preflight.Checks.Concat(mutationChecks).ToArray(),
             FirmwareSmokeAssessment.ManualChecks);
@@ -401,7 +409,8 @@ public static class FirmwareSmokeProgram
             "--expect-firmware-changes <components> [--output <directory>]");
         Console.WriteLine(
             "  rehearsal --baseline <baseline.json> --confirm-target " +
-            TargetConfirmationFormat + " [--output <directory>]");
+            TargetConfirmationFormat + " --expect-firmware-changes <components> " +
+            "[--output <directory>]");
         Console.WriteLine(
             "  reversible --baseline <baseline.json> --confirm-target " +
             TargetConfirmationFormat + " --expect-firmware-changes <components> " +
@@ -412,6 +421,7 @@ public static class FirmwareSmokeProgram
         Console.WriteLine();
         Console.WriteLine(
             "Components are a comma-separated subset of BIOS, EC, MCU, and VBIOS. " +
-            "Rehearsal requires all firmware versions to remain unchanged.");
+            "Rehearsal requires declared components to be readable and all firmware " +
+            "versions to remain unchanged.");
     }
 }

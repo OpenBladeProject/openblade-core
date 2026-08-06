@@ -166,6 +166,83 @@ public sealed class FirmwareSmokeAssessmentTests
             Assert.Single(report.Checks, check => check.Id == "firmware.mcu").Outcome);
     }
 
+    [Fact]
+    public void PostUpdateRejectsAnEmptyExpectedChangeSet()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");
+
+        Assert.Throws<ArgumentException>(() =>
+            FirmwareSmokeAssessment.ComparePostUpdate(
+                snapshot,
+                snapshot,
+                new HashSet<FirmwareComponent>()));
+    }
+
+    [Fact]
+    public void RehearsalRequiresEverySelectedComponentToBeReadable()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("Unavailable");
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.CompareRehearsal(
+            snapshot,
+            snapshot,
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
+
+        FirmwareSmokeCheck check = Assert.Single(
+            report.Checks,
+            item => item.Id == "firmware.mcu");
+        Assert.False(report.Succeeded);
+        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
+        Assert.DoesNotContain("Different from Unavailable", check.Expected);
+        Assert.Contains("readable", check.Expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RehearsalAllowsAnUnrelatedComponentToBeUnavailable()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("Unavailable");
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.CompareRehearsal(
+            snapshot,
+            snapshot,
+            new HashSet<FirmwareComponent> { FirmwareComponent.Bios });
+
+        Assert.True(report.Succeeded);
+        Assert.Equal("pre-update rehearsal", report.Phase);
+    }
+
+    [Fact]
+    public void RehearsalRejectsAnyFirmwareChange()
+    {
+        FirmwareSmokeSnapshot baseline = CreateSnapshot("mcu-before");
+        FirmwareSmokeSnapshot current = baseline with
+        {
+            Firmware = baseline.Firmware with { Ec = "ec-after" },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.CompareRehearsal(
+            baseline,
+            current,
+            new HashSet<FirmwareComponent> { FirmwareComponent.Bios });
+
+        Assert.False(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(report.Checks, check => check.Id == "firmware.ec").Outcome);
+    }
+
+    [Fact]
+    public void RehearsalRejectsAnEmptyComponentSet()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");
+
+        Assert.Throws<ArgumentException>(() =>
+            FirmwareSmokeAssessment.CompareRehearsal(
+                snapshot,
+                snapshot,
+                new HashSet<FirmwareComponent>()));
+    }
+
     [Theory]
     [InlineData(FirmwareComponent.Bios)]
     [InlineData(FirmwareComponent.Ec)]

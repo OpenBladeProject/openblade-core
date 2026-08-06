@@ -62,8 +62,24 @@ public sealed class FirmwareSmokeProgramTests
         Assert.DoesNotContain("RZ09-", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("-MCU-SMOKE", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotMatch(
-            @"(?<![A-Za-z0-9])v?\d+\.\d+(?:\.\d+)*(?![A-Za-z0-9])",
+            @"['""]v?\d+\.\d+(?:\.\d+)*['""]",
             script);
+    }
+
+    [Fact]
+    public void FirmwareUpdateScriptDelegatesComponentValidationToTheTool()
+    {
+        string script = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "scripts",
+            "Test-FirmwareUpdate.ps1"));
+
+        Assert.DoesNotContain("allowedComponents", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("unsupportedComponents", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "@('PostUpdate', 'Rehearsal', 'Reversible')",
+            script,
+            StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

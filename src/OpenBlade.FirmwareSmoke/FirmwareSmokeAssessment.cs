@@ -174,6 +174,36 @@ public static class FirmwareSmokeAssessment
         FirmwareSmokeSnapshot current,
         IReadOnlySet<FirmwareComponent> expectedChangedComponents)
     {
+        RequireComponents(expectedChangedComponents, nameof(expectedChangedComponents));
+        return CompareSnapshots(
+            baseline,
+            current,
+            expectedChangedComponents,
+            expectedChangedComponents,
+            "post-update");
+    }
+
+    public static FirmwareSmokeReport CompareRehearsal(
+        FirmwareSmokeSnapshot baseline,
+        FirmwareSmokeSnapshot current,
+        IReadOnlySet<FirmwareComponent> componentsUnderTest)
+    {
+        RequireComponents(componentsUnderTest, nameof(componentsUnderTest));
+        return CompareSnapshots(
+            baseline,
+            current,
+            new HashSet<FirmwareComponent>(),
+            componentsUnderTest,
+            "pre-update rehearsal");
+    }
+
+    private static FirmwareSmokeReport CompareSnapshots(
+        FirmwareSmokeSnapshot baseline,
+        FirmwareSmokeSnapshot current,
+        IReadOnlySet<FirmwareComponent> expectedChangedComponents,
+        IReadOnlySet<FirmwareComponent> requiredReadableComponents,
+        string phase)
+    {
         var checks = CommonHealthChecks(current);
         FirmwareSmokeReport baselineValidation = ValidateBaseline(baseline);
         string[] baselineFailures = baselineValidation.Checks
@@ -216,7 +246,8 @@ public static class FirmwareSmokeAssessment
             checks,
             baseline.Firmware,
             current.Firmware,
-            expectedChangedComponents);
+            expectedChangedComponents,
+            requiredReadableComponents);
         checks.Add(Check(
             "capabilities.unchanged",
             "Advertised capabilities match the baseline",
@@ -284,9 +315,7 @@ public static class FirmwareSmokeAssessment
             Components(current)));
 
         return new FirmwareSmokeReport(
-            expectedChangedComponents.Count > 0
-                ? "post-update"
-                : "pre-update rehearsal",
+            phase,
             DateTimeOffset.UtcNow,
             checks,
             ManualChecks);
@@ -296,7 +325,8 @@ public static class FirmwareSmokeAssessment
         ICollection<FirmwareSmokeCheck> checks,
         FirmwareIdentity baseline,
         FirmwareIdentity current,
-        IReadOnlySet<FirmwareComponent> expectedChangedComponents)
+        IReadOnlySet<FirmwareComponent> expectedChangedComponents,
+        IReadOnlySet<FirmwareComponent> requiredReadableComponents)
     {
         IReadOnlyDictionary<FirmwareComponent, string> baselineVersions =
             FirmwareVersions(baseline);
@@ -308,27 +338,50 @@ public static class FirmwareSmokeAssessment
             string baselineVersion = baselineVersions[component];
             string currentVersion = currentVersions[component];
             bool expectedToChange = expectedChangedComponents.Contains(component);
+            bool requiresReadable = requiredReadableComponents.Contains(component);
+            bool baselineReadable = !IsUnavailable(baselineVersion);
+            bool currentReadable = !IsUnavailable(currentVersion);
             bool passed = expectedToChange
-                ? !IsUnavailable(baselineVersion)
-                    && !IsUnavailable(currentVersion)
+                ? baselineReadable
+                    && currentReadable
                     && !string.Equals(
                         baselineVersion,
                         currentVersion,
                         StringComparison.Ordinal)
-                : string.Equals(
-                    baselineVersion,
-                    currentVersion,
-                    StringComparison.Ordinal);
+                : (!requiresReadable || baselineReadable && currentReadable)
+                    && string.Equals(
+                        baselineVersion,
+                        currentVersion,
+                        StringComparison.Ordinal);
             checks.Add(Check(
                 $"firmware.{component.ToString().ToLowerInvariant()}",
                 expectedToChange
                     ? $"{name} version changed and remains readable"
+                    : requiresReadable
+                        ? $"{name} version remains readable and unchanged"
                     : $"{name} version is unchanged",
                 passed,
                 expectedToChange
-                    ? $"Different from {baselineVersion}"
+                    ? baselineReadable
+                        ? $"A readable version different from {baselineVersion}"
+                        : "A readable baseline and a different readable current version"
+                    : requiresReadable && !baselineReadable
+                        ? "The same readable version in both snapshots"
                     : baselineVersion,
                 currentVersion));
+        }
+    }
+
+    private static void RequireComponents(
+        IReadOnlySet<FirmwareComponent> components,
+        string parameterName)
+    {
+        ArgumentNullException.ThrowIfNull(components);
+        if (components.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one firmware component is required.",
+                parameterName);
         }
     }
 

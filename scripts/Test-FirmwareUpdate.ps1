@@ -42,27 +42,20 @@ if ($Phase -ne 'Baseline') {
 $expectedChanges = @(
     $ExpectedFirmwareChanges |
         ForEach-Object { $_ -split ',' } |
-        ForEach-Object { $_.Trim().ToUpperInvariant() } |
+        ForEach-Object { $_.Trim() } |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         Select-Object -Unique
 )
-$allowedComponents = @('BIOS', 'EC', 'MCU', 'VBIOS')
-$unsupportedComponents = @(
-    $expectedChanges | Where-Object { $_ -notin $allowedComponents }
-)
-if ($unsupportedComponents.Count -gt 0) {
-    throw "Unsupported firmware component: $($unsupportedComponents -join ', '). Expected BIOS, EC, MCU, or VBIOS."
-}
 
-if ($Phase -in @('PostUpdate', 'Reversible')) {
+if ($Phase -in @('PostUpdate', 'Rehearsal', 'Reversible')) {
     if ($expectedChanges.Count -eq 0) {
-        throw '-ExpectedFirmwareChanges is required for PostUpdate and Reversible.'
+        throw '-ExpectedFirmwareChanges is required for PostUpdate, Rehearsal, and Reversible.'
     }
 
     $toolArguments += @('--expect-firmware-changes', ($expectedChanges -join ','))
 }
 elseif ($expectedChanges.Count -gt 0) {
-    throw '-ExpectedFirmwareChanges is valid only for PostUpdate and Reversible.'
+    throw '-ExpectedFirmwareChanges is valid only for PostUpdate, Rehearsal, and Reversible.'
 }
 
 if ($Phase -in @('Rehearsal', 'Reversible', 'Recover')) {
