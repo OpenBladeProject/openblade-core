@@ -35,7 +35,7 @@ internal sealed record GpuClockOffsetValidationPlan(
         CoreMaximumMegahertz: 15,
         MemoryMinimumMegahertz: -15,
         MemoryMaximumMegahertz: 15,
-        AdjacentStepMegahertz: 15,
+        AdjacentStepMegahertz: 5,
         RequiredBaseline: new(0, 0));
 }
 

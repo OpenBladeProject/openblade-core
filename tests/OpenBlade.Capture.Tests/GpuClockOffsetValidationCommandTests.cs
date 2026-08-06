@@ -97,7 +97,7 @@ public sealed class GpuClockOffsetValidationCommandTests
     }
 
     [Fact]
-    public void Run_Rz090581PlanUsesFifteenMegahertzStepAndRestores()
+    public void Run_Rz090581PlanUsesFiveMegahertzStepAndRestores()
     {
         var controller = new FakeController();
         var output = new StringWriter();
@@ -110,14 +110,14 @@ public sealed class GpuClockOffsetValidationCommandTests
         Assert.Equal(0, result);
         Assert.Equal(
             [
-                new GpuClockOffsetValidationSettings(15, 15),
+                new GpuClockOffsetValidationSettings(5, 5),
                 new GpuClockOffsetValidationSettings(0, 0),
             ],
             controller.Writes);
         Assert.Contains(
             "Target=RZ09-0581 1532:02E0 BIOS 4.00",
             output.ToString());
-        Assert.Contains("Requested=Core=15;Memory=15", output.ToString());
+        Assert.Contains("Requested=Core=5;Memory=5", output.ToString());
         Assert.Contains("Restored=True", output.ToString());
         Assert.Contains("Success=True", output.ToString());
     }

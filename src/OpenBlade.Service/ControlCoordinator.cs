@@ -323,6 +323,7 @@ public sealed class ControlCoordinator
                 DeviceAccessFailed: true);
         }
 
+        desired = DropUnsupportedGpuClockTuning(desired, capabilities);
         Dictionary<DeviceSubsystem, PendingSubsystem> states =
             CreatePendingSubsystems(desired, capabilities, initial);
 
@@ -1323,6 +1324,22 @@ public sealed class ControlCoordinator
         GpuClockTuningSettings? gpuClockTuning) =>
         gpuClockTuning is null
         || capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite };
+
+    private static DesiredDeviceState DropUnsupportedGpuClockTuning(
+        DesiredDeviceState desired,
+        DeviceCapabilities capabilities)
+    {
+        if (desired.GpuClockTuning is null
+            || capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite })
+        {
+            return desired;
+        }
+
+        // Legacy profiles may retain GPU offsets on firmware where the model
+        // policy is unavailable. Ignore only that optional component so power
+        // mode and fan reconciliation can continue safely.
+        return desired with { GpuClockTuning = null };
+    }
 
     private static void NormalizeLegacyGpuClockTuning(
         ref CustomPerformanceSettings? customPerformance,

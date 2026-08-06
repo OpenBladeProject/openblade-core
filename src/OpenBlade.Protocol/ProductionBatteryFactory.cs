@@ -272,6 +272,11 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             biosVersion,
             Rz090581GpuOverclockBiosVersion,
             StringComparison.Ordinal)
+            // These are the exact Synapse-visible policy-envelope bounds on
+            // RZ09-0581 BIOS 4.00. NVIDIA's independently queried driver range
+            // remains a second per-write gate; bounded reversible validation
+            // establishes the 5 MHz UI step inside this envelope, but not every
+            // endpoint.
             ? new GpuOverclockCapabilities(
                 new DeviceNumericRange(-1000, 400, null),
                 new DeviceNumericRange(-1000, 3000, null),

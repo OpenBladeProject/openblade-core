@@ -530,6 +530,31 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task FullReconcile_UnsupportedGpuTuningDropsOnlyGpuComponent()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        DesiredDeviceState desired = CreateDesiredState() with
+        {
+            GpuClockTuning = new GpuClockTuningSettings(
+                Enabled: true,
+                new GpuClockOffsetSettings(5, 10)),
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
+            desired,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Applied, results.Fans.Status);
+        Assert.Equal(1, device.PerformanceSetCalls);
+        Assert.Equal(1, device.FanSetCalls);
+        Assert.Equal(0, device.GpuClockSetCalls);
+        Assert.Equal(PerformancePreset.Balanced, device.State.Performance);
+        Assert.Equal(FanMode.Maximum, device.State.Fans);
+    }
+
+    [Fact]
     public async Task ScopedMaximumFans_RequireConfirmedBalancedAutomaticState()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
