@@ -57,6 +57,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private const byte DefaultLightingBrightness = 50;
     private static readonly TimeSpan ReconnectVisualGracePeriod =
         TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan PerformancePresentationHoldGracePeriod =
+        TimeSpan.FromSeconds(2);
 
     private enum ProfileDraftGroup
     {
@@ -65,6 +67,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Display,
         Laptop,
     }
+
+    private sealed record PendingPerformanceHold(
+        PerformanceOverride Requested,
+        PowerSource PowerSource,
+        DateTimeOffset? ExpiresAt);
 
     private static readonly IReadOnlyList<ProfileComparisonOption> ComparisonOptions =
     [
@@ -168,8 +175,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
-    private PerformanceOverride? pendingPerformance;
-    private PowerSource pendingPerformancePowerSource;
+    private PendingPerformanceHold? pendingPerformance;
     private IReadOnlyList<CustomPerformanceLevel> availableCustomCpuLevels =
         AllCustomPerformanceLevels;
     private IReadOnlyList<CustomPerformanceLevel> availableCustomGpuLevels =
@@ -3877,12 +3883,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return;
         }
 
-        ReconcilePendingPerformancePresentation(status);
+        bool performanceHoldReleased = ReleasePendingPerformanceHold(status);
         ServiceStatusSnapshot? previousStatus = latestStatus;
         latestAcceptedRevision = status.Revision;
         latestStatus = status;
         if (IsConnected
             && previousStatus is not null
+            && !performanceHoldReleased
             && StatusMetadataEqual(previousStatus, status))
         {
             ApplyLiveReadings(status);
@@ -3915,7 +3922,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool checkingLaptopConnection)
     {
         UpdateOneShotReadbacks(status);
-        SelectedPerformance = pendingPerformance?.Value
+        SelectedPerformance = pendingPerformance?.Requested.Value
             ?? ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = pendingFanControl?.Mode
             ?? ResolvePresentedFanMode(status, confirmed, capabilities);
@@ -3966,7 +3973,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SetTemporaryFullChargeState(confirmed?.Battery?.TemporaryFullCharge);
         ActivePowerSource = status.ActivePowerSource;
         CustomPerformanceSettings customPerformance =
-            pendingPerformance is
+            pendingPerformance?.Requested is
             { Value: PerformancePreset.Custom, CustomPerformance: { } pendingCustom }
                 ? pendingCustom
                 : confirmed is
@@ -4575,8 +4582,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             GpuClockOffsets = CurrentGpuClockOffsets,
         };
         bool applied = false;
-        pendingPerformance = requested;
-        pendingPerformancePowerSource = sourceAtStart;
+        pendingPerformance = new PendingPerformanceHold(
+            requested,
+            sourceAtStart,
+            ExpiresAt: null);
         IsPerformanceOperationInProgress = true;
         PresentPerformance(requested);
         try
@@ -4611,33 +4620,45 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                         ? previousCustom
                         : null));
             }
-            else if (latestStatus is { } status)
+            else
             {
-                ReconcilePendingPerformancePresentation(status);
+                if (pendingPerformance is { Requested: var pending } hold
+                    && pending == requested)
+                {
+                    pendingPerformance = hold with
+                    {
+                        ExpiresAt = timeProvider.GetUtcNow()
+                            + PerformancePresentationHoldGracePeriod,
+                    };
+                }
+
+                if (latestStatus is { } status)
+                {
+                    ReleasePendingPerformanceHold(status);
+                }
             }
         }
     }
 
-    private void ReconcilePendingPerformancePresentation(ServiceStatusSnapshot status)
+    private bool ReleasePendingPerformanceHold(ServiceStatusSnapshot status)
     {
         if (pendingPerformance is not { } pending)
         {
-            return;
+            return false;
         }
 
-        if (status.ActivePowerSource != pendingPerformancePowerSource
-            || PerformanceMatchesConfirmedState(pending, status.ConfirmedState))
+        bool statusCaughtUp = status.PerformanceOverride == pending.Requested;
+        bool sourceChanged = status.ActivePowerSource != pending.PowerSource;
+        bool gracePeriodExpired = pending.ExpiresAt is { } expiresAt
+            && timeProvider.GetUtcNow() >= expiresAt;
+        if (!statusCaughtUp && !sourceChanged && !gracePeriodExpired)
         {
-            pendingPerformance = null;
+            return false;
         }
-    }
 
-    private static bool PerformanceMatchesConfirmedState(
-        PerformanceOverride requested,
-        ConfirmedDeviceState? confirmed) =>
-        confirmed?.Performance == requested.Value
-        && (requested.Value != PerformancePreset.Custom
-            || confirmed.CustomPerformance == requested.CustomPerformance);
+        pendingPerformance = null;
+        return true;
+    }
 
     private void PresentPerformance(PerformanceOverride value)
     {
