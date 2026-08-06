@@ -223,9 +223,7 @@
       </StackPanel>
     </Grid>
 
-    <Border Grid.Row="1" Background="{DynamicResource CardBrush}"
-            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-            CornerRadius="6" Padding="20">
+    <Grid x:Name="ContentHost" Grid.Row="1" Margin="20,0">
       <Grid>
         <Grid x:Name="LoadingPanel">
           <StackPanel VerticalAlignment="Center">
@@ -282,15 +280,15 @@
             <ToggleButton x:Name="DetailsToggle" Content="Show details"
                           HorizontalAlignment="Left" Checked="DetailsToggle_Changed"
                           Unchecked="DetailsToggle_Changed" />
-            <Border x:Name="DetailsBorder" Grid.Row="1" Margin="0,8,0,0"
+            <Border x:Name="DetailsBorder" Grid.Row="1" Margin="0,8,0,12"
                     BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                     Background="{DynamicResource InputBrush}" Visibility="Collapsed">
               <TextBox x:Name="DetailsText" IsReadOnly="True" BorderThickness="0"
                        Background="Transparent" Foreground="{DynamicResource TextBrush}"
                        FontFamily="Cascadia Mono, Consolas" FontSize="11"
-                       Padding="8" TextWrapping="NoWrap"
+                       Padding="8" TextWrapping="Wrap"
                        VerticalScrollBarVisibility="Auto"
-                       HorizontalScrollBarVisibility="Auto" />
+                       HorizontalScrollBarVisibility="Disabled" />
             </Border>
           </Grid>
           <Button x:Name="ProgressCancelButton" Grid.Row="4" Content="Cancel"
@@ -335,7 +333,7 @@
         </Grid>
 
         <Grid x:Name="CancelConfirmationPanel" Panel.ZIndex="10"
-              Background="{DynamicResource CardBrush}" Visibility="Collapsed">
+              Background="{DynamicResource WindowBrush}" Visibility="Collapsed">
           <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
@@ -353,7 +351,7 @@
           </StackPanel>
         </Grid>
       </Grid>
-    </Border>
+    </Grid>
 
     <TextBlock x:Name="VersionText" Grid.Row="2" VerticalAlignment="Bottom"
                Foreground="{DynamicResource SecondaryTextBrush}" />

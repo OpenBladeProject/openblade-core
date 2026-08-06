@@ -10,6 +10,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Simplified the tray right-click menu to **Open** and **Exit**. Exiting now
   asks whether to leave keyboard lighting, hotkeys, profiles, and automation
   running in the background or shut down OpenBlade completely.
+- Gave the OpenBlade installer a dedicated adaptive file and taskbar icon with
+  a Blade-green download badge, while retaining the existing installed-app
+  identity.
 
 ### Fixed
 

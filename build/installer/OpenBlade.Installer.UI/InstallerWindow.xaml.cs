@@ -234,8 +234,6 @@ internal partial class InstallerWindow : Window
         bool show = DetailsToggle.IsChecked == true;
         DetailsToggle.Content = show ? "Hide details" : "Show details";
         DetailsBorder.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        Height = show ? 620 : 430;
-        MinHeight = Height;
     }
 
     private void SystemEvents_UserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)

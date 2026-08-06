@@ -133,8 +133,10 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     {
         try
         {
-            string target = Engine.GetVariableString(LaunchTargetVariable);
-            string workingFolder = Engine.GetVariableString(LaunchWorkingFolderVariable);
+            string target = Engine.FormatString(
+                Engine.GetVariableString(LaunchTargetVariable));
+            string workingFolder = Engine.FormatString(
+                Engine.GetVariableString(LaunchWorkingFolderVariable));
             Process.Start(new ProcessStartInfo(target)
             {
                 UseShellExecute = true,

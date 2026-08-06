@@ -2,6 +2,7 @@ using System;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using WixToolset.BootstrapperApplicationApi;
 using Xunit;
@@ -21,6 +22,8 @@ public sealed class InstallerWindowTests
             Assert.Equal("Version 1.2.3", window.VersionText.Text);
 
             InstallerTheme.Apply(window, dark: true);
+            Assert.Null(window.ContentHost.Background);
+            Assert.Equal(new Thickness(20, 0, 20, 0), window.ContentHost.Margin);
             Assert.Equal(
                 Color.FromRgb(0x20, 0x20, 0x20),
                 ((SolidColorBrush)window.Resources["WindowBrush"]).Color);
@@ -60,10 +63,20 @@ public sealed class InstallerWindowTests
             Assert.Equal(42, window.OverallProgress.Value);
             Assert.Contains("Copying OpenBlade.Tray.exe", window.DetailsText.Text);
             Assert.Equal(Visibility.Visible, window.DetailsBorder.Visibility);
+            Assert.Equal(430, window.Height);
+            Assert.Equal(430, window.MinHeight);
+            Assert.Equal(TextWrapping.Wrap, window.DetailsText.TextWrapping);
+            Assert.Equal(
+                ScrollBarVisibility.Disabled,
+                window.DetailsText.HorizontalScrollBarVisibility);
+            Assert.Equal(new Thickness(0, 8, 0, 12), window.DetailsBorder.Margin);
 
             window.ProgressCancelButton.RaiseEvent(
                 new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             Assert.Equal(Visibility.Visible, window.CancelConfirmationPanel.Visibility);
+            Assert.Equal(
+                ((SolidColorBrush)window.Resources["WindowBrush"]).Color,
+                ((SolidColorBrush)window.CancelConfirmationPanel.Background).Color);
 
             window.ShowSuccess(LaunchAction.Install);
             Assert.Equal(Visibility.Collapsed, window.CancelConfirmationPanel.Visibility);

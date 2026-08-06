@@ -10,6 +10,8 @@ $installerUiProject = Join-Path $repository (
 $installerUiTestProject = Join-Path $repository (
     'build\installer\OpenBlade.Installer.UI.Tests\OpenBlade.Installer.UI.Tests.csproj')
 $bundleSource = Join-Path $repository 'build\installer\Bundle.wxs'
+$setupProject = Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj'
+$installerIcon = Join-Path $repository 'src\OpenBlade.Tray\Assets\Brand\OpenBlade.Installer.ico'
 $setupPathsSource = Join-Path $repository 'src\OpenBlade.Setup\SetupPaths.cs'
 
 function Assert-True {
@@ -90,9 +92,24 @@ Assert-True ($bundle.GetAttribute('ProviderKey') -eq 'OSSBlade.OpenBlade') `
 Assert-True ($bundle.GetAttribute('Version') -eq '$(OpenBladeVersion)') `
     'The Burn bundle must use the product version source of truth.'
 Assert-True (
+    $bundle.GetAttribute('IconSourceFile') -eq
+        '!(bindpath.BrandAssets)\OpenBlade.Installer.ico') `
+    'The Burn bundle must use the dedicated OpenBlade installer icon.'
+Assert-True (Test-Path -LiteralPath $installerIcon -PathType Leaf) `
+    'The dedicated OpenBlade installer icon is missing.'
+Assert-True ((Get-Item -LiteralPath $installerIcon).Length -gt 6) `
+    'The dedicated OpenBlade installer icon is empty or truncated.'
+Assert-True (
     $bundle.GetAttribute('Condition') -eq
         'VersionNT64 >= v10.0 AND WindowsBuildNumber >= 26100') `
     'The Burn bundle must require Windows 11 version 24H2 x64.'
+
+$setupProjectSource = Get-Content -LiteralPath $setupProject -Raw
+Assert-True (
+    $setupProjectSource.IndexOf(
+        '<ApplicationIcon>..\OpenBlade.Tray\Assets\Brand\OpenBlade.Installer.ico</ApplicationIcon>',
+        [StringComparison]::Ordinal) -ge 0) `
+    'The setup payload must use the dedicated OpenBlade installer icon.'
 
 $bootstrapper = $bundle.SelectSingleNode("*[local-name()='BootstrapperApplication']")
 Assert-True ($null -ne $bootstrapper) 'The Burn bootstrapper application is missing.'
@@ -235,6 +252,14 @@ Assert-True ($bootstrapperSource.Contains('RequestState.ForcePresent')) `
     'A confirmed overwrite must execute the selected OpenBlade setup package.'
 Assert-True ($bootstrapperSource.Contains('ApplyDowngrade += OnApplyDowngrade')) `
     'A confirmed overwrite must clear Burn''s Apply-stage downgrade veto.'
+Assert-True ([regex]::IsMatch(
+        $bootstrapperSource,
+        'Engine\.FormatString\(\s*Engine\.GetVariableString\(LaunchTargetVariable\)\)')) `
+    'Launch OpenBlade must resolve Burn formatting in the executable path.'
+Assert-True ([regex]::IsMatch(
+        $bootstrapperSource,
+        'Engine\.FormatString\(\s*Engine\.GetVariableString\(LaunchWorkingFolderVariable\)\)')) `
+    'Launch OpenBlade must resolve Burn formatting in the working directory.'
 Assert-True (-not $bootstrapperSource.Contains('new WindowInteropHelper(window)')) `
     'Burn callbacks must not read the WPF window handle from a worker thread.'
 $programSource = Get-Content -LiteralPath (

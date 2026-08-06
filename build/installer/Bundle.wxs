@@ -9,7 +9,7 @@
       Manufacturer="OSSBlade"
       AboutUrl="https://github.com/OSSBlade/openblade-core"
       HelpUrl="https://github.com/OSSBlade/openblade-docs"
-      IconSourceFile="!(bindpath.BrandAssets)\OpenBlade.ico"
+      IconSourceFile="!(bindpath.BrandAssets)\OpenBlade.Installer.ico"
       Condition="VersionNT64 &gt;= v10.0 AND WindowsBuildNumber &gt;= 26100"
       Compressed="yes">
     <BootstrapperApplication
