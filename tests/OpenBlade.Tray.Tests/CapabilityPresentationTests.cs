@@ -1520,13 +1520,12 @@ public sealed class CapabilityPresentationTests
             },
             BatteryPolicy = BatteryPolicy.Create(70),
         };
-        client.Publish(initial with
+        await client.PublishAndWaitAsync(initial with
         {
             Revision = initial.Revision + 1,
             Message = "Later profiles",
             Profiles = laterProfiles,
         });
-        await WaitUntilAsync(() => viewModel.Profiles == laterProfiles);
 
         Assert.Equal(laterProfiles, viewModel.Profiles);
         Assert.Equal(PerformancePreset.Balanced, viewModel.PluggedInPerformanceEditor);
