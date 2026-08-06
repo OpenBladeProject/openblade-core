@@ -227,6 +227,12 @@ Assert-True ($bootstrapperSource.Contains('QuitAfterRunFailure(exception)')) `
     'The managed bootstrapper must convert unhandled UI failures into a Burn exit code.'
 Assert-True ($bootstrapperSource.Contains('window?.WindowHandle ?? IntPtr.Zero')) `
     'Burn apply must use the UI-thread-captured owner handle.'
+Assert-True ($bootstrapperSource.Contains('ShowNewerVersionConfirmation')) `
+    'Interactive setup must ask before replacing a newer OpenBlade version.'
+Assert-True ($bootstrapperSource.Contains('PlanRelatedBundleType += OnPlanRelatedBundleType')) `
+    'A confirmed overwrite must convert Burn downgrade planning into replacement planning.'
+Assert-True ($bootstrapperSource.Contains('RequestState.ForcePresent')) `
+    'A confirmed overwrite must execute the selected OpenBlade setup package.'
 Assert-True (-not $bootstrapperSource.Contains('new WindowInteropHelper(window)')) `
     'Burn callbacks must not read the WPF window handle from a worker thread.'
 $programSource = Get-Content -LiteralPath (

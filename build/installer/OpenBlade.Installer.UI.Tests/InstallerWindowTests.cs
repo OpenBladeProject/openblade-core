@@ -36,6 +36,13 @@ public sealed class InstallerWindowTests
             Assert.Equal(Visibility.Visible, window.UninstallButton.Visibility);
             Assert.Equal(Visibility.Visible, window.PurgeProfilesCheckBox.Visibility);
 
+            window.ShowNewerVersionConfirmation("2.0.0", "1.2.3");
+            Assert.Equal("Overwrite", window.InstallButton.Content);
+            Assert.Contains("2.0.0", window.ReadyMessage.Text);
+            Assert.Contains("1.2.3", window.ReadyMessage.Text);
+            Assert.Equal(Visibility.Collapsed, window.RepairButton.Visibility);
+            Assert.Equal(Visibility.Collapsed, window.UninstallButton.Visibility);
+
             window.ShowProgress(LaunchAction.Install);
             window.SetProgress(42, "Copying OpenBlade.Tray.exe");
             window.AddDetail("Copying OpenBlade.Tray.exe");
@@ -62,6 +69,74 @@ public sealed class InstallerWindowTests
             Assert.Equal("Expected test failure", window.FailureMessage.Text);
             Assert.False(window.OpenLogButton.IsEnabled);
         });
+    }
+
+    [Theory]
+    [InlineData("1.2.3", "1.2.4", true)]
+    [InlineData("1.2.3.4", "1.2.3.5", true)]
+    [InlineData("1.2.3", "1.2.3", false)]
+    [InlineData("2.0.0", "1.9.9", false)]
+    [InlineData("invalid", "2.0.0", false)]
+    public void NewerVersionDetectionUsesBurnComparableVersions(
+        string current,
+        string related,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.IsNewerVersion(current, related));
+    }
+
+    [Fact]
+    public void RelatedBundlePlanChangesOnlyAfterConfirmedNewerVersionOverwrite()
+    {
+        Assert.Equal(
+            RelatedBundlePlanType.Upgrade,
+            OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
+                allowOverwrite: true,
+                detectedNewerBundle: true,
+                RelatedBundlePlanType.Downgrade));
+        Assert.Equal(
+            RelatedBundlePlanType.Downgrade,
+            OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
+                allowOverwrite: false,
+                detectedNewerBundle: true,
+                RelatedBundlePlanType.Downgrade));
+        Assert.Equal(
+            RelatedBundlePlanType.Downgrade,
+            OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
+                allowOverwrite: true,
+                detectedNewerBundle: false,
+                RelatedBundlePlanType.Downgrade));
+
+        Assert.Equal(
+            RequestState.ForcePresent,
+            OpenBladeBootstrapperApplication.SelectPackageRequestState(
+                allowOverwrite: true,
+                LaunchAction.Install,
+                "OpenBladeSetup",
+                RequestState.Present));
+        Assert.Equal(
+            RequestState.Present,
+            OpenBladeBootstrapperApplication.SelectPackageRequestState(
+                allowOverwrite: false,
+                LaunchAction.Install,
+                "OpenBladeSetup",
+                RequestState.Present));
+        Assert.Equal(
+            RequestState.Present,
+            OpenBladeBootstrapperApplication.SelectPackageRequestState(
+                allowOverwrite: true,
+                LaunchAction.Repair,
+                "OpenBladeSetup",
+                RequestState.Present));
+        Assert.Equal(
+            RequestState.Present,
+            OpenBladeBootstrapperApplication.SelectPackageRequestState(
+                allowOverwrite: true,
+                LaunchAction.Install,
+                "OpenBladeVcRuntime",
+                RequestState.Present));
     }
 
     [Fact]

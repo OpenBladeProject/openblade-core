@@ -14,6 +14,7 @@ internal partial class InstallerWindow : Window
     private readonly OpenBladeBootstrapperApplication bootstrapper;
     private readonly bool allowInteraction;
     private readonly Queue<string> detailLines = new();
+    private bool overwriteNewerVersion;
     private string? logPath;
 
     internal InstallerWindow(
@@ -36,15 +37,33 @@ internal partial class InstallerWindow : Window
     public void ShowReady(bool installed)
     {
         ShowOnly(ReadyPanel);
+        overwriteNewerVersion = false;
         HeaderSubtitle.Text = installed ? "Maintenance" : "Setup";
         ReadyHeading.Text = installed ? "OpenBlade is installed" : "Install OpenBlade";
         ReadyMessage.Text = installed
             ? "Repair the installed files, or remove OpenBlade from this PC."
             : "Install the OpenBlade service, Session Agent, and tray application for this PC.";
         InstallButton.Visibility = installed ? Visibility.Collapsed : Visibility.Visible;
+        InstallButton.Content = "Install";
         RepairButton.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
         UninstallButton.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
         PurgeProfilesCheckBox.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public void ShowNewerVersionConfirmation(string installedVersion, string installerVersion)
+    {
+        ShowOnly(ReadyPanel);
+        overwriteNewerVersion = true;
+        HeaderSubtitle.Text = "Newer version installed";
+        ReadyHeading.Text = "Replace the newer OpenBlade version?";
+        ReadyMessage.Text =
+            $"OpenBlade {installedVersion} is installed. This installer contains "
+            + $"version {installerVersion}. Do you want to overwrite the newer version?";
+        InstallButton.Content = "Overwrite";
+        InstallButton.Visibility = Visibility.Visible;
+        RepairButton.Visibility = Visibility.Collapsed;
+        UninstallButton.Visibility = Visibility.Collapsed;
+        PurgeProfilesCheckBox.Visibility = Visibility.Collapsed;
     }
 
     public void ShowProgress(LaunchAction action)
@@ -155,7 +174,10 @@ internal partial class InstallerWindow : Window
     }
 
     private void InstallButton_Click(object sender, RoutedEventArgs e) =>
-        bootstrapper.StartAction(LaunchAction.Install, purgeProfiles: false);
+        bootstrapper.StartAction(
+            LaunchAction.Install,
+            purgeProfiles: false,
+            overwriteNewerVersion);
 
     private void RepairButton_Click(object sender, RoutedEventArgs e) =>
         bootstrapper.StartAction(LaunchAction.Repair, purgeProfiles: false);
