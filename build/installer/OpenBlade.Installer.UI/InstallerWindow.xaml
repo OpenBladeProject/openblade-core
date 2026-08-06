@@ -13,7 +13,6 @@
         Background="{DynamicResource WindowBrush}">
   <Window.Resources>
     <SolidColorBrush x:Key="WindowBrush" Color="#F7F7F7" />
-    <SolidColorBrush x:Key="CardBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="InputBrush" Color="#FAFAFA" />
     <SolidColorBrush x:Key="TextBrush" Color="#202020" />
     <SolidColorBrush x:Key="SecondaryTextBrush" Color="#5A5A5A" />

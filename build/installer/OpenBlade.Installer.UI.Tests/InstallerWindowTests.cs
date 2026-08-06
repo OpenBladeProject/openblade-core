@@ -22,6 +22,7 @@ public sealed class InstallerWindowTests
             Assert.Equal("Version 1.2.3", window.VersionText.Text);
 
             InstallerTheme.Apply(window, dark: true);
+            Assert.False(window.Resources.Contains("CardBrush"));
             Assert.Null(window.ContentHost.Background);
             Assert.Equal(new Thickness(20, 0, 20, 0), window.ContentHost.Margin);
             Assert.Equal(

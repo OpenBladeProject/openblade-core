@@ -111,6 +111,13 @@ Assert-True (
         [StringComparison]::Ordinal) -ge 0) `
     'The setup payload must use the dedicated OpenBlade installer icon.'
 
+$installerUiProjectSource = Get-Content -LiteralPath $installerUiProject -Raw
+Assert-True (
+    $installerUiProjectSource.IndexOf(
+        '<ApplicationIcon>..\..\..\src\OpenBlade.Tray\Assets\Brand\OpenBlade.Installer.ico</ApplicationIcon>',
+        [StringComparison]::Ordinal) -ge 0) `
+    'The managed bootstrapper application must use the dedicated installer icon.'
+
 $bootstrapper = $bundle.SelectSingleNode("*[local-name()='BootstrapperApplication']")
 Assert-True ($null -ne $bootstrapper) 'The Burn bootstrapper application is missing.'
 Assert-True ($bootstrapper.GetAttribute('SourceFile').EndsWith(
@@ -227,6 +234,8 @@ Assert-True ($themeSource.Contains('AppsUseLightTheme')) `
     'The installer theme must follow the Windows app-mode preference.'
 Assert-True ($themeSource.Contains('DwmUseImmersiveDarkMode')) `
     'The installer must apply dark mode to its native title bar.'
+Assert-True (-not $themeSource.Contains('CardBrush')) `
+    'The installer theme must not retain the removed content-card resource.'
 $windowSource = Get-Content -LiteralPath (
     Join-Path $repository (
         'build\installer\OpenBlade.Installer.UI\InstallerWindow.xaml.cs')) -Raw

@@ -6,6 +6,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AssemblyName>OpenBlade.Installer.UI</AssemblyName>
     <RootNamespace>OpenBlade.Installer.UI</RootNamespace>
+    <ApplicationIcon>..\..\..\src\OpenBlade.Tray\Assets\Brand\OpenBlade.Installer.ico</ApplicationIcon>
     <LangVersion>latest</LangVersion>
     <UseWPF>true</UseWPF>
     <EnableDynamicLoading>true</EnableDynamicLoading>

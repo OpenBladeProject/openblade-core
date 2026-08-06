@@ -34,7 +34,6 @@ internal static class InstallerTheme
         }
 
         Color windowColor = dark ? Color.FromRgb(0x20, 0x20, 0x20) : Color.FromRgb(0xF7, 0xF7, 0xF7);
-        Color cardColor = dark ? Color.FromRgb(0x2B, 0x2B, 0x2B) : Colors.White;
         Color inputColor = dark ? Color.FromRgb(0x18, 0x18, 0x18) : Color.FromRgb(0xFA, 0xFA, 0xFA);
         Color textColor = dark ? Color.FromRgb(0xF3, 0xF3, 0xF3) : Color.FromRgb(0x20, 0x20, 0x20);
         Color secondaryTextColor = dark ? Color.FromRgb(0xC7, 0xC7, 0xC7) : Color.FromRgb(0x5A, 0x5A, 0x5A);
@@ -45,7 +44,6 @@ internal static class InstallerTheme
         Color progressTrackColor = dark ? Color.FromRgb(0x15, 0x15, 0x15) : Color.FromRgb(0xD8, 0xD8, 0xD8);
 
         window.Resources["WindowBrush"] = FrozenBrush(windowColor);
-        window.Resources["CardBrush"] = FrozenBrush(cardColor);
         window.Resources["InputBrush"] = FrozenBrush(inputColor);
         window.Resources["TextBrush"] = FrozenBrush(textColor);
         window.Resources["SecondaryTextBrush"] = FrozenBrush(secondaryTextColor);
