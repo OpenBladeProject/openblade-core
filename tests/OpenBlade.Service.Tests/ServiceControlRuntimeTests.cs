@@ -291,6 +291,22 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, context.Device.DriverModeEnsureCalls);
     }
 
+    [Fact]
+    public async Task PrepareForShutdown_NoVerifiedDeviceIsACompletedNoOp()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Contains(
+            "No verified laptop was available",
+            result.Message,
+            StringComparison.Ordinal);
+        Assert.Equal(0, context.Device.TotalCalls);
+    }
+
     [Theory]
     [InlineData(FanMode.Fixed)]
     [InlineData(FanMode.ManualCurve)]
@@ -577,6 +593,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.History.Snapshot().CommandResults,
             entry => entry.Status == "Failed"
                 && entry.Detail?.Contains("synthetic release failure") == true);
+    }
+
+    [Fact]
+    public async Task PrepareForLowPower_NoVerifiedDeviceRemainsFailed()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForLowPowerAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains(
+            "could not verify",
+            result.Message,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -2179,6 +2210,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                     LightingEffect.Off,
                     LightingEffect.Static,
                 },
+                FanSpeedRange = new FanSpeedRange(2000, 5000, 100),
             };
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -2189,10 +2221,22 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         LightingSettings lighting = LightingSettingsFactory.Static(
             new RgbColor(32, 255, 64),
             brightness: 55);
+        var recoveryCurve = new ManualFanCurve(
+            ManualFanCurve.Default.Cpu
+                .Select(point => new FanCurvePoint(
+                    point.TemperatureCelsius,
+                    Math.Min(point.SpeedRpm, 5000)))
+                .ToArray(),
+            ManualFanCurve.Default.Gpu
+                .Select(point => new FanCurvePoint(
+                    point.TemperatureCelsius,
+                    Math.Min(point.SpeedRpm, 5000)))
+                .ToArray(),
+            ManualFanCurve.Default.UseHigherTemperatureForBoth);
         var fanControl = new FanControlSettings(
             FanMode.ManualCurve,
             2800,
-            ManualFanCurve.Default);
+            recoveryCurve);
         BatteryConfiguration configuration = await context.Store.LoadAsync(
             CancellationToken.None);
         configuration = configuration with
@@ -2245,7 +2289,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.PrepareManualFanCurveRecoveryAsync(
             CancellationToken.None);
         Assert.Equal(
-            FanControlSettings.MaximumSpeedRpm,
+            5000,
             Assert.Single(context.Device.FanTargets).Fan1Rpm);
         await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
         Assert.Contains(
@@ -2259,8 +2303,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Device.FanTargets,
             target => Assert.Equal(
                 new FanTargetSpeeds(
-                    FanControlSettings.MaximumSpeedRpm,
-                    FanControlSettings.MaximumSpeedRpm,
+                    5000,
+                    5000,
                     FailSafe: true),
                 target));
         Assert.Equal(1, context.Device.LightingSetCalls);
@@ -7771,8 +7815,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken cancellationToken) =>
             value.Mode == FanMode.ManualCurve && FanTargetsAvailable
                 ? SetFanTargetsAsync(
-                    FanControlSettings.MaximumSpeedRpm,
-                    FanControlSettings.MaximumSpeedRpm,
+                    Capabilities.FanSpeedRange?.MaximumRpm
+                        ?? FanControlSettings.MaximumSpeedRpm,
+                    Capabilities.FanSpeedRange?.MaximumRpm
+                        ?? FanControlSettings.MaximumSpeedRpm,
                     cancellationToken)
                 : SetFanModeAsync(value.Mode, cancellationToken);
 
@@ -7791,11 +7837,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
             TotalCalls++;
             FanSetCalls++;
+            int maximumRpm = Capabilities.FanSpeedRange?.MaximumRpm
+                ?? FanControlSettings.MaximumSpeedRpm;
             FanTargets.Add(new FanTargetSpeeds(
                 fan1Rpm,
                 fan2Rpm,
-                fan1Rpm == FanControlSettings.MaximumSpeedRpm
-                    && fan2Rpm == FanControlSettings.MaximumSpeedRpm));
+                fan1Rpm == maximumRpm
+                    && fan2Rpm == maximumRpm));
             ConfirmedState = ConfirmedState with { Fans = FanMode.Maximum };
             AfterSetter?.Invoke(DeviceSubsystem.Fans);
             return Task.CompletedTask;

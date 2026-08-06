@@ -21,7 +21,8 @@ public interface IServiceControlRuntime
         PowerSource powerSource,
         PersistentOverrideState persistentOverrides,
         bool recoveringUnexpectedExit) =>
-        Initialize(configuration, powerSource, persistentOverrides);
+        throw new NotSupportedException(
+            "This runtime does not implement unexpected-exit startup classification.");
 
     ServiceStatusSnapshot GetStatus();
 
@@ -185,7 +186,7 @@ public interface IServiceControlRuntime
         throw new NotSupportedException();
 
     Task PrepareManualFanCurveRecoveryAsync(CancellationToken cancellationToken) =>
-        Task.CompletedTask;
+        throw new NotSupportedException();
 
     Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken);
 
@@ -3173,10 +3174,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
                 string unavailable = reasonLabel == "shutdown"
-                    ? "OpenBlade could not verify the laptop before releasing keyboard Driver mode."
+                    ? "No verified laptop was available during shutdown, so keyboard Driver mode was left unchanged."
                     : $"OpenBlade could not verify the laptop while releasing keyboard Driver mode {boundary}.";
-                history.RecordSummary(ControlOperationStatus.Failed, unavailable);
-                return new ControlOperationResult(ControlOperationStatus.Failed, unavailable);
+                ControlOperationStatus unavailableStatus = reasonLabel == "shutdown"
+                    ? ControlOperationStatus.Stored
+                    : ControlOperationStatus.Failed;
+                history.RecordSummary(unavailableStatus, unavailable);
+                return new ControlOperationResult(unavailableStatus, unavailable);
             }
 
             bool? active = await device.ReleaseDriverModeAsync(cancellationToken)

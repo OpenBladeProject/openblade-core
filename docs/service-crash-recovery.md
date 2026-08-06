@@ -8,9 +8,11 @@ seconds, and 60 seconds. OpenBlade does not run a second watchdog.
 
 The service creates `%ProgramData%\OpenBlade\service-running.json` before its
 first device observation. An intentional Windows service stop runs the existing
-bounded hardware cleanup and then removes this marker. A process failure or
-forced termination cannot remove it, so the next SCM start enters unexpected-
-exit recovery.
+bounded hardware cleanup and then removes this marker. An in-process background
+failure also attempts the same cleanup while the hardware is still reachable,
+but retains the marker. A forced termination cannot run cleanup or remove the
+marker. In both failure cases, the next same-boot service start enters
+unexpected-exit recovery.
 
 If intentional-stop cleanup cannot remove the marker, the next start also uses
 the recovery path. This fails safe: it can skip ordinary profile application,
@@ -29,6 +31,12 @@ Unexpected-exit recovery performs these operations in order:
 
 The run marker is recovery evidence, not hardware admission. Every recovery
 write still performs fresh device and safety checks.
+
+`StartedAtUtc` separates a same-boot process failure from a system restart. A
+marker older than the current Windows boot is replaced and ordinary startup
+reconciliation runs, because firmware state from the prior boot cannot prove
+continued OpenBlade ownership. An unreadable marker still fails closed into
+unexpected-exit recovery.
 
 ## Owned producers
 
@@ -50,9 +58,9 @@ The following tests form the crash-recovery contract:
 
 | Requirement | Coverage |
 | --- | --- |
-| Durable distinction between graceful and unexpected exits | `ServiceRunMarkerStoreTests`, `WorkerTests.UnexpectedBackgroundFailure_IsReportedToCleanup`, and `WorkerTests.RunMarker_IsClearedOnlyAfterConfirmedOrDeliberatelySkippedCleanup` |
+| Durable distinction between graceful, same-boot failure, and system restart | `ServiceRunMarkerStoreTests`, `WorkerTests.UnexpectedBackgroundFailure_IsReportedToCleanup`, `WorkerTests.UnexpectedBackgroundFailure_AttemptsCleanupButRetainsRunMarker`, and `WorkerTests.RunMarker_IsClearedOnlyAfterConfirmedOrDeliberatelySkippedCleanup` |
 | Observation before recovery writes | `ServiceControlRuntimeTests.UnexpectedRestart_ObservesBeforeRecoveringOwnedProducers` |
-| Thermally safe manual-curve recovery without telemetry | `ServiceControlRuntimeTests.UnexpectedRestart_ObservesBeforeRecoveringOwnedProducers` |
+| Thermally safe manual-curve recovery without telemetry at the admitted device maximum | `ServiceControlRuntimeTests.UnexpectedRestart_ObservesBeforeRecoveringOwnedProducers` |
 | External changes and persistent overrides | `ServiceControlRuntimeTests.UnexpectedRestart_LatchesExternalChangesWithoutRecoveryWrites` |
 | Delayed device arrival after the bounded recovery attempt | `ServiceControlRuntimeTests.UnexpectedRestart_DeviceArrivingAfterRecoveryAttemptDoesNotStartCurve` |
 | Startup sequencing and cancellation | `ServiceStartupCoordinatorTests.InitializeAsync_UnclearedRunMarkerUsesOwnedRecoverySequence` |

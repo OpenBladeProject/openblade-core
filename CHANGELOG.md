@@ -48,6 +48,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   intent without ordinary profile writes, restore only eligible owned fan and
   lighting producers, and start a manual fan curve at a fresh thermally safe
   target that falls back to maximum speed when CPU telemetry is unavailable.
+  In-process failures still attempt bounded hardware cleanup, while markers
+  from an earlier Windows boot no longer suppress ordinary startup profiles.
 
 ## [0.1.0-nightly.9] - 2026-08-06
 

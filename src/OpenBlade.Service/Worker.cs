@@ -99,38 +99,20 @@ public sealed class Worker(
         bool intentionalStop,
         CancellationToken cancellationToken)
     {
-        if (!intentionalStop)
-        {
-            logger.LogWarning(
-                "The service stopped unexpectedly; graceful hardware cleanup was skipped and the run marker was retained for bounded recovery on the next SCM start.");
-            return;
-        }
+        bool clearRunMarker = await PrepareHardwareAndShouldClearRunMarkerAsync(
+            intentionalStop,
+            runtime.PrepareForShutdownAsync,
+            logger,
+            cancellationToken).ConfigureAwait(false);
 
-        bool cleanupCompleted = false;
-        try
+        if (!clearRunMarker)
         {
-            ControlOperationResult result = await runtime
-                .PrepareForShutdownAsync(cancellationToken)
-                .ConfigureAwait(false);
-            LogShutdownCleanupResult(logger, result);
-            cleanupCompleted = ShouldClearRunMarker(result);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
+            string reason = intentionalStop
+                ? "intentional-stop hardware cleanup was not confirmed"
+                : "the service stopped after an in-process failure";
             logger.LogWarning(
-                "Hardware cleanup timed out during service stop.");
-        }
-        catch (Exception exception)
-        {
-            logger.LogWarning(
-                exception,
-                "Hardware cleanup failed during service stop.");
-        }
-
-        if (!cleanupCompleted)
-        {
-            logger.LogWarning(
-                "The service run marker was retained because intentional-stop hardware cleanup was not confirmed; the next start will use the safer recovery path.");
+                "The service run marker was retained because {Reason}; the next start will use the safer recovery path.",
+                reason);
             return;
         }
 
@@ -152,8 +134,35 @@ public sealed class Worker(
         }
     }
 
-    internal static bool ShouldClearRunMarker(ControlOperationResult result) =>
-        result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored;
+    internal static async Task<bool> PrepareHardwareAndShouldClearRunMarkerAsync(
+        bool intentionalStop,
+        Func<CancellationToken, Task<ControlOperationResult>> prepareHardwareAsync,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            ControlOperationResult result = await prepareHardwareAsync(cancellationToken)
+                .ConfigureAwait(false);
+            LogShutdownCleanupResult(logger, result);
+            return intentionalStop
+                && result.Status is
+                    ControlOperationStatus.Applied or ControlOperationStatus.Stored;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "Hardware cleanup timed out during service stop.");
+            return false;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Hardware cleanup failed during service stop.");
+            return false;
+        }
+    }
 
     internal static void LogShutdownCleanupResult(
         ILogger logger,
