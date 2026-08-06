@@ -214,7 +214,14 @@ internal sealed class WindowsPid02E0MatrixFeatureOpener
         && string.Equals(evidence.Manufacturer, ExactManufacturer, StringComparison.Ordinal)
         && string.Equals(evidence.ProductName, ExactProductName, StringComparison.Ordinal)
         && string.Equals(evidence.Sku, ExactSku, StringComparison.Ordinal)
-        && string.Equals(evidence.BiosVersion, TargetBladeDevice.BiosVersion, StringComparison.Ordinal);
+        && identity.FirmwareCompatibility switch
+        {
+            HostFirmwareCompatibility.Tested =>
+                TargetBladeDevice.IsSupportedBiosVersion(evidence.BiosVersion),
+            HostFirmwareCompatibility.UntestedAllowed =>
+                !string.IsNullOrWhiteSpace(evidence.BiosVersion),
+            _ => false,
+        };
 
     private static HidSessionResult<OpenedHidHandle> Failure(HidSessionFailureKind failure) =>
         new(null, failure);

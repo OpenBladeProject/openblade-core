@@ -4,6 +4,12 @@ namespace OpenBlade.Protocol;
 
 public static class TargetBladeDevice
 {
+    private static readonly string[] SupportedBiosVersionValues =
+    [
+        BiosVersion,
+        "4.00",
+    ];
+
     public const string Model = RazerBladeModelCatalog.OpenBladeTargetModelNumber;
     public const string BiosVersion = "3.01";
     public const ushort VendorId = 0x1532;
@@ -16,6 +22,13 @@ public static class TargetBladeDevice
 
     public static bool Matches(ushort vendorId, ushort productId) =>
         vendorId == VendorId && productId == ProductId;
+
+    internal static IReadOnlyList<string> SupportedBiosVersions { get; } =
+        Array.AsReadOnly(SupportedBiosVersionValues);
+
+    internal static bool IsSupportedBiosVersion(string? biosVersion) =>
+        biosVersion is not null
+        && SupportedBiosVersionValues.Contains(biosVersion, StringComparer.Ordinal);
 
     public static bool CanCarryProtocolReport(ushort featureReportByteLength) =>
         featureReportByteLength == RazerReport.ReportLength + 1;
