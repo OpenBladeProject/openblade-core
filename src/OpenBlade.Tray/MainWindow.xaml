@@ -442,7 +442,7 @@
                                         <TextBlock Text="GPU tuning"
                                                    Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="Apply NVIDIA clock offsets independently of Power mode"
-                                                   Style="{StaticResource CardDescriptionStyle}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
                                     <ToggleSwitch x:Name="GpuClockTuningToggle"

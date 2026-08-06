@@ -18,6 +18,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   work clearly, avoids stale equal-version replacement cycles, and gives quiet
   and embedded installs a valid native apply owner.
 
+### Fixed
+
+- Fixed the Tray terminating at startup when loading the new GPU tuning card's
+  description style.
+
 ## [0.1.0-nightly.8] - 2026-08-06
 
 ### Changed

@@ -5,6 +5,22 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void DashboardGpuTuningDescriptionUsesDefinedSharedStyle()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string gpuTuningCard = SliceMethod(
+            xaml,
+            "Text=\"GPU tuning\"",
+            "x:Name=\"GpuClockTuningToggle\"");
+
+        Assert.Contains(
+            "Style=\"{StaticResource SecondaryTextStyle}\"",
+            gpuTuningCard,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("CardDescriptionStyle", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ExecutableProjectsInheritTheSharedOpenBladeIcon()
     {
         string targets = ReadRepositoryFile("src", "Directory.Build.targets");
