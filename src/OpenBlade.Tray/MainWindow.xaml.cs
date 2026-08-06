@@ -653,6 +653,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             }
         }
 
+        if (args.PropertyName == nameof(MainViewModel.HasAttention)
+            && !ViewModel.HasAttention)
+        {
+            if (dispatcherQueue.HasThreadAccess)
+            {
+                AttentionFlyout.Hide();
+            }
+            else
+            {
+                dispatcherQueue.TryEnqueue(AttentionFlyout.Hide);
+            }
+        }
+
         if (args.PropertyName is nameof(MainViewModel.LiveReadingsRefreshCadence)
             or nameof(MainViewModel.TrayHoverLabelMode)
             or nameof(MainViewModel.EnabledDashboardTelemetryItems)
