@@ -19,17 +19,11 @@ internal sealed class InstallerProgressPipe : IDisposable
     {
         Name = name;
         this.onMessage = onMessage;
-        PipeSecurity security = new();
         SecurityIdentifier currentUser = WindowsIdentity.GetCurrent().User
             ?? throw new InvalidOperationException("The installer user identity is unavailable.");
-        security.AddAccessRule(new PipeAccessRule(
-            currentUser,
-            PipeAccessRights.FullControl,
-            AccessControlType.Allow));
-        security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
-            PipeAccessRights.Write,
-            AccessControlType.Allow));
+        PipeSecurity security = CreateSecurity(currentUser);
+        // Burn executes one OpenBlade.Setup package per plan, so a single
+        // authenticated writer is the complete progress session.
         server = new NamedPipeServerStream(
             name,
             PipeDirection.In,
@@ -42,6 +36,25 @@ internal sealed class InstallerProgressPipe : IDisposable
     }
 
     public string Name { get; }
+
+    internal static PipeSecurity CreateSecurity(SecurityIdentifier currentUser)
+    {
+        if (currentUser is null)
+        {
+            throw new ArgumentNullException(nameof(currentUser));
+        }
+
+        PipeSecurity security = new();
+        security.AddAccessRule(new PipeAccessRule(
+            currentUser,
+            PipeAccessRights.FullControl,
+            AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+            PipeAccessRights.ReadWrite,
+            AccessControlType.Allow));
+        return security;
+    }
 
     public static InstallerProgressPipe Start(Action<string> onMessage)
     {
@@ -79,22 +92,53 @@ internal sealed class InstallerProgressPipe : IDisposable
                 detectEncodingFromByteOrderMarks: true,
                 bufferSize: 1024,
                 leaveOpen: true);
-            while (!disposed)
-            {
-                string? line = await reader.ReadLineAsync().ConfigureAwait(false);
-                if (line is null)
-                {
-                    break;
-                }
-
-                onMessage(line);
-            }
+            await ReadMessagesAsync(reader, onMessage).ConfigureAwait(false);
         }
         catch (ObjectDisposedException)
         {
         }
         catch (IOException)
         {
+        }
+    }
+
+    internal static async Task ReadMessagesAsync(
+        TextReader reader,
+        Action<string> messageHandler)
+    {
+        if (reader is null)
+        {
+            throw new ArgumentNullException(nameof(reader));
+        }
+        if (messageHandler is null)
+        {
+            throw new ArgumentNullException(nameof(messageHandler));
+        }
+
+        const int MaximumMessageLength = 512;
+        char[] buffer = new char[1024];
+        StringBuilder line = new(MaximumMessageLength);
+        int read;
+        while ((read = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+        {
+            for (int index = 0; index < read; index++)
+            {
+                char value = buffer[index];
+                if (value == '\n')
+                {
+                    messageHandler(line.ToString());
+                    line.Clear();
+                }
+                else if (value != '\r' && line.Length < MaximumMessageLength)
+                {
+                    line.Append(value);
+                }
+            }
+        }
+
+        if (line.Length > 0)
+        {
+            messageHandler(line.ToString());
         }
     }
 }

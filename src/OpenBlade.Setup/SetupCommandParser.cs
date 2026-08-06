@@ -118,30 +118,32 @@ public static class SetupCommandParser
         }
 
         int index = 2;
-        if (allowPurge
-            && index < arguments.Count
-            && string.Equals(arguments[index], "--purge", StringComparison.OrdinalIgnoreCase))
+        while (index < arguments.Count)
         {
-            purge = true;
-            index++;
-        }
-
-        if (index < arguments.Count
-            && string.Equals(
-                arguments[index],
-                "--progress-pipe",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            if (index + 1 >= arguments.Count
-                || string.IsNullOrWhiteSpace(arguments[index + 1]))
+            string option = arguments[index];
+            if (allowPurge
+                && !purge
+                && string.Equals(option, "--purge", StringComparison.OrdinalIgnoreCase))
             {
-                return false;
+                purge = true;
+                index++;
+                continue;
             }
 
-            progressPipeName = arguments[index + 1];
-            index += 2;
+            if (progressPipeName is null
+                && string.Equals(option, "--progress-pipe", StringComparison.OrdinalIgnoreCase)
+                && index + 1 < arguments.Count
+                && !string.IsNullOrWhiteSpace(arguments[index + 1])
+                && !arguments[index + 1].StartsWith("--", StringComparison.Ordinal))
+            {
+                progressPipeName = arguments[index + 1];
+                index += 2;
+                continue;
+            }
+
+            return false;
         }
 
-        return index == arguments.Count;
+        return true;
     }
 }

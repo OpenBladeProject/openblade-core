@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Interop;
 using Microsoft.Win32;
 using WixToolset.BootstrapperApplicationApi;
 
@@ -11,19 +12,26 @@ internal partial class InstallerWindow : Window
 {
     private const int MaximumDetailLines = 500;
     private readonly OpenBladeBootstrapperApplication bootstrapper;
+    private readonly bool allowInteraction;
     private readonly Queue<string> detailLines = new();
     private string? logPath;
 
-    internal InstallerWindow(OpenBladeBootstrapperApplication bootstrapper, string version)
+    internal InstallerWindow(
+        OpenBladeBootstrapperApplication bootstrapper,
+        string version,
+        bool allowInteraction = true)
     {
         this.bootstrapper = bootstrapper ?? throw new ArgumentNullException(nameof(bootstrapper));
+        this.allowInteraction = allowInteraction;
         InitializeComponent();
         VersionText.Text = $"Version {version}";
-        SourceInitialized += (_, _) => ApplyTheme();
+        SourceInitialized += Window_SourceInitialized;
         Closing += Window_Closing;
         Closed += Window_Closed;
         SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
     }
+
+    internal IntPtr WindowHandle { get; private set; }
 
     public void ShowReady(bool installed)
     {
@@ -52,6 +60,13 @@ internal partial class InstallerWindow : Window
         ProgressMessage.Text = "Preparing…";
         OverallProgress.Value = 0;
         ProgressCancelButton.IsEnabled = true;
+        ProgressCancelButton.Visibility = allowInteraction
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        DetailsToggle.Visibility = allowInteraction
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        DetailsBorder.Visibility = Visibility.Collapsed;
         DetailsToggle.IsChecked = false;
         detailLines.Clear();
         DetailsText.Clear();
@@ -110,8 +125,19 @@ internal partial class InstallerWindow : Window
         OpenLogButton.IsEnabled = !string.IsNullOrWhiteSpace(logPath);
     }
 
+    public void ShowHelp()
+    {
+        ShowOnly(SuccessPanel);
+        HeaderSubtitle.Text = "Help";
+        LaunchButton.Visibility = Visibility.Collapsed;
+        SuccessHeading.Text = "OpenBlade Setup";
+        SuccessMessage.Text =
+            "Run this installer normally to install, repair, or remove OpenBlade.";
+    }
+
     public void MarkCancellationRequested()
     {
+        CancelConfirmationPanel.Visibility = Visibility.Collapsed;
         ProgressCancelButton.IsEnabled = false;
         ProgressMessage.Text = "Cancelling and restoring the previous state…";
         AddDetail("Cancellation requested; waiting for safe rollback.");
@@ -124,6 +150,7 @@ internal partial class InstallerWindow : Window
         ProgressPanel.Visibility = Visibility.Collapsed;
         SuccessPanel.Visibility = Visibility.Collapsed;
         FailurePanel.Visibility = Visibility.Collapsed;
+        CancelConfirmationPanel.Visibility = Visibility.Collapsed;
         panel.Visibility = Visibility.Visible;
     }
 
@@ -138,15 +165,16 @@ internal partial class InstallerWindow : Window
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
-        if (MessageBox.Show(
-                this,
-                "Cancel setup and restore the previous state?",
-                "OpenBlade Setup",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning) == MessageBoxResult.Yes)
-        {
-            bootstrapper.RequestCancel();
-        }
+        CancelConfirmationPanel.Visibility = Visibility.Visible;
+    }
+
+    private void KeepWorkingButton_Click(object sender, RoutedEventArgs e) =>
+        CancelConfirmationPanel.Visibility = Visibility.Collapsed;
+
+    private void ConfirmCancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        CancelConfirmationPanel.Visibility = Visibility.Collapsed;
+        bootstrapper.RequestCancel();
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
@@ -176,6 +204,12 @@ internal partial class InstallerWindow : Window
     }
 
     private void ApplyTheme() => InstallerTheme.Apply(this, InstallerTheme.ShouldUseDarkMode());
+
+    private void Window_SourceInitialized(object? sender, EventArgs e)
+    {
+        WindowHandle = new WindowInteropHelper(this).Handle;
+        ApplyTheme();
+    }
 
     private void Window_Closed(object? sender, EventArgs e)
     {

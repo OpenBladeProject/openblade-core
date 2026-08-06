@@ -7,6 +7,8 @@ $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $installerProject = Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj'
 $installerUiProject = Join-Path $repository (
     'build\installer\OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj')
+$installerUiTestProject = Join-Path $repository (
+    'build\installer\OpenBlade.Installer.UI.Tests\OpenBlade.Installer.UI.Tests.csproj')
 $bundleSource = Join-Path $repository 'build\installer\Bundle.wxs'
 $setupPathsSource = Join-Path $repository 'src\OpenBlade.Setup\SetupPaths.cs'
 
@@ -45,6 +47,20 @@ $installerUiReferences = @($installerUi.SelectNodes(
     ForEach-Object { [string]$_.GetAttribute('Include') })
 Assert-True ($installerUiReferences -contains 'WixToolset.BootstrapperApplicationApi') `
     'The installer UI must use the supported WiX managed bootstrapper API.'
+
+[xml]$installerUiTests = Get-Content -LiteralPath $installerUiTestProject
+Assert-True ($installerUiTests.Project.PropertyGroup.TargetFramework -eq 'net472') `
+    'The installer UI tests must exercise the same .NET Framework target as the bootstrapper.'
+Assert-True ($installerUiTests.Project.PropertyGroup.UseWPF -eq 'true') `
+    'The installer UI tests must load the real WPF resources.'
+Assert-True ($installerUiTests.Project.PropertyGroup.IsTestProject -eq 'true') `
+    'The installer UI validation project must remain discoverable by dotnet test.'
+$installerUiTestReferences = @($installerUiTests.SelectNodes(
+        "/*[local-name()='Project']/*[local-name()='ItemGroup']/*[local-name()='ProjectReference']") |
+    ForEach-Object { [string]$_.GetAttribute('Include') })
+Assert-True ($installerUiTestReferences -contains `
+        '..\OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj') `
+    'The installer UI tests must load the production bootstrapper window.'
 
 [xml]$packages = Get-Content -LiteralPath (Join-Path $repository 'Directory.Packages.props')
 $packageVersions = @{}
@@ -200,11 +216,19 @@ $windowSource = Get-Content -LiteralPath (
 Assert-True ($windowSource.Contains(
         'action is LaunchAction.Install or LaunchAction.Repair')) `
     'Launch OpenBlade must remain limited to successful install and repair.'
+Assert-True (-not $windowSource.Contains('MessageBox.Show')) `
+    'Interactive cancellation must use the theme-aware in-window confirmation.'
 $bootstrapperSource = Get-Content -LiteralPath (
     Join-Path $repository (
         'build\installer\OpenBlade.Installer.UI\OpenBladeBootstrapperApplication.cs')) -Raw
 Assert-True ($bootstrapperSource.Contains('OpenBladeSetupProgressPipe')) `
     'The managed bootstrapper must create the private setup progress channel.'
+Assert-True ($bootstrapperSource.Contains('QuitAfterRunFailure(exception)')) `
+    'The managed bootstrapper must convert unhandled UI failures into a Burn exit code.'
+Assert-True ($bootstrapperSource.Contains('window?.WindowHandle ?? IntPtr.Zero')) `
+    'Burn apply must use the UI-thread-captured owner handle.'
+Assert-True (-not $bootstrapperSource.Contains('new WindowInteropHelper(window)')) `
+    'Burn callbacks must not read the WPF window handle from a worker thread.'
 $programSource = Get-Content -LiteralPath (
     Join-Path $repository 'build\installer\OpenBlade.Installer.UI\Program.cs') -Raw
 Assert-True (-not $programSource.Contains('[STAThread]')) `
@@ -214,6 +238,10 @@ $progressPipeSource = Get-Content -LiteralPath (
         'build\installer\OpenBlade.Installer.UI\InstallerProgressPipe.cs')) -Raw
 Assert-True ($progressPipeSource.Contains('BuiltinAdministratorsSid')) `
     'The elevated setup package must be able to write to the private progress channel.'
+Assert-True ($progressPipeSource.Contains('PipeAccessRights.ReadWrite')) `
+    'Over-the-shoulder elevated setup must receive sufficient progress-pipe access.'
+Assert-True ($progressPipeSource.Contains('MaximumMessageLength = 512')) `
+    'Progress-pipe messages must remain bounded before reaching the UI.'
 
 $payloads = $package.SelectSingleNode("*[local-name()='Payloads']")
 Assert-True ($null -ne $payloads) 'The OpenBlade payload group is missing.'
@@ -296,6 +324,10 @@ Assert-True ($solution.IndexOf(
         'OpenBlade.Installer.UI.csproj',
         [StringComparison]::OrdinalIgnoreCase) -lt 0) `
     'The release-only installer UI must remain outside the normal solution build.'
+Assert-True ($solution.IndexOf(
+        'OpenBlade.Installer.UI.Tests.csproj',
+        [StringComparison]::OrdinalIgnoreCase) -lt 0) `
+    'The release-only installer UI tests must remain outside the normal solution build.'
 
 $installerValidation = Get-Content -LiteralPath (
     Join-Path $repository 'build\InstallerValidation.ps1') -Raw
@@ -316,6 +348,8 @@ foreach ($requiredText in @(
         'StoreSubmissionValidation.ps1',
         'build\installer\OpenBlade.Installer.wixproj',
         'OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj',
+        'OpenBlade.Installer.UI.Tests\OpenBlade.Installer.UI.Tests.csproj',
+        'dotnet test $installerUiTestProject',
         'OpenBladeInstallerUi',
         'OpenBlade-Setup.exe',
         'OpenBlade-Store-Readiness.json',

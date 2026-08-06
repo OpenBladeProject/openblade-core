@@ -187,6 +187,16 @@ try {
         $stagingBundle ($productionPublishArguments + $setupPublishArguments)
     $installerUiProject = Join-Path $repository (
         'build\installer\OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj')
+    $installerUiTestProject = Join-Path $repository (
+        'build\installer\OpenBlade.Installer.UI.Tests\OpenBlade.Installer.UI.Tests.csproj')
+    & dotnet test $installerUiTestProject `
+        --configuration $Configuration `
+        --framework net472 `
+        --runtime win-x64 `
+        --property:NuGetAudit=false
+    if ($LASTEXITCODE -ne 0) {
+        throw "OpenBlade installer UI tests failed with exit code $LASTEXITCODE"
+    }
     & dotnet publish $installerUiProject `
         --configuration $Configuration `
         --framework net472 `

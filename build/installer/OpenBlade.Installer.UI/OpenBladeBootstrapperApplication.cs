@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Windows.Interop;
 using System.Windows.Threading;
 using WixToolset.BootstrapperApplicationApi;
 
@@ -159,6 +158,18 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     protected override void Run()
     {
+        try
+        {
+            RunCore();
+        }
+        catch (Exception exception)
+        {
+            QuitAfterRunFailure(exception);
+        }
+    }
+
+    private void RunCore()
+    {
         if (command is null)
         {
             Engine.Quit(unchecked((int)0x80004005));
@@ -169,7 +180,10 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         string version = TryGetVariable(BundleVersionVariable) ?? "unknown";
         if (command.Display is Display.Full or Display.Passive)
         {
-            window = new InstallerWindow(this, version);
+            window = new InstallerWindow(
+                this,
+                version,
+                allowInteraction: command.Display == Display.Full);
             window.Show();
         }
 
@@ -217,9 +231,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             result = 0;
             if (command.Display == Display.Full)
             {
-                Ui(() => window?.ShowFailure(
-                    "Run OpenBlade-Setup.exe normally to install, repair, or remove OpenBlade.",
-                    TryGetVariable(BundleLogVariable)));
+                Ui(() => window?.ShowHelp());
             }
             else
             {
@@ -259,7 +271,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
 
         applying = true;
-        IntPtr parent = window is null ? IntPtr.Zero : new WindowInteropHelper(window).Handle;
+        IntPtr parent = window?.WindowHandle ?? IntPtr.Zero;
         AddDetail("Applying the requested changes.");
         Engine.Apply(parent);
     }
@@ -324,7 +336,6 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private void OnProgress(object? sender, ProgressEventArgs e)
     {
-        Ui(() => window?.SetProgress(e.OverallPercentage));
         e.Cancel = cancellationRequested;
     }
 
@@ -413,6 +424,34 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             Engine.Log(LogLevel.Standard, message);
             window?.AddDetail(message);
         });
+    }
+
+    private void QuitAfterRunFailure(Exception exception)
+    {
+        int status = exception.HResult < 0
+            ? exception.HResult
+            : unchecked((int)0x80004005);
+        result = status;
+        progressPipe?.Dispose();
+        progressPipe = null;
+
+        try
+        {
+            Engine.Log(
+                LogLevel.Error,
+                $"The OpenBlade installer UI failed: {exception.GetType().Name} (0x{status:X8}).");
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            Engine.Quit(NormalizeExitCode(status));
+        }
+        catch
+        {
+        }
     }
 
     private string? TryGetVariable(string name)

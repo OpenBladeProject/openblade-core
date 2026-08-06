@@ -31,8 +31,8 @@ public sealed record WindowsSetupPlatformOptions(
     IBundleOwnershipRegistration? BundleOwnershipRegistration = null,
     IInstalledUninstallerWriter? InstalledUninstallerWriter = null,
     IDynamicLightingIdentityRegistration? DynamicLightingIdentityRegistration = null,
-    ISetupProgressReporter? ProgressReporter = null,
-    string? SetupExecutablePath = null);
+    string? SetupExecutablePath = null,
+    ISetupProgressReporter? ProgressReporter = null);
 
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {

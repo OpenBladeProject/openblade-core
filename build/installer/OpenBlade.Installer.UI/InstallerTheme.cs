@@ -40,6 +40,9 @@ internal static class InstallerTheme
         Color secondaryTextColor = dark ? Color.FromRgb(0xC7, 0xC7, 0xC7) : Color.FromRgb(0x5A, 0x5A, 0x5A);
         Color borderColor = dark ? Color.FromRgb(0x4A, 0x4A, 0x4A) : Color.FromRgb(0xD0, 0xD0, 0xD0);
         Color buttonColor = dark ? Color.FromRgb(0x3A, 0x3A, 0x3A) : Color.FromRgb(0xEB, 0xEB, 0xEB);
+        Color controlHoverColor = dark ? Color.FromRgb(0x48, 0x48, 0x48) : Color.FromRgb(0xE1, 0xE1, 0xE1);
+        Color controlPressedColor = dark ? Color.FromRgb(0x52, 0x52, 0x52) : Color.FromRgb(0xD5, 0xD5, 0xD5);
+        Color progressTrackColor = dark ? Color.FromRgb(0x15, 0x15, 0x15) : Color.FromRgb(0xD8, 0xD8, 0xD8);
 
         window.Resources["WindowBrush"] = FrozenBrush(windowColor);
         window.Resources["CardBrush"] = FrozenBrush(cardColor);
@@ -48,6 +51,9 @@ internal static class InstallerTheme
         window.Resources["SecondaryTextBrush"] = FrozenBrush(secondaryTextColor);
         window.Resources["BorderBrush"] = FrozenBrush(borderColor);
         window.Resources["ButtonBrush"] = FrozenBrush(buttonColor);
+        window.Resources["ControlHoverBrush"] = FrozenBrush(controlHoverColor);
+        window.Resources["ControlPressedBrush"] = FrozenBrush(controlPressedColor);
+        window.Resources["ProgressTrackBrush"] = FrozenBrush(progressTrackColor);
         window.Resources["AccentBrush"] = FrozenBrush(Color.FromRgb(0x44, 0xC7, 0x67));
 
         IntPtr handle = new WindowInteropHelper(window).Handle;

@@ -19,6 +19,9 @@
     <SolidColorBrush x:Key="SecondaryTextBrush" Color="#5A5A5A" />
     <SolidColorBrush x:Key="BorderBrush" Color="#D0D0D0" />
     <SolidColorBrush x:Key="ButtonBrush" Color="#EBEBEB" />
+    <SolidColorBrush x:Key="ControlHoverBrush" Color="#E1E1E1" />
+    <SolidColorBrush x:Key="ControlPressedBrush" Color="#D5D5D5" />
+    <SolidColorBrush x:Key="ProgressTrackBrush" Color="#D8D8D8" />
     <SolidColorBrush x:Key="AccentBrush" Color="#44C767" />
 
     <Style TargetType="TextBlock">
@@ -33,6 +36,36 @@
       <Setter Property="Background" Value="{DynamicResource ButtonBrush}" />
       <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                    CornerRadius="3" SnapsToDevicePixels="True">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Margin="{TemplateBinding Padding}"
+                                RecognizesAccessKey="True" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Chrome" Property="Background"
+                        Value="{DynamicResource ControlHoverBrush}" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Chrome" Property="Background"
+                        Value="{DynamicResource ControlPressedBrush}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Chrome" Property="BorderBrush"
+                        Value="{DynamicResource AccentBrush}" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Chrome" Property="Opacity" Value="0.45" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
     <Style TargetType="ToggleButton">
       <Setter Property="MinWidth" Value="96" />
@@ -41,6 +74,36 @@
       <Setter Property="Background" Value="{DynamicResource ButtonBrush}" />
       <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ToggleButton">
+            <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                    CornerRadius="3" SnapsToDevicePixels="True">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Margin="{TemplateBinding Padding}"
+                                RecognizesAccessKey="True" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Chrome" Property="Background"
+                        Value="{DynamicResource ControlHoverBrush}" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Chrome" Property="Background"
+                        Value="{DynamicResource ControlPressedBrush}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Chrome" Property="BorderBrush"
+                        Value="{DynamicResource AccentBrush}" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Chrome" Property="Opacity" Value="0.45" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
       <Style.Triggers>
         <Trigger Property="IsChecked" Value="True">
           <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
@@ -51,6 +114,90 @@
     </Style>
     <Style TargetType="CheckBox">
       <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Grid SnapsToDevicePixels="True">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border x:Name="Box" Width="17" Height="17"
+                      Background="{DynamicResource InputBrush}"
+                      BorderBrush="{DynamicResource BorderBrush}"
+                      BorderThickness="1" CornerRadius="2">
+                <Path x:Name="CheckMark" Data="M 3,8 L 7,12 L 14,4"
+                      Stroke="#101010" StrokeThickness="2"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                      Visibility="Collapsed" />
+              </Border>
+              <ContentPresenter Grid.Column="1" Margin="7,0,0,0"
+                                VerticalAlignment="Center"
+                                RecognizesAccessKey="True" />
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Box" Property="Background"
+                        Value="{DynamicResource AccentBrush}" />
+                <Setter TargetName="Box" Property="BorderBrush"
+                        Value="{DynamicResource AccentBrush}" />
+                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Box" Property="BorderBrush"
+                        Value="{DynamicResource AccentBrush}" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.45" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ProgressBar">
+      <Setter Property="Background" Value="{DynamicResource ProgressTrackBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ProgressBar">
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                    CornerRadius="3" SnapsToDevicePixels="True">
+              <Grid x:Name="PART_Track" ClipToBounds="True">
+                <Border x:Name="PART_Indicator" HorizontalAlignment="Left"
+                        Background="{TemplateBinding Foreground}" CornerRadius="2" />
+                <Border x:Name="PART_GlowRect" Width="90" HorizontalAlignment="Left"
+                        Background="{TemplateBinding Foreground}" CornerRadius="2"
+                        Visibility="Collapsed">
+                  <Border.RenderTransform>
+                    <TranslateTransform X="-90" />
+                  </Border.RenderTransform>
+                </Border>
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsIndeterminate" Value="True">
+                <Setter TargetName="PART_Indicator" Property="Visibility" Value="Collapsed" />
+                <Setter TargetName="PART_GlowRect" Property="Visibility" Value="Visible" />
+                <Trigger.EnterActions>
+                  <BeginStoryboard x:Name="IndeterminateStoryboard">
+                    <Storyboard RepeatBehavior="Forever">
+                      <DoubleAnimation Storyboard.TargetName="PART_GlowRect"
+                                       Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                       From="-90" To="520" Duration="0:0:1.4" />
+                    </Storyboard>
+                  </BeginStoryboard>
+                </Trigger.EnterActions>
+                <Trigger.ExitActions>
+                  <StopStoryboard BeginStoryboardName="IndeterminateStoryboard" />
+                </Trigger.ExitActions>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
   </Window.Resources>
 
@@ -66,7 +213,8 @@
         <ColumnDefinition Width="62" />
         <ColumnDefinition Width="*" />
       </Grid.ColumnDefinitions>
-      <Image Width="52" Height="52" HorizontalAlignment="Left" VerticalAlignment="Top"
+      <Image x:Name="BrandImage" Width="52" Height="52"
+             HorizontalAlignment="Left" VerticalAlignment="Top"
              Source="/OpenBlade.Installer.UI;component/Assets/OpenBlade.png" />
       <StackPanel Grid.Column="1" Margin="10,2,0,0">
         <TextBlock Text="OpenBlade" FontSize="26" FontWeight="SemiBold" />
@@ -159,7 +307,8 @@
             <TextBlock x:Name="SuccessMessage" Margin="0,12,0,0"
                        Text="Setup completed successfully."
                        Foreground="{DynamicResource SecondaryTextBrush}"
-                       HorizontalAlignment="Center" />
+                       HorizontalAlignment="Center" TextAlignment="Center"
+                       TextWrapping="Wrap" />
           </StackPanel>
           <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button x:Name="LaunchButton" Content="Launch OpenBlade"
@@ -181,6 +330,25 @@
           <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button x:Name="OpenLogButton" Content="Open log" Click="OpenLogButton_Click" />
             <Button Content="Close" Click="CloseButton_Click" />
+          </StackPanel>
+        </Grid>
+
+        <Grid x:Name="CancelConfirmationPanel" Panel.ZIndex="10"
+              Background="{DynamicResource CardBrush}" Visibility="Collapsed">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="Cancel setup?" FontSize="18" FontWeight="SemiBold"
+                       HorizontalAlignment="Center" />
+            <TextBlock Margin="16,12,16,0" TextWrapping="Wrap" TextAlignment="Center"
+                       Foreground="{DynamicResource SecondaryTextBrush}"
+                       Text="OpenBlade will stop safely and restore the previous installation state." />
+          </StackPanel>
+          <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Keep working" Click="KeepWorkingButton_Click" MinWidth="112" />
+            <Button Content="Cancel setup" Click="ConfirmCancelButton_Click" MinWidth="112" />
           </StackPanel>
         </Grid>
       </Grid>

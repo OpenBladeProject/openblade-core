@@ -75,6 +75,7 @@ public sealed class SetupCommandParserTests
     [InlineData(SetupCommand.Install, "install", "--bundle-managed", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef")]
     [InlineData(SetupCommand.Uninstall, "uninstall", "--bundle-managed", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef")]
     [InlineData(SetupCommand.UninstallAndPurge, "uninstall", "--bundle-managed", "--purge", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef")]
+    [InlineData(SetupCommand.UninstallAndPurge, "uninstall", "--bundle-managed", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef", "--purge")]
     public void TryParseInvocation_AllowsProgressPipeOnlyOnExactBundleManagedCommands(
         SetupCommand expected,
         params string[] arguments)
@@ -107,9 +108,11 @@ public sealed class SetupCommandParserTests
     [InlineData("install", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef")]
     [InlineData("install", "--bundle-managed", "--progress-pipe")]
     [InlineData("install", "--bundle-managed", "--progress-pipe", "")]
-    [InlineData("uninstall", "--bundle-managed", "--progress-pipe", "pipe", "--purge")]
+    [InlineData("uninstall", "--bundle-managed", "--progress-pipe", "--purge")]
+    [InlineData("uninstall", "--bundle-managed", "--purge", "--purge")]
+    [InlineData("uninstall", "--bundle-managed", "--progress-pipe", "pipe", "--progress-pipe", "other")]
     [InlineData("remove")]
-    public void TryParseInvocation_RejectsUnknownFlagsExtraArgumentsAndWrongOrdering(
+    public void TryParseInvocation_RejectsUnknownFlagsExtraArgumentsAndDuplicateOptions(
         params string[] arguments)
     {
         Assert.False(SetupCommandParser.TryParseInvocation(arguments, out _));
