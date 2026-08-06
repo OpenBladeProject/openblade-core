@@ -73,7 +73,8 @@ public sealed class WorkerTests
     {
         int cleanupCalls = 0;
 
-        bool clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+        bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+            startupCompleted: true,
             intentionalStop: false,
             _ =>
             {
@@ -87,6 +88,35 @@ public sealed class WorkerTests
 
         Assert.Equal(1, cleanupCalls);
         Assert.False(clearRunMarker);
+    }
+
+    [Fact]
+    public async Task StartupFailure_SkipsCleanupWithoutHardwareWarning()
+    {
+        bool cleanupCalled = false;
+        var logger = new RecordingLogger();
+
+        bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+            startupCompleted: false,
+            intentionalStop: false,
+            _ =>
+            {
+                cleanupCalled = true;
+                return Task.FromResult(new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    "Hardware cleanup completed."));
+            },
+            logger,
+            CancellationToken.None);
+
+        Assert.Null(clearRunMarker);
+        Assert.False(cleanupCalled);
+        LogEntry entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Information, entry.Level);
+        Assert.Contains(
+            "startup did not complete",
+            entry.Message,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -139,7 +169,8 @@ public sealed class WorkerTests
         ControlOperationStatus status,
         bool expected)
     {
-        bool clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+        bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+            startupCompleted: true,
             intentionalStop: true,
             _ => Task.FromResult(new ControlOperationResult(status, "result")),
             new RecordingLogger(),

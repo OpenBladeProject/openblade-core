@@ -92,6 +92,73 @@ public sealed class ServiceRunMarkerStoreTests : IDisposable
             await restarted.BeginRunAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task ForwardClockCorrectionDuringCurrentBootRemainsUnexpected()
+    {
+        string path = Path.Combine(directory, "service-running.json");
+        DateTimeOffset firstStart = new(2026, 8, 6, 7, 0, 0, TimeSpan.Zero);
+        var priorRun = new ServiceRunMarkerStore(
+            path,
+            () => firstStart,
+            () => TimeSpan.FromSeconds(30));
+        Assert.Equal(
+            ServiceStartupKind.Normal,
+            await priorRun.BeginRunAsync(CancellationToken.None));
+        var restarted = new ServiceRunMarkerStore(
+            path,
+            () => firstStart.AddMinutes(6),
+            () => TimeSpan.FromMinutes(1));
+
+        Assert.Equal(
+            ServiceStartupKind.UnexpectedExitRecovery,
+            await restarted.BeginRunAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RebootWithAmbiguousWallClockFailsClosed()
+    {
+        string path = Path.Combine(directory, "service-running.json");
+        DateTimeOffset firstStart = new(2026, 8, 6, 7, 0, 0, TimeSpan.Zero);
+        var priorRun = new ServiceRunMarkerStore(
+            path,
+            () => firstStart,
+            () => TimeSpan.FromHours(2));
+        Assert.Equal(
+            ServiceStartupKind.Normal,
+            await priorRun.BeginRunAsync(CancellationToken.None));
+        var restarted = new ServiceRunMarkerStore(
+            path,
+            () => firstStart.AddMinutes(-30),
+            () => TimeSpan.FromMinutes(5));
+
+        Assert.Equal(
+            ServiceStartupKind.UnexpectedExitRecovery,
+            await restarted.BeginRunAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task VersionOneMarkerFailsClosedDuringSchemaUpgrade()
+    {
+        string path = Path.Combine(directory, "service-running.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "schemaVersion": 1,
+              "startedAtUtc": "2026-08-05T12:00:00+00:00"
+            }
+            """);
+        var store = new ServiceRunMarkerStore(
+            path,
+            () => new DateTimeOffset(2026, 8, 6, 8, 0, 0, TimeSpan.Zero),
+            () => TimeSpan.FromMinutes(5));
+
+        Assert.Equal(
+            ServiceStartupKind.UnexpectedExitRecovery,
+            await store.BeginRunAsync(CancellationToken.None));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))

@@ -20,6 +20,7 @@ public sealed class Worker(
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        bool startupCompleted = false;
         var startupCoordinator = new ServiceStartupCoordinator(
             profileBootstrapper,
             overrideStore,
@@ -29,10 +30,16 @@ public sealed class Worker(
             logger);
         return RunWithShutdownCleanupAsync(
             token => RunAfterSuccessfulStartupAsync(
-                startupCoordinator.InitializeAsync,
+                async innerToken =>
+                {
+                    startupCompleted = await startupCoordinator
+                        .InitializeAsync(innerToken).ConfigureAwait(false);
+                    return startupCompleted;
+                },
                 RunBackgroundAsync,
                 token),
             (intentionalStop, token) => PrepareForShutdownAsync(
+                startupCompleted,
                 intentionalStop,
                 token),
             stoppingToken);
@@ -96,16 +103,23 @@ public sealed class Worker(
     }
 
     private async Task PrepareForShutdownAsync(
+        bool startupCompleted,
         bool intentionalStop,
         CancellationToken cancellationToken)
     {
-        bool clearRunMarker = await PrepareHardwareAndShouldClearRunMarkerAsync(
+        bool? clearRunMarker = await PrepareHardwareAndShouldClearRunMarkerAsync(
+            startupCompleted,
             intentionalStop,
             runtime.PrepareForShutdownAsync,
             logger,
             cancellationToken).ConfigureAwait(false);
 
-        if (!clearRunMarker)
+        if (clearRunMarker is null)
+        {
+            return;
+        }
+
+        if (!clearRunMarker.Value)
         {
             string reason = intentionalStop
                 ? "intentional-stop hardware cleanup was not confirmed"
@@ -134,12 +148,20 @@ public sealed class Worker(
         }
     }
 
-    internal static async Task<bool> PrepareHardwareAndShouldClearRunMarkerAsync(
+    internal static async Task<bool?> PrepareHardwareAndShouldClearRunMarkerAsync(
+        bool startupCompleted,
         bool intentionalStop,
         Func<CancellationToken, Task<ControlOperationResult>> prepareHardwareAsync,
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        if (!startupCompleted)
+        {
+            logger.LogInformation(
+                "Service startup did not complete; hardware cleanup and run-marker deletion were skipped.");
+            return null;
+        }
+
         try
         {
             ControlOperationResult result = await prepareHardwareAsync(cancellationToken)

@@ -10,11 +10,12 @@ public enum ServiceStartupKind
 
 internal sealed record ServiceRunMarkerDocument(
     int SchemaVersion,
-    DateTimeOffset StartedAtUtc);
+    DateTimeOffset StartedAtUtc,
+    TimeSpan UptimeAtStart);
 
 public sealed class ServiceRunMarkerStore
 {
-    private const int CurrentSchemaVersion = 1;
+    private const int CurrentSchemaVersion = 2;
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
         {
@@ -56,13 +57,16 @@ public sealed class ServiceRunMarkerStore
         try
         {
             DateTimeOffset startedAtUtc = getUtcNow();
+            TimeSpan uptimeAtStart = getSystemUptime();
             ServiceStartupKind startupKind = await ClassifyExistingMarkerAsync(
                 startedAtUtc,
+                uptimeAtStart,
                 cancellationToken).ConfigureAwait(false);
             byte[] json = JsonSerializer.SerializeToUtf8Bytes(
                 new ServiceRunMarkerDocument(
                     CurrentSchemaVersion,
-                    startedAtUtc),
+                    startedAtUtc,
+                    uptimeAtStart),
                 SerializerOptions);
             await AtomicFile.WriteAsync(path, json, cancellationToken)
                 .ConfigureAwait(false);
@@ -76,6 +80,7 @@ public sealed class ServiceRunMarkerStore
 
     private async Task<ServiceStartupKind> ClassifyExistingMarkerAsync(
         DateTimeOffset nowUtc,
+        TimeSpan currentUptime,
         CancellationToken cancellationToken)
     {
         if (!File.Exists(path))
@@ -93,19 +98,18 @@ public sealed class ServiceRunMarkerStore
                     SerializerOptions);
             if (marker is null
                 || marker.SchemaVersion != CurrentSchemaVersion
-                || marker.StartedAtUtc == default)
+                || marker.StartedAtUtc == default
+                || marker.UptimeAtStart < TimeSpan.Zero
+                || currentUptime < TimeSpan.Zero)
             {
                 return ServiceStartupKind.UnexpectedExitRecovery;
             }
 
-            TimeSpan uptime = getSystemUptime();
-            if (uptime < TimeSpan.Zero)
-            {
-                return ServiceStartupKind.UnexpectedExitRecovery;
-            }
-
-            DateTimeOffset currentBootStartedAtUtc = nowUtc - uptime;
-            return marker.StartedAtUtc < currentBootStartedAtUtc
+            DateTimeOffset currentBootStartedAtUtc = nowUtc - currentUptime;
+            bool uptimeProvesRestart = currentUptime < marker.UptimeAtStart;
+            bool wallClockSupportsRestart =
+                marker.StartedAtUtc < currentBootStartedAtUtc;
+            return uptimeProvesRestart && wallClockSupportsRestart
                 ? ServiceStartupKind.Normal
                 : ServiceStartupKind.UnexpectedExitRecovery;
         }

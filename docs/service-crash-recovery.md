@@ -32,11 +32,12 @@ Unexpected-exit recovery performs these operations in order:
 The run marker is recovery evidence, not hardware admission. Every recovery
 write still performs fresh device and safety checks.
 
-`StartedAtUtc` separates a same-boot process failure from a system restart. A
-marker older than the current Windows boot is replaced and ordinary startup
-reconciliation runs, because firmware state from the prior boot cannot prove
-continued OpenBlade ownership. An unreadable marker still fails closed into
-unexpected-exit recovery.
+The marker stores both `StartedAtUtc` and monotonic system uptime. A restart is
+accepted only when current uptime is lower than the stored uptime and the wall
+clock also places the marker before the current Windows boot. Requiring both
+signals prevents an early-boot clock correction from making a same-boot crash
+look like a reboot. Ambiguous, unreadable, and older-schema markers fail closed
+into unexpected-exit recovery.
 
 ## Owned producers
 
