@@ -44,7 +44,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly VisibleObservationLoop visibleObservationLoop;
     private readonly VisibleObservationLoop trayObservationLoop;
     private readonly WindowsProcessorEfficiencyPolicy processorPolicy;
-    private readonly Action<TrayNotification> showNotification;
+    private readonly Func<TrayNotification, bool> showNotification;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
     private readonly DispatcherQueueTimer chargeLimitCommitTimer;
     private readonly DispatcherQueueTimer lightingCommitTimer;
@@ -118,12 +118,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     internal MainWindow(
         WindowsProcessorEfficiencyPolicy processorPolicy,
         IStartupRegistration startupRegistration,
-        Action<TrayNotification>? showNotification = null)
+        Func<TrayNotification, bool>? showNotification = null)
     {
         this.processorPolicy = processorPolicy
             ?? throw new ArgumentNullException(nameof(processorPolicy));
         ArgumentNullException.ThrowIfNull(startupRegistration);
-        this.showNotification = showNotification ?? (_ => { });
+        this.showNotification = showNotification ?? (_ => false);
         dispatcherQueue = DispatcherQueue.GetForCurrentThread()
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         dispatcherQueue.EnsureSystemDispatcherQueue();
@@ -1109,12 +1109,15 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        TryShowNotification(new TrayNotification(
+        if (!TryShowNotification(new TrayNotification(
             "OpenBlade update available",
             $"OpenBlade {args.ReleaseTag.TrimStart('v', 'V')} is ready to download.",
             TrayNotificationSeverity.Information,
             ReplacementTag: AppUpdateNotificationTag,
-            Destination: TrayNotificationDestination.Updates));
+            Destination: TrayNotificationDestination.Updates)))
+        {
+            return;
+        }
         lastNotifiedReleaseTag = args.ReleaseTag;
         QueuePreferenceSave();
     }
@@ -1132,12 +1135,15 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        TryShowNotification(new TrayNotification(
+        if (!TryShowNotification(new TrayNotification(
             "Razer firmware update available",
             args.Summary,
             TrayNotificationSeverity.Information,
             ReplacementTag: FirmwareUpdateNotificationTag,
-            Destination: TrayNotificationDestination.Firmware));
+            Destination: TrayNotificationDestination.Firmware)))
+        {
+            return;
+        }
         lastNotifiedFirmwareSignature = args.Signature;
         QueuePreferenceSave();
     }
@@ -1272,17 +1278,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private void TryShowNotification(TrayNotification notification)
+    private bool TryShowNotification(TrayNotification notification)
     {
         try
         {
-            showNotification(notification);
+            return showNotification(notification);
         }
         catch (Exception exception)
         {
             Trace.TraceWarning(
                 "OpenBlade could not show a notification: {0}",
                 exception.Message);
+            return false;
         }
     }
 

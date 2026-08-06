@@ -169,7 +169,19 @@ public partial class App : Microsoft.UI.Xaml.Application
         return new MainWindow(
             processorPolicy,
             startupRegistration,
-            notification => trayIconHost?.ShowNotification(notification));
+            TryShowTrayNotification);
+    }
+
+    private bool TryShowTrayNotification(TrayNotification notification)
+    {
+        ITrayIconHost? host = trayIconHost;
+        if (host is null)
+        {
+            return false;
+        }
+
+        host.ShowNotification(notification);
+        return true;
     }
 
     private void CreateTrayIconHost()

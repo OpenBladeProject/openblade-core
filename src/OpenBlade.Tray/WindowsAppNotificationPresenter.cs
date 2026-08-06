@@ -148,8 +148,18 @@ internal sealed class WindowsAppNotificationPresenter : IDisposable
         out TrayNotificationDestination destination)
     {
         destination = TrayNotificationDestination.Home;
-        return arguments.TryGetValue("destination", out string? value)
-            && Enum.TryParse(value, ignoreCase: false, out destination);
+        if (arguments.TryGetValue("destination", out string? value)
+            && Enum.TryParse(
+                value,
+                ignoreCase: false,
+                out TrayNotificationDestination parsed)
+            && Enum.IsDefined(parsed))
+        {
+            destination = parsed;
+            return true;
+        }
+
+        return false;
     }
 
     private static void Report(Action<Exception>? errorHandler, Exception exception)

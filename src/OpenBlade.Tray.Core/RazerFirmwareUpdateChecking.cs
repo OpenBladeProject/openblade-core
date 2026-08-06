@@ -459,11 +459,6 @@ public sealed class FirmwareUpdateAssistantViewModel :
             StringComparison.OrdinalIgnoreCase);
         installedFirmware = firmware;
         supportPage = nextPage;
-        if (firmwareChanged)
-        {
-            IsUpdateAvailable = false;
-            UpdateAvailableSummary = string.Empty;
-        }
         Notify(nameof(IsSupported));
         Notify(nameof(OfficialSupportUri));
         Notify(nameof(InstalledBiosVersion));
@@ -471,7 +466,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
         Notify(nameof(InstalledMcuVersion));
         checkCommand.NotifyCanExecuteChanged();
 
-        if (modelChanged)
+        if (modelChanged || firmwareChanged)
         {
             RestoreCachedVersionsForCurrentModel();
         }
@@ -702,27 +697,47 @@ public sealed class FirmwareUpdateAssistantViewModel :
         string? installed,
         string? published)
     {
-        if (TryParseComparableVersion(installed, out Version installedVersion)
-            && TryParseComparableVersion(published, out Version publishedVersion)
-            && publishedVersion > installedVersion)
+        Version? installedVersion = ParseComparableVersion(installed);
+        Version? publishedVersion = ParseComparableVersion(published);
+        if (installedVersion is null || publishedVersion is null)
+        {
+            if ((installedVersion is null && IsTraceableVersion(installed))
+                || (publishedVersion is null && IsTraceableVersion(published)))
+            {
+                Trace.TraceInformation(
+                    "OpenBlade could not compare {0} firmware versions. Installed: '{1}'; published: '{2}'.",
+                    label,
+                    installed ?? "Unavailable",
+                    published ?? "Not listed");
+            }
+            return;
+        }
+
+        if (publishedVersion > installedVersion)
         {
             newerComponents.Add($"{label} {published!.Trim()}");
         }
     }
 
-    private static bool TryParseComparableVersion(
-        string? value,
-        out Version version)
+    private static Version? ParseComparableVersion(string? value)
     {
-        version = new Version();
         if (string.IsNullOrWhiteSpace(value))
         {
-            return false;
+            return null;
         }
 
         string candidate = value.Trim().TrimStart('v', 'V');
-        return Version.TryParse(candidate, out version!);
+        return Version.TryParse(candidate, out Version? version)
+            ? version
+            : null;
     }
+
+    private static bool IsTraceableVersion(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && !string.Equals(
+            value.Trim(),
+            "Unavailable",
+            StringComparison.OrdinalIgnoreCase);
 
     private string CreateNotCheckedMessage() =>
         lastSuccessfulCheckAt is DateTimeOffset checkedAt
@@ -742,20 +757,31 @@ public sealed class FirmwareUpdateAssistantViewModel :
             || cachedMcuVersion is not null;
         if (lastSuccessfulCheckAt is not null && modelMatches && hasCachedVersion)
         {
-            PublishedBiosVersion = PublishedValue(
+            var published = new RazerPublishedFirmwareVersions(
                 cachedBiosVersion,
-                cachedBiosStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable);
-            PublishedEcVersion = PublishedValue(
                 cachedEcVersion,
-                cachedEcStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable);
-            PublishedMcuVersion = PublishedValue(
                 cachedMcuVersion,
+                cachedBiosStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable,
+                cachedEcStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable,
                 cachedMcuStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable);
-            StatusText =
-                $"Published updater versions last loaded {lastSuccessfulCheckAt.Value.ToLocalTime():g}.";
+            PublishedBiosVersion = PublishedValue(
+                published.BiosVersion,
+                published.BiosStatus);
+            PublishedEcVersion = PublishedValue(
+                published.EcVersion,
+                published.EcStatus);
+            PublishedMcuVersion = PublishedValue(
+                published.McuVersion,
+                published.McuStatus);
+            PresentUpdateAvailability(supportPage!, published);
+            StatusText = IsUpdateAvailable
+                ? UpdateAvailableSummary
+                : $"Published updater versions last loaded {lastSuccessfulCheckAt.Value.ToLocalTime():g}.";
             return;
         }
 
+        IsUpdateAvailable = false;
+        UpdateAvailableSummary = string.Empty;
         PublishedBiosVersion = "Not checked";
         PublishedEcVersion = "Not checked";
         PublishedMcuVersion = "Not checked";

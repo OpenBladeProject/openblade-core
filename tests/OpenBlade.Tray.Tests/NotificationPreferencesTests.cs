@@ -15,15 +15,28 @@ public sealed class NotificationPreferencesTests
         Assert.True(preferences.OperationFailuresEnabled);
     }
 
-    [Fact]
-    public void CategoriesCanBeChangedIndependently()
+    [Theory]
+    [InlineData(NotificationCategory.PerformanceChanges)]
+    [InlineData(NotificationCategory.ProfileAndPowerSourceChanges)]
+    [InlineData(NotificationCategory.AppUpdates)]
+    [InlineData(NotificationCategory.FirmwareUpdates)]
+    [InlineData(NotificationCategory.ControllerAdvisories)]
+    [InlineData(NotificationCategory.OperationFailures)]
+    public void CategoriesCanBeChangedIndependently(NotificationCategory category)
     {
-        NotificationPreferences preferences = NotificationPreferences.Default
-            .WithEnabled(NotificationCategory.AppUpdates, enabled: false);
+        NotificationPreferences before = NotificationPreferences.Default;
+        NotificationPreferences after = before.WithEnabled(
+            category,
+            !before.IsEnabled(category));
 
-        Assert.False(preferences.AppUpdatesEnabled);
-        Assert.True(preferences.FirmwareUpdatesEnabled);
-        Assert.True(preferences.OperationFailuresEnabled);
+        foreach (NotificationCategory candidate in Enum.GetValues<NotificationCategory>())
+        {
+            Assert.Equal(
+                candidate == category
+                    ? !before.IsEnabled(candidate)
+                    : before.IsEnabled(candidate),
+                after.IsEnabled(candidate));
+        }
     }
 
     [Fact]
@@ -54,6 +67,13 @@ public sealed class NotificationPreferencesTests
 
         Assert.True(deduplicator.ShouldEmit("updates", "Update", "Version 1.2"));
         Assert.True(deduplicator.ShouldEmit("updates", "Update", "Version 1.3"));
+    }
+
+    [Fact]
+    public void NegativeRepeatWindowIsRejected()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new NotificationDeduplicator(repeatWindow: TimeSpan.FromTicks(-1)));
     }
 
     private sealed class SettableTimeProvider(DateTimeOffset now) : TimeProvider

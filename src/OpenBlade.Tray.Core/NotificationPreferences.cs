@@ -64,6 +64,10 @@ public sealed record NotificationPreferences(
         };
 }
 
+/// <summary>
+/// Suppresses repeated tagged notifications on the tray UI thread. Callers keep
+/// the replacement-tag set bounded; this type is not thread-safe.
+/// </summary>
 public sealed class NotificationDeduplicator
 {
     public static readonly TimeSpan DefaultRepeatWindow = TimeSpan.FromSeconds(30);
@@ -78,11 +82,12 @@ public sealed class NotificationDeduplicator
         TimeSpan? repeatWindow = null)
     {
         this.timeProvider = timeProvider ?? TimeProvider.System;
-        this.repeatWindow = repeatWindow ?? DefaultRepeatWindow;
-        if (this.repeatWindow < TimeSpan.Zero)
+        TimeSpan selectedRepeatWindow = repeatWindow ?? DefaultRepeatWindow;
+        if (selectedRepeatWindow < TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(repeatWindow));
         }
+        this.repeatWindow = selectedRepeatWindow;
     }
 
     public bool ShouldEmit(string replacementTag, string title, string body)
