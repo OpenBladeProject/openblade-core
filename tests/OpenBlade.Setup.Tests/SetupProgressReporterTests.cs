@@ -1,5 +1,6 @@
-using OpenBlade.Setup;
 using System.Text;
+
+using OpenBlade.Setup;
 
 namespace OpenBlade.Setup.Tests;
 
