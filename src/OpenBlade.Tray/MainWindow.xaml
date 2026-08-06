@@ -3248,7 +3248,6 @@
                                                   AutomationProperties.Name="Update channel"
                                                   ItemsSource="{x:Bind UpdateViewModel.ChannelOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
-                                                  SelectionChanged="OnUpdateChannelSelectionChanged"
                                                   SelectedItem="{x:Bind UpdateViewModel.SelectedChannelOption, Mode=TwoWay}"
                                                   local:StableComboBoxSelection.Anchor="{x:Bind UpdateViewModel.SelectedChannelOption, Mode=OneWay}" />
                                     </Grid>

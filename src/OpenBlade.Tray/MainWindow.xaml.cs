@@ -1093,17 +1093,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private void OnUpdatePreferencesChanged(object? sender, EventArgs args) =>
         QueuePreferenceSave();
 
-    private void OnUpdateChannelSelectionChanged(
-        object sender,
-        SelectionChangedEventArgs args)
-    {
-        if (sender is Microsoft.UI.Xaml.Controls.ComboBox
-            { SelectedItem: UpdateChannelOption selected })
-        {
-            UpdateViewModel.SelectedChannelOption = selected;
-        }
-    }
-
     private void OnFirmwareUpdatePreferencesChanged(object? sender, EventArgs args) =>
         QueuePreferenceSave();
 

@@ -475,25 +475,6 @@ public sealed class WinUiShellContractTests
             "SelectedItem=\"{x:Bind UpdateViewModel.SelectedChannelOption, Mode=TwoWay}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "SelectionChanged=\"OnUpdateChannelSelectionChanged\"",
-            xaml,
-            StringComparison.Ordinal);
-        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
-        int handlerStart = window.IndexOf(
-            "private void OnUpdateChannelSelectionChanged(",
-            StringComparison.Ordinal);
-        int nextHandler = window.IndexOf(
-            "private void OnFirmwareUpdatePreferencesChanged(",
-            handlerStart,
-            StringComparison.Ordinal);
-        Assert.True(
-            handlerStart >= 0 && nextHandler > handlerStart,
-            "The update-channel selection commit handler must remain discoverable.");
-        Assert.Contains(
-            "UpdateViewModel.SelectedChannelOption = selected;",
-            window[handlerStart..nextHandler],
-            StringComparison.Ordinal);
         Assert.Equal(7, CountOccurrences(xaml, "Margin=\"0,0,0,20\""));
         Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}\"",
