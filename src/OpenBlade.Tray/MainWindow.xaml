@@ -1884,7 +1884,8 @@
                                                 AutomationProperties.Name="Show warning details"
                                                 ToolTipService.ToolTip="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}">
                                             <Button.Flyout>
-                                                <Flyout Placement="BottomEdgeAlignedLeft">
+                                                <Flyout x:Name="AttentionFlyout"
+                                                        Placement="BottomEdgeAlignedLeft">
                                                     <StackPanel MaxWidth="360" Spacing="6">
                                                         <TextBlock Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
                                                                    Style="{StaticResource CardTitleStyle}" />

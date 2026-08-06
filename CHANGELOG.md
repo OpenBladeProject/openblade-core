@@ -13,6 +13,20 @@ All notable changes to OpenBlade are documented in this file. The project follow
   notification routes to the relevant OpenBlade status while durable errors and
   advisories remain available in the app.
 
+### Fixed
+
+- Kept newly applied Power mode and Custom CPU/GPU selections from briefly
+  reverting after the progress spinner finishes while confirmed status catches
+  up.
+- Aligned MCU versions in the README hardware table with Razer's updater label
+  format.
+- Dismissed the dashboard warning flyout when its underlying status clears,
+  preventing a mostly empty popup after reapplying settings or accepting an
+  incompatible firmware override.
+- Offered **Use profile settings** when another app changes the keyboard effect
+  to a value that firmware cannot read back, allowing the saved profile to be
+  restored without guessing the active effect.
+
 ## [0.1.0-nightly.9] - 2026-08-06
 
 ### Added

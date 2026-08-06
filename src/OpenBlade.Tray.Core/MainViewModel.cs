@@ -57,6 +57,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private const byte DefaultLightingBrightness = 50;
     private static readonly TimeSpan ReconnectVisualGracePeriod =
         TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan PerformancePresentationHoldGracePeriod =
+        TimeSpan.FromSeconds(2);
 
     private enum ProfileDraftGroup
     {
@@ -65,6 +67,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Display,
         Laptop,
     }
+
+    private sealed record PendingPerformanceHold(
+        PerformanceOverride Requested,
+        PowerSource PowerSource,
+        DateTimeOffset? ExpiresAt);
 
     private static readonly IReadOnlyList<ProfileComparisonOption> ComparisonOptions =
     [
@@ -168,7 +175,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
-    private PerformanceOverride? pendingPerformance;
+    private PendingPerformanceHold? pendingPerformance;
     private IReadOnlyList<CustomPerformanceLevel> availableCustomCpuLevels =
         AllCustomPerformanceLevels;
     private IReadOnlyList<CustomPerformanceLevel> availableCustomGpuLevels =
@@ -1120,6 +1127,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         get
         {
+            if (!HasAttention)
+            {
+                return string.Empty;
+            }
             if (HasExternalChanges)
             {
                 return "Laptop controls changed outside OpenBlade";
@@ -1132,16 +1143,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public string AttentionBadgeLabel => HasExternalChanges
-        ? "Changed outside OpenBlade"
-        : HasControllerDetectionWarning
-            ? "Check status"
-            : "Razer app active";
+    public string AttentionBadgeLabel => !HasAttention
+        ? string.Empty
+        : HasExternalChanges
+            ? "Changed outside OpenBlade"
+            : HasControllerDetectionWarning
+                ? "Check status"
+                : "Razer app active";
 
     public string AttentionDetails
     {
         get
         {
+            if (!HasAttention)
+            {
+                return string.Empty;
+            }
             List<string> details = [];
             if (HasExternalChanges)
             {
@@ -3866,11 +3883,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return;
         }
 
+        bool performanceHoldReleased = ReleasePendingPerformanceHold(status);
         ServiceStatusSnapshot? previousStatus = latestStatus;
         latestAcceptedRevision = status.Revision;
         latestStatus = status;
         if (IsConnected
             && previousStatus is not null
+            && !performanceHoldReleased
             && StatusMetadataEqual(previousStatus, status))
         {
             ApplyLiveReadings(status);
@@ -3903,7 +3922,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool checkingLaptopConnection)
     {
         UpdateOneShotReadbacks(status);
-        SelectedPerformance = pendingPerformance?.Value
+        SelectedPerformance = pendingPerformance?.Requested.Value
             ?? ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = pendingFanControl?.Mode
             ?? ResolvePresentedFanMode(status, confirmed, capabilities);
@@ -3954,7 +3973,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SetTemporaryFullChargeState(confirmed?.Battery?.TemporaryFullCharge);
         ActivePowerSource = status.ActivePowerSource;
         CustomPerformanceSettings customPerformance =
-            pendingPerformance is
+            pendingPerformance?.Requested is
             { Value: PerformancePreset.Custom, CustomPerformance: { } pendingCustom }
                 ? pendingCustom
                 : confirmed is
@@ -4563,7 +4582,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             GpuClockOffsets = CurrentGpuClockOffsets,
         };
         bool applied = false;
-        pendingPerformance = requested;
+        pendingPerformance = new PendingPerformanceHold(
+            requested,
+            sourceAtStart,
+            ExpiresAt: null);
         IsPerformanceOperationInProgress = true;
         PresentPerformance(requested);
         try
@@ -4578,7 +4600,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     if (result.Status == ControlOperationStatus.Applied)
                     {
                         applied = true;
-                        PresentPerformance(requested);
                         MarkActiveProfileDraft(
                             sourceAtStart,
                             performance: requested.Value,
@@ -4588,10 +4609,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         finally
         {
-            pendingPerformance = null;
             IsPerformanceOperationInProgress = false;
             if (!applied)
             {
+                pendingPerformance = null;
                 PresentPerformance(new PerformanceOverride(
                     previousPerformance,
                     OverrideLifetime.UntilPowerSourceChange,
@@ -4599,7 +4620,44 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                         ? previousCustom
                         : null));
             }
+            else
+            {
+                if (pendingPerformance is { Requested: var pending } hold
+                    && pending == requested)
+                {
+                    pendingPerformance = hold with
+                    {
+                        ExpiresAt = timeProvider.GetUtcNow()
+                            + PerformancePresentationHoldGracePeriod,
+                    };
+                }
+
+                if (latestStatus is { } status)
+                {
+                    ReleasePendingPerformanceHold(status);
+                }
+            }
         }
+    }
+
+    private bool ReleasePendingPerformanceHold(ServiceStatusSnapshot status)
+    {
+        if (pendingPerformance is not { } pending)
+        {
+            return false;
+        }
+
+        bool statusCaughtUp = status.PerformanceOverride == pending.Requested;
+        bool sourceChanged = status.ActivePowerSource != pending.PowerSource;
+        bool gracePeriodExpired = pending.ExpiresAt is { } expiresAt
+            && timeProvider.GetUtcNow() >= expiresAt;
+        if (!statusCaughtUp && !sourceChanged && !gracePeriodExpired)
+        {
+            return false;
+        }
+
+        pendingPerformance = null;
+        return true;
     }
 
     private void PresentPerformance(PerformanceOverride value)
@@ -6274,7 +6332,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             bool logoDiffers = saved.Lighting.LogoMode is { } savedLogo
                 && current.LogoMode is { } currentLogo
                 && savedLogo != currentLogo;
-            return keyboardDiffers || logoDiffers;
+            bool unreadableEffectChangedOutside = IsKeyboardEffectUnconfirmed
+                && latestStatus?.ExternalChanges.Contains(DeviceSubsystem.Lighting) == true;
+            return keyboardDiffers || logoDiffers || unreadableEffectChangedOutside;
         }
     }
 
