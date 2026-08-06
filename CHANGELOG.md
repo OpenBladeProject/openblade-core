@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Aligned MCU versions in the README hardware table with Razer's updater label
+  format.
 - Dismissed the dashboard warning flyout when its underlying status clears,
   preventing a mostly empty popup after reapplying settings or accepting an
   incompatible firmware override.
