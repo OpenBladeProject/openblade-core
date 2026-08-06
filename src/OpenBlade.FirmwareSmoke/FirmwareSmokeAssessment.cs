@@ -179,7 +179,7 @@ public static class FirmwareSmokeAssessment
             baseline,
             current,
             expectedChangedComponents,
-            expectedChangedComponents,
+            new HashSet<FirmwareComponent>(),
             "post-update");
     }
 

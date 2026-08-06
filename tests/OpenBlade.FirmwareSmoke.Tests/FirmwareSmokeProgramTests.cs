@@ -61,9 +61,25 @@ public sealed class FirmwareSmokeProgramTests
 
         Assert.DoesNotContain("RZ09-", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("-MCU-SMOKE", script, StringComparison.OrdinalIgnoreCase);
+
+        int executionStart = script.IndexOf(
+            "Push-Location $repositoryRoot",
+            StringComparison.Ordinal);
+        Assert.True(executionStart >= 0);
+        string parameterAndValidationBlock = script[..executionStart];
         Assert.DoesNotMatch(
-            @"['""]v?\d+\.\d+(?:\.\d+)*['""]",
-            script);
+            FirmwareVersionLiteralPattern,
+            parameterAndValidationBlock);
+    }
+
+    [Theory]
+    [InlineData("throw 'BIOS 4.00 is required'")]
+    [InlineData("if ($bios -lt 4.00) { }")]
+    [InlineData("# requires BIOS 4.00")]
+    [InlineData("$min = '4.00'")]
+    public void FirmwareVersionLiteralGuardRejectsHardcodedVersions(string line)
+    {
+        Assert.Matches(FirmwareVersionLiteralPattern, line);
     }
 
     [Fact]
@@ -97,4 +113,7 @@ public sealed class FirmwareSmokeProgramTests
 
         throw new DirectoryNotFoundException("Could not locate the repository root.");
     }
+
+    private const string FirmwareVersionLiteralPattern =
+        @"(?<![A-Za-z0-9])v?\d+\.\d+(?:\.\d+)*(?![A-Za-z0-9])";
 }
