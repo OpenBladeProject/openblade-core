@@ -19,7 +19,8 @@ public sealed class WindowsStartupRegistrationTests : IDisposable
         WindowsStartupRegistration registration = CreateRegistration(paths, writer);
 
         Assert.True(await registration.IsEnabledAsync(CancellationToken.None));
-        Assert.True(registration.ShouldStartForLaunchArguments(StartupShortcutArguments.Tray));
+        Assert.True(registration.ShouldStartForLaunchArguments(
+            ["OpenBlade.Tray.exe", StartupShortcutArguments.Tray]));
         Assert.Empty(writer.Requests);
     }
 
@@ -34,9 +35,12 @@ public sealed class WindowsStartupRegistrationTests : IDisposable
             new RecordingShortcutWriter());
 
         Assert.False(await registration.IsEnabledAsync(CancellationToken.None));
-        Assert.False(registration.ShouldStartForLaunchArguments("  --STARTUP  "));
-        Assert.True(registration.ShouldStartForLaunchArguments(string.Empty));
-        Assert.True(registration.ShouldStartForLaunchArguments("--notification"));
+        Assert.False(registration.ShouldStartForLaunchArguments(
+            ["OpenBlade.Tray.exe", "--notification", "--STARTUP"]));
+        Assert.True(registration.ShouldStartForLaunchArguments(["OpenBlade.Tray.exe"]));
+        Assert.True(registration.ShouldStartForLaunchArguments(
+            ["OpenBlade.Tray.exe", "--notification"]));
+        Assert.True(registration.ShouldStartForLaunchArguments(["--startup"]));
     }
 
     [Fact]
@@ -73,6 +77,21 @@ public sealed class WindowsStartupRegistrationTests : IDisposable
         Assert.False(File.Exists(paths.DisabledMarker));
         Assert.True(await registration.IsEnabledAsync(CancellationToken.None));
         Assert.Empty(writer.Requests);
+    }
+
+    [Fact]
+    public async Task EnableWithoutPriorMarkerDoesNotRequireUserDataDirectory()
+    {
+        TestPaths paths = CreatePaths();
+        WriteFile(paths.CommonShortcut);
+        WindowsStartupRegistration registration = CreateRegistration(
+            paths,
+            new RecordingShortcutWriter());
+
+        await registration.SetEnabledAsync(true, CancellationToken.None);
+
+        Assert.False(Directory.Exists(paths.UserDataDirectory));
+        Assert.True(await registration.IsEnabledAsync(CancellationToken.None));
     }
 
     [Fact]
@@ -126,6 +145,24 @@ public sealed class WindowsStartupRegistrationTests : IDisposable
 
         Assert.False(File.Exists(paths.DisabledMarker));
         Assert.True(await registration.IsEnabledAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RepeatedDisableCleanupFailurePreservesExistingOptOut()
+    {
+        TestPaths paths = CreatePaths();
+        WriteFile(paths.CommonShortcut);
+        WriteFile(paths.DisabledMarker);
+        Directory.CreateDirectory(paths.UserShortcut);
+        WindowsStartupRegistration registration = CreateRegistration(
+            paths,
+            new RecordingShortcutWriter());
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            registration.SetEnabledAsync(false, CancellationToken.None));
+
+        Assert.True(File.Exists(paths.DisabledMarker));
+        Assert.False(await registration.IsEnabledAsync(CancellationToken.None));
     }
 
     public void Dispose()

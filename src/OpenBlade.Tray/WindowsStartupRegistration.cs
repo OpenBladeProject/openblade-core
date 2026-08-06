@@ -50,12 +50,16 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
         this.workingDirectory = workingDirectory;
     }
 
-    internal bool ShouldStartForLaunchArguments(string? arguments) =>
-        !string.Equals(
-            arguments?.Trim(),
-            StartupShortcutArguments.Tray,
-            StringComparison.OrdinalIgnoreCase)
-        || !File.Exists(disabledMarkerPath);
+    internal bool ShouldStartForLaunchArguments(IReadOnlyList<string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        bool startupLaunch = arguments
+            .Skip(1)
+            .Contains(
+                StartupShortcutArguments.Tray,
+                StringComparer.OrdinalIgnoreCase);
+        return !startupLaunch || !File.Exists(disabledMarkerPath);
+    }
 
     public Task<bool> IsEnabledAsync(CancellationToken cancellationToken)
     {
@@ -81,10 +85,14 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
                     cancellationToken).ConfigureAwait(false);
             }
 
-            File.Delete(disabledMarkerPath);
+            if (File.Exists(disabledMarkerPath))
+            {
+                File.Delete(disabledMarkerPath);
+            }
             return;
         }
 
+        bool wasDisabled = File.Exists(disabledMarkerPath);
         await WriteDisabledMarkerAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -93,6 +101,11 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
         }
         catch (Exception deletionException)
         {
+            if (wasDisabled)
+            {
+                throw;
+            }
+
             try
             {
                 File.Delete(disabledMarkerPath);
@@ -129,7 +142,14 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
         }
         finally
         {
-            File.Delete(temporaryPath);
+            try
+            {
+                File.Delete(temporaryPath);
+            }
+            catch
+            {
+                // Best-effort cleanup must not replace the primary write failure.
+            }
         }
     }
 }

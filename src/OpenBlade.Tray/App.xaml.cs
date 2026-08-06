@@ -41,7 +41,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             "OpenBlade.Tray",
             OpenBladeProductVersion.Read(typeof(App).Assembly));
         var startupRegistration = new WindowsStartupRegistration();
-        if (!startupRegistration.ShouldStartForLaunchArguments(args.Arguments))
+        if (!startupRegistration.ShouldStartForLaunchArguments(
+                Environment.GetCommandLineArgs()))
         {
             Trace.TraceInformation(
                 "OpenBlade skipped the current user's disabled tray startup registration.");
