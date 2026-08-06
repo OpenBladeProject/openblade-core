@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept newly applied Power mode and Custom CPU/GPU selections from briefly
+  reverting after the progress spinner finishes while confirmed status catches
+  up.
 - Aligned MCU versions in the README hardware table with Razer's updater label
   format.
 - Dismissed the dashboard warning flyout when its underlying status clears,
