@@ -1042,6 +1042,48 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AttentionPresentationPreservesRemainingWarningAndClearsOnDisconnect()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            conflicts: ["RazerAppEngine"]) with
+        {
+            ExternalChanges = [DeviceSubsystem.Fans],
+        });
+        await WaitUntilAsync(() => viewModel.HasExternalChanges);
+        Assert.Equal(
+            "Laptop controls changed outside OpenBlade",
+            viewModel.AttentionSummary);
+
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            conflicts: ["RazerAppEngine"]) with
+        {
+            Revision = 2,
+        });
+        await WaitUntilAsync(() => !viewModel.HasExternalChanges);
+
+        Assert.True(viewModel.HasAttention);
+        Assert.Equal("Another Razer app is running", viewModel.AttentionSummary);
+        Assert.Equal("Razer app active", viewModel.AttentionBadgeLabel);
+        Assert.NotEmpty(viewModel.AttentionDetails);
+
+        client.CompleteWatch();
+        await WaitUntilAsync(() => !viewModel.IsConnected);
+
+        Assert.False(viewModel.HasAttention);
+        Assert.Empty(viewModel.AttentionSummary);
+        Assert.Empty(viewModel.AttentionBadgeLabel);
+        Assert.Empty(viewModel.AttentionDetails);
+    }
+
+    [Fact]
     public async Task TroubleshootingOtherRazerSoftware_IncludesDetectionFailureAndRecovers()
     {
         var client = new FakeServiceClient();

@@ -1120,6 +1120,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         get
         {
+            if (!HasAttention)
+            {
+                return string.Empty;
+            }
             if (HasExternalChanges)
             {
                 return "Laptop controls changed outside OpenBlade";
@@ -1128,24 +1132,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 return "Controller detection needs attention";
             }
-            return HasControllerAdvisory
-                ? "Another Razer app is running"
-                : string.Empty;
+            return "Another Razer app is running";
         }
     }
 
-    public string AttentionBadgeLabel => HasExternalChanges
-        ? "Changed outside OpenBlade"
-        : HasControllerDetectionWarning
-            ? "Check status"
-            : HasControllerAdvisory
-                ? "Razer app active"
-                : string.Empty;
+    public string AttentionBadgeLabel => !HasAttention
+        ? string.Empty
+        : HasExternalChanges
+            ? "Changed outside OpenBlade"
+            : HasControllerDetectionWarning
+                ? "Check status"
+                : "Razer app active";
 
     public string AttentionDetails
     {
         get
         {
+            if (!HasAttention)
+            {
+                return string.Empty;
+            }
             List<string> details = [];
             if (HasExternalChanges)
             {
