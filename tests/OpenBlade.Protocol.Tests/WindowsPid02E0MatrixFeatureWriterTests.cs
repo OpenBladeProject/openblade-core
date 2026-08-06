@@ -12,7 +12,8 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
             "Blade 16 - RZ09-0581",
             "RZ09-05819EN4",
             "3.01"),
-        null);
+        null,
+        HostFirmwareCompatibility.Tested);
 
     private static readonly HidHandleIdentity ExactMatrix = new(
         0x1532,
@@ -46,6 +47,50 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         await result.Value.DisposeAsync();
         Assert.True(matrix.FileHandle.IsClosed);
         Assert.Equal(1, native.BoundDisposeCount);
+    }
+
+    [Fact]
+    public async Task Opener_AcceptsUntestedFirmwareOnlyWhenExplicitlyAllowed()
+    {
+        var allowedNative = new ScriptedCandidateNative();
+        OpenedCandidateHandle allowedCandidate = allowedNative.Add("mi03", ExactMatrix);
+        var allowed = new WindowsPid02E0MatrixFeatureOpener(
+            new ScriptedHost(ExactHost with
+            {
+                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "4.00" },
+                FirmwareCompatibility = HostFirmwareCompatibility.UntestedAllowed,
+            }),
+            new ScriptedGuard(),
+            allowedNative,
+            ControllerExclusivityPolicy.Strict);
+
+        HidSessionResult<OpenedHidHandle> allowedResult = allowed.Open();
+
+        Assert.Null(allowedResult.Failure);
+        Assert.NotNull(allowedResult.Value);
+        await allowedResult.Value.DisposeAsync();
+        Assert.True(allowedCandidate.FileHandle.IsClosed);
+
+        var blockedNative = new ScriptedCandidateNative();
+        OpenedCandidateHandle blockedCandidate = blockedNative.Add("mi03", ExactMatrix);
+        var blocked = new WindowsPid02E0MatrixFeatureOpener(
+            new ScriptedHost(ExactHost with
+            {
+                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "4.00" },
+                FirmwareCompatibility = HostFirmwareCompatibility.UntestedBlocked,
+            }),
+            new ScriptedGuard(),
+            blockedNative,
+            ControllerExclusivityPolicy.Strict);
+
+        HidSessionResult<OpenedHidHandle> blockedResult = blocked.Open();
+
+        Assert.Equal(HidSessionFailureKind.IdentityBlocked, blockedResult.Failure);
+        Assert.Null(blockedResult.Value);
+        Assert.Equal(0, blockedNative.EnumerateCalls);
+        Assert.False(blockedCandidate.FileHandle.IsClosed);
+        blockedCandidate.Dispose();
+        Assert.True(blockedCandidate.FileHandle.IsClosed);
     }
 
     [Fact]
