@@ -100,6 +100,10 @@ Assert-True (Test-Path -LiteralPath $installerIcon -PathType Leaf) `
 Assert-True ((Get-Item -LiteralPath $installerIcon).Length -gt 6) `
     'The dedicated OpenBlade installer icon is empty or truncated.'
 Assert-True (
+    (Get-FileHash -LiteralPath $installerIcon -Algorithm SHA256).Hash -eq
+        '286A783AC117BF96D92D5B77E41BE847CC7FC225AC002BD19F076A1A7F743766') `
+    'The installer icon no longer matches the selected taskbar artwork.'
+Assert-True (
     $bundle.GetAttribute('Condition') -eq
         'VersionNT64 >= v10.0 AND WindowsBuildNumber >= 26100') `
     'The Burn bundle must require Windows 11 version 24H2 x64.'
@@ -117,6 +121,9 @@ Assert-True (
         '<ApplicationIcon>..\..\..\src\OpenBlade.Tray\Assets\Brand\OpenBlade.Installer.ico</ApplicationIcon>',
         [StringComparison]::Ordinal) -ge 0) `
     'The managed bootstrapper application must use the dedicated installer icon.'
+Assert-True (
+    $installerUi.Project.PropertyGroup.AssemblyTitle -eq 'OpenBlade Setup') `
+    'Task Manager must identify the managed bootstrapper as OpenBlade Setup.'
 
 $bootstrapper = $bundle.SelectSingleNode("*[local-name()='BootstrapperApplication']")
 Assert-True ($null -ne $bootstrapper) 'The Burn bootstrapper application is missing.'

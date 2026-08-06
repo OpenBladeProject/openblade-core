@@ -5,6 +5,9 @@
     <TargetFramework>net472</TargetFramework>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AssemblyName>OpenBlade.Installer.UI</AssemblyName>
+    <AssemblyTitle>OpenBlade Setup</AssemblyTitle>
+    <Product>OpenBlade Setup</Product>
+    <Description>Installs, repairs, and removes OpenBlade.</Description>
     <RootNamespace>OpenBlade.Installer.UI</RootNamespace>
     <ApplicationIcon>..\..\..\src\OpenBlade.Tray\Assets\Brand\OpenBlade.Installer.ico</ApplicationIcon>
     <LangVersion>latest</LangVersion>

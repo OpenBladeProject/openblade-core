@@ -37,6 +37,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private string? newerRelatedBundleVersion;
     private readonly HashSet<string> newerRelatedBundleCodes =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> relatedBundleVersions =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private IEngine Engine => engine;
 
@@ -225,6 +227,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         installed = e.RegistrationType == RegistrationType.Full;
         allowNewerVersionOverwrite = false;
         newerRelatedBundleCodes.Clear();
+        relatedBundleVersions.Clear();
         newerRelatedBundleVersion = null;
         AddDetail("Checking the installed OpenBlade version.");
     }
@@ -242,13 +245,17 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
 
         if (e.RelationType == RelationType.Upgrade
-            && IsNewerVersion(bundleVersion, e.Version))
+            && !string.IsNullOrWhiteSpace(e.ProductCode))
         {
-            newerRelatedBundleCodes.Add(e.ProductCode);
-            if (newerRelatedBundleVersion is null
-                || IsNewerVersion(newerRelatedBundleVersion, e.Version))
+            relatedBundleVersions[e.ProductCode] = e.Version;
+            if (IsNewerVersion(bundleVersion, e.Version))
             {
-                newerRelatedBundleVersion = e.Version;
+                newerRelatedBundleCodes.Add(e.ProductCode);
+                if (newerRelatedBundleVersion is null
+                    || IsNewerVersion(newerRelatedBundleVersion, e.Version))
+                {
+                    newerRelatedBundleVersion = e.Version;
+                }
             }
         }
     }
@@ -316,14 +323,20 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private void OnPlanRelatedBundleType(object? sender, PlanRelatedBundleTypeEventArgs e)
     {
         bool detectedNewerBundle = newerRelatedBundleCodes.Contains(e.BundleCode);
+        bool detectedSameVersionBundle =
+            relatedBundleVersions.TryGetValue(e.BundleCode, out string? relatedVersion)
+            && AreSameVersion(bundleVersion, relatedVersion);
         RelatedBundlePlanType selected = SelectRelatedBundlePlanType(
             allowNewerVersionOverwrite,
             detectedNewerBundle,
+            detectedSameVersionBundle,
             e.RecommendedType);
         if (selected != e.Type)
         {
             e.Type = selected;
-            AddDetail($"Replacing newer OpenBlade bundle {e.BundleCode} after user confirmation.");
+            AddDetail(selected == RelatedBundlePlanType.None
+                ? $"Skipping an earlier OpenBlade {relatedVersion} registration to avoid an equal-version replacement cycle."
+                : $"Replacing newer OpenBlade {relatedVersion} after user confirmation.");
         }
 
         e.Cancel = cancellationRequested;
@@ -399,8 +412,16 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private void OnExecutePackageBegin(object? sender, ExecutePackageBeginEventArgs e)
     {
         string package = GetPackageName(e.PackageId);
-        AddDetail($"Running {package}.");
-        Ui(() => window?.SetProgress(CalculatedProgress(), package));
+        bool relatedBundle = relatedBundleVersions.TryGetValue(
+            e.PackageId,
+            out string relatedVersion);
+        string phase = relatedBundle
+            ? DescribeRelatedBundleExecution(relatedVersion)
+            : package;
+        AddDetail(relatedBundle
+            ? $"{phase}."
+            : $"Running {phase}.");
+        Ui(() => window?.SetProgress(CalculatedProgress(), phase));
         e.Cancel = cancellationRequested;
     }
 
@@ -517,6 +538,11 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private string GetPackageName(string packageId)
     {
+        if (relatedBundleVersions.TryGetValue(packageId, out string? relatedVersion))
+        {
+            return $"OpenBlade {relatedVersion}";
+        }
+
         if (applicationData?.Bundle.Packages.TryGetValue(packageId, out IPackageInfo? package) == true)
         {
             return string.IsNullOrWhiteSpace(package.DisplayName) ? packageId : package.DisplayName;
@@ -600,6 +626,16 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         return current is not null && related is not null && related > current;
     }
 
+    private static bool AreSameVersion(string currentVersion, string relatedVersion)
+    {
+        Version? current = ParseBurnComparableVersion(currentVersion);
+        Version? related = ParseBurnComparableVersion(relatedVersion);
+        return current is not null && related is not null && related == current;
+    }
+
+    internal static string DescribeRelatedBundleExecution(string version) =>
+        $"Removing OpenBlade {version}";
+
     private static Version? ParseBurnComparableVersion(string value)
     {
         if (!Version.TryParse(value, out Version? parsed))
@@ -617,12 +653,25 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     internal static RelatedBundlePlanType SelectRelatedBundlePlanType(
         bool allowOverwrite,
         bool detectedNewerBundle,
-        RelatedBundlePlanType recommendedType) =>
-        allowOverwrite
+        bool detectedSameVersionBundle,
+        RelatedBundlePlanType recommendedType)
+    {
+        if (allowOverwrite
             && detectedNewerBundle
-            && recommendedType == RelatedBundlePlanType.Downgrade
-                ? RelatedBundlePlanType.Upgrade
-                : recommendedType;
+            && recommendedType == RelatedBundlePlanType.Downgrade)
+        {
+            return RelatedBundlePlanType.Upgrade;
+        }
+
+        if (allowOverwrite
+            && detectedSameVersionBundle
+            && recommendedType == RelatedBundlePlanType.Upgrade)
+        {
+            return RelatedBundlePlanType.None;
+        }
+
+        return recommendedType;
+    }
 
     internal static RequestState SelectPackageRequestState(
         bool allowOverwrite,
