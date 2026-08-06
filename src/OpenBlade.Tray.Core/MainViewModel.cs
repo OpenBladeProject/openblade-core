@@ -169,6 +169,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
     private PerformanceOverride? pendingPerformance;
+    private PowerSource pendingPerformancePowerSource;
     private IReadOnlyList<CustomPerformanceLevel> availableCustomCpuLevels =
         AllCustomPerformanceLevels;
     private IReadOnlyList<CustomPerformanceLevel> availableCustomGpuLevels =
@@ -3876,6 +3877,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return;
         }
 
+        ReconcilePendingPerformancePresentation(status);
         ServiceStatusSnapshot? previousStatus = latestStatus;
         latestAcceptedRevision = status.Revision;
         latestStatus = status;
@@ -4574,6 +4576,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         };
         bool applied = false;
         pendingPerformance = requested;
+        pendingPerformancePowerSource = sourceAtStart;
         IsPerformanceOperationInProgress = true;
         PresentPerformance(requested);
         try
@@ -4588,7 +4591,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     if (result.Status == ControlOperationStatus.Applied)
                     {
                         applied = true;
-                        PresentPerformance(requested);
                         MarkActiveProfileDraft(
                             sourceAtStart,
                             performance: requested.Value,
@@ -4598,10 +4600,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         finally
         {
-            pendingPerformance = null;
             IsPerformanceOperationInProgress = false;
             if (!applied)
             {
+                pendingPerformance = null;
                 PresentPerformance(new PerformanceOverride(
                     previousPerformance,
                     OverrideLifetime.UntilPowerSourceChange,
@@ -4609,8 +4611,33 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                         ? previousCustom
                         : null));
             }
+            else if (latestStatus is { } status)
+            {
+                ReconcilePendingPerformancePresentation(status);
+            }
         }
     }
+
+    private void ReconcilePendingPerformancePresentation(ServiceStatusSnapshot status)
+    {
+        if (pendingPerformance is not { } pending)
+        {
+            return;
+        }
+
+        if (status.ActivePowerSource != pendingPerformancePowerSource
+            || PerformanceMatchesConfirmedState(pending, status.ConfirmedState))
+        {
+            pendingPerformance = null;
+        }
+    }
+
+    private static bool PerformanceMatchesConfirmedState(
+        PerformanceOverride requested,
+        ConfirmedDeviceState? confirmed) =>
+        confirmed?.Performance == requested.Value
+        && (requested.Value != PerformancePreset.Custom
+            || confirmed.CustomPerformance == requested.CustomPerformance);
 
     private void PresentPerformance(PerformanceOverride value)
     {

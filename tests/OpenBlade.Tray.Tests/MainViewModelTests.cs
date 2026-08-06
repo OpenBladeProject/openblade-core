@@ -2344,6 +2344,156 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task PerformanceSelection_StaysRequestedAcrossPostCompletionStaleStatus()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+
+        Assert.False(viewModel.IsPerformanceOperationInProgress);
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+            Message = "Lagging status",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Lagging status");
+
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+
+        PerformanceOverride requested = Assert.IsType<PerformanceOverride>(
+            client.PerformanceOverride);
+        ServiceStatusSnapshot confirmed = baseline with
+        {
+            Revision = baseline.Revision + 2,
+            Message = "Confirmed status",
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Performance,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Performance,
+                    SettingValueSource.TemporaryOverride),
+            },
+            PerformanceOverride = requested,
+        };
+        client.Publish(confirmed);
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Confirmed status");
+
+        client.Publish(confirmed with
+        {
+            Revision = baseline.Revision + 3,
+            Message = "Later external status",
+            ConfirmedState = confirmed.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Silent,
+            },
+            DesiredState = confirmed.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Silent,
+                    SettingValueSource.PowerProfile),
+            },
+            PerformanceOverride = null,
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Later external status");
+
+        Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
+    }
+
+    [Fact]
+    public async Task CustomPerformanceSelection_WaitsForMatchingConfirmedSettings()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        CustomPerformanceSettings previous = CustomPerformanceSettings.Default;
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false) with
+        {
+            ConfirmedState = CreateStatus(true, false).ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = previous,
+            },
+            DesiredState = CreateStatus(true, false).DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Custom,
+                    SettingValueSource.PowerProfile),
+                CustomPerformance = previous,
+            },
+        };
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.IsCustomPerformanceVisible);
+        var requested = new CustomPerformanceSettings(
+            CustomPerformanceLevel.Low,
+            CustomPerformanceLevel.High);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetCustomPerformanceCommand)
+            .ExecuteAsync(requested);
+
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+            Message = "Lagging custom status",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Lagging custom status");
+
+        Assert.Equal(requested.Cpu, viewModel.SelectedCustomCpuLevel);
+        Assert.Equal(requested.Gpu, viewModel.SelectedCustomGpuLevel);
+
+        PerformanceOverride requestedOverride = Assert.IsType<PerformanceOverride>(
+            client.PerformanceOverride);
+        ServiceStatusSnapshot confirmed = baseline with
+        {
+            Revision = baseline.Revision + 2,
+            Message = "Confirmed custom status",
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                CustomPerformance = requested,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                CustomPerformance = requested,
+            },
+            PerformanceOverride = requestedOverride,
+        };
+        client.Publish(confirmed);
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Confirmed custom status");
+
+        var later = new CustomPerformanceSettings(
+            CustomPerformanceLevel.Medium,
+            CustomPerformanceLevel.Low);
+        client.Publish(confirmed with
+        {
+            Revision = baseline.Revision + 3,
+            Message = "Later custom status",
+            ConfirmedState = confirmed.ConfirmedState! with
+            {
+                CustomPerformance = later,
+            },
+            DesiredState = confirmed.DesiredState with
+            {
+                CustomPerformance = later,
+            },
+            PerformanceOverride = null,
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Later custom status");
+
+        Assert.Equal(later.Cpu, viewModel.SelectedCustomCpuLevel);
+        Assert.Equal(later.Gpu, viewModel.SelectedCustomGpuLevel);
+    }
+
+    [Fact]
     public async Task FailedPerformanceSelection_RestoresPreviousPresentation()
     {
         var client = new FakeServiceClient
