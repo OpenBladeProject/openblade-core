@@ -14,9 +14,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Prevented confirmed installer downgrades from waiting indefinitely on stale
-  same-version Burn registrations, replaced raw bundle identifiers with clear
-  version-removal progress, preserved the selected installer artwork in the
-  taskbar, and aligned the Task Manager identity with OpenBlade Setup.
+  same-version Burn registrations, gave quiet and embedded installs a valid
+  native apply owner, replaced raw bundle identifiers with clear version-removal
+  progress, preserved the selected installer artwork in the taskbar, and aligned
+  the Task Manager identity with OpenBlade Setup.
 
 ## [0.1.0-nightly.8] - 2026-08-06
 

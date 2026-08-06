@@ -3,6 +3,7 @@ using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using WixToolset.BootstrapperApplicationApi;
 using Xunit;
@@ -218,6 +219,18 @@ public sealed class InstallerWindowTests
             Assert.Equal(Visibility.Collapsed, window.DetailsToggle.Visibility);
             Assert.Equal(Visibility.Collapsed, window.ProgressCancelButton.Visibility);
             Assert.Equal(Visibility.Collapsed, window.DetailsBorder.Visibility);
+        });
+    }
+
+    [Fact]
+    public void HiddenApplyOwnerProvidesANativeHandleForNonVisualModes()
+    {
+        RunInSta(() =>
+        {
+            using HwndSource owner = OpenBladeBootstrapperApplication.CreateHiddenApplyOwner();
+
+            Assert.NotEqual(IntPtr.Zero, owner.Handle);
+            Assert.Null(owner.RootVisual);
         });
     }
 

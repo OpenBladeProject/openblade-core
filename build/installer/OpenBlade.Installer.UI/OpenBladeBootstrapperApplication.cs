@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using WixToolset.BootstrapperApplicationApi;
 
@@ -22,6 +23,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private BootstrapperApplicationData? applicationData;
     private Dispatcher? dispatcher;
     private InstallerWindow? window;
+    private HwndSource? hiddenApplyOwner;
+    private IntPtr hiddenApplyOwnerHandle;
     private InstallerProgressPipe? progressPipe;
     private LaunchAction plannedAction = LaunchAction.Unknown;
     private bool installed;
@@ -207,18 +210,29 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
         dispatcher = Dispatcher.CurrentDispatcher;
         bundleVersion = TryGetVariable(BundleVersionVariable) ?? "unknown";
-        if (command.Display is Display.Full or Display.Passive)
+        hiddenApplyOwner = CreateHiddenApplyOwner();
+        hiddenApplyOwnerHandle = hiddenApplyOwner.Handle;
+        try
         {
-            window = new InstallerWindow(
-                this,
-                bundleVersion,
-                allowInteraction: command.Display == Display.Full);
-            window.Show();
+            if (command.Display is Display.Full or Display.Passive)
+            {
+                window = new InstallerWindow(
+                    this,
+                    bundleVersion,
+                    allowInteraction: command.Display == Display.Full);
+                window.Show();
+            }
+
+            Engine.Detect();
+            Dispatcher.Run();
+        }
+        finally
+        {
+            progressPipe?.Dispose();
+            progressPipe = null;
+            DisposeHiddenApplyOwner();
         }
 
-        Engine.Detect();
-        Dispatcher.Run();
-        progressPipe?.Dispose();
         Engine.Quit(NormalizeExitCode(result));
     }
 
@@ -368,9 +382,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
 
         applying = true;
-        IntPtr parent = window?.WindowHandle ?? IntPtr.Zero;
         AddDetail("Applying the requested changes.");
-        Engine.Apply(parent);
+        Engine.Apply(GetApplyOwnerHandle());
     }
 
     private void OnApplyBegin(object? sender, ApplyBeginEventArgs e)
@@ -615,6 +628,40 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
 
         _ = current.BeginInvoke(action);
+    }
+
+    private IntPtr GetApplyOwnerHandle()
+    {
+        IntPtr visibleWindowHandle = window?.WindowHandle ?? IntPtr.Zero;
+        IntPtr handle = visibleWindowHandle != IntPtr.Zero
+            ? visibleWindowHandle
+            : hiddenApplyOwnerHandle;
+        if (handle == IntPtr.Zero)
+        {
+            throw new InvalidOperationException("The installer apply owner window is unavailable.");
+        }
+
+        return handle;
+    }
+
+    internal static HwndSource CreateHiddenApplyOwner()
+    {
+        const int windowStylePopup = unchecked((int)0x80000000);
+        const int extendedWindowStyleToolWindow = 0x00000080;
+        return new HwndSource(new HwndSourceParameters("OpenBlade Setup Apply Owner")
+        {
+            Width = 0,
+            Height = 0,
+            WindowStyle = windowStylePopup,
+            ExtendedWindowStyle = extendedWindowStyleToolWindow,
+        });
+    }
+
+    private void DisposeHiddenApplyOwner()
+    {
+        hiddenApplyOwner?.Dispose();
+        hiddenApplyOwner = null;
+        hiddenApplyOwnerHandle = IntPtr.Zero;
     }
 
     private static bool Failed(int status) => status < 0;

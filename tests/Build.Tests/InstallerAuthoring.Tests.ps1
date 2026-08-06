@@ -258,8 +258,13 @@ Assert-True ($bootstrapperSource.Contains('OpenBladeSetupProgressPipe')) `
     'The managed bootstrapper must create the private setup progress channel.'
 Assert-True ($bootstrapperSource.Contains('QuitAfterRunFailure(exception)')) `
     'The managed bootstrapper must convert unhandled UI failures into a Burn exit code.'
-Assert-True ($bootstrapperSource.Contains('window?.WindowHandle ?? IntPtr.Zero')) `
-    'Burn apply must use the UI-thread-captured owner handle.'
+Assert-True ($bootstrapperSource.Contains('Engine.Apply(GetApplyOwnerHandle())')) `
+    'Burn apply must use a valid native owner in visual and non-visual modes.'
+Assert-True ($bootstrapperSource.Contains('CreateHiddenApplyOwner()')) `
+    'Embedded and quiet Burn apply must have a hidden native owner window.'
+Assert-True (-not $bootstrapperSource.Contains(
+        'IntPtr parent = window?.WindowHandle ?? IntPtr.Zero')) `
+    'Burn apply must not fall back to a null owner when no WPF window exists.'
 Assert-True ($bootstrapperSource.Contains('ShowNewerVersionConfirmation')) `
     'Interactive setup must ask before replacing a newer OpenBlade version.'
 Assert-True ($bootstrapperSource.Contains('PlanRelatedBundleType += OnPlanRelatedBundleType')) `
