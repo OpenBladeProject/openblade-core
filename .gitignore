@@ -20,6 +20,7 @@ TestResults/
 
 src/OpenBlade.Tray/Assets/Brand/*
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.ico
+!src/OpenBlade.Tray/Assets/Brand/OpenBlade.Installer.ico
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.png
 !src/OpenBlade.Tray/Assets/Brand/Notifications/
 src/OpenBlade.Tray/Assets/Brand/Notifications/*

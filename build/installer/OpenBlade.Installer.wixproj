@@ -9,13 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="WixToolset.BootstrapperApplications.wixext" />
     <PackageReference Include="WixToolset.Util.wixext" />
   </ItemGroup>
 
   <ItemGroup>
     <BindPath Include="$(OpenBladeBundle)" BindName="OpenBladeBundle" />
     <BindPath Include="$(OpenBladePrerequisites)" BindName="OpenBladePrerequisites" />
+    <BindPath Include="$(OpenBladeInstallerUi)" BindName="OpenBladeInstallerUi" />
     <BindPath Include="$(MSBuildThisFileDirectory)..\..\src\OpenBlade.Tray\Assets\Brand"
               BindName="BrandAssets" />
   </ItemGroup>
@@ -31,6 +31,14 @@
            Text="OpenBladePrerequisites must point to the validated prerequisite directory." />
     <Error Condition="!Exists('$(OpenBladePrerequisites)\VC_redist.x64.exe')"
            Text="OpenBladePrerequisites is missing VC_redist.x64.exe." />
+    <Error Condition="'$(OpenBladeInstallerUi)' == ''"
+           Text="OpenBladeInstallerUi must point to the published installer UI." />
+    <Error Condition="!Exists('$(OpenBladeInstallerUi)\OpenBlade.Installer.UI.exe')"
+           Text="OpenBladeInstallerUi is missing OpenBlade.Installer.UI.exe." />
+    <Error Condition="!Exists('$(OpenBladeInstallerUi)\WixToolset.BootstrapperApplicationApi.dll')"
+           Text="OpenBladeInstallerUi is missing WixToolset.BootstrapperApplicationApi.dll." />
+    <Error Condition="!Exists('$(OpenBladeInstallerUi)\mbanative.dll')"
+           Text="OpenBladeInstallerUi is missing mbanative.dll." />
   </Target>
 
   <Target Name="SignBundleEngine" Condition="'$(OpenBladeSigningThumbprint)' != ''">

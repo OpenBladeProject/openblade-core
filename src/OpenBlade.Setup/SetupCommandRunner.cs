@@ -68,8 +68,13 @@ public interface ISetupPlatform
     Task RemoveDataAsync(CancellationToken cancellationToken);
 }
 
-public sealed class SetupCommandRunner(ISetupPlatform platform)
+public sealed class SetupCommandRunner(
+    ISetupPlatform platform,
+    ISetupProgressReporter? progressReporter = null)
 {
+    private readonly ISetupProgressReporter progress =
+        progressReporter ?? NullSetupProgressReporter.Instance;
+
     public async Task<int> RunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
         if (!SetupCommandParser.TryParseInvocation(arguments, out SetupInvocation invocation))
@@ -83,12 +88,14 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         SetupCommand command = invocation.Command;
         if (command == SetupCommand.Install)
         {
+            progress.Report("Inspecting and staging the OpenBlade payload");
             await using ISetupPayloadTransaction transaction =
                 await platform.StagePayloadAsync(cancellationToken);
             SetupInstallLifecycleState? priorLifecycle = null;
             bool mutationStarted = false;
             try
             {
+                progress.Report("Reading the current service, shortcut, and registry state");
                 priorLifecycle = await platform.CaptureInstallLifecycleStateAsync(cancellationToken);
                 ValidateBundleOwnershipSnapshot(priorLifecycle);
                 if (priorLifecycle.BundleOwnershipExisted && !invocation.BundleManaged)
@@ -105,23 +112,36 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 }
 
                 mutationStarted = true;
+                progress.Report(
+                    "Removing superseded OpenBlade.lnk, OpenBlade.SessionAgent.lnk, and uninstall registry entries");
                 await platform.RemoveStartupShortcutAsync(cancellationToken);
                 await platform.RemoveSessionAgentStartupShortcutAsync(cancellationToken);
                 await platform.RemoveStartMenuShortcutAsync(cancellationToken);
                 await platform.RemoveUninstallShortcutAsync(cancellationToken);
                 await platform.RemoveUninstallRegistrationAsync(cancellationToken);
+                progress.Report("Stopping Windows service OpenBlade for replacement");
                 await platform.PrepareServiceForInstallAsync(cancellationToken);
+                progress.Report("Stopping the OpenBlade tray and Session Agent");
                 await platform.StopTrayAsync(cancellationToken);
                 await platform.StopSessionAgentAsync(cancellationToken);
+                progress.Report(
+                    "Removing Dynamic Lighting package OSSBlade.OpenBlade.DynamicLighting");
                 await platform.RemoveDynamicLightingIdentityAsync(cancellationToken);
                 await transaction.ActivateAsync(cancellationToken);
+                progress.Report(
+                    "Registering Dynamic Lighting package OSSBlade.OpenBlade.DynamicLighting");
                 await platform.InstallDynamicLightingIdentityAsync(cancellationToken);
                 if (!invocation.BundleManaged)
                 {
+                    progress.Report("Writing the standalone uninstaller");
                     await platform.InstallUninstallerAsync(cancellationToken);
                 }
+                progress.Report("Creating and starting Windows service OpenBlade as LocalSystem");
                 await platform.InstallServiceAsync(cancellationToken);
+                progress.Report("Verifying the OpenBlade service health check");
                 await platform.VerifyServiceHealthAsync(cancellationToken);
+                progress.Report(
+                    "Creating all-users OpenBlade.lnk and OpenBlade.SessionAgent.lnk shortcuts");
                 await platform.InstallSessionAgentStartupShortcutAsync(cancellationToken);
                 await platform.InstallStartMenuShortcutAsync(cancellationToken);
                 if (!invocation.BundleManaged)
@@ -132,6 +152,8 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 await platform.InstallStartupShortcutAsync(cancellationToken);
                 if (invocation.BundleManaged)
                 {
+                    progress.Report(
+                        @"Writing HKLM\SOFTWARE\OSSBlade\OpenBlade\Installer registry values");
                     await platform.InstallBundleOwnershipAsync(cancellationToken);
                 }
                 await transaction.CommitAsync(cancellationToken);
@@ -140,6 +162,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
             }
             catch (Exception failure)
             {
+                progress.Report("Setup failed; restoring the previous installation state");
                 List<Exception> recoveryFailures = [];
                 using CancellationTokenSource recoveryTimeout = new(TimeSpan.FromSeconds(60));
                 CancellationToken recoveryToken = recoveryTimeout.Token;
@@ -266,6 +289,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
             }
         }
 
+        progress.Report("Reading the installed OpenBlade state");
         SetupInstallLifecycleState uninstallLifecycle =
             await platform.CaptureInstallLifecycleStateAsync(cancellationToken);
         ValidateBundleOwnershipSnapshot(uninstallLifecycle);
@@ -279,7 +303,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
             && !uninstallLifecycle.BundleOwnershipMatchesCurrentBuild)
         {
             Console.WriteLine(
-                "A newer OpenBlade payload owns this installation; "
+                "A different OpenBlade payload owns this installation; "
                 + "the superseded bundle uninstall was ignored.");
             return 0;
         }
@@ -291,14 +315,20 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 "This OpenBlade installation is managed by the graphical installer. "
                 + "Use Windows Installed apps or OpenBlade-Setup.exe to remove it.");
         }
+        progress.Report(
+            "Removing all-users OpenBlade.lnk and OpenBlade.SessionAgent.lnk shortcuts");
         await platform.RemoveStartupShortcutAsync(cancellationToken);
         await platform.RemoveSessionAgentStartupShortcutAsync(cancellationToken);
         await platform.RemoveStartMenuShortcutAsync(cancellationToken);
+        progress.Report("Stopping and deleting Windows service OpenBlade");
         await platform.RemoveServiceAsync(cancellationToken);
+        progress.Report("Stopping the OpenBlade tray and Session Agent");
         await platform.StopTrayAsync(cancellationToken);
         await platform.StopSessionAgentAsync(cancellationToken);
         try
         {
+            progress.Report(
+                @"Removing Dynamic Lighting package OSSBlade.OpenBlade.DynamicLighting and HKLM\SOFTWARE\OSSBlade\OpenBlade\Installer");
             await platform.RemoveDynamicLightingIdentityAsync(cancellationToken);
             await platform.RemoveUninstallShortcutAsync(cancellationToken);
             await platform.RemoveUninstallRegistrationAsync(cancellationToken);
@@ -306,10 +336,12 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
             {
                 await platform.RemoveBundleOwnershipAsync(cancellationToken);
             }
+            progress.Report(@"Removing Program Files\OpenBlade");
             await platform.RemoveBinariesAsync(cancellationToken);
         }
         catch (Exception failure)
         {
+            progress.Report("Removal failed; restoring the previous registration state");
             List<Exception> recoveryFailures = [];
             using CancellationTokenSource recoveryTimeout = new(TimeSpan.FromSeconds(30));
             if (uninstallLifecycle.DynamicLightingIdentityRegistered)
@@ -354,6 +386,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
         if (command == SetupCommand.UninstallAndPurge)
         {
+            progress.Report(@"Removing ProgramData\OpenBlade and saved per-user OpenBlade settings");
             await platform.RemoveDataAsync(cancellationToken);
         }
 

@@ -114,6 +114,8 @@ internal sealed class WindowsBundleOwnershipRegistration : IBundleOwnershipRegis
             return "0.0.0";
         }
 
+        // Burn compares a missing fourth component as zero. Keep stable markers
+        // three-part and add the revision only when the bundle has a nonzero one.
         string baseVersion =
             $"{Math.Max(version.Major, 0)}.{Math.Max(version.Minor, 0)}.{Math.Max(version.Build, 0)}";
         return version.Revision > 0

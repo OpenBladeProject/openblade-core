@@ -143,8 +143,11 @@ and separate developer tools:
 The user-facing installer is written to
 `artifacts\win-x64\OpenBlade-Setup.exe`. Double-click it and choose Install;
 Windows requests administrator approval only when setup is ready to make
-system changes. After a successful install or repair, choose **Launch** to
-start the Tray; the Tray starts the Session Agent. In the ordinary
+system changes. The installer follows the Windows app theme. During install,
+repair, or removal, choose **Show details** below the progress bar to see the
+files, registry entries, shortcuts, and services being changed. After a
+successful install or repair, choose **Launch OpenBlade** to start the Tray;
+the Tray starts the Session Agent. In the ordinary
 double-click flow, both run in the normal user session. If you explicitly
 start the installer with **Run as administrator**, they inherit that elevated
 context, so close them and start OpenBlade normally instead.

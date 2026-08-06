@@ -10,6 +10,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Added Razer Blade 16 RZ09-0581 BIOS 4.00 to the tested production firmware
   set while retaining BIOS 3.01 support and keeping other BIOS versions behind
   the explicit untested-firmware override.
+- Added a graphical installer that follows the Windows app theme, keeps a fixed
+  compact progress view with expandable wrapped details for file, registry,
+  shortcut, and service activity, asks before replacing a newer local version,
+  and offers **Launch OpenBlade** after install or repair. It consistently uses
+  the installer artwork and **OpenBlade Setup** identity, labels version-removal
+  work clearly, avoids stale equal-version replacement cycles, and gives quiet
+  and embedded installs a valid native apply owner.
 
 ## [0.1.0-nightly.8] - 2026-08-06
 
@@ -22,6 +29,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Simplified the tray right-click menu to **Open** and **Exit**. Exiting now
   asks whether to leave keyboard lighting, hotkeys, profiles, and automation
   running in the background or shut down OpenBlade completely.
+- Gave the OpenBlade installer a dedicated adaptive file and taskbar icon with
+  a Blade-green download badge, while retaining the existing installed-app
+  identity.
 
 ### Fixed
 

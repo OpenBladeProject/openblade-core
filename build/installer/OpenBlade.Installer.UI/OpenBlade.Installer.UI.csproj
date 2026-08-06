@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AssemblyName>OpenBlade.Installer.UI</AssemblyName>
+    <AssemblyTitle>OpenBlade Setup</AssemblyTitle>
+    <Product>OpenBlade Setup</Product>
+    <Description>Installs, repairs, and removes OpenBlade.</Description>
+    <RootNamespace>OpenBlade.Installer.UI</RootNamespace>
+    <ApplicationIcon>..\..\..\src\OpenBlade.Tray\Assets\Brand\OpenBlade.Installer.ico</ApplicationIcon>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <DebugType>embedded</DebugType>
+    <AcceptEula>wix7</AcceptEula>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" PrivateAssets="All" />
+    <PackageReference Include="WixToolset.BootstrapperApplicationApi" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="..\..\..\src\OpenBlade.Tray\Assets\Brand\OpenBlade.png"
+              Link="Assets\OpenBlade.png" />
+  </ItemGroup>
+
+</Project>
