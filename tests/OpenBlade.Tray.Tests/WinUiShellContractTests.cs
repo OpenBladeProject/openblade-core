@@ -1037,6 +1037,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("manager.Register()", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("builder.SetAppLogoOverride(logoUri)", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("builder.SetTag(notification.ReplacementTag)", notificationPresenter, StringComparison.Ordinal);
+        Assert.Contains(".AddArgument(\"destination\"", notificationPresenter, StringComparison.Ordinal);
+        Assert.Contains("notificationInvoked(destination)", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("\"OpenBlade.png\"", notificationPresenter, StringComparison.Ordinal);
 
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
@@ -1094,6 +1096,21 @@ public sealed class WinUiShellContractTests
             "ReplacementTag: PerformanceNotificationReplacementTag",
             app[successStart..showNotification],
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NotificationSettingsKeepDurableFailureStatusIndependentFromToasts()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+
+        Assert.Contains("Notification preferences", xaml, StringComparison.Ordinal);
+        Assert.Contains("AppUpdateNotificationsEnabled", xaml, StringComparison.Ordinal);
+        Assert.Contains("FirmwareUpdateNotificationsEnabled", xaml, StringComparison.Ordinal);
+        Assert.Contains("ControllerAdvisoryNotificationsEnabled", xaml, StringComparison.Ordinal);
+        Assert.Contains("OperationFailureNotificationsEnabled", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.TroubleshootingRecentErrorStatus", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ControllerAdvisoryText", window, StringComparison.Ordinal);
     }
 
     [Fact]

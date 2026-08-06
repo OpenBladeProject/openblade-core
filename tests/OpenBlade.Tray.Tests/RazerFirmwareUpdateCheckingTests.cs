@@ -203,8 +203,32 @@ public sealed class RazerFirmwareUpdateCheckingTests
         await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
 
         Assert.Equal("1.06", viewModel.PublishedMcuVersion);
+        Assert.False(viewModel.IsUpdateAvailable);
         Assert.Equal("Published updater versions loaded from Razer.", viewModel.StatusText);
         Assert.NotNull(viewModel.OfficialSupportUri);
+    }
+
+    [Fact]
+    public async Task ViewModel_ReportsOnlyNewerPublishedFirmware()
+    {
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            new StubClient(new("3.02", "1.04", "1.07")));
+        UpdateModel(viewModel);
+        FirmwareUpdateAvailableEventArgs? update = null;
+        viewModel.UpdateAvailable += (_, args) => update = args;
+
+        await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
+
+        Assert.True(viewModel.IsUpdateAvailable);
+        Assert.Contains("BIOS 3.02", viewModel.UpdateAvailableSummary, StringComparison.Ordinal);
+        Assert.Contains("MCU 1.07", viewModel.UpdateAvailableSummary, StringComparison.Ordinal);
+        Assert.DoesNotContain("EC", viewModel.UpdateAvailableSummary, StringComparison.Ordinal);
+        Assert.NotNull(update);
+        Assert.Contains(
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            update.Signature,
+            StringComparison.Ordinal);
+        Assert.Equal(viewModel.OfficialSupportUri, update.OfficialSupportUri);
     }
 
     [Theory]

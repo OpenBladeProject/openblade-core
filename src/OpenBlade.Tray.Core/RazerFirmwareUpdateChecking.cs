@@ -259,6 +259,18 @@ public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
         };
 }
 
+public sealed class FirmwareUpdateAvailableEventArgs(
+    string signature,
+    string summary,
+    Uri officialSupportUri) : EventArgs
+{
+    public string Signature { get; } = signature;
+
+    public string Summary { get; } = summary;
+
+    public Uri OfficialSupportUri { get; } = officialSupportUri;
+}
+
 public sealed class FirmwareUpdateAssistantViewModel :
     INotifyPropertyChanged,
     IAsyncDisposable
@@ -288,6 +300,8 @@ public sealed class FirmwareUpdateAssistantViewModel :
     private string publishedEcVersion = "Not checked";
     private string publishedMcuVersion = "Not checked";
     private bool isChecking;
+    private bool isUpdateAvailable;
+    private string updateAvailableSummary = string.Empty;
     private int checkInProgress;
     private int automaticCheckStarted;
     private int disposed;
@@ -307,6 +321,8 @@ public sealed class FirmwareUpdateAssistantViewModel :
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public event EventHandler? PreferencesChanged;
+
+    public event EventHandler<FirmwareUpdateAvailableEventArgs>? UpdateAvailable;
 
     public IReadOnlyList<UpdateCheckIntervalOption> IntervalOptions { get; } =
     [
@@ -387,6 +403,18 @@ public sealed class FirmwareUpdateAssistantViewModel :
         }
     }
 
+    public bool IsUpdateAvailable
+    {
+        get => isUpdateAvailable;
+        private set => SetField(ref isUpdateAvailable, value);
+    }
+
+    public string UpdateAvailableSummary
+    {
+        get => updateAvailableSummary;
+        private set => SetField(ref updateAvailableSummary, value);
+    }
+
     public Uri? OfficialSupportUri => supportPage?.OfficialPageUri;
 
     public string StatusText
@@ -422,6 +450,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     public void UpdateInstalledFirmware(FirmwareVersions? firmware)
     {
+        bool firmwareChanged = !Equals(installedFirmware, firmware);
         RazerFirmwareSupportPage? nextPage = RazerFirmwareSupportCatalog.Find(
             firmware?.ModelNumber);
         bool modelChanged = !string.Equals(
@@ -430,6 +459,11 @@ public sealed class FirmwareUpdateAssistantViewModel :
             StringComparison.OrdinalIgnoreCase);
         installedFirmware = firmware;
         supportPage = nextPage;
+        if (firmwareChanged)
+        {
+            IsUpdateAvailable = false;
+            UpdateAvailableSummary = string.Empty;
+        }
         Notify(nameof(IsSupported));
         Notify(nameof(OfficialSupportUri));
         Notify(nameof(InstalledBiosVersion));
@@ -573,12 +607,15 @@ public sealed class FirmwareUpdateAssistantViewModel :
             cachedBiosStatus = versions.BiosStatus;
             cachedEcStatus = versions.EcStatus;
             cachedMcuStatus = versions.McuStatus;
+            PresentUpdateAvailability(page, versions);
             lastSuccessfulCheckAt = timeProvider.GetUtcNow();
             retryAfter = null;
             Notify(nameof(LastSuccessfulCheckAt));
             Notify(nameof(RetryAfter));
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
-            StatusText = "Published updater versions loaded from Razer.";
+            StatusText = IsUpdateAvailable
+                ? UpdateAvailableSummary
+                : "Published updater versions loaded from Razer.";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -613,6 +650,78 @@ public sealed class FirmwareUpdateAssistantViewModel :
         retryAfter = timeProvider.GetUtcNow() + FailureRetryDelay;
         Notify(nameof(RetryAfter));
         PreferencesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void PresentUpdateAvailability(
+        RazerFirmwareSupportPage page,
+        RazerPublishedFirmwareVersions published)
+    {
+        var newerComponents = new List<string>();
+        AddNewerComponent(
+            newerComponents,
+            "BIOS",
+            installedFirmware?.BiosVersion,
+            published.BiosVersion);
+        AddNewerComponent(
+            newerComponents,
+            "EC",
+            installedFirmware?.EcVersion,
+            published.EcVersion);
+        AddNewerComponent(
+            newerComponents,
+            "MCU",
+            McuFirmwareVersionPresentation.Format(installedFirmware?.McuVersion),
+            published.McuVersion);
+
+        IsUpdateAvailable = newerComponents.Count > 0;
+        UpdateAvailableSummary = IsUpdateAvailable
+            ? $"Newer {string.Join(", ", newerComponents)} firmware is available from Razer."
+            : string.Empty;
+        if (!IsUpdateAvailable)
+        {
+            return;
+        }
+
+        string signature = string.Join(
+            '|',
+            page.ModelNumber,
+            $"bios={NormalizeCachedVersion(published.BiosVersion) ?? "-"}",
+            $"ec={NormalizeCachedVersion(published.EcVersion) ?? "-"}",
+            $"mcu={NormalizeCachedVersion(published.McuVersion) ?? "-"}");
+        UpdateAvailable?.Invoke(
+            this,
+            new FirmwareUpdateAvailableEventArgs(
+                signature,
+                UpdateAvailableSummary,
+                page.OfficialPageUri));
+    }
+
+    private static void AddNewerComponent(
+        ICollection<string> newerComponents,
+        string label,
+        string? installed,
+        string? published)
+    {
+        if (TryParseComparableVersion(installed, out Version installedVersion)
+            && TryParseComparableVersion(published, out Version publishedVersion)
+            && publishedVersion > installedVersion)
+        {
+            newerComponents.Add($"{label} {published!.Trim()}");
+        }
+    }
+
+    private static bool TryParseComparableVersion(
+        string? value,
+        out Version version)
+    {
+        version = new Version();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string candidate = value.Trim().TrimStart('v', 'V');
+        return Version.TryParse(candidate, out version!);
     }
 
     private string CreateNotCheckedMessage() =>

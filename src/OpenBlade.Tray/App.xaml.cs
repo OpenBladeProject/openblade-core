@@ -166,7 +166,10 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private MainWindow CreateMainWindow(IStartupRegistration startupRegistration)
     {
-        return new MainWindow(processorPolicy, startupRegistration);
+        return new MainWindow(
+            processorPolicy,
+            startupRegistration,
+            notification => trayIconHost?.ShowNotification(notification));
     }
 
     private void CreateTrayIconHost()
@@ -185,7 +188,9 @@ public partial class App : Microsoft.UI.Xaml.Application
             () => Enqueue(() => _ = RequestTrayExitAsync()),
             mainWindow.ViewModel,
             trayIconThemeSource,
-            () => Enqueue(mainWindow.RequestTrayTelemetryRefresh));
+            () => Enqueue(mainWindow.RequestTrayTelemetryRefresh),
+            destination => Enqueue(
+                () => _ = ShowNotificationDestinationAsync(destination)));
     }
 
     private static void StartSessionAgent()
@@ -214,6 +219,15 @@ public partial class App : Microsoft.UI.Xaml.Application
             return;
         }
 
+        NotificationCategory category = signal.Kind
+            == PerformanceShortcutNotificationKind.Failed
+                ? NotificationCategory.OperationFailures
+                : NotificationCategory.PerformanceChanges;
+        if (mainWindow?.IsNotificationEnabled(category) != true)
+        {
+            return;
+        }
+
         TrayNotification notification;
         if (signal.Kind == PerformanceShortcutNotificationKind.Failed)
         {
@@ -221,7 +235,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 "Performance mode could not be changed",
                 "OpenBlade could not apply the selected mode.",
                 TrayNotificationSeverity.Error,
-                ReplacementTag: PerformanceNotificationReplacementTag);
+                ReplacementTag: PerformanceNotificationReplacementTag,
+                Destination: TrayNotificationDestination.Troubleshooting);
         }
         else
         {
@@ -239,7 +254,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 body,
                 TrayNotificationSeverity.Information,
                 LogoAssetRelativePath: logoAssetRelativePath,
-                ReplacementTag: PerformanceNotificationReplacementTag);
+                ReplacementTag: PerformanceNotificationReplacementTag,
+                Destination: TrayNotificationDestination.Laptop);
         }
 
         trayIconHost.ShowNotification(notification);
@@ -357,6 +373,13 @@ public partial class App : Microsoft.UI.Xaml.Application
     }
 
     private void ShowMainWindow() => _ = ShowMainWindowWhenReadyAsync(initialLaunch: false);
+
+    private async Task ShowNotificationDestinationAsync(
+        TrayNotificationDestination destination)
+    {
+        await ShowMainWindowWhenReadyAsync(initialLaunch: false);
+        mainWindow?.NavigateToNotificationDestination(destination);
+    }
 
     private void ShowMainWindow(bool initialLaunch) =>
         _ = ShowMainWindowWhenReadyAsync(initialLaunch);
