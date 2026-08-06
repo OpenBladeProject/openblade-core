@@ -303,7 +303,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private readonly TimeSpan shutdownBudget;
         private readonly Action? onClosing;
         private readonly object lifecycleSync = new();
+        private readonly object lightingPortOpenDiagnosticSync = new();
         private readonly SemaphoreSlim hardwareOperationGate = new(1, 1);
+        private readonly string?[] lastLightingPortOpenDiagnostics =
+            new string?[Enum.GetValues<LightingPortOperation>().Length];
         private Task? deferredDisposal;
         private bool closing;
         private bool disposed;
@@ -1511,15 +1514,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
             try
             {
-                port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
-                if (port is null
-                    || !port.Capabilities.LightingEffects.Contains(value.Effect)
-                    || value.LogoMode is { } logoMode
-                        && !port.Capabilities.LogoLightingModes.Contains(logoMode))
+                port = await GetLightingPortForWriteCoreAsync(
+                    LightingPortOperation.LightingChange,
+                    cancellationToken).ConfigureAwait(false);
+                if (!port.Capabilities.LightingEffects.Contains(value.Effect))
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
-                        "The lighting writer could not open an exact-device session.");
+                        "The exact-device lighting session does not support the requested lighting effect.");
+                }
+
+                if (value.LogoMode is { } logoMode
+                    && !port.Capabilities.LogoLightingModes.Contains(logoMode))
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        "The exact-device lighting session does not support the requested logo lighting mode.");
                 }
 
                 await port.SetLightingAsync(value, cancellationToken).ConfigureAwait(false);
@@ -1586,7 +1596,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 port = await GetLightingPortForWriteCoreAsync(
-                    "keyboard brightness change",
+                    LightingPortOperation.KeyboardBrightnessChange,
                     cancellationToken).ConfigureAwait(false);
                 if (!port.Capabilities.SupportsKeyboardBrightness)
                 {
@@ -1742,16 +1752,17 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
             try
             {
-                port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
-                if (port is null
-                    || !(port.Capabilities.LightingEffects.Contains(
+                port = await GetLightingPortForWriteCoreAsync(
+                    LightingPortOperation.AmbientLightingFrame,
+                    cancellationToken).ConfigureAwait(false);
+                if (!(port.Capabilities.LightingEffects.Contains(
                             LightingEffect.AmbientAwareness)
                         || port.Capabilities.LightingEffects.Contains(
                             LightingEffect.AudioMeter)))
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
-                        "The lighting writer could not open an exact-device session.");
+                        "The exact-device lighting session does not support ambient lighting frames.");
                 }
 
                 await port.PushAmbientLightingFrameAsync(frame, cancellationToken)
@@ -1816,12 +1827,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
             try
             {
-                port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
-                if (port is null || !port.Capabilities.SupportsPlaybackMuteIndicator)
+                port = await GetLightingPortForWriteCoreAsync(
+                    LightingPortOperation.PlaybackMuteIndication,
+                    cancellationToken).ConfigureAwait(false);
+                if (!port.Capabilities.SupportsPlaybackMuteIndicator)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
-                        "The lighting writer could not open an exact-device session.");
+                        "The exact-device lighting session does not support playback mute indication.");
                 }
 
                 await port.SetPlaybackMuteIndicatorAsync(muted, cancellationToken)
@@ -1925,12 +1938,23 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
             catch (Exception exception)
             {
-                logger?.LogWarning(
-                    "The production lighting port threw {ExceptionType} while opening.",
-                    exception.GetType().Name);
-                reportOpenFailure?.Invoke(new(
+                var failure = new LightingPortOpenFailure(
                     HidSessionFailureKind.NativeIoFailure,
-                    Diagnostic: null));
+                    Diagnostic: null,
+                    Origin: LightingPortOpenFailureOrigin.Threw,
+                    ExceptionType: exception.GetType().Name);
+                if (reportOpenFailure is not null)
+                {
+                    reportOpenFailure(failure);
+                }
+                else
+                {
+                    // Native exception messages may contain host paths or device
+                    // identifiers, so diagnostic history receives only the type.
+                    logger?.LogWarning(
+                        "The production lighting port threw {ExceptionType} while opening for a read or background operation.",
+                        exception.GetType().Name);
+                }
                 return null;
             }
 
@@ -1944,7 +1968,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
                 reportOpenFailure?.Invoke(new(
                     opened.Failure ?? HidSessionFailureKind.NativeIoFailure,
-                    opened.Diagnostic));
+                    opened.Diagnostic,
+                    LightingPortOpenFailureOrigin.Returned,
+                    ExceptionType: null));
                 return null;
             }
 
@@ -1969,7 +1995,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         }
 
         private async Task<IProductionLightingPort> GetLightingPortForWriteCoreAsync(
-            string operation,
+            LightingPortOperation operation,
             CancellationToken cancellationToken)
         {
             LightingPortOpenFailure? openFailure = null;
@@ -1978,35 +2004,132 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 failure => openFailure = failure).ConfigureAwait(false);
             if (port is not null)
             {
+                ClearLightingPortOpenDiagnostic(operation);
                 return port;
             }
 
+            ReportLightingPortOpenDiagnostic(operation, openFailure);
             throw new BladeWriteException(
                 WriteSubmissionState.KnownNotApplied,
-                FormatLightingPortOpenFailure(operation, openFailure));
+                GetLightingPortOpenFailureMessage(operation));
         }
 
-        private static string FormatLightingPortOpenFailure(
-            string operation,
+        private void ReportLightingPortOpenDiagnostic(
+            LightingPortOperation operation,
             LightingPortOpenFailure? failure)
         {
-            if (failure is not { } available)
+            if (logger is null || failure is not { } available)
             {
-                return $"The {operation} could not open an exact-device lighting session.";
+                return;
             }
 
-            HidSessionFailureDiagnostic? diagnostic = available.Diagnostic;
-            return $"The {operation} could not open an exact-device lighting session "
-                + $"(failure={available.Failure}, "
-                + $"phase={diagnostic?.Phase.ToString() ?? "None"}, "
-                + $"nativeError={diagnostic?.NativeWin32Error?.ToString() ?? "None"}, "
-                + $"bytes={diagnostic?.TransferredByteCount?.ToString() ?? "None"}, "
-                + $"validation={diagnostic?.ProtocolValidationFailure?.ToString() ?? "None"}).";
+            string message = FormatLightingPortOpenDiagnostic(operation, available);
+            lock (lightingPortOpenDiagnosticSync)
+            {
+                int index = (int)operation;
+                if (string.Equals(
+                    lastLightingPortOpenDiagnostics[index],
+                    message,
+                    StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                lastLightingPortOpenDiagnostics[index] = message;
+            }
+
+            logger.LogWarning("{LightingPortOpenDiagnostic}", message);
         }
+
+        private void ClearLightingPortOpenDiagnostic(LightingPortOperation operation)
+        {
+            lock (lightingPortOpenDiagnosticSync)
+            {
+                lastLightingPortOpenDiagnostics[(int)operation] = null;
+            }
+        }
+
+        private static string GetLightingPortOpenFailureMessage(
+            LightingPortOperation operation) =>
+            $"The {GetLightingPortOperationText(operation)} could not open an exact-device lighting session.";
+
+        private static string FormatLightingPortOpenDiagnostic(
+            LightingPortOperation operation,
+            LightingPortOpenFailure failure)
+        {
+            var fields = new List<string>
+            {
+                $"origin={GetLightingPortOpenFailureOriginText(failure.Origin)}",
+                $"failure={failure.Failure}",
+            };
+            if (failure.ExceptionType is { } exceptionType)
+            {
+                fields.Add($"exceptionType={exceptionType}");
+            }
+
+            if (failure.Diagnostic is { } diagnostic)
+            {
+                fields.Add($"diagnosticFailure={diagnostic.Failure}");
+                fields.Add($"phase={diagnostic.Phase}");
+                if (diagnostic.NativeWin32Error is { } nativeError)
+                {
+                    fields.Add($"nativeError={nativeError}");
+                }
+
+                if (diagnostic.TransferredByteCount is { } bytes)
+                {
+                    fields.Add($"bytes={bytes}");
+                }
+
+                if (diagnostic.ProtocolValidationFailure is { } validation)
+                {
+                    fields.Add($"validation={validation}");
+                }
+            }
+
+            return $"{GetLightingPortOpenFailureMessage(operation)} ({string.Join(", ", fields)}).";
+        }
+
+        private static string GetLightingPortOperationText(
+            LightingPortOperation operation) => operation switch
+            {
+                LightingPortOperation.LightingChange => "lighting change",
+                LightingPortOperation.KeyboardBrightnessChange =>
+                    "keyboard brightness change",
+                LightingPortOperation.AmbientLightingFrame =>
+                    "ambient lighting frame",
+                LightingPortOperation.PlaybackMuteIndication =>
+                    "playback mute indication",
+                _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+            };
+
+        private static string GetLightingPortOpenFailureOriginText(
+            LightingPortOpenFailureOrigin origin) => origin switch
+            {
+                LightingPortOpenFailureOrigin.Returned => "returned",
+                LightingPortOpenFailureOrigin.Threw => "threw",
+                _ => throw new ArgumentOutOfRangeException(nameof(origin)),
+            };
 
         private readonly record struct LightingPortOpenFailure(
             HidSessionFailureKind Failure,
-            HidSessionFailureDiagnostic? Diagnostic);
+            HidSessionFailureDiagnostic? Diagnostic,
+            LightingPortOpenFailureOrigin Origin,
+            string? ExceptionType);
+
+        private enum LightingPortOperation
+        {
+            LightingChange,
+            KeyboardBrightnessChange,
+            AmbientLightingFrame,
+            PlaybackMuteIndication,
+        }
+
+        private enum LightingPortOpenFailureOrigin
+        {
+            Returned,
+            Threw,
+        }
 
         private async Task<LightingSettings?> ReadLightingStateCoreAsync(
             CancellationToken cancellationToken)
