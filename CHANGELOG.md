@@ -10,6 +10,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Dismissed the dashboard warning flyout when its underlying status clears,
   preventing a mostly empty popup after reapplying settings or accepting an
   incompatible firmware override.
+- Offered **Use profile settings** when another app changes the keyboard effect
+  to a value that firmware cannot read back, allowing the saved profile to be
+  restored without guessing the active effect.
 
 ## [0.1.0-nightly.9] - 2026-08-06
 

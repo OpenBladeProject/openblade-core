@@ -6284,7 +6284,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             bool logoDiffers = saved.Lighting.LogoMode is { } savedLogo
                 && current.LogoMode is { } currentLogo
                 && savedLogo != currentLogo;
-            return keyboardDiffers || logoDiffers;
+            bool unreadableEffectChangedOutside = IsKeyboardEffectUnconfirmed
+                && latestStatus?.ExternalChanges.Contains(DeviceSubsystem.Lighting) == true;
+            return keyboardDiffers || logoDiffers || unreadableEffectChangedOutside;
         }
     }
 
