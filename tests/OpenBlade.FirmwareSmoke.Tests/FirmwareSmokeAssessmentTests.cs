@@ -142,7 +142,7 @@ public sealed class FirmwareSmokeAssessmentTests
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
             baseline,
             current,
-            requireMcuChange: true);
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
 
         Assert.True(report.Succeeded);
         Assert.Equal(
@@ -151,19 +151,184 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Fact]
-    public void PostUpdateRequiresMcuVersionToChange()
+    public void PostUpdateRequiresEveryDeclaredFirmwareComponentToChange()
     {
         FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");
 
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
             snapshot,
             snapshot,
-            requireMcuChange: true);
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
 
         Assert.False(report.Succeeded);
         Assert.Equal(
             FirmwareSmokeOutcome.Failed,
             Assert.Single(report.Checks, check => check.Id == "firmware.mcu").Outcome);
+    }
+
+    [Fact]
+    public void PostUpdateRejectsAnEmptyExpectedChangeSet()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");
+
+        Assert.Throws<ArgumentException>(() =>
+            FirmwareSmokeAssessment.ComparePostUpdate(
+                snapshot,
+                snapshot,
+                new HashSet<FirmwareComponent>()));
+    }
+
+    [Fact]
+    public void RehearsalRequiresEverySelectedComponentToBeReadable()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("Unavailable");
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.CompareRehearsal(
+            snapshot,
+            snapshot,
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
+
+        FirmwareSmokeCheck check = Assert.Single(
+            report.Checks,
+            item => item.Id == "firmware.mcu");
+        Assert.False(report.Succeeded);
+        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
+        Assert.DoesNotContain("Different from Unavailable", check.Expected);
+        Assert.Contains("readable", check.Expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RehearsalAllowsAnUnrelatedComponentToBeUnavailable()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("Unavailable");
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.CompareRehearsal(
+            snapshot,
+            snapshot,
+            new HashSet<FirmwareComponent> { FirmwareComponent.Bios });
+
+        Assert.True(report.Succeeded);
+        Assert.Equal("pre-update rehearsal", report.Phase);
+    }
+
+    [Fact]
+    public void RehearsalRejectsAnyFirmwareChange()
+    {
+        FirmwareSmokeSnapshot baseline = CreateSnapshot("mcu-before");
+        FirmwareSmokeSnapshot current = baseline with
+        {
+            Firmware = baseline.Firmware with { Ec = "ec-after" },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.CompareRehearsal(
+            baseline,
+            current,
+            new HashSet<FirmwareComponent> { FirmwareComponent.Bios });
+
+        Assert.False(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(report.Checks, check => check.Id == "firmware.ec").Outcome);
+    }
+
+    [Fact]
+    public void RehearsalRejectsAnEmptyComponentSet()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");
+
+        Assert.Throws<ArgumentException>(() =>
+            FirmwareSmokeAssessment.CompareRehearsal(
+                snapshot,
+                snapshot,
+                new HashSet<FirmwareComponent>()));
+    }
+
+    [Theory]
+    [InlineData(FirmwareComponent.Bios)]
+    [InlineData(FirmwareComponent.Ec)]
+    [InlineData(FirmwareComponent.Mcu)]
+    [InlineData(FirmwareComponent.Vbios)]
+    public void PostUpdateAcceptsADeclaredFirmwareComponentChange(
+        FirmwareComponent component)
+    {
+        FirmwareSmokeSnapshot baseline = CreateSnapshot("mcu-before");
+        FirmwareSmokeSnapshot current = baseline with
+        {
+            Firmware = ChangeFirmwareVersion(baseline.Firmware, component, "after"),
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
+            baseline,
+            current,
+            new HashSet<FirmwareComponent> { component });
+
+        Assert.True(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == $"firmware.{component.ToString().ToLowerInvariant()}")
+                .Outcome);
+    }
+
+    [Fact]
+    public void PostUpdateAcceptsMultipleDeclaredFirmwareChanges()
+    {
+        FirmwareSmokeSnapshot baseline = CreateSnapshot("mcu-before");
+        FirmwareSmokeSnapshot current = baseline with
+        {
+            Firmware = baseline.Firmware with
+            {
+                Bios = "bios-after",
+                Ec = "ec-after",
+            },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
+            baseline,
+            current,
+            new HashSet<FirmwareComponent>
+            {
+                FirmwareComponent.Bios,
+                FirmwareComponent.Ec,
+            });
+
+        Assert.True(report.Succeeded);
+    }
+
+    [Fact]
+    public void PostUpdateRejectsAnUndeclaredFirmwareChange()
+    {
+        FirmwareSmokeSnapshot baseline = CreateSnapshot("mcu-before");
+        FirmwareSmokeSnapshot current = baseline with
+        {
+            Firmware = baseline.Firmware with { Bios = "bios-after" },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
+            baseline,
+            current,
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
+
+        Assert.False(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(report.Checks, check => check.Id == "firmware.bios").Outcome);
+    }
+
+    [Fact]
+    public void BaselineDoesNotRequireAnUnrelatedFirmwareComponent()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("Unavailable");
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
+
+        Assert.True(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "firmware.inventory.available").Outcome);
     }
 
     [Fact]
@@ -178,7 +343,7 @@ public sealed class FirmwareSmokeAssessmentTests
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
             baseline,
             current,
-            requireMcuChange: true);
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
 
         Assert.False(report.Succeeded);
         Assert.Equal(
@@ -203,7 +368,7 @@ public sealed class FirmwareSmokeAssessmentTests
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
             baseline,
             current,
-            requireMcuChange: true);
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
 
         Assert.False(report.Succeeded);
         Assert.Equal(
@@ -232,7 +397,7 @@ public sealed class FirmwareSmokeAssessmentTests
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
             baseline,
             current,
-            requireMcuChange: true);
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
 
         Assert.False(report.Succeeded);
         Assert.Equal(
@@ -255,7 +420,7 @@ public sealed class FirmwareSmokeAssessmentTests
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
             baseline,
             current,
-            requireMcuChange: true);
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
 
         Assert.False(report.Succeeded);
         Assert.Equal(
@@ -279,7 +444,7 @@ public sealed class FirmwareSmokeAssessmentTests
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
             baseline,
             current,
-            requireMcuChange: true);
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
 
         Assert.False(report.Succeeded);
         Assert.Equal(
@@ -302,7 +467,7 @@ public sealed class FirmwareSmokeAssessmentTests
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
             baseline,
             current,
-            requireMcuChange: true);
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
 
         Assert.False(report.Succeeded);
         Assert.Equal(
@@ -322,7 +487,7 @@ public sealed class FirmwareSmokeAssessmentTests
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
             baseline,
             current,
-            requireMcuChange: true);
+            new HashSet<FirmwareComponent> { FirmwareComponent.Mcu });
 
         Assert.False(report.Succeeded);
         Assert.Equal(
@@ -498,6 +663,19 @@ public sealed class FirmwareSmokeAssessmentTests
                     "0.1.0+test",
                     100),
             ]));
+
+    private static FirmwareIdentity ChangeFirmwareVersion(
+        FirmwareIdentity firmware,
+        FirmwareComponent component,
+        string value) =>
+        component switch
+        {
+            FirmwareComponent.Bios => firmware with { Bios = value },
+            FirmwareComponent.Ec => firmware with { Ec = value },
+            FirmwareComponent.Mcu => firmware with { Mcu = value },
+            FirmwareComponent.Vbios => firmware with { Vbios = value },
+            _ => throw new ArgumentOutOfRangeException(nameof(component)),
+        };
 
     private static FirmwareSmokeCapabilities CopyCapabilities(
         FirmwareSmokeCapabilities value) => value with

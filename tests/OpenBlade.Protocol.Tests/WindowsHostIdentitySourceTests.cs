@@ -108,8 +108,24 @@ public sealed class WindowsHostIdentitySourceTests
         });
     }
 
+    [Theory]
+    [InlineData("3.01")]
+    [InlineData("4.00")]
+    public void ReadExactIdentity_AcceptsEachSupportedProductionBios(string biosVersion)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|BIOSVersion"] = biosVersion;
+        registry.Values[$"{SystemInformationKey}|BIOSVersion"] = biosVersion;
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        Assert.Equal(biosVersion, result.Evidence?.BiosVersion);
+        Assert.Null(result.Failure);
+        Assert.Equal(HostFirmwareCompatibility.Tested, result.FirmwareCompatibility);
+    }
+
     [Fact]
-    public void ReadExactIdentity_AcceptsExplicitRz090528Identity()
+    public void ReadExactIdentity_Rz090528UsesIndependentFirmwareSet()
     {
         FakeRegistryValueSource registry = CreateExactRegistry();
         registry.Values[$"{BiosKey}|SystemProductName"] = "Blade 16 - RZ09-0528";
@@ -121,11 +137,7 @@ public sealed class WindowsHostIdentitySourceTests
         var source = new WindowsHostIdentitySource(
             registry,
             new FakeWindowsPlatformEvidenceSource(ExactPlatform),
-            new ExpectedHostIdentity(
-                "Razer",
-                "Blade 16 - RZ09-0528",
-                "RZ09-05289EN4",
-                "2.02"));
+            WindowsHostIdentitySource.Rz090528Identity);
 
         HostIdentityReadResult result = source.ReadExactIdentity();
 
@@ -137,6 +149,16 @@ public sealed class WindowsHostIdentitySourceTests
                 "2.02"),
             result.Evidence);
         Assert.Null(result.Failure);
+
+        registry.Values[$"{BiosKey}|BIOSVersion"] = "4.00";
+        registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "4.00";
+
+        HostIdentityReadResult blocked = source.ReadExactIdentity();
+
+        AssertIdentityBlocked(blocked);
+        Assert.Equal(
+            HostFirmwareCompatibility.UntestedBlocked,
+            blocked.FirmwareCompatibility);
     }
 
     [Fact]

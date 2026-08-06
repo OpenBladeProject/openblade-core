@@ -40,6 +40,18 @@ public partial class App : Microsoft.UI.Xaml.Application
         traceLogRegistration ??= PersistentTraceLog.RegisterDefault(
             "OpenBlade.Tray",
             OpenBladeProductVersion.Read(typeof(App).Assembly));
+        var startupRegistration = new WindowsStartupRegistration();
+        if (!startupRegistration.ShouldStartForLaunchArguments(
+                Environment.GetCommandLineArgs()))
+        {
+            Trace.TraceInformation(
+                "OpenBlade skipped the current user's disabled tray startup registration.");
+            traceLogRegistration.Dispose();
+            traceLogRegistration = null;
+            Exit();
+            return;
+        }
+
         processorPolicy = WindowsProcessorEfficiencyPolicy.Discover();
         Trace.TraceInformation(
             "OpenBlade processor efficiency policy: {0}",
@@ -61,7 +73,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             return;
         }
 
-        mainWindow = CreateMainWindow();
+        mainWindow = CreateMainWindow(startupRegistration);
         SessionAgentEventEndpoint sessionEventEndpoint =
             SessionAgentEventEndpoint.Create(
                 new SecurityIdentifier(userSid),
@@ -152,9 +164,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         ShowMainWindow(initialLaunch: true);
     }
 
-    private MainWindow CreateMainWindow()
+    private MainWindow CreateMainWindow(IStartupRegistration startupRegistration)
     {
-        return new MainWindow(processorPolicy);
+        return new MainWindow(processorPolicy, startupRegistration);
     }
 
     private void CreateTrayIconHost()
