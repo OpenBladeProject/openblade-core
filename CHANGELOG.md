@@ -7,6 +7,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Generalized the developer firmware-smoke workflow for BIOS, EC, MCU, and
+  VBIOS updates. Pre-update rehearsals now declare and verify the components
+  under test, operator confirmation uses `<MODEL>-FIRMWARE-SMOKE`, and reports
+  use `firmware.inventory.available` instead of `firmware.mcu.available`.
 - Simplified the tray right-click menu to **Open** and **Exit**. Exiting now
   asks whether to leave keyboard lighting, hotkeys, profiles, and automation
   running in the background or shut down OpenBlade completely.
