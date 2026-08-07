@@ -2113,7 +2113,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     "keyboard lighting state read",
                 LightingPortOperation.LogoLightingStateRead =>
                     "logo lighting state read",
-                _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+                _ => operation.ToString(),
             };
 
         private static string GetLightingPortOpenFailureOriginText(
