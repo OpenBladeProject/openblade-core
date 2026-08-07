@@ -21,6 +21,8 @@ public sealed class CapabilityPresentationTests
             "{x:Bind FirmwareUpdateViewModel.IsSupported, Mode=OneWay}",
             Attribute(card, "Visibility"));
         Assert.Contains("FirmwareUpdateViewModel.CheckCommand", presentation);
+        Assert.Contains("Check for updates", presentation);
+        Assert.DoesNotContain("Check Razer", presentation);
         Assert.Contains("FirmwareUpdateViewModel.OfficialSupportUri", presentation);
         Assert.Contains("FirmwareUpdateViewModel.IntervalOptions", presentation);
         Assert.Contains("FirmwareUpdateViewModel.SelectedIntervalOption", presentation);
@@ -28,7 +30,7 @@ public sealed class CapabilityPresentationTests
             "MCU versions use Razer's updater label format where it applies. OpenBlade never downloads or installs firmware.",
             presentation);
         Assert.DoesNotContain("Published updater", presentation);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "OpenBlade does not download or install firmware.",
             presentation);
         XElement versionsSection = NamedElement(
@@ -103,7 +105,7 @@ public sealed class CapabilityPresentationTests
             Attribute(element, "Text") == "Open official Razer page");
         XElement assurance = Assert.Single(supportLink.Descendants(), element =>
             Attribute(element, "Text")
-                == "View firmware downloads and release details on Razer's site. OpenBlade does not download or install firmware.");
+                == "View firmware downloads and release details on Razer's site.");
         Assert.Equal("Wrap", Attribute(assurance, "TextWrapping"));
         Assert.Contains(supportLink.Descendants(), element =>
             Attribute(element, "Style") == "{StaticResource CardActionIconStyle}");

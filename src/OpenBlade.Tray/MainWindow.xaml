@@ -3537,7 +3537,7 @@
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
                                         <Button Grid.Column="1"
-                                                Content="Check Razer"
+                                                Content="Check for updates"
                                                 Command="{x:Bind FirmwareUpdateViewModel.CheckCommand}"
                                                 AutomationProperties.Name="Check official Razer firmware versions" />
                                     </Grid>
@@ -3649,7 +3649,7 @@
                                             <StackPanel Spacing="3">
                                                 <TextBlock Text="Open official Razer page"
                                                            Style="{StaticResource CardTitleStyle}" />
-                                                <TextBlock Text="View firmware downloads and release details on Razer's site. OpenBlade does not download or install firmware."
+                                                <TextBlock Text="View firmware downloads and release details on Razer's site."
                                                            Style="{StaticResource SecondaryTextStyle}"
                                                            TextWrapping="Wrap" />
                                             </StackPanel>
