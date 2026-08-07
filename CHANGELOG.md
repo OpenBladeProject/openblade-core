@@ -9,7 +9,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Folded GPU clock offsets under their tuning toggle, removed the persistent
   nested-card highlight, and placed dashboard slider values beside their
-  sliders to keep the cards compact.
+  sliders to keep the cards compact while retaining their circular thumbs.
 - Restored the function-row keyboard-brightness controls on the Razer Blade 16
   RZ09-0581 by advertising the already-admitted brightness command through the
   exact-device lighting capability, and exposed that capability in diagnostic

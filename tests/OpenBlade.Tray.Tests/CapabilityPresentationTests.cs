@@ -365,6 +365,11 @@ public sealed class CapabilityPresentationTests
     public void MainWindow_DashboardSliderCardsKeepValuesInline()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement sliderStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "InlineCardSliderStyle");
+        Assert.Equal(
+            "{StaticResource DefaultSliderStyle}",
+            Attribute(sliderStyle, "BasedOn"));
         string[] sliderNames =
         [
             "GpuCoreClockOffsetSlider",

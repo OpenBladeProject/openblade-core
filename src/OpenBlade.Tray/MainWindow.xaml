@@ -75,7 +75,9 @@
                    BasedOn="{StaticResource SettingsSubcardStyle}">
                 <Setter Property="Background" Value="Transparent" />
             </Style>
-            <Style x:Key="InlineCardSliderStyle" TargetType="Slider">
+            <Style x:Key="InlineCardSliderStyle"
+                   TargetType="Slider"
+                   BasedOn="{StaticResource DefaultSliderStyle}">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
