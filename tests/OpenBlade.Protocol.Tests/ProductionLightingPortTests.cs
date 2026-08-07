@@ -884,6 +884,69 @@ public sealed class ProductionLightingPortTests
         await opened.Value!.DisposeAsync();
     }
 
+    [Fact]
+    public async Task ProductionFactory_PreservesActorOpenDiagnostic()
+    {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion,
+            HidSessionFailureKind.Timeout,
+            NativeWin32Error: 995,
+            TransferredByteCount: 12);
+        var actorResult = new HidSessionResult<ValidationActor>(
+            null,
+            HidSessionFailureKind.Timeout)
+        {
+            Diagnostic = diagnostic,
+        };
+        var factory = new ProductionLightingFactory(
+            admitted: false,
+            static () => new ValidationRunContext(),
+            _ => new FixedLightingActorFactory(actorResult),
+            static () => new HidSessionResult<IPid02E0MatrixFeatureWriter>(null, null),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1),
+            new PendingDisposalRegistry());
+
+        HidSessionResult<IProductionLightingPort> opened = await factory.OpenAsync(default);
+
+        Assert.Null(opened.Value);
+        Assert.Equal(HidSessionFailureKind.Timeout, opened.Failure);
+        Assert.Equal(diagnostic, opened.Diagnostic);
+    }
+
+    [Fact]
+    public async Task ProductionFactory_PreservesMatrixOpenDiagnostic()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5);
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.SetSubmit,
+            HidSessionFailureKind.NativeIoFailure,
+            NativeWin32Error: 5,
+            TransferredByteCount: 0);
+        var matrixResult = new HidSessionResult<IPid02E0MatrixFeatureWriter>(
+            null,
+            HidSessionFailureKind.NativeIoFailure)
+        {
+            Diagnostic = diagnostic,
+        };
+        var factory = new ProductionLightingFactory(
+            admitted: true,
+            static () => new ValidationRunContext(),
+            _ => new LightingActorFactory(session),
+            () => matrixResult,
+            TimeProvider.System,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1),
+            new PendingDisposalRegistry());
+
+        HidSessionResult<IProductionLightingPort> opened = await factory.OpenAsync(default);
+
+        Assert.Null(opened.Value);
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, opened.Failure);
+        Assert.Equal(diagnostic, opened.Diagnostic);
+    }
+
     [Theory]
     [InlineData(true, 0x00, LogoLightingMode.Off)]
     [InlineData(false, 0x00, LogoLightingMode.Static)]
@@ -2423,6 +2486,17 @@ public sealed class ProductionLightingPortTests
                         new BatteryCommands(),
                         new TemporaryCommands()),
                     null));
+        }
+    }
+
+    private sealed class FixedLightingActorFactory(
+        HidSessionResult<ValidationActor> result) : IValidationActorFactory
+    {
+        public ValueTask<HidSessionResult<ValidationActor>> OpenAsync(
+            ValidationRunContext context)
+        {
+            _ = context;
+            return ValueTask.FromResult(result);
         }
     }
 
