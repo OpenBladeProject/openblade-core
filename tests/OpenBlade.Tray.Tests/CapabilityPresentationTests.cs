@@ -258,10 +258,16 @@ public sealed class CapabilityPresentationTests
                 "IsCustomPerformanceVisible",
                 StringComparison.Ordinal) is true);
         Assert.Equal(
-            3,
+            1,
             animated.Count(element =>
                 Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                     "IsGpuClockTuningVisible",
+                    StringComparison.Ordinal) is true));
+        Assert.Equal(
+            2,
+            animated.Count(element =>
+                Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                    "IsGpuClockTuningEnabled",
                     StringComparison.Ordinal) is true));
         XElement gpuClockTuningToggle = document.Descendants()
             .Single(element => Attribute(element, "Name") == "GpuClockTuningToggle");
@@ -311,6 +317,87 @@ public sealed class CapabilityPresentationTests
             Attribute(element, "AutomationProperties.Name") == "Export profiles to JSON");
         Assert.Equal("OnExportProfiles", Attribute(export, "Click"));
         Assert.Equal("Export profiles", Attribute(export, "Content"));
+    }
+
+    [Fact]
+    public void MainWindow_FoldsGpuOffsetsUnderANeutralTuningRow()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement toggle = NamedElement(document, "ToggleSwitch", "GpuClockTuningToggle");
+        XElement toggleRow = toggle.Ancestors()
+            .First(element => element.Name.LocalName == "Border");
+        XElement coreSlider = NamedElement(document, "Slider", "GpuCoreClockOffsetSlider");
+        XElement memorySlider = NamedElement(document, "Slider", "GpuMemoryClockOffsetSlider");
+        XElement coreRow = coreSlider.Ancestors()
+            .First(element => element.Name.LocalName == "Border");
+        XElement memoryRow = memorySlider.Ancestors()
+            .First(element => element.Name.LocalName == "Border");
+
+        Assert.Equal(
+            "{StaticResource SettingsNeutralSubcardStyle}",
+            Attribute(toggleRow, "Style"));
+        Assert.Equal(
+            [coreRow, memoryRow],
+            toggleRow.ElementsAfterSelf()
+                .Where(element => element.Name.LocalName == "Border")
+                .Take(2));
+        Assert.All([coreRow, memoryRow], row =>
+        {
+            Assert.Equal(
+                "{StaticResource SettingsNeutralSubcardStyle}",
+                Attribute(row, "Style"));
+            Assert.Equal(
+                "{Binding IsGpuClockTuningEnabled}",
+                Attribute(row, "AnimatedVisibility.IsVisible"));
+        });
+
+        XElement neutralStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsNeutralSubcardStyle");
+        Assert.Equal(
+            "{StaticResource SettingsSubcardStyle}",
+            Attribute(neutralStyle, "BasedOn"));
+        Assert.Contains(neutralStyle.Elements(), setter =>
+            Attribute(setter, "Property") == "Background"
+            && Attribute(setter, "Value") == "Transparent");
+    }
+
+    [Fact]
+    public void MainWindow_DashboardSliderCardsKeepValuesInline()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        string[] sliderNames =
+        [
+            "GpuCoreClockOffsetSlider",
+            "GpuMemoryClockOffsetSlider",
+            "FixedFanSpeedSlider",
+            "DashboardChargeLimitSlider",
+            "DashboardLightingBrightnessSlider",
+            "DashboardAudioMeterColorBoostSlider",
+            "DashboardAudioMeterDecaySlider",
+        ];
+
+        foreach (string name in sliderNames)
+        {
+            XElement slider = NamedElement(document, "Slider", name);
+            XElement row = Assert.IsType<XElement>(slider.Parent);
+
+            Assert.Equal("Grid", row.Name.LocalName);
+            Assert.Equal("12", Attribute(row, "ColumnSpacing"));
+            Assert.Equal(
+                "{StaticResource InlineCardSliderStyle}",
+                Attribute(slider, "Style"));
+            Assert.Contains(row.Elements(), element =>
+                Attribute(element, "Grid.Column") == "1"
+                && element.DescendantsAndSelf().Any(descendant =>
+                    descendant.Name.LocalName == "TextBlock"));
+        }
+
+        Assert.Equal(
+            sliderNames.Length,
+            document.Descendants().Count(element =>
+                element.Name.LocalName == "Slider"
+                && Attribute(element, "Style")
+                    == "{StaticResource InlineCardSliderStyle}"));
     }
 
     [Fact]
@@ -427,7 +514,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("80", Attribute(chargeLimit, "Maximum"));
         Assert.Equal("5", Attribute(chargeLimit, "StepFrequency"));
         Assert.Equal("StepValues", Attribute(chargeLimit, "SnapsTo"));
-        Assert.Equal("Stretch", Attribute(chargeLimit, "HorizontalAlignment"));
+        Assert.Equal(
+            "{StaticResource InlineCardSliderStyle}",
+            Attribute(chargeLimit, "Style"));
         Assert.Equal(
             "{StaticResource SettingsRowStyle}",
             Attribute(

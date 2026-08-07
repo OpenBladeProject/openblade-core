@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Folded GPU clock offsets under their tuning toggle, removed the persistent
+  nested-card highlight, and placed dashboard slider values beside their
+  sliders to keep the cards compact.
 - Kept full-power AC fan controls available in every supported performance
   mode, preserving performance intent through the confirmed Balanced/Automatic
   bridge required for fixed speeds, maximum fans, and manual fan curves.

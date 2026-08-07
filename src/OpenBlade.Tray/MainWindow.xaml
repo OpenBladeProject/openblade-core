@@ -70,6 +70,21 @@
                    BasedOn="{StaticResource SettingsSubcardStyle}">
                 <Setter Property="CornerRadius" Value="0,0,8,8" />
             </Style>
+            <Style x:Key="SettingsNeutralSubcardStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SettingsSubcardStyle}">
+                <Setter Property="Background" Value="Transparent" />
+            </Style>
+            <Style x:Key="InlineCardSliderStyle" TargetType="Slider">
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="InlineCardSliderValueStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource CardTitleStyle}">
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
             <Style x:Key="SettingsPickerStyle"
                    TargetType="ComboBox"
                    BasedOn="{StaticResource DefaultComboBoxStyle}">
@@ -430,7 +445,7 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsSubcardStyle}"
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">
                                 <Grid ColumnSpacing="20">
@@ -451,6 +466,86 @@
                                                   IsEnabled="{Binding CanToggleGpuClockTuning}"
                                                   AutomationProperties.Name="GPU tuning"
                                                   Toggled="OnGpuClockTuningToggled" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningEnabled}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="GPU core clock offset"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                    </StackPanel>
+                                    <Grid Grid.Column="1"
+                                          Width="320"
+                                          ColumnSpacing="12"
+                                          VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="GpuCoreClockOffsetSlider"
+                                                Style="{StaticResource InlineCardSliderStyle}"
+                                                Minimum="{Binding GpuCoreClockOffsetMinimum}"
+                                                Maximum="{Binding GpuCoreClockOffsetMaximum}"
+                                                Value="{Binding GpuCoreClockOffsetMegahertz, Mode=OneWay}"
+                                                StepFrequency="5"
+                                                SmallChange="5"
+                                                LargeChange="50"
+                                                SnapsTo="StepValues"
+                                                IsEnabled="{Binding CanEditGpuClockTuning}"
+                                                AutomationProperties.Name="GPU core clock offset"
+                                                ValueChanged="OnGpuCoreClockOffsetChanged" />
+                                        <TextBlock Grid.Column="1"
+                                                   Style="{StaticResource InlineCardSliderValueStyle}">
+                                            <Run Text="{Binding Value, ElementName=GpuCoreClockOffsetSlider}" />
+                                            <Run Text=" MHz" />
+                                        </TextBlock>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningEnabled}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="GPU memory clock offset"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                    </StackPanel>
+                                    <Grid Grid.Column="1"
+                                          Width="320"
+                                          ColumnSpacing="12"
+                                          VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="GpuMemoryClockOffsetSlider"
+                                                Style="{StaticResource InlineCardSliderStyle}"
+                                                Minimum="{Binding GpuMemoryClockOffsetMinimum}"
+                                                Maximum="{Binding GpuMemoryClockOffsetMaximum}"
+                                                Value="{Binding GpuMemoryClockOffsetMegahertz, Mode=OneWay}"
+                                                StepFrequency="5"
+                                                SmallChange="5"
+                                                LargeChange="50"
+                                                SnapsTo="StepValues"
+                                                IsEnabled="{Binding CanEditGpuClockTuning}"
+                                                AutomationProperties.Name="GPU memory clock offset"
+                                                ValueChanged="OnGpuMemoryClockOffsetChanged" />
+                                        <TextBlock Grid.Column="1"
+                                                   Style="{StaticResource InlineCardSliderValueStyle}">
+                                            <Run Text="{Binding Value, ElementName=GpuMemoryClockOffsetSlider}" />
+                                            <Run Text=" MHz" />
+                                        </TextBlock>
+                                    </Grid>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
@@ -497,76 +592,6 @@
                                               SelectedItem="{Binding SelectedCustomGpuLevel}"
                                               local:StableComboBoxSelection.Anchor="{Binding SelectedCustomGpuLevel, Mode=OneWay}"
                                               SelectionChanged="OnDashboardCustomGpuChanged" />
-                                </Grid>
-                            </Border>
-                            <Border Style="{StaticResource SettingsSubcardStyle}"
-                                    Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="GPU core clock offset"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1"
-                                                Width="320"
-                                                Spacing="4"
-                                                VerticalAlignment="Center">
-                                        <TextBlock HorizontalAlignment="Right"
-                                                   Style="{StaticResource CardTitleStyle}">
-                                            <Run Text="{Binding Value, ElementName=GpuCoreClockOffsetSlider}" />
-                                            <Run Text=" MHz" />
-                                        </TextBlock>
-                                        <Slider x:Name="GpuCoreClockOffsetSlider"
-                                                Minimum="{Binding GpuCoreClockOffsetMinimum}"
-                                                Maximum="{Binding GpuCoreClockOffsetMaximum}"
-                                                Value="{Binding GpuCoreClockOffsetMegahertz, Mode=OneWay}"
-                                                StepFrequency="5"
-                                                SmallChange="5"
-                                                LargeChange="50"
-                                                SnapsTo="StepValues"
-                                                IsEnabled="{Binding CanEditGpuClockTuning}"
-                                                AutomationProperties.Name="GPU core clock offset"
-                                                ValueChanged="OnGpuCoreClockOffsetChanged" />
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-                            <Border Style="{StaticResource SettingsSubcardStyle}"
-                                    Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="GPU memory clock offset"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1"
-                                                Width="320"
-                                                Spacing="4"
-                                                VerticalAlignment="Center">
-                                        <TextBlock HorizontalAlignment="Right"
-                                                   Style="{StaticResource CardTitleStyle}">
-                                            <Run Text="{Binding Value, ElementName=GpuMemoryClockOffsetSlider}" />
-                                            <Run Text=" MHz" />
-                                        </TextBlock>
-                                        <Slider x:Name="GpuMemoryClockOffsetSlider"
-                                                Minimum="{Binding GpuMemoryClockOffsetMinimum}"
-                                                Maximum="{Binding GpuMemoryClockOffsetMaximum}"
-                                                Value="{Binding GpuMemoryClockOffsetMegahertz, Mode=OneWay}"
-                                                StepFrequency="5"
-                                                SmallChange="5"
-                                                LargeChange="50"
-                                                SnapsTo="StepValues"
-                                                IsEnabled="{Binding CanEditGpuClockTuning}"
-                                                AutomationProperties.Name="GPU memory clock offset"
-                                                ValueChanged="OnGpuMemoryClockOffsetChanged" />
-                                    </StackPanel>
                                 </Grid>
                             </Border>
                             </StackPanel>
@@ -625,13 +650,15 @@
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Fan speed" Style="{StaticResource CardTitleStyle}" />
                                     </StackPanel>
-                                    <StackPanel Grid.Column="1" Spacing="4">
-                                        <TextBlock HorizontalAlignment="Right"
-                                                   Style="{StaticResource CardTitleStyle}">
-                                            <Run Text="{Binding FixedFanSpeedRpm}" />
-                                            <Run Text=" RPM" />
-                                        </TextBlock>
+                                    <Grid Grid.Column="1"
+                                          ColumnSpacing="12"
+                                          VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
                                         <Slider x:Name="FixedFanSpeedSlider"
+                                                Style="{StaticResource InlineCardSliderStyle}"
                                                 Minimum="{Binding FixedFanSpeedMinimumRpm}"
                                                 Maximum="{Binding FixedFanSpeedMaximumRpm}"
                                                 StepFrequency="{Binding FixedFanSpeedStepRpm}"
@@ -644,7 +671,12 @@
                                                 Value="{Binding FixedFanSpeedRpm, Mode=TwoWay, Converter={StaticResource Int32Double}}"
                                                 PointerCaptureLost="OnFixedFanSpeedCommit"
                                                 KeyUp="OnFixedFanSpeedKeyUp" />
-                                    </StackPanel>
+                                        <TextBlock Grid.Column="1"
+                                                   Style="{StaticResource InlineCardSliderValueStyle}">
+                                            <Run Text="{Binding FixedFanSpeedRpm}" />
+                                            <Run Text=" RPM" />
+                                        </TextBlock>
+                                    </Grid>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsLastSubcardStyle}"
@@ -796,19 +828,15 @@
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
                                     </StackPanel>
-                                    <StackPanel Grid.Column="1"
-                                                Spacing="4"
-                                                HorizontalAlignment="Stretch">
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-                                            <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                          IsActive="{Binding IsChargeLimitOperationInProgress}"
-                                                          AutomationProperties.Name="Applying charge limit" />
-                                            <TextBlock Text="{Binding ChargeLimitPercent}"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="%" Style="{StaticResource CardTitleStyle}" />
-                                        </StackPanel>
+                                    <Grid Grid.Column="1"
+                                          ColumnSpacing="12"
+                                          VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
                                         <Slider x:Name="DashboardChargeLimitSlider"
-                                                HorizontalAlignment="Stretch"
+                                                Style="{StaticResource InlineCardSliderStyle}"
                                                 Minimum="50"
                                                 Maximum="80"
                                                 StepFrequency="5"
@@ -823,7 +851,19 @@
                                                 PointerReleased="OnDashboardChargeLimitPointerCaptureLost"
                                                 PointerCaptureLost="OnDashboardChargeLimitPointerCaptureLost"
                                                 KeyUp="OnDashboardChargeLimitKeyUp" />
-                                    </StackPanel>
+                                        <StackPanel Grid.Column="1"
+                                                    Orientation="Horizontal"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Center"
+                                                    Spacing="8">
+                                            <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                          IsActive="{Binding IsChargeLimitOperationInProgress}"
+                                                          AutomationProperties.Name="Applying charge limit" />
+                                            <TextBlock Text="{Binding ChargeLimitPercent}"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="%" Style="{StaticResource CardTitleStyle}" />
+                                        </StackPanel>
+                                    </Grid>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsLastRowStyle}">
@@ -1112,13 +1152,16 @@
                                             <TextBlock Text="Adjust the keyboard lighting level."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <StackPanel Grid.Column="1" Spacing="4">
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                                <TextBlock Text="{x:Bind LightingBrightnessEditor, Mode=OneWay}"
-                                                           Style="{StaticResource CardTitleStyle}" />
-                                                <TextBlock Text="%" Style="{StaticResource CardTitleStyle}" />
-                                            </StackPanel>
-                                            <Slider Minimum="1"
+                                        <Grid Grid.Column="1"
+                                              ColumnSpacing="12"
+                                              VerticalAlignment="Center">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="DashboardLightingBrightnessSlider"
+                                                    Style="{StaticResource InlineCardSliderStyle}"
+                                                    Minimum="1"
                                                     Maximum="100"
                                                     StepFrequency="1"
                                                     SmallChange="1"
@@ -1126,7 +1169,15 @@
                                                     IsThumbToolTipEnabled="True"
                                                     AutomationProperties.Name="Keyboard lighting brightness"
                                                     Value="{Binding LightingBrightnessEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
-                                        </StackPanel>
+                                            <StackPanel Grid.Column="1"
+                                                        Orientation="Horizontal"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock Text="{x:Bind LightingBrightnessEditor, Mode=OneWay}"
+                                                           Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock Text="%" Style="{StaticResource CardTitleStyle}" />
+                                            </StackPanel>
+                                        </Grid>
                                     </Grid>
                                 </Border>
 
@@ -1168,11 +1219,16 @@
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <StackPanel Grid.Column="1" Spacing="4">
-                                            <TextBlock HorizontalAlignment="Right"
-                                                       Text="{x:Bind LightingAudioMeterColorBoostEditor, Mode=OneWay}"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <Slider Minimum="1"
+                                        <Grid Grid.Column="1"
+                                              ColumnSpacing="12"
+                                              VerticalAlignment="Center">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="DashboardAudioMeterColorBoostSlider"
+                                                    Style="{StaticResource InlineCardSliderStyle}"
+                                                    Minimum="1"
                                                     Maximum="4"
                                                     StepFrequency="0.25"
                                                     SmallChange="0.25"
@@ -1180,7 +1236,10 @@
                                                     IsThumbToolTipEnabled="True"
                                                     AutomationProperties.Name="Audio Meter color boost"
                                                     Value="{x:Bind LightingAudioMeterColorBoostEditor, Mode=TwoWay}" />
-                                        </StackPanel>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{x:Bind LightingAudioMeterColorBoostEditor, Mode=OneWay}"
+                                                       Style="{StaticResource InlineCardSliderValueStyle}" />
+                                        </Grid>
                                     </Grid>
                                 </Border>
 
@@ -1198,11 +1257,16 @@
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <StackPanel Grid.Column="1" Spacing="4">
-                                            <TextBlock HorizontalAlignment="Right"
-                                                       Text="{x:Bind LightingAudioMeterDecayValue, Mode=OneWay}"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <Slider Minimum="0"
+                                        <Grid Grid.Column="1"
+                                              ColumnSpacing="12"
+                                              VerticalAlignment="Center">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="DashboardAudioMeterDecaySlider"
+                                                    Style="{StaticResource InlineCardSliderStyle}"
+                                                    Minimum="0"
                                                     Maximum="2000"
                                                     StepFrequency="250"
                                                     SmallChange="250"
@@ -1210,7 +1274,10 @@
                                                     IsThumbToolTipEnabled="False"
                                                     AutomationProperties.Name="Audio Meter quiet-change smoothing"
                                                     Value="{x:Bind LightingAudioMeterDecayMillisecondsEditor, Mode=TwoWay}" />
-                                        </StackPanel>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{x:Bind LightingAudioMeterDecayValue, Mode=OneWay}"
+                                                       Style="{StaticResource InlineCardSliderValueStyle}" />
+                                        </Grid>
                                     </Grid>
                                 </Border>
 
