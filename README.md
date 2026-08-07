@@ -176,9 +176,13 @@ Stable artifacts carrying the same product version.
 
 Setup also stops before Apply when it detects several related OpenBlade bundle
 registrations. Older installers can recursively launch one another while Burn
-tries to remove them, so continuing would risk another installer deadlock.
-Remove the duplicate OpenBlade entries through Windows installer recovery
-before retrying the newer setup.
+tries to remove them, so continuing would risk another installer deadlock. This
+includes a mixed set with one older and one newer registration: there is still
+no single unambiguous predecessor to replace. Interactive setup reports the
+conflict as soon as detection completes instead of offering Install or Repair.
+If it offers Uninstall for its own registered bundle, use that escape hatch
+first. Remove any remaining duplicate entries through Windows installer
+recovery before retrying the newer setup.
 
 The unpacked production bundle remains available at
 `artifacts\win-x64\OpenBlade` for development and recovery. Its command-line

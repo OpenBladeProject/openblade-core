@@ -17,8 +17,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Stopped install and repair before Apply when another OpenBlade bundle has the
   same four-part version, preventing cached related bundles from recursively
   removing each other. Setup also rejects machines that already contain
-  several related bundle registrations instead of launching their legacy
-  installers into the same cycle. Exact development builds must use ordered
+  several related bundle registrations, including mixed older and newer
+  versions, instead of launching their legacy installers into the same cycle.
+  Interactive setup reports the conflict during detection while retaining an
+  available Uninstall escape hatch. Exact development builds must use ordered
   Nightly revisions for transactional replacement.
 
 ## [0.1.0-nightly.10] - 2026-08-07
