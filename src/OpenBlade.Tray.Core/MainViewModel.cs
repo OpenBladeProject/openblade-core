@@ -1544,7 +1544,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(CanEditFanControl));
-            Notify(nameof(IsManualFanControlUnavailable));
             NotifyTrayHoverLabel();
         }
     }
@@ -1759,17 +1758,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool CanEditFanControl =>
         CanRequestHardwareControl
-        && !IsFanControlOperationInProgress
-        && (ActivePowerSource != PowerSource.PluggedIn
-            || SelectedFanMode != FanMode.Automatic
-            || IsManualFanControlEligible());
-
-    public bool IsManualFanControlUnavailable =>
-        ActivePowerSource == PowerSource.PluggedIn
-        && SelectedFanMode == FanMode.Automatic
-        && AvailableFanModes.Any(mode => mode is
-            FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum)
-        && !IsManualFanControlEligible();
+        && !IsFanControlOperationInProgress;
 
     public bool CanEditPerformance =>
         CanRequestHardwareControl && !IsPerformanceOperationInProgress;
@@ -3438,8 +3427,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && CanMutate
         && HasConfirmedPowerSource
         && CommandCapabilities.PerformancePresets.Contains(value)
-        && PerformancePresetPresentation.IsAvailable(ActivePowerSource, value)
-        && !MaximumFansAreEffectiveOrConfirmed();
+        && PerformancePresetPresentation.IsAvailable(ActivePowerSource, value);
 
     private bool CanSetCustomPerformance(object? parameter) =>
         parameter is CustomPerformanceSettings value
@@ -3450,8 +3438,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && IsCustomPerformanceVisible
         && !IsPerformanceOperationInProgress
         && CanMutate
-        && HasConfirmedPowerSource
-        && !MaximumFansAreEffectiveOrConfirmed();
+        && HasConfirmedPowerSource;
 
     private bool SupportsCustomPerformance(
         CustomPerformanceLevel cpu,
@@ -3520,7 +3507,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         return FanModeAvailable(ActivePowerSource, value)
-            && (value == FanMode.Automatic || IsManualFanControlEligible());
+            && (value == FanMode.Automatic
+                || ActivePowerSource == PowerSource.PluggedIn);
     }
 
     private bool CanSetFanControl(object? parameter) =>
@@ -3561,26 +3549,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         || IsConnected
         && Capabilities.OneShotLaptopControls.Contains(control)
         && readPending;
-
-    private bool MaximumFansAreEffectiveOrConfirmed() =>
-        latestStatus is { } status
-        && (status.DesiredState.Fans.Value == FanMode.Maximum
-            || status.ConfirmedState?.Fans == FanMode.Maximum);
-
-    private bool IsManualFanControlEligible()
-    {
-        if (latestStatus is not { } status
-            || status.DesiredState.Performance.Value != PerformancePreset.Balanced
-            || status.ConfirmedState?.Fans is not { } confirmedFans)
-        {
-            return false;
-        }
-
-        return confirmedFans == FanMode.Automatic
-            ? status.ConfirmedState.Performance == PerformancePreset.Balanced
-            : confirmedFans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
-                && status.ConfirmedState.Performance is null or PerformancePreset.Balanced;
-    }
 
     private bool CanSetFullChargeOverride(object? parameter)
     {
@@ -4597,7 +4565,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 token,
                 result =>
                 {
-                    if (result.Status == ControlOperationStatus.Applied)
+                    if (result.Status is
+                        ControlOperationStatus.Applied or ControlOperationStatus.Stored)
                     {
                         applied = true;
                         MarkActiveProfileDraft(
@@ -7708,7 +7677,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(CanEditPerformance));
         Notify(nameof(CanEditGpuClockTuning));
         Notify(nameof(CanEditFanControl));
-        Notify(nameof(IsManualFanControlUnavailable));
         NotifyGamingModeKeyPolicy();
         NotifyDashboardTelemetryValuesChanged();
         Notify(nameof(LiveReadingsRefreshToolTip));

@@ -10,9 +10,12 @@ public sealed class ProfileSetValidatorTests
     [InlineData(PerformancePreset.Balanced, FanMode.Automatic)]
     [InlineData(PerformancePreset.Performance, FanMode.Automatic)]
     [InlineData(PerformancePreset.Balanced, FanMode.Maximum)]
+    [InlineData(PerformancePreset.Silent, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Performance, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.Custom, FanMode.Maximum)]
     [InlineData(PerformancePreset.BatterySaver, FanMode.Automatic)]
     [InlineData(PerformancePreset.BatteryBalanced, FanMode.Automatic)]
-    public void DefaultPolicy_AllowsOnlyVerifiedThermalPairs(
+    public void DefaultPolicy_AllowsIndependentAcIntentAndBatteryAutomatic(
         PerformancePreset performance,
         FanMode fans)
     {
@@ -21,15 +24,31 @@ public sealed class ProfileSetValidatorTests
     }
 
     [Theory]
-    [InlineData(PerformancePreset.Silent, FanMode.Maximum)]
-    [InlineData(PerformancePreset.Performance, FanMode.Maximum)]
-    public void DefaultPolicy_RejectsUnverifiedMaximumFanPairs(
+    [InlineData(PerformancePreset.BatterySaver, FanMode.Maximum)]
+    [InlineData(PerformancePreset.BatteryBalanced, FanMode.Fixed)]
+    public void DefaultPolicy_RejectsManualBatteryFanPairs(
         PerformancePreset performance,
         FanMode fans)
     {
         Assert.Throws<InvalidDataException>(() =>
             ProfileSetValidator.CreateUnverifiedSafeDefaults()
                 .ValidatePerformanceFanCombination(performance, fans));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Balanced, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.Performance, FanMode.Maximum)]
+    [InlineData(PerformancePreset.Custom, FanMode.Fixed)]
+    public void SourceAwareCombinationValidation_AllowsIndependentAcFanIntent(
+        PerformancePreset performance,
+        FanMode fans)
+    {
+        ProfileSetValidator.CreateUnverifiedSafeDefaults()
+            .ValidatePerformanceFanCombination(
+                performance,
+                fans,
+                PowerSource.PluggedIn);
     }
 
     [Theory]

@@ -567,10 +567,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Switch Power mode to Balanced to use fixed speed or a manual fan curve."
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   Visibility="Collapsed"
-                                                   local:AnimatedVisibility.IsVisible="{Binding IsManualFanControlUnavailable}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal"
