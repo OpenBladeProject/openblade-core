@@ -3600,7 +3600,7 @@
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
                                         <Button Grid.Column="1"
-                                                Content="Check Razer"
+                                                Content="Check for updates"
                                                 Command="{x:Bind FirmwareUpdateViewModel.CheckCommand}"
                                                 AutomationProperties.Name="Check official Razer firmware versions" />
                                     </Grid>
@@ -3655,7 +3655,7 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="Installed" Style="{StaticResource SecondaryTextStyle}" />
-                                            <TextBlock Grid.Column="1" Text="Published updater" Style="{StaticResource SecondaryTextStyle}" />
+                                            <TextBlock Grid.Column="1" Text="Latest" Style="{StaticResource SecondaryTextStyle}" />
                                         </Grid>
                                         <TextBlock Grid.Row="1" Text="BIOS" Style="{StaticResource CardTitleStyle}" />
                                         <Grid Grid.Row="1" Grid.Column="1" ColumnSpacing="24">
@@ -3697,23 +3697,31 @@
                                 </Border>
 
                                 <Border x:Name="FirmwareFooterSection"
-                                        Padding="16,14">
-                                    <Grid ColumnSpacing="24">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="MCU versions use Razer's updater label format where it applies. OpenBlade never downloads or installs firmware."
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   TextWrapping="Wrap"
-                                                   VerticalAlignment="Center" />
-                                        <HyperlinkButton Grid.Column="1"
-                                                         Content="Open official Razer page"
-                                                         Padding="0"
-                                                         VerticalAlignment="Center"
-                                                         NavigateUri="{x:Bind FirmwareUpdateViewModel.OfficialSupportUri, Mode=OneWay}"
-                                                         AutomationProperties.Name="Open official Razer firmware support page" />
-                                    </Grid>
+                                        Style="{StaticResource SettingsLastRowStyle}"
+                                        Padding="0">
+                                    <HyperlinkButton NavigateUri="{x:Bind FirmwareUpdateViewModel.OfficialSupportUri, Mode=OneWay}"
+                                                     Style="{StaticResource ExternalLinkButtonStyle}"
+                                                     CornerRadius="0,0,8,8"
+                                                     AutomationProperties.Name="Open official Razer firmware support page"
+                                                     ToolTipService.ToolTip="Open official Razer firmware support page">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="3">
+                                                <TextBlock Text="Open official Razer page"
+                                                           Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock Text="View firmware downloads and release details on Razer's site."
+                                                           Style="{StaticResource SecondaryTextStyle}"
+                                                           TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <FontIcon Grid.Column="1"
+                                                      Glyph="&#xE8A7;"
+                                                      VerticalAlignment="Center"
+                                                      Style="{StaticResource CardActionIconStyle}" />
+                                        </Grid>
+                                    </HyperlinkButton>
                                 </Border>
                             </StackPanel>
                         </Border>

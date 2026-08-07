@@ -20,6 +20,8 @@ public sealed class DiagnosticArchiveProviderTests
             KeyboardDriverModeActive = true,
             Capabilities = DeviceCapabilities.Unavailable() with
             {
+                SupportsKeyboardBrightness = true,
+                SupportsPlaybackMuteIndicator = true,
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
                 WritableSpecialKeySlots =
                     SpecialKeySlotSet.M3
@@ -89,6 +91,12 @@ public sealed class DiagnosticArchiveProviderTests
             string.Empty,
             configuration.RootElement.GetProperty("capability.chargeLimits").GetString());
         Assert.Equal(
+            bool.TrueString,
+            configuration.RootElement.GetProperty("capability.supportsKeyboardBrightness").GetString());
+        Assert.Equal(
+            bool.TrueString,
+            configuration.RootElement.GetProperty("capability.supportsPlaybackMuteIndicator").GetString());
+        Assert.Equal(
             "RazerAppEngine",
             configuration.RootElement.GetProperty("status.potentialControllers").GetString());
         Assert.Equal(
@@ -133,6 +141,10 @@ public sealed class DiagnosticArchiveProviderTests
             capabilities.RootElement.GetProperty("lighting.observed.Spectrum").GetBoolean());
         Assert.False(
             capabilities.RootElement.GetProperty("lighting.Spectrum").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("lighting.keyboardBrightness").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("lighting.playbackMuteIndicator").GetBoolean());
         Assert.True(
             capabilities.RootElement.GetProperty("laptop.specialKeyBindings.observed").GetBoolean());
         Assert.True(

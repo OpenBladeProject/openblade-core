@@ -392,6 +392,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         result["battery.chargeLimit"] = capabilities.ChargeLimits.Count > 0;
         result["battery.protectionOff"] = capabilities.SupportsBatteryProtectionOff;
         result["battery.temporaryFullCharge"] = capabilities.SupportsTemporaryFullCharge;
+        result["lighting.keyboardBrightness"] = capabilities.SupportsKeyboardBrightness;
+        result["lighting.playbackMuteIndicator"] = capabilities.SupportsPlaybackMuteIndicator;
         result["performance.customCombinations"] =
             capabilities.CustomPerformance?.IsWellFormed == true;
         result["performance.cpuPowerLimit.observed"] =
@@ -513,6 +515,10 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.SupportsBatteryProtectionOff.ToString(),
             ["capability.supportsTemporaryFullCharge"] =
                 capabilities.SupportsTemporaryFullCharge.ToString(),
+            ["capability.supportsKeyboardBrightness"] =
+                capabilities.SupportsKeyboardBrightness.ToString(),
+            ["capability.supportsPlaybackMuteIndicator"] =
+                capabilities.SupportsPlaybackMuteIndicator.ToString(),
             ["capability.observedLightingEffects"] = string.Join(
                 ", ",
                 capabilities.ObservedLightingEffects
