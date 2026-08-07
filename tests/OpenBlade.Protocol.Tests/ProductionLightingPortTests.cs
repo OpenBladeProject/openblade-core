@@ -64,6 +64,7 @@ public sealed class ProductionLightingPortTests
         Assert.Equal(
             SpecialKeySlotSet.All,
             factory.Capabilities.WritableSpecialKeySlots);
+        Assert.True(factory.Capabilities.SupportsKeyboardBrightness);
         Assert.True(factory.Capabilities.SupportsPlaybackMuteIndicator);
         Assert.Null(factory.Capabilities.LampArrayLightingAccess);
         Assert.Empty(factory.Capabilities.PerformancePresets);
@@ -72,6 +73,15 @@ public sealed class ProductionLightingPortTests
         Assert.False(ProductionLightingEvidenceSource.HasCurrentExactBuildValidationArtifact(
             Path.Combine(Path.GetTempPath(), $"absent-{Guid.NewGuid():N}.json"),
             TestBuildIdentity()));
+    }
+
+    [Fact]
+    public void ProductionReadOnlyCapabilities_DoNotAdvertiseKeyboardBrightness()
+    {
+        IProductionLightingPortFactory factory =
+            ProductionLightingFactory.CreateWindowsReadOnly();
+
+        Assert.False(factory.Capabilities.SupportsKeyboardBrightness);
     }
 
     [Fact]

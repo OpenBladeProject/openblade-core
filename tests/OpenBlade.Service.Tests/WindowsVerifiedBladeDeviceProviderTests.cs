@@ -347,6 +347,68 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task KeyboardBrightnessStep_UsesRecoveredSupportedPort()
+    {
+        var lightingPort = new FakeLightingPort
+        {
+            BrightnessStepResult = 42,
+        };
+        var lightingFactory = FakeLightingFactory.FromResults(
+            new HidSessionResult<IProductionLightingPort>(
+                Value: null,
+                HidSessionFailureKind.NativeIoFailure),
+            new HidSessionResult<IProductionLightingPort>(
+                lightingPort,
+                Failure: null));
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Increase,
+                CancellationToken.None));
+
+        byte brightness = await device.StepKeyboardBrightnessAsync(
+            KeyboardBrightnessDirection.Increase,
+            CancellationToken.None);
+
+        Assert.Equal((byte)42, brightness);
+        Assert.Equal(
+            [KeyboardBrightnessDirection.Increase],
+            lightingPort.BrightnessSteps);
+        Assert.Equal(2, lightingFactory.OpenCount);
+    }
+
+    [Fact]
+    public async Task KeyboardBrightnessStep_RejectsOpenedPortWithoutCapability()
+    {
+        var lightingPort = new FakeLightingPort(supportsKeyboardBrightness: false);
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        BladeWriteException exception = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Decrease,
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, exception.SubmissionState);
+        Assert.Equal(
+            "The exact-device lighting session does not support keyboard brightness.",
+            exception.Message);
+        Assert.Empty(lightingPort.BrightnessSteps);
+        Assert.Equal(1, lightingFactory.OpenCount);
+    }
+
+    [Fact]
     public async Task LightingWriteOpenFailuresKeepUserMessagesPlainAndLogEachOperationOnce()
     {
         var history = new DiagnosticHistory();
@@ -1808,24 +1870,30 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
     private sealed class FakeLightingPort : IProductionLightingPort
     {
-        public DeviceCapabilities Capabilities { get; } = new(
-            new HashSet<PerformancePreset>(),
-            new HashSet<FanMode>(),
-            new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
-            new HashSet<int>(),
-            false,
-            false)
+        public FakeLightingPort(bool supportsKeyboardBrightness = true)
         {
-            SupportsPlaybackMuteIndicator = true,
-            SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
-            WritableSpecialKeySlots =
-                SpecialKeySlotSet.M3
-                | SpecialKeySlotSet.M4
-                | SpecialKeySlotSet.M5,
-            LampArrayLightingAccess = DeviceFeatureAccess.ReadOnly,
-            ObservedLightingEffects =
-                new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
-        };
+            Capabilities = new DeviceCapabilities(
+                new HashSet<PerformancePreset>(),
+                new HashSet<FanMode>(),
+                new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+                new HashSet<int>(),
+                false,
+                false)
+            {
+                SupportsKeyboardBrightness = supportsKeyboardBrightness,
+                SupportsPlaybackMuteIndicator = true,
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+                WritableSpecialKeySlots =
+                    SpecialKeySlotSet.M3
+                    | SpecialKeySlotSet.M4
+                    | SpecialKeySlotSet.M5,
+                LampArrayLightingAccess = DeviceFeatureAccess.ReadOnly,
+                ObservedLightingEffects =
+                    new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
+            };
+        }
+
+        public DeviceCapabilities Capabilities { get; }
 
         public LightingRendererOwnershipState OwnershipState { get; set; }
 
@@ -1838,6 +1906,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         public List<AmbientLightingFrame> AmbientFrames { get; } = [];
 
         public List<bool> PlaybackMuteIndicatorStates { get; } = [];
+
+        public List<KeyboardBrightnessDirection> BrightnessSteps { get; } = [];
+
+        public byte BrightnessStepResult { get; init; } = 50;
 
         public BladeWriteException? PlaybackMuteFailure { get; init; }
 
@@ -1902,8 +1974,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public Task<byte> StepBrightnessAsync(
             KeyboardBrightnessDirection direction,
-            CancellationToken cancellationToken) =>
-            Task.FromResult((byte)50);
+            CancellationToken cancellationToken)
+        {
+            BrightnessSteps.Add(direction);
+            return Task.FromResult(BrightnessStepResult);
+        }
 
         public Task PulseReactiveKeyAsync(
             ReactiveKeyPulse pulse,
