@@ -187,6 +187,21 @@ public sealed class RazerFirmwareUpdateCheckingTests
     }
 
     [Fact]
+    public async Task ViewModel_UsesLatestFirmwareTerminologyBeforeChecking()
+    {
+        var client = new StubClient(new("4.00", "1.04", "1.06"));
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            client,
+            new FixedTimeProvider(Now));
+
+        UpdateModel(viewModel);
+
+        Assert.Equal(
+            "Check Razer's official page for the latest firmware versions.",
+            viewModel.StatusText);
+    }
+
+    [Fact]
     public async Task ViewModel_ShowsInstalledAndPublishedValuesWithComparableMcuFormatting()
     {
         var client = new StubClient(new("3.01", "1.04", "1.06"));
@@ -204,7 +219,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
 
         Assert.Equal("1.06", viewModel.PublishedMcuVersion);
         Assert.False(viewModel.IsUpdateAvailable);
-        Assert.Equal("Published updater versions loaded from Razer.", viewModel.StatusText);
+        Assert.Equal("Latest firmware versions loaded from Razer.", viewModel.StatusText);
         Assert.NotNull(viewModel.OfficialSupportUri);
     }
 
@@ -364,7 +379,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.Equal("Couldn't read", viewModel.PublishedBiosVersion);
         Assert.Equal("Not listed", viewModel.PublishedEcVersion);
         Assert.Equal("1.06", viewModel.PublishedMcuVersion);
-        Assert.Contains("last loaded", viewModel.StatusText);
+        Assert.StartsWith("Latest firmware versions last loaded ", viewModel.StatusText);
         Assert.Equal(0, client.CallCount);
     }
 
