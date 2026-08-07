@@ -1733,6 +1733,22 @@ public sealed class WinUiShellContractTests
         Assert.Contains("MonitorDpiType.Effective", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("TryPositionAt(", dashboardWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("GetDpiForWindow(", dashboardWindow, StringComparison.Ordinal);
+        int beginEdit = dashboardWindow.IndexOf(
+            "public void BeginEditSession()",
+            StringComparison.Ordinal);
+        int endEdit = dashboardWindow.IndexOf(
+            "public void EndEditSession()",
+            beginEdit,
+            StringComparison.Ordinal);
+        string beginEditBody = dashboardWindow[beginEdit..endEdit];
+        Assert.Contains(
+            "checked(workArea.X + workArea.Width - 1)",
+            beginEditBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "checked(workArea.Y + workArea.Height - 1)",
+            beginEditBody,
+            StringComparison.Ordinal);
         int tryPosition = dashboardWindow.IndexOf(
             "private void TryPositionAt(",
             StringComparison.Ordinal);

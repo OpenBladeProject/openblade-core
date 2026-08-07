@@ -140,8 +140,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         RectInt32 workArea = displayArea.WorkArea;
         ShowAt(
             new TrayDashboardPoint(
-                checked(workArea.X + workArea.Width),
-                checked(workArea.Y + workArea.Height)),
+                checked(workArea.X + workArea.Width - 1),
+                checked(workArea.Y + workArea.Height - 1)),
             editing: true,
             displayArea);
     }
