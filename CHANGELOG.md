@@ -5,6 +5,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Simplified the official firmware version card with a clearer **Latest**
+  column and a consistent action row for the model's Razer support page.
+
 ### Fixed
 
 - Restored the function-row keyboard-brightness controls on the Razer Blade 16

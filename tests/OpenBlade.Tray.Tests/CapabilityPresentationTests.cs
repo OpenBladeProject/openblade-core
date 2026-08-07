@@ -24,9 +24,11 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("FirmwareUpdateViewModel.OfficialSupportUri", presentation);
         Assert.Contains("FirmwareUpdateViewModel.IntervalOptions", presentation);
         Assert.Contains("FirmwareUpdateViewModel.SelectedIntervalOption", presentation);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "MCU versions use Razer's updater label format where it applies. OpenBlade never downloads or installs firmware.",
             presentation);
+        Assert.DoesNotContain("Published updater", presentation);
+        Assert.Contains("Latest", presentation);
         Assert.Equal(2, document.Descendants().Count(element =>
             Attribute(element, "Text") == "Checks at startup when due."));
         Assert.DoesNotContain(
@@ -73,6 +75,24 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             sectionNames,
             host.Elements().Select(section => Attribute(section, "Name")));
+
+        XElement footerSection = NamedElement(
+            document,
+            "Border",
+            "FirmwareFooterSection");
+        Assert.Equal(
+            "{StaticResource SettingsLastRowStyle}",
+            Attribute(footerSection, "Style"));
+        Assert.Equal("0", Attribute(footerSection, "Padding"));
+        XElement supportLink = Assert.Single(footerSection.Elements());
+        Assert.Equal("HyperlinkButton", supportLink.Name.LocalName);
+        Assert.Equal(
+            "{StaticResource ExternalLinkButtonStyle}",
+            Attribute(supportLink, "Style"));
+        Assert.Contains(supportLink.Descendants(), element =>
+            Attribute(element, "Text") == "Open official Razer page");
+        Assert.Contains(supportLink.Descendants(), element =>
+            Attribute(element, "Style") == "{StaticResource CardActionIconStyle}");
 
         XElement versionsSection = NamedElement(
             document,
@@ -893,7 +913,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("ms-appx:///Assets/Brand/OpenBlade.png", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Copy version information", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Equal(
-            4,
+            5,
             aboutPage.Descendants().Count(element =>
                 element.Name.LocalName == "HyperlinkButton"
                 && Attribute(element, "Style") == "{StaticResource ExternalLinkButtonStyle}"));
@@ -904,7 +924,7 @@ public sealed class CapabilityPresentationTests
                     "{StaticResource IconActionButtonStyle}"
                     or "{StaticResource ExternalLinkButtonStyle}")
             .ToArray();
-        Assert.Equal(5, supportActions.Length);
+        Assert.Equal(6, supportActions.Length);
         Assert.All(
             supportActions,
             action =>
@@ -991,7 +1011,7 @@ public sealed class CapabilityPresentationTests
             .SelectMany(element => element.Descendants()
                 .Where(descendant => descendant.Name.LocalName == "FontIcon"))
             .ToArray();
-        Assert.Equal(5, cardActionIcons.Length);
+        Assert.Equal(6, cardActionIcons.Length);
         Assert.All(
             cardActionIcons,
             icon =>
