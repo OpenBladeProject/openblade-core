@@ -160,6 +160,20 @@ running. This caller-controlled recovery does not apply to the Microsoft Store
 EXE channel, where Partner Center owns the quiet invocation; that remaining
 gap is tracked in [issue #25](https://github.com/OSSBlade/openblade-core/issues/25).
 
+When installing several exact development builds without changing the base
+product version, publish each build with a monotonically increasing Nightly
+revision:
+
+```powershell
+.\build\Publish.ps1 -BuildChannel Nightly -BuildRevision 42 -SourceRevision (git rev-parse HEAD)
+```
+
+Burn cannot safely order two different bundles with the same four-part version
+during related-bundle removal. OpenBlade therefore stops before Apply
+when another installer build has the same version. Use a higher Nightly
+revision for exact-build validation; do not repeatedly install different
+Stable artifacts carrying the same product version.
+
 The unpacked production bundle remains available at
 `artifacts\win-x64\OpenBlade` for development and recovery. Its command-line
 setup entry point can be run from an elevated terminal when needed:

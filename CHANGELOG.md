@@ -42,6 +42,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Offered **Use profile settings** when another app changes the keyboard effect
   to a value that firmware cannot read back, allowing the saved profile to be
   restored without guessing the active effect.
+- Stopped install and repair before Apply when another OpenBlade bundle has the
+  same four-part version, preventing cached related bundles from recursively
+  removing each other. Exact development builds must use ordered Nightly
+  revisions for transactional replacement.
 
 ## [0.1.0-nightly.9] - 2026-08-06
 

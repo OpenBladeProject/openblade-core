@@ -115,7 +115,7 @@ public sealed class InstallerWindowTests
     }
 
     [Fact]
-    public void RelatedBundlePlanChangesOnlyAfterConfirmedNewerVersionOverwrite()
+    public void RelatedBundlePlanSkipsEqualVersionCyclesAndProtectsNewerVersions()
     {
         Assert.Equal(
             "Removing OpenBlade 2.0.0",
@@ -149,12 +149,29 @@ public sealed class InstallerWindowTests
                 detectedSameVersionBundle: true,
                 RelatedBundlePlanType.Upgrade));
         Assert.Equal(
-            RelatedBundlePlanType.Upgrade,
+            RelatedBundlePlanType.None,
             OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
                 allowOverwrite: false,
                 detectedNewerBundle: false,
                 detectedSameVersionBundle: true,
                 RelatedBundlePlanType.Upgrade));
+
+        Assert.True(
+            OpenBladeBootstrapperApplication.ShouldBlockSameVersionReplacement(
+                LaunchAction.Install,
+                detectedSameVersionBundle: true));
+        Assert.True(
+            OpenBladeBootstrapperApplication.ShouldBlockSameVersionReplacement(
+                LaunchAction.Repair,
+                detectedSameVersionBundle: true));
+        Assert.False(
+            OpenBladeBootstrapperApplication.ShouldBlockSameVersionReplacement(
+                LaunchAction.Uninstall,
+                detectedSameVersionBundle: true));
+        Assert.False(
+            OpenBladeBootstrapperApplication.ShouldBlockSameVersionReplacement(
+                LaunchAction.Install,
+                detectedSameVersionBundle: false));
 
         Assert.Equal(
             RequestState.ForcePresent,

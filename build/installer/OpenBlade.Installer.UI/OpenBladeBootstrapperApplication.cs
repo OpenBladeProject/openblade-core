@@ -38,6 +38,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private string? lastError;
     private string bundleVersion = "unknown";
     private string? newerRelatedBundleVersion;
+    private string? sameVersionRelatedBundleVersion;
     private readonly HashSet<string> newerRelatedBundleCodes =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> relatedBundleVersions =
@@ -75,6 +76,14 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     {
         if (applying || command is null)
         {
+            return;
+        }
+
+        if (ShouldBlockSameVersionReplacement(
+                action,
+                sameVersionRelatedBundleVersion is not null))
+        {
+            RejectSameVersionReplacement();
             return;
         }
 
@@ -243,6 +252,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         newerRelatedBundleCodes.Clear();
         relatedBundleVersions.Clear();
         newerRelatedBundleVersion = null;
+        sameVersionRelatedBundleVersion = null;
         AddDetail("Checking the installed OpenBlade version.");
     }
 
@@ -262,6 +272,10 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             && !string.IsNullOrWhiteSpace(e.ProductCode))
         {
             relatedBundleVersions[e.ProductCode] = e.Version;
+            if (AreSameVersion(bundleVersion, e.Version))
+            {
+                sameVersionRelatedBundleVersion = e.Version;
+            }
             if (IsNewerVersion(bundleVersion, e.Version))
             {
                 newerRelatedBundleCodes.Add(e.ProductCode);
@@ -537,6 +551,19 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
     }
 
+    private void RejectSameVersionReplacement()
+    {
+        string installedVersion = sameVersionRelatedBundleVersion
+            ?? throw new InvalidOperationException(
+                "The equal OpenBlade version is unavailable.");
+        string message =
+            $"Another OpenBlade {installedVersion} installer build is already registered. "
+            + "Setup stopped before making changes to avoid an equal-version replacement cycle. "
+            + "Use an installer with a higher version or uninstall the existing OpenBlade bundle first.";
+        AddDetail(message);
+        CompleteWithFailure(NewerVersionInstalled, message);
+    }
+
     private void UpdateCalculatedProgress()
     {
         int percentage = CalculatedProgress();
@@ -710,8 +737,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             return RelatedBundlePlanType.Upgrade;
         }
 
-        if (allowOverwrite
-            && detectedSameVersionBundle
+        if (detectedSameVersionBundle
             && recommendedType == RelatedBundlePlanType.Upgrade)
         {
             return RelatedBundlePlanType.None;
@@ -719,6 +745,12 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
         return recommendedType;
     }
+
+    internal static bool ShouldBlockSameVersionReplacement(
+        LaunchAction action,
+        bool detectedSameVersionBundle) =>
+        detectedSameVersionBundle
+        && action is LaunchAction.Install or LaunchAction.Repair;
 
     internal static RequestState SelectPackageRequestState(
         bool allowOverwrite,
