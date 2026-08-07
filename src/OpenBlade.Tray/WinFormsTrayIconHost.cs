@@ -10,6 +10,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private readonly ITrayIconThemeSource themeSource;
     private readonly TrayHoverTelemetryRefreshGate hoverTelemetryRefreshGate = new();
     private readonly Action hoverTelemetryRefreshRequested;
+    private readonly Action<TrayDashboardPoint> openDashboard;
     private readonly Action<TrayNotificationDestination> notificationInvoked;
     private readonly WindowsAppNotificationPresenter? notificationPresenter;
     private readonly NotificationDeduplicator notificationDeduplicator = new();
@@ -19,6 +20,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private int disposed;
 
     public WinFormsTrayIconHost(
+        Action<TrayDashboardPoint> openDashboard,
         Action openTray,
         Action exitTray,
         MainViewModel viewModel,
@@ -26,6 +28,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         Action hoverTelemetryRefreshRequested,
         Action<TrayNotificationDestination> notificationInvoked)
     {
+        this.openDashboard = openDashboard
+            ?? throw new ArgumentNullException(nameof(openDashboard));
         ArgumentNullException.ThrowIfNull(openTray);
         ArgumentNullException.ThrowIfNull(exitTray);
         this.viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
@@ -48,6 +52,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             Visible = true,
         };
         trayIcon.DoubleClick += (_, _) => openTray();
+        trayIcon.MouseClick += OnTrayIconMouseClick;
         trayIcon.MouseMove += OnTrayIconMouseMove;
         trayIcon.BalloonTipClicked += OnBalloonTipClicked;
         notificationPresenter = WindowsAppNotificationPresenter.CreateBestEffort(
@@ -68,6 +73,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
 
         viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         themeSource.TrayIconThemeChanged -= OnTrayIconThemeChanged;
+        trayIcon.MouseClick -= OnTrayIconMouseClick;
         trayIcon.MouseMove -= OnTrayIconMouseMove;
         trayIcon.BalloonTipClicked -= OnBalloonTipClicked;
         trayIcon.Visible = false;
@@ -157,6 +163,24 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
                     ref liveReadingsObservationIntervalTicks))))
         {
             hoverTelemetryRefreshRequested();
+        }
+    }
+
+    private void OnTrayIconMouseClick(object? sender, MouseEventArgs args)
+    {
+        TrayIconPointerButton button = args.Button switch
+        {
+            MouseButtons.Left => TrayIconPointerButton.Left,
+            MouseButtons.Right => TrayIconPointerButton.Right,
+            MouseButtons.Middle => TrayIconPointerButton.Middle,
+            _ => TrayIconPointerButton.Other,
+        };
+        if (Volatile.Read(ref disposed) == 0
+            && TrayIconActivationPolicy.Resolve(button)
+                == TrayIconActivation.ShowDashboard)
+        {
+            System.Drawing.Point cursorPosition = Cursor.Position;
+            openDashboard(new TrayDashboardPoint(cursorPosition.X, cursorPosition.Y));
         }
     }
 

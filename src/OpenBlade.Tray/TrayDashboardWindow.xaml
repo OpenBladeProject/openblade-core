@@ -1,0 +1,257 @@
+<Window
+    x:Class="OpenBlade.Tray.TrayDashboardWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:OpenBlade.Tray"
+    Title="OpenBlade quick controls">
+    <Grid x:Name="Root"
+          Padding="14"
+          Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+          KeyDown="OnRootKeyDown">
+        <Grid.Resources>
+            <local:Int32DoubleConverter x:Key="Int32Double" />
+            <Style x:Key="TrayTileStyle" TargetType="Border">
+                <Setter Property="Padding" Value="12" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            </Style>
+            <Style x:Key="TrayTitleStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource BodyStrongTextBlockStyle}" />
+            <Style x:Key="TraySecondaryStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+        </Grid.Resources>
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Margin="2,0,2,12" ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Width="34"
+                    Height="34"
+                    CornerRadius="9"
+                    Background="{ThemeResource AccentFillColorDefaultBrush}">
+                <FontIcon Glyph="&#xE770;"
+                          Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                          FontSize="16" />
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                <TextBlock Text="OpenBlade" Style="{StaticResource TrayTitleStyle}" />
+                <TextBlock Text="{Binding ProfileStateLabel, Mode=OneWay}"
+                           Style="{StaticResource TraySecondaryStyle}" />
+            </StackPanel>
+        </Grid>
+
+        <ScrollViewer Grid.Row="1"
+                      HorizontalContentAlignment="Stretch"
+                      HorizontalScrollMode="Disabled"
+                      HorizontalScrollBarVisibility="Hidden"
+                      VerticalScrollMode="Enabled"
+                      VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="10">
+                <Grid x:Name="ControlGrid" ColumnSpacing="8" RowSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border x:Name="PerformanceTile" Style="{StaticResource TrayTileStyle}">
+                        <StackPanel Spacing="7">
+                            <TextBlock Text="Performance" Style="{StaticResource TrayTitleStyle}" />
+                            <ComboBox AutomationProperties.Name="Performance mode"
+                                      IsEnabled="{Binding CanEditPerformance, Mode=OneWay}"
+                                      ItemsSource="{Binding AvailableActivePerformanceOptions, Mode=OneWay}"
+                                      SelectedItem="{Binding SelectedPerformanceOption, Mode=OneWay}"
+                                      local:StableComboBoxSelection.Anchor="{Binding SelectedPerformanceOption, Mode=OneWay}"
+                                      SelectionChanged="OnPerformanceChanged" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="FansTile" Style="{StaticResource TrayTileStyle}">
+                        <StackPanel Spacing="7">
+                            <TextBlock Text="Fans" Style="{StaticResource TrayTitleStyle}" />
+                            <ComboBox AutomationProperties.Name="Fan mode"
+                                      IsEnabled="{Binding CanEditFanControl, Mode=OneWay}"
+                                      ItemsSource="{Binding AvailableActiveFanModeOptions, Mode=OneWay}"
+                                      SelectedItem="{Binding SelectedFanModeOption, Mode=OneWay}"
+                                      local:StableComboBoxSelection.Anchor="{Binding SelectedFanModeOption, Mode=OneWay}"
+                                      SelectionChanged="OnFanModeChanged" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="BatteryTile" Style="{StaticResource TrayTileStyle}">
+                        <StackPanel Spacing="5">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Charge limit" Style="{StaticResource TrayTitleStyle}" />
+                                <TextBlock Grid.Column="1" Style="{StaticResource TraySecondaryStyle}">
+                                    <Run Text="{Binding ChargeLimitPercent, Mode=OneWay}" />
+                                    <Run Text="%" />
+                                </TextBlock>
+                            </Grid>
+                            <Slider Minimum="50"
+                                    Maximum="80"
+                                    StepFrequency="5"
+                                    SmallChange="5"
+                                    LargeChange="5"
+                                    SnapsTo="StepValues"
+                                    IsThumbToolTipEnabled="True"
+                                    IsEnabled="{Binding CanAdjustChargeLimit, Mode=OneWay}"
+                                    AutomationProperties.Name="Charge limit"
+                                    Value="{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                    PointerPressed="OnChargeLimitPointerPressed"
+                                    PointerReleased="OnChargeLimitPointerReleased"
+                                    PointerCaptureLost="OnChargeLimitPointerReleased"
+                                    KeyUp="OnChargeLimitKeyUp" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="LightingTile" Style="{StaticResource TrayTileStyle}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Lighting" Style="{StaticResource TrayTitleStyle}" />
+                            <ComboBox AutomationProperties.Name="Lighting effect"
+                                      IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
+                                      ItemsSource="{Binding AvailableLightingEffectOptions, Mode=OneWay}"
+                                      SelectedItem="{Binding SelectedLightingEffectOption, Mode=TwoWay}"
+                                      local:StableComboBoxSelection.Anchor="{Binding SelectedLightingEffectOption, Mode=OneWay}" />
+                            <Slider Minimum="0"
+                                    Maximum="100"
+                                    StepFrequency="5"
+                                    IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
+                                    AutomationProperties.Name="Lighting brightness"
+                                    Value="{Binding LightingBrightnessEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <Border x:Name="ExpandedControlContainer"
+                        Style="{StaticResource TrayTileStyle}">
+                    <StackPanel>
+                        <StackPanel x:Name="ExpandedPerformance" Spacing="7">
+                            <TextBlock Text="Performance preset" Style="{StaticResource TrayTitleStyle}" />
+                            <ComboBox AutomationProperties.Name="Expanded performance mode"
+                                      IsEnabled="{Binding CanEditPerformance, Mode=OneWay}"
+                                      ItemsSource="{Binding AvailableActivePerformanceOptions, Mode=OneWay}"
+                                      SelectedItem="{Binding SelectedPerformanceOption, Mode=OneWay}"
+                                      local:StableComboBoxSelection.Anchor="{Binding SelectedPerformanceOption, Mode=OneWay}"
+                                      SelectionChanged="OnPerformanceChanged" />
+                        </StackPanel>
+                        <StackPanel x:Name="ExpandedFans" Spacing="7" Visibility="Collapsed">
+                            <TextBlock Text="Fan control" Style="{StaticResource TrayTitleStyle}" />
+                            <ComboBox AutomationProperties.Name="Expanded fan mode"
+                                      IsEnabled="{Binding CanEditFanControl, Mode=OneWay}"
+                                      ItemsSource="{Binding AvailableActiveFanModeOptions, Mode=OneWay}"
+                                      SelectedItem="{Binding SelectedFanModeOption, Mode=OneWay}"
+                                      local:StableComboBoxSelection.Anchor="{Binding SelectedFanModeOption, Mode=OneWay}"
+                                      SelectionChanged="OnFanModeChanged" />
+                        </StackPanel>
+                        <StackPanel x:Name="ExpandedBattery" Spacing="6" Visibility="Collapsed">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Battery charge limit" Style="{StaticResource TrayTitleStyle}" />
+                                <TextBlock Grid.Column="1" Style="{StaticResource TraySecondaryStyle}">
+                                    <Run Text="{Binding ChargeLimitPercent, Mode=OneWay}" />
+                                    <Run Text="%" />
+                                </TextBlock>
+                            </Grid>
+                            <Slider Minimum="50"
+                                    Maximum="80"
+                                    StepFrequency="5"
+                                    SnapsTo="StepValues"
+                                    IsEnabled="{Binding CanAdjustChargeLimit, Mode=OneWay}"
+                                    AutomationProperties.Name="Expanded charge limit"
+                                    Value="{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                    PointerPressed="OnChargeLimitPointerPressed"
+                                    PointerReleased="OnChargeLimitPointerReleased"
+                                    PointerCaptureLost="OnChargeLimitPointerReleased"
+                                    KeyUp="OnChargeLimitKeyUp" />
+                        </StackPanel>
+                        <StackPanel x:Name="ExpandedLighting" Spacing="6" Visibility="Collapsed">
+                            <TextBlock Text="Keyboard lighting" Style="{StaticResource TrayTitleStyle}" />
+                            <ComboBox AutomationProperties.Name="Expanded lighting effect"
+                                      IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
+                                      ItemsSource="{Binding AvailableLightingEffectOptions, Mode=OneWay}"
+                                      SelectedItem="{Binding SelectedLightingEffectOption, Mode=TwoWay}"
+                                      local:StableComboBoxSelection.Anchor="{Binding SelectedLightingEffectOption, Mode=OneWay}" />
+                            <Slider Minimum="0"
+                                    Maximum="100"
+                                    StepFrequency="5"
+                                    IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
+                                    AutomationProperties.Name="Expanded lighting brightness"
+                                    Value="{Binding LightingBrightnessEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="2" Margin="2,12,2,0" ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Grid x:Name="StatusItemsHost"
+                  ColumnSpacing="8"
+                  VerticalAlignment="Center">
+                <Grid x:Name="BatteryPowerStatus" ColumnSpacing="4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE83F;" FontSize="12" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding BatteryPowerFlowLabel, Mode=OneWay}"
+                               TextTrimming="CharacterEllipsis"
+                               Style="{StaticResource TraySecondaryStyle}" />
+                </Grid>
+                <Grid x:Name="TemperatureStatus" ColumnSpacing="4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE9CA;" FontSize="12" />
+                    <TextBlock Grid.Column="1"
+                               TextTrimming="CharacterEllipsis"
+                               Style="{StaticResource TraySecondaryStyle}">
+                        <Run Text="{Binding CpuTemperatureValue, Mode=OneWay}" />
+                        <Run Text=" / " />
+                        <Run Text="{Binding GpuTemperatureValue, Mode=OneWay}" />
+                    </TextBlock>
+                </Grid>
+                <Grid x:Name="FansStatus" ColumnSpacing="4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE9D0;" FontSize="12" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding ActiveFanModeLabel, Mode=OneWay}"
+                               TextTrimming="CharacterEllipsis"
+                               Style="{StaticResource TraySecondaryStyle}" />
+                </Grid>
+            </Grid>
+            <Button Grid.Column="1"
+                    Content="More"
+                    Click="OnMoreClick"
+                    AutomationProperties.Name="Open OpenBlade" />
+        </Grid>
+    </Grid>
+</Window>

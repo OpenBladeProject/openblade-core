@@ -68,6 +68,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingWindowsDynamicLighting;
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
+    private bool trayDashboardCustomizationActive;
     private bool changingPageSections;
     private bool changingPrimaryNavigationItems;
     private bool changingPrimaryNavigationOrder;
@@ -99,6 +100,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private AppAccentColorMode accentColorMode = AppAccentColorMode.RazerGreen;
     private string customAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
     private NotificationPreferences notificationPreferences = NotificationPreferences.Default;
+    private TrayDashboardPreference trayDashboardPreference =
+        TrayDashboardPreferenceDefaults.Preference;
     private string? lastNotifiedReleaseTag;
     private string? lastNotifiedFirmwareSignature;
     private PowerSource lastObservedPowerSource = PowerSource.ExternalUnknown;
@@ -263,6 +266,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         notificationPreferences.IsEnabled(category);
 
     public ObservableCollection<DashboardCardOption> DashboardCards { get; } = [];
+
+    public TrayDashboardPreference TrayDashboardPreference => trayDashboardPreference;
+
+    public event Action<TrayDashboardPreference>? TrayDashboardPreferenceChanged;
+
+    public event Action<bool>? TrayDashboardEditSessionChanged;
 
     public ObservableCollection<PrimaryNavigationItemOption> PrimaryNavigationItems { get; } = [];
 
@@ -531,6 +540,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             SpecialKeyBindingDefaults.Bindings;
         IReadOnlyList<PageLayoutPreference> pageLayouts =
             PageLayoutPreferenceDefaults.Layouts;
+        TrayDashboardPreference initialTrayDashboard =
+            TrayDashboardPreferenceDefaults.Preference;
         AppAccentColorMode initialAccentColorMode = AppAccentColorMode.RazerGreen;
         string initialCustomAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
         UpdateChannel initialUpdateChannel = UpdateChannel.Stable;
@@ -568,6 +579,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             primaryNavigationItems = preferences.EffectivePrimaryNavigationItems;
             specialKeyBindings = preferences.EffectiveSpecialKeyBindings;
             pageLayouts = preferences.EffectivePageLayouts;
+            initialTrayDashboard = preferences.EffectiveTrayDashboard;
             initialAccentColorMode = preferences.EffectiveAccentColorMode;
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
@@ -622,6 +634,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         ViewModel.ApplyTelemetryPreferences(dashboardTelemetryItems, trayHoverLabelItems);
         ApplyDashboardPreferences(dashboardCards);
+        ApplyTrayDashboardPreference(initialTrayDashboard, queueSave: false);
         ApplyPageLayoutPreferences(pageLayouts);
         ApplyPrimaryNavigationPreferences(primaryNavigationItems);
         ApplySpecialKeyBindingPreferences(specialKeyBindings);
@@ -943,7 +956,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastKnownPublishedMcuStatus: FirmwareUpdateViewModel.CachedMcuStatus,
                 Notifications: notificationPreferences,
                 LastNotifiedReleaseTag: lastNotifiedReleaseTag,
-                LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature));
+                LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature,
+                TrayDashboard: trayDashboardPreference));
         }
         catch (ObjectDisposedException)
         {
@@ -2916,6 +2930,144 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private void ApplyDashboardCustomizerChanges() =>
         dashboardCustomizerApply?.Invoke();
 
+    private async void OnCustomizeTrayDashboard(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            HandleCustomizeTrayDashboardAsync,
+            nameof(OnCustomizeTrayDashboard));
+
+    private async Task HandleCustomizeTrayDashboardAsync()
+    {
+        if (trayDashboardCustomizationActive)
+        {
+            return;
+        }
+
+        trayDashboardCustomizationActive = true;
+        var controls = new ObservableCollection<TrayDashboardControlOption>(
+            TrayDashboardPreferenceDefaults.CreateControlOptions(trayDashboardPreference));
+        var statusItems = new ObservableCollection<TrayDashboardStatusItemOption>(
+            TrayDashboardPreferenceDefaults.CreateStatusOptions(trayDashboardPreference));
+        IReadOnlyList<TrayDashboardExpandedControlOption> expandedOptions =
+            TrayDashboardPreferenceDefaults.ExpandedControls;
+        var expandedSelector = new Microsoft.UI.Xaml.Controls.ComboBox
+        {
+            MinWidth = 180,
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right,
+            ItemsSource = expandedOptions,
+            DisplayMemberPath = nameof(TrayDashboardExpandedControlOption.Label),
+            SelectedItem = expandedOptions.Single(option =>
+                option.Kind == trayDashboardPreference.ExpandedControl),
+        };
+        AutomationProperties.SetName(expandedSelector, "Expanded tray dashboard control");
+
+        var statusList = new ItemsControl
+        {
+            ItemsSource = statusItems,
+            ItemTemplate = (DataTemplate)Root.Resources["TrayDashboardStatusItemOptionTemplate"],
+        };
+        AutomationProperties.SetName(statusList, "Tray dashboard status row");
+
+        var expandedRow = new Grid { ColumnSpacing = 20 };
+        expandedRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        expandedRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        expandedRow.Children.Add(new TextBlock
+        {
+            Text = "Expanded control",
+            Style = (Style)Root.Resources["CardTitleStyle"],
+            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
+        });
+        Grid.SetColumn(expandedSelector, 1);
+        expandedRow.Children.Add(expandedSelector);
+
+        var additionalContent = new StackPanel { Spacing = 10 };
+        additionalContent.Children.Add(expandedRow);
+        additionalContent.Children.Add(new TextBlock
+        {
+            Text = "Status row",
+            Style = (Style)Root.Resources["CardTitleStyle"],
+            Margin = new Thickness(0, 4, 0, 0),
+        });
+        additionalContent.Children.Add(statusList);
+
+        ContentDialog dialog = CreateCustomizationDialog(
+            "Customize tray dashboard",
+            "Tray dashboard controls",
+            "Check controls to show, choose their size, and drag them into order. "
+                + "The actual tray popup stays open and updates while you edit.",
+            controls,
+            "TrayDashboardControlOptionTemplate",
+            additionalContent,
+            maxListHeight: 350);
+
+        void ApplyEditor()
+        {
+            TrayDashboardControlKind? expanded =
+                (expandedSelector.SelectedItem as TrayDashboardExpandedControlOption)?.Kind;
+            ApplyTrayDashboardPreference(new TrayDashboardPreference(
+                controls
+                    .Select(option => new TrayDashboardControlPreference(
+                        option.Kind,
+                        option.IsVisible,
+                        option.Size))
+                    .ToArray(),
+                expanded,
+                statusItems
+                    .Select(option => new TrayDashboardStatusItemPreference(
+                        option.Kind,
+                        option.IsVisible))
+                    .ToArray()),
+                queueSave: true);
+        }
+
+        PropertyChangedEventHandler optionChanged = (_, _) => ApplyEditor();
+        NotifyCollectionChangedEventHandler orderChanged = (_, _) => ApplyEditor();
+        SelectionChangedEventHandler expandedChanged = (_, _) => ApplyEditor();
+        foreach (TrayDashboardControlOption option in controls)
+        {
+            option.PropertyChanged += optionChanged;
+        }
+        foreach (TrayDashboardStatusItemOption option in statusItems)
+        {
+            option.PropertyChanged += optionChanged;
+        }
+        controls.CollectionChanged += orderChanged;
+        expandedSelector.SelectionChanged += expandedChanged;
+
+        TrayDashboardEditSessionChanged?.Invoke(true);
+        try
+        {
+            await dialog.ShowAsync();
+            ApplyEditor();
+        }
+        finally
+        {
+            expandedSelector.SelectionChanged -= expandedChanged;
+            controls.CollectionChanged -= orderChanged;
+            foreach (TrayDashboardControlOption option in controls)
+            {
+                option.PropertyChanged -= optionChanged;
+            }
+            foreach (TrayDashboardStatusItemOption option in statusItems)
+            {
+                option.PropertyChanged -= optionChanged;
+            }
+            TrayDashboardEditSessionChanged?.Invoke(false);
+            trayDashboardCustomizationActive = false;
+        }
+    }
+
+    private void ApplyTrayDashboardPreference(
+        TrayDashboardPreference preference,
+        bool queueSave)
+    {
+        trayDashboardPreference = TrayDashboardPreferenceDefaults.Normalize(preference);
+        TrayDashboardPreferenceChanged?.Invoke(trayDashboardPreference);
+        if (queueSave)
+        {
+            QueuePreferenceSave();
+        }
+    }
+
     private void ApplyPageLayoutPreferences(
         IReadOnlyList<PageLayoutPreference> preferences)
     {
@@ -3047,7 +3199,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         string automationName,
         string instructions,
         ObservableCollection<T> items,
-        string itemTemplateKey)
+        string itemTemplateKey,
+        FrameworkElement? additionalContent = null,
+        double maxListHeight = 480)
     {
         var reorderList = new Microsoft.UI.Xaml.Controls.ListView
         {
@@ -3057,7 +3211,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             CanReorderItems = true,
             ReorderMode = ListViewReorderMode.Enabled,
             AllowDrop = true,
-            MaxHeight = 480,
+            MaxHeight = maxListHeight,
             HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
             HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
             ItemTemplate = (DataTemplate)Root.Resources[itemTemplateKey],
@@ -3073,6 +3227,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             TextWrapping = TextWrapping.Wrap,
         });
         content.Children.Add(reorderList);
+        if (additionalContent is not null)
+        {
+            content.Children.Add(additionalContent);
+        }
 
         return new ContentDialog
         {

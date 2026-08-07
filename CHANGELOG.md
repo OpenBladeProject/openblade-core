@@ -5,6 +5,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Added a compact quick-controls dashboard that opens with one click on the
+  tray icon. Its controls, order, tile sizes, expanded control, and status row
+  can be customized from Settings while the actual popup updates live.
+
 ### Fixed
 
 - Kept full-power AC fan controls available in every supported performance

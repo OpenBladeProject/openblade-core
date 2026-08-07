@@ -345,6 +345,50 @@
                               VerticalAlignment="Center" />
                 </Grid>
             </DataTemplate>
+            <DataTemplate x:Key="TrayDashboardControlOptionTemplate"
+                          x:DataType="local:TrayDashboardControlOption">
+                <Grid ColumnSpacing="10"
+                      Padding="2,6,8,6"
+                      MinWidth="580"
+                      HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE76F;"
+                              FontSize="14"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Text="{x:Bind Label, Mode=OneTime}"
+                                   Style="{StaticResource CardTitleStyle}" />
+                        <TextBlock Text="{x:Bind Description, Mode=OneTime}"
+                                   Style="{StaticResource SecondaryTextStyle}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                    <ComboBox Grid.Column="2"
+                              MinWidth="110"
+                              ItemsSource="{x:Bind AvailableSizes, Mode=OneTime}"
+                              SelectedItem="{x:Bind Size, Mode=TwoWay}"
+                              local:StableComboBoxSelection.Anchor="{x:Bind Size, Mode=OneWay}"
+                              AutomationProperties.Name="{x:Bind Label, Mode=OneTime}"
+                              VerticalAlignment="Center" />
+                    <CheckBox Grid.Column="3"
+                              IsChecked="{x:Bind IsVisible, Mode=TwoWay}"
+                              AutomationProperties.Name="{x:Bind Label, Mode=OneTime}"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Center" />
+                </Grid>
+            </DataTemplate>
+            <DataTemplate x:Key="TrayDashboardStatusItemOptionTemplate"
+                          x:DataType="local:TrayDashboardStatusItemOption">
+                <CheckBox Content="{x:Bind Label, Mode=OneTime}"
+                          IsChecked="{x:Bind IsVisible, Mode=TwoWay}"
+                          Margin="0,2,18,2"
+                          AutomationProperties.Name="{x:Bind Label, Mode=OneTime}" />
+            </DataTemplate>
             <DataTemplate x:Key="PageSectionOptionTemplate"
                           x:DataType="local:PageSectionOption">
                 <Grid ColumnSpacing="10"
@@ -3034,6 +3078,25 @@
                         <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Tray dashboard"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Choose the controls and live details shown when you click the tray icon."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Content="Customize"
+                                            VerticalAlignment="Center"
+                                            Click="OnCustomizeTrayDashboard"
+                                            AutomationProperties.Name="Customize tray dashboard" />
+                                </Grid>
+                            </Border>
                             <Border Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>

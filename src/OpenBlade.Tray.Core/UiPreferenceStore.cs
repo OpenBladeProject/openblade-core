@@ -49,7 +49,8 @@ public sealed record UiPreferences(
     RazerPublishedFirmwareVersionStatus? LastKnownPublishedMcuStatus = null,
     NotificationPreferences? Notifications = null,
     string? LastNotifiedReleaseTag = null,
-    string? LastNotifiedFirmwareSignature = null)
+    string? LastNotifiedFirmwareSignature = null,
+    TrayDashboardPreference? TrayDashboard = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -85,7 +86,8 @@ public sealed record UiPreferences(
         LastKnownPublishedMcuStatus: null,
         Notifications: NotificationPreferences.Default,
         LastNotifiedReleaseTag: null,
-        LastNotifiedFirmwareSignature: null);
+        LastNotifiedFirmwareSignature: null,
+        TrayDashboard: TrayDashboardPreferenceDefaults.Preference);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled
@@ -142,6 +144,9 @@ public sealed record UiPreferences(
 
     public NotificationPreferences EffectiveNotifications =>
         Notifications ?? NotificationPreferences.Default;
+
+    public TrayDashboardPreference EffectiveTrayDashboard =>
+        TrayDashboardPreferenceDefaults.Normalize(TrayDashboard);
 }
 
 public sealed class UiPreferenceStore

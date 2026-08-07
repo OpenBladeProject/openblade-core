@@ -19,6 +19,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private RegisteredWaitHandle? shutdownRegistration;
     private TrayInstanceCoordinator? instanceCoordinator;
     private MainWindow? mainWindow;
+    private TrayDashboardWindow? trayDashboardWindow;
     private WindowsTrayBrightnessOsdHost? brightnessOsdHost;
     private WindowsTrayPerformanceNotificationHost? performanceNotificationHost;
     private WindowsShellThemeSource? trayIconThemeSource;
@@ -74,6 +75,12 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         mainWindow = CreateMainWindow(startupRegistration);
+        trayDashboardWindow = new TrayDashboardWindow(
+            mainWindow.ViewModel,
+            () => Enqueue(ShowMainWindow));
+        trayDashboardWindow.ApplyPreferences(mainWindow.TrayDashboardPreference);
+        mainWindow.TrayDashboardPreferenceChanged += OnTrayDashboardPreferenceChanged;
+        mainWindow.TrayDashboardEditSessionChanged += OnTrayDashboardEditSessionChanged;
         SessionAgentEventEndpoint sessionEventEndpoint =
             SessionAgentEventEndpoint.Create(
                 new SecurityIdentifier(userSid),
@@ -119,6 +126,15 @@ public partial class App : Microsoft.UI.Xaml.Application
                     performanceNotificationHost = null;
                     brightnessOsdHost?.Dispose();
                     brightnessOsdHost = null;
+                    if (mainWindow is not null)
+                    {
+                        mainWindow.TrayDashboardPreferenceChanged -=
+                            OnTrayDashboardPreferenceChanged;
+                        mainWindow.TrayDashboardEditSessionChanged -=
+                            OnTrayDashboardEditSessionChanged;
+                    }
+                    trayDashboardWindow?.Dispose();
+                    trayDashboardWindow = null;
                     if (mainWindow is not null)
                     {
                         await mainWindow.DisposeAsync();
@@ -196,6 +212,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             ExitTrayAsync,
             ShutdownOpenBladeAsync);
         trayIconHost = new WinFormsTrayIconHost(
+            point => Enqueue(() => _ = ToggleTrayDashboardWhenReadyAsync(point)),
             () => Enqueue(ShowMainWindow),
             () => Enqueue(() => _ = RequestTrayExitAsync()),
             mainWindow.ViewModel,
@@ -385,6 +402,42 @@ public partial class App : Microsoft.UI.Xaml.Application
     }
 
     private void ShowMainWindow() => _ = ShowMainWindowWhenReadyAsync(initialLaunch: false);
+
+    private async Task ToggleTrayDashboardWhenReadyAsync(TrayDashboardPoint point)
+    {
+        try
+        {
+            await windowInitializationTask;
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade tray dashboard initialization failed: {0}",
+                exception);
+        }
+
+        if (exitLifecycle is null)
+        {
+            return;
+        }
+
+        exitLifecycle.TryRunWhileActive(() => trayDashboardWindow?.ToggleAt(point));
+    }
+
+    private void OnTrayDashboardPreferenceChanged(TrayDashboardPreference preference) =>
+        trayDashboardWindow?.ApplyPreferences(preference);
+
+    private void OnTrayDashboardEditSessionChanged(bool editing)
+    {
+        if (editing)
+        {
+            trayDashboardWindow?.BeginEditSession();
+        }
+        else
+        {
+            trayDashboardWindow?.EndEditSession();
+        }
+    }
 
     private async Task ShowNotificationDestinationAsync(
         TrayNotificationDestination destination)

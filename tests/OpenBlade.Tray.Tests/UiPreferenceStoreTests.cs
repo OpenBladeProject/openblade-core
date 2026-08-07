@@ -48,6 +48,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
             DashboardCardPreferenceDefaults.Cards,
             preferences.EffectiveDashboardCards);
         Assert.Equal(
+            TrayDashboardPreferenceDefaults.Preference.Controls,
+            preferences.EffectiveTrayDashboard.Controls);
+        Assert.Equal(
             PrimaryNavigationPreferenceDefaults.Items,
             preferences.EffectivePrimaryNavigationItems);
         Assert.Equal(AppAccentColorMode.RazerGreen, preferences.EffectiveAccentColorMode);
@@ -163,7 +166,25 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 AppUpdatesEnabled = false,
             },
             LastNotifiedReleaseTag: "v1.2.0",
-            LastNotifiedFirmwareSignature: "RZ09-0581|bios=3.01|ec=1.04|mcu=1.06"));
+            LastNotifiedFirmwareSignature: "RZ09-0581|bios=3.01|ec=1.04|mcu=1.06",
+            TrayDashboard: new TrayDashboardPreference(
+                Controls:
+                [
+                    new(
+                        TrayDashboardControlKind.Battery,
+                        true,
+                        TrayDashboardControlSize.Wide),
+                    new(
+                        TrayDashboardControlKind.Performance,
+                        false,
+                        TrayDashboardControlSize.Compact),
+                ],
+                ExpandedControl: TrayDashboardControlKind.Battery,
+                StatusItems:
+                [
+                    new(TrayDashboardStatusItemKind.BatteryPower, true),
+                    new(TrayDashboardStatusItemKind.Fans, false),
+                ])));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -257,6 +278,15 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             "RZ09-0581|bios=3.01|ec=1.04|mcu=1.06",
             reloaded.LastNotifiedFirmwareSignature);
+        Assert.Equal(
+            TrayDashboardControlKind.Battery,
+            reloaded.EffectiveTrayDashboard.Controls![0].Kind);
+        Assert.Equal(
+            TrayDashboardControlSize.Wide,
+            reloaded.EffectiveTrayDashboard.Controls[0].Size);
+        Assert.Equal(
+            TrayDashboardControlKind.Battery,
+            reloaded.EffectiveTrayDashboard.ExpandedControl);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -302,6 +332,12 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             "Weekly",
             document.RootElement.GetProperty("firmwareUpdateCheckInterval").GetString());
+        Assert.Equal(
+            "Battery",
+            document.RootElement.GetProperty("trayDashboard")
+                .GetProperty("controls")[0]
+                .GetProperty("kind")
+                .GetString());
         Assert.Equal(
             "2026-07-27T12:30:00+00:00",
             document.RootElement.GetProperty("lastSuccessfulUpdateCheckAt").GetString());

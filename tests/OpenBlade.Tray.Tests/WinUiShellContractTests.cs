@@ -1706,6 +1706,50 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void TrayDashboardUsesSingleClickAndSettingsOwnedLiveCustomization()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string trayHost = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "WinFormsTrayIconHost.cs");
+        string mainXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string mainWindow = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "MainWindow.xaml.cs");
+        string dashboardXaml = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "TrayDashboardWindow.xaml");
+        string dashboardWindow = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "TrayDashboardWindow.xaml.cs");
+
+        Assert.Contains("trayIcon.MouseClick += OnTrayIconMouseClick", trayHost, StringComparison.Ordinal);
+        Assert.Contains("TrayIconActivationPolicy.Resolve(button)", trayHost, StringComparison.Ordinal);
+        Assert.Contains("System.Drawing.Point cursorPosition = Cursor.Position", trayHost, StringComparison.Ordinal);
+        Assert.Contains("new ToolStripMenuItem(\"Open\")", trayHost, StringComparison.Ordinal);
+        Assert.Contains("new ToolStripMenuItem(\"Exit\")", trayHost, StringComparison.Ordinal);
+        Assert.Contains("new TrayDashboardWindow(", app, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardEditSessionChanged +=", app, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnCustomizeTrayDashboard\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(true)", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(false)", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("The actual tray popup stays open and updates while you edit.", mainWindow, StringComparison.Ordinal);
+
+        Assert.Contains("x:Name=\"ControlGrid\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ExpandedControlContainer\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"BatteryPowerStatus\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"More\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Customize", dashboardXaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Preview", dashboardXaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ControlGrid.Children.Remove", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("ControlGrid.Children.Add", dashboardWindow, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DiagnosticDestinationUsesWindowOwnedWindowsAppSdkPicker()
     {
         string source = ReadRepositoryFile(
