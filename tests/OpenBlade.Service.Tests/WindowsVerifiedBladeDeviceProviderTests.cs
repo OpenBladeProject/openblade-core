@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
@@ -343,6 +344,261 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Null(state.Fans);
         Assert.Equal(0, batteryFactory.OpenCount);
         Assert.Equal(1, lightingFactory.OpenCount);
+    }
+
+    [Fact]
+    public async Task LightingWriteOpenFailuresKeepUserMessagesPlainAndLogEachOperationOnce()
+    {
+        var history = new DiagnosticHistory();
+        var logger = new ForwardingLogger<WindowsVerifiedBladeDeviceProvider>(
+            history.CreateLogger(typeof(WindowsVerifiedBladeDeviceProvider).FullName!));
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.SetSubmit,
+            HidSessionFailureKind.NativeIoFailure,
+            NativeWin32Error: 5,
+            TransferredByteCount: 0);
+        var failedOpen = new HidSessionResult<IProductionLightingPort>(
+            null,
+            HidSessionFailureKind.NativeIoFailure)
+        {
+            Diagnostic = diagnostic,
+        };
+        var lightingFactory = FakeLightingFactory.FromResults(failedOpen);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory,
+            logger: logger);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        BladeWriteException lighting = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetLightingAsync(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+                CancellationToken.None));
+        BladeWriteException keyboard = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Increase,
+                CancellationToken.None));
+        BladeWriteException keyboardRepeat = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Increase,
+                CancellationToken.None));
+        BladeWriteException ambient = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.PushAmbientLightingFrameAsync(
+                new AmbientLightingFrame(new RgbColor[AmbientLightingFrame.SlotCount]),
+                CancellationToken.None));
+        BladeWriteException playback = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetPlaybackMuteIndicatorAsync(true, CancellationToken.None));
+
+        Assert.All(
+            [lighting, keyboard, keyboardRepeat, ambient, playback],
+            error => Assert.Equal(
+                WriteSubmissionState.KnownNotApplied,
+                error.SubmissionState));
+        Assert.Equal(
+            "The lighting change could not open an exact-device lighting session.",
+            lighting.Message);
+        Assert.Equal(
+            "The keyboard brightness change could not open an exact-device lighting session.",
+            keyboard.Message);
+        Assert.Equal(keyboard.Message, keyboardRepeat.Message);
+        Assert.Equal(
+            "The ambient lighting frame could not open an exact-device lighting session.",
+            ambient.Message);
+        Assert.Equal(
+            "The playback mute indication could not open an exact-device lighting session.",
+            playback.Message);
+
+        string[] logLines = history.Snapshot().LogLines.ToArray();
+        Assert.Equal(4, logLines.Length);
+        Assert.Contains(logLines, line => line.Contains(
+            "The lighting change could not open",
+            StringComparison.Ordinal));
+        Assert.Contains(logLines, line => line.Contains(
+            "The ambient lighting frame could not open",
+            StringComparison.Ordinal));
+        Assert.Contains(logLines, line => line.Contains(
+            "The playback mute indication could not open",
+            StringComparison.Ordinal));
+        string keyboardLog = Assert.Single(
+            logLines,
+            line => line.Contains(
+                "The keyboard brightness change could not open",
+                StringComparison.Ordinal));
+        Assert.Contains("origin=returned", keyboardLog, StringComparison.Ordinal);
+        Assert.Contains("failure=NativeIoFailure", keyboardLog, StringComparison.Ordinal);
+        Assert.Contains("diagnosticFailure=NativeIoFailure", keyboardLog, StringComparison.Ordinal);
+        Assert.Contains("phase=SetSubmit", keyboardLog, StringComparison.Ordinal);
+        Assert.Contains("nativeError=5", keyboardLog, StringComparison.Ordinal);
+        Assert.Contains("bytes=0", keyboardLog, StringComparison.Ordinal);
+        Assert.DoesNotContain("validation=", keyboardLog, StringComparison.Ordinal);
+        Assert.DoesNotContain("None", keyboardLog, StringComparison.Ordinal);
+        Assert.Equal(5, lightingFactory.OpenCount);
+    }
+
+    [Fact]
+    public async Task LightingWriteOpenExceptionLogsSafeOriginWithoutExceptionMessage()
+    {
+        const string exceptionSecret = "machine-specific-native-message";
+        var history = new DiagnosticHistory();
+        var logger = new ForwardingLogger<WindowsVerifiedBladeDeviceProvider>(
+            history.CreateLogger(typeof(WindowsVerifiedBladeDeviceProvider).FullName!));
+        var lightingFactory = new ThrowingLightingFactory(
+            new InvalidOperationException(exceptionSecret));
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory,
+            logger: logger);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        BladeWriteException first = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Decrease,
+                CancellationToken.None));
+        BladeWriteException second = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Decrease,
+                CancellationToken.None));
+
+        Assert.Equal(
+            "The keyboard brightness change could not open an exact-device lighting session.",
+            first.Message);
+        Assert.Equal(first.Message, second.Message);
+        string logLine = Assert.Single(history.Snapshot().LogLines);
+        Assert.Contains("origin=threw", logLine, StringComparison.Ordinal);
+        Assert.Contains("failure=NativeIoFailure", logLine, StringComparison.Ordinal);
+        Assert.Contains("exceptionType=InvalidOperationException", logLine, StringComparison.Ordinal);
+        Assert.DoesNotContain("diagnosticFailure=", logLine, StringComparison.Ordinal);
+        Assert.DoesNotContain("phase=", logLine, StringComparison.Ordinal);
+        Assert.DoesNotContain(exceptionSecret, logLine, StringComparison.Ordinal);
+        Assert.Equal(2, lightingFactory.OpenCount);
+    }
+
+    [Fact]
+    public async Task DriverModeOpenFailuresLogReturnedDiagnosticsOncePerOperation()
+    {
+        var history = new DiagnosticHistory();
+        var logger = new ForwardingLogger<WindowsVerifiedBladeDeviceProvider>(
+            history.CreateLogger(typeof(WindowsVerifiedBladeDeviceProvider).FullName!));
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.ProtocolValidation,
+            HidSessionFailureKind.ProtocolFailure,
+            NativeWin32Error: null,
+            TransferredByteCount: 90)
+        {
+            ProtocolValidationFailure = HidProtocolValidationFailure.Status,
+        };
+        var failedOpen = new HidSessionResult<IProductionLightingPort>(
+            null,
+            HidSessionFailureKind.ProtocolFailure)
+        {
+            Diagnostic = diagnostic,
+        };
+        var lightingFactory = FakeLightingFactory.FromResults(failedOpen);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory,
+            logger: logger);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        await device.EnsureDriverModeAsync(CancellationToken.None);
+        Assert.Null(await device.ReadDriverModeAsync(CancellationToken.None));
+        Assert.Null(await device.MaintainDriverModeAsync(CancellationToken.None));
+        Assert.Null(await device.MaintainDriverModeAsync(CancellationToken.None));
+        Assert.Null(await device.ReleaseDriverModeAsync(CancellationToken.None));
+
+        string[] logLines = history.Snapshot().LogLines.ToArray();
+        Assert.Equal(4, logLines.Length);
+        Assert.Contains(logLines, line => line.Contains(
+            "keyboard Driver-mode acquisition",
+            StringComparison.Ordinal));
+        Assert.Contains(logLines, line => line.Contains(
+            "keyboard Driver-mode read",
+            StringComparison.Ordinal));
+        Assert.Contains(logLines, line => line.Contains(
+            "keyboard Driver-mode release",
+            StringComparison.Ordinal));
+        string maintenanceLog = Assert.Single(
+            logLines,
+            line => line.Contains(
+                "keyboard Driver-mode maintenance",
+                StringComparison.Ordinal));
+        Assert.Contains("origin=returned", maintenanceLog, StringComparison.Ordinal);
+        Assert.Contains("failure=ProtocolFailure", maintenanceLog, StringComparison.Ordinal);
+        Assert.Contains(
+            "diagnosticFailure=ProtocolFailure",
+            maintenanceLog,
+            StringComparison.Ordinal);
+        Assert.Contains("phase=ProtocolValidation", maintenanceLog, StringComparison.Ordinal);
+        Assert.Contains("bytes=90", maintenanceLog, StringComparison.Ordinal);
+        Assert.Contains("validation=Status", maintenanceLog, StringComparison.Ordinal);
+        Assert.DoesNotContain("nativeError=", maintenanceLog, StringComparison.Ordinal);
+        Assert.Equal(5, lightingFactory.OpenCount);
+    }
+
+    [Fact]
+    public async Task SuccessfulLightingOpenEndsFailureEpisodeForEveryOperation()
+    {
+        var history = new DiagnosticHistory();
+        var logger = new ForwardingLogger<WindowsVerifiedBladeDeviceProvider>(
+            history.CreateLogger(typeof(WindowsVerifiedBladeDeviceProvider).FullName!));
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.SetSubmit,
+            HidSessionFailureKind.NativeIoFailure,
+            NativeWin32Error: 5,
+            TransferredByteCount: 0);
+        var failedOpen = new HidSessionResult<IProductionLightingPort>(
+            null,
+            HidSessionFailureKind.NativeIoFailure)
+        {
+            Diagnostic = diagnostic,
+        };
+        var recoveredPort = new FakeLightingPort();
+        var recoveredOpen = new HidSessionResult<IProductionLightingPort>(
+            recoveredPort,
+            Failure: null);
+        var lightingFactory = FakeLightingFactory.FromResults(
+            failedOpen,
+            failedOpen,
+            recoveredOpen,
+            failedOpen);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory,
+            logger: logger);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Increase,
+                CancellationToken.None));
+        await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Increase,
+                CancellationToken.None));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None);
+        await provider.InvalidateLightingRendererAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Increase,
+                CancellationToken.None));
+
+        Assert.Equal(
+            2,
+            history.Snapshot().LogLines.Count(line => line.Contains(
+                "keyboard brightness change",
+                StringComparison.Ordinal)));
+        Assert.Equal(4, lightingFactory.OpenCount);
+        Assert.Equal(1, recoveredPort.DisposeCount);
     }
 
     [Fact]
@@ -1462,10 +1718,30 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         }
     }
 
-    private sealed class FakeLightingFactory(params FakeLightingPort[] ports)
-        : IProductionLightingPortFactory
+    private sealed class FakeLightingFactory : IProductionLightingPortFactory
     {
+        private readonly HidSessionResult<IProductionLightingPort>[] results;
         private int nextPort;
+
+        public FakeLightingFactory(
+            FakeLightingPort firstPort,
+            params FakeLightingPort[] additionalPorts)
+        {
+            results = new[] { firstPort }
+                .Concat(additionalPorts)
+                .Select(port => new HidSessionResult<IProductionLightingPort>(port, null))
+                .ToArray();
+        }
+
+        private FakeLightingFactory(HidSessionResult<IProductionLightingPort>[] results)
+        {
+            this.results = results;
+        }
+
+        public static FakeLightingFactory FromResults(
+            HidSessionResult<IProductionLightingPort> firstResult,
+            params HidSessionResult<IProductionLightingPort>[] additionalResults) =>
+            new(new[] { firstResult }.Concat(additionalResults).ToArray());
 
         public DeviceCapabilities Capabilities { get; } = new(
             new HashSet<PerformancePreset>(),
@@ -1492,11 +1768,42 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             CancellationToken cancellationToken)
         {
             OpenCount++;
-            FakeLightingPort port = ports[Math.Min(nextPort, ports.Length - 1)];
+            HidSessionResult<IProductionLightingPort> result =
+                results[Math.Min(nextPort, results.Length - 1)];
             nextPort++;
-            return Task.FromResult(
-                new HidSessionResult<IProductionLightingPort>(port, null));
+            return Task.FromResult(result);
         }
+    }
+
+    private sealed class ThrowingLightingFactory(Exception exception)
+        : IProductionLightingPortFactory
+    {
+        public DeviceCapabilities Capabilities { get; } = DeviceCapabilities.Unavailable();
+
+        public int OpenCount { get; private set; }
+
+        public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
+            CancellationToken cancellationToken)
+        {
+            OpenCount++;
+            return Task.FromException<HidSessionResult<IProductionLightingPort>>(exception);
+        }
+    }
+
+    private sealed class ForwardingLogger<T>(ILogger inner) : ILogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull =>
+            inner.BeginScope(state);
+
+        public bool IsEnabled(LogLevel logLevel) => inner.IsEnabled(logLevel);
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            inner.Log(logLevel, eventId, state, exception, formatter);
     }
 
     private sealed class FakeLightingPort : IProductionLightingPort

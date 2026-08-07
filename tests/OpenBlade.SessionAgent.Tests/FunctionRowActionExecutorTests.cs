@@ -116,7 +116,10 @@ public sealed class FunctionRowActionExecutorTests
                 FunctionRowAction.KeyboardBrightnessUp,
                 CancellationToken.None));
 
-        Assert.Equal("Another controller owns lighting.", error.Message);
+        Assert.Equal(
+            "Function-row action KeyboardBrightnessUp failed: Another controller owns lighting.",
+            error.Message);
+        Assert.Equal("Another controller owns lighting.", error.InnerException?.Message);
     }
 
     [Theory]

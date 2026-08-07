@@ -249,7 +249,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(26, animated.Length);
+        Assert.Equal(25, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -295,10 +295,6 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsManualFanCurveVisible",
-                StringComparison.Ordinal) is true);
-        Assert.Contains(animated, element =>
-            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
-                "IsManualFanControlUnavailable",
                 StringComparison.Ordinal) is true);
         XElement[] gamingModePolicies = animated
             .Where(element => element.Descendants().Any(descendant =>
@@ -591,11 +587,11 @@ public sealed class CapabilityPresentationTests
         XElement about = NamedElement(document, "ScrollViewer", "AboutPage");
 
         Assert.Equal(
-            4,
+            5,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            9,
+            14,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -604,7 +600,7 @@ public sealed class CapabilityPresentationTests
                 element.Name.LocalName == "Expander"
                 && Attribute(element, "IsExpanded") == "False"));
         Assert.Equal(
-            3,
+            4,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
 
@@ -1529,8 +1525,7 @@ public sealed class CapabilityPresentationTests
             {
                 ChargeLimits = ChargeLimits(),
             });
-        client.Publish(initial);
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        await client.PublishAndWaitAsync(initial);
 
         viewModel.PluggedInPerformanceEditor = PerformancePreset.Balanced;
         viewModel.PluggedInFanModeEditor = FanMode.Maximum;
@@ -1552,13 +1547,12 @@ public sealed class CapabilityPresentationTests
             },
             BatteryPolicy = BatteryPolicy.Create(70),
         };
-        client.Publish(initial with
+        await client.PublishAndWaitAsync(initial with
         {
             Revision = initial.Revision + 1,
             Message = "Later profiles",
             Profiles = laterProfiles,
         });
-        await WaitUntilAsync(() => viewModel.Profiles == laterProfiles);
 
         Assert.Equal(laterProfiles, viewModel.Profiles);
         Assert.Equal(PerformancePreset.Balanced, viewModel.PluggedInPerformanceEditor);
@@ -1576,14 +1570,13 @@ public sealed class CapabilityPresentationTests
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(
+        await client.PublishAndWaitAsync(CreateStatus(
             verified: true,
             blocked: false,
             capabilities: DeviceCapabilities.SafeTargetDefaults() with
             {
                 ChargeLimits = ChargeLimits(),
             }));
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
         viewModel.PluggedInPerformanceEditor = performance;
         viewModel.PluggedInFanModeEditor = FanMode.Maximum;
         AsyncRelayCommand save = Assert.IsType<AsyncRelayCommand>(
@@ -1626,7 +1619,7 @@ public sealed class CapabilityPresentationTests
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(
+        await client.PublishAndWaitAsync(CreateStatus(
             verified: true,
             blocked: false,
             capabilities: new DeviceCapabilities(
@@ -1634,7 +1627,6 @@ public sealed class CapabilityPresentationTests
                 new HashSet<FanMode>(),
                 new HashSet<LightingEffect>(),
                 ChargeLimits(), true, true)));
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
         viewModel.ProfileChargeLimitEditor = 75;
         AsyncRelayCommand save = Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand);
 

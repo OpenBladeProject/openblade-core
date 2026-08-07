@@ -40,6 +40,34 @@ public sealed class UpdateCheckViewModelTests
     }
 
     [Fact]
+    public async Task NewerReleaseRaisesAnUpdateAvailableEvent()
+    {
+        var client = SuccessfulClient(NewerRelease);
+        await using var viewModel = Create(client);
+        AppUpdateAvailableEventArgs? update = null;
+        viewModel.UpdateAvailable += (_, args) => update = args;
+
+        await Command(viewModel).ExecuteAsync(null);
+
+        Assert.NotNull(update);
+        Assert.Equal("v1.1.0", update.ReleaseTag);
+        Assert.Equal(ReleaseUri, update.ReleasePageUri);
+    }
+
+    [Fact]
+    public async Task CurrentReleaseDoesNotRaiseAnUpdateAvailableEvent()
+    {
+        var client = SuccessfulClient(CurrentRelease);
+        await using var viewModel = Create(client);
+        int notifications = 0;
+        viewModel.UpdateAvailable += (_, _) => notifications++;
+
+        await Command(viewModel).ExecuteAsync(null);
+
+        Assert.Equal(0, notifications);
+    }
+
+    [Fact]
     public async Task AutomaticCheckDoesNotRunBeforeSuccessfulIntervalIsDue()
     {
         var client = SuccessfulClient(NewerRelease);

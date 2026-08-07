@@ -10,9 +10,12 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private readonly ITrayIconThemeSource themeSource;
     private readonly TrayHoverTelemetryRefreshGate hoverTelemetryRefreshGate = new();
     private readonly Action hoverTelemetryRefreshRequested;
+    private readonly Action<TrayNotificationDestination> notificationInvoked;
     private readonly WindowsAppNotificationPresenter? notificationPresenter;
+    private readonly NotificationDeduplicator notificationDeduplicator = new();
     private long liveReadingsObservationIntervalTicks;
     private Icon? currentIcon;
+    private TrayNotificationDestination lastBalloonDestination;
     private int disposed;
 
     public WinFormsTrayIconHost(
@@ -20,7 +23,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         Action exitTray,
         MainViewModel viewModel,
         ITrayIconThemeSource themeSource,
-        Action hoverTelemetryRefreshRequested)
+        Action hoverTelemetryRefreshRequested,
+        Action<TrayNotificationDestination> notificationInvoked)
     {
         ArgumentNullException.ThrowIfNull(openTray);
         ArgumentNullException.ThrowIfNull(exitTray);
@@ -28,6 +32,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         this.themeSource = themeSource ?? throw new ArgumentNullException(nameof(themeSource));
         this.hoverTelemetryRefreshRequested = hoverTelemetryRefreshRequested
             ?? throw new ArgumentNullException(nameof(hoverTelemetryRefreshRequested));
+        this.notificationInvoked = notificationInvoked
+            ?? throw new ArgumentNullException(nameof(notificationInvoked));
         liveReadingsObservationIntervalTicks = viewModel.LiveReadingsObservationInterval.Ticks;
 
         menu = BuildTrayMenu(openTray, exitTray);
@@ -43,7 +49,9 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         };
         trayIcon.DoubleClick += (_, _) => openTray();
         trayIcon.MouseMove += OnTrayIconMouseMove;
+        trayIcon.BalloonTipClicked += OnBalloonTipClicked;
         notificationPresenter = WindowsAppNotificationPresenter.CreateBestEffort(
+            notificationInvoked,
             exception => System.Diagnostics.Trace.TraceWarning(
                 "OpenBlade app notification presenter failed: {0}",
                 exception.Message));
@@ -61,6 +69,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         themeSource.TrayIconThemeChanged -= OnTrayIconThemeChanged;
         trayIcon.MouseMove -= OnTrayIconMouseMove;
+        trayIcon.BalloonTipClicked -= OnBalloonTipClicked;
         trayIcon.Visible = false;
         trayIcon.Dispose();
         notificationPresenter?.Dispose();
@@ -77,16 +86,34 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             return;
         }
 
+        if (!string.IsNullOrWhiteSpace(notification.ReplacementTag)
+            && !notificationDeduplicator.ShouldEmit(
+                notification.ReplacementTag,
+                notification.Title,
+                notification.Body))
+        {
+            return;
+        }
+
         if (notificationPresenter?.TryShow(notification) == true)
         {
             return;
         }
 
+        lastBalloonDestination = notification.Destination;
         trayIcon.ShowBalloonTip(
             timeout: 2000,
             notification.Title,
             notification.Body,
             ToolTipIcon.None);
+    }
+
+    private void OnBalloonTipClicked(object? sender, EventArgs args)
+    {
+        if (Volatile.Read(ref disposed) == 0)
+        {
+            notificationInvoked(lastBalloonDestination);
+        }
     }
 
     private void OnViewModelPropertyChanged(

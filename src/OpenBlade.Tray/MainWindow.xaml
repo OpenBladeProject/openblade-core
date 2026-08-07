@@ -590,10 +590,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Switch Power mode to Balanced to use fixed speed or a manual fan curve."
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   Visibility="Collapsed"
-                                                   local:AnimatedVisibility.IsVisible="{Binding IsManualFanControlUnavailable}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal"
@@ -1907,7 +1903,8 @@
                                                 AutomationProperties.Name="Show warning details"
                                                 ToolTipService.ToolTip="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}">
                                             <Button.Flyout>
-                                                <Flyout Placement="BottomEdgeAlignedLeft">
+                                                <Flyout x:Name="AttentionFlyout"
+                                                        Placement="BottomEdgeAlignedLeft">
                                                     <StackPanel MaxWidth="360" Spacing="6">
                                                         <TextBlock Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
                                                                    Style="{StaticResource CardTitleStyle}" />
@@ -2946,6 +2943,110 @@
                                                       OnContent=""
                                                       IsOn="{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}"
                                                       Toggled="OnExternalLightingOverridePolicyToggled" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="Notifications"
+                                   Style="{StaticResource SectionHeaderStyle}"
+                                   Margin="0,18,0,10" />
+                        <Border Style="{StaticResource SettingsGroupStyle}"
+                                AutomationProperties.Name="Notification preferences">
+                            <StackPanel>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Performance changes" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Confirmed Fn+P results."
+                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1" MinWidth="0"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      AutomationProperties.Name="Notify when the performance mode changes"
+                                                      OffContent="" OnContent=""
+                                                      IsOn="{x:Bind PerformanceNotificationsEnabled, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Power profile changes" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Active AC, USB-C, or Battery profile."
+                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1" MinWidth="0"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      AutomationProperties.Name="Notify when the active power profile changes"
+                                                      OffContent="" OnContent=""
+                                                      IsOn="{x:Bind ProfileAndPowerSourceNotificationsEnabled, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="App updates" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="New OpenBlade releases."
+                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1" MinWidth="0"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      AutomationProperties.Name="Notify when an OpenBlade update is available"
+                                                      OffContent="" OnContent=""
+                                                      IsOn="{x:Bind AppUpdateNotificationsEnabled, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Firmware updates" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="New Razer BIOS, EC, or MCU firmware."
+                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1" MinWidth="0"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      AutomationProperties.Name="Notify when a Razer firmware update is available"
+                                                      OffContent="" OnContent=""
+                                                      IsOn="{x:Bind FirmwareUpdateNotificationsEnabled, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Controller advisories" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="New Razer controllers. Advisories stay visible."
+                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1" MinWidth="0"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      AutomationProperties.Name="Notify when another Razer controller is detected"
+                                                      OffContent="" OnContent=""
+                                                      IsOn="{x:Bind ControllerAdvisoryNotificationsEnabled, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Operation failures" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Failed control operations. Details stay visible."
+                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1" MinWidth="0"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      AutomationProperties.Name="Notify when an OpenBlade operation fails"
+                                                      OffContent="" OnContent=""
+                                                      IsOn="{x:Bind OperationFailureNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
                             </StackPanel>

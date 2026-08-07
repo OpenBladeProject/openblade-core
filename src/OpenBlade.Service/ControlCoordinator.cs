@@ -9,7 +9,8 @@ internal sealed record ScopedApplyOutcome(
     bool WriteAttempted,
     bool ReadbackMatched,
     DeviceCapabilities? Capabilities,
-    bool DeviceAccessFailed);
+    bool DeviceAccessFailed,
+    IReadOnlySet<DeviceSubsystem>? ConfirmedCoupledWrites = null);
 
 internal sealed record FullTransitionApplyOutcome(
     SubsystemApplyResults Results,
@@ -197,33 +198,230 @@ public sealed class ControlCoordinator
     internal async Task<ScopedApplyOutcome> ApplyFanControlTransitionOutcomeAsync(
         FanControlSettings previous,
         FanControlSettings requested,
+        PerformancePreset performanceIntent,
+        CustomPerformanceSettings? customPerformanceIntent,
+        CancellationToken cancellationToken)
+    {
+        var writeAttempted = new HashSet<DeviceSubsystem>();
+        var confirmedCoupledWrites = new HashSet<DeviceSubsystem>();
+        try
+        {
+            ScopedApplyOutcome outcome = await ApplyFanControlTransitionCoreOutcomeAsync(
+                previous,
+                requested,
+                performanceIntent,
+                customPerformanceIntent,
+                writeAttempted,
+                confirmedCoupledWrites,
+                cancellationToken).ConfigureAwait(false);
+            return outcome with
+            {
+                ConfirmedCoupledWrites = new HashSet<DeviceSubsystem>(
+                    confirmedCoupledWrites),
+            };
+        }
+        catch (IntentionalWriteCanceledException exception)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            writeAttempted.UnionWith(exception.WriteAttempted);
+            throw new IntentionalWriteCanceledException(
+                writeAttempted,
+                cancellationToken,
+                exception);
+        }
+        catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested && writeAttempted.Count > 0)
+        {
+            throw new IntentionalWriteCanceledException(
+                writeAttempted,
+                cancellationToken,
+                exception);
+        }
+    }
+
+    private async Task<ScopedApplyOutcome> ApplyFanControlTransitionCoreOutcomeAsync(
+        FanControlSettings previous,
+        FanControlSettings requested,
+        PerformancePreset performanceIntent,
+        CustomPerformanceSettings? customPerformanceIntent,
+        HashSet<DeviceSubsystem> writeAttempted,
+        HashSet<DeviceSubsystem> confirmedCoupledWrites,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(requested);
 
-        if (previous.Mode != requested.Mode
-            && DeviceSubsystemOrder.IsManualFanMode(previous.Mode)
-            && DeviceSubsystemOrder.IsManualFanMode(requested.Mode))
+        bool requestedManual = DeviceSubsystemOrder.IsManualFanMode(requested.Mode);
+        bool previousManual = DeviceSubsystemOrder.IsManualFanMode(previous.Mode);
+        bool requiresAutomaticBridge = requestedManual
+            && (!previousManual || previous.Mode != requested.Mode);
+        ScopedApplyOutcome? automaticBridge = null;
+        if (requiresAutomaticBridge)
         {
-            ScopedApplyOutcome automatic = await ApplyFanControlOutcomeAsync(
+            automaticBridge = await ApplyFanControlOutcomeAsync(
                 FanControlSettings.FromLegacy(FanMode.Automatic),
                 cancellationToken).ConfigureAwait(false);
-            if (automatic.Result.Status is not (
+            RecordWriteAttempt(writeAttempted, DeviceSubsystem.Fans, automaticBridge);
+            if (automaticBridge.Result.Status is not (
                     ControlResultStatus.Applied or ControlResultStatus.Unchanged))
             {
-                return automatic with
+                return automaticBridge with
                 {
-                    Result = automatic.Result with
+                    Result = automaticBridge.Result with
                     {
-                        Message = $"Could not leave {previous.Mode} before selecting {requested.Mode}. {automatic.Result.Message}",
+                        Message = $"Could not leave {previous.Mode} before selecting {requested.Mode}. {automaticBridge.Result.Message}",
                     },
                 };
             }
         }
 
-        return await ApplyFanControlOutcomeAsync(requested, cancellationToken)
-            .ConfigureAwait(false);
+        ScopedApplyOutcome? balancedBridge = null;
+        if (requiresAutomaticBridge)
+        {
+            balancedBridge = await ApplyPerformanceOutcomeAsync(
+                PerformancePreset.Balanced,
+                customPerformance: null,
+                cancellationToken).ConfigureAwait(false);
+            RecordWriteAttempt(writeAttempted, DeviceSubsystem.Performance, balancedBridge);
+            RecordConfirmedCoupledWrite(
+                confirmedCoupledWrites,
+                DeviceSubsystem.Performance,
+                balancedBridge);
+            if (balancedBridge.Result.Status is not (
+                    ControlResultStatus.Applied or ControlResultStatus.Unchanged))
+            {
+                return balancedBridge with
+                {
+                    WriteAttempted = balancedBridge.WriteAttempted
+                        || automaticBridge?.WriteAttempted == true,
+                    DeviceAccessFailed = balancedBridge.DeviceAccessFailed
+                        || automaticBridge?.DeviceAccessFailed == true,
+                    Result = balancedBridge.Result with
+                    {
+                        Message = $"Could not establish Balanced Automatic fans before selecting {requested.Mode}. {balancedBridge.Result.Message}",
+                    },
+                };
+            }
+        }
+
+        ScopedApplyOutcome fans = await ApplyFanControlOutcomeAsync(
+            requested,
+            cancellationToken).ConfigureAwait(false);
+        RecordWriteAttempt(writeAttempted, DeviceSubsystem.Fans, fans);
+        if (fans.Result.Status is not (
+                ControlResultStatus.Applied or ControlResultStatus.Unchanged))
+        {
+            if ((balancedBridge?.Result.Status == ControlResultStatus.Applied
+                    || automaticBridge?.Result.Status == ControlResultStatus.Applied)
+                && !fans.WriteAttempted
+                && performanceIntent != PerformancePreset.Balanced)
+            {
+                ScopedApplyOutcome restored = await ApplyPerformanceOutcomeAsync(
+                    performanceIntent,
+                    customPerformanceIntent,
+                    cancellationToken).ConfigureAwait(false);
+                RecordWriteAttempt(writeAttempted, DeviceSubsystem.Performance, restored);
+                RecordConfirmedCoupledWrite(
+                    confirmedCoupledWrites,
+                    DeviceSubsystem.Performance,
+                    restored);
+                string restoration = restored.Result.Status is
+                        ControlResultStatus.Applied or ControlResultStatus.Unchanged
+                    ? " The previous performance intent was restored."
+                    : $" The previous performance intent could not be restored. {restored.Result.Message}";
+                return fans with
+                {
+                    Readback = restored.Readback ?? fans.Readback,
+                    WriteAttempted = fans.WriteAttempted
+                        || balancedBridge?.WriteAttempted == true
+                        || automaticBridge?.WriteAttempted == true
+                        || restored.WriteAttempted,
+                    DeviceAccessFailed = fans.DeviceAccessFailed || restored.DeviceAccessFailed,
+                    Result = fans.Result with
+                    {
+                        Message = fans.Result.Message + restoration,
+                    },
+                };
+            }
+
+            return fans with
+            {
+                WriteAttempted = fans.WriteAttempted
+                    || balancedBridge?.WriteAttempted == true
+                    || automaticBridge?.WriteAttempted == true,
+                DeviceAccessFailed = fans.DeviceAccessFailed
+                    || balancedBridge?.DeviceAccessFailed == true
+                    || automaticBridge?.DeviceAccessFailed == true,
+            };
+        }
+
+        if (requested.Mode != FanMode.Automatic || !previousManual)
+        {
+            return fans;
+        }
+
+        ScopedApplyOutcome performance = await ApplyPerformanceOutcomeAsync(
+            performanceIntent,
+            customPerformanceIntent,
+            cancellationToken).ConfigureAwait(false);
+        RecordWriteAttempt(writeAttempted, DeviceSubsystem.Performance, performance);
+        RecordConfirmedCoupledWrite(
+            confirmedCoupledWrites,
+            DeviceSubsystem.Performance,
+            performance);
+        if (performance.Result.Status is not (
+                ControlResultStatus.Applied or ControlResultStatus.Unchanged))
+        {
+            return fans with
+            {
+                Result = performance.Result with
+                {
+                    Message = $"Fans returned to Automatic, but the saved {performanceIntent} performance intent was not restored. {performance.Result.Message}",
+                },
+                Readback = performance.Readback ?? fans.Readback,
+                WriteAttempted = fans.WriteAttempted || performance.WriteAttempted,
+                ReadbackMatched = fans.ReadbackMatched,
+                Capabilities = performance.Capabilities ?? fans.Capabilities,
+                DeviceAccessFailed = fans.DeviceAccessFailed || performance.DeviceAccessFailed,
+            };
+        }
+
+        return fans with
+        {
+            Result = fans.Result with
+            {
+                Message = performanceIntent == PerformancePreset.Balanced
+                    ? fans.Result.Message
+                    : $"{fans.Result.Message} {performanceIntent} performance was restored.",
+            },
+            Readback = performance.Readback ?? fans.Readback,
+            WriteAttempted = fans.WriteAttempted || performance.WriteAttempted,
+            ReadbackMatched = fans.ReadbackMatched && performance.ReadbackMatched,
+            Capabilities = performance.Capabilities ?? fans.Capabilities,
+            DeviceAccessFailed = fans.DeviceAccessFailed || performance.DeviceAccessFailed,
+        };
+    }
+
+    private static void RecordWriteAttempt(
+        HashSet<DeviceSubsystem> writeAttempted,
+        DeviceSubsystem subsystem,
+        ScopedApplyOutcome outcome)
+    {
+        if (outcome.WriteAttempted)
+        {
+            writeAttempted.Add(subsystem);
+        }
+    }
+
+    private static void RecordConfirmedCoupledWrite(
+        HashSet<DeviceSubsystem> confirmedCoupledWrites,
+        DeviceSubsystem subsystem,
+        ScopedApplyOutcome outcome)
+    {
+        if (outcome.WriteAttempted && outcome.ReadbackMatched)
+        {
+            confirmedCoupledWrites.Add(subsystem);
+        }
     }
 
     internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
@@ -430,6 +628,14 @@ public sealed class ControlCoordinator
         bool thermalCombinationSupported = IsVerifiedThermalCombination(
             desired.Performance.Value,
             desired.Fans.Value);
+        bool manualFansDesired = DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value);
+        bool PerformanceStateMatches(ConfirmedDeviceState state) =>
+            manualFansDesired && DeviceSubsystemOrder.IsManualFanMode(state.Fans)
+            || PerformanceMatches(
+                state,
+                desired.Performance.Value,
+                desired.CustomPerformance,
+                desired.GpuClockTuning);
         return new Dictionary<DeviceSubsystem, PendingSubsystem>
         {
             [DeviceSubsystem.Performance] = new(
@@ -438,21 +644,13 @@ public sealed class ControlCoordinator
                     && IsDefined(desired.Performance.Value)
                     && capabilities.PerformancePresets.Contains(desired.Performance.Value)
                     && GpuClockTuningSupported(capabilities, desired.GpuClockTuning),
-                PerformanceMatches(
-                    initial,
-                    desired.Performance.Value,
-                    desired.CustomPerformance,
-                    desired.GpuClockTuning),
+                PerformanceStateMatches(initial),
                 token => ApplyPerformanceAndGpuClockTuningAsync(
                     desired.Performance.Value,
                     desired.CustomPerformance,
                     desired.GpuClockTuning,
                     token),
-                state => PerformanceMatches(
-                    state,
-                    desired.Performance.Value,
-                    desired.CustomPerformance,
-                    desired.GpuClockTuning))
+                PerformanceStateMatches)
             {
                 StateAwareSetter = (state, token) =>
                     CanApplyGpuClockOffsetsOnly(

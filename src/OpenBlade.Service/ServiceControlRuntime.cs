@@ -742,7 +742,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             token,
             value is null
                 ? "Performance override was cleared."
-                : "Performance override intent was stored.");
+                : "Performance override intent was stored.",
+            deferHardwareApply: DeferredPerformanceIntentMessage);
 
     public async Task<ControlOperationResult> CyclePerformanceShortcutAsync(
         PerformanceShortcutSource source,
@@ -817,32 +818,70 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return RecordRejectedIntent(exception);
             }
 
-            ControlOperationResult result = await ApplyScopedIntentAsync(
-                DeviceSubsystem.Performance,
+            ControlOperationResult result;
+            string? deferredMessage = DeferredPerformanceIntentMessage(
                 powerSource,
-                (coordinator, desired, cancellationToken) =>
-                    coordinator.ApplyPerformanceOutcomeAsync(
-                        desired.Performance.Value,
-                        desired.CustomPerformance,
-                        desired.GpuClockTuning,
-                        cancellationToken),
-                token,
-                desired => desired with
+                current);
+            if (deferredMessage is not null)
+            {
+                try
                 {
-                    Performance = new ResolvedSetting<PerformancePreset>(
-                        next,
-                        SettingValueSource.TemporaryOverride),
-                    CustomPerformance = stagedOverride.CustomPerformance,
-                    GpuClockTuning = stagedOverride.GpuClockTuning,
-                },
-                cancellationToken => SetPerformanceOverrideCoreAsync(
-                    stagedOverride,
-                    cancellationToken)).ConfigureAwait(false);
+                    await SetPerformanceOverrideCoreAsync(stagedOverride, token)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception) when (IsIntentFailure(exception))
+                {
+                    return RecordRejectedIntent(exception);
+                }
+
+                history.RecordSummary(ControlOperationStatus.Stored, deferredMessage);
+                PublishScopedStatus(
+                    powerSource,
+                    current.ConfirmedState,
+                    current.Capabilities,
+                    deferredMessage,
+                    current.DeviceVerified,
+                    current.WritesBlocked);
+                result = new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    deferredMessage);
+            }
+            else
+            {
+                result = await ApplyScopedIntentAsync(
+                    DeviceSubsystem.Performance,
+                    powerSource,
+                    (coordinator, desired, cancellationToken) =>
+                        coordinator.ApplyPerformanceOutcomeAsync(
+                            desired.Performance.Value,
+                            desired.CustomPerformance,
+                            desired.GpuClockTuning,
+                            cancellationToken),
+                    token,
+                    desired => desired with
+                    {
+                        Performance = new ResolvedSetting<PerformancePreset>(
+                            next,
+                            SettingValueSource.TemporaryOverride),
+                        CustomPerformance = stagedOverride.CustomPerformance,
+                        GpuClockTuning = stagedOverride.GpuClockTuning,
+                    },
+                    cancellationToken => SetPerformanceOverrideCoreAsync(
+                        stagedOverride,
+                        cancellationToken)).ConfigureAwait(false);
+            }
             if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
             {
-                string message = source == PerformanceShortcutSource.DedicatedButton
+                string selectedBy = source == PerformanceShortcutSource.DedicatedButton
                     ? $"The performance button selected {next}."
                     : $"Fn+P selected {next}.";
+                string message = result.Status == ControlOperationStatus.Stored
+                    ? $"{selectedBy} It will be applied when fans return to Automatic."
+                    : selectedBy;
                 history.RecordSummary(result.Status, message);
                 PublishIfChanged(GetStatus() with { Message = message });
                 return result with { Message = message };
@@ -866,6 +905,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token)
     {
         FanControlSettings? previous = null;
+        PerformancePreset performanceIntent = PerformancePreset.Balanced;
+        CustomPerformanceSettings? customPerformanceIntent = null;
         return ExecuteScopedMutationAsync(
             DeviceSubsystem.Fans,
             async cancellationToken =>
@@ -878,6 +919,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     value,
                     settings,
                     cancellationToken).ConfigureAwait(false);
+                DesiredDeviceState intended = Automation.Resolve(
+                    GetStatus().ConfirmedState ?? UnknownConfirmedState);
+                performanceIntent = intended.Performance.Value;
+                customPerformanceIntent = intended.CustomPerformance;
             },
             (coordinator, desired, cancellationToken) =>
             {
@@ -886,6 +931,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return coordinator.ApplyFanControlTransitionOutcomeAsync(
                     previous ?? requested,
                     requested,
+                    performanceIntent,
+                    customPerformanceIntent,
                     cancellationToken);
             },
             token,
@@ -3537,7 +3584,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<CancellationToken, Task> mutation,
         Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
         CancellationToken token,
-        string committedMessage)
+        string committedMessage,
+        Func<PowerSource, ServiceStatusSnapshot, string?>? deferHardwareApply = null)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(token);
@@ -3569,6 +3617,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             catch (Exception exception) when (IsIntentFailure(exception))
             {
                 return RecordRejectedIntent(exception);
+            }
+
+            ServiceStatusSnapshot staged = GetStatus();
+            string? deferredMessage = deferHardwareApply?.Invoke(powerSource, staged);
+            if (deferredMessage is not null)
+            {
+                history.RecordSummary(ControlOperationStatus.Stored, deferredMessage);
+                PublishScopedStatus(
+                    powerSource,
+                    staged.ConfirmedState,
+                    staged.Capabilities,
+                    deferredMessage,
+                    staged.DeviceVerified,
+                    staged.WritesBlocked);
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    deferredMessage);
             }
 
             ControlOperationResult result = await ApplyScopedIntentAsync(
@@ -3763,6 +3828,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (commitFailure is not null)
         {
             return commitFailure;
+        }
+
+        if (outcome.Result.Status is
+                ControlResultStatus.Applied or ControlResultStatus.Unchanged
+            && outcome.ConfirmedCoupledWrites is not null)
+        {
+            foreach (DeviceSubsystem coupled in outcome.ConfirmedCoupledWrites)
+            {
+                driftTracker.ConfirmIntentional(coupled, matched: true);
+            }
         }
 
         return PublishScopedIntentOutcome(
@@ -5376,6 +5451,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return exclusions;
     }
 
+    private static string? DeferredPerformanceIntentMessage(
+        PowerSource powerSource,
+        ServiceStatusSnapshot status) =>
+        powerSource == PowerSource.PluggedIn
+        && DeviceSubsystemOrder.IsManualFanMode(status.ConfirmedState?.Fans)
+        && DeviceSubsystemOrder.IsManualFanMode(status.DesiredState.Fans.Value)
+            ? "Performance intent was stored and will be applied when fans return to Automatic."
+            : null;
+
     private void ValidateThermalOverrideCombination(
         PerformanceOverride? performanceOverride,
         ManualOverride<FanMode>? fanOverride)
@@ -5780,6 +5864,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private DesiredDeviceState ResolveHardwareDesired(ConfirmedDeviceState confirmed)
     {
         DesiredDeviceState desired = Automation.Resolve(confirmed);
+        if (Automation.PowerSource == PowerSource.PluggedIn
+            && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value))
+        {
+            desired = desired with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Balanced,
+                    desired.Performance.Source),
+                CustomPerformance = null,
+            };
+        }
+
         if (lightingSuppressions.Count == 0)
         {
             return desired;

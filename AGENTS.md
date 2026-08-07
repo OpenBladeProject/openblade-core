@@ -186,6 +186,13 @@ submodules.
     proof that credentials expired when the same output includes config or
     keyring access-denied warnings. Retry the exact read with approved host
     access; ask for reauthentication only if that host-level check also fails.
+13. After a pull request is merged or closed, complete its branch cleanup:
+    remove any dedicated worktree, then delete the local and remote pull-request
+    branch. First verify the pull request's final state and exact branch, preserve
+    dirty or untracked worktree artifacts, and ensure no other live worktree uses
+    the branch. For a merged pull request, also prove that the branch tip is
+    reachable from `origin/main`. If any safety check fails, report the blocker
+    instead of silently leaving cleanup incomplete or deleting uncertain work.
 
 ## Versioning and commits
 

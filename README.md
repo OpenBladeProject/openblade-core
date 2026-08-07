@@ -27,8 +27,8 @@ exact laptop and firmware.
 
 | Laptop | USB identity | BIOS | EC | MCU |
 | --- | --- | --- | --- | --- |
-| Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` | `3.01`, `4.00` | `1.04` | `1.5.0.0`, `1.6.0.0` |
-| Razer Blade 16 (2025), `RZ09-0528` | `1532:02C6` | `2.02` | `1.09` | `1.9.0.0` |
+| Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` | `3.01`, `4.00` | `1.04` | `1.05`, `1.06` |
+| Razer Blade 16 (2025), `RZ09-0528` | `1532:02C6` | `2.02` | `1.09` | `1.09` |
 
 The exact-device `RZ09-0528` admission includes AC performance and custom
 levels, fan control, battery care, keyboard brightness and Off, lid-logo
