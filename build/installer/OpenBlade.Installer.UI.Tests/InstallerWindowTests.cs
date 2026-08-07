@@ -173,6 +173,23 @@ public sealed class InstallerWindowTests
                 LaunchAction.Install,
                 detectedSameVersionBundle: false));
 
+        Assert.False(
+            OpenBladeBootstrapperApplication.ShouldBlockMultipleRelatedBundles(
+                LaunchAction.Install,
+                relatedBundleCount: 1));
+        Assert.True(
+            OpenBladeBootstrapperApplication.ShouldBlockMultipleRelatedBundles(
+                LaunchAction.Install,
+                relatedBundleCount: 2));
+        Assert.True(
+            OpenBladeBootstrapperApplication.ShouldBlockMultipleRelatedBundles(
+                LaunchAction.Repair,
+                relatedBundleCount: 5));
+        Assert.False(
+            OpenBladeBootstrapperApplication.ShouldBlockMultipleRelatedBundles(
+                LaunchAction.Uninstall,
+                relatedBundleCount: 5));
+
         Assert.Equal(
             RequestState.ForcePresent,
             OpenBladeBootstrapperApplication.SelectPackageRequestState(

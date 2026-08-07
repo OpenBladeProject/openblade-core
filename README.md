@@ -174,6 +174,12 @@ when another installer build has the same version. Use a higher Nightly
 revision for exact-build validation; do not repeatedly install different
 Stable artifacts carrying the same product version.
 
+Setup also stops before Apply when it detects several related OpenBlade bundle
+registrations. Older installers can recursively launch one another while Burn
+tries to remove them, so continuing would risk another installer deadlock.
+Remove the duplicate OpenBlade entries through Windows installer recovery
+before retrying the newer setup.
+
 The unpacked production bundle remains available at
 `artifacts\win-x64\OpenBlade` for development and recovery. Its command-line
 setup entry point can be run from an elevated terminal when needed:

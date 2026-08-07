@@ -87,6 +87,14 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             return;
         }
 
+        if (ShouldBlockMultipleRelatedBundles(
+                action,
+                relatedBundleVersions.Count))
+        {
+            RejectMultipleRelatedBundles();
+            return;
+        }
+
         if (newerRelatedBundleVersion is not null
             && action is LaunchAction.Install or LaunchAction.Repair
             && (!overwriteNewerVersion || command.Display != Display.Full))
@@ -564,6 +572,16 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         CompleteWithFailure(NewerVersionInstalled, message);
     }
 
+    private void RejectMultipleRelatedBundles()
+    {
+        string message =
+            $"OpenBlade setup found {relatedBundleVersions.Count} related installer registrations. "
+            + "Setup stopped before making changes because executing one legacy bundle can recursively launch the others. "
+            + "Remove the duplicate OpenBlade entries through Windows installer recovery, then run this installer again.";
+        AddDetail(message);
+        CompleteWithFailure(NewerVersionInstalled, message);
+    }
+
     private void UpdateCalculatedProgress()
     {
         int percentage = CalculatedProgress();
@@ -750,6 +768,12 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         LaunchAction action,
         bool detectedSameVersionBundle) =>
         detectedSameVersionBundle
+        && action is LaunchAction.Install or LaunchAction.Repair;
+
+    internal static bool ShouldBlockMultipleRelatedBundles(
+        LaunchAction action,
+        int relatedBundleCount) =>
+        relatedBundleCount > 1
         && action is LaunchAction.Install or LaunchAction.Repair;
 
     internal static RequestState SelectPackageRequestState(

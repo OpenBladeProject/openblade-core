@@ -14,6 +14,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Kept full-power AC fan controls available in every supported performance
   mode, preserving performance intent through the confirmed Balanced/Automatic
   bridge required for fixed speeds, maximum fans, and manual fan curves.
+- Stopped install and repair before Apply when another OpenBlade bundle has the
+  same four-part version, preventing cached related bundles from recursively
+  removing each other. Setup also rejects machines that already contain
+  several related bundle registrations instead of launching their legacy
+  installers into the same cycle. Exact development builds must use ordered
+  Nightly revisions for transactional replacement.
 
 ## [0.1.0-nightly.10] - 2026-08-07
 
@@ -42,10 +48,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Offered **Use profile settings** when another app changes the keyboard effect
   to a value that firmware cannot read back, allowing the saved profile to be
   restored without guessing the active effect.
-- Stopped install and repair before Apply when another OpenBlade bundle has the
-  same four-part version, preventing cached related bundles from recursively
-  removing each other. Exact development builds must use ordered Nightly
-  revisions for transactional replacement.
 
 ## [0.1.0-nightly.9] - 2026-08-06
 
