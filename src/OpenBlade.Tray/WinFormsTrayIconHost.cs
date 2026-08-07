@@ -51,7 +51,6 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             ContextMenuStrip = menu,
             Visible = true,
         };
-        trayIcon.DoubleClick += (_, _) => openTray();
         trayIcon.MouseClick += OnTrayIconMouseClick;
         trayIcon.MouseMove += OnTrayIconMouseMove;
         trayIcon.BalloonTipClicked += OnBalloonTipClicked;

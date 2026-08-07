@@ -3037,7 +3037,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         try
         {
             await dialog.ShowAsync();
-            ApplyEditor();
         }
         finally
         {

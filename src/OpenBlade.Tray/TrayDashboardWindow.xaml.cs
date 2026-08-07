@@ -1,11 +1,13 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using OpenBlade.Contracts;
 using Windows.Graphics;
+using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
@@ -15,6 +17,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     private readonly Action openMainWindow;
     private TrayDashboardPreference preference = TrayDashboardPreferenceDefaults.Preference;
+    private TrayDashboardLayout layout = TrayDashboardLayoutPolicy.Resolve(
+        TrayDashboardPreferenceDefaults.Preference.Controls!);
     private bool changingPerformance;
     private bool changingFans;
     private bool chargeLimitPointerInteraction;
@@ -22,6 +26,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private bool visible;
     private TrayDashboardPoint visibleAnchor;
     private DisplayArea? visibleDisplayArea;
+    private long lastDeactivationHideTimestamp;
     private int disposed;
 
     public TrayDashboardWindow(MainViewModel viewModel, Action openMainWindow)
@@ -61,6 +66,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     public void ApplyPreferences(TrayDashboardPreference preferences)
     {
         preference = TrayDashboardPreferenceDefaults.Normalize(preferences);
+        layout = TrayDashboardLayoutPolicy.Resolve(preference.Controls!);
         IReadOnlyDictionary<TrayDashboardControlKind, Border> tiles = TilesByKind();
         foreach (Border tile in tiles.Values)
         {
@@ -68,34 +74,14 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
 
         ControlGrid.RowDefinitions.Clear();
-        int row = 0;
-        int column = 0;
-        foreach (TrayDashboardControlPreference control in preference.Controls!
-                     .Where(control => control.IsVisible))
+        foreach (TrayDashboardControlPlacement placement in layout.Controls)
         {
-            Border tile = tiles[control.Kind];
-            bool wide = control.Size == TrayDashboardControlSize.Wide;
-            if (wide && column != 0)
-            {
-                row++;
-                column = 0;
-            }
-
-            EnsureRow(row);
-            Grid.SetRow(tile, row);
-            Grid.SetColumn(tile, column);
-            Grid.SetColumnSpan(tile, wide ? 2 : 1);
+            Border tile = tiles[placement.Kind];
+            EnsureRow(placement.Row);
+            Grid.SetRow(tile, placement.Row);
+            Grid.SetColumn(tile, placement.Column);
+            Grid.SetColumnSpan(tile, placement.ColumnSpan);
             tile.Visibility = Visibility.Visible;
-
-            if (wide || column == 1)
-            {
-                row++;
-                column = 0;
-            }
-            else
-            {
-                column = 1;
-            }
         }
 
         SetExpandedControl(preference.ExpandedControl);
@@ -129,6 +115,16 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     public void ToggleAt(TrayDashboardPoint anchor)
     {
+        if (!visible && lastDeactivationHideTimestamp != 0)
+        {
+            TimeSpan elapsed = Stopwatch.GetElapsedTime(lastDeactivationHideTimestamp);
+            lastDeactivationHideTimestamp = 0;
+            if (TrayDashboardInteractionPolicy.ShouldSuppressReopen(elapsed))
+            {
+                return;
+            }
+        }
+
         if (visible && !pinnedForEditing)
         {
             Hide();
@@ -186,14 +182,24 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         visibleAnchor = anchor;
         visibleDisplayArea = displayArea;
         PositionAt(anchor, displayArea);
-        AppWindow.Show(true);
+        AppWindow.Show(activateWindow: !editing);
         visible = true;
     }
 
     private void PositionAt(TrayDashboardPoint anchor, DisplayArea displayArea)
     {
         RectInt32 workArea = displayArea.WorkArea;
-        int preferredHeight = CalculatePreferredHeight();
+        int preferredHeightDip = TrayDashboardLayoutPolicy.CalculatePreferredHeight(
+            layout,
+            preference.ExpandedControl is not null);
+        nint hwnd = WindowNative.GetWindowHandle(this);
+        uint nativeDpi = GetDpiForWindow(hwnd);
+        if (nativeDpi == 0)
+        {
+            throw new InvalidOperationException(
+                "Windows returned zero DPI for the tray dashboard window.");
+        }
+
         TrayDashboardRect placement = TrayDashboardPlacement.Resolve(
             anchor,
             new TrayDashboardRect(
@@ -201,7 +207,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 workArea.Y,
                 workArea.Width,
                 workArea.Height),
-            new TrayDashboardSize(PopupWidth, preferredHeight));
+            new TrayDashboardSize(PopupWidth, preferredHeightDip),
+            checked((int)nativeDpi));
         AppWindow.MoveAndResize(
             new RectInt32(
                 placement.X,
@@ -209,41 +216,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 placement.Width,
                 placement.Height),
             displayArea);
-    }
-
-    private int CalculatePreferredHeight()
-    {
-        int rows = 0;
-        int column = 0;
-        foreach (TrayDashboardControlPreference control in preference.Controls!
-                     .Where(control => control.IsVisible))
-        {
-            if (control.Size == TrayDashboardControlSize.Wide)
-            {
-                if (column != 0)
-                {
-                    rows++;
-                    column = 0;
-                }
-                rows++;
-            }
-            else if (column == 1)
-            {
-                rows++;
-                column = 0;
-            }
-            else
-            {
-                column = 1;
-            }
-        }
-        if (column != 0)
-        {
-            rows++;
-        }
-
-        int expandedHeight = preference.ExpandedControl is null ? 0 : 118;
-        return Math.Clamp(118 + (rows * 122) + expandedHeight, 230, 720);
     }
 
     private void EnsureRow(int row)
@@ -294,7 +266,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             : Visibility.Collapsed;
     }
 
-    private void Hide()
+    private void Hide(bool suppressNextTrayToggle = false)
     {
         if (!visible)
         {
@@ -303,6 +275,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
         AppWindow.Hide();
         visible = false;
+        if (suppressNextTrayToggle)
+        {
+            lastDeactivationHideTimestamp = Stopwatch.GetTimestamp();
+        }
     }
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
@@ -310,7 +286,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         if (args.WindowActivationState == WindowActivationState.Deactivated
             && !pinnedForEditing)
         {
-            Hide();
+            Hide(suppressNextTrayToggle: true);
         }
     }
 
@@ -474,4 +450,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 exception);
         }
     }
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(nint hwnd);
 }

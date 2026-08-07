@@ -16,32 +16,41 @@ public static class TrayDashboardPlacement
     public static TrayDashboardRect Resolve(
         TrayDashboardPoint anchor,
         TrayDashboardRect workArea,
-        TrayDashboardSize requestedSize,
-        int margin = 8)
+        TrayDashboardSize requestedSizeDip,
+        int dpi,
+        int marginDip = 8)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(margin);
+        ArgumentOutOfRangeException.ThrowIfNegative(marginDip);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dpi);
         if (workArea.Width <= 0 || workArea.Height <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(workArea));
         }
-        if (requestedSize.Width <= 0 || requestedSize.Height <= 0)
+        if (requestedSizeDip.Width <= 0 || requestedSizeDip.Height <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(requestedSize));
+            throw new ArgumentOutOfRangeException(nameof(requestedSizeDip));
         }
 
-        int availableWidth = Math.Max(1, workArea.Width - (margin * 2));
-        int availableHeight = Math.Max(1, workArea.Height - (margin * 2));
-        int width = Math.Min(requestedSize.Width, availableWidth);
-        int height = Math.Min(requestedSize.Height, availableHeight);
-        int minimumX = checked(workArea.X + margin);
-        int maximumX = checked(workArea.Right - margin - width);
+        int margin = WindowPlacementPolicy.ScaleToPixels(marginDip, dpi);
+        int horizontalMargin = Math.Min(margin, Math.Max(0, (workArea.Width - 1) / 2));
+        int verticalMargin = Math.Min(margin, Math.Max(0, (workArea.Height - 1) / 2));
+        int availableWidth = checked(workArea.Width - (horizontalMargin * 2));
+        int availableHeight = checked(workArea.Height - (verticalMargin * 2));
+        int requestedWidth = WindowPlacementPolicy.ScaleToPixels(requestedSizeDip.Width, dpi);
+        int requestedHeight = WindowPlacementPolicy.ScaleToPixels(requestedSizeDip.Height, dpi);
+        int width = Math.Min(requestedWidth, availableWidth);
+        int height = Math.Min(requestedHeight, availableHeight);
+        int minimumX = checked(workArea.X + horizontalMargin);
+        int maximumX = Math.Max(
+            minimumX,
+            checked(workArea.Right - horizontalMargin - width));
         int desiredX = checked(anchor.X - (width / 2));
         int x = Math.Clamp(desiredX, minimumX, maximumX);
 
         int workAreaMiddle = checked(workArea.Y + (workArea.Height / 2));
         int y = anchor.Y >= workAreaMiddle
-            ? checked(workArea.Bottom - margin - height)
-            : checked(workArea.Y + margin);
+            ? checked(workArea.Bottom - verticalMargin - height)
+            : checked(workArea.Y + verticalMargin);
 
         return new TrayDashboardRect(x, y, width, height);
     }

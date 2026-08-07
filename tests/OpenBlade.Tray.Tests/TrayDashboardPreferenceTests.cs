@@ -116,7 +116,8 @@ public sealed class TrayDashboardPreferenceTests
         TrayDashboardRect result = TrayDashboardPlacement.Resolve(
             new TrayDashboardPoint(1900, 1075),
             new TrayDashboardRect(0, 0, 1920, 1040),
-            new TrayDashboardSize(420, 520));
+            new TrayDashboardSize(420, 520),
+            dpi: 96);
 
         Assert.Equal(new TrayDashboardRect(1492, 512, 420, 520), result);
     }
@@ -127,8 +128,87 @@ public sealed class TrayDashboardPreferenceTests
         TrayDashboardRect result = TrayDashboardPlacement.Resolve(
             new TrayDashboardPoint(20, 0),
             new TrayDashboardRect(0, 40, 1280, 680),
-            new TrayDashboardSize(420, 520));
+            new TrayDashboardSize(420, 520),
+            dpi: 96);
 
         Assert.Equal(new TrayDashboardRect(8, 48, 420, 520), result);
+    }
+
+    [Fact]
+    public void PlacementScalesDipDimensionsAndMarginForMonitorDpi()
+    {
+        TrayDashboardRect result = TrayDashboardPlacement.Resolve(
+            new TrayDashboardPoint(1900, 1075),
+            new TrayDashboardRect(0, 0, 1920, 1040),
+            new TrayDashboardSize(420, 480),
+            dpi: 144);
+
+        Assert.Equal(new TrayDashboardRect(1278, 308, 630, 720), result);
+    }
+
+    [Fact]
+    public void PlacementHandlesWorkAreasNarrowerThanConfiguredMargins()
+    {
+        TrayDashboardRect result = TrayDashboardPlacement.Resolve(
+            new TrayDashboardPoint(3, 8),
+            new TrayDashboardRect(0, 0, 6, 10),
+            new TrayDashboardSize(420, 480),
+            dpi: 192);
+
+        Assert.Equal(new TrayDashboardRect(2, 4, 2, 2), result);
+    }
+
+    [Fact]
+    public void LayoutUsesOneFlowForPlacementAndPreferredHeight()
+    {
+        TrayDashboardLayout layout = TrayDashboardLayoutPolicy.Resolve(
+        [
+            new(
+                TrayDashboardControlKind.Performance,
+                true,
+                TrayDashboardControlSize.Compact),
+            new(
+                TrayDashboardControlKind.Fans,
+                true,
+                TrayDashboardControlSize.Wide),
+            new(
+                TrayDashboardControlKind.Battery,
+                true,
+                TrayDashboardControlSize.Compact),
+            new(
+                TrayDashboardControlKind.Lighting,
+                true,
+                TrayDashboardControlSize.Compact),
+        ]);
+
+        Assert.Equal(3, layout.RowCount);
+        Assert.Equal(
+        [
+            new(TrayDashboardControlKind.Performance, 0, 0, 1),
+            new(TrayDashboardControlKind.Fans, 1, 0, 2),
+            new(TrayDashboardControlKind.Battery, 2, 0, 1),
+            new(TrayDashboardControlKind.Lighting, 2, 1, 1),
+        ],
+            layout.Controls);
+        Assert.Equal(
+            602,
+            TrayDashboardLayoutPolicy.CalculatePreferredHeight(
+                layout,
+                hasExpandedControl: true));
+    }
+
+    [Theory]
+    [InlineData(-1, false)]
+    [InlineData(0, true)]
+    [InlineData(200, true)]
+    [InlineData(251, false)]
+    public void DeactivationReopenSuppressionIsBounded(
+        int elapsedMilliseconds,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            TrayDashboardInteractionPolicy.ShouldSuppressReopen(
+                TimeSpan.FromMilliseconds(elapsedMilliseconds)));
     }
 }

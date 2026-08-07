@@ -1019,23 +1019,12 @@ public sealed class WinUiShellContractTests
         Assert.Contains("new ToolStripMenuItem(\"Open\")", trayHost, StringComparison.Ordinal);
         Assert.Contains("new ToolStripMenuItem(\"Exit\")", trayHost, StringComparison.Ordinal);
         Assert.Contains("menu.Items.Add(new ToolStripSeparator())", trayHost, StringComparison.Ordinal);
-        Assert.Contains("trayIcon.DoubleClick +=", trayHost, StringComparison.Ordinal);
+        Assert.DoesNotContain("trayIcon.DoubleClick +=", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.TrayHoverLabelText", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.PropertyChanged +=", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.PropertyChanged -=", trayHost, StringComparison.Ordinal);
         Assert.Contains("nameof(MainViewModel.TrayIconState)", trayHost, StringComparison.Ordinal);
         Assert.Contains("OpenBladeIconAssets.LoadTrayIcon", trayHost, StringComparison.Ordinal);
-        int doubleClickHandlerStart = trayHost.IndexOf(
-            "trayIcon.DoubleClick +=",
-            StringComparison.Ordinal);
-        int mouseMoveHandlerStart = trayHost.IndexOf(
-            "trayIcon.MouseMove +=",
-            doubleClickHandlerStart,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "openTray()",
-            trayHost[doubleClickHandlerStart..mouseMoveHandlerStart],
-            StringComparison.Ordinal);
         Assert.Contains("Interlocked.Exchange(ref disposed, 1)", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Visible = false", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Dispose()", trayHost, StringComparison.Ordinal);
@@ -1738,6 +1727,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(true)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(false)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("The actual tray popup stays open and updates while you edit.", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("AppWindow.Show(activateWindow: !editing)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("GetDpiForWindow(hwnd)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardInteractionPolicy.ShouldSuppressReopen", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("trayIcon.DoubleClick +=", trayHost, StringComparison.Ordinal);
 
         Assert.Contains("x:Name=\"ControlGrid\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ExpandedControlContainer\"", dashboardXaml, StringComparison.Ordinal);
