@@ -136,7 +136,9 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
                 await DisposeActorBoundedAsync(actor).ConfigureAwait(false);
             }
 
-            return Failure(actorResult.Failure ?? HidSessionFailureKind.NativeIoFailure);
+            return Failure(
+                actorResult.Failure ?? HidSessionFailureKind.NativeIoFailure,
+                actorResult.Diagnostic);
         }
 
         if (cancellationToken.IsCancellationRequested)
@@ -168,7 +170,9 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
                 }
 
                 await DisposeActorBoundedAsync(actor).ConfigureAwait(false);
-                return Failure(matrixResult.Failure ?? HidSessionFailureKind.NativeIoFailure);
+                return Failure(
+                    matrixResult.Failure ?? HidSessionFailureKind.NativeIoFailure,
+                    matrixResult.Diagnostic);
             }
         }
 
@@ -271,7 +275,10 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
                         null)
                     : new HidSessionResult<IPid02E0MatrixFeatureWriter>(
                         null,
-                        opened.Failure ?? HidSessionFailureKind.NativeIoFailure);
+                        opened.Failure ?? HidSessionFailureKind.NativeIoFailure)
+                    {
+                        Diagnostic = opened.Diagnostic,
+                    };
             },
             TimeProvider.System,
             DefaultExchangeTimeout,
@@ -298,5 +305,9 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     }
 
     private static HidSessionResult<IProductionLightingPort> Failure(
-        HidSessionFailureKind failure) => new(null, failure);
+        HidSessionFailureKind failure,
+        HidSessionFailureDiagnostic? diagnostic = null) => new(null, failure)
+        {
+            Diagnostic = diagnostic,
+        };
 }

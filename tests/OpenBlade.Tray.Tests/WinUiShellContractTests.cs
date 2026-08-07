@@ -1055,6 +1055,9 @@ public sealed class WinUiShellContractTests
         Assert.Contains("manager.Register()", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("builder.SetAppLogoOverride(logoUri)", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("builder.SetTag(notification.ReplacementTag)", notificationPresenter, StringComparison.Ordinal);
+        Assert.Contains(".AddArgument(\"destination\"", notificationPresenter, StringComparison.Ordinal);
+        Assert.Contains("notificationInvoked(destination)", notificationPresenter, StringComparison.Ordinal);
+        Assert.Contains("Enum.IsDefined(parsed)", notificationPresenter, StringComparison.Ordinal);
         Assert.Contains("\"OpenBlade.png\"", notificationPresenter, StringComparison.Ordinal);
 
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
@@ -1112,6 +1115,60 @@ public sealed class WinUiShellContractTests
             "ReplacementTag: PerformanceNotificationReplacementTag",
             app[successStart..showNotification],
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NotificationSettingsKeepDurableFailureStatusIndependentFromToasts()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+
+        Assert.Contains("Notification preferences", xaml, StringComparison.Ordinal);
+        Assert.Contains("AppUpdateNotificationsEnabled", xaml, StringComparison.Ordinal);
+        Assert.Contains("FirmwareUpdateNotificationsEnabled", xaml, StringComparison.Ordinal);
+        Assert.Contains("ControllerAdvisoryNotificationsEnabled", xaml, StringComparison.Ordinal);
+        Assert.Contains("OperationFailureNotificationsEnabled", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.TroubleshootingRecentErrorStatus", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ControllerAdvisoryText", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FailedUpdateNotificationDeliveryDoesNotConsumeThePersistedKey()
+    {
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int appHandlerStart = window.IndexOf(
+            "private void OnAppUpdateAvailable(",
+            StringComparison.Ordinal);
+        int firmwareHandlerStart = window.IndexOf(
+            "private void OnFirmwareUpdateAvailable(",
+            appHandlerStart,
+            StringComparison.Ordinal);
+        int preferencesStart = window.IndexOf(
+            "private void ApplyNotificationPreferences(",
+            firmwareHandlerStart,
+            StringComparison.Ordinal);
+        Assert.True(
+            appHandlerStart >= 0
+                && firmwareHandlerStart > appHandlerStart
+                && preferencesStart > firmwareHandlerStart,
+            "The update notification handlers must remain discoverable.");
+
+        string appHandler = window[appHandlerStart..firmwareHandlerStart];
+        string firmwareHandler = window[firmwareHandlerStart..preferencesStart];
+        Assert.Contains("if (!TryShowNotification(", appHandler, StringComparison.Ordinal);
+        Assert.Contains("if (!TryShowNotification(", firmwareHandler, StringComparison.Ordinal);
+        Assert.True(
+            appHandler.IndexOf("lastNotifiedReleaseTag =", StringComparison.Ordinal)
+                > appHandler.IndexOf("if (!TryShowNotification(", StringComparison.Ordinal));
+        Assert.True(
+            firmwareHandler.IndexOf("lastNotifiedFirmwareSignature =", StringComparison.Ordinal)
+                > firmwareHandler.IndexOf("if (!TryShowNotification(", StringComparison.Ordinal));
+        Assert.Contains("Func<TrayNotification, bool>", window, StringComparison.Ordinal);
+
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        Assert.Contains("if (host is null)", app, StringComparison.Ordinal);
+        Assert.Contains("return false;", app, StringComparison.Ordinal);
+        Assert.Contains("return true;", app, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -8,11 +8,16 @@ internal sealed class WindowsAppNotificationPresenter : IDisposable
     private readonly AppNotificationManager manager;
     private readonly string brandDirectory;
     private readonly Uri? defaultLogoUri;
+    private readonly Action<TrayNotificationDestination> notificationInvoked;
     private readonly Action<Exception>? errorHandler;
     private int disposed;
 
-    private WindowsAppNotificationPresenter(Action<Exception>? errorHandler)
+    private WindowsAppNotificationPresenter(
+        Action<TrayNotificationDestination> notificationInvoked,
+        Action<Exception>? errorHandler)
     {
+        this.notificationInvoked = notificationInvoked
+            ?? throw new ArgumentNullException(nameof(notificationInvoked));
         this.errorHandler = errorHandler;
         brandDirectory = Path.Combine(
             AppContext.BaseDirectory,
@@ -37,11 +42,12 @@ internal sealed class WindowsAppNotificationPresenter : IDisposable
     }
 
     internal static WindowsAppNotificationPresenter? CreateBestEffort(
+        Action<TrayNotificationDestination> notificationInvoked,
         Action<Exception>? errorHandler = null)
     {
         try
         {
-            return new WindowsAppNotificationPresenter(errorHandler);
+            return new WindowsAppNotificationPresenter(notificationInvoked, errorHandler);
         }
         catch (Exception exception)
         {
@@ -62,7 +68,8 @@ internal sealed class WindowsAppNotificationPresenter : IDisposable
         {
             var builder = new AppNotificationBuilder()
                 .AddText(notification.Title)
-                .AddText(notification.Body);
+                .AddText(notification.Body)
+                .AddArgument("destination", notification.Destination.ToString());
             Uri? logoUri = ResolveLogoUri(notification.LogoAssetRelativePath)
                 ?? defaultLogoUri;
             if (logoUri is not null)
@@ -126,10 +133,33 @@ internal sealed class WindowsAppNotificationPresenter : IDisposable
         }
     }
 
-    private static void OnNotificationInvoked(
+    private void OnNotificationInvoked(
         AppNotificationManager sender,
         AppNotificationActivatedEventArgs args)
     {
+        if (TryReadDestination(args.Arguments, out TrayNotificationDestination destination))
+        {
+            notificationInvoked(destination);
+        }
+    }
+
+    private static bool TryReadDestination(
+        IDictionary<string, string> arguments,
+        out TrayNotificationDestination destination)
+    {
+        destination = TrayNotificationDestination.Home;
+        if (arguments.TryGetValue("destination", out string? value)
+            && Enum.TryParse(
+                value,
+                ignoreCase: false,
+                out TrayNotificationDestination parsed)
+            && Enum.IsDefined(parsed))
+        {
+            destination = parsed;
+            return true;
+        }
+
+        return false;
     }
 
     private static void Report(Action<Exception>? errorHandler, Exception exception)

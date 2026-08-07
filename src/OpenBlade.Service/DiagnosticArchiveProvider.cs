@@ -463,6 +463,10 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 status.ControllerDetectionWarning ?? "Unavailable",
             ["status.externalChanges"] = string.Join(", ", status.ExternalChanges),
             ["status.message"] = status.Message,
+            ["laptop.functionKeyPrimary"] =
+                status.FunctionKeyPrimary?.ToString() ?? "Unavailable",
+            ["laptop.keyboardDriverModeActive"] =
+                status.KeyboardDriverModeActive?.ToString() ?? "Unavailable",
             ["power.source"] = status.ActivePowerSource.ToString(),
             ["liveReadings.enabled"] = liveReadingsEnabled.ToString(),
             ["liveReadings.available"] = HasAnyLiveReading(status.LiveReadings).ToString(),

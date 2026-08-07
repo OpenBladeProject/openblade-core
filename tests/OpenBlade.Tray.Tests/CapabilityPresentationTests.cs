@@ -556,11 +556,11 @@ public sealed class CapabilityPresentationTests
         XElement about = NamedElement(document, "ScrollViewer", "AboutPage");
 
         Assert.Equal(
-            4,
+            5,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            9,
+            14,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -569,7 +569,7 @@ public sealed class CapabilityPresentationTests
                 element.Name.LocalName == "Expander"
                 && Attribute(element, "IsExpanded") == "False"));
         Assert.Equal(
-            3,
+            4,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
 

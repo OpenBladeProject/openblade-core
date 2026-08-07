@@ -10,6 +10,23 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Kept full-power AC fan controls available in every supported performance
   mode, preserving performance intent through the confirmed Balanced/Automatic
   bridge required for fixed speeds, maximum fans, and manual fan curves.
+
+## [0.1.0-nightly.10] - 2026-08-07
+
+### Added
+
+- Added per-user notification controls for performance and power-profile changes,
+  app and Razer firmware updates, controller advisories, and operation failures.
+  Repeated toasts are coalesced, update versions notify once, and opening a
+  notification routes to the relevant OpenBlade status while durable errors and
+  advisories remain available in the app.
+
+### Fixed
+
+- Made function-row brightness failures identify the logical key action,
+  recorded sanitized and deduplicated exact-device session failures for every
+  lighting open path, and added the active function-key and keyboard
+  Driver-mode state to diagnostic archives.
 - Kept newly applied Power mode and Custom CPU/GPU selections from briefly
   reverting after the progress spinner finishes while confirmed status catches
   up.
@@ -1035,7 +1052,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.9...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.10...HEAD
+[0.1.0-nightly.10]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.9...v0.1.0-nightly.10
 [0.1.0-nightly.9]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.8...v0.1.0-nightly.9
 [0.1.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.8
 [0.1.0-nightly.6]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.5...v0.1.0-nightly.6

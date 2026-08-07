@@ -6,6 +6,15 @@ using System.Windows.Input;
 
 namespace OpenBlade.Tray;
 
+public sealed class AppUpdateAvailableEventArgs(
+    string releaseTag,
+    Uri releasePageUri) : EventArgs
+{
+    public string ReleaseTag { get; } = releaseTag;
+
+    public Uri ReleasePageUri { get; } = releasePageUri;
+}
+
 public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     internal static readonly TimeSpan FailureRetryDelay = TimeSpan.FromMinutes(5);
@@ -52,6 +61,8 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public event EventHandler? PreferencesChanged;
+
+    public event EventHandler<AppUpdateAvailableEventArgs>? UpdateAvailable;
 
     public IReadOnlyList<UpdateChannelOption> ChannelOptions { get; } =
     [
@@ -408,6 +419,11 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
             IsUpdateAvailable = true;
             ReleasePageUri = release.ReleasePageUri;
             StatusText = $"OpenBlade {release.TagName.TrimStart('v', 'V')} is available.";
+            UpdateAvailable?.Invoke(
+                this,
+                new AppUpdateAvailableEventArgs(
+                    release.TagName,
+                    release.ReleasePageUri));
         }
         else
         {
