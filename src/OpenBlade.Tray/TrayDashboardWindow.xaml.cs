@@ -7,13 +7,13 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using OpenBlade.Contracts;
 using Windows.Graphics;
-using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
 public sealed partial class TrayDashboardWindow : Window, IDisposable
 {
     private const int PopupWidth = 420;
+    private const uint MonitorDefaultToNearest = 2;
 
     private readonly Action openMainWindow;
     private TrayDashboardPreference preference = TrayDashboardPreferenceDefaults.Preference;
@@ -109,7 +109,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             : Visibility.Collapsed;
         if (visible && visibleDisplayArea is not null)
         {
-            PositionAt(visibleAnchor, visibleDisplayArea);
+            TryPositionAt(visibleAnchor, visibleDisplayArea);
         }
     }
 
@@ -181,9 +181,23 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             DisplayAreaFallback.Nearest);
         visibleAnchor = anchor;
         visibleDisplayArea = displayArea;
-        PositionAt(anchor, displayArea);
+        TryPositionAt(anchor, displayArea);
         AppWindow.Show(activateWindow: !editing);
         visible = true;
+    }
+
+    private void TryPositionAt(TrayDashboardPoint anchor, DisplayArea displayArea)
+    {
+        try
+        {
+            PositionAt(anchor, displayArea);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard placement failed; keeping the Windows placement: {0}",
+                exception);
+        }
     }
 
     private void PositionAt(TrayDashboardPoint anchor, DisplayArea displayArea)
@@ -192,12 +206,24 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         int preferredHeightDip = TrayDashboardLayoutPolicy.CalculatePreferredHeight(
             layout,
             preference.ExpandedControl is not null);
-        nint hwnd = WindowNative.GetWindowHandle(this);
-        uint nativeDpi = GetDpiForWindow(hwnd);
+        nint monitor = MonitorFromPoint(
+            new NativePoint(anchor.X, anchor.Y),
+            MonitorDefaultToNearest);
+        if (monitor == 0)
+        {
+            throw new InvalidOperationException(
+                "Windows could not resolve the tray dashboard target monitor.");
+        }
+        int dpiResult = GetDpiForMonitor(
+            monitor,
+            MonitorDpiType.Effective,
+            out uint nativeDpi,
+            out _);
+        Marshal.ThrowExceptionForHR(dpiResult);
         if (nativeDpi == 0)
         {
             throw new InvalidOperationException(
-                "Windows returned zero DPI for the tray dashboard window.");
+                "Windows returned zero DPI for the tray dashboard target monitor.");
         }
 
         TrayDashboardRect placement = TrayDashboardPlacement.Resolve(
@@ -451,6 +477,32 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct NativePoint
+    {
+        public NativePoint(int x, int y)
+        {
+            X = x;
+            Y = y;
+        }
+
+        public readonly int X;
+
+        public readonly int Y;
+    }
+
+    private enum MonitorDpiType
+    {
+        Effective = 0,
+    }
+
     [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(nint hwnd);
+    private static extern nint MonitorFromPoint(NativePoint point, uint flags);
+
+    [DllImport("shcore.dll")]
+    private static extern int GetDpiForMonitor(
+        nint monitor,
+        MonitorDpiType dpiType,
+        out uint dpiX,
+        out uint dpiY);
 }

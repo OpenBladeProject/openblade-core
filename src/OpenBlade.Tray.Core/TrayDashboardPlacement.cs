@@ -13,6 +13,11 @@ public readonly record struct TrayDashboardRect(int X, int Y, int Width, int Hei
 
 public static class TrayDashboardPlacement
 {
+    /// <summary>
+    /// Resolves a physical-pixel popup rectangle within a physical-pixel work area.
+    /// The requested size and margin are device-independent pixels and are scaled
+    /// using the target monitor's DPI.
+    /// </summary>
     public static TrayDashboardRect Resolve(
         TrayDashboardPoint anchor,
         TrayDashboardRect workArea,
@@ -20,7 +25,7 @@ public static class TrayDashboardPlacement
         int dpi,
         int marginDip = 8)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(marginDip);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(marginDip);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dpi);
         if (workArea.Width <= 0 || workArea.Height <= 0)
         {

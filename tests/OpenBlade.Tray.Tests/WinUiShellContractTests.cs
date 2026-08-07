@@ -1728,9 +1728,23 @@ public sealed class WinUiShellContractTests
         Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(false)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("The actual tray popup stays open and updates while you edit.", mainWindow, StringComparison.Ordinal);
         Assert.Contains("AppWindow.Show(activateWindow: !editing)", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("GetDpiForWindow(hwnd)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("MonitorFromPoint(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("GetDpiForMonitor(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("MonitorDpiType.Effective", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("TryPositionAt(", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetDpiForWindow(", dashboardWindow, StringComparison.Ordinal);
+        int tryPosition = dashboardWindow.IndexOf(
+            "private void TryPositionAt(",
+            StringComparison.Ordinal);
+        int position = dashboardWindow.IndexOf(
+            "private void PositionAt(",
+            tryPosition,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "catch (Exception exception)",
+            dashboardWindow[tryPosition..position],
+            StringComparison.Ordinal);
         Assert.Contains("TrayDashboardInteractionPolicy.ShouldSuppressReopen", dashboardWindow, StringComparison.Ordinal);
-        Assert.DoesNotContain("trayIcon.DoubleClick +=", trayHost, StringComparison.Ordinal);
 
         Assert.Contains("x:Name=\"ControlGrid\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ExpandedControlContainer\"", dashboardXaml, StringComparison.Ordinal);

@@ -159,6 +159,20 @@ public sealed class TrayDashboardPreferenceTests
     }
 
     [Fact]
+    public void PlacementRejectsAZeroDipMarginWithItsPublicParameterName()
+    {
+        ArgumentOutOfRangeException exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            TrayDashboardPlacement.Resolve(
+                new TrayDashboardPoint(100, 100),
+                new TrayDashboardRect(0, 0, 1920, 1080),
+                new TrayDashboardSize(420, 480),
+                dpi: 96,
+                marginDip: 0));
+
+        Assert.Equal("marginDip", exception.ParamName);
+    }
+
+    [Fact]
     public void LayoutUsesOneFlowForPlacementAndPreferredHeight()
     {
         TrayDashboardLayout layout = TrayDashboardLayoutPolicy.Resolve(
