@@ -62,7 +62,7 @@ The following tests form the crash-recovery contract:
 | Durable distinction between graceful, same-boot failure, and system restart | `ServiceRunMarkerStoreTests`, `WorkerTests.UnexpectedBackgroundFailure_IsReportedToCleanup`, `WorkerTests.UnexpectedBackgroundFailure_AttemptsCleanupButRetainsRunMarker`, and `WorkerTests.RunMarker_IsClearedOnlyAfterConfirmedOrDeliberatelySkippedCleanup` |
 | Observation before recovery writes | `ServiceControlRuntimeTests.UnexpectedRestart_ObservesBeforeRecoveringOwnedProducers` |
 | Thermally safe manual-curve recovery without telemetry at the admitted device maximum | `ServiceControlRuntimeTests.UnexpectedRestart_ObservesBeforeRecoveringOwnedProducers` |
-| External changes and persistent overrides | `ServiceControlRuntimeTests.UnexpectedRestart_LatchesExternalChangesWithoutRecoveryWrites` |
+| External changes, persistent overrides, initial user activation, and delayed power classification | `ServiceControlRuntimeTests.UnexpectedRestart_LatchesExternalChangesWithoutRecoveryWrites`, `ServiceControlRuntimeTests.UnexpectedRestart_InitialUserActivationPreservesRecoveryDrift`, and `ServiceControlRuntimeTests.UnexpectedRestart_DelayedInitialPowerClassificationPreservesRecoveryDrift` |
 | Delayed device arrival after the bounded recovery attempt | `ServiceControlRuntimeTests.UnexpectedRestart_DeviceArrivingAfterRecoveryAttemptDoesNotStartCurve` |
 | Startup sequencing and cancellation | `ServiceStartupCoordinatorTests.InitializeAsync_UnclearedRunMarkerUsesOwnedRecoverySequence` |
 | Bounded SCM restart policy | `WindowsSetupPlatformServiceTests.InstallService_ConfiguresBoundedRestartRecovery` |

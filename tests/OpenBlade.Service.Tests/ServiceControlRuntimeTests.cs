@@ -85,6 +85,94 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, repository.Loads[staleSid.Value]);
     }
 
+    [Fact]
+    public async Task UnexpectedRestart_InitialUserActivationPreservesRecoveryDrift()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+            },
+        };
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var repository = new RecordingUserConfigurationRepository(
+            new Dictionary<string, ProfileSet>
+            {
+                [userSid.Value] = profiles,
+            },
+            directory);
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities),
+            userConfigurationRepository: repository);
+        context.Device.Capabilities = capabilities;
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Maximum,
+            ConfirmedBattery(80),
+            null);
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+        Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
+
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.Equal(0, context.Provider.InvalidationCount);
+        Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(FanMode.Maximum, context.Runtime.GetStatus().ConfirmedState!.Fans);
+        Assert.Equal(profiles, context.Runtime.GetStatus().Profiles);
+        Assert.Equal(1, repository.Loads[userSid.Value]);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_DelayedInitialPowerClassificationPreservesRecoveryDrift()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown,
+            initialize: false,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Maximum,
+            ConfirmedBattery(80),
+            null);
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.ExternalUnknown,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+        Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(FanMode.Maximum, context.Runtime.GetStatus().ConfirmedState!.Fans);
+        Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
+    }
+
     [Theory]
     [InlineData(DeviceSubsystem.Performance)]
     [InlineData(DeviceSubsystem.Fans)]

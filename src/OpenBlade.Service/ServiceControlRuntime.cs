@@ -301,6 +301,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool startupProfileReconciliationRequested;
     private bool unexpectedExitRecoveryPending;
     private bool manualFanCurveRecoveryPending;
+    private bool suppressInitialUserProfileApplyAfterUnexpectedExit;
+    private bool suppressInitialKnownPowerSourceApplyAfterUnexpectedExit;
     private string? activeUserSid;
     private ResumeStateBaseline? pendingResumeStateBaseline;
 
@@ -552,6 +554,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             startupProfileReconciliationRequested = false;
             unexpectedExitRecoveryPending = recoveringUnexpectedExit;
             manualFanCurveRecoveryPending = recoveringUnexpectedExit;
+            suppressInitialUserProfileApplyAfterUnexpectedExit = recoveringUnexpectedExit;
+            suppressInitialKnownPowerSourceApplyAfterUnexpectedExit =
+                recoveringUnexpectedExit && powerSource == PowerSource.ExternalUnknown;
             pendingLightingRestore = recoveringUnexpectedExit
                 ? configuration.Preferences.LastKnownLighting
                 : initializedAutomation
@@ -619,10 +624,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             ServiceStatusSnapshot current = GetStatus();
             PowerSource powerSource = current.ActivePowerSource;
-            await InvalidateLightingRendererCoreAsync(
-                preserveForLifecycleRestore: false,
-                cancellationToken).ConfigureAwait(false);
-            current = GetStatus();
+            bool suppressProfileApply =
+                suppressInitialUserProfileApplyAfterUnexpectedExit;
+            suppressInitialUserProfileApplyAfterUnexpectedExit = false;
+            if (!suppressProfileApply)
+            {
+                await InvalidateLightingRendererCoreAsync(
+                    preserveForLifecycleRestore: false,
+                    cancellationToken).ConfigureAwait(false);
+                current = GetStatus();
+            }
             Volatile.Write(
                 ref userStores,
                 new UserConfigurationStores(context.Store, context.OverrideStore));
@@ -636,11 +647,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 context.Configuration.Preferences.AllowUntestedFirmware);
             persistentOverrides = overrides;
             lightingSuppressions.Clear();
-            pendingLightingRestore = null;
-            pendingLightingRestoreFromLifecycle = false;
+            if (!suppressProfileApply)
+            {
+                pendingLightingRestore = null;
+                pendingLightingRestoreFromLifecycle = false;
+            }
 
             ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
-            if (powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
+            if (!suppressProfileApply
+                && powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
             {
                 await ApplyFullTransitionAsync(
                         powerSource,
@@ -653,7 +668,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             confirmed = current.ConfirmedState ?? UnknownConfirmedState;
             PublishIfChanged(current with
             {
-                Message = "The active Windows user's profile is loaded.",
+                Message = suppressProfileApply
+                    ? "The active Windows user's profile is loaded without hardware application during unexpected-exit recovery."
+                    : "The active Windows user's profile is loaded.",
                 Profiles = profiles,
                 DesiredState = Automation.Resolve(confirmed),
                 PerformanceOverride = Automation.PerformanceOverride,
@@ -800,7 +817,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveCurrentAvailability: true);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
@@ -1115,7 +1132,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveCurrentAvailability: true);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
@@ -1511,7 +1528,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     blockedMessage);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
@@ -1904,7 +1921,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "Lighting power policy is paused because an external lighting change is present.");
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
@@ -2437,7 +2454,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveCurrentAvailability: true);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token);
             }
@@ -2535,7 +2552,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 cancellationToken,
                 allowRecentObservation: canUseReadOnlyFastPath);
             bool changed = powerSource != PowerSource.ExternalUnknown
-                && Automation.ChangePowerSource(powerSource);
+                && ChangePowerSourceCore(powerSource);
             if (changed)
             {
                 RecordResumePowerSourceTransitionCore(powerSource);
@@ -2732,7 +2749,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             RefreshBatteryHealthAfterPowerSourceChangeCore();
             RefreshControllerPresenceCore(cancellationToken);
             bool changed = powerSource != PowerSource.ExternalUnknown
-                && Automation.ChangePowerSource(powerSource);
+                && ChangePowerSourceCore(powerSource);
             if (changed)
             {
                 RecordResumePowerSourceTransitionCore(powerSource);
@@ -2801,7 +2818,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return;
             }
 
-            if (Automation.ChangePowerSource(classified))
+            if (ChangePowerSourceCore(classified))
             {
                 await ApplyFullTransitionAsync(
                     classified,
@@ -3732,7 +3749,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveCurrentAvailability: true);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token);
             }
@@ -3802,7 +3819,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveCurrentAvailability: true);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token);
             }
@@ -5377,6 +5394,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    private bool ChangePowerSourceCore(PowerSource powerSource)
+    {
+        bool changed = Automation.ChangePowerSource(powerSource);
+        if (!changed || !suppressInitialKnownPowerSourceApplyAfterUnexpectedExit)
+        {
+            return changed;
+        }
+
+        suppressInitialKnownPowerSourceApplyAfterUnexpectedExit = false;
+        ServiceStatusSnapshot current = GetStatus();
+        PublishIfChanged(current with
+        {
+            ActivePowerSource = powerSource,
+            WritesBlocked = false,
+            Message =
+                "The initial power adapter classification was recorded without hardware application during unexpected-exit recovery.",
+            DesiredState = Automation.Resolve(
+                current.ConfirmedState ?? UnknownConfirmedState),
+        });
+        return false;
+    }
+
     private void CompleteUnexpectedExitRecoveryCore()
     {
         ServiceStatusSnapshot current = GetStatus();
@@ -5408,7 +5447,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        _ = Automation.ChangePowerSource(powerSource);
+        _ = ChangePowerSourceCore(powerSource);
         await ApplyFullTransitionAsync(
             powerSource,
             cancellationToken,

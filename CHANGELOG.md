@@ -14,6 +14,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Kept full-power AC fan controls available in every supported performance
   mode, preserving performance intent through the confirmed Balanced/Automatic
   bridge required for fixed speeds, maximum fans, and manual fan curves.
+- Distinguished intentional service stops from unexpected exits with a
+  durable run marker. SCM restarts now observe exact-device state before any
+  recovery write, retain external-change latches and persistent override
+  intent without ordinary profile writes, restore only eligible owned fan and
+  lighting producers, and start a manual fan curve at a fresh thermally safe
+  target that falls back to maximum speed when CPU telemetry is unavailable.
+  In-process failures still attempt bounded hardware cleanup, while markers
+  from an earlier Windows boot no longer suppress ordinary startup profiles.
 
 ## [0.1.0-nightly.10] - 2026-08-07
 
@@ -42,14 +50,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Offered **Use profile settings** when another app changes the keyboard effect
   to a value that firmware cannot read back, allowing the saved profile to be
   restored without guessing the active effect.
-- Distinguished intentional service stops from unexpected exits with a
-  durable run marker. SCM restarts now observe exact-device state before any
-  recovery write, retain external-change latches and persistent override
-  intent without ordinary profile writes, restore only eligible owned fan and
-  lighting producers, and start a manual fan curve at a fresh thermally safe
-  target that falls back to maximum speed when CPU telemetry is unavailable.
-  In-process failures still attempt bounded hardware cleanup, while markers
-  from an earlier Windows boot no longer suppress ordinary startup profiles.
 
 ## [0.1.0-nightly.9] - 2026-08-06
 
