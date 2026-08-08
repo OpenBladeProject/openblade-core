@@ -644,6 +644,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string GpuTemperatureValue =>
         FormatTemperatureValue(LiveReadings?.GpuTemperatureCelsius);
 
+    public string TrayDashboardBatteryPowerFlowLabel =>
+        TrayDashboardStatusPresentation.BatteryPower(
+            IsConnected,
+            LiveReadings?.BatteryPowerFlowMilliwatts,
+            ActivePowerSource);
+
+    public string TrayDashboardTemperatureLabel =>
+        TrayDashboardStatusPresentation.Temperatures(
+            IsConnected,
+            LiveReadings?.CpuTemperatureCelsius,
+            LiveReadings?.GpuTemperatureCelsius);
+
     public ObservableCollection<LiveReadingVisibilityOption> DashboardTelemetryItems
     {
         get;
@@ -815,6 +827,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyGamingModeKeyPolicy();
             NotifyActiveFanSelectionBinding();
             Notify(nameof(BatteryPowerFlowLabel));
+            Notify(nameof(TrayDashboardBatteryPowerFlowLabel));
             NotifyTrayHoverLabel();
             NotifyCommands();
         }
@@ -858,6 +871,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string ActiveFanModeLabel => IsConnected
         ? $"{FanModePresentation.Label(SelectedFanMode)} fans"
         : UnavailableLabel;
+
+    public string TrayDashboardFanModeLabel =>
+        TrayDashboardStatusPresentation.Fans(IsConnected, SelectedFanMode);
 
     public string ProfileStateLabel => !IsConnected
         ? "Service unavailable"
@@ -1709,6 +1725,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
             SetField(ref selectedFanMode, value);
             Notify(nameof(ActiveFanModeLabel));
+            Notify(nameof(TrayDashboardFanModeLabel));
             Notify(nameof(SelectedFanModeOption));
             Notify(nameof(IsFixedFanSpeedVisible));
             Notify(nameof(IsManualFanCurveVisible));
@@ -7853,6 +7870,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(LiveReadingsRefreshToolTip));
         Notify(nameof(ActivePerformanceLabel));
         Notify(nameof(ActiveFanModeLabel));
+        Notify(nameof(TrayDashboardFanModeLabel));
         Notify(nameof(ProfileStateLabel));
         Notify(nameof(IsReadinessReady));
         Notify(nameof(IsReadinessChecking));
@@ -8231,7 +8249,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
 }
 
-public sealed record LightingEffectOption(LightingEffect Effect, string Label);
+public sealed record LightingEffectOption(LightingEffect Effect, string Label)
+{
+    public override string ToString() => Label;
+}
 
 public sealed record AmbientAwarenessRegionOption(
     AmbientAwarenessRegion Region,

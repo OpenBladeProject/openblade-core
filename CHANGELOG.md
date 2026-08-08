@@ -23,6 +23,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed the quick-controls popup's blank black opening frame, raw lighting
+  option text, missing fan icon, clipped expanded selector, and truncated
+  status labels. The popup now reuses the brightness overlay's upward Windows
+  flyout animation and stages its first composed frame behind the taskbar.
 - Folded GPU clock offsets under their tuning toggle, removed the persistent
   nested-card highlight, and placed dashboard slider values beside their
   sliders to keep the cards compact while retaining their circular thumbs.

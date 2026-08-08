@@ -1739,6 +1739,10 @@ public sealed class WinUiShellContractTests
             "src",
             "OpenBlade.Tray",
             "TrayDashboardWindow.xaml.cs");
+        string brightnessOsd = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "WindowsDisplayBrightnessOsd.cs");
 
         Assert.Contains("trayIcon.MouseClick += OnTrayIconMouseClick", trayHost, StringComparison.Ordinal);
         Assert.Contains(
@@ -1770,7 +1774,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(true)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(false)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("The actual tray popup stays open and updates while you edit.", mainWindow, StringComparison.Ordinal);
-        Assert.Contains("AppWindow.Show(activateWindow: !editing)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("AppWindow.Show(activateWindow: false)", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("private const int PopupWidth = 360", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("presenter.IsAlwaysOnTop = true", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("MonitorFromPoint(", dashboardWindow, StringComparison.Ordinal);
@@ -1804,6 +1808,7 @@ public sealed class WinUiShellContractTests
         string showAtBody = dashboardWindow[showAt..tryPosition];
         Assert.Contains("if (!editing)", showAtBody, StringComparison.Ordinal);
         Assert.Contains("Activate();", showAtBody, StringComparison.Ordinal);
+        Assert.Contains("TryStartReveal(placement, displayArea, editing)", showAtBody, StringComparison.Ordinal);
         int position = dashboardWindow.IndexOf(
             "private void PositionAt(",
             tryPosition,
@@ -1813,6 +1818,20 @@ public sealed class WinUiShellContractTests
             dashboardWindow[tryPosition..position],
             StringComparison.Ordinal);
         Assert.Contains("TrayDashboardInteractionPolicy.ShouldSuppressReopen", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("CompositionTarget.Rendering += OnRevealRendering", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("WindowsPopupSlidePolicy.ResolvePosition(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("WindowsPopupPositioner.FindTaskbarForMonitor", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("checked(workArea.Y + workArea.Height)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("Root.UpdateLayout()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("WindowsMotionSettings.AreAnimationsEnabled()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains(
+            "WindowsPopupSlidePolicy.ResolvePosition(",
+            brightnessOsd,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "WindowsPopupPositioner.PositionBehindTaskbar(",
+            brightnessOsd,
+            StringComparison.Ordinal);
         Assert.Contains(
             "SetExpandedControl(layout.ExpandedControl)",
             dashboardWindow,
@@ -1824,6 +1843,12 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Charge limit\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"BatteryPowerStatus\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"More\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("DisplayMemberPath=\"Label\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Glyph=\"&#xE895;\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Glyph=\"&#xE9D0;\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardBatteryPowerFlowLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardTemperatureLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardFanModeLabel", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Customize", dashboardXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Preview", dashboardXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("ControlGrid.Children.Remove", dashboardWindow, StringComparison.Ordinal);

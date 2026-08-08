@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Tray.Tests;
 
 public sealed class TrayDashboardPreferenceTests
@@ -140,6 +142,102 @@ public sealed class TrayDashboardPreferenceTests
             TrayIconActivationPolicy.ShouldSuppressTrailingClick(
                 TimeSpan.FromMilliseconds(elapsedMilliseconds),
                 TimeSpan.FromMilliseconds(systemDoubleClickMilliseconds)));
+    }
+
+    [Theory]
+    [InlineData(-1, 100)]
+    [InlineData(0, 100)]
+    [InlineData(125, 3)]
+    [InlineData(250, 0)]
+    [InlineData(500, 0)]
+    public void PopupRevealUsesBrightnessOsdEaseOut(
+        int elapsedMilliseconds,
+        int expectedPosition)
+    {
+        Assert.Equal(
+            expectedPosition,
+            WindowsPopupSlidePolicy.ResolvePosition(
+                start: 100,
+                end: 0,
+                TimeSpan.FromMilliseconds(elapsedMilliseconds),
+                hiding: false));
+    }
+
+    [Fact]
+    public void PopupHideUsesComplementaryBrightnessOsdEaseIn()
+    {
+        Assert.Equal(
+            3,
+            WindowsPopupSlidePolicy.ResolvePosition(
+                start: 0,
+                end: 100,
+                TimeSpan.FromMilliseconds(125),
+                hiding: true));
+        Assert.True(WindowsPopupSlidePolicy.IsComplete(TimeSpan.FromMilliseconds(250)));
+        Assert.False(WindowsPopupSlidePolicy.IsComplete(TimeSpan.FromMilliseconds(249)));
+    }
+
+    [Theory]
+    [InlineData(true, -24300, PowerSource.Battery, "24.3 W")]
+    [InlineData(true, 31800, PowerSource.PluggedIn, "+31.8 W")]
+    [InlineData(true, 0, PowerSource.PluggedIn, "Idle")]
+    [InlineData(true, 0, PowerSource.Battery, "—")]
+    [InlineData(false, -24300, PowerSource.Battery, "—")]
+    public void StatusPowerTextFitsThePopupFooter(
+        bool connected,
+        int milliwatts,
+        PowerSource source,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            TrayDashboardStatusPresentation.BatteryPower(
+                connected,
+                milliwatts,
+                source));
+    }
+
+    [Theory]
+    [InlineData(true, 47, 52, "47° / 52°")]
+    [InlineData(true, 47, null, "47°")]
+    [InlineData(true, null, 52, "52°")]
+    [InlineData(true, null, null, "—")]
+    [InlineData(false, 47, 52, "—")]
+    public void StatusTemperatureTextFitsThePopupFooter(
+        bool connected,
+        int? cpu,
+        int? gpu,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            TrayDashboardStatusPresentation.Temperatures(
+                connected,
+                cpu,
+                gpu));
+    }
+
+    [Fact]
+    public void LightingEffectOptionUsesItsDisplayLabel()
+    {
+        var option = new LightingEffectOption(LightingEffect.Spectrum, "Spectrum");
+
+        Assert.Equal("Spectrum", option.ToString());
+    }
+
+    [Fact]
+    public void StatusFanTextDropsTheRedundantNoun()
+    {
+        Assert.Equal(
+            "Automatic",
+            TrayDashboardStatusPresentation.Fans(
+                connected: true,
+                FanMode.Automatic));
+        Assert.Equal(
+            "—",
+            TrayDashboardStatusPresentation.Fans(
+                connected: false,
+                FanMode.Automatic));
     }
 
     [Fact]

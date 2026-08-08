@@ -20,6 +20,8 @@ public sealed partial class MainViewModel
 
     private void NotifyDashboardTelemetryValuesChanged()
     {
+        Notify(nameof(TrayDashboardBatteryPowerFlowLabel));
+        Notify(nameof(TrayDashboardTemperatureLabel));
         if (!dashboardTelemetryPresentationActive)
         {
             return;

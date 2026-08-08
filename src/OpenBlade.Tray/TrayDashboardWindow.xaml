@@ -52,7 +52,7 @@
                       HorizontalScrollBarVisibility="Hidden"
                       VerticalScrollMode="Enabled"
                       VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="10">
+            <StackPanel HorizontalAlignment="Stretch" Spacing="10">
                 <Grid x:Name="ControlGrid" ColumnSpacing="10" RowSpacing="10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -98,7 +98,7 @@
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <FontIcon Glyph="&#xE9D0;" FontSize="19" />
+                                <FontIcon Glyph="&#xE895;" FontSize="19" />
                                 <ComboBox Grid.Column="1"
                                           MinWidth="0"
                                           HorizontalAlignment="Stretch"
@@ -187,6 +187,7 @@
                                               AutomationProperties.Name="Lighting effect"
                                               IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
                                               ItemsSource="{Binding AvailableLightingEffectOptions, Mode=OneWay}"
+                                              DisplayMemberPath="Label"
                                               SelectedItem="{Binding SelectedLightingEffectOption, Mode=TwoWay}"
                                               local:StableComboBoxSelection.Anchor="{Binding SelectedLightingEffectOption, Mode=OneWay}" />
                                 </Grid>
@@ -212,10 +213,12 @@
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="0,1,0,0">
                     <StackPanel>
-                        <Grid x:Name="ExpandedPerformance" ColumnSpacing="12">
+                        <Grid x:Name="ExpandedPerformance"
+                              HorizontalAlignment="Stretch"
+                              ColumnSpacing="12">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
                                 <FontIcon Glyph="&#xE7F4;" FontSize="18" />
@@ -223,7 +226,8 @@
                                            Style="{StaticResource ExpandedTitleStyle}" />
                             </StackPanel>
                             <ComboBox Grid.Column="1"
-                                      MinWidth="150"
+                                      MinWidth="0"
+                                      HorizontalAlignment="Stretch"
                                       AutomationProperties.Name="Expanded performance mode"
                                       IsEnabled="{Binding CanEditPerformance, Mode=OneWay}"
                                       ItemsSource="{Binding AvailableActivePerformanceOptions, Mode=OneWay}"
@@ -232,19 +236,21 @@
                                       SelectionChanged="OnPerformanceChanged" />
                         </Grid>
                         <Grid x:Name="ExpandedFans"
+                              HorizontalAlignment="Stretch"
                               ColumnSpacing="12"
                               Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
-                                <FontIcon Glyph="&#xE9D0;" FontSize="18" />
+                                <FontIcon Glyph="&#xE895;" FontSize="18" />
                                 <TextBlock Text="Fans"
                                            Style="{StaticResource ExpandedTitleStyle}" />
                             </StackPanel>
                             <ComboBox Grid.Column="1"
-                                      MinWidth="150"
+                                      MinWidth="0"
+                                      HorizontalAlignment="Stretch"
                                       AutomationProperties.Name="Expanded fan mode"
                                       IsEnabled="{Binding CanEditFanControl, Mode=OneWay}"
                                       ItemsSource="{Binding AvailableActiveFanModeOptions, Mode=OneWay}"
@@ -281,10 +287,10 @@
                                     KeyUp="OnChargeLimitKeyUp" />
                         </StackPanel>
                         <StackPanel x:Name="ExpandedLighting" Spacing="8" Visibility="Collapsed">
-                            <Grid ColumnSpacing="12">
+                            <Grid HorizontalAlignment="Stretch" ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
                                     <FontIcon Glyph="&#xE706;" FontSize="18" />
@@ -292,10 +298,12 @@
                                                Style="{StaticResource ExpandedTitleStyle}" />
                                 </StackPanel>
                                 <ComboBox Grid.Column="1"
-                                          MinWidth="150"
+                                          MinWidth="0"
+                                          HorizontalAlignment="Stretch"
                                           AutomationProperties.Name="Expanded lighting effect"
                                           IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
                                           ItemsSource="{Binding AvailableLightingEffectOptions, Mode=OneWay}"
+                                          DisplayMemberPath="Label"
                                           SelectedItem="{Binding SelectedLightingEffectOption, Mode=TwoWay}"
                                           local:StableComboBoxSelection.Anchor="{Binding SelectedLightingEffectOption, Mode=OneWay}" />
                             </Grid>
@@ -321,7 +329,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Grid x:Name="StatusItemsHost"
-                      ColumnSpacing="10"
+                      ColumnSpacing="8"
                       VerticalAlignment="Center">
                     <Grid x:Name="BatteryPowerStatus" ColumnSpacing="4">
                         <Grid.ColumnDefinitions>
@@ -330,7 +338,8 @@
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE83F;" FontSize="12" />
                         <TextBlock Grid.Column="1"
-                                   Text="{Binding BatteryPowerFlowLabel, Mode=OneWay}"
+                                   Text="{Binding TrayDashboardBatteryPowerFlowLabel, Mode=OneWay}"
+                                   ToolTipService.ToolTip="{Binding BatteryPowerFlowLabel, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
                     <Grid x:Name="TemperatureStatus" ColumnSpacing="4">
@@ -339,20 +348,19 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE9CA;" FontSize="12" />
-                        <TextBlock Grid.Column="1" Style="{StaticResource StatusTextStyle}">
-                            <Run Text="{Binding CpuTemperatureValue, Mode=OneWay}" />
-                            <Run Text=" / " />
-                            <Run Text="{Binding GpuTemperatureValue, Mode=OneWay}" />
-                        </TextBlock>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding TrayDashboardTemperatureLabel, Mode=OneWay}"
+                                   Style="{StaticResource StatusTextStyle}" />
                     </Grid>
                     <Grid x:Name="FansStatus" ColumnSpacing="4">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE9D0;" FontSize="12" />
+                        <FontIcon Glyph="&#xE895;" FontSize="12" />
                         <TextBlock Grid.Column="1"
-                                   Text="{Binding ActiveFanModeLabel, Mode=OneWay}"
+                                   Text="{Binding TrayDashboardFanModeLabel, Mode=OneWay}"
+                                   ToolTipService.ToolTip="{Binding ActiveFanModeLabel, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
                 </Grid>

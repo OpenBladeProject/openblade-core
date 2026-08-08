@@ -26,6 +26,8 @@
   <ItemGroup>
     <Compile Include="..\..\src\OpenBlade.Tray\WindowsDisplayBrightnessOsd.cs"
              Link="WindowsDisplayBrightnessOsd.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\WindowsPopupPositioner.cs"
+             Link="WindowsPopupPositioner.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\WindowsRegistryReader.cs"
              Link="WindowsRegistryReader.cs" />
   </ItemGroup>

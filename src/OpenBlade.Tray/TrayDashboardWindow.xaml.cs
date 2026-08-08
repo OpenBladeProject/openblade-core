@@ -5,14 +5,17 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using OpenBlade.Contracts;
 using Windows.Graphics;
+using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
 public sealed partial class TrayDashboardWindow : Window, IDisposable
 {
     private const int PopupWidth = 360;
+    private const int RevealOffsetDip = 24;
     private const uint MonitorDefaultToNearest = 2;
 
     private readonly Action openMainWindow;
@@ -28,6 +31,13 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private TrayDashboardPoint visibleAnchor;
     private DisplayArea? visibleDisplayArea;
     private long lastDeactivationHideTimestamp;
+    private long revealStartedTimestamp;
+    private nint revealWindowHandle;
+    private nint revealTaskbarHandle;
+    private TrayDashboardRect revealPlacement;
+    private int revealStartY;
+    private bool revealAnimationActive;
+    private bool awaitingRevealActivation;
     private int disposed;
 
     public TrayDashboardWindow(MainViewModel viewModel, Action openMainWindow)
@@ -175,6 +185,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         Activated -= OnActivated;
         AppWindow.Closing -= OnClosing;
+        CancelRevealAnimation();
         Close();
     }
 
@@ -194,17 +205,29 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             DisplayAreaFallback.Nearest);
         visibleAnchor = anchor;
         visibleDisplayArea = displayArea;
-        TryPositionAt(anchor, displayArea);
+        visible = true;
+        if (TryResolvePlacement(anchor, displayArea, out ResolvedPlacement placement)
+            && TryStartReveal(placement, displayArea, editing))
+        {
+            return;
+        }
+
+        if (placement.Rect.Width > 0)
+        {
+            AppWindow.MoveAndResize(
+                ToRectInt32(placement.Rect),
+                displayArea);
+        }
         AppWindow.Show(activateWindow: !editing);
         if (!editing)
         {
             Activate();
         }
-        visible = true;
     }
 
     private void TryPositionAt(TrayDashboardPoint anchor, DisplayArea displayArea)
     {
+        CancelRevealAnimation();
         try
         {
             PositionAt(anchor, displayArea);
@@ -218,6 +241,16 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     }
 
     private void PositionAt(TrayDashboardPoint anchor, DisplayArea displayArea)
+    {
+        ResolvedPlacement placement = ResolvePlacement(anchor, displayArea);
+        AppWindow.MoveAndResize(
+            ToRectInt32(placement.Rect),
+            displayArea);
+    }
+
+    private ResolvedPlacement ResolvePlacement(
+        TrayDashboardPoint anchor,
+        DisplayArea displayArea)
     {
         RectInt32 workArea = displayArea.WorkArea;
         int preferredHeightDip =
@@ -251,14 +284,169 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 workArea.Height),
             new TrayDashboardSize(PopupWidth, preferredHeightDip),
             checked((int)nativeDpi));
-        AppWindow.MoveAndResize(
-            new RectInt32(
-                placement.X,
-                placement.Y,
-                placement.Width,
-                placement.Height),
-            displayArea);
+        return new ResolvedPlacement(
+            placement,
+            monitor,
+            checked((int)nativeDpi));
     }
+
+    private bool TryResolvePlacement(
+        TrayDashboardPoint anchor,
+        DisplayArea displayArea,
+        out ResolvedPlacement placement)
+    {
+        try
+        {
+            placement = ResolvePlacement(anchor, displayArea);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard placement failed; keeping the Windows placement: {0}",
+                exception);
+            placement = default;
+            return false;
+        }
+    }
+
+    private bool TryStartReveal(
+        ResolvedPlacement placement,
+        DisplayArea displayArea,
+        bool editing)
+    {
+        try
+        {
+            CancelRevealAnimation();
+            RectInt32 workArea = displayArea.WorkArea;
+            revealPlacement = placement.Rect;
+            int stagingY = checked(workArea.Y + workArea.Height);
+            revealStartY = Math.Min(
+                stagingY,
+                checked(
+                    placement.Rect.Y
+                    + WindowPlacementPolicy.ScaleToPixels(
+                        RevealOffsetDip,
+                        placement.Dpi)));
+            revealWindowHandle = WindowNative.GetWindowHandle(this);
+            revealTaskbarHandle =
+                WindowsPopupPositioner.FindTaskbarForMonitor(placement.Monitor);
+            revealStartedTimestamp = 0;
+            awaitingRevealActivation = !editing;
+
+            var staged = new TrayDashboardRect(
+                placement.Rect.X,
+                stagingY,
+                placement.Rect.Width,
+                placement.Rect.Height);
+            AppWindow.MoveAndResize(ToRectInt32(staged), displayArea);
+            Root.UpdateLayout();
+            AppWindow.Show(activateWindow: false);
+            WindowsPopupPositioner.PositionBehindTaskbar(
+                revealWindowHandle,
+                revealTaskbarHandle,
+                staged.X,
+                staged.Y,
+                staged.Width,
+                staged.Height);
+            revealAnimationActive = true;
+            CompositionTarget.Rendering += OnRevealRendering;
+            return true;
+        }
+        catch (Exception exception)
+        {
+            CancelRevealAnimation();
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard reveal failed; showing without animation: {0}",
+                exception);
+            return false;
+        }
+    }
+
+    private void OnRevealRendering(object? sender, object args)
+    {
+        if (!revealAnimationActive || !visible)
+        {
+            return;
+        }
+
+        if (revealStartedTimestamp == 0)
+        {
+            revealStartedTimestamp = Stopwatch.GetTimestamp();
+        }
+
+        TimeSpan elapsed = Stopwatch.GetElapsedTime(revealStartedTimestamp);
+        bool animationsEnabled = WindowsMotionSettings.AreAnimationsEnabled();
+
+        int y = animationsEnabled
+            ? WindowsPopupSlidePolicy.ResolvePosition(
+                revealStartY,
+                revealPlacement.Y,
+                elapsed,
+                hiding: false)
+            : revealPlacement.Y;
+        try
+        {
+            WindowsPopupPositioner.PositionBehindTaskbar(
+                revealWindowHandle,
+                revealTaskbarHandle,
+                revealPlacement.X,
+                y,
+                revealPlacement.Width,
+                revealPlacement.Height);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard reveal frame failed: {0}",
+                exception.Message);
+            AppWindow.MoveAndResize(ToRectInt32(revealPlacement));
+            y = revealPlacement.Y;
+        }
+
+        if (awaitingRevealActivation)
+        {
+            awaitingRevealActivation = false;
+            Activate();
+            try
+            {
+                WindowsPopupPositioner.PositionBehindTaskbar(
+                    revealWindowHandle,
+                    revealTaskbarHandle,
+                    revealPlacement.X,
+                    y,
+                    revealPlacement.Width,
+                    revealPlacement.Height);
+            }
+            catch (Exception exception)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade tray dashboard activation positioning failed: {0}",
+                    exception.Message);
+            }
+        }
+
+        if (!animationsEnabled
+            || y == revealPlacement.Y
+            || WindowsPopupSlidePolicy.IsComplete(elapsed))
+        {
+            CancelRevealAnimation();
+        }
+    }
+
+    private void CancelRevealAnimation()
+    {
+        if (revealAnimationActive)
+        {
+            CompositionTarget.Rendering -= OnRevealRendering;
+        }
+        revealAnimationActive = false;
+        awaitingRevealActivation = false;
+        revealStartedTimestamp = 0;
+    }
+
+    private static RectInt32 ToRectInt32(TrayDashboardRect rect) =>
+        new(rect.X, rect.Y, rect.Width, rect.Height);
 
     private void EnsureRow(int row)
     {
@@ -315,6 +503,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             return;
         }
 
+        CancelRevealAnimation();
         AppWindow.Hide();
         visible = false;
         if (suppressNextTrayToggle)
@@ -326,7 +515,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
         if (args.WindowActivationState == WindowActivationState.Deactivated
-            && !pinnedForEditing)
+            && !pinnedForEditing
+            && !awaitingRevealActivation)
         {
             Hide(suppressNextTrayToggle: true);
         }
@@ -511,6 +701,11 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     {
         Effective = 0,
     }
+
+    private readonly record struct ResolvedPlacement(
+        TrayDashboardRect Rect,
+        nint Monitor,
+        int Dpi);
 
     [DllImport("user32.dll")]
     private static extern nint MonitorFromPoint(NativePoint point, uint flags);
