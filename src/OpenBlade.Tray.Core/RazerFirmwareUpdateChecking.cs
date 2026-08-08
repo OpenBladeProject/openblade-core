@@ -277,7 +277,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
 {
     internal static readonly TimeSpan FailureRetryDelay = TimeSpan.FromMinutes(5);
     private const string NotCheckedMessage =
-        "Check Razer's official page for published updater versions.";
+        "Check Razer's official page for the latest firmware versions.";
     private readonly IRazerFirmwareUpdateClient client;
     private readonly TimeProvider timeProvider;
     private readonly CancellationTokenSource lifetime = new();
@@ -610,7 +610,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
             StatusText = IsUpdateAvailable
                 ? UpdateAvailableSummary
-                : "Published updater versions loaded from Razer.";
+                : "Latest firmware versions loaded from Razer.";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -776,7 +776,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
             PresentUpdateAvailability(supportPage!, published);
             StatusText = IsUpdateAvailable
                 ? UpdateAvailableSummary
-                : $"Published updater versions last loaded {lastSuccessfulCheckAt.Value.ToLocalTime():g}.";
+                : $"Latest firmware versions last loaded {lastSuccessfulCheckAt.Value.ToLocalTime():g}.";
             return;
         }
 

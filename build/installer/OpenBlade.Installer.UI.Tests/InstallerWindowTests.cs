@@ -114,48 +114,123 @@ public sealed class InstallerWindowTests
             OpenBladeBootstrapperApplication.IsNewerVersion(current, related));
     }
 
+    [Theory]
+    [InlineData("0.1.0", "0.1.0", true)]
+    [InlineData("0.1.0", "0.1.0.0", true)]
+    [InlineData("0.1.0.0", "0.1.0", true)]
+    [InlineData("0.1.0", "0.1.0.1", false)]
+    [InlineData("unknown", "0.1.0", false)]
+    [InlineData("0.1.0", "invalid", false)]
+    public void SameVersionDetectionUsesBurnComparableVersions(
+        string current,
+        string related,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.IsSameVersion(current, related));
+    }
+
     [Fact]
-    public void RelatedBundlePlanChangesOnlyAfterConfirmedNewerVersionOverwrite()
+    public void RelatedBundleExecutionDescribesRemoval()
     {
         Assert.Equal(
             "Removing OpenBlade 2.0.0",
             OpenBladeBootstrapperApplication.DescribeRelatedBundleExecution("2.0.0"));
-        Assert.Equal(
-            RelatedBundlePlanType.Upgrade,
-            OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
-                allowOverwrite: true,
-                detectedNewerBundle: true,
-                detectedSameVersionBundle: false,
-                RelatedBundlePlanType.Downgrade));
-        Assert.Equal(
-            RelatedBundlePlanType.Downgrade,
-            OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
-                allowOverwrite: false,
-                detectedNewerBundle: true,
-                detectedSameVersionBundle: false,
-                RelatedBundlePlanType.Downgrade));
-        Assert.Equal(
-            RelatedBundlePlanType.Downgrade,
-            OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
-                allowOverwrite: true,
-                detectedNewerBundle: false,
-                detectedSameVersionBundle: false,
-                RelatedBundlePlanType.Downgrade));
-        Assert.Equal(
-            RelatedBundlePlanType.None,
-            OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
-                allowOverwrite: true,
-                detectedNewerBundle: false,
-                detectedSameVersionBundle: true,
-                RelatedBundlePlanType.Upgrade));
-        Assert.Equal(
-            RelatedBundlePlanType.Upgrade,
-            OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
-                allowOverwrite: false,
-                detectedNewerBundle: false,
-                detectedSameVersionBundle: true,
-                RelatedBundlePlanType.Upgrade));
+    }
 
+    [Theory]
+    [InlineData(true, true, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Upgrade)]
+    [InlineData(false, true, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Downgrade)]
+    [InlineData(true, false, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Downgrade)]
+    [InlineData(true, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
+    [InlineData(false, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
+    public void RelatedBundlePlanProtectsVersionBoundaries(
+        bool allowOverwrite,
+        bool detectedNewerBundle,
+        bool detectedSameVersionBundle,
+        RelatedBundlePlanType recommendedType,
+        RelatedBundlePlanType expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
+                allowOverwrite,
+                detectedNewerBundle,
+                detectedSameVersionBundle,
+                recommendedType));
+    }
+
+    [Theory]
+    [InlineData(LaunchAction.Install, true, true)]
+    [InlineData(LaunchAction.Repair, true, true)]
+    [InlineData(LaunchAction.Uninstall, true, false)]
+    [InlineData(LaunchAction.Layout, true, false)]
+    [InlineData(LaunchAction.Unknown, true, false)]
+    [InlineData(LaunchAction.Install, false, false)]
+    public void SameVersionReplacementGateHonorsAction(
+        LaunchAction action,
+        bool detectedSameVersionBundle,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.ShouldBlockSameVersionReplacement(
+                action,
+                detectedSameVersionBundle));
+    }
+
+    [Theory]
+    [InlineData(LaunchAction.Install, 0, false)]
+    [InlineData(LaunchAction.Install, 1, false)]
+    [InlineData(LaunchAction.Install, 2, true)]
+    [InlineData(LaunchAction.Repair, 5, true)]
+    [InlineData(LaunchAction.Uninstall, 5, false)]
+    [InlineData(LaunchAction.Layout, 5, false)]
+    [InlineData(LaunchAction.Unknown, 5, false)]
+    public void MultipleRelatedBundleGateHonorsActionAndCount(
+        LaunchAction action,
+        int relatedBundleCount,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.ShouldBlockMultipleRelatedBundles(
+                action,
+                relatedBundleCount));
+    }
+
+    [Theory]
+    [InlineData(LaunchAction.Unknown, Display.Full, LaunchAction.Install)]
+    [InlineData(LaunchAction.Unknown, Display.Passive, LaunchAction.Unknown)]
+    [InlineData(LaunchAction.Layout, Display.Full, LaunchAction.Layout)]
+    [InlineData(LaunchAction.Uninstall, Display.Full, LaunchAction.Uninstall)]
+    public void DetectionGateMapsTheInteractiveReadyPageToInstall(
+        LaunchAction action,
+        Display display,
+        LaunchAction expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.SelectDetectionGateAction(action, display));
+    }
+
+    [Fact]
+    public void MultipleRegistrationsUseAConfigurationError()
+    {
+        Assert.Equal(
+            unchecked((int)0x80070666),
+            OpenBladeBootstrapperApplication.SelectRelatedBundleConflictStatus(
+                multipleRegistrations: false));
+        Assert.Equal(
+            unchecked((int)0x8007064A),
+            OpenBladeBootstrapperApplication.SelectRelatedBundleConflictStatus(
+                multipleRegistrations: true));
+    }
+
+    [Fact]
+    public void ConfirmedOverwriteOnlyForcesTheSetupPackageDuringInstall()
+    {
         Assert.Equal(
             RequestState.ForcePresent,
             OpenBladeBootstrapperApplication.SelectPackageRequestState(
@@ -184,7 +259,11 @@ public sealed class InstallerWindowTests
                 LaunchAction.Install,
                 "OpenBladeVcRuntime",
                 RequestState.Present));
+    }
 
+    [Fact]
+    public void ConfirmedOverwriteOnlySuppressesTheProductVersionConflict()
+    {
         const int productVersionError = unchecked((int)0x80070666);
         Assert.Equal(
             0,
@@ -202,6 +281,32 @@ public sealed class InstallerWindowTests
             OpenBladeBootstrapperApplication.SelectApplyDowngradeStatus(
                 allowOverwrite: true,
                 unexpectedFailure));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void RegistrationConflictHidesUnsafeActionsAndRetainsAvailableUninstall(
+        bool canUninstall)
+    {
+        RunInSta(() =>
+        {
+            InstallerWindow window = new(new OpenBladeBootstrapperApplication(), "1.2.3");
+
+            window.ShowRegistrationConflict("Resolve duplicate registrations.", canUninstall);
+
+            Assert.Equal("Installer cleanup required", window.HeaderSubtitle.Text);
+            Assert.Equal("Resolve existing OpenBlade installers", window.ReadyHeading.Text);
+            Assert.Equal("Resolve duplicate registrations.", window.ReadyMessage.Text);
+            Assert.Equal(Visibility.Collapsed, window.InstallButton.Visibility);
+            Assert.Equal(Visibility.Collapsed, window.RepairButton.Visibility);
+            Assert.Equal(
+                canUninstall ? Visibility.Visible : Visibility.Collapsed,
+                window.UninstallButton.Visibility);
+            Assert.Equal(
+                canUninstall ? Visibility.Visible : Visibility.Collapsed,
+                window.PurgeProfilesCheckBox.Visibility);
+        });
     }
 
     [Fact]

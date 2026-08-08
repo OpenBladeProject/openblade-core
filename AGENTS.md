@@ -240,6 +240,19 @@ dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
 Use `build/Publish.ps1` and the payload validation tests for release or setup
 changes. Do not install or request UAC when the user is unavailable.
 
+Do not run production publishing from a OneDrive-linked worktree. The deep WiX
+upgrade-probe extraction path repeatedly fails during validated cleanup there,
+even after the binaries and installers build successfully. Create a short,
+detached exact-commit worktree under `C:\tmp`, initialize the pinned `captures`
+submodule, and run the unchanged `build/Publish.ps1` from that worktree. Never
+install artifacts left in `.staging` by the failed OneDrive-path run.
+
+On managed hosts, NuGet restore and publish commonly fail in the sandbox with
+`NU1900` because `https://api.nuget.org/v3/index.json` is unreachable. Retry
+the exact command with approved host network access before diagnosing a package
+or project failure; do not change package sources or suppress restore errors to
+work around the sandbox restriction.
+
 On Windows hosts where local execution policy blocks repository `.ps1` files,
 run them in a child process with
 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <script>`. This bypass

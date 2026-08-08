@@ -5,8 +5,16 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Simplified the official firmware version card with a clearer **Latest**
+  column and a consistent action row for the model's Razer support page.
+
 ### Fixed
 
+- Folded GPU clock offsets under their tuning toggle, removed the persistent
+  nested-card highlight, and placed dashboard slider values beside their
+  sliders to keep the cards compact while retaining their circular thumbs.
 - Restored the function-row keyboard-brightness controls on the Razer Blade 16
   RZ09-0581 by advertising the already-admitted brightness command through the
   exact-device lighting capability, and exposed that capability in diagnostic
@@ -30,6 +38,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
   be established on a compatible source.
   In-process failures still attempt bounded hardware cleanup, while markers
   from an earlier Windows boot no longer suppress ordinary startup profiles.
+- Stopped install and repair before Apply when another OpenBlade bundle has the
+  same four-part version, preventing cached related bundles from recursively
+  removing each other. Setup also rejects machines that already contain
+  several related bundle registrations, including mixed older and newer
+  versions, instead of launching their legacy installers into the same cycle.
+  Interactive setup reports the conflict during detection while retaining an
+  available Uninstall escape hatch. Exact development builds must use ordered
+  Nightly revisions for transactional replacement.
 
 ## [0.1.0-nightly.10] - 2026-08-07
 
@@ -73,6 +89,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   the installer artwork and **OpenBlade Setup** identity, labels version-removal
   work clearly, avoids stale equal-version replacement cycles, and gives quiet
   and embedded installs a valid native apply owner.
+
+### Fixed
+
+- Fixed the Tray terminating at startup when loading the new GPU tuning card's
+  description style.
 
 ## [0.1.0-nightly.8] - 2026-08-06
 
@@ -144,6 +165,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a separate GPU tuning switch and clock-offset controls for plugged-in
+  profiles. Offsets now work with Balanced and other power modes, while
+  existing Custom-mode settings migrate automatically. Exact Razer Blade 16
+  RZ09-0581 systems use the Synapse-visible policy ranges regardless of BIOS
+  version, with NVIDIA capability and readback checks gating every write.
 - Added exact-source changelog snapshots to nightly prereleases. After each
   successful publication, the workflow reconstructs any unrecorded nightly
   boundaries and opens or updates a guarded draft documentation pull request

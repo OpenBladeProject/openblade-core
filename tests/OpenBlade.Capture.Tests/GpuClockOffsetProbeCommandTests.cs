@@ -11,14 +11,14 @@ public sealed class GpuClockOffsetProbeCommandTests
         var probe = new StubProbe(new GpuClockOffsetCapabilities(
             "NVIDIA Test GPU",
             new GpuClockOffsetRange(-500, 1000, 150),
-            new GpuClockOffsetRange(-1000, 2000, 300)));
+            new GpuClockOffsetRange(-1000, 3000, 150)));
 
         int result = GpuClockOffsetProbeCommand.Run(probe, output);
 
         Assert.Equal(0, result);
         Assert.Contains("Device=NVIDIA Test GPU", output.ToString());
         Assert.Contains("CoreOffsetMHz=150;Min=-500;Max=1000", output.ToString());
-        Assert.Contains("MemoryOffsetMHz=300;Min=-1000;Max=2000", output.ToString());
+        Assert.Contains("MemoryOffsetMHz=150;Min=-1000;Max=3000", output.ToString());
         Assert.Contains("Success=True", output.ToString());
     }
 

@@ -310,6 +310,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private Task? deferredDisposal;
         private bool closing;
         private bool disposed;
+        // Querying NVML can wake an otherwise idle discrete GPU. Keep ranges
+        // undiscovered until a profile explicitly opts into GPU tuning and a
+        // successful OpenBlade write makes subsequent readback authoritative.
+        private bool gpuClockOffsetsManaged;
         private IProductionLightingPort? lightingPort;
         // Desired Windows playback state, retained independently of any one
         // renderer port so a recycled exact-device session can reapply it.
@@ -586,18 +590,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     await port.QueryPerformanceFanStateAsync(cancellationToken)
                         .ConfigureAwait(false);
                 GpuClockOffsetCapabilities? gpuOffsets =
-                    performanceFan.Performance == PerformancePreset.Custom
+                    gpuClockOffsetsManaged
                         ? ApplyGpuPolicy(gpuClockOffsets.Query())
                         : null;
                 CustomPerformanceSettings? customPerformance =
                     performanceFan.CustomPerformance;
-                if (customPerformance is not null && gpuOffsets is not null)
-                {
-                    customPerformance = customPerformance with
-                    {
-                        GpuClockOffsets = gpuOffsets.Current,
-                    };
-                }
                 LightingSettings? lighting =
                     await ReadLightingStateCoreAsync(cancellationToken).ConfigureAwait(false);
                 LogoLightingMode? logo =
@@ -920,13 +917,38 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             CancellationToken cancellationToken) => SetPerformanceAsync(
                 value,
                 customPerformance: null,
+                gpuClockOffsets: null,
+                cancellationToken);
+
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            CancellationToken cancellationToken) => SetPerformanceAsync(
+                value,
+                customPerformance,
+                gpuClockOffsets: null,
                 cancellationToken);
 
         public async Task SetPerformanceAsync(
             PerformancePreset value,
             CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
             CancellationToken cancellationToken)
         {
+            if (customPerformance?.GpuClockOffsets is { } legacyOffsets)
+            {
+                if (gpuClockOffsets is not null && gpuClockOffsets != legacyOffsets)
+                {
+                    await RejectProductionWrite(
+                        "The GPU clock tuning request is inconsistent.")
+                        .ConfigureAwait(false);
+                    return;
+                }
+
+                customPerformance = customPerformance with { GpuClockOffsets = null };
+                gpuClockOffsets = legacyOffsets;
+            }
+
             if (!batteryFactory.Capabilities.PerformancePresets.Contains(value)
                 || (value == PerformancePreset.Custom
                     ? !CustomPerformanceSettings.IsWellFormed(customPerformance)
@@ -940,18 +962,16 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 return;
             }
 
-            if (value == PerformancePreset.Custom
-                && customPerformance?.GpuClockOffsets is { } preflightOffsets)
+            if (gpuClockOffsets is { } preflightOffsets)
             {
-                GpuClockOffsetCapabilities? capabilities =
-                    batteryFactory.Capabilities.GpuOverclock is null
-                        or { Access: DeviceFeatureAccess.ReadWrite }
-                        ? ApplyGpuPolicy(gpuClockOffsets.Query())
-                        : null;
-                if (capabilities is null || !capabilities.Supports(preflightOffsets))
+                GpuClockOffsetCapabilities? driver = batteryFactory.Capabilities.GpuOverclock
+                    is { Access: DeviceFeatureAccess.ReadWrite }
+                    ? this.gpuClockOffsets.Query()
+                    : null;
+                if (!GpuClockOffsetsSupported(driver, preflightOffsets))
                 {
                     await RejectProductionWrite(
-                        capabilities is null
+                        driver is null
                             ? "GPU clock tuning is unavailable."
                             : "The requested GPU clock offsets are outside the ranges reported by the NVIDIA driver.")
                         .ConfigureAwait(false);
@@ -965,21 +985,21 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     : port.SetPerformanceAsync(value, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
 
-            if (value == PerformancePreset.Custom
-                && customPerformance?.GpuClockOffsets is { } appliedOffsets)
+            if (gpuClockOffsets is { } appliedOffsets)
             {
                 try
                 {
                     // The firmware power mode has already been committed. Complete
                     // the paired NVML operation even if shutdown cancellation raced
                     // with the successful HID write.
-                    gpuClockOffsets.Set(appliedOffsets);
+                    this.gpuClockOffsets.Set(appliedOffsets);
+                    gpuClockOffsetsManaged = true;
                 }
                 catch (BladeWriteException exception)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.Indeterminate,
-                        $"Custom power mode was applied, but GPU clock tuning failed. {exception.Message}",
+                        $"The power mode was applied, but GPU clock tuning failed. {exception.Message}",
                         exception);
                 }
             }
@@ -1018,21 +1038,21 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                GpuClockOffsetCapabilities? capabilities =
-                    batteryFactory.Capabilities.GpuOverclock is null
-                        or { Access: DeviceFeatureAccess.ReadWrite }
-                        ? ApplyGpuPolicy(gpuClockOffsets.Query())
-                        : null;
-                if (capabilities is null || !capabilities.Supports(value))
+                GpuClockOffsetCapabilities? driver = batteryFactory.Capabilities.GpuOverclock
+                    is { Access: DeviceFeatureAccess.ReadWrite }
+                    ? gpuClockOffsets.Query()
+                    : null;
+                if (!GpuClockOffsetsSupported(driver, value))
                 {
                     throw new CapabilityUnavailableException(
-                        capabilities is null
+                        driver is null
                             ? "GPU clock tuning is unavailable."
                             : "The requested GPU clock offsets are outside the ranges reported by the NVIDIA driver.");
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
                 gpuClockOffsets.Set(value);
+                gpuClockOffsetsManaged = true;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -1099,6 +1119,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     MaximumMegahertz = memoryMaximum,
                 },
             };
+        }
+
+        private bool GpuClockOffsetsSupported(
+            GpuClockOffsetCapabilities? driver,
+            GpuClockOffsetSettings requested)
+        {
+            if (driver?.Supports(requested) != true)
+            {
+                return false;
+            }
+
+            GpuOverclockCapabilities? policy = batteryFactory.Capabilities.GpuOverclock;
+            return policy?.IsWellFormed == true
+                && policy.Access == DeviceFeatureAccess.ReadWrite
+                && requested.CoreMegahertz >= policy.CoreOffsetMegahertz.Minimum
+                && requested.CoreMegahertz <= policy.CoreOffsetMegahertz.Maximum
+                && requested.MemoryMegahertz >= policy.MemoryOffsetMegahertz.Minimum
+                && requested.MemoryMegahertz <= policy.MemoryOffsetMegahertz.Maximum;
         }
 
         public Task SetFanControlAsync(

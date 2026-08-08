@@ -25,10 +25,10 @@ public sealed class ProfileStoreTests : IDisposable
                 Performance = PerformancePreset.Custom,
                 CustomPerformance = new CustomPerformanceSettings(
                     CustomPerformanceLevel.High,
-                    CustomPerformanceLevel.Medium)
-                {
-                    GpuClockOffsets = new GpuClockOffsetSettings(125, 500),
-                },
+                    CustomPerformanceLevel.Medium),
+                GpuClockTuning = new GpuClockTuningSettings(
+                    Enabled: true,
+                    new GpuClockOffsetSettings(125, 500)),
                 LaptopBehavior = new LaptopBehaviorProfileSettings(
                     StartupAnimationEnabled: true,
                     FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
@@ -74,6 +74,81 @@ public sealed class ProfileStoreTests : IDisposable
         Assert.Contains(
             $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
             await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
+    public async Task Load_PreviousSchemaMigratesCustomGpuClockOffsetsToProfileTuning()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var offsets = new GpuClockOffsetSettings(125, 500);
+        ProfileSet legacy = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.High,
+                    CustomPerformanceLevel.Medium)
+                {
+                    GpuClockOffsets = offsets,
+                },
+            },
+        };
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(
+                new ProfileDocument(ProfileStore.PreviousSchemaVersion, legacy),
+                ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Null(result.Profiles.PluggedIn.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(
+            new GpuClockTuningSettings(Enabled: true, offsets),
+            result.Profiles.PluggedIn.GpuClockTuning);
+        Assert.Contains(
+            $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
+            await File.ReadAllTextAsync(path),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NormalizeLegacyBatteryProfile_DoesNotMigrateGpuTuningOutsidePluggedIn()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var offsets = new GpuClockOffsetSettings(125, 500);
+        var legacyCustom = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium)
+        {
+            GpuClockOffsets = offsets,
+        };
+        ProfileSet legacy = defaults with
+        {
+            Battery = defaults.Battery with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = legacyCustom,
+            },
+            UsbC = defaults.UsbC with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = legacyCustom,
+            },
+        };
+
+        ProfileSet normalized = ProfileStore.NormalizeLegacyBatteryProfile(
+            legacy,
+            out _);
+
+        Assert.Null(normalized.Battery.GpuClockTuning);
+        Assert.Equal(offsets, normalized.Battery.CustomPerformance?.GpuClockOffsets);
+        Assert.Null(normalized.UsbC.GpuClockTuning);
+        Assert.Equal(offsets, normalized.UsbC.CustomPerformance?.GpuClockOffsets);
     }
 
     [Fact]
@@ -271,7 +346,7 @@ public sealed class ProfileStoreTests : IDisposable
             Assert.IsType<AudioMeterLightingParameters>(
                 result.Profiles.PluggedIn.Lighting.Parameters).DecayMilliseconds);
         string rewritten = await File.ReadAllTextAsync(path);
-        Assert.Contains("\"schemaVersion\": 9", rewritten, StringComparison.Ordinal);
+        Assert.Contains("\"schemaVersion\": 10", rewritten, StringComparison.Ordinal);
         Assert.Contains("\"decayMilliseconds\": 500", rewritten, StringComparison.Ordinal);
     }
 
@@ -318,7 +393,7 @@ public sealed class ProfileStoreTests : IDisposable
             Assert.IsType<AudioMeterLightingParameters>(
                 result.Profiles.PluggedIn.Lighting.Parameters).DecayMilliseconds);
         Assert.Contains(
-            "\"schemaVersion\": 9",
+            "\"schemaVersion\": 10",
             await File.ReadAllTextAsync(path),
             StringComparison.Ordinal);
     }

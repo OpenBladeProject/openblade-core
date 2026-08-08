@@ -21,12 +21,25 @@ public sealed class CapabilityPresentationTests
             "{x:Bind FirmwareUpdateViewModel.IsSupported, Mode=OneWay}",
             Attribute(card, "Visibility"));
         Assert.Contains("FirmwareUpdateViewModel.CheckCommand", presentation);
+        Assert.Contains("Check for updates", presentation);
+        Assert.DoesNotContain("Check Razer", presentation);
         Assert.Contains("FirmwareUpdateViewModel.OfficialSupportUri", presentation);
         Assert.Contains("FirmwareUpdateViewModel.IntervalOptions", presentation);
         Assert.Contains("FirmwareUpdateViewModel.SelectedIntervalOption", presentation);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "MCU versions use Razer's updater label format where it applies. OpenBlade never downloads or installs firmware.",
             presentation);
+        Assert.DoesNotContain("Published updater", presentation);
+        Assert.DoesNotContain(
+            "OpenBlade does not download or install firmware.",
+            presentation);
+        XElement versionsSection = NamedElement(
+            document,
+            "Border",
+            "FirmwareVersionsSection");
+        Assert.Single(versionsSection.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Latest");
         Assert.Equal(2, document.Descendants().Count(element =>
             Attribute(element, "Text") == "Checks at startup when due."));
         Assert.DoesNotContain(
@@ -73,6 +86,29 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             sectionNames,
             host.Elements().Select(section => Attribute(section, "Name")));
+
+        XElement footerSection = NamedElement(
+            document,
+            "Border",
+            "FirmwareFooterSection");
+        Assert.Equal(
+            "{StaticResource SettingsLastRowStyle}",
+            Attribute(footerSection, "Style"));
+        Assert.Equal("0", Attribute(footerSection, "Padding"));
+        XElement supportLink = Assert.Single(footerSection.Elements());
+        Assert.Equal("HyperlinkButton", supportLink.Name.LocalName);
+        Assert.Equal(
+            "{StaticResource ExternalLinkButtonStyle}",
+            Attribute(supportLink, "Style"));
+        Assert.Equal("0,0,8,8", Attribute(supportLink, "CornerRadius"));
+        Assert.Contains(supportLink.Descendants(), element =>
+            Attribute(element, "Text") == "Open official Razer page");
+        XElement assurance = Assert.Single(supportLink.Descendants(), element =>
+            Attribute(element, "Text")
+                == "View firmware downloads and release details on Razer's site.");
+        Assert.Equal("Wrap", Attribute(assurance, "TextWrapping"));
+        Assert.Contains(supportLink.Descendants(), element =>
+            Attribute(element, "Style") == "{StaticResource CardActionIconStyle}");
 
         XElement versionsSection = NamedElement(
             document,
@@ -249,7 +285,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(24, animated.Length);
+        Assert.Equal(25, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -257,6 +293,43 @@ public sealed class CapabilityPresentationTests
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsCustomPerformanceVisible",
                 StringComparison.Ordinal) is true);
+        Assert.Equal(
+            1,
+            animated.Count(element =>
+                Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                    "IsGpuClockTuningVisible",
+                    StringComparison.Ordinal) is true));
+        Assert.Equal(
+            2,
+            animated.Count(element =>
+                Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                    "IsGpuClockTuningEnabled",
+                    StringComparison.Ordinal) is true));
+        XElement gpuClockTuningToggle = document.Descendants()
+            .Single(element => Attribute(element, "Name") == "GpuClockTuningToggle");
+        Assert.Equal(
+            "{Binding IsGpuClockTuningEnabled, Mode=OneWay}",
+            Attribute(gpuClockTuningToggle, "IsOn"));
+        Assert.Equal(
+            "{Binding CanToggleGpuClockTuning}",
+            Attribute(gpuClockTuningToggle, "IsEnabled"));
+        Assert.Equal(
+            "OnGpuClockTuningToggled",
+            Attribute(gpuClockTuningToggle, "Toggled"));
+        Assert.Equal(
+            "{Binding IsGpuClockTuningVisible}",
+            Attribute(
+                gpuClockTuningToggle.Ancestors()
+                    .First(element => element.Name.LocalName == "Border"),
+                "AnimatedVisibility.IsVisible"));
+        XElement customCpuSelector = document.Descendants()
+            .Single(element => Attribute(element, "Name") == "DashboardCustomCpuSelector");
+        Assert.Equal(
+            "{Binding IsCustomPerformanceVisible}",
+            Attribute(
+                customCpuSelector.Ancestors()
+                    .First(element => element.Name.LocalName == "Border"),
+                "AnimatedVisibility.IsVisible"));
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsFixedFanSpeedVisible",
@@ -280,6 +353,97 @@ public sealed class CapabilityPresentationTests
             Attribute(element, "AutomationProperties.Name") == "Export profiles to JSON");
         Assert.Equal("OnExportProfiles", Attribute(export, "Click"));
         Assert.Equal("Export profiles", Attribute(export, "Content"));
+    }
+
+    [Fact]
+    public void MainWindow_FoldsGpuOffsetsUnderANeutralTuningRow()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement toggle = NamedElement(document, "ToggleSwitch", "GpuClockTuningToggle");
+        XElement toggleRow = toggle.Ancestors()
+            .First(element => element.Name.LocalName == "Border");
+        XElement coreSlider = NamedElement(document, "Slider", "GpuCoreClockOffsetSlider");
+        XElement memorySlider = NamedElement(document, "Slider", "GpuMemoryClockOffsetSlider");
+        XElement coreRow = coreSlider.Ancestors()
+            .First(element => element.Name.LocalName == "Border");
+        XElement memoryRow = memorySlider.Ancestors()
+            .First(element => element.Name.LocalName == "Border");
+
+        Assert.Equal(
+            "{StaticResource SettingsNeutralSubcardStyle}",
+            Attribute(toggleRow, "Style"));
+        Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));
+        Assert.Equal("Center", Attribute(toggle, "VerticalAlignment"));
+        Assert.Equal("0", Attribute(toggle, "MinWidth"));
+        Assert.Equal(string.Empty, Attribute(toggle, "OffContent"));
+        Assert.Equal(string.Empty, Attribute(toggle, "OnContent"));
+        Assert.Equal(
+            [coreRow, memoryRow],
+            toggleRow.ElementsAfterSelf()
+                .Where(element => element.Name.LocalName == "Border")
+                .Take(2));
+        Assert.All([coreRow, memoryRow], row =>
+        {
+            Assert.Equal(
+                "{StaticResource SettingsNeutralSubcardStyle}",
+                Attribute(row, "Style"));
+            Assert.Equal(
+                "{Binding IsGpuClockTuningEnabled}",
+                Attribute(row, "AnimatedVisibility.IsVisible"));
+        });
+
+        XElement neutralStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsNeutralSubcardStyle");
+        Assert.Equal(
+            "{StaticResource SettingsSubcardStyle}",
+            Attribute(neutralStyle, "BasedOn"));
+        Assert.Contains(neutralStyle.Elements(), setter =>
+            Attribute(setter, "Property") == "Background"
+            && Attribute(setter, "Value") == "Transparent");
+    }
+
+    [Fact]
+    public void MainWindow_DashboardSliderCardsKeepValuesInline()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement sliderStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "InlineCardSliderStyle");
+        Assert.Equal(
+            "{StaticResource DefaultSliderStyle}",
+            Attribute(sliderStyle, "BasedOn"));
+        string[] sliderNames =
+        [
+            "GpuCoreClockOffsetSlider",
+            "GpuMemoryClockOffsetSlider",
+            "FixedFanSpeedSlider",
+            "DashboardChargeLimitSlider",
+            "DashboardLightingBrightnessSlider",
+            "DashboardAudioMeterColorBoostSlider",
+            "DashboardAudioMeterDecaySlider",
+        ];
+
+        foreach (string name in sliderNames)
+        {
+            XElement slider = NamedElement(document, "Slider", name);
+            XElement row = Assert.IsType<XElement>(slider.Parent);
+
+            Assert.Equal("Grid", row.Name.LocalName);
+            Assert.Equal("12", Attribute(row, "ColumnSpacing"));
+            Assert.Equal(
+                "{StaticResource InlineCardSliderStyle}",
+                Attribute(slider, "Style"));
+            Assert.Contains(row.Elements(), element =>
+                Attribute(element, "Grid.Column") == "1"
+                && element.DescendantsAndSelf().Any(descendant =>
+                    descendant.Name.LocalName == "TextBlock"));
+        }
+
+        Assert.Equal(
+            sliderNames.Length,
+            document.Descendants().Count(element =>
+                element.Name.LocalName == "Slider"
+                && Attribute(element, "Style")
+                    == "{StaticResource InlineCardSliderStyle}"));
     }
 
     [Fact]
@@ -396,7 +560,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("80", Attribute(chargeLimit, "Maximum"));
         Assert.Equal("5", Attribute(chargeLimit, "StepFrequency"));
         Assert.Equal("StepValues", Attribute(chargeLimit, "SnapsTo"));
-        Assert.Equal("Stretch", Attribute(chargeLimit, "HorizontalAlignment"));
+        Assert.Equal(
+            "{StaticResource InlineCardSliderStyle}",
+            Attribute(chargeLimit, "Style"));
         Assert.Equal(
             "{StaticResource SettingsRowStyle}",
             Attribute(
@@ -893,7 +1059,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("ms-appx:///Assets/Brand/OpenBlade.png", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Copy version information", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Equal(
-            4,
+            5,
             aboutPage.Descendants().Count(element =>
                 element.Name.LocalName == "HyperlinkButton"
                 && Attribute(element, "Style") == "{StaticResource ExternalLinkButtonStyle}"));
@@ -904,7 +1070,7 @@ public sealed class CapabilityPresentationTests
                     "{StaticResource IconActionButtonStyle}"
                     or "{StaticResource ExternalLinkButtonStyle}")
             .ToArray();
-        Assert.Equal(5, supportActions.Length);
+        Assert.Equal(6, supportActions.Length);
         Assert.All(
             supportActions,
             action =>
@@ -991,7 +1157,7 @@ public sealed class CapabilityPresentationTests
             .SelectMany(element => element.Descendants()
                 .Where(descendant => descendant.Name.LocalName == "FontIcon"))
             .ToArray();
-        Assert.Equal(5, cardActionIcons.Length);
+        Assert.Equal(6, cardActionIcons.Length);
         Assert.All(
             cardActionIcons,
             icon =>
