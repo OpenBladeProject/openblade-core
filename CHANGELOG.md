@@ -7,8 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Fixed an `IPC request body is invalid` error when the dashboard Power mode
-  picker selected Custom after editing GPU clock tuning from a legacy profile.
+- Fixed `IPC request body is invalid` errors and rejected profile saves after
+  editing GPU clock tuning from a legacy profile.
 
 ## [0.1.0-nightly.11] - 2026-08-08
 
