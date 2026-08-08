@@ -147,10 +147,11 @@ public sealed class TrayDashboardPreferenceTests
     [Theory]
     [InlineData(-1, 100)]
     [InlineData(0, 100)]
-    [InlineData(125, 3)]
-    [InlineData(250, 0)]
+    [InlineData(100, 84)]
+    [InlineData(200, 50)]
+    [InlineData(400, 0)]
     [InlineData(500, 0)]
-    public void PopupRevealUsesBrightnessOsdEaseOut(
+    public void PopupRevealUsesSmoothDashboardMotion(
         int elapsedMilliseconds,
         int expectedPosition)
     {
@@ -164,17 +165,17 @@ public sealed class TrayDashboardPreferenceTests
     }
 
     [Fact]
-    public void PopupHideUsesComplementaryBrightnessOsdEaseIn()
+    public void PopupMotionCompletesAtFourHundredMilliseconds()
     {
         Assert.Equal(
-            3,
+            50,
             WindowsPopupSlidePolicy.ResolvePosition(
                 start: 0,
                 end: 100,
-                TimeSpan.FromMilliseconds(125),
+                TimeSpan.FromMilliseconds(200),
                 hiding: true));
-        Assert.True(WindowsPopupSlidePolicy.IsComplete(TimeSpan.FromMilliseconds(250)));
-        Assert.False(WindowsPopupSlidePolicy.IsComplete(TimeSpan.FromMilliseconds(249)));
+        Assert.True(WindowsPopupSlidePolicy.IsComplete(TimeSpan.FromMilliseconds(400)));
+        Assert.False(WindowsPopupSlidePolicy.IsComplete(TimeSpan.FromMilliseconds(399)));
     }
 
     [Theory]
@@ -256,40 +257,28 @@ public sealed class TrayDashboardPreferenceTests
         Assert.Equal(new TrayDashboardRect(8, 48, 420, 520), result);
     }
 
-    [Theory]
-    [InlineData(96, 536)]
-    [InlineData(144, 548)]
-    [InlineData(192, 560)]
-    public void BottomRevealScalesUpwardOffsetFromTheBottomEdge(
-        int dpi,
-        int expectedStartY)
+    [Fact]
+    public void BottomRevealStagesTheWholePopupBelowTheWorkArea()
     {
         TrayDashboardRevealGeometry result =
             TrayDashboardPlacement.ResolveRevealGeometry(
                 new TrayDashboardPoint(1900, 1075),
                 new TrayDashboardRect(0, 0, 1920, 1040),
-                new TrayDashboardRect(1492, 512, 420, 520),
-                WindowPlacementPolicy.ScaleToPixels(24, dpi));
+                new TrayDashboardRect(1492, 512, 420, 520));
 
-        Assert.Equal(new TrayDashboardRevealGeometry(1040, expectedStartY), result);
+        Assert.Equal(new TrayDashboardRevealGeometry(1040), result);
     }
 
-    [Theory]
-    [InlineData(96, 24)]
-    [InlineData(144, 12)]
-    [InlineData(192, 0)]
-    public void TopRevealScalesDownwardOffsetFromTheTopEdge(
-        int dpi,
-        int expectedStartY)
+    [Fact]
+    public void TopRevealStagesTheWholePopupAboveTheWorkArea()
     {
         TrayDashboardRevealGeometry result =
             TrayDashboardPlacement.ResolveRevealGeometry(
                 new TrayDashboardPoint(20, 0),
                 new TrayDashboardRect(0, 40, 1280, 680),
-                new TrayDashboardRect(8, 48, 420, 520),
-                WindowPlacementPolicy.ScaleToPixels(24, dpi));
+                new TrayDashboardRect(8, 48, 420, 520));
 
-        Assert.Equal(new TrayDashboardRevealGeometry(-480, expectedStartY), result);
+        Assert.Equal(new TrayDashboardRevealGeometry(-480), result);
     }
 
     [Fact]

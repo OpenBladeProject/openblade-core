@@ -15,7 +15,6 @@ namespace OpenBlade.Tray;
 public sealed partial class TrayDashboardWindow : Window, IDisposable
 {
     private const int PopupWidth = 360;
-    private const int RevealOffsetDip = 24;
     private const uint MonitorDefaultToNearest = 2;
 
     private readonly Action openMainWindow;
@@ -36,6 +35,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private nint revealTaskbarHandle;
     private TrayDashboardRect revealPlacement;
     private int revealStartY;
+    private int revealPrimingFrames;
     private bool revealAnimationsEnabled;
     private bool revealAnimationActive;
     private bool awaitingRevealActivation;
@@ -290,10 +290,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             TrayDashboardPlacement.ResolveRevealGeometry(
                 anchor,
                 physicalWorkArea,
-                placement,
-                WindowPlacementPolicy.ScaleToPixels(
-                    RevealOffsetDip,
-                    checked((int)nativeDpi)));
+                placement);
         return new ResolvedPlacement(
             placement,
             monitor,
@@ -330,13 +327,15 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             CancelRevealAnimation();
             revealPlacement = placement.Rect;
             int stagingY = placement.Reveal.StagingY;
-            revealStartY = placement.Reveal.StartY;
+            revealStartY = stagingY;
             revealWindowHandle = WindowNative.GetWindowHandle(this);
             revealTaskbarHandle =
                 WindowsPopupPositioner.FindTaskbarForMonitor(placement.Monitor);
             revealStartedTimestamp = 0;
+            revealPrimingFrames = 0;
             revealAnimationsEnabled = WindowsMotionSettings.AreAnimationsEnabled();
             awaitingRevealActivation = !editing;
+            WindowsPopupPositioner.DisableTransitions(revealWindowHandle);
 
             var staged = new TrayDashboardRect(
                 placement.Rect.X,
@@ -345,7 +344,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 placement.Rect.Height);
             AppWindow.MoveAndResize(ToRectInt32(staged), displayArea);
             Root.UpdateLayout();
-            AppWindow.Show(activateWindow: false);
+            AppWindow.Show(activateWindow: !editing);
             WindowsPopupPositioner.PositionBehindTaskbar(
                 revealWindowHandle,
                 revealTaskbarHandle,
@@ -374,9 +373,13 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             return;
         }
 
-        if (revealStartedTimestamp == 0)
+        if (revealPrimingFrames < 2)
         {
-            revealStartedTimestamp = Stopwatch.GetTimestamp();
+            revealPrimingFrames++;
+            if (revealPrimingFrames == 2)
+            {
+                revealStartedTimestamp = Stopwatch.GetTimestamp();
+            }
             return;
         }
 
@@ -410,6 +413,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         if (awaitingRevealActivation)
         {
             awaitingRevealActivation = false;
+            AppWindow.Show(activateWindow: true);
             Activate();
             try
             {
@@ -461,6 +465,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         revealAnimationActive = false;
         awaitingRevealActivation = false;
         revealStartedTimestamp = 0;
+        revealPrimingFrames = 0;
         revealAnimationsEnabled = false;
     }
 
@@ -476,6 +481,14 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 Height = GridLength.Auto,
             });
         }
+    }
+
+    private void OnRootSizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        Thickness padding = DashboardScroller.Padding;
+        DashboardContent.Width = Math.Max(
+            0,
+            args.NewSize.Width - padding.Left - padding.Right);
     }
 
     private IReadOnlyDictionary<TrayDashboardControlKind, FrameworkElement> TilesByKind() =>

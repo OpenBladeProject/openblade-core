@@ -6,7 +6,8 @@
     Title="OpenBlade quick controls">
     <Grid x:Name="Root"
           Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
-          KeyDown="OnRootKeyDown">
+          KeyDown="OnRootKeyDown"
+          SizeChanged="OnRootSizeChanged">
         <Grid.Resources>
             <local:Int32DoubleConverter x:Key="Int32Double" />
             <Style x:Key="QuickTileSurfaceStyle" TargetType="Border">
@@ -46,20 +47,27 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ScrollViewer Padding="14,14,14,10"
+        <ScrollViewer x:Name="DashboardScroller"
+                      Padding="14,14,14,10"
                       HorizontalContentAlignment="Stretch"
                       HorizontalScrollMode="Disabled"
                       HorizontalScrollBarVisibility="Hidden"
                       VerticalScrollMode="Enabled"
                       VerticalScrollBarVisibility="Auto">
-            <StackPanel HorizontalAlignment="Stretch" Spacing="10">
-                <Grid x:Name="ControlGrid" ColumnSpacing="10" RowSpacing="10">
+            <StackPanel x:Name="DashboardContent"
+                        MinWidth="0"
+                        HorizontalAlignment="Left"
+                        Spacing="10">
+                <Grid x:Name="ControlGrid"
+                      MinWidth="0"
+                      ColumnSpacing="10"
+                      RowSpacing="10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <Grid x:Name="PerformanceTile">
+                    <Grid x:Name="PerformanceTile" MinWidth="0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -87,7 +95,7 @@
                                    Style="{StaticResource QuickTileLabelStyle}" />
                     </Grid>
 
-                    <Grid x:Name="FansTile">
+                    <Grid x:Name="FansTile" MinWidth="0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -115,7 +123,7 @@
                                    Style="{StaticResource QuickTileLabelStyle}" />
                     </Grid>
 
-                    <Grid x:Name="BatteryTile">
+                    <Grid x:Name="BatteryTile" MinWidth="0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -163,7 +171,7 @@
                                    Style="{StaticResource QuickTileLabelStyle}" />
                     </Grid>
 
-                    <Grid x:Name="LightingTile">
+                    <Grid x:Name="LightingTile" MinWidth="0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />

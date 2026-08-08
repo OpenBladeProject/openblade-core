@@ -7,6 +7,7 @@ namespace OpenBlade.Tray;
 internal static class WindowsPopupPositioner
 {
     private const uint SetWindowNoActivate = 0x0010;
+    private const uint DisableTransitionsAttribute = 3;
     private const string PrimaryTaskbarClass = "Shell_TrayWnd";
     private const string SecondaryTaskbarClass = "Shell_SecondaryTrayWnd";
     private static readonly nint TopmostWindow = new(-1);
@@ -35,6 +36,17 @@ internal static class WindowsPopupPositioner
         int width,
         int height) =>
         Position(window, TopmostWindow, x, y, width, height);
+
+    public static void DisableTransitions(nint window)
+    {
+        int disabled = 1;
+        int result = DwmSetWindowAttribute(
+            window,
+            DisableTransitionsAttribute,
+            ref disabled,
+            sizeof(int));
+        Marshal.ThrowExceptionForHR(result);
+    }
 
     public static nint FindTaskbarForMonitor(nint monitor)
     {
@@ -165,4 +177,11 @@ internal static class WindowsPopupPositioner
 
     [DllImport("user32.dll")]
     private static extern nint MonitorFromWindow(nint window, uint flags);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+        nint window,
+        uint attribute,
+        ref int value,
+        int valueSize);
 }

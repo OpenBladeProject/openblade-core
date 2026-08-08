@@ -22,9 +22,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Fixed the quick-controls popup's blank black opening frame, raw lighting
-  option text, missing fan icon, clipped expanded selector, and truncated
-  status labels. The popup now uses the brightness overlay's Windows flyout
-  timing and stages its first composed frame behind the taskbar.
+  option text, missing fan icon, clipped controls, and truncated status labels.
+  The popup now stages two composed frames behind the taskbar, rises fully into
+  view with slower motion, takes focus so an outside click dismisses it, and
+  constrains its tiles to the live viewport at every display scale.
 - Showed the effective **Off** defaults for Gaming mode's Windows-key and
   Alt+Tab blocks instead of presenting missing profile overrides as **Not set**.
 

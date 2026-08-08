@@ -1773,7 +1773,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(true)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(false)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("The actual tray popup stays open and updates while you edit.", mainWindow, StringComparison.Ordinal);
-        Assert.Contains("AppWindow.Show(activateWindow: false)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("AppWindow.Show(activateWindow: !editing)", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("private const int PopupWidth = 360", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("presenter.IsAlwaysOnTop = true", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("MonitorFromPoint(", dashboardWindow, StringComparison.Ordinal);
@@ -1824,6 +1824,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Root.UpdateLayout()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsMotionSettings.AreAnimationsEnabled()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupPositioner.PositionTopmost(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("WindowsPopupPositioner.DisableTransitions(", dashboardWindow, StringComparison.Ordinal);
         int revealRendering = dashboardWindow.IndexOf(
             "private void OnRevealRendering(",
             StringComparison.Ordinal);
@@ -1833,7 +1834,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         string revealRenderingBody = dashboardWindow[revealRendering..cancelReveal];
         int primeFrame = revealRenderingBody.IndexOf(
-            "if (revealStartedTimestamp == 0)",
+            "if (revealPrimingFrames < 2)",
             StringComparison.Ordinal);
         int elapsedFrame = revealRenderingBody.IndexOf(
             "TimeSpan elapsed =",
@@ -1846,6 +1847,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains(
             "return;",
             revealRenderingBody[primeFrame..elapsedFrame],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AppWindow.Show(activateWindow: true);",
+            revealRenderingBody,
             StringComparison.Ordinal);
         Assert.Contains("TaskbarByMonitor.TryGetValue", popupPositioner, StringComparison.Ordinal);
         Assert.Contains("IsTaskbarForMonitor(cached, monitor)", popupPositioner, StringComparison.Ordinal);
@@ -1867,6 +1872,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("x:Name=\"BatteryPowerStatus\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"More\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("DisplayMemberPath=\"Label\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("SizeChanged=\"OnRootSizeChanged\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"DashboardContent\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("Glyph=\"&#xE895;\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Glyph=\"&#xE9D0;\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardBatteryPowerFlowLabel", dashboardXaml, StringComparison.Ordinal);

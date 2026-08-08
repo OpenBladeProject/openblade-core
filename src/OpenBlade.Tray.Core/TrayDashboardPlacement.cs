@@ -11,7 +11,7 @@ public readonly record struct TrayDashboardRect(int X, int Y, int Width, int Hei
     public int Bottom => checked(Y + Height);
 }
 
-public readonly record struct TrayDashboardRevealGeometry(int StagingY, int StartY);
+public readonly record struct TrayDashboardRevealGeometry(int StagingY);
 
 public static class TrayDashboardPlacement
 {
@@ -62,16 +62,14 @@ public static class TrayDashboardPlacement
     }
 
     /// <summary>
-    /// Resolves physical-pixel staging and animation coordinates from the same
+    /// Resolves a physical-pixel off-work-area staging coordinate from the same
     /// top-or-bottom edge decision used by <see cref="Resolve"/>.
     /// </summary>
     public static TrayDashboardRevealGeometry ResolveRevealGeometry(
         TrayDashboardPoint anchor,
         TrayDashboardRect workArea,
-        TrayDashboardRect placement,
-        int offsetPixels)
+        TrayDashboardRect placement)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offsetPixels);
         if (workArea.Width <= 0 || workArea.Height <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(workArea));
@@ -83,16 +81,11 @@ public static class TrayDashboardPlacement
 
         if (UsesBottomEdge(anchor, workArea))
         {
-            int stagingY = workArea.Bottom;
-            return new TrayDashboardRevealGeometry(
-                stagingY,
-                Math.Min(stagingY, checked(placement.Y + offsetPixels)));
+            return new TrayDashboardRevealGeometry(workArea.Bottom);
         }
 
-        int topStagingY = checked(workArea.Y - placement.Height);
         return new TrayDashboardRevealGeometry(
-            topStagingY,
-            Math.Max(topStagingY, checked(placement.Y - offsetPixels)));
+            checked(workArea.Y - placement.Height));
     }
 
     private static bool UsesBottomEdge(
