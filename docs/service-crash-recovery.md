@@ -22,15 +22,19 @@ Unexpected-exit recovery performs these operations in order:
 
 1. Re-admit the exact model, firmware, USB identity, and command capabilities,
    then establish a read-only confirmed-state baseline.
-2. Wait for an authorized active-user request before recovering user-owned
+2. If retained firmware state is manual on full AC or battery power, establish
+   one device-admitted maximum-RPM safety floor without loading or applying a
+   user's profile. Hand that owned floor back to firmware Automatic once if the
+   machine moves to USB-C; do not retry an indeterminate handback.
+3. Wait for an authorized active-user request before recovering user-owned
    producers. The machine bootstrap is not treated as that user's saved intent.
-3. Load the active user's profiles and persistent overrides without applying
+4. Load the active user's profiles and persistent overrides without applying
    ordinary profile writes, then reclassify the current adapter and read
    exact-device state again while that session remains authoritative.
-4. Compare confirmed state with that user's active desired state. Differences remain
+5. Compare confirmed state with that user's active desired state. Differences remain
    latched as external changes.
-5. Skip ordinary profile and laptop-behavior writes.
-6. Resume only the continuously owned producers that still pass their normal
+6. Skip ordinary profile and laptop-behavior writes.
+7. Resume only the continuously owned producers that still pass their normal
    write gates.
 
 The run marker is recovery evidence, not hardware admission. Every recovery
@@ -48,7 +52,7 @@ into unexpected-exit recovery.
 | Producer | Recovery behavior |
 | --- | --- |
 | Keyboard Driver mode | Maintenance runs only after the first exact-device observation. Unknown status remains fail-closed for function-row input. |
-| Manual fan curve | Recovery requires a retained firmware manual state and no fan drift. The service enters the device-admitted maximum target before reading a fresh temperature sample; unavailable CPU telemetry keeps that maximum. A successful target write establishes ownership for the new service process. |
+| Manual fan curve | A retained firmware manual state on full AC or battery receives one device-admitted maximum target even before a user signs in, so a dead host process cannot leave a low target indefinitely. The service keeps user intent deferred, hands its temporary floor back to Automatic on USB-C, and reconciles that owned state with the authorized user's saved intent before drift classification. A manual curve starts only after that classification and a fresh temperature sample; unavailable CPU telemetry keeps the admitted maximum. |
 | Keyboard lighting renderer | Only a previously confirmed `LastKnownLighting` value is eligible. External lighting drift blocks restoration unless the user enabled the existing override policy. |
 | Persistent overrides | Overrides remain visible as desired intent, but recovery does not use them to bypass external-change latches or perform ordinary profile writes. |
 | Session Agent renderers | Service reconnect notifications cancel the old Ambient Awareness or Audio Meter request and dispose its producer before a new confirmed ownership status starts another one. Reactive input and LampArray observation use the same reconnect status feed. |
@@ -65,9 +69,9 @@ The following tests form the crash-recovery contract:
 | --- | --- |
 | Durable distinction between graceful, same-boot failure, and system restart | `ServiceRunMarkerStoreTests`, `WorkerTests.UnexpectedBackgroundFailure_IsReportedToCleanup`, `WorkerTests.UnexpectedBackgroundFailure_AttemptsCleanupButRetainsRunMarker`, and `WorkerTests.RunMarker_IsClearedOnlyAfterConfirmedOrDeliberatelySkippedCleanup` |
 | Observation before recovery writes | `ServiceControlRuntimeTests.UnexpectedRestart_ObservesBeforeRecoveringOwnedProducers` and `ServiceControlRuntimeTests.UnexpectedRestart_DefersOwnedRecoveryUntilUserAndPowerAreCompatible` |
-| Thermally safe manual-curve recovery without telemetry at the admitted device maximum | `ServiceControlRuntimeTests.UnexpectedRestart_ObservesBeforeRecoveringOwnedProducers` |
+| Thermally safe recovery at the admitted device maximum, including signed-out startup and USB-C handback | `ServiceControlRuntimeTests.UnexpectedRestart_ObservesBeforeRecoveringOwnedProducers`, `ServiceControlRuntimeTests.UnexpectedRestart_WithoutActiveUserAppliesOneThermalSafetyFloor`, `ServiceControlRuntimeTests.UnexpectedRestart_UsbCHandbackWaitsForUserBeforeReflooringOnAc`, and `ServiceControlRuntimeTests.UnexpectedRestart_IndeterminateUsbCHandbackIsNotRetried` |
 | External changes, persistent overrides, initial user activation, and delayed power classification | `ServiceControlRuntimeTests.UnexpectedRestart_LatchesExternalChangesWithoutRecoveryWrites`, `ServiceControlRuntimeTests.UnexpectedRestart_InitialUserActivationClassifiesRecoveryDrift`, `ServiceControlRuntimeTests.UnexpectedRestart_DefersOwnedRecoveryUntilUserAndPowerAreCompatible`, and `ServiceControlRuntimeTests.UnexpectedRestart_DelayedInitialPowerClassificationPreservesRecoveryDrift` |
-| Session-switch, late lighting changes, and pre-submission cancellation safety | `ServiceControlRuntimeTests.UnexpectedRestart_SessionLossDuringObservationDoesNotRecoverStaleUser`, `ServiceControlRuntimeTests.UnexpectedRestart_LightingChangeAfterClassificationHonorsPolicy`, `ServiceControlRuntimeTests.UnexpectedRestart_PreSubmissionCancellationKeepsRecoveryPending`, and `ServiceControlRuntimeTests.UnexpectedRestart_PreLightingCancellationKeepsRestorePending` |
+| Session-switch, late lighting changes, and pre-submission cancellation safety | `ServiceControlRuntimeTests.UnexpectedRestart_SessionLossDuringObservationDoesNotRecoverStaleUser`, `ServiceControlRuntimeTests.UnexpectedRestart_LightingChangeAfterClassificationHonorsPolicy`, `ServiceControlRuntimeTests.UnexpectedRestart_ThermalFloorPreSubmissionCancellationRearmsAttempt`, and `ServiceControlRuntimeTests.UnexpectedRestart_PreLightingCancellationKeepsRestorePending` |
 | Delayed device arrival after the bounded recovery attempt | `ServiceControlRuntimeTests.UnexpectedRestart_DeviceArrivingAfterRecoveryAttemptDoesNotStartCurve` |
 | Startup sequencing and cancellation | `ServiceStartupCoordinatorTests.InitializeAsync_UnclearedRunMarkerUsesOwnedRecoverySequence` |
 | Bounded SCM restart policy | `WindowsSetupPlatformServiceTests.InstallService_ConfiguresBoundedRestartRecovery` |

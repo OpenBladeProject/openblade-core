@@ -134,9 +134,21 @@ public sealed class ControlCoordinator
     internal Task<ScopedApplyOutcome> ApplyFanControlOutcomeAsync(
         FanControlSettings value,
         CancellationToken cancellationToken,
-        Func<bool>? writeAllowed = null)
+        Func<bool>? writeAllowed = null,
+        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null)
     {
         ArgumentNullException.ThrowIfNull(value);
+        Func<ConfirmedDeviceState, string?>? manualEntryBlockReason =
+            DeviceSubsystemOrder.IsManualFanMode(value.Mode)
+                ? state => IsConfirmedManualFanWriteBaseline(state)
+                    ? null
+                    : "Fixed and manual fan control require confirmed Balanced Automatic fans to enter manual mode, or an already-confirmed manual fan state."
+                : null;
+        Func<ConfirmedDeviceState, string?>? combinedBlockReason =
+            initialStateBlockReason is null
+                ? manualEntryBlockReason
+                : state => initialStateBlockReason(state)
+                    ?? manualEntryBlockReason?.Invoke(state);
         return ApplyScopedAsync(
             DeviceSubsystem.Fans,
             "Fans",
@@ -147,11 +159,7 @@ public sealed class ControlCoordinator
             state => FanModeMatches(state.Fans, value.Mode),
             token => device.SetFanControlAsync(value, token),
             cancellationToken,
-            DeviceSubsystemOrder.IsManualFanMode(value.Mode)
-                ? state => IsConfirmedManualFanWriteBaseline(state)
-                        ? null
-                        : "Fixed and manual fan control require confirmed Balanced Automatic fans to enter manual mode, or an already-confirmed manual fan state."
-                : null,
+            combinedBlockReason,
             writeAllowed: writeAllowed,
             acceptSetterCompletionWithoutReadback:
                 DeviceSubsystemOrder.IsManualFanMode(value.Mode),
@@ -161,7 +169,8 @@ public sealed class ControlCoordinator
             // Firmware exposes only Automatic versus manual state. It cannot
             // read back a fixed target or distinguish Fixed, Curve and Maximum,
             // so every explicit manual-mode action must submit its RPM target.
-            forceWrite: DeviceSubsystemOrder.IsManualFanMode(value.Mode));
+            forceWrite: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
+                || initialStateBlockReason is not null);
     }
 
     internal async Task<ScopedApplyOutcome> ApplyFanControlTransitionOutcomeAsync(
