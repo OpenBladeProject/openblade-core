@@ -8,7 +8,8 @@ public readonly record struct TrayDashboardControlPlacement(
 
 public sealed record TrayDashboardLayout(
     IReadOnlyList<TrayDashboardControlPlacement> Controls,
-    int RowCount);
+    int RowCount,
+    TrayDashboardControlKind? ExpandedControl);
 
 public static class TrayDashboardLayoutPolicy
 {
@@ -24,11 +25,18 @@ public static class TrayDashboardLayoutPolicy
     {
         ArgumentNullException.ThrowIfNull(controls);
 
+        TrayDashboardControlPreference[] visibleControls = controls
+            .Where(control => control.IsVisible)
+            .ToArray();
+        TrayDashboardControlKind? effectiveExpandedControl = expandedControl is { } selected
+            && visibleControls.Any(control => control.Kind == selected)
+                ? selected
+                : null;
         var placements = new List<TrayDashboardControlPlacement>();
         int row = 0;
         int column = 0;
-        foreach (TrayDashboardControlPreference control in controls.Where(control =>
-                     control.IsVisible && control.Kind != expandedControl))
+        foreach (TrayDashboardControlPreference control in visibleControls.Where(control =>
+                     control.Kind != effectiveExpandedControl))
         {
             bool wide = control.Size == TrayDashboardControlSize.Wide;
             if (wide && column != 0)
@@ -55,15 +63,18 @@ public static class TrayDashboardLayoutPolicy
         }
 
         int rowCount = checked(row + (column == 0 ? 0 : 1));
-        return new TrayDashboardLayout(placements, rowCount);
+        return new TrayDashboardLayout(
+            placements,
+            rowCount,
+            effectiveExpandedControl);
     }
 
-    public static int CalculatePreferredHeight(
-        TrayDashboardLayout layout,
-        bool hasExpandedControl)
+    public static int CalculatePreferredHeight(TrayDashboardLayout layout)
     {
         ArgumentNullException.ThrowIfNull(layout);
-        int expandedHeight = hasExpandedControl ? ExpandedControlHeightDip : 0;
+        int expandedHeight = layout.ExpandedControl is not null
+            ? ExpandedControlHeightDip
+            : 0;
         return Math.Clamp(
             checked(BaseHeightDip + (layout.RowCount * ControlRowHeightDip) + expandedHeight),
             MinimumHeightDip,

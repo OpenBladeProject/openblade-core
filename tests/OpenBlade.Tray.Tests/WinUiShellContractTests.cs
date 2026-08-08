@@ -1730,7 +1730,6 @@ public sealed class WinUiShellContractTests
         Assert.Contains("AppWindow.Show(activateWindow: !editing)", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("private const int PopupWidth = 360", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("presenter.IsAlwaysOnTop = true", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("Activate();", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("MonitorFromPoint(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("GetDpiForMonitor(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("MonitorDpiType.Effective", dashboardWindow, StringComparison.Ordinal);
@@ -1752,9 +1751,16 @@ public sealed class WinUiShellContractTests
             "checked(workArea.Y + workArea.Height - 1)",
             beginEditBody,
             StringComparison.Ordinal);
+        int showAt = dashboardWindow.IndexOf(
+            "private void ShowAt(",
+            StringComparison.Ordinal);
         int tryPosition = dashboardWindow.IndexOf(
             "private void TryPositionAt(",
+            showAt,
             StringComparison.Ordinal);
+        string showAtBody = dashboardWindow[showAt..tryPosition];
+        Assert.Contains("if (!editing)", showAtBody, StringComparison.Ordinal);
+        Assert.Contains("Activate();", showAtBody, StringComparison.Ordinal);
         int position = dashboardWindow.IndexOf(
             "private void PositionAt(",
             tryPosition,
@@ -1764,6 +1770,10 @@ public sealed class WinUiShellContractTests
             dashboardWindow[tryPosition..position],
             StringComparison.Ordinal);
         Assert.Contains("TrayDashboardInteractionPolicy.ShouldSuppressReopen", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains(
+            "SetExpandedControl(layout.ExpandedControl)",
+            dashboardWindow,
+            StringComparison.Ordinal);
 
         Assert.Contains("x:Name=\"ControlGrid\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ExpandedControlContainer\"", dashboardXaml, StringComparison.Ordinal);
@@ -1775,6 +1785,18 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Preview", dashboardXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("ControlGrid.Children.Remove", dashboardWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("ControlGrid.Children.Add", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains(
+            "IsEnabled=\"{x:Bind IsSizeEnabled, Mode=OneWay}\"",
+            mainXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "TrayDashboardPreferenceDefaults.UpdateSizeAvailability(",
+            mainWindow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "GetEffectiveExpandedControl()",
+            mainWindow,
+            StringComparison.Ordinal);
     }
 
     [Fact]

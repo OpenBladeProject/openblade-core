@@ -40,6 +40,7 @@ public sealed record TrayDashboardPreference(
 public sealed class TrayDashboardControlOption : INotifyPropertyChanged
 {
     private bool isVisible;
+    private bool isSizeEnabled = true;
     private TrayDashboardControlSize size;
 
     public TrayDashboardControlOption(
@@ -66,6 +67,23 @@ public sealed class TrayDashboardControlOption : INotifyPropertyChanged
 
     public IReadOnlyList<TrayDashboardControlSize> AvailableSizes { get; } =
         Enum.GetValues<TrayDashboardControlSize>();
+
+    public bool IsSizeEnabled
+    {
+        get => isSizeEnabled;
+        internal set
+        {
+            if (isSizeEnabled == value)
+            {
+                return;
+            }
+
+            isSizeEnabled = value;
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(IsSizeEnabled)));
+        }
+    }
 
     public bool IsVisible
     {
@@ -298,6 +316,17 @@ public static class TrayDashboardPreferenceDefaults
                 StatusLabel(status.Kind),
                 status.IsVisible))
             .ToArray();
+    }
+
+    public static void UpdateSizeAvailability(
+        IEnumerable<TrayDashboardControlOption> options,
+        TrayDashboardControlKind? expandedControl)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        foreach (TrayDashboardControlOption option in options)
+        {
+            option.IsSizeEnabled = option.Kind != expandedControl;
+        }
     }
 
     private static string StatusLabel(TrayDashboardStatusItemKind kind) => kind switch

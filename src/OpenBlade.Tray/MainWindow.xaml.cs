@@ -2945,6 +2945,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         trayDashboardCustomizationActive = true;
         var controls = new ObservableCollection<TrayDashboardControlOption>(
             TrayDashboardPreferenceDefaults.CreateControlOptions(trayDashboardPreference));
+        TrayDashboardPreferenceDefaults.UpdateSizeAvailability(
+            controls,
+            trayDashboardPreference.ExpandedControl);
         var statusItems = new ObservableCollection<TrayDashboardStatusItemOption>(
             TrayDashboardPreferenceDefaults.CreateStatusOptions(trayDashboardPreference));
         IReadOnlyList<TrayDashboardExpandedControlOption> expandedOptions =
@@ -2999,10 +3002,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             additionalContent,
             maxListHeight: 350);
 
+        TrayDashboardControlKind? GetEffectiveExpandedControl()
+        {
+            TrayDashboardControlKind? selected =
+                (expandedSelector.SelectedItem as TrayDashboardExpandedControlOption)?.Kind;
+            return selected is { } kind
+                && controls.Any(option => option.Kind == kind && option.IsVisible)
+                    ? kind
+                    : null;
+        }
+
         void ApplyEditor()
         {
-            TrayDashboardControlKind? expanded =
-                (expandedSelector.SelectedItem as TrayDashboardExpandedControlOption)?.Kind;
+            TrayDashboardControlKind? expanded = GetEffectiveExpandedControl();
             ApplyTrayDashboardPreference(new TrayDashboardPreference(
                 controls
                     .Select(option => new TrayDashboardControlPreference(
@@ -3019,9 +3031,24 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 queueSave: true);
         }
 
-        PropertyChangedEventHandler optionChanged = (_, _) => ApplyEditor();
+        PropertyChangedEventHandler optionChanged = (_, args) =>
+        {
+            if (args.PropertyName != nameof(TrayDashboardControlOption.IsSizeEnabled))
+            {
+                TrayDashboardPreferenceDefaults.UpdateSizeAvailability(
+                    controls,
+                    GetEffectiveExpandedControl());
+                ApplyEditor();
+            }
+        };
         NotifyCollectionChangedEventHandler orderChanged = (_, _) => ApplyEditor();
-        SelectionChangedEventHandler expandedChanged = (_, _) => ApplyEditor();
+        SelectionChangedEventHandler expandedChanged = (_, _) =>
+        {
+            TrayDashboardPreferenceDefaults.UpdateSizeAvailability(
+                controls,
+                GetEffectiveExpandedControl());
+            ApplyEditor();
+        };
         foreach (TrayDashboardControlOption option in controls)
         {
             option.PropertyChanged += optionChanged;

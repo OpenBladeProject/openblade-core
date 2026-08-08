@@ -89,7 +89,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             tile.Visibility = Visibility.Visible;
         }
 
-        SetExpandedControl(preference.ExpandedControl);
+        SetExpandedControl(layout.ExpandedControl);
         IReadOnlyDictionary<TrayDashboardStatusItemKind, FrameworkElement> statusItems =
             StatusItemsByKind();
         StatusItemsHost.ColumnDefinitions.Clear();
@@ -212,9 +212,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private void PositionAt(TrayDashboardPoint anchor, DisplayArea displayArea)
     {
         RectInt32 workArea = displayArea.WorkArea;
-        int preferredHeightDip = TrayDashboardLayoutPolicy.CalculatePreferredHeight(
-            layout,
-            preference.ExpandedControl is not null);
+        int preferredHeightDip =
+            TrayDashboardLayoutPolicy.CalculatePreferredHeight(layout);
         nint monitor = MonitorFromPoint(
             new NativePoint(anchor.X, anchor.Y),
             MonitorDefaultToNearest);
