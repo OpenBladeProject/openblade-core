@@ -4,6 +4,20 @@ This file is the first instruction source for AI coding agents working in this
 repository. Keep changes narrow, evidence-based, and suitable for a native
 Windows hardware utility.
 
+## Parallel work
+
+Use parallel subagents when a task has multiple independent workstreams and the
+expected speed or quality gain justifies the added token and coordination cost.
+Prefer delegation for bounded, read-heavy work such as codebase exploration,
+reviews, test or log analysis, triage, and research. Give each subagent a clear,
+non-overlapping scope, wait for all requested results, then synthesize and
+verify them in the main task.
+
+Keep dependent work and overlapping code edits with one owner. Do not delegate
+trivial tasks or split write-heavy work when merge conflicts and coordination
+would outweigh the benefit. When parallel editing is useful, assign disjoint
+files or components and inspect the combined diff before verification.
+
 ## Product boundary
 
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
@@ -232,6 +246,12 @@ even after the binaries and installers build successfully. Create a short,
 detached exact-commit worktree under `C:\tmp`, initialize the pinned `captures`
 submodule, and run the unchanged `build/Publish.ps1` from that worktree. Never
 install artifacts left in `.staging` by the failed OneDrive-path run.
+
+On managed hosts, NuGet restore and publish commonly fail in the sandbox with
+`NU1900` because `https://api.nuget.org/v3/index.json` is unreachable. Retry
+the exact command with approved host network access before diagnosing a package
+or project failure; do not change package sources or suppress restore errors to
+work around the sandbox restriction.
 
 On Windows hosts where local execution policy blocks repository `.ps1` files,
 run them in a child process with

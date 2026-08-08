@@ -5,6 +5,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Simplified the official firmware version card with a clearer **Latest**
+  column and a consistent action row for the model's Razer support page.
+
 ### Fixed
 
 - Folded GPU clock offsets under their tuning toggle, removed the persistent
@@ -17,6 +22,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Kept full-power AC fan controls available in every supported performance
   mode, preserving performance intent through the confirmed Balanced/Automatic
   bridge required for fixed speeds, maximum fans, and manual fan curves.
+- Stopped install and repair before Apply when another OpenBlade bundle has the
+  same four-part version, preventing cached related bundles from recursively
+  removing each other. Setup also rejects machines that already contain
+  several related bundle registrations, including mixed older and newer
+  versions, instead of launching their legacy installers into the same cycle.
+  Interactive setup reports the conflict during detection while retaining an
+  available Uninstall escape hatch. Exact development builds must use ordered
+  Nightly revisions for transactional replacement.
 
 ## [0.1.0-nightly.10] - 2026-08-07
 

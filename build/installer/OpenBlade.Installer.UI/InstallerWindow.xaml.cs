@@ -72,6 +72,25 @@ internal partial class InstallerWindow : Window
         PurgeProfilesCheckBox.Visibility = Visibility.Collapsed;
     }
 
+    public void ShowRegistrationConflict(string message, bool canUninstall)
+    {
+        ShowOnly(ReadyPanel);
+        overwriteNewerVersion = false;
+        readyInstalled = canUninstall;
+        HeaderSubtitle.Text = "Installer cleanup required";
+        ReadyHeading.Text = "Resolve existing OpenBlade installers";
+        ReadyMessage.Text = message;
+        InstallButton.Visibility = Visibility.Collapsed;
+        InstallButton.Content = "Install";
+        RepairButton.Visibility = Visibility.Collapsed;
+        UninstallButton.Visibility = canUninstall
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        PurgeProfilesCheckBox.Visibility = canUninstall
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
     public void ShowProgress(LaunchAction action)
     {
         ShowOnly(ProgressPanel);
