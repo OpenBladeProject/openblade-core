@@ -8,6 +8,7 @@ public sealed class Worker(
     IStatusSubscriptionHub subscriptionHub,
     MachineProfileBootstrapper profileBootstrapper,
     PersistentOverrideStore overrideStore,
+    ServiceRunMarkerStore runMarkerStore,
     IPowerStateProvider powerStateProvider,
     IServiceLifecycleEventSource lifecycleEventSource,
     LowPowerGate lowPowerGate,
@@ -19,24 +20,34 @@ public sealed class Worker(
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        bool startupCompleted = false;
         var startupCoordinator = new ServiceStartupCoordinator(
             profileBootstrapper,
             overrideStore,
+            runMarkerStore,
             runtime,
             powerStateProvider,
             logger);
         return RunWithShutdownCleanupAsync(
             token => RunAfterSuccessfulStartupAsync(
-                startupCoordinator.InitializeAsync,
+                async innerToken =>
+                {
+                    startupCompleted = await startupCoordinator
+                        .InitializeAsync(innerToken).ConfigureAwait(false);
+                    return startupCompleted;
+                },
                 RunBackgroundAsync,
                 token),
-            PrepareForShutdownAsync,
+            (intentionalStop, token) => PrepareForShutdownAsync(
+                startupCompleted,
+                intentionalStop,
+                token),
             stoppingToken);
     }
 
     internal static async Task RunWithShutdownCleanupAsync(
         Func<CancellationToken, Task> runAsync,
-        Func<CancellationToken, Task> cleanupAsync,
+        Func<bool, CancellationToken, Task> cleanupAsync,
         CancellationToken stoppingToken)
     {
         try
@@ -47,7 +58,9 @@ public sealed class Worker(
         {
             using var cleanupTimeout = new CancellationTokenSource(
                 ShutdownCleanupTimeout);
-            await cleanupAsync(cleanupTimeout.Token).ConfigureAwait(false);
+            await cleanupAsync(
+                stoppingToken.IsCancellationRequested,
+                cleanupTimeout.Token).ConfigureAwait(false);
         }
     }
 
@@ -89,25 +102,87 @@ public sealed class Worker(
         await ServiceBackgroundTaskGroup.RunAsync(operations, stoppingToken);
     }
 
-    private async Task PrepareForShutdownAsync(CancellationToken cancellationToken)
+    private async Task PrepareForShutdownAsync(
+        bool startupCompleted,
+        bool intentionalStop,
+        CancellationToken cancellationToken)
     {
+        bool? clearRunMarker = await PrepareHardwareAndShouldClearRunMarkerAsync(
+            startupCompleted,
+            intentionalStop,
+            runtime.PrepareForShutdownAsync,
+            logger,
+            cancellationToken).ConfigureAwait(false);
+
+        if (clearRunMarker is null)
+        {
+            return;
+        }
+
+        if (!clearRunMarker.Value)
+        {
+            string reason = intentionalStop
+                ? "intentional-stop hardware cleanup was not confirmed"
+                : "the service stopped after an in-process failure";
+            logger.LogWarning(
+                "The service run marker was retained because {Reason}; the next start will use the safer recovery path.",
+                reason);
+            return;
+        }
+
         try
         {
-            ControlOperationResult result = await runtime
-                .PrepareForShutdownAsync(cancellationToken)
+            await runMarkerStore.CompleteRunAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "The service run marker was retained because intentional-stop cleanup timed out.");
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "The service run marker could not be cleared after an intentional stop; the next start will use the safer recovery path.");
+        }
+    }
+
+    internal static async Task<bool?> PrepareHardwareAndShouldClearRunMarkerAsync(
+        bool startupCompleted,
+        bool intentionalStop,
+        Func<CancellationToken, Task<ControlOperationResult>> prepareHardwareAsync,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        if (!startupCompleted)
+        {
+            logger.LogInformation(
+                "Service startup did not complete; hardware cleanup and run-marker deletion were skipped.");
+            return null;
+        }
+
+        try
+        {
+            ControlOperationResult result = await prepareHardwareAsync(cancellationToken)
                 .ConfigureAwait(false);
             LogShutdownCleanupResult(logger, result);
+            return intentionalStop
+                && result.Status is
+                    ControlOperationStatus.Applied or ControlOperationStatus.Stored;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
                 "Hardware cleanup timed out during service stop.");
+            return false;
         }
         catch (Exception exception)
         {
             logger.LogWarning(
                 exception,
                 "Hardware cleanup failed during service stop.");
+            return false;
         }
     }
 

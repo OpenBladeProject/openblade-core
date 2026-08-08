@@ -81,6 +81,9 @@ OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
   state, but every write performs fresh identity and safety checks.
 - Razer software is reported as a possible conflict. OpenBlade does not stop it
   or silently fight external changes.
+- [Unexpected service-exit recovery](docs/service-crash-recovery.md) uses the
+  bounded SCM policy, observes fresh exact-device state, and resumes only
+  eligible OpenBlade-owned producers.
 
 Capture tools are kept outside the installed product, and raw captures are
 never production admission artifacts.

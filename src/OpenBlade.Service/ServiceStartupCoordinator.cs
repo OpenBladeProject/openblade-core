@@ -5,6 +5,7 @@ namespace OpenBlade.Service;
 public sealed class ServiceStartupCoordinator(
     MachineProfileBootstrapper profileBootstrapper,
     PersistentOverrideStore overrideStore,
+    ServiceRunMarkerStore runMarkerStore,
     IServiceControlRuntime runtime,
     IPowerStateProvider powerStateProvider,
     ILogger logger)
@@ -28,15 +29,40 @@ public sealed class ServiceStartupCoordinator(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        ServiceStartupKind startupKind = await runMarkerStore
+            .BeginRunAsync(cancellationToken)
+            .ConfigureAwait(false);
+        bool recoveringUnexpectedExit =
+            startupKind == ServiceStartupKind.UnexpectedExitRecovery;
+        if (recoveringUnexpectedExit)
+        {
+            logger.LogWarning(
+                "An uncleared service run marker was found. OpenBlade will observe fresh state and recover only owned long-running behavior.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
         PowerSource powerSource = powerStateProvider.CapturePowerSource();
         cancellationToken.ThrowIfCancellationRequested();
-        runtime.Initialize(configuration, powerSource, persistentOverrides.Overrides);
+        runtime.Initialize(
+            configuration,
+            powerSource,
+            persistentOverrides.Overrides,
+            recoveringUnexpectedExit);
 
         try
         {
             await runtime.ObserveAsync(includeLiveReadings: false, cancellationToken);
             await runtime.MaintainDriverModeAsync(cancellationToken);
-            await runtime.ReconcileStartupProfileAsync(cancellationToken);
+            if (recoveringUnexpectedExit)
+            {
+                await runtime.ReconcileUnexpectedExitAsync(cancellationToken);
+                await runtime.PrepareManualFanCurveRecoveryAsync(cancellationToken);
+                await runtime.MaintainFanCurveAsync(cancellationToken);
+            }
+            else
+            {
+                await runtime.ReconcileStartupProfileAsync(cancellationToken);
+            }
             await runtime.RestoreLightingRendererAsync(cancellationToken);
         }
         catch (OperationCanceledException)

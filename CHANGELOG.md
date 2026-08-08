@@ -22,6 +22,22 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Kept full-power AC fan controls available in every supported performance
   mode, preserving performance intent through the confirmed Balanced/Automatic
   bridge required for fixed speeds, maximum fans, and manual fan curves.
+- Distinguished intentional service stops from unexpected exits with a
+  durable run marker. SCM restarts now observe exact-device state before any
+  recovery write, retain external-change latches and persistent override
+  intent without ordinary profile writes, restore only eligible owned fan and
+  lighting producers, and start a manual fan curve at a fresh thermally safe
+  target that falls back to maximum speed when CPU telemetry is unavailable.
+  Recovery on multi-user installs now waits for the active user's saved intent
+  instead of comparing retained hardware state with the machine bootstrap, and
+  rechecks session, power, controller, and lighting state before recovery writes.
+  A signed-out restart on full AC or battery now establishes one device-admitted
+  maximum fan target when retained firmware state is manual, then safely hands
+  that owned floor back to Automatic on USB-C without an unbounded retry loop.
+  A manual state first observed on USB-C remains unchanged until ownership can
+  be established on a compatible source.
+  In-process failures still attempt bounded hardware cleanup, while markers
+  from an earlier Windows boot no longer suppress ordinary startup profiles.
 - Stopped install and repair before Apply when another OpenBlade bundle has the
   same four-part version, preventing cached related bundles from recursively
   removing each other. Setup also rejects machines that already contain
