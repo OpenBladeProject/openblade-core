@@ -237,6 +237,13 @@ dotnet build OpenBlade.slnx -p:NuGetAudit=false --no-restore
 dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
 ```
 
+On managed hosts, run the full solution test command above with approved host
+access from the outset. The sandbox consistently denies the loopback client in
+`NamedPipeControlServerTests.ServeOnceAsync_ReadsRequestBeforeResolvingWindowsClientContext`
+with `UnauthorizedAccessException`; this is a sandbox permission failure, not a
+test regression. Focused test projects that do not exercise Windows named-pipe
+client identity may still run in the sandbox.
+
 Use `build/Publish.ps1` and the payload validation tests for release or setup
 changes. Do not install or request UAC when the user is unavailable.
 

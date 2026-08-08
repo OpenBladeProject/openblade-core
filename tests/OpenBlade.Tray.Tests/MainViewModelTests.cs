@@ -767,6 +767,58 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.HasLaptopPageProfileSaveOpportunity);
     }
 
+    [Theory]
+    [InlineData(false, false, false, "Off", "Off")]
+    [InlineData(true, true, false, "On", "Off")]
+    public async Task ProfilePresentation_UsesEffectiveGamingModeKeyPolicy(
+        bool hasPolicy,
+        bool blockWindowsKey,
+        bool blockAltTab,
+        string expectedWindowsKey,
+        string expectedAltTab)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        ProfileSet profiles = status.Profiles with
+        {
+            PluggedIn = status.Profiles.PluggedIn with
+            {
+                LaptopBehavior = new LaptopBehaviorProfileSettings(
+                    StartupAnimationEnabled: null,
+                    FunctionKeyPrimary: null,
+                    GamingModeEnabled: false)
+                {
+                    GamingModeKeyPolicy = hasPolicy
+                        ? new GamingModeKeyPolicy(blockWindowsKey, blockAltTab)
+                        : null,
+                },
+            },
+        };
+
+        client.Publish(status with
+        {
+            Profiles = profiles,
+            GamingModeEnabled = false,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.PluggedInProfilePresentation.GamingMode == "Off");
+
+        Assert.Equal(
+            expectedWindowsKey,
+            viewModel.PluggedInProfilePresentation.GamingModeWindowsKey);
+        Assert.Equal(
+            expectedAltTab,
+            viewModel.PluggedInProfilePresentation.GamingModeAltTab);
+        Assert.Equal(
+            expectedWindowsKey,
+            viewModel.SelectedProfilePresentation.GamingModeWindowsKey);
+        Assert.Equal(
+            expectedAltTab,
+            viewModel.SelectedProfilePresentation.GamingModeAltTab);
+    }
+
     [Fact]
     public async Task GamingModeKeyPolicy_PersistsImmediatelyToTheActiveProfile()
     {

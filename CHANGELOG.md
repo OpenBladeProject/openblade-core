@@ -5,6 +5,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Showed the effective **Off** defaults for Gaming mode's Windows-key and
+  Alt+Tab blocks instead of presenting missing profile overrides as **Not set**.
+
 ## [0.1.0-nightly.11] - 2026-08-08
 
 ### Changed
