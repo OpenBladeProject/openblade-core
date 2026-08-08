@@ -45,7 +45,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private long lastDeactivationHideTimestamp;
     private long revealStartedTimestamp;
     private nint revealWindowHandle;
-    private nint revealTaskbarHandle;
     private TrayDashboardRect revealPlacement;
     private int revealStartY;
     private int revealStagingY;
@@ -96,7 +95,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             presenter.IsResizable = false;
             presenter.IsMaximizable = false;
             presenter.IsMinimizable = false;
-            presenter.IsAlwaysOnTop = true;
+            presenter.IsAlwaysOnTop = false;
             presenter.SetBorderAndTitleBar(hasBorder: true, hasTitleBar: false);
             AppWindow.SetPresenter(presenter);
         }
@@ -303,9 +302,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         revealStagingY = placement.Reveal.StagingY;
         revealCurrentY = placement.Rect.Y;
         revealWindowHandle = WindowNative.GetWindowHandle(this);
-        revealTaskbarHandle =
-            WindowsPopupPositioner.FindTaskbarForMonitor(placement.Monitor);
-        WindowsPopupPositioner.PositionTopmost(
+        WindowsPopupPositioner.PositionInFront(
             revealWindowHandle,
             placement.Rect.X,
             placement.Rect.Y,
@@ -327,8 +324,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             revealStagingY = placement.Reveal.StagingY;
             revealCurrentY = revealStagingY;
             revealWindowHandle = WindowNative.GetWindowHandle(this);
-            revealTaskbarHandle =
-                WindowsPopupPositioner.FindTaskbarForMonitor(placement.Monitor);
             WindowsPopupPositioner.DisableTransitions(revealWindowHandle);
             var staged = new TrayDashboardRect(
                 placement.Rect.X,
@@ -342,9 +337,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 AppWindow.Show(activateWindow: false);
                 surfaceShown = true;
             }
-            WindowsPopupPositioner.PositionBehindTaskbar(
+            WindowsPopupPositioner.PositionInFront(
                 revealWindowHandle,
-                revealTaskbarHandle,
                 staged.X,
                 staged.Y,
                 staged.Width,
@@ -400,10 +394,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 anchor,
                 physicalWorkArea,
                 placement);
-        return new ResolvedPlacement(
-            placement,
-            monitor,
-            reveal);
+        return new ResolvedPlacement(placement, reveal);
     }
 
     private bool TryResolvePlacement(
@@ -440,8 +431,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             revealStartY = stagingY;
             revealCurrentY = stagingY;
             revealWindowHandle = WindowNative.GetWindowHandle(this);
-            revealTaskbarHandle =
-                WindowsPopupPositioner.FindTaskbarForMonitor(placement.Monitor);
             revealStartedTimestamp = 0;
             revealPrimingFrames = 0;
             revealAnimationsEnabled = WindowsMotionSettings.AreAnimationsEnabled();
@@ -461,9 +450,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 AppWindow.Show(activateWindow: false);
                 surfaceShown = true;
             }
-            WindowsPopupPositioner.PositionBehindTaskbar(
+            WindowsPopupPositioner.PositionInFront(
                 revealWindowHandle,
-                revealTaskbarHandle,
                 staged.X,
                 staged.Y,
                 staged.Width,
@@ -513,9 +501,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         revealCurrentY = y;
         try
         {
-            WindowsPopupPositioner.PositionBehindTaskbar(
+            WindowsPopupPositioner.PositionInFront(
                 revealWindowHandle,
-                revealTaskbarHandle,
                 revealPlacement.X,
                 y,
                 revealPlacement.Width,
@@ -539,9 +526,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             foregroundEstablished = !awaitingRevealActivation;
             try
             {
-                WindowsPopupPositioner.PositionBehindTaskbar(
+                WindowsPopupPositioner.PositionInFront(
                     revealWindowHandle,
-                    revealTaskbarHandle,
                     revealPlacement.X,
                     y,
                     revealPlacement.Width,
@@ -571,7 +557,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
             try
             {
-                WindowsPopupPositioner.PositionTopmost(
+                WindowsPopupPositioner.PositionInFront(
                     revealWindowHandle,
                     revealPlacement.X,
                     revealPlacement.Y,
@@ -773,9 +759,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
         try
         {
-            WindowsPopupPositioner.PositionBehindTaskbar(
+            WindowsPopupPositioner.PositionInFront(
                 revealWindowHandle,
-                revealTaskbarHandle,
                 revealPlacement.X,
                 revealStagingY,
                 revealPlacement.Width,
@@ -1111,7 +1096,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     private readonly record struct ResolvedPlacement(
         TrayDashboardRect Rect,
-        nint Monitor,
         TrayDashboardRevealGeometry Reveal);
 
     [DllImport("user32.dll")]

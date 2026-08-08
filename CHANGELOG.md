@@ -25,9 +25,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   option text, missing fan icon, clipped controls, and truncated status labels.
   The popup now keeps its composed surface prewarmed behind the taskbar, uses
   matching 200 ms reveal and dismissal motion paced by the desktop compositor
-  with the brightness overlay's easing, reliably dismisses after an outside
-  click, refreshes its telemetry while open, and constrains its tiles to the
-  live viewport at every display scale.
+  with the brightness overlay's easing, stays outside the taskbar's topmost
+  band, reliably dismisses after an outside click, refreshes its telemetry
+  while open, and constrains its tiles to the live viewport at every display
+  scale.
 - Showed the effective **Off** defaults for Gaming mode's Windows-key and
   Alt+Tab blocks instead of presenting missing profile overrides as **Not set**.
 

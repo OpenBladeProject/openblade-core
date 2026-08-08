@@ -1776,7 +1776,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("The actual tray popup stays open and updates while you edit.", mainWindow, StringComparison.Ordinal);
         Assert.Contains("AppWindow.Show(activateWindow: !editing)", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("private const int PopupWidth = 360", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("presenter.IsAlwaysOnTop = true", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("presenter.IsAlwaysOnTop = false", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("MonitorFromPoint(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("GetDpiForMonitor(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("MonitorDpiType.Effective", dashboardWindow, StringComparison.Ordinal);
@@ -1824,11 +1824,12 @@ public sealed class WinUiShellContractTests
         Assert.Contains("DispatcherQueuePriority.High", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("StartRevealFrameClock()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupSlidePolicy.ResolvePosition(", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("WindowsPopupPositioner.FindTaskbarForMonitor", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardPlacement.ResolveRevealGeometry(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("Root.UpdateLayout()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsMotionSettings.AreAnimationsEnabled()", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("WindowsPopupPositioner.PositionTopmost(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("WindowsPopupPositioner.PositionInFront(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("NotTopmostWindow", popupPositioner, StringComparison.Ordinal);
+        Assert.DoesNotContain("TopmostWindow = new(-1)", popupPositioner, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupPositioner.DisableTransitions(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("TryPrimeSurface();", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("TryStartDismissAnimation()", dashboardWindow, StringComparison.Ordinal);
@@ -1868,10 +1869,6 @@ public sealed class WinUiShellContractTests
             "AppWindow.Show(activateWindow: true);",
             revealRenderingBody,
             StringComparison.Ordinal);
-        Assert.Contains("TaskbarByMonitor.TryGetValue", popupPositioner, StringComparison.Ordinal);
-        Assert.Contains("IsTaskbarForMonitor(cached, monitor)", popupPositioner, StringComparison.Ordinal);
-        Assert.Contains("FindWindow(PrimaryTaskbarClass, null)", popupPositioner, StringComparison.Ordinal);
-        Assert.Contains("FindWindowEx(", popupPositioner, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "DisplayInformation.DisplayContentsInvalidated",
             dashboardWindow,
