@@ -1443,21 +1443,26 @@ public sealed class CapabilityPresentationTests
             XElement presenter = Assert.Single(template.Elements(), element =>
                 element.Name.LocalName == "ContentControl");
             Assert.Equal(
-                "{x:Bind IsPending, Mode=OneWay}",
+                "{x:Bind IsPending, Mode=OneTime}",
                 Attribute(presenter, "IsTabStop"));
             Assert.Equal(
-                "{x:Bind PendingDescription, Mode=OneWay}",
+                "{x:Bind PendingDescription, Mode=OneTime}",
                 Attribute(presenter, "ToolTipService.ToolTip"));
             Assert.Equal(
-                "{x:Bind AccessibilityDescription, Mode=OneWay}",
+                "{x:Bind AccessibilityDescription, Mode=OneTime}",
                 Attribute(presenter, "AutomationProperties.Name"));
             Assert.Equal(
-                "{x:Bind PendingDescription, Mode=OneWay}",
+                "{x:Bind PendingDescription, Mode=OneTime}",
                 Attribute(presenter, "AutomationProperties.HelpText"));
+            XElement valueText = Assert.Single(template.Descendants(), element =>
+                element.Name.LocalName == "TextBlock");
+            Assert.Equal(
+                "Raw",
+                Attribute(valueText, "AutomationProperties.AccessibilityView"));
             XElement indicator = Assert.Single(template.Descendants(), element =>
                 element.Name.LocalName == "InfoBadge");
             Assert.Equal(
-                "{x:Bind IsPending, Mode=OneWay}",
+                "{x:Bind IsPending, Mode=OneTime}",
                 Attribute(indicator, "Visibility"));
             Assert.Equal(
                 "Raw",

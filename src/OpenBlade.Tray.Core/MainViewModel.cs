@@ -37,20 +37,15 @@ public sealed record ProfileValuePresentation(
     string SettingName,
     string ProfileName,
     bool IsPending = false,
-    string PendingText = "") : INotifyPropertyChanged
+    string PendingText = "")
 {
-    public string PendingDescription => IsPending
+    public string? PendingDescription => IsPending
         ? $"Pending: {PendingText}"
-        : string.Empty;
+        : null;
 
     public string AccessibilityDescription => IsPending
         ? $"{ProfileName} {SettingName}: {Text}. Pending: {PendingText}"
         : $"{ProfileName} {SettingName}: {Text}";
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void RaisePropertyChanged([CallerMemberName] string? propertyName = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
 
 public sealed record ProfilePresentation(
@@ -6793,13 +6788,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private ProfilePresentation CreateProfilePresentation(PowerSource source)
     {
-        string profileName = source switch
-        {
-            PowerSource.PluggedIn => "AC",
-            PowerSource.UsbC => "USB-C",
-            PowerSource.Battery => "Battery",
-            _ => throw new ArgumentOutOfRangeException(nameof(source)),
-        };
+        string profileName = ComparisonOptions
+            .First(option => option.Source == source)
+            .Label;
         PowerProfile savedProfile = GetProfile(source);
         ProfilePresentation saved = CreateProfilePresentation(savedProfile, profileName);
         if (activeProfileDraftSource != source || GetActiveProfileDraft() is not { } draft)
@@ -6808,22 +6799,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         ProfilePresentation pending = CreateProfilePresentation(draft, profileName);
-        DisplayProfileSettings savedDisplay = savedProfile.Display
-            ?? DisplayProfileSettings.Unconfigured();
-        DisplayProfileSettings pendingDisplay = draft.Display
-            ?? DisplayProfileSettings.Unconfigured();
-        LaptopBehaviorProfileSettings savedLaptop = savedProfile.EffectiveLaptopBehavior;
-        LaptopBehaviorProfileSettings pendingLaptop = draft.EffectiveLaptopBehavior;
         return new ProfilePresentation(
-            MarkPending(
-                saved.PowerMode,
-                pending.PowerMode,
-                PerformancePresentationDiffers(savedProfile, draft)),
-            MarkPending(
-                saved.GpuTuning,
-                pending.GpuTuning,
-                ResolveProfileGpuClockTuning(savedProfile)
-                    != ResolveProfileGpuClockTuning(draft)),
+            MarkPending(saved.PowerMode, pending.PowerMode),
+            MarkPending(saved.GpuTuning, pending.GpuTuning),
             MarkPending(
                 saved.Fans,
                 pending.Fans,
@@ -6831,105 +6809,32 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     savedProfile.FanControl
                         ?? FanControlSettings.FromLegacy(savedProfile.Fans),
                     draft.FanControl ?? FanControlSettings.FromLegacy(draft.Fans))),
-            MarkPending(
-                saved.LightingEffect,
-                pending.LightingEffect,
-                !string.Equals(
-                    saved.LightingEffect.Text,
-                    pending.LightingEffect.Text,
-                    StringComparison.Ordinal)),
-            MarkPending(
-                saved.LightingBrightness,
-                pending.LightingBrightness,
-                savedProfile.Lighting.Brightness != draft.Lighting.Brightness),
-            MarkPending(
-                saved.LightingColor,
-                pending.LightingColor,
-                LightingColorPresentationDiffers(
-                    savedProfile.Lighting,
-                    draft.Lighting)),
-            MarkPending(
-                saved.LogoLighting,
-                pending.LogoLighting,
-                savedProfile.Lighting.LogoMode != draft.Lighting.LogoMode),
-            MarkPending(
-                saved.LightingDisplayOff,
-                pending.LightingDisplayOff,
-                savedProfile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
-                    != draft.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff),
-            MarkPending(
-                saved.LightingIdle,
-                pending.LightingIdle,
-                savedProfile.EffectiveLightingPowerPolicy.IdleTimeoutMinutes
-                    != draft.EffectiveLightingPowerPolicy.IdleTimeoutMinutes),
-            MarkPending(
-                saved.DisplayRefreshRate,
-                pending.DisplayRefreshRate,
-                !string.Equals(
-                    savedDisplay.RefreshRateKey,
-                    pendingDisplay.RefreshRateKey,
-                    StringComparison.Ordinal)),
-            MarkPending(
-                saved.DisplayHdr,
-                pending.DisplayHdr,
-                savedDisplay.HdrEnabled != pendingDisplay.HdrEnabled),
-            MarkPending(
-                saved.DisplayColorProfile,
-                pending.DisplayColorProfile,
-                !string.Equals(
-                    savedDisplay.ColorProfileKey,
-                    pendingDisplay.ColorProfileKey,
-                    StringComparison.Ordinal)),
-            MarkPending(
-                saved.FunctionKeyBehavior,
-                pending.FunctionKeyBehavior,
-                savedLaptop.FunctionKeyPrimary != pendingLaptop.FunctionKeyPrimary),
-            MarkPending(
-                saved.GamingMode,
-                pending.GamingMode,
-                savedLaptop.GamingModeEnabled != pendingLaptop.GamingModeEnabled),
-            MarkPending(
-                saved.GamingModeWindowsKey,
-                pending.GamingModeWindowsKey,
-                savedLaptop.EffectiveGamingModeKeyPolicy.BlockWindowsKey
-                    != pendingLaptop.EffectiveGamingModeKeyPolicy.BlockWindowsKey),
-            MarkPending(
-                saved.GamingModeAltTab,
-                pending.GamingModeAltTab,
-                savedLaptop.EffectiveGamingModeKeyPolicy.BlockAltTab
-                    != pendingLaptop.EffectiveGamingModeKeyPolicy.BlockAltTab),
-            MarkPending(
-                saved.StartupAnimation,
-                pending.StartupAnimation,
-                savedLaptop.StartupAnimationEnabled != pendingLaptop.StartupAnimationEnabled));
+            MarkPending(saved.LightingEffect, pending.LightingEffect),
+            MarkPending(saved.LightingBrightness, pending.LightingBrightness),
+            MarkPending(saved.LightingColor, pending.LightingColor),
+            MarkPending(saved.LogoLighting, pending.LogoLighting),
+            MarkPending(saved.LightingDisplayOff, pending.LightingDisplayOff),
+            MarkPending(saved.LightingIdle, pending.LightingIdle),
+            MarkPending(saved.DisplayRefreshRate, pending.DisplayRefreshRate),
+            MarkPending(saved.DisplayHdr, pending.DisplayHdr),
+            MarkPending(saved.DisplayColorProfile, pending.DisplayColorProfile),
+            MarkPending(saved.FunctionKeyBehavior, pending.FunctionKeyBehavior),
+            MarkPending(saved.GamingMode, pending.GamingMode),
+            MarkPending(saved.GamingModeWindowsKey, pending.GamingModeWindowsKey),
+            MarkPending(saved.GamingModeAltTab, pending.GamingModeAltTab),
+            MarkPending(saved.StartupAnimation, pending.StartupAnimation));
     }
 
     private static ProfileValuePresentation MarkPending(
         ProfileValuePresentation saved,
         ProfileValuePresentation pending,
-        bool isPending) =>
+        bool isPending = false) =>
         saved with
         {
-            IsPending = isPending,
+            IsPending = isPending
+                || !string.Equals(saved.Text, pending.Text, StringComparison.Ordinal),
             PendingText = pending.Text,
         };
-
-    private static bool PerformancePresentationDiffers(
-        PowerProfile saved,
-        PowerProfile pending) =>
-        saved.Performance != pending.Performance
-        || (saved.Performance == PerformancePreset.Custom
-            && pending.Performance == PerformancePreset.Custom
-            && (saved.CustomPerformance?.Cpu != pending.CustomPerformance?.Cpu
-                || saved.CustomPerformance?.Gpu != pending.CustomPerformance?.Gpu));
-
-    private static bool LightingColorPresentationDiffers(
-        LightingSettings saved,
-        LightingSettings pending) =>
-        !string.Equals(
-            FormatLightingColor(saved),
-            FormatLightingColor(pending),
-            StringComparison.Ordinal);
 
     private static ProfilePresentation CreateProfilePresentation(
         PowerProfile profile,

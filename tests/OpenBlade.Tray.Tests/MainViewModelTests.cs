@@ -260,6 +260,10 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.PluggedInProfilePresentation.DisplayHdr.IsPending);
         Assert.True(viewModel.PluggedInProfilePresentation.DisplayColorProfile.IsPending);
         Assert.False(viewModel.PluggedInProfilePresentation.GpuTuning.IsPending);
+        Assert.Null(viewModel.PluggedInProfilePresentation.GpuTuning.PendingDescription);
+        Assert.Equal(
+            "AC GPU tuning: Not set",
+            viewModel.PluggedInProfilePresentation.GpuTuning.AccessibilityDescription);
         Assert.False(viewModel.PluggedInProfilePresentation.LogoLighting.IsPending);
         Assert.False(viewModel.PluggedInProfilePresentation.LightingDisplayOff.IsPending);
         Assert.False(viewModel.PluggedInProfilePresentation.LightingIdle.IsPending);
@@ -304,7 +308,7 @@ public sealed class MainViewModelTests
         Assert.Contains("Maximum", viewModel.PluggedInProfileThermalSummary);
         Assert.Equal("Balanced", viewModel.PluggedInProfilePresentation.PowerMode.Text);
         Assert.False(viewModel.PluggedInProfilePresentation.PowerMode.IsPending);
-        Assert.Equal(string.Empty, viewModel.PluggedInProfilePresentation.PowerMode.PendingDescription);
+        Assert.Null(viewModel.PluggedInProfilePresentation.PowerMode.PendingDescription);
         Assert.Equal("Maximum", viewModel.PluggedInProfilePresentation.Fans.Text);
         Assert.False(viewModel.PluggedInProfilePresentation.Fans.IsPending);
     }
@@ -666,6 +670,115 @@ public sealed class MainViewModelTests
             "AC Fans: Manual fan curve. Pending: Manual fan curve",
             viewModel.PluggedInProfilePresentation.Fans.AccessibilityDescription);
         Assert.Equal(changedFanControl, client.LastFanControlSettings);
+    }
+
+    [Fact]
+    public async Task PendingProfileValue_IgnoresHiddenOffsetsWhileGpuTuningIsOff()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var savedOffsets = new GpuClockOffsetSettings(100, 200);
+        var currentOffsets = new GpuClockOffsetSettings(0, 0);
+        var gpuCapabilities = new GpuClockOffsetCapabilities(
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            new GpuClockOffsetRange(-1000, 1000, currentOffsets.CoreMegahertz),
+            new GpuClockOffsetRange(-1000, 3000, currentOffsets.MemoryMegahertz));
+        ProfileSet profiles = baseline.Profiles with
+        {
+            PluggedIn = baseline.Profiles.PluggedIn with
+            {
+                GpuClockTuning = new GpuClockTuningSettings(
+                    Enabled: false,
+                    savedOffsets),
+            },
+        };
+        client.Publish(baseline with
+        {
+            Profiles = profiles,
+            Capabilities = baseline.Capabilities! with
+            {
+                GpuOverclock = new GpuOverclockCapabilities(
+                    new DeviceNumericRange(-1000, 400, null),
+                    new DeviceNumericRange(-1000, 3000, null),
+                    DeviceFeatureAccess.ReadWrite),
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                GpuClockOffsets = gpuCapabilities,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                GpuClockTuning = new GpuClockTuningSettings(
+                    Enabled: false,
+                    currentOffsets),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.CanToggleGpuClockTuning);
+
+        await viewModel.SetGpuClockTuningEnabledAsync(
+            enabled: false,
+            CancellationToken.None);
+
+        Assert.True(viewModel.HasActiveProfileDraft);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.GpuTuning.Text);
+        Assert.False(viewModel.PluggedInProfilePresentation.GpuTuning.IsPending);
+        Assert.Null(viewModel.PluggedInProfilePresentation.GpuTuning.PendingDescription);
+    }
+
+    [Fact]
+    public async Task PendingProfileValue_MarksBrightnessWhenEffectMakesItVisible()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 50));
+
+        Assert.True(viewModel.PluggedInProfilePresentation.LightingEffect.IsPending);
+        Assert.Equal("Not applicable", viewModel.PluggedInProfilePresentation.LightingBrightness.Text);
+        Assert.True(viewModel.PluggedInProfilePresentation.LightingBrightness.IsPending);
+        Assert.Equal(
+            "Pending: 50%",
+            viewModel.PluggedInProfilePresentation.LightingBrightness.PendingDescription);
+    }
+
+    [Fact]
+    public async Task PendingProfileValue_MarksOnlyTheBatteryDraftColumn()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with { ActivePowerSource = PowerSource.Battery });
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && viewModel.ActivePowerSource == PowerSource.Battery);
+
+        viewModel.RecordDisplayProfileChange(
+            PowerSource.Battery,
+            new DisplayProfileSettings("dynamic-48-240", false, null));
+
+        Assert.False(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.False(viewModel.UsbCProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.True(viewModel.BatteryProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.Equal(
+            "On battery Refresh rate: Not set. Pending: Dynamic 48–240 Hz",
+            viewModel.BatteryProfilePresentation.DisplayRefreshRate.AccessibilityDescription);
     }
 
     [Fact]

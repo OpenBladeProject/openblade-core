@@ -322,20 +322,21 @@
             <DataTemplate x:Key="ProfileValuePresentationTemplate"
                           x:DataType="local:ProfileValuePresentation">
                 <ContentControl HorizontalContentAlignment="Stretch"
-                                IsTabStop="{x:Bind IsPending, Mode=OneWay}"
-                                ToolTipService.ToolTip="{x:Bind PendingDescription, Mode=OneWay}"
-                                AutomationProperties.Name="{x:Bind AccessibilityDescription, Mode=OneWay}"
-                                AutomationProperties.HelpText="{x:Bind PendingDescription, Mode=OneWay}">
+                                IsTabStop="{x:Bind IsPending, Mode=OneTime}"
+                                ToolTipService.ToolTip="{x:Bind PendingDescription, Mode=OneTime}"
+                                AutomationProperties.Name="{x:Bind AccessibilityDescription, Mode=OneTime}"
+                                AutomationProperties.HelpText="{x:Bind PendingDescription, Mode=OneTime}">
                     <Grid ColumnSpacing="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="{x:Bind Text, Mode=OneWay}"
-                                   TextWrapping="Wrap" />
+                        <TextBlock Text="{x:Bind Text, Mode=OneTime}"
+                                   TextWrapping="Wrap"
+                                   AutomationProperties.AccessibilityView="Raw" />
                         <InfoBadge Grid.Column="1"
                                    Style="{StaticResource PendingProfileValueBadgeStyle}"
-                                   Visibility="{x:Bind IsPending, Mode=OneWay}"
+                                   Visibility="{x:Bind IsPending, Mode=OneTime}"
                                    AutomationProperties.AccessibilityView="Raw" />
                     </Grid>
                 </ContentControl>
@@ -343,21 +344,22 @@
             <DataTemplate x:Key="CompactProfileValuePresentationTemplate"
                           x:DataType="local:ProfileValuePresentation">
                 <ContentControl HorizontalContentAlignment="Stretch"
-                                IsTabStop="{x:Bind IsPending, Mode=OneWay}"
-                                ToolTipService.ToolTip="{x:Bind PendingDescription, Mode=OneWay}"
-                                AutomationProperties.Name="{x:Bind AccessibilityDescription, Mode=OneWay}"
-                                AutomationProperties.HelpText="{x:Bind PendingDescription, Mode=OneWay}">
+                                IsTabStop="{x:Bind IsPending, Mode=OneTime}"
+                                ToolTipService.ToolTip="{x:Bind PendingDescription, Mode=OneTime}"
+                                AutomationProperties.Name="{x:Bind AccessibilityDescription, Mode=OneTime}"
+                                AutomationProperties.HelpText="{x:Bind PendingDescription, Mode=OneTime}">
                     <Grid ColumnSpacing="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="{x:Bind Text, Mode=OneWay}"
+                        <TextBlock Text="{x:Bind Text, Mode=OneTime}"
                                    TextWrapping="Wrap"
-                                   TextAlignment="Right" />
+                                   TextAlignment="Right"
+                                   AutomationProperties.AccessibilityView="Raw" />
                         <InfoBadge Grid.Column="1"
                                    Style="{StaticResource PendingProfileValueBadgeStyle}"
-                                   Visibility="{x:Bind IsPending, Mode=OneWay}"
+                                   Visibility="{x:Bind IsPending, Mode=OneTime}"
                                    AutomationProperties.AccessibilityView="Raw" />
                     </Grid>
                 </ContentControl>
