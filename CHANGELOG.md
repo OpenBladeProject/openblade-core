@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.1.0-nightly.11] - 2026-08-08
+
 ### Changed
 
 - Simplified the official firmware version card with a clearer **Latest**
@@ -1098,7 +1100,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.10...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.11...HEAD
+[0.1.0-nightly.11]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.10...v0.1.0-nightly.11
 [0.1.0-nightly.10]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.9...v0.1.0-nightly.10
 [0.1.0-nightly.9]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.8...v0.1.0-nightly.9
 [0.1.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.8
