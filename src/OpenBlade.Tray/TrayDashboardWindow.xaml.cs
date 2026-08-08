@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using OpenBlade.Contracts;
 using Windows.Graphics;
+using Windows.Graphics.Display;
 using WinRT.Interop;
 
 namespace OpenBlade.Tray;
@@ -36,6 +37,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private nint revealTaskbarHandle;
     private TrayDashboardRect revealPlacement;
     private int revealStartY;
+    private bool revealAnimationsEnabled;
     private bool revealAnimationActive;
     private bool awaitingRevealActivation;
     private int disposed;
@@ -52,6 +54,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
         Activated += OnActivated;
         AppWindow.Closing += OnClosing;
+        DisplayInformation.DisplayContentsInvalidated +=
+            OnDisplayContentsInvalidated;
         AppWindow.IsShownInSwitchers = false;
         try
         {
@@ -185,6 +189,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         Activated -= OnActivated;
         AppWindow.Closing -= OnClosing;
+        DisplayInformation.DisplayContentsInvalidated -=
+            OnDisplayContentsInvalidated;
         CancelRevealAnimation();
         Close();
     }
@@ -275,19 +281,28 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 "Windows returned zero DPI for the tray dashboard target monitor.");
         }
 
+        var physicalWorkArea = new TrayDashboardRect(
+            workArea.X,
+            workArea.Y,
+            workArea.Width,
+            workArea.Height);
         TrayDashboardRect placement = TrayDashboardPlacement.Resolve(
             anchor,
-            new TrayDashboardRect(
-                workArea.X,
-                workArea.Y,
-                workArea.Width,
-                workArea.Height),
+            physicalWorkArea,
             new TrayDashboardSize(PopupWidth, preferredHeightDip),
             checked((int)nativeDpi));
+        TrayDashboardRevealGeometry reveal =
+            TrayDashboardPlacement.ResolveRevealGeometry(
+                anchor,
+                physicalWorkArea,
+                placement,
+                WindowPlacementPolicy.ScaleToPixels(
+                    RevealOffsetDip,
+                    checked((int)nativeDpi)));
         return new ResolvedPlacement(
             placement,
             monitor,
-            checked((int)nativeDpi));
+            reveal);
     }
 
     private bool TryResolvePlacement(
@@ -318,20 +333,14 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         try
         {
             CancelRevealAnimation();
-            RectInt32 workArea = displayArea.WorkArea;
             revealPlacement = placement.Rect;
-            int stagingY = checked(workArea.Y + workArea.Height);
-            revealStartY = Math.Min(
-                stagingY,
-                checked(
-                    placement.Rect.Y
-                    + WindowPlacementPolicy.ScaleToPixels(
-                        RevealOffsetDip,
-                        placement.Dpi)));
+            int stagingY = placement.Reveal.StagingY;
+            revealStartY = placement.Reveal.StartY;
             revealWindowHandle = WindowNative.GetWindowHandle(this);
             revealTaskbarHandle =
                 WindowsPopupPositioner.FindTaskbarForMonitor(placement.Monitor);
             revealStartedTimestamp = 0;
+            revealAnimationsEnabled = WindowsMotionSettings.AreAnimationsEnabled();
             awaitingRevealActivation = !editing;
 
             var staged = new TrayDashboardRect(
@@ -373,12 +382,11 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         if (revealStartedTimestamp == 0)
         {
             revealStartedTimestamp = Stopwatch.GetTimestamp();
+            return;
         }
 
         TimeSpan elapsed = Stopwatch.GetElapsedTime(revealStartedTimestamp);
-        bool animationsEnabled = WindowsMotionSettings.AreAnimationsEnabled();
-
-        int y = animationsEnabled
+        int y = revealAnimationsEnabled
             ? WindowsPopupSlidePolicy.ResolvePosition(
                 revealStartY,
                 revealPlacement.Y,
@@ -426,10 +434,25 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             }
         }
 
-        if (!animationsEnabled
+        if (!revealAnimationsEnabled
             || y == revealPlacement.Y
             || WindowsPopupSlidePolicy.IsComplete(elapsed))
         {
+            try
+            {
+                WindowsPopupPositioner.PositionTopmost(
+                    revealWindowHandle,
+                    revealPlacement.X,
+                    revealPlacement.Y,
+                    revealPlacement.Width,
+                    revealPlacement.Height);
+            }
+            catch (Exception exception)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade tray dashboard final positioning failed: {0}",
+                    exception.Message);
+            }
             CancelRevealAnimation();
         }
     }
@@ -443,6 +466,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         revealAnimationActive = false;
         awaitingRevealActivation = false;
         revealStartedTimestamp = 0;
+        revealAnimationsEnabled = false;
     }
 
     private static RectInt32 ToRectInt32(TrayDashboardRect rect) =>
@@ -530,6 +554,11 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             Hide();
         }
     }
+
+    private void OnDisplayContentsInvalidated(
+        DisplayInformation sender,
+        object args) =>
+        WindowsPopupPositioner.InvalidateTaskbarCache();
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
@@ -705,7 +734,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private readonly record struct ResolvedPlacement(
         TrayDashboardRect Rect,
         nint Monitor,
-        int Dpi);
+        TrayDashboardRevealGeometry Reveal);
 
     [DllImport("user32.dll")]
     private static extern nint MonitorFromPoint(NativePoint point, uint flags);

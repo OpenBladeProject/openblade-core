@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace OpenBlade.Tray;
 
@@ -45,8 +46,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
     private const uint WindowMessageDpiChanged = 0x02E0;
     private const nuint HideTimerId = 1;
     internal const uint HideDelayMilliseconds = 2000;
-    internal const double SlideDurationMilliseconds =
-        WindowsPopupSlidePolicy.DurationMilliseconds;
+    internal const double SlideDurationMilliseconds = 250;
     private const uint ExtendedStyle = 0x00000008 // WS_EX_TOPMOST
         | 0x00000020 // WS_EX_TRANSPARENT
         | 0x00000080 // WS_EX_TOOLWINDOW
@@ -56,6 +56,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
     private const uint LayeredAlpha = 0x00000002;
     private const uint MonitorDefaultToPrimary = 0x00000001;
     private const int EffectiveMonitorDpi = 0;
+    private const uint SetWindowNoActivate = 0x0010;
     private const int ShowNoActivate = 4;
     private const int ShowHide = 0;
     private const int TransparentBackgroundMode = 1;
@@ -363,7 +364,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
         ApplyCornerRegion(window, bounds, dpi);
         bool wasVisible = IsWindowVisible(window);
         displayedBounds = bounds;
-        taskbarHandle = WindowsPopupPositioner.FindTaskbarForMonitor(monitor);
+        taskbarHandle = FindTaskbarForMonitor(monitor);
         hiddenY = monitorInfo.WorkArea.Bottom;
         if (!wasVisible)
         {
@@ -426,7 +427,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
             effectiveDpi == 0 ? 96u : effectiveDpi);
         CancelSlideAnimation();
         displayedBounds = bounds;
-        taskbarHandle = WindowsPopupPositioner.FindTaskbarForMonitor(monitor);
+        taskbarHandle = FindTaskbarForMonitor(monitor);
         hiddenY = monitorInfo.WorkArea.Bottom;
         int y = IsWindowVisible(window)
             ? bounds.Y
@@ -588,16 +589,25 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
             hidesWindow = slideHidesWindow;
         }
 
-        TimeSpan elapsed = Stopwatch.GetElapsedTime(started);
-        int y = WindowsPopupSlidePolicy.ResolvePosition(
-            startY,
-            endY,
-            elapsed,
-            hidesWindow);
+        double elapsedMilliseconds =
+            Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        double progress = Math.Clamp(
+            elapsedMilliseconds / SlideDurationMilliseconds,
+            0,
+            1);
+        double easedProgress = hidesWindow
+            ? progress == 0
+                ? 0
+                : Math.Pow(2, 10 * progress - 10)
+            : progress == 1
+                ? 1
+                : 1 - Math.Pow(2, -10 * progress);
+        int y = checked((int)Math.Round(
+            startY + (endY - startY) * easedProgress));
         PositionWindow(window, displayedBounds, taskbarHandle, y);
         Volatile.Write(ref currentY, y);
 
-        if (WindowsPopupSlidePolicy.IsComplete(elapsed))
+        if (progress >= 1)
         {
             CompleteSlideAnimation(
                 window,
@@ -652,14 +662,58 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
         nint window,
         DisplayBrightnessOsdBounds bounds,
         nint taskbar,
-        int y) =>
-        WindowsPopupPositioner.PositionBehindTaskbar(
+        int y)
+    {
+        nint insertAfter = taskbar == 0
+            ? new nint(-1) // HWND_TOPMOST
+            : taskbar;
+        if (!SetWindowPos(
             window,
-            taskbar,
+            insertAfter,
             bounds.X,
             y,
             bounds.Width,
-            bounds.Height);
+            bounds.Height,
+            SetWindowNoActivate))
+        {
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error(),
+                "The brightness OSD could not be positioned.");
+        }
+    }
+
+    private static nint FindTaskbarForMonitor(nint monitor)
+    {
+        nint match = 0;
+        _ = EnumWindows(
+            (candidate, _) =>
+            {
+                var className = new StringBuilder(64);
+                if (GetClassName(candidate, className, className.Capacity) == 0)
+                {
+                    return true;
+                }
+
+                string value = className.ToString();
+                if ((string.Equals(
+                        value,
+                        "Shell_TrayWnd",
+                        StringComparison.Ordinal)
+                    || string.Equals(
+                        value,
+                        "Shell_SecondaryTrayWnd",
+                        StringComparison.Ordinal))
+                    && MonitorFromWindow(candidate, 0) == monitor)
+                {
+                    match = candidate;
+                    return false;
+                }
+
+                return true;
+            },
+            0);
+        return match;
+    }
 
     private void Paint(nint window)
     {
@@ -1165,6 +1219,10 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
         nuint windowParameter,
         nint messageParameter);
 
+    private delegate bool EnumWindowsProcedure(
+        nint window,
+        nint parameter);
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern nint GetModuleHandle(string? moduleName);
 
@@ -1226,6 +1284,16 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
         nint messageParameter);
 
     [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(
+        nint window,
+        nint insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags);
+
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowRgn(
         nint window,
         nint region,
@@ -1242,6 +1310,17 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
 
     [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(
+        EnumWindowsProcedure callback,
+        nint parameter);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(
+        nint window,
+        StringBuilder className,
+        int maximumCount);
 
     [DllImport("user32.dll")]
     private static extern nint MonitorFromWindow(nint window, uint flags);

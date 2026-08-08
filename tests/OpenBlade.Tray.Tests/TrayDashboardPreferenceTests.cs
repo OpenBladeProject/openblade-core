@@ -218,14 +218,6 @@ public sealed class TrayDashboardPreferenceTests
     }
 
     [Fact]
-    public void LightingEffectOptionUsesItsDisplayLabel()
-    {
-        var option = new LightingEffectOption(LightingEffect.Spectrum, "Spectrum");
-
-        Assert.Equal("Spectrum", option.ToString());
-    }
-
-    [Fact]
     public void StatusFanTextDropsTheRedundantNoun()
     {
         Assert.Equal(
@@ -262,6 +254,42 @@ public sealed class TrayDashboardPreferenceTests
             dpi: 96);
 
         Assert.Equal(new TrayDashboardRect(8, 48, 420, 520), result);
+    }
+
+    [Theory]
+    [InlineData(96, 536)]
+    [InlineData(144, 548)]
+    [InlineData(192, 560)]
+    public void BottomRevealScalesUpwardOffsetFromTheBottomEdge(
+        int dpi,
+        int expectedStartY)
+    {
+        TrayDashboardRevealGeometry result =
+            TrayDashboardPlacement.ResolveRevealGeometry(
+                new TrayDashboardPoint(1900, 1075),
+                new TrayDashboardRect(0, 0, 1920, 1040),
+                new TrayDashboardRect(1492, 512, 420, 520),
+                WindowPlacementPolicy.ScaleToPixels(24, dpi));
+
+        Assert.Equal(new TrayDashboardRevealGeometry(1040, expectedStartY), result);
+    }
+
+    [Theory]
+    [InlineData(96, 24)]
+    [InlineData(144, 12)]
+    [InlineData(192, 0)]
+    public void TopRevealScalesDownwardOffsetFromTheTopEdge(
+        int dpi,
+        int expectedStartY)
+    {
+        TrayDashboardRevealGeometry result =
+            TrayDashboardPlacement.ResolveRevealGeometry(
+                new TrayDashboardPoint(20, 0),
+                new TrayDashboardRect(0, 40, 1280, 680),
+                new TrayDashboardRect(8, 48, 420, 520),
+                WindowPlacementPolicy.ScaleToPixels(24, dpi));
+
+        Assert.Equal(new TrayDashboardRevealGeometry(-480, expectedStartY), result);
     }
 
     [Fact]

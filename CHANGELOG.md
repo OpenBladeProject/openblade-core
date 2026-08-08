@@ -18,15 +18,25 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Refined the dashboard into a Windows Quick Settings-style panel that stays
   above other windows, does not repeat the selected expanded control, and
   disables tile sizing when it does not affect that expanded control.
-- Simplified the official firmware version card with a clearer **Latest**
-  column and a consistent action row for the model's Razer support page.
 
 ### Fixed
 
 - Fixed the quick-controls popup's blank black opening frame, raw lighting
   option text, missing fan icon, clipped expanded selector, and truncated
-  status labels. The popup now reuses the brightness overlay's upward Windows
-  flyout animation and stages its first composed frame behind the taskbar.
+  status labels. The popup now uses the brightness overlay's Windows flyout
+  timing and stages its first composed frame behind the taskbar.
+- Showed the effective **Off** defaults for Gaming mode's Windows-key and
+  Alt+Tab blocks instead of presenting missing profile overrides as **Not set**.
+
+## [0.1.0-nightly.11] - 2026-08-08
+
+### Changed
+
+- Simplified the official firmware version card with a clearer **Latest**
+  column and a consistent action row for the model's Razer support page.
+
+### Fixed
+
 - Folded GPU clock offsets under their tuning toggle, removed the persistent
   nested-card highlight, and placed dashboard slider values beside their
   sliders to keep the cards compact while retaining their circular thumbs.
@@ -1113,7 +1123,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.10...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.11...HEAD
+[0.1.0-nightly.11]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.10...v0.1.0-nightly.11
 [0.1.0-nightly.10]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.9...v0.1.0-nightly.10
 [0.1.0-nightly.9]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.8...v0.1.0-nightly.9
 [0.1.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.8

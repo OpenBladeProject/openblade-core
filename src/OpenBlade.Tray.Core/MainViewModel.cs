@@ -6829,17 +6829,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             },
             FormatOptionalToggle(profile.EffectiveLaptopBehavior.GamingModeEnabled),
             FormatOptionalToggle(
-                profile.EffectiveLaptopBehavior.GamingModeKeyPolicy is null
-                    ? null
-                    : profile.EffectiveLaptopBehavior
-                        .EffectiveGamingModeKeyPolicy
-                        .BlockWindowsKey),
+                profile.EffectiveLaptopBehavior
+                    .EffectiveGamingModeKeyPolicy
+                    .BlockWindowsKey),
             FormatOptionalToggle(
-                profile.EffectiveLaptopBehavior.GamingModeKeyPolicy is null
-                    ? null
-                    : profile.EffectiveLaptopBehavior
-                        .EffectiveGamingModeKeyPolicy
-                        .BlockAltTab),
+                profile.EffectiveLaptopBehavior
+                    .EffectiveGamingModeKeyPolicy
+                    .BlockAltTab),
             FormatOptionalToggle(profile.EffectiveLaptopBehavior.StartupAnimationEnabled));
     }
 
@@ -8249,10 +8245,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
 }
 
-public sealed record LightingEffectOption(LightingEffect Effect, string Label)
-{
-    public override string ToString() => Label;
-}
+public sealed record LightingEffectOption(LightingEffect Effect, string Label);
 
 public sealed record AmbientAwarenessRegionOption(
     AmbientAwarenessRegion Region,

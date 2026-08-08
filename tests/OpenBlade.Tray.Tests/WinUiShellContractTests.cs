@@ -1739,11 +1739,10 @@ public sealed class WinUiShellContractTests
             "src",
             "OpenBlade.Tray",
             "TrayDashboardWindow.xaml.cs");
-        string brightnessOsd = ReadRepositoryFile(
+        string popupPositioner = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
-            "WindowsDisplayBrightnessOsd.cs");
-
+            "WindowsPopupPositioner.cs");
         Assert.Contains("trayIcon.MouseClick += OnTrayIconMouseClick", trayHost, StringComparison.Ordinal);
         Assert.Contains(
             "trayIcon.MouseDoubleClick += OnTrayIconMouseDoubleClick",
@@ -1821,16 +1820,44 @@ public sealed class WinUiShellContractTests
         Assert.Contains("CompositionTarget.Rendering += OnRevealRendering", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupSlidePolicy.ResolvePosition(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupPositioner.FindTaskbarForMonitor", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("checked(workArea.Y + workArea.Height)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardPlacement.ResolveRevealGeometry(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("Root.UpdateLayout()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsMotionSettings.AreAnimationsEnabled()", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains(
-            "WindowsPopupSlidePolicy.ResolvePosition(",
-            brightnessOsd,
+        Assert.Contains("WindowsPopupPositioner.PositionTopmost(", dashboardWindow, StringComparison.Ordinal);
+        int revealRendering = dashboardWindow.IndexOf(
+            "private void OnRevealRendering(",
+            StringComparison.Ordinal);
+        int cancelReveal = dashboardWindow.IndexOf(
+            "private void CancelRevealAnimation()",
+            revealRendering,
+            StringComparison.Ordinal);
+        string revealRenderingBody = dashboardWindow[revealRendering..cancelReveal];
+        int primeFrame = revealRenderingBody.IndexOf(
+            "if (revealStartedTimestamp == 0)",
+            StringComparison.Ordinal);
+        int elapsedFrame = revealRenderingBody.IndexOf(
+            "TimeSpan elapsed =",
+            primeFrame,
             StringComparison.Ordinal);
         Assert.Contains(
-            "WindowsPopupPositioner.PositionBehindTaskbar(",
-            brightnessOsd,
+            "revealStartedTimestamp = Stopwatch.GetTimestamp();",
+            revealRenderingBody[primeFrame..elapsedFrame],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "return;",
+            revealRenderingBody[primeFrame..elapsedFrame],
+            StringComparison.Ordinal);
+        Assert.Contains("TaskbarByMonitor.TryGetValue", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains("IsTaskbarForMonitor(cached, monitor)", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains("FindWindow(PrimaryTaskbarClass, null)", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains("FindWindowEx(", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains(
+            "DisplayInformation.DisplayContentsInvalidated +=",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "WindowsPopupPositioner.InvalidateTaskbarCache()",
+            dashboardWindow,
             StringComparison.Ordinal);
         Assert.Contains(
             "SetExpandedControl(layout.ExpandedControl)",

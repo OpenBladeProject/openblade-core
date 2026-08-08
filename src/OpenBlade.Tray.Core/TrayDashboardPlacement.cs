@@ -11,6 +11,8 @@ public readonly record struct TrayDashboardRect(int X, int Y, int Width, int Hei
     public int Bottom => checked(Y + Height);
 }
 
+public readonly record struct TrayDashboardRevealGeometry(int StagingY, int StartY);
+
 public static class TrayDashboardPlacement
 {
     /// <summary>
@@ -52,12 +54,53 @@ public static class TrayDashboardPlacement
         int desiredX = checked(anchor.X - (width / 2));
         int x = Math.Clamp(desiredX, minimumX, maximumX);
 
-        int workAreaMiddle = checked(workArea.Y + (workArea.Height / 2));
-        int y = anchor.Y >= workAreaMiddle
+        int y = UsesBottomEdge(anchor, workArea)
             ? checked(workArea.Bottom - verticalMargin - height)
             : checked(workArea.Y + verticalMargin);
 
         return new TrayDashboardRect(x, y, width, height);
+    }
+
+    /// <summary>
+    /// Resolves physical-pixel staging and animation coordinates from the same
+    /// top-or-bottom edge decision used by <see cref="Resolve"/>.
+    /// </summary>
+    public static TrayDashboardRevealGeometry ResolveRevealGeometry(
+        TrayDashboardPoint anchor,
+        TrayDashboardRect workArea,
+        TrayDashboardRect placement,
+        int offsetPixels)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(offsetPixels);
+        if (workArea.Width <= 0 || workArea.Height <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(workArea));
+        }
+        if (placement.Width <= 0 || placement.Height <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(placement));
+        }
+
+        if (UsesBottomEdge(anchor, workArea))
+        {
+            int stagingY = workArea.Bottom;
+            return new TrayDashboardRevealGeometry(
+                stagingY,
+                Math.Min(stagingY, checked(placement.Y + offsetPixels)));
+        }
+
+        int topStagingY = checked(workArea.Y - placement.Height);
+        return new TrayDashboardRevealGeometry(
+            topStagingY,
+            Math.Max(topStagingY, checked(placement.Y - offsetPixels)));
+    }
+
+    private static bool UsesBottomEdge(
+        TrayDashboardPoint anchor,
+        TrayDashboardRect workArea)
+    {
+        int workAreaMiddle = checked(workArea.Y + (workArea.Height / 2));
+        return anchor.Y >= workAreaMiddle;
     }
 }
 
