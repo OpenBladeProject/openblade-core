@@ -20,6 +20,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   intent without ordinary profile writes, restore only eligible owned fan and
   lighting producers, and start a manual fan curve at a fresh thermally safe
   target that falls back to maximum speed when CPU telemetry is unavailable.
+  Recovery on multi-user installs now waits for the active user's saved intent
+  instead of comparing retained hardware state with the machine bootstrap, and
+  rechecks session, power, controller, and lighting state before recovery writes.
   In-process failures still attempt bounded hardware cleanup, while markers
   from an earlier Windows boot no longer suppress ordinary startup profiles.
 

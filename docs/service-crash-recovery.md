@@ -20,10 +20,14 @@ but it cannot mistake an uncertain stop for a normal startup.
 
 Unexpected-exit recovery performs these operations in order:
 
-1. Load profiles and persistent overrides without applying them.
-2. Re-admit the exact model, firmware, USB identity, and command capabilities.
-3. Read confirmed control state and refresh controller advisories.
-4. Compare confirmed state with the active desired state. Differences remain
+1. Re-admit the exact model, firmware, USB identity, and command capabilities,
+   then establish a read-only confirmed-state baseline.
+2. Wait for an authorized active-user request before recovering user-owned
+   producers. The machine bootstrap is not treated as that user's saved intent.
+3. Load the active user's profiles and persistent overrides without applying
+   ordinary profile writes, then reclassify the current adapter and read
+   exact-device state again while that session remains authoritative.
+4. Compare confirmed state with that user's active desired state. Differences remain
    latched as external changes.
 5. Skip ordinary profile and laptop-behavior writes.
 6. Resume only the continuously owned producers that still pass their normal
@@ -60,9 +64,10 @@ The following tests form the crash-recovery contract:
 | Requirement | Coverage |
 | --- | --- |
 | Durable distinction between graceful, same-boot failure, and system restart | `ServiceRunMarkerStoreTests`, `WorkerTests.UnexpectedBackgroundFailure_IsReportedToCleanup`, `WorkerTests.UnexpectedBackgroundFailure_AttemptsCleanupButRetainsRunMarker`, and `WorkerTests.RunMarker_IsClearedOnlyAfterConfirmedOrDeliberatelySkippedCleanup` |
-| Observation before recovery writes | `ServiceControlRuntimeTests.UnexpectedRestart_ObservesBeforeRecoveringOwnedProducers` |
+| Observation before recovery writes | `ServiceControlRuntimeTests.UnexpectedRestart_ObservesBeforeRecoveringOwnedProducers` and `ServiceControlRuntimeTests.UnexpectedRestart_DefersOwnedRecoveryUntilUserAndPowerAreCompatible` |
 | Thermally safe manual-curve recovery without telemetry at the admitted device maximum | `ServiceControlRuntimeTests.UnexpectedRestart_ObservesBeforeRecoveringOwnedProducers` |
-| External changes, persistent overrides, initial user activation, and delayed power classification | `ServiceControlRuntimeTests.UnexpectedRestart_LatchesExternalChangesWithoutRecoveryWrites`, `ServiceControlRuntimeTests.UnexpectedRestart_InitialUserActivationPreservesRecoveryDrift`, and `ServiceControlRuntimeTests.UnexpectedRestart_DelayedInitialPowerClassificationPreservesRecoveryDrift` |
+| External changes, persistent overrides, initial user activation, and delayed power classification | `ServiceControlRuntimeTests.UnexpectedRestart_LatchesExternalChangesWithoutRecoveryWrites`, `ServiceControlRuntimeTests.UnexpectedRestart_InitialUserActivationClassifiesRecoveryDrift`, `ServiceControlRuntimeTests.UnexpectedRestart_DefersOwnedRecoveryUntilUserAndPowerAreCompatible`, and `ServiceControlRuntimeTests.UnexpectedRestart_DelayedInitialPowerClassificationPreservesRecoveryDrift` |
+| Session-switch, late lighting changes, and pre-submission cancellation safety | `ServiceControlRuntimeTests.UnexpectedRestart_SessionLossDuringObservationDoesNotRecoverStaleUser`, `ServiceControlRuntimeTests.UnexpectedRestart_LightingChangeAfterClassificationHonorsPolicy`, `ServiceControlRuntimeTests.UnexpectedRestart_PreSubmissionCancellationKeepsRecoveryPending`, and `ServiceControlRuntimeTests.UnexpectedRestart_PreLightingCancellationKeepsRestorePending` |
 | Delayed device arrival after the bounded recovery attempt | `ServiceControlRuntimeTests.UnexpectedRestart_DeviceArrivingAfterRecoveryAttemptDoesNotStartCurve` |
 | Startup sequencing and cancellation | `ServiceStartupCoordinatorTests.InitializeAsync_UnclearedRunMarkerUsesOwnedRecoverySequence` |
 | Bounded SCM restart policy | `WindowsSetupPlatformServiceTests.InstallService_ConfiguresBoundedRestartRecovery` |
@@ -87,7 +92,8 @@ controller active and with the operator available to restore state.
 3. From an elevated shell, record the service PID and force-terminate only that
    exact `%ProgramFiles%\OpenBlade\OpenBlade.Service.exe` process.
 4. Wait up to 30 seconds for SCM to start one replacement service process with
-   a different PID. Do not start a second service or watchdog.
+   a different PID and for the active Tray or Session Agent to reconnect and
+   load that user's recovery intent. Do not start a second service or watchdog.
 5. Use the typed status or firmware-smoke client to confirm exact-device
    verification completed, the manual curve produced a fresh target, the
    lighting renderer reconnected once, and no external-change latch was

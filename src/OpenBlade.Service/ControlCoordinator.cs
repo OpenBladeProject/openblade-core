@@ -33,6 +33,14 @@ internal sealed class IntentionalWriteCanceledException(
     public IReadOnlySet<DeviceSubsystem> WriteAttempted { get; } = writeAttempted;
 }
 
+internal sealed class WriteAuthorityLostException : InvalidOperationException
+{
+    public WriteAuthorityLostException()
+        : base("The active Windows session changed before the recovery write.")
+    {
+    }
+}
+
 public sealed class ControlCoordinator
 {
     private readonly IBladeDevice device;
@@ -125,7 +133,8 @@ public sealed class ControlCoordinator
 
     internal Task<ScopedApplyOutcome> ApplyFanControlOutcomeAsync(
         FanControlSettings value,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<bool>? writeAllowed = null)
     {
         ArgumentNullException.ThrowIfNull(value);
         return ApplyScopedAsync(
@@ -143,6 +152,7 @@ public sealed class ControlCoordinator
                         ? null
                         : "Fixed and manual fan control require confirmed Balanced Automatic fans to enter manual mode, or an already-confirmed manual fan state."
                 : null,
+            writeAllowed: writeAllowed,
             acceptSetterCompletionWithoutReadback:
                 DeviceSubsystemOrder.IsManualFanMode(value.Mode),
             setterCompletionEvidence: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
@@ -445,7 +455,10 @@ public sealed class ControlCoordinator
     internal Task<ScopedApplyOutcome> ApplyLightingOutcomeAsync(
         LightingSettings value,
         CancellationToken cancellationToken,
-        bool forceWrite = false) => ApplyScopedAsync(
+        bool forceWrite = false,
+        Func<bool>? writeAllowed = null,
+        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null) =>
+        ApplyScopedAsync(
             DeviceSubsystem.Lighting,
             "Lighting",
             IsLightingValid(value),
@@ -453,9 +466,11 @@ public sealed class ControlCoordinator
             state => LightingMatches(state, value),
             token => device.SetLightingAsync(value, token),
             cancellationToken,
+            initialStateBlockReason,
             acceptSetterCompletionWithoutReadback: value.Effect != LightingEffect.Off,
             setterCompletionEvidence: state => LogoMatches(state, value),
             forceWrite: forceWrite,
+            writeAllowed: writeAllowed,
             stateReader: device.ReadLightingStateAsync);
 
     internal async Task<FullTransitionApplyOutcome> ApplyDesiredStateOutcomeAsync(
@@ -949,7 +964,8 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, bool>? setterCompletionEvidence = null,
         bool forceWrite = false,
         Func<ConfirmedDeviceState, CancellationToken, Task>? stateAwareSetter = null,
-        Func<CancellationToken, Task<ConfirmedDeviceState>>? stateReader = null)
+        Func<CancellationToken, Task<ConfirmedDeviceState>>? stateReader = null,
+        Func<bool>? writeAllowed = null)
     {
         if (!valid)
         {
@@ -1009,6 +1025,11 @@ public sealed class ControlCoordinator
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            if (writeAllowed?.Invoke() == false)
+            {
+                throw new WriteAuthorityLostException();
+            }
+
             writeAttempted = true;
             await (stateAwareSetter is null
                 ? setter(cancellationToken)
@@ -1071,6 +1092,10 @@ public sealed class ControlCoordinator
                 exception);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (WriteAuthorityLostException)
         {
             throw;
         }
