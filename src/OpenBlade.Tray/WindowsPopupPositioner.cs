@@ -65,14 +65,6 @@ internal static class WindowsPopupPositioner
         }
     }
 
-    public static void InvalidateTaskbarCache()
-    {
-        lock (CacheLock)
-        {
-            TaskbarByMonitor.Clear();
-        }
-    }
-
     private static nint FindSecondaryTaskbarForMonitor(nint monitor)
     {
         nint taskbar = 0;

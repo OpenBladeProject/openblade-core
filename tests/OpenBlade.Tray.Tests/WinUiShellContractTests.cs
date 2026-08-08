@@ -1851,12 +1851,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("IsTaskbarForMonitor(cached, monitor)", popupPositioner, StringComparison.Ordinal);
         Assert.Contains("FindWindow(PrimaryTaskbarClass, null)", popupPositioner, StringComparison.Ordinal);
         Assert.Contains("FindWindowEx(", popupPositioner, StringComparison.Ordinal);
-        Assert.Contains(
-            "DisplayInformation.DisplayContentsInvalidated +=",
-            dashboardWindow,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "WindowsPopupPositioner.InvalidateTaskbarCache()",
+        Assert.DoesNotContain(
+            "DisplayInformation.DisplayContentsInvalidated",
             dashboardWindow,
             StringComparison.Ordinal);
         Assert.Contains(

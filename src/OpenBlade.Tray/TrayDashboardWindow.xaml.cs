@@ -8,7 +8,6 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using OpenBlade.Contracts;
 using Windows.Graphics;
-using Windows.Graphics.Display;
 using WinRT.Interop;
 
 namespace OpenBlade.Tray;
@@ -54,8 +53,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
         Activated += OnActivated;
         AppWindow.Closing += OnClosing;
-        DisplayInformation.DisplayContentsInvalidated +=
-            OnDisplayContentsInvalidated;
         AppWindow.IsShownInSwitchers = false;
         try
         {
@@ -189,8 +186,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         Activated -= OnActivated;
         AppWindow.Closing -= OnClosing;
-        DisplayInformation.DisplayContentsInvalidated -=
-            OnDisplayContentsInvalidated;
         CancelRevealAnimation();
         Close();
     }
@@ -554,11 +549,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             Hide();
         }
     }
-
-    private void OnDisplayContentsInvalidated(
-        DisplayInformation sender,
-        object args) =>
-        WindowsPopupPositioner.InvalidateTaskbarCache();
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
