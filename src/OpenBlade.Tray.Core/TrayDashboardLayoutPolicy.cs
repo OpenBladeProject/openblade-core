@@ -12,14 +12,15 @@ public sealed record TrayDashboardLayout(
 
 public static class TrayDashboardLayoutPolicy
 {
-    private const int BaseHeightDip = 118;
-    private const int ControlRowHeightDip = 122;
-    private const int ExpandedControlHeightDip = 118;
-    private const int MinimumHeightDip = 230;
-    private const int MaximumHeightDip = 720;
+    private const int BaseHeightDip = 82;
+    private const int ControlRowHeightDip = 106;
+    private const int ExpandedControlHeightDip = 84;
+    private const int MinimumHeightDip = 188;
+    private const int MaximumHeightDip = 640;
 
     public static TrayDashboardLayout Resolve(
-        IEnumerable<TrayDashboardControlPreference> controls)
+        IEnumerable<TrayDashboardControlPreference> controls,
+        TrayDashboardControlKind? expandedControl = null)
     {
         ArgumentNullException.ThrowIfNull(controls);
 
@@ -27,7 +28,7 @@ public static class TrayDashboardLayoutPolicy
         int row = 0;
         int column = 0;
         foreach (TrayDashboardControlPreference control in controls.Where(control =>
-                     control.IsVisible))
+                     control.IsVisible && control.Kind != expandedControl))
         {
             bool wide = control.Size == TrayDashboardControlSize.Wide;
             if (wide && column != 0)

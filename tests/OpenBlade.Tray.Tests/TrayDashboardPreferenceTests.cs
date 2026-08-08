@@ -146,6 +146,29 @@ public sealed class TrayDashboardPreferenceTests
         Assert.Equal(new TrayDashboardRect(1278, 308, 630, 720), result);
     }
 
+    [Theory]
+    [InlineData(96, 360, 378, 8)]
+    [InlineData(144, 540, 567, 12)]
+    [InlineData(192, 720, 756, 16)]
+    public void PlacementScalesRedesignedPopupAtCommonMonitorDpis(
+        int dpi,
+        int expectedWidth,
+        int expectedHeight,
+        int expectedMargin)
+    {
+        var workArea = new TrayDashboardRect(0, 0, 3840, 2160);
+        TrayDashboardRect result = TrayDashboardPlacement.Resolve(
+            new TrayDashboardPoint(3839, 2159),
+            workArea,
+            new TrayDashboardSize(360, 378),
+            dpi);
+
+        Assert.Equal(expectedWidth, result.Width);
+        Assert.Equal(expectedHeight, result.Height);
+        Assert.Equal(workArea.Right - expectedMargin, result.Right);
+        Assert.Equal(workArea.Bottom - expectedMargin, result.Bottom);
+    }
+
     [Fact]
     public void PlacementHandlesWorkAreasNarrowerThanConfiguredMargins()
     {
@@ -205,10 +228,42 @@ public sealed class TrayDashboardPreferenceTests
         ],
             layout.Controls);
         Assert.Equal(
-            602,
+            484,
             TrayDashboardLayoutPolicy.CalculatePreferredHeight(
                 layout,
                 hasExpandedControl: true));
+    }
+
+    [Fact]
+    public void LayoutOmitsExpandedControlFromCompactTiles()
+    {
+        TrayDashboardLayout layout = TrayDashboardLayoutPolicy.Resolve(
+        [
+            new(
+                TrayDashboardControlKind.Performance,
+                true,
+                TrayDashboardControlSize.Compact),
+            new(
+                TrayDashboardControlKind.Fans,
+                true,
+                TrayDashboardControlSize.Compact),
+            new(
+                TrayDashboardControlKind.Battery,
+                true,
+                TrayDashboardControlSize.Compact),
+        ],
+            TrayDashboardControlKind.Performance);
+
+        Assert.DoesNotContain(
+            layout.Controls,
+            control => control.Kind == TrayDashboardControlKind.Performance);
+        Assert.Equal(
+        [
+            new(TrayDashboardControlKind.Fans, 0, 0, 1),
+            new(TrayDashboardControlKind.Battery, 0, 1, 1),
+        ],
+            layout.Controls);
+        Assert.Equal(1, layout.RowCount);
     }
 
     [Theory]

@@ -12,13 +12,14 @@ namespace OpenBlade.Tray;
 
 public sealed partial class TrayDashboardWindow : Window, IDisposable
 {
-    private const int PopupWidth = 420;
+    private const int PopupWidth = 360;
     private const uint MonitorDefaultToNearest = 2;
 
     private readonly Action openMainWindow;
     private TrayDashboardPreference preference = TrayDashboardPreferenceDefaults.Preference;
     private TrayDashboardLayout layout = TrayDashboardLayoutPolicy.Resolve(
-        TrayDashboardPreferenceDefaults.Preference.Controls!);
+        TrayDashboardPreferenceDefaults.Preference.Controls!,
+        TrayDashboardPreferenceDefaults.Preference.ExpandedControl);
     private bool changingPerformance;
     private bool changingFans;
     private bool chargeLimitPointerInteraction;
@@ -48,6 +49,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             presenter.IsResizable = false;
             presenter.IsMaximizable = false;
             presenter.IsMinimizable = false;
+            presenter.IsAlwaysOnTop = true;
             presenter.SetBorderAndTitleBar(hasBorder: true, hasTitleBar: false);
             AppWindow.SetPresenter(presenter);
         }
@@ -66,9 +68,12 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     public void ApplyPreferences(TrayDashboardPreference preferences)
     {
         preference = TrayDashboardPreferenceDefaults.Normalize(preferences);
-        layout = TrayDashboardLayoutPolicy.Resolve(preference.Controls!);
-        IReadOnlyDictionary<TrayDashboardControlKind, Border> tiles = TilesByKind();
-        foreach (Border tile in tiles.Values)
+        layout = TrayDashboardLayoutPolicy.Resolve(
+            preference.Controls!,
+            preference.ExpandedControl);
+        IReadOnlyDictionary<TrayDashboardControlKind, FrameworkElement> tiles =
+            TilesByKind();
+        foreach (FrameworkElement tile in tiles.Values)
         {
             tile.Visibility = Visibility.Collapsed;
         }
@@ -76,7 +81,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         ControlGrid.RowDefinitions.Clear();
         foreach (TrayDashboardControlPlacement placement in layout.Controls)
         {
-            Border tile = tiles[placement.Kind];
+            FrameworkElement tile = tiles[placement.Kind];
             EnsureRow(placement.Row);
             Grid.SetRow(tile, placement.Row);
             Grid.SetColumn(tile, placement.Column);
@@ -183,6 +188,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         visibleDisplayArea = displayArea;
         TryPositionAt(anchor, displayArea);
         AppWindow.Show(activateWindow: !editing);
+        if (!editing)
+        {
+            Activate();
+        }
         visible = true;
     }
 
@@ -255,8 +264,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
     }
 
-    private IReadOnlyDictionary<TrayDashboardControlKind, Border> TilesByKind() =>
-        new Dictionary<TrayDashboardControlKind, Border>
+    private IReadOnlyDictionary<TrayDashboardControlKind, FrameworkElement> TilesByKind() =>
+        new Dictionary<TrayDashboardControlKind, FrameworkElement>
         {
             [TrayDashboardControlKind.Performance] = PerformanceTile,
             [TrayDashboardControlKind.Fans] = FansTile,

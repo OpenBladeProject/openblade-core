@@ -14,6 +14,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Refined the dashboard into a Windows Quick Settings-style panel that stays
+  above other windows and does not repeat the selected expanded control.
 - Simplified the official firmware version card with a clearer **Latest**
   column and a consistent action row for the model's Razer support page.
 

@@ -1728,6 +1728,9 @@ public sealed class WinUiShellContractTests
         Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(false)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("The actual tray popup stays open and updates while you edit.", mainWindow, StringComparison.Ordinal);
         Assert.Contains("AppWindow.Show(activateWindow: !editing)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("private const int PopupWidth = 360", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("presenter.IsAlwaysOnTop = true", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("Activate();", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("MonitorFromPoint(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("GetDpiForMonitor(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("MonitorDpiType.Effective", dashboardWindow, StringComparison.Ordinal);
@@ -1764,6 +1767,8 @@ public sealed class WinUiShellContractTests
 
         Assert.Contains("x:Name=\"ControlGrid\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ExpandedControlContainer\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("QuickTileSurfaceStyle", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Charge limit\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"BatteryPowerStatus\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"More\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Customize", dashboardXaml, StringComparison.OrdinalIgnoreCase);
