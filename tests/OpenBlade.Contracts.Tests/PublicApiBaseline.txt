@@ -401,6 +401,7 @@ type sealed class OpenBlade.Contracts.DesiredDeviceState
   method OpenBlade.Contracts.DesiredBatteryState get_Battery()
   method OpenBlade.Contracts.DesiredDeviceState <Clone>$()
   method OpenBlade.Contracts.FanControlSettings get_FanControl()
+  method OpenBlade.Contracts.GpuClockTuningSettings get_GpuClockTuning()
   method OpenBlade.Contracts.ResolvedSetting<OpenBlade.Contracts.FanMode> get_Fans()
   method OpenBlade.Contracts.ResolvedSetting<OpenBlade.Contracts.LightingSettings> get_Lighting()
   method OpenBlade.Contracts.ResolvedSetting<OpenBlade.Contracts.PerformancePreset> get_Performance()
@@ -409,6 +410,7 @@ type sealed class OpenBlade.Contracts.DesiredDeviceState
   method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceSettings value)
   method System.Void set_FanControl(OpenBlade.Contracts.FanControlSettings value)
   method System.Void set_Fans(OpenBlade.Contracts.ResolvedSetting<OpenBlade.Contracts.FanMode> value)
+  method System.Void set_GpuClockTuning(OpenBlade.Contracts.GpuClockTuningSettings value)
   method System.Void set_Lighting(OpenBlade.Contracts.ResolvedSetting<OpenBlade.Contracts.LightingSettings> value)
   method System.Void set_Performance(OpenBlade.Contracts.ResolvedSetting<OpenBlade.Contracts.PerformancePreset> value)
   method override System.Boolean Equals(System.Object obj)
@@ -420,6 +422,7 @@ type sealed class OpenBlade.Contracts.DesiredDeviceState
   property OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance { get; init; }
   property OpenBlade.Contracts.DesiredBatteryState Battery { get; init; }
   property OpenBlade.Contracts.FanControlSettings FanControl { get; init; }
+  property OpenBlade.Contracts.GpuClockTuningSettings GpuClockTuning { get; init; }
   property OpenBlade.Contracts.ResolvedSetting<OpenBlade.Contracts.FanMode> Fans { get; init; }
   property OpenBlade.Contracts.ResolvedSetting<OpenBlade.Contracts.LightingSettings> Lighting { get; init; }
   property OpenBlade.Contracts.ResolvedSetting<OpenBlade.Contracts.PerformancePreset> Performance { get; init; }
@@ -802,6 +805,28 @@ type sealed class OpenBlade.Contracts.GpuClockOffsetSettings
   property OpenBlade.Contracts.GpuClockOffsetSettings Default { get; }
   property System.Int32 CoreMegahertz { get; }
   property System.Int32 MemoryMegahertz { get; }
+type sealed class OpenBlade.Contracts.GpuClockTuningSettings
+  interface System.IEquatable<OpenBlade.Contracts.GpuClockTuningSettings>
+  ctor (System.Boolean Enabled, OpenBlade.Contracts.GpuClockOffsetSettings Offsets)
+  method OpenBlade.Contracts.GpuClockOffsetSettings get_EffectiveOffsets()
+  method OpenBlade.Contracts.GpuClockOffsetSettings get_Offsets()
+  method OpenBlade.Contracts.GpuClockTuningSettings <Clone>$()
+  method System.Boolean get_Enabled()
+  method System.Void Deconstruct(out System.Boolean Enabled, out OpenBlade.Contracts.GpuClockOffsetSettings Offsets)
+  method System.Void set_Enabled(System.Boolean value)
+  method System.Void set_Offsets(OpenBlade.Contracts.GpuClockOffsetSettings value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Contracts.GpuClockTuningSettings get_Disabled()
+  method static System.Boolean IsWellFormed(OpenBlade.Contracts.GpuClockTuningSettings value)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.GpuClockTuningSettings left, OpenBlade.Contracts.GpuClockTuningSettings right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.GpuClockTuningSettings left, OpenBlade.Contracts.GpuClockTuningSettings right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.GpuClockTuningSettings other)
+  property OpenBlade.Contracts.GpuClockOffsetSettings EffectiveOffsets { get; }
+  property OpenBlade.Contracts.GpuClockOffsetSettings Offsets { get; init; }
+  property OpenBlade.Contracts.GpuClockTuningSettings Disabled { get; }
+  property System.Boolean Enabled { get; init; }
 type sealed class OpenBlade.Contracts.GpuOverclockCapabilities
   interface System.IEquatable<OpenBlade.Contracts.GpuOverclockCapabilities>
   ctor (OpenBlade.Contracts.DeviceNumericRange CoreOffsetMegahertz, OpenBlade.Contracts.DeviceNumericRange MemoryOffsetMegahertz, OpenBlade.Contracts.DeviceFeatureAccess Access)
@@ -1106,7 +1131,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 37
+  field const System.Int32 ProtocolVersion = 38
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1118,12 +1143,14 @@ type sealed class OpenBlade.Contracts.PerformanceOverride
   interface System.IEquatable<OpenBlade.Contracts.PerformanceOverride>
   ctor (OpenBlade.Contracts.PerformancePreset Value, OpenBlade.Contracts.OverrideLifetime Lifetime, OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance = null)
   method OpenBlade.Contracts.CustomPerformanceSettings get_CustomPerformance()
+  method OpenBlade.Contracts.GpuClockTuningSettings get_GpuClockTuning()
   method OpenBlade.Contracts.OverrideLifetime get_Lifetime()
   method OpenBlade.Contracts.PerformanceOverride <Clone>$()
   method OpenBlade.Contracts.PerformancePreset get_Value()
   method System.Boolean IsWellFormed()
   method System.Void Deconstruct(out OpenBlade.Contracts.PerformancePreset Value, out OpenBlade.Contracts.OverrideLifetime Lifetime, out OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance)
   method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceSettings value)
+  method System.Void set_GpuClockTuning(OpenBlade.Contracts.GpuClockTuningSettings value)
   method System.Void set_Lifetime(OpenBlade.Contracts.OverrideLifetime value)
   method System.Void set_Value(OpenBlade.Contracts.PerformancePreset value)
   method override System.Boolean Equals(System.Object obj)
@@ -1134,6 +1161,7 @@ type sealed class OpenBlade.Contracts.PerformanceOverride
   method static System.Boolean op_Inequality(OpenBlade.Contracts.PerformanceOverride left, OpenBlade.Contracts.PerformanceOverride right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.PerformanceOverride other)
   property OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance { get; init; }
+  property OpenBlade.Contracts.GpuClockTuningSettings GpuClockTuning { get; init; }
   property OpenBlade.Contracts.OverrideLifetime Lifetime { get; init; }
   property OpenBlade.Contracts.PerformancePreset Value { get; init; }
 type enum OpenBlade.Contracts.PerformancePreset
@@ -1178,6 +1206,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   method OpenBlade.Contracts.DisplayProfileSettings get_Display()
   method OpenBlade.Contracts.FanControlSettings get_FanControl()
   method OpenBlade.Contracts.FanMode get_Fans()
+  method OpenBlade.Contracts.GpuClockTuningSettings get_GpuClockTuning()
   method OpenBlade.Contracts.LaptopBehaviorProfileSettings get_EffectiveLaptopBehavior()
   method OpenBlade.Contracts.LaptopBehaviorProfileSettings get_LaptopBehavior()
   method OpenBlade.Contracts.LightingPowerPolicy get_EffectiveLightingPowerPolicy()
@@ -1190,6 +1219,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   method System.Void set_Display(OpenBlade.Contracts.DisplayProfileSettings value)
   method System.Void set_FanControl(OpenBlade.Contracts.FanControlSettings value)
   method System.Void set_Fans(OpenBlade.Contracts.FanMode value)
+  method System.Void set_GpuClockTuning(OpenBlade.Contracts.GpuClockTuningSettings value)
   method System.Void set_LaptopBehavior(OpenBlade.Contracts.LaptopBehaviorProfileSettings value)
   method System.Void set_Lighting(OpenBlade.Contracts.LightingSettings value)
   method System.Void set_LightingPowerPolicy(OpenBlade.Contracts.LightingPowerPolicy value)
@@ -1204,6 +1234,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   property OpenBlade.Contracts.DisplayProfileSettings Display { get; init; }
   property OpenBlade.Contracts.FanControlSettings FanControl { get; init; }
   property OpenBlade.Contracts.FanMode Fans { get; init; }
+  property OpenBlade.Contracts.GpuClockTuningSettings GpuClockTuning { get; init; }
   property OpenBlade.Contracts.LaptopBehaviorProfileSettings EffectiveLaptopBehavior { get; }
   property OpenBlade.Contracts.LaptopBehaviorProfileSettings LaptopBehavior { get; init; }
   property OpenBlade.Contracts.LightingPowerPolicy EffectiveLightingPowerPolicy { get; }

@@ -19,7 +19,7 @@ public sealed class ProfileExportSerializerTests
 
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
-        Assert.Equal(5, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(6, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("0.1.0+abcdef0", root.GetProperty("applicationVersion").GetString());
         Assert.Equal(exportedAt, root.GetProperty("exportedAtUtc").GetDateTimeOffset());
         JsonElement exportedProfiles = root.GetProperty("profiles");
@@ -59,10 +59,10 @@ public sealed class ProfileExportSerializerTests
                 Performance = PerformancePreset.Custom,
                 CustomPerformance = new CustomPerformanceSettings(
                     CustomPerformanceLevel.High,
-                    CustomPerformanceLevel.Medium)
-                {
-                    GpuClockOffsets = new GpuClockOffsetSettings(125, 500),
-                },
+                    CustomPerformanceLevel.Medium),
+                GpuClockTuning = new GpuClockTuningSettings(
+                    Enabled: true,
+                    new GpuClockOffsetSettings(125, 500)),
                 LaptopBehavior = new LaptopBehaviorProfileSettings(
                     StartupAnimationEnabled: true,
                     FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
@@ -85,20 +85,94 @@ public sealed class ProfileExportSerializerTests
     }
 
     [Fact]
+    public void Deserialize_VersionFiveMigratesCustomGpuClockOffsets()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var offsets = new GpuClockOffsetSettings(125, 500);
+        ProfileSet legacy = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.High,
+                    CustomPerformanceLevel.Medium)
+                {
+                    GpuClockOffsets = offsets,
+                },
+            },
+        };
+        string json = ProfileExportSerializer.Serialize(
+            legacy,
+            "0.1.0+abcdef0",
+            DateTimeOffset.UtcNow).Replace(
+                "\"schemaVersion\": 6",
+                "\"schemaVersion\": 5",
+                StringComparison.Ordinal);
+
+        ProfileSet imported = ProfileExportSerializer.Deserialize(json);
+
+        Assert.Null(imported.PluggedIn.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(
+            new GpuClockTuningSettings(Enabled: true, offsets),
+            imported.PluggedIn.GpuClockTuning);
+    }
+
+    [Fact]
+    public void Deserialize_VersionFiveDoesNotMigrateGpuTuningOutsidePluggedIn()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var offsets = new GpuClockOffsetSettings(125, 500);
+        var legacyCustom = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium)
+        {
+            GpuClockOffsets = offsets,
+        };
+        ProfileSet legacy = defaults with
+        {
+            Battery = defaults.Battery with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = legacyCustom,
+            },
+            UsbC = defaults.UsbC with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = legacyCustom,
+            },
+        };
+        string json = ProfileExportSerializer.Serialize(
+            legacy,
+            "0.1.0+abcdef0",
+            DateTimeOffset.UtcNow).Replace(
+                "\"schemaVersion\": 6",
+                "\"schemaVersion\": 5",
+                StringComparison.Ordinal);
+
+        ProfileSet imported = ProfileExportSerializer.Deserialize(json);
+
+        Assert.Null(imported.Battery.GpuClockTuning);
+        Assert.Equal(offsets, imported.Battery.CustomPerformance?.GpuClockOffsets);
+        Assert.Null(imported.UsbC.GpuClockTuning);
+        Assert.Equal(offsets, imported.UsbC.CustomPerformance?.GpuClockOffsets);
+    }
+
+    [Fact]
     public void Deserialize_RejectsUnsupportedSchema()
     {
         string json = ProfileExportSerializer.Serialize(
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 5",
                 "\"schemaVersion\": 6",
+                "\"schemaVersion\": 7",
                 StringComparison.Ordinal);
 
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => ProfileExportSerializer.Deserialize(json));
 
-        Assert.Contains("schema 6", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("schema 7", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("newer version", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -109,7 +183,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 5",
+                "\"schemaVersion\": 6",
                 "\"schemaVersion\": 0",
                 StringComparison.Ordinal);
 
@@ -126,7 +200,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 5",
+                "\"schemaVersion\": 6",
                 "\"schemaVersion\": 1",
                 StringComparison.Ordinal);
 

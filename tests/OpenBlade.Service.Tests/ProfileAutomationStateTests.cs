@@ -155,6 +155,42 @@ public sealed class ProfileAutomationStateTests
     }
 
     [Fact]
+    public void GpuClockTuning_ResolvesOnAcAndFailsClosedOnBattery()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var pluggedInTuning = new GpuClockTuningSettings(
+            Enabled: true,
+            new GpuClockOffsetSettings(125, 500));
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Balanced,
+                GpuClockTuning = pluggedInTuning,
+            },
+            Battery = defaults.Battery with
+            {
+                GpuClockTuning = GpuClockTuningSettings.Disabled,
+            },
+        };
+        var state = new ProfileAutomationState(
+            profiles,
+            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            PowerSource.PluggedIn);
+
+        DesiredDeviceState onAc = state.Resolve(
+            new ConfirmedDeviceState(null, null, null, null));
+        state.ChangePowerSource(PowerSource.Battery);
+        DesiredDeviceState onBattery = state.Resolve(
+            new ConfirmedDeviceState(null, null, null, null));
+
+        Assert.Equal(PerformancePreset.Balanced, onAc.Performance.Value);
+        Assert.Equal(pluggedInTuning, onAc.GpuClockTuning);
+        Assert.Equal(PerformancePreset.BatterySaver, onBattery.Performance.Value);
+        Assert.Null(onBattery.GpuClockTuning);
+    }
+
+    [Fact]
     public void PersistentBatteryPerformanceOverride_PausesOnAcAndReturnsOnBattery()
     {
         ProfileAutomationState state = CreateState(PowerSource.Battery);

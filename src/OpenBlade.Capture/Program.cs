@@ -197,6 +197,100 @@ if (args.Length == 2 && args[0].Equals(
             && GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive());
 }
 
+if (args.Length == 2 && args[0].Equals(
+    "validate-rz09-0581-02e0-bios-4.00-gpu-clock-offsets",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool confirmationMatched = args[1].Equals(
+        GpuClockOffsetValidationEnvironment.Rz090581Bios400Confirmation,
+        StringComparison.Ordinal);
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactDevice =
+        GpuClockOffsetValidationEnvironment.HasOneExactRz090581ProtocolCollection();
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    bool gpuTuningToolsInactive =
+        GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive();
+    Console.WriteLine($"ConfirmationMatched={confirmationMatched}");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactDevice={exactDevice}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    Console.WriteLine($"GpuTuningToolsInactive={gpuTuningToolsInactive}");
+    if (!confirmationMatched
+        || !exactHost
+        || !exactDevice
+        || !synapseInactive
+        || !openBladeServiceInactive
+        || !gpuTuningToolsInactive)
+    {
+        Console.WriteLine("MutationAttempted=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    return GpuClockOffsetValidationCommand.Run(
+        new NvidiaNvmlGpuClockOffsetValidationController(),
+        Console.Out,
+        GpuClockOffsetValidationPlan.Rz090581Bios400,
+        static () =>
+            GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host()
+            && GpuClockOffsetValidationEnvironment.HasOneExactRz090581ProtocolCollection()
+            && GpuClockOffsetValidationEnvironment.IsSynapseInactive()
+            && GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive()
+            && GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive());
+}
+
+if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0581-02e0-bios-4.00-performance",
+    StringComparison.OrdinalIgnoreCase))
+{
+    Console.WriteLine("Target=RZ09-0581 1532:02E0 BIOS 4.00");
+    Console.WriteLine("ReadOnly=True");
+    if (!GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host())
+    {
+        Console.WriteLine("ExactHost=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    Console.WriteLine("ExactHost=True");
+    IProductionBatteryPortFactory factory =
+        ProductionBatteryFactory.CreateWindowsReadOnly();
+    HidSessionResult<IProductionBatteryPort> opened =
+        await factory.OpenAsync(CancellationToken.None);
+    Console.WriteLine($"OpenFailure={opened.Failure?.ToString() ?? "None"}");
+    if (opened.Value is not { } port || opened.Failure is not null)
+    {
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    await using (port)
+    {
+        try
+        {
+            ProductionPerformanceFanState state =
+                await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+            Console.WriteLine(
+                $"Performance={state.Performance?.ToString() ?? "Unavailable"}");
+            Console.WriteLine($"Fans={state.Fans?.ToString() ?? "Unavailable"}");
+            Console.WriteLine("Success=True");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"Failure={exception.GetType().Name}");
+            Console.WriteLine($"Message={exception.Message}");
+            Console.WriteLine("Success=False");
+            return 2;
+        }
+    }
+}
+
 if (args.Length is >= 1 and <= 3
     && (args[0].Equals(
             "probe-special-keys",
@@ -1552,6 +1646,11 @@ Console.WriteLine("  OpenBlade.Capture probe-gpu-clock-offsets");
 Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0528-02c6-gpu-clock-offsets " +
     GpuClockOffsetValidationEnvironment.Confirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-gpu-clock-offsets " +
+    GpuClockOffsetValidationEnvironment.Rz090581Bios400Confirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture query-rz09-0581-02e0-bios-4.00-performance");
 Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds] [output-file]");
 Console.WriteLine(
     "  OpenBlade.Capture probe-rz09-0528-02c6-special-keys [seconds] [output-file]");

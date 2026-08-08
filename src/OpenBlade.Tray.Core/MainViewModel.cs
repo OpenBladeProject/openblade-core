@@ -181,6 +181,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private IReadOnlyList<CustomPerformanceLevel> availableCustomGpuLevels =
         AllCustomPerformanceLevels;
     private GpuClockOffsetCapabilities? gpuClockOffsetCapabilities;
+    private bool gpuClockTuningEnabled;
+    private bool gpuClockTuningConfigured;
     private int gpuCoreClockOffsetMegahertz;
     private int gpuMemoryClockOffsetMegahertz;
     private FanMode selectedFanMode = FanMode.Automatic;
@@ -267,6 +269,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private PowerSource? activeProfileDraftSource;
     private PerformancePreset? activeProfileDraftPerformance;
     private CustomPerformanceSettings? activeProfileDraftCustomPerformance;
+    private GpuClockTuningSettings? activeProfileDraftGpuClockTuning;
     private FanMode? activeProfileDraftFans;
     private FanControlSettings? activeProfileDraftFanControl;
     private LightingSettings? activeProfileDraftLighting;
@@ -803,7 +806,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(AvailableActivePerformanceOptions));
             Notify(nameof(SelectedPerformanceOption));
             Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsGpuClockTuningVisible));
             Notify(nameof(IsGpuClockTuningAvailable));
+            Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(ActiveSavedDisplayProfile));
             Notify(nameof(SaveToActiveProfileLabel));
@@ -1541,7 +1546,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsBalancedSelected));
             Notify(nameof(IsPerformanceSelected));
             Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsGpuClockTuningVisible));
             Notify(nameof(IsGpuClockTuningAvailable));
+            Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(CanEditFanControl));
             NotifyTrayHoverLabel();
@@ -1559,9 +1566,29 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && SelectedPerformance == PerformancePreset.Custom
         && AvailablePerformancePresets.Contains(PerformancePreset.Custom);
 
+    public bool IsGpuClockTuningVisible =>
+        ActivePowerSource == PowerSource.PluggedIn
+        && (AvailablePerformancePresets.Contains(PerformancePreset.Custom)
+            || Capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite });
+
     public bool IsGpuClockTuningAvailable =>
-        IsCustomPerformanceVisible
+        IsGpuClockTuningVisible
         && GpuClockOffsetCapabilities?.IsWellFormed == true;
+
+    public bool IsGpuClockTuningEnabled
+    {
+        get => gpuClockTuningEnabled;
+        private set
+        {
+            if (gpuClockTuningEnabled == value)
+            {
+                return;
+            }
+
+            SetField(ref gpuClockTuningEnabled, value);
+            Notify(nameof(CanEditGpuClockTuning));
+        }
+    }
 
     public bool IsSpecialKeyBindingsEditable =>
         Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
@@ -1764,10 +1791,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CanRequestHardwareControl && !IsPerformanceOperationInProgress;
 
     public bool CanEditGpuClockTuning =>
+        CanToggleGpuClockTuning
+        && IsGpuClockTuningEnabled
+        && IsGpuClockTuningAvailable;
+
+    public bool CanToggleGpuClockTuning =>
         CanEditPerformance
-        && IsGpuClockTuningAvailable
-        && Capabilities.GpuOverclock
-            is not { Access: not DeviceFeatureAccess.ReadWrite };
+        && IsGpuClockTuningVisible
+        && Capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite };
 
     public bool IsPerformanceOperationInProgress
     {
@@ -1779,6 +1810,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 SetField(ref isPerformanceOperationInProgress, value);
                 NotifyCommands();
                 Notify(nameof(CanEditPerformance));
+                Notify(nameof(CanToggleGpuClockTuning));
                 Notify(nameof(CanEditGpuClockTuning));
             }
         }
@@ -2020,6 +2052,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SupportsStartupAnimation));
             Notify(nameof(SupportsFunctionKeyPrimary));
             Notify(nameof(SupportsGamingMode));
+            Notify(nameof(IsGpuClockTuningVisible));
+            Notify(nameof(IsGpuClockTuningAvailable));
+            Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
@@ -2453,6 +2488,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool HasThermalProfileDraft =>
         activeProfileDraftPerformance is not null
         || activeProfileDraftCustomPerformance is not null
+        || activeProfileDraftGpuClockTuning is not null
         || activeProfileDraftFans is not null
         || activeProfileDraftFanControl is not null;
 
@@ -3433,8 +3469,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         parameter is CustomPerformanceSettings value
         && CustomPerformanceSettings.IsWellFormed(value)
         && CommandCapabilities.CustomPerformance?.Supports(value) != false
-        && (value.GpuClockOffsets is null
-            || GpuClockOffsetCapabilities?.Supports(value.GpuClockOffsets) == true)
         && IsCustomPerformanceVisible
         && !IsPerformanceOperationInProgress
         && CanMutate
@@ -3952,11 +3986,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     ?? CustomPerformanceSettings.Default;
         SelectedCustomCpuLevel = customPerformance.Cpu;
         SelectedCustomGpuLevel = customPerformance.Gpu;
-        GpuClockOffsetCapabilities = confirmed?.Performance == PerformancePreset.Custom
-            ? confirmed.GpuClockOffsets
-            : null;
+        GpuClockTuningSettings? gpuClockTuning = pendingPerformance?.Requested.GpuClockTuning
+            ?? status.DesiredState.GpuClockTuning;
+        if (gpuClockTuning is null
+            && customPerformance.GpuClockOffsets is { } legacyOffsets)
+        {
+            gpuClockTuning = new GpuClockTuningSettings(
+                Enabled: true,
+                legacyOffsets);
+        }
+        GpuClockOffsetCapabilities = confirmed?.GpuClockOffsets;
+        gpuClockTuningConfigured = gpuClockTuning is not null;
+        IsGpuClockTuningEnabled = gpuClockTuning?.Enabled == true;
         GpuClockOffsetSettings presentedGpuOffsets =
-            customPerformance.GpuClockOffsets
+            gpuClockTuning?.Offsets
             ?? GpuClockOffsetCapabilities?.Current
             ?? GpuClockOffsetSettings.Default;
         GpuCoreClockOffsetMegahertz = presentedGpuOffsets.CoreMegahertz;
@@ -4095,7 +4138,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             // WinUI clears a ComboBox selection when ItemsSource is replaced.
             Notify(nameof(SelectedPerformance));
             Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsGpuClockTuningVisible));
             Notify(nameof(IsGpuClockTuningAvailable));
+            Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(PluggedInPerformanceEditor));
             Notify(nameof(BatteryPerformanceEditor));
@@ -4522,20 +4567,80 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 OverrideLifetime.UntilPowerSourceChange,
                 requested == PerformancePreset.Custom
                     ? GetActiveProfileCustomPerformance()
-                    : null),
+                    : null)
+            {
+                GpuClockTuning = GetActiveProfileGpuClockTuning(),
+            },
             token);
     }
 
     private async Task SetCustomPerformanceAsync(object? parameter, CancellationToken token)
     {
         CustomPerformanceSettings requested = (CustomPerformanceSettings)parameter!;
+        GpuClockTuningSettings? gpuClockTuning = GetActiveProfileGpuClockTuning();
+        if (requested.GpuClockOffsets is { } legacyOffsets)
+        {
+            requested = requested with { GpuClockOffsets = null };
+            gpuClockTuning ??= new GpuClockTuningSettings(
+                Enabled: true,
+                legacyOffsets);
+        }
         await ApplyPerformanceAsync(
             new PerformanceOverride(
                 PerformancePreset.Custom,
                 OverrideLifetime.UntilPowerSourceChange,
-                requested),
+                requested)
+            {
+                GpuClockTuning = gpuClockTuning,
+            },
             token);
     }
+
+    public Task SetGpuClockTuningEnabledAsync(
+        bool enabled,
+        CancellationToken token)
+    {
+        if (!CanToggleGpuClockTuning)
+        {
+            throw new InvalidOperationException("GPU clock tuning is unavailable.");
+        }
+
+        return ApplyGpuClockTuningAsync(
+            new GpuClockTuningSettings(enabled, CurrentGpuClockOffsets),
+            token);
+    }
+
+    public Task SetGpuClockOffsetsAsync(
+        GpuClockOffsetSettings offsets,
+        CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(offsets);
+        if (!CanEditGpuClockTuning
+            || GpuClockOffsetCapabilities?.Supports(offsets) != true)
+        {
+            throw new InvalidOperationException("GPU clock offsets are unavailable.");
+        }
+
+        return ApplyGpuClockTuningAsync(
+            new GpuClockTuningSettings(Enabled: true, offsets),
+            token);
+    }
+
+    private Task ApplyGpuClockTuningAsync(
+        GpuClockTuningSettings gpuClockTuning,
+        CancellationToken token) => ApplyPerformanceAsync(
+            new PerformanceOverride(
+                SelectedPerformance,
+                OverrideLifetime.UntilPowerSourceChange,
+                SelectedPerformance == PerformancePreset.Custom
+                    ? new CustomPerformanceSettings(
+                        SelectedCustomCpuLevel,
+                        SelectedCustomGpuLevel)
+                    : null)
+            {
+                GpuClockTuning = gpuClockTuning,
+            },
+            token);
 
     private async Task ApplyPerformanceAsync(
         PerformanceOverride requested,
@@ -4545,10 +4650,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         PerformancePreset previousPerformance = SelectedPerformance;
         CustomPerformanceSettings previousCustom = new(
             SelectedCustomCpuLevel,
-            SelectedCustomGpuLevel)
-        {
-            GpuClockOffsets = CurrentGpuClockOffsets,
-        };
+            SelectedCustomGpuLevel);
+        GpuClockTuningSettings? previousGpuClockTuning = gpuClockTuningConfigured
+            ? new GpuClockTuningSettings(
+                IsGpuClockTuningEnabled,
+                CurrentGpuClockOffsets)
+            : null;
         bool applied = false;
         pendingPerformance = new PendingPerformanceHold(
             requested,
@@ -4572,7 +4679,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                         MarkActiveProfileDraft(
                             sourceAtStart,
                             performance: requested.Value,
-                            customPerformance: requested.CustomPerformance);
+                            customPerformance: requested.CustomPerformance,
+                            gpuClockTuning: requested.GpuClockTuning);
                     }
                 });
         }
@@ -4587,7 +4695,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     OverrideLifetime.UntilPowerSourceChange,
                     previousPerformance == PerformancePreset.Custom
                         ? previousCustom
-                        : null));
+                        : null)
+                {
+                    GpuClockTuning = previousGpuClockTuning,
+                });
             }
             else
             {
@@ -4632,15 +4743,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private void PresentPerformance(PerformanceOverride value)
     {
         SelectedPerformance = value.Value;
-        if (value is not
+        if (value is
             { Value: PerformancePreset.Custom, CustomPerformance: { } custom })
         {
-            return;
+            SelectedCustomCpuLevel = custom.Cpu;
+            SelectedCustomGpuLevel = custom.Gpu;
         }
 
-        SelectedCustomCpuLevel = custom.Cpu;
-        SelectedCustomGpuLevel = custom.Gpu;
-        if (custom.GpuClockOffsets is { } offsets)
+        gpuClockTuningConfigured = value.GpuClockTuning is not null;
+        IsGpuClockTuningEnabled = value.GpuClockTuning?.Enabled == true;
+        if (value.GpuClockTuning?.Offsets is { } offsets)
         {
             GpuCoreClockOffsetMegahertz = offsets.CoreMegahertz;
             GpuMemoryClockOffsetMegahertz = offsets.MemoryMegahertz;
@@ -5906,6 +6018,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ?? CustomPerformanceSettings.Default
             : CustomPerformanceSettings.Default;
 
+    private GpuClockTuningSettings? GetActiveProfileGpuClockTuning()
+    {
+        if (ActivePowerSource is not PowerSource.PluggedIn)
+        {
+            return null;
+        }
+
+        PowerProfile profile = GetPresentedProfile(ActivePowerSource);
+        if (profile.GpuClockTuning is not null)
+        {
+            return profile.GpuClockTuning;
+        }
+
+        return profile.Performance == PerformancePreset.Custom
+            && profile.CustomPerformance?.GpuClockOffsets is { } legacyOffsets
+                ? new GpuClockTuningSettings(Enabled: true, legacyOffsets)
+                : null;
+    }
+
     private PowerProfile GetPresentedProfile(PowerSource source) =>
         activeProfileDraftSource == source
             ? GetActiveProfileDraft() ?? GetProfile(source)
@@ -5924,6 +6055,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Performance = activeProfileDraftPerformance ?? profile.Performance,
             CustomPerformance = activeProfileDraftCustomPerformance
                 ?? profile.CustomPerformance,
+            GpuClockTuning = activeProfileDraftGpuClockTuning
+                ?? profile.GpuClockTuning,
             Fans = activeProfileDraftFans ?? profile.Fans,
             FanControl = activeProfileDraftFanControl ?? profile.FanControl,
             Lighting = activeProfileDraftLighting ?? profile.Lighting,
@@ -5962,6 +6095,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Performance = activeProfileDraftPerformance ?? saved.Performance,
                 CustomPerformance = activeProfileDraftCustomPerformance
                     ?? saved.CustomPerformance,
+                GpuClockTuning = activeProfileDraftGpuClockTuning
+                    ?? saved.GpuClockTuning,
                 Fans = activeProfileDraftFans ?? saved.Fans,
                 FanControl = activeProfileDraftFanControl ?? saved.FanControl,
             },
@@ -5980,6 +6115,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Performance = activeProfileDraftPerformance ?? saved.Performance,
                 CustomPerformance = activeProfileDraftCustomPerformance
                     ?? saved.CustomPerformance,
+                GpuClockTuning = activeProfileDraftGpuClockTuning
+                    ?? saved.GpuClockTuning,
                 Fans = activeProfileDraftFans ?? saved.Fans,
                 FanControl = activeProfileDraftFanControl ?? saved.FanControl,
                 LaptopBehavior = activeProfileDraftLaptopBehavior
@@ -6023,6 +6160,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         PowerSource source,
         PerformancePreset? performance = null,
         CustomPerformanceSettings? customPerformance = null,
+        GpuClockTuningSettings? gpuClockTuning = null,
         FanMode? fans = null,
         FanControlSettings? fanControl = null,
         LightingSettings? lighting = null,
@@ -6043,6 +6181,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             activeProfileDraftSource = source;
             activeProfileDraftPerformance = null;
             activeProfileDraftCustomPerformance = null;
+            activeProfileDraftGpuClockTuning = null;
             activeProfileDraftFans = null;
             activeProfileDraftFanControl = null;
             activeProfileDraftLighting = null;
@@ -6065,6 +6204,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         activeProfileDraftPerformance = performance ?? activeProfileDraftPerformance;
         activeProfileDraftCustomPerformance = customPerformance
             ?? activeProfileDraftCustomPerformance;
+        activeProfileDraftGpuClockTuning = gpuClockTuning
+            ?? activeProfileDraftGpuClockTuning;
         activeProfileDraftFans = fans ?? activeProfileDraftFans;
         activeProfileDraftFanControl = fanControl ?? activeProfileDraftFanControl;
         activeProfileDraftLighting = lighting ?? activeProfileDraftLighting;
@@ -6082,6 +6223,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (activeProfileDraftCustomPerformance == saved.CustomPerformance)
         {
             activeProfileDraftCustomPerformance = null;
+        }
+        if (activeProfileDraftGpuClockTuning == saved.GpuClockTuning)
+        {
+            activeProfileDraftGpuClockTuning = null;
         }
         if (activeProfileDraftFans == saved.Fans)
         {
@@ -6123,6 +6268,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         if (activeProfileDraftPerformance is null
             && activeProfileDraftCustomPerformance is null
+            && activeProfileDraftGpuClockTuning is null
             && activeProfileDraftFans is null
             && activeProfileDraftFanControl is null
             && activeProfileDraftLighting is null
@@ -6146,6 +6292,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         activeProfileDraftSource = null;
         activeProfileDraftPerformance = null;
         activeProfileDraftCustomPerformance = null;
+        activeProfileDraftGpuClockTuning = null;
         activeProfileDraftFans = null;
         activeProfileDraftFanControl = null;
         activeProfileDraftLighting = null;
@@ -6164,6 +6311,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             case ProfileDraftGroup.Thermal:
                 activeProfileDraftPerformance = null;
                 activeProfileDraftCustomPerformance = null;
+                activeProfileDraftGpuClockTuning = null;
                 activeProfileDraftFans = null;
                 activeProfileDraftFanControl = null;
                 break;
@@ -6178,6 +6326,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             case ProfileDraftGroup.Laptop:
                 activeProfileDraftPerformance = null;
                 activeProfileDraftCustomPerformance = null;
+                activeProfileDraftGpuClockTuning = null;
                 activeProfileDraftFans = null;
                 activeProfileDraftFanControl = null;
                 activeProfileDraftLaptopBehavior = null;
@@ -6235,19 +6384,33 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     activeProfileDraftCustomPerformance
                     ?? new CustomPerformanceSettings(
                         SelectedCustomCpuLevel,
-                        SelectedCustomGpuLevel)
-                    {
-                        GpuClockOffsets = savedCustom.GpuClockOffsets is null
-                            ? null
-                            : CurrentGpuClockOffsets,
-                    };
+                        SelectedCustomGpuLevel);
                 if (savedCustom.Cpu != currentCustom.Cpu
-                    || savedCustom.Gpu != currentCustom.Gpu
-                    || savedCustom.GpuClockOffsets is not null
-                    && savedCustom.GpuClockOffsets != currentCustom.GpuClockOffsets)
+                    || savedCustom.Gpu != currentCustom.Gpu)
                 {
                     return true;
                 }
+            }
+
+            GpuClockTuningSettings? savedGpuClockTuning = saved.GpuClockTuning;
+            if (savedGpuClockTuning is null
+                && saved.Performance == PerformancePreset.Custom
+                && saved.CustomPerformance?.GpuClockOffsets is { } legacyOffsets)
+            {
+                savedGpuClockTuning = new GpuClockTuningSettings(
+                    Enabled: true,
+                    legacyOffsets);
+            }
+            GpuClockTuningSettings? currentGpuClockTuning =
+                activeProfileDraftGpuClockTuning
+                ?? (gpuClockTuningConfigured
+                    ? new GpuClockTuningSettings(
+                        IsGpuClockTuningEnabled,
+                        CurrentGpuClockOffsets)
+                    : null);
+            if (savedGpuClockTuning != currentGpuClockTuning)
+            {
+                return true;
             }
 
             FanControlSettings savedFans =
@@ -6695,14 +6858,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : PerformancePresetPresentation.Label(profile.Performance);
 
     private static string FormatGpuClockOffsets(PowerProfile profile) =>
-        profile is
+        ResolveProfileGpuClockTuning(profile) switch
         {
-            Performance: PerformancePreset.Custom,
-            CustomPerformance.GpuClockOffsets: { } offsets,
-        }
-            ? $"Core {FormatSignedMegahertz(offsets.CoreMegahertz)}, "
-                + $"memory {FormatSignedMegahertz(offsets.MemoryMegahertz)}"
-            : "Not set";
+            { Enabled: true, Offsets: { } offsets } =>
+                $"Core {FormatSignedMegahertz(offsets.CoreMegahertz)}, "
+                + $"memory {FormatSignedMegahertz(offsets.MemoryMegahertz)}",
+            { Enabled: false } => "Off",
+            _ => "Not set",
+        };
+
+    private static GpuClockTuningSettings? ResolveProfileGpuClockTuning(
+        PowerProfile profile) => profile.GpuClockTuning
+        ?? (profile.Performance == PerformancePreset.Custom
+            && profile.CustomPerformance?.GpuClockOffsets is { } legacyOffsets
+                ? new GpuClockTuningSettings(Enabled: true, legacyOffsets)
+                : null);
 
     private static string FormatSignedMegahertz(int value) =>
         $"{value.ToString("+0;-0;0", CultureInfo.CurrentCulture)} MHz";
@@ -7675,6 +7845,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(CanRequestHardwareControl));
         Notify(nameof(CanReapplyChangedSettings));
         Notify(nameof(CanEditPerformance));
+        Notify(nameof(CanToggleGpuClockTuning));
         Notify(nameof(CanEditGpuClockTuning));
         Notify(nameof(CanEditFanControl));
         NotifyGamingModeKeyPolicy();

@@ -737,6 +737,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 coordinator.ApplyPerformanceOutcomeAsync(
                     desired.Performance.Value,
                     desired.CustomPerformance,
+                    desired.GpuClockTuning,
                     cancellationToken),
             token,
             value is null
@@ -802,7 +803,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 next == PerformancePreset.Custom
                     ? Automation.Profiles.PluggedIn.CustomPerformance
                         ?? CustomPerformanceSettings.Default
-                    : null);
+                    : null)
+            {
+                GpuClockTuning = current.DesiredState.GpuClockTuning,
+            };
             try
             {
                 ValidateThermalOverrideCombination(
@@ -855,6 +859,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         coordinator.ApplyPerformanceOutcomeAsync(
                             desired.Performance.Value,
                             desired.CustomPerformance,
+                            desired.GpuClockTuning,
                             cancellationToken),
                     token,
                     desired => desired with
@@ -863,6 +868,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             next,
                             SettingValueSource.TemporaryOverride),
                         CustomPerformance = stagedOverride.CustomPerformance,
+                        GpuClockTuning = stagedOverride.GpuClockTuning,
                     },
                     cancellationToken => SetPerformanceOverrideCoreAsync(
                         stagedOverride,
@@ -1580,6 +1586,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     coordinator.ApplyPerformanceOutcomeAsync(
                         desired.Performance.Value,
                         desired.CustomPerformance,
+                        desired.GpuClockTuning,
                         cancellationToken),
                 token),
             DeviceSubsystem.Fans => ApplyScopedIntentAsync(
@@ -3499,6 +3506,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : null,
             CustomPerformance = value?.Lifetime == OverrideLifetime.Persistent
                 ? value.CustomPerformance
+                : null,
+            GpuClockTuning = value?.Lifetime == OverrideLifetime.Persistent
+                ? value.GpuClockTuning
                 : null,
         };
         await PersistOverridesIfChangedAsync(staged, cancellationToken);
@@ -5521,7 +5531,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DesiredDeviceState desired) =>
         confirmed.Performance == desired.Performance.Value
         && (confirmed.Performance != PerformancePreset.Custom
-            || confirmed.CustomPerformance == desired.CustomPerformance);
+            || confirmed.CustomPerformance == desired.CustomPerformance)
+        && (desired.GpuClockTuning is null
+            || confirmed.GpuClockOffsets?.Current
+                == desired.GpuClockTuning.EffectiveOffsets);
 
     private void CompareInitialAutomaticValue<T>(
         DeviceSubsystem subsystem,

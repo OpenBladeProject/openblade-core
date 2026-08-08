@@ -52,6 +52,12 @@ public interface IBladeDevice
         CustomPerformanceSettings? customPerformance,
         CancellationToken cancellationToken);
 
+    Task SetPerformanceAsync(
+        PerformancePreset value,
+        CustomPerformanceSettings? customPerformance,
+        GpuClockOffsetSettings? gpuClockOffsets,
+        CancellationToken cancellationToken);
+
     Task SetGpuClockOffsetsAsync(
         GpuClockOffsetSettings value,
         CancellationToken cancellationToken);

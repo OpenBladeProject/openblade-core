@@ -58,6 +58,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool initialPlacementAttempted;
     private bool changingPerformanceSelection;
     private bool changingCustomPerformanceSelection;
+    private bool changingGpuClockTuning;
     private bool changingFanSelection;
     private bool changingBatteryProtection;
     private bool changingGamingMode;
@@ -1574,10 +1575,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await ApplyCustomPerformanceChangeAsync(
             new CustomPerformanceSettings(
                 selected,
-                ViewModel.SelectedCustomGpuLevel)
-            {
-                GpuClockOffsets = ViewModel.CurrentGpuClockOffsets,
-            },
+                ViewModel.SelectedCustomGpuLevel),
             selector);
     }
 
@@ -1597,11 +1595,37 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await ApplyCustomPerformanceChangeAsync(
             new CustomPerformanceSettings(
                 ViewModel.SelectedCustomCpuLevel,
-                selected)
-            {
-                GpuClockOffsets = ViewModel.CurrentGpuClockOffsets,
-            },
+                selected),
             selector);
+    }
+
+    private async void OnGpuClockTuningToggled(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleGpuClockTuningToggledAsync(sender),
+            nameof(OnGpuClockTuningToggled));
+
+    private async Task HandleGpuClockTuningToggledAsync(object sender)
+    {
+        if (changingGpuClockTuning
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.IsGpuClockTuningEnabled)
+        {
+            return;
+        }
+
+        changingGpuClockTuning = true;
+        try
+        {
+            await ViewModel.SetGpuClockTuningEnabledAsync(
+                toggle.IsOn,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.IsGpuClockTuningEnabled;
+            changingGpuClockTuning = false;
+        }
     }
 
     private async void OnBlockWindowsKeyInGamingModeToggled(
@@ -1695,7 +1719,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         int memoryMegahertz)
     {
         if (Volatile.Read(ref disposed) != 0
-            || !ViewModel.IsGpuClockTuningAvailable)
+            || !ViewModel.CanEditGpuClockTuning)
         {
             return;
         }
@@ -1740,19 +1764,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
-            if (ViewModel.IsGpuClockTuningAvailable)
+            if (ViewModel.CanEditGpuClockTuning)
             {
-                var custom = new CustomPerformanceSettings(
-                    ViewModel.SelectedCustomCpuLevel,
-                    ViewModel.SelectedCustomGpuLevel)
-                {
-                    GpuClockOffsets = requested,
-                };
-                if (ViewModel.SetCustomPerformanceCommand is AsyncRelayCommand command
-                    && command.CanExecute(custom))
-                {
-                    await command.ExecuteAsync(custom);
-                }
+                await ViewModel.SetGpuClockOffsetsAsync(
+                    requested,
+                    CancellationToken.None);
             }
         }
         catch (Exception exception)

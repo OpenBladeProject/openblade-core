@@ -23,6 +23,8 @@ public sealed record DesiredDeviceState(
 {
     public CustomPerformanceSettings? CustomPerformance { get; init; }
 
+    public GpuClockTuningSettings? GpuClockTuning { get; init; }
+
     public FanControlSettings? FanControl { get; init; }
 }
 
