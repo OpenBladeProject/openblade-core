@@ -16,6 +16,14 @@ public interface IServiceControlRuntime
         PersistentOverrideState persistentOverrides) =>
         Initialize(configuration, powerSource);
 
+    void Initialize(
+        BatteryConfiguration configuration,
+        PowerSource powerSource,
+        PersistentOverrideState persistentOverrides,
+        bool recoveringUnexpectedExit) =>
+        throw new NotSupportedException(
+            "This runtime does not implement unexpected-exit startup classification.");
+
     ServiceStatusSnapshot GetStatus();
 
     Task ActivateUserAsync(
@@ -174,6 +182,12 @@ public interface IServiceControlRuntime
     Task ReconcileStartupProfileAsync(CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
+    Task ReconcileUnexpectedExitAsync(CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    Task PrepareManualFanCurveRecoveryAsync(CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
     Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken);
 
     Task RefreshPowerSourceClassificationAsync(CancellationToken cancellationToken) =>
@@ -261,7 +275,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private volatile BatteryAutomationPreferences preferences =
         new(ProtectionEnabled: true);
     private PersistentOverrideState persistentOverrides = PersistentOverrideState.Empty;
-    private readonly ConfirmedStateDriftTracker driftTracker = new();
+    private ConfirmedStateDriftTracker driftTracker = new();
     private readonly HashSet<DeviceSubsystem> initialAutomaticComparisons = [];
     private ServiceStatusSnapshot? status;
     private bool mcuVersionReadAttempted;
@@ -285,6 +299,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool batteryHealthVerificationRetryPending;
     private bool startupProfileReconciliationPending;
     private bool startupProfileReconciliationRequested;
+    private bool unexpectedExitRecoveryPending;
+    private bool manualFanCurveRecoveryPending;
+    private bool unexpectedExitRecoveryDeferredForUserConfiguration;
+    private DeferredManualFanSafetyState deferredManualFanSafetyState;
+    private bool recoveryUserConfigurationLoaded;
+    private bool suppressInitialUserProfileApplyAfterUnexpectedExit;
+    private bool suppressInitialKnownPowerSourceApplyAfterUnexpectedExit;
     private string? activeUserSid;
     private ResumeStateBaseline? pendingResumeStateBaseline;
 
@@ -489,6 +510,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         BatteryConfiguration configuration,
         PowerSource powerSource,
         PersistentOverrideState persistentOverrides)
+        => Initialize(
+            configuration,
+            powerSource,
+            persistentOverrides,
+            recoveringUnexpectedExit: false);
+
+    public void Initialize(
+        BatteryConfiguration configuration,
+        PowerSource powerSource,
+        PersistentOverrideState persistentOverrides,
+        bool recoveringUnexpectedExit)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ProfileSet profiles = ProfileStore.NormalizeLegacyBatteryProfile(
@@ -523,10 +555,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             this.persistentOverrides = persistentOverrides;
             startupProfileReconciliationPending = true;
             startupProfileReconciliationRequested = false;
-            pendingLightingRestore = initializedAutomation
-                .Resolve(UnknownConfirmedState)
-                .Lighting
-                .Value;
+            unexpectedExitRecoveryPending = recoveringUnexpectedExit;
+            manualFanCurveRecoveryPending = recoveringUnexpectedExit;
+            // Production profiles and overrides become authoritative only after
+            // an authorized active user is known. The machine bootstrap must not
+            // classify retained user-owned hardware as external drift.
+            unexpectedExitRecoveryDeferredForUserConfiguration =
+                recoveringUnexpectedExit && userConfigurationRepository is not null;
+            deferredManualFanSafetyState =
+                unexpectedExitRecoveryDeferredForUserConfiguration
+                    ? DeferredManualFanSafetyState.PendingUnowned
+                    : DeferredManualFanSafetyState.Lost;
+            recoveryUserConfigurationLoaded = false;
+            suppressInitialUserProfileApplyAfterUnexpectedExit = recoveringUnexpectedExit;
+            suppressInitialKnownPowerSourceApplyAfterUnexpectedExit =
+                recoveringUnexpectedExit && powerSource == PowerSource.ExternalUnknown;
+            pendingLightingRestore = recoveringUnexpectedExit
+                && !unexpectedExitRecoveryDeferredForUserConfiguration
+                ? configuration.Preferences.LastKnownLighting
+                : initializedAutomation
+                    .Resolve(UnknownConfirmedState)
+                    .Lighting
+                    .Value;
             Volatile.Write(ref status, CreateInitialSnapshot(powerSource));
         }
     }
@@ -548,12 +598,41 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ArgumentNullException.ThrowIfNull(userSid);
         ArgumentNullException.ThrowIfNull(stillControlsSession);
-        if (userConfigurationRepository is null
-            || string.Equals(
-                Volatile.Read(ref activeUserSid),
-                userSid.Value,
-                StringComparison.OrdinalIgnoreCase))
+        if (userConfigurationRepository is null)
         {
+            return;
+        }
+
+        bool alreadyActive = string.Equals(
+            Volatile.Read(ref activeUserSid),
+            userSid.Value,
+            StringComparison.OrdinalIgnoreCase);
+        if (alreadyActive)
+        {
+            if (!unexpectedExitRecoveryDeferredForUserConfiguration)
+            {
+                return;
+            }
+
+            await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (string.Equals(
+                        activeUserSid,
+                        userSid.Value,
+                        StringComparison.OrdinalIgnoreCase)
+                    && stillControlsSession())
+                {
+                    await TryCompleteDeferredUnexpectedExitRecoveryCoreAsync(
+                        stillControlsSession,
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                operationGate.Release();
+            }
+
             return;
         }
 
@@ -588,10 +667,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             ServiceStatusSnapshot current = GetStatus();
             PowerSource powerSource = current.ActivePowerSource;
-            await InvalidateLightingRendererCoreAsync(
-                preserveForLifecycleRestore: false,
-                cancellationToken).ConfigureAwait(false);
-            current = GetStatus();
+            bool suppressProfileApply =
+                suppressInitialUserProfileApplyAfterUnexpectedExit
+                || unexpectedExitRecoveryDeferredForUserConfiguration;
+            if (!unexpectedExitRecoveryDeferredForUserConfiguration)
+            {
+                suppressInitialUserProfileApplyAfterUnexpectedExit = false;
+            }
+            if (!suppressProfileApply)
+            {
+                await InvalidateLightingRendererCoreAsync(
+                    preserveForLifecycleRestore: false,
+                    cancellationToken).ConfigureAwait(false);
+                current = GetStatus();
+            }
             Volatile.Write(
                 ref userStores,
                 new UserConfigurationStores(context.Store, context.OverrideStore));
@@ -605,11 +694,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 context.Configuration.Preferences.AllowUntestedFirmware);
             persistentOverrides = overrides;
             lightingSuppressions.Clear();
-            pendingLightingRestore = null;
-            pendingLightingRestoreFromLifecycle = false;
+            if (unexpectedExitRecoveryDeferredForUserConfiguration)
+            {
+                recoveryUserConfigurationLoaded = true;
+                pendingLightingRestore = context.Configuration.Preferences.LastKnownLighting;
+                pendingLightingRestoreFromLifecycle = false;
+            }
+            if (!suppressProfileApply)
+            {
+                pendingLightingRestore = null;
+                pendingLightingRestoreFromLifecycle = false;
+            }
 
             ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
-            if (powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
+            if (!suppressProfileApply
+                && powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
             {
                 await ApplyFullTransitionAsync(
                         powerSource,
@@ -622,7 +721,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             confirmed = current.ConfirmedState ?? UnknownConfirmedState;
             PublishIfChanged(current with
             {
-                Message = "The active Windows user's profile is loaded.",
+                Message = suppressProfileApply
+                    ? "The active Windows user's profile is loaded without hardware application during unexpected-exit recovery."
+                    : "The active Windows user's profile is loaded.",
                 Profiles = profiles,
                 DesiredState = Automation.Resolve(confirmed),
                 PerformanceOverride = Automation.PerformanceOverride,
@@ -636,7 +737,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PerformanceShortcutPreview = null,
             });
 
-            Volatile.Write(ref activeUserSid, userSid.Value);
+            if (unexpectedExitRecoveryDeferredForUserConfiguration)
+            {
+                await TryCompleteDeferredUnexpectedExitRecoveryCoreAsync(
+                    stillControlsSession,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            if (stillControlsSession())
+            {
+                Volatile.Write(ref activeUserSid, userSid.Value);
+            }
         }
         finally
         {
@@ -737,6 +848,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 coordinator.ApplyPerformanceOutcomeAsync(
                     desired.Performance.Value,
                     desired.CustomPerformance,
+                    desired.GpuClockTuning,
                     cancellationToken),
             token,
             value is null
@@ -769,7 +881,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveCurrentAvailability: true);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
@@ -802,7 +914,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 next == PerformancePreset.Custom
                     ? Automation.Profiles.PluggedIn.CustomPerformance
                         ?? CustomPerformanceSettings.Default
-                    : null);
+                    : null)
+            {
+                GpuClockTuning = current.DesiredState.GpuClockTuning,
+            };
             try
             {
                 ValidateThermalOverrideCombination(
@@ -855,6 +970,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         coordinator.ApplyPerformanceOutcomeAsync(
                             desired.Performance.Value,
                             desired.CustomPerformance,
+                            desired.GpuClockTuning,
                             cancellationToken),
                     token,
                     desired => desired with
@@ -863,6 +979,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             next,
                             SettingValueSource.TemporaryOverride),
                         CustomPerformance = stagedOverride.CustomPerformance,
+                        GpuClockTuning = stagedOverride.GpuClockTuning,
                     },
                     cancellationToken => SetPerformanceOverrideCoreAsync(
                         stagedOverride,
@@ -944,6 +1061,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (settings.Mode != FanMode.ManualCurve
             || !snapshot.DeviceVerified
             || snapshot.WritesBlocked
+            || unexpectedExitRecoveryDeferredForUserConfiguration
+            || manualFanCurveRecoveryPending
             || snapshot.ExternalChanges.Contains(DeviceSubsystem.Fans))
         {
             lastCurveFan1Rpm = null;
@@ -955,7 +1074,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await fanTemperatureSource.ReadAsync(cancellationToken);
         FanTargetSpeeds targets = FanCurveCalculator.Calculate(
             settings.ManualCurve,
-            temperatures);
+            temperatures,
+            snapshot.Capabilities?.FanSpeedRange?.MaximumRpm
+                ?? FanControlSettings.MaximumSpeedRpm);
         if (lastCurveFan1Rpm == targets.Fan1Rpm
             && lastCurveFan2Rpm == targets.Fan2Rpm)
         {
@@ -971,6 +1092,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (currentSettings != settings
                 || !current.DeviceVerified
                 || current.WritesBlocked
+                || unexpectedExitRecoveryDeferredForUserConfiguration
+                || manualFanCurveRecoveryPending
                 || current.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
@@ -1082,7 +1205,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveCurrentAvailability: true);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
@@ -1478,7 +1601,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     blockedMessage);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
@@ -1580,6 +1703,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     coordinator.ApplyPerformanceOutcomeAsync(
                         desired.Performance.Value,
                         desired.CustomPerformance,
+                        desired.GpuClockTuning,
                         cancellationToken),
                 token),
             DeviceSubsystem.Fans => ApplyScopedIntentAsync(
@@ -1871,7 +1995,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "Lighting power policy is paused because an external lighting change is present.");
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
@@ -2404,7 +2528,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveCurrentAvailability: true);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token);
             }
@@ -2502,13 +2626,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 cancellationToken,
                 allowRecentObservation: canUseReadOnlyFastPath);
             bool changed = powerSource != PowerSource.ExternalUnknown
-                && Automation.ChangePowerSource(powerSource);
+                && ChangePowerSourceCore(powerSource);
             if (changed)
             {
                 RecordResumePowerSourceTransitionCore(powerSource);
             }
             if (startupProfileReconciliationPending
                 && startupProfileReconciliationRequested
+                && !unexpectedExitRecoveryPending
                 && powerSource != PowerSource.ExternalUnknown)
             {
                 await ReconcileStartupProfileCoreAsync(
@@ -2582,6 +2707,840 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    public async Task ReconcileUnexpectedExitAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!unexpectedExitRecoveryPending)
+            {
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            RefreshControllerPresenceCore(cancellationToken);
+            startupProfileReconciliationRequested = true;
+            if (unexpectedExitRecoveryDeferredForUserConfiguration)
+            {
+                return;
+            }
+
+            if (GetStatus() is { DeviceVerified: true, WritesBlocked: false })
+            {
+                CompleteUnexpectedExitRecoveryCore();
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task PrepareManualFanCurveRecoveryAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await PrepareManualFanCurveRecoveryCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private async Task PrepareManualFanCurveRecoveryCoreAsync(
+        CancellationToken cancellationToken,
+        Func<bool>? stillControlsSession = null)
+    {
+        if (!manualFanCurveRecoveryPending)
+        {
+            return;
+        }
+
+        if (unexpectedExitRecoveryDeferredForUserConfiguration)
+        {
+            await MaintainDeferredManualFanSafetyFloorCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        ServiceStatusSnapshot current = GetStatus();
+        FanControlSettings settings = current.DesiredState.FanControl
+            ?? FanControlSettings.FromLegacy(current.DesiredState.Fans.Value);
+        if (settings.Mode != FanMode.ManualCurve)
+        {
+            manualFanCurveRecoveryPending = false;
+            return;
+        }
+
+        if (!current.DeviceVerified
+            || current.WritesBlocked
+            || current.ExternalChanges.Contains(DeviceSubsystem.Fans)
+            || !DeviceSubsystemOrder.IsManualFanMode(
+                current.ConfirmedState?.Fans ?? FanMode.Automatic))
+        {
+            if (!current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+            {
+                const string message =
+                    "Manual fan-curve crash recovery could not confirm existing fan ownership; automatic recovery is blocked.";
+                initialAutomaticComparisons.Add(DeviceSubsystem.Fans);
+                driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
+                history.RecordSummary(ControlOperationStatus.Blocked, message);
+                PublishIfChanged(current with
+                {
+                    ExternalChanges = driftTracker.ExternalChanges,
+                    Message = message,
+                });
+            }
+
+            return;
+        }
+
+        if (stillControlsSession?.Invoke() == false)
+        {
+            return;
+        }
+
+        RefreshControllerPresenceCore(cancellationToken);
+        if (stillControlsSession?.Invoke() == false)
+        {
+            return;
+        }
+
+        // Consume the bounded attempt immediately before admission. A plain
+        // pre-submission cancellation re-arms it; an indeterminate submitted
+        // write remains consumed and is never retried automatically.
+        manualFanCurveRecoveryPending = false;
+        ControlOperationResult result;
+        try
+        {
+            result = await ApplyScopedIntentAsync(
+                DeviceSubsystem.Fans,
+                current.ActivePowerSource,
+                (coordinator, _, token) =>
+                    coordinator.ApplyFanControlOutcomeAsync(
+                        settings,
+                        token,
+                        stillControlsSession),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (WriteAuthorityLostException)
+        {
+            manualFanCurveRecoveryPending = true;
+            throw;
+        }
+        catch (IntentionalWriteCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            manualFanCurveRecoveryPending = true;
+            throw;
+        }
+        if (result.Status == ControlOperationStatus.Applied)
+        {
+            const string message =
+                "Manual fan-curve crash recovery entered maximum speed before resuming host temperature calculations.";
+            history.RecordSummary(ControlOperationStatus.Applied, message);
+            PublishIfChanged(GetStatus() with { Message = message });
+        }
+        else
+        {
+            initialAutomaticComparisons.Add(DeviceSubsystem.Fans);
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
+            PublishIfChanged(GetStatus() with
+            {
+                ExternalChanges = driftTracker.ExternalChanges,
+                Message = result.Message,
+            });
+        }
+    }
+
+    private async Task MaintainDeferredManualFanSafetyFloorCoreAsync(
+        CancellationToken cancellationToken,
+        bool allowOwnedAutomaticBaseline = false,
+        Func<bool>? stillControlsSession = null)
+    {
+        if (deferredManualFanSafetyState == DeferredManualFanSafetyState.Lost)
+        {
+            return;
+        }
+
+        PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (powerSource == PowerSource.ExternalUnknown
+            || stillControlsSession?.Invoke() == false)
+        {
+            return;
+        }
+
+        _ = ChangePowerSourceCore(powerSource);
+        PublishDeferredRecoveryPowerSourceCore(powerSource);
+        ServiceStatusSnapshot current = GetStatus();
+        if (!ValidateDeferredManualFanSafetyStateCore(current))
+        {
+            return;
+        }
+
+        if (powerSource == PowerSource.UsbC)
+        {
+            // PendingUnowned is intentionally not eligible. A first manual
+            // readback cannot prove that the prior service instance wrote it;
+            // only this process's confirmed floor write permits handback.
+            await HandBackDeferredManualFanSafetyFloorCoreAsync(
+                powerSource,
+                cancellationToken,
+                stillControlsSession).ConfigureAwait(false);
+            return;
+        }
+
+        bool pendingBaseline =
+            deferredManualFanSafetyState == DeferredManualFanSafetyState.PendingUnowned
+            && DeviceSubsystemOrder.IsManualFanMode(
+                current.ConfirmedState?.Fans ?? FanMode.Automatic);
+        bool ownedAutomaticBaseline =
+            allowOwnedAutomaticBaseline
+            && deferredManualFanSafetyState ==
+                DeferredManualFanSafetyState.AutomaticOwned
+            && current.ConfirmedState?.Fans == FanMode.Automatic;
+        if (!manualFanCurveRecoveryPending
+            || powerSource is not (PowerSource.PluggedIn or PowerSource.Battery)
+            || (!pendingBaseline && !ownedAutomaticBaseline)
+            || !current.DeviceVerified
+            || current.WritesBlocked
+            || current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+        {
+            if (deferredManualFanSafetyState == DeferredManualFanSafetyState.PendingUnowned
+                && current.ConfirmedState?.Fans is not null
+                && !pendingBaseline)
+            {
+                LoseDeferredManualFanSafetyOwnershipCore();
+            }
+
+            return;
+        }
+
+        RefreshControllerPresenceCore(cancellationToken);
+        current = GetStatus();
+        if (current.ControllerDetectionWarning is not null
+            || current.PotentialControllers.Any(CompetingControllerProcesses.Contains)
+            || stillControlsSession?.Invoke() == false)
+        {
+            return;
+        }
+
+        PowerSource confirmedPowerSource =
+            await ResolveCurrentPowerSourceAsync(cancellationToken).ConfigureAwait(false);
+        if (confirmedPowerSource != powerSource
+            || stillControlsSession?.Invoke() == false)
+        {
+            if (confirmedPowerSource != PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(confirmedPowerSource);
+                PublishDeferredRecoveryPowerSourceCore(confirmedPowerSource);
+            }
+
+            if (confirmedPowerSource == PowerSource.UsbC)
+            {
+                await HandBackDeferredManualFanSafetyFloorCoreAsync(
+                    confirmedPowerSource,
+                    cancellationToken,
+                    stillControlsSession).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        var safetyFloor = FanControlSettings.FromLegacy(FanMode.ManualCurve);
+        DeferredManualFanSafetyState priorState = deferredManualFanSafetyState;
+        FanControlSettings? priorOwnedSettings = lastOwnedFanControlSettings;
+        // Revoke any stale ownership before submission. ApplyScopedIntentAsync
+        // records the staged ManualCurve settings again only after an Applied
+        // floor write, so shutdown cleanup cannot act on an uncertain attempt.
+        deferredManualFanSafetyState = DeferredManualFanSafetyState.Lost;
+        manualFanCurveRecoveryPending = false;
+        lastOwnedFanControlSettings = null;
+        ControlOperationResult result;
+        try
+        {
+            result = await ApplyScopedIntentAsync(
+                DeviceSubsystem.Fans,
+                powerSource,
+                (coordinator, _, token) =>
+                    coordinator.ApplyFanControlOutcomeAsync(
+                        safetyFloor,
+                        token,
+                        stillControlsSession,
+                        state => DeferredManualFanSafetyStateBlockReason(
+                            priorState,
+                            state)),
+                cancellationToken,
+                desired => desired with
+                {
+                    Fans = desired.Fans with { Value = FanMode.ManualCurve },
+                    FanControl = safetyFloor,
+                }).ConfigureAwait(false);
+        }
+        catch (IntentionalWriteCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (WriteAuthorityLostException)
+        {
+            deferredManualFanSafetyState = priorState;
+            manualFanCurveRecoveryPending = true;
+            lastOwnedFanControlSettings = priorOwnedSettings;
+            throw;
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            deferredManualFanSafetyState = priorState;
+            manualFanCurveRecoveryPending = true;
+            lastOwnedFanControlSettings = priorOwnedSettings;
+            throw;
+        }
+
+        if (result.Status != ControlOperationStatus.Applied)
+        {
+            return;
+        }
+
+        deferredManualFanSafetyState = DeferredManualFanSafetyState.FloorOwned;
+        const string message =
+            "Unexpected-exit recovery established a maximum fan-speed safety floor while user-owned recovery remains deferred.";
+        history.RecordSummary(ControlOperationStatus.Applied, message);
+        PublishIfChanged(GetStatus() with { Message = message });
+    }
+
+    private async Task HandBackDeferredManualFanSafetyFloorCoreAsync(
+        PowerSource powerSource,
+        CancellationToken cancellationToken,
+        Func<bool>? stillControlsSession = null)
+    {
+        if (deferredManualFanSafetyState != DeferredManualFanSafetyState.FloorOwned
+            || stillControlsSession?.Invoke() == false)
+        {
+            return;
+        }
+
+        ServiceStatusSnapshot current = GetStatus();
+        if (!ValidateDeferredManualFanSafetyStateCore(current)
+            || !current.DeviceVerified
+            || current.WritesBlocked
+            || current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+        {
+            return;
+        }
+
+        RefreshControllerPresenceCore(cancellationToken);
+        current = GetStatus();
+        if (current.ControllerDetectionWarning is not null
+            || current.PotentialControllers.Any(CompetingControllerProcesses.Contains)
+            || stillControlsSession?.Invoke() == false)
+        {
+            return;
+        }
+
+        PowerSource confirmedPowerSource =
+            await ResolveCurrentPowerSourceAsync(cancellationToken).ConfigureAwait(false);
+        if (confirmedPowerSource != powerSource
+            || stillControlsSession?.Invoke() == false)
+        {
+            return;
+        }
+
+        FanControlSettings automatic = FanControlSettings.FromLegacy(FanMode.Automatic);
+        FanControlSettings? priorOwnedSettings = lastOwnedFanControlSettings;
+        deferredManualFanSafetyState = DeferredManualFanSafetyState.Lost;
+        lastOwnedFanControlSettings = null;
+        ControlOperationResult result;
+        try
+        {
+            result = await ApplyScopedIntentAsync(
+                DeviceSubsystem.Fans,
+                powerSource,
+                (coordinator, _, token) =>
+                    coordinator.ApplyFanControlOutcomeAsync(
+                        automatic,
+                        token,
+                        stillControlsSession,
+                        state => DeferredManualFanSafetyStateBlockReason(
+                            DeferredManualFanSafetyState.FloorOwned,
+                            state)),
+                cancellationToken,
+                desired => desired with
+                {
+                    Fans = desired.Fans with { Value = FanMode.Automatic },
+                    FanControl = automatic,
+                }).ConfigureAwait(false);
+        }
+        catch (IntentionalWriteCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (WriteAuthorityLostException)
+        {
+            deferredManualFanSafetyState = DeferredManualFanSafetyState.FloorOwned;
+            lastOwnedFanControlSettings = priorOwnedSettings;
+            throw;
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            deferredManualFanSafetyState = DeferredManualFanSafetyState.FloorOwned;
+            lastOwnedFanControlSettings = priorOwnedSettings;
+            throw;
+        }
+
+        if (result.Status != ControlOperationStatus.Applied)
+        {
+            return;
+        }
+
+        deferredManualFanSafetyState = DeferredManualFanSafetyState.AutomaticOwned;
+        manualFanCurveRecoveryPending = true;
+        const string message =
+            "The deferred crash-recovery fan safety floor was handed back to firmware Automatic mode.";
+        history.RecordSummary(ControlOperationStatus.Applied, message);
+        PublishIfChanged(GetStatus() with { Message = message });
+    }
+
+    private bool ValidateDeferredManualFanSafetyStateCore(
+        ServiceStatusSnapshot current)
+    {
+        FanMode? confirmedFans = current.ConfirmedState?.Fans;
+        bool matches = deferredManualFanSafetyState switch
+        {
+            DeferredManualFanSafetyState.FloorOwned =>
+                confirmedFans is { } value
+                && DeviceSubsystemOrder.IsManualFanMode(value),
+            DeferredManualFanSafetyState.AutomaticOwned =>
+                confirmedFans == FanMode.Automatic,
+            _ => true,
+        };
+        if (!matches)
+        {
+            LoseDeferredManualFanSafetyOwnershipCore();
+        }
+
+        return matches;
+    }
+
+    private static string? DeferredManualFanSafetyStateBlockReason(
+        DeferredManualFanSafetyState expected,
+        ConfirmedDeviceState state)
+    {
+        bool matches = expected switch
+        {
+            DeferredManualFanSafetyState.PendingUnowned or
+                DeferredManualFanSafetyState.FloorOwned =>
+                DeviceSubsystemOrder.IsManualFanMode(
+                    state.Fans ?? FanMode.Automatic),
+            DeferredManualFanSafetyState.AutomaticOwned =>
+                state.Fans == FanMode.Automatic,
+            _ => false,
+        };
+        return matches
+            ? null
+            : "Fan state changed after crash-recovery ownership was classified; the automatic recovery write was blocked.";
+    }
+
+    private void LoseDeferredManualFanSafetyOwnershipCore()
+    {
+        deferredManualFanSafetyState = DeferredManualFanSafetyState.Lost;
+        manualFanCurveRecoveryPending = false;
+        lastOwnedFanControlSettings = null;
+    }
+
+    private async Task<bool> ReconcileDeferredManualFanSafetyWithUserIntentCoreAsync(
+        PowerSource powerSource,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (!ValidateDeferredManualFanSafetyStateCore(current)
+            || !stillControlsSession())
+        {
+            return false;
+        }
+
+        FanControlSettings desired = Automation.Resolve(
+                current.ConfirmedState ?? UnknownConfirmedState)
+            .FanControl
+            ?? FanControlSettings.FromLegacy(
+                Automation.Resolve(current.ConfirmedState ?? UnknownConfirmedState)
+                    .Fans
+                    .Value);
+        if (deferredManualFanSafetyState == DeferredManualFanSafetyState.PendingUnowned)
+        {
+            return true;
+        }
+
+        if (deferredManualFanSafetyState == DeferredManualFanSafetyState.Lost)
+        {
+            return false;
+        }
+
+        if (deferredManualFanSafetyState == DeferredManualFanSafetyState.FloorOwned)
+        {
+            if (desired.Mode == FanMode.Automatic)
+            {
+                await HandBackDeferredManualFanSafetyFloorCoreAsync(
+                    powerSource,
+                    cancellationToken,
+                    stillControlsSession).ConfigureAwait(false);
+                return deferredManualFanSafetyState ==
+                    DeferredManualFanSafetyState.AutomaticOwned;
+            }
+
+            if (desired.Mode is FanMode.ManualCurve or FanMode.Maximum)
+            {
+                manualFanCurveRecoveryPending = false;
+                return true;
+            }
+
+            return await ApplyDeferredOwnedFanIntentCoreAsync(
+                desired,
+                powerSource,
+                stillControlsSession,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (desired.Mode == FanMode.Automatic)
+        {
+            manualFanCurveRecoveryPending = false;
+            return true;
+        }
+
+        if (desired.Mode == FanMode.ManualCurve)
+        {
+            await MaintainDeferredManualFanSafetyFloorCoreAsync(
+                cancellationToken,
+                allowOwnedAutomaticBaseline: true,
+                stillControlsSession).ConfigureAwait(false);
+            return deferredManualFanSafetyState ==
+                DeferredManualFanSafetyState.FloorOwned;
+        }
+
+        return await ApplyDeferredOwnedFanIntentCoreAsync(
+            desired,
+            powerSource,
+            stillControlsSession,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> ApplyDeferredOwnedFanIntentCoreAsync(
+        FanControlSettings settings,
+        PowerSource powerSource,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken)
+    {
+        RefreshControllerPresenceCore(cancellationToken);
+        ServiceStatusSnapshot current = GetStatus();
+        if (current.ControllerDetectionWarning is not null
+            || current.PotentialControllers.Any(CompetingControllerProcesses.Contains)
+            || !stillControlsSession())
+        {
+            return false;
+        }
+
+        PowerSource confirmedPowerSource =
+            await ResolveCurrentPowerSourceAsync(cancellationToken).ConfigureAwait(false);
+        if (confirmedPowerSource != powerSource || !stillControlsSession())
+        {
+            return false;
+        }
+
+        DeferredManualFanSafetyState priorState = deferredManualFanSafetyState;
+        FanControlSettings? priorOwnedSettings = lastOwnedFanControlSettings;
+        bool priorRecoveryPending = manualFanCurveRecoveryPending;
+        deferredManualFanSafetyState = DeferredManualFanSafetyState.Lost;
+        manualFanCurveRecoveryPending = false;
+        lastOwnedFanControlSettings = null;
+        ControlOperationResult result;
+        try
+        {
+            result = await ApplyScopedIntentAsync(
+                DeviceSubsystem.Fans,
+                powerSource,
+                (coordinator, _, token) =>
+                    coordinator.ApplyFanControlOutcomeAsync(
+                        settings,
+                        token,
+                        stillControlsSession,
+                        state => DeferredManualFanSafetyStateBlockReason(
+                            priorState,
+                            state)),
+                cancellationToken,
+                desired => desired with
+                {
+                    Fans = desired.Fans with { Value = settings.Mode },
+                    FanControl = settings,
+                }).ConfigureAwait(false);
+        }
+        catch (IntentionalWriteCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (WriteAuthorityLostException)
+        {
+            deferredManualFanSafetyState = priorState;
+            manualFanCurveRecoveryPending = priorRecoveryPending;
+            lastOwnedFanControlSettings = priorOwnedSettings;
+            throw;
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            deferredManualFanSafetyState = priorState;
+            manualFanCurveRecoveryPending = priorRecoveryPending;
+            lastOwnedFanControlSettings = priorOwnedSettings;
+            throw;
+        }
+
+        if (result.Status != ControlOperationStatus.Applied)
+        {
+            return false;
+        }
+
+        deferredManualFanSafetyState = settings.Mode == FanMode.Automatic
+            ? DeferredManualFanSafetyState.AutomaticOwned
+            : DeferredManualFanSafetyState.FloorOwned;
+        return true;
+    }
+
+    private async Task<bool> TryCompleteDeferredUnexpectedExitRecoveryCoreAsync(
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken)
+    {
+        if (!unexpectedExitRecoveryDeferredForUserConfiguration
+            || !recoveryUserConfigurationLoaded
+            || !stillControlsSession())
+        {
+            return false;
+        }
+
+        PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!stillControlsSession()
+            || powerSource == PowerSource.ExternalUnknown)
+        {
+            return false;
+        }
+
+        _ = ChangePowerSourceCore(powerSource);
+
+        FanControlSettings? retainedFanControl = Automation.FanControlOverride;
+        FanControlSettings fullPowerProfileFanControl =
+            Automation.Profiles.PluggedIn.FanControl
+            ?? FanControlSettings.FromLegacy(Automation.Profiles.PluggedIn.Fans);
+        // A manual curve is intentionally inactive on USB-C. Keep the bounded
+        // recovery attempt available until a compatible source is confirmed.
+        if (powerSource == PowerSource.UsbC
+            && (retainedFanControl is { Mode: FanMode.ManualCurve }
+                || fullPowerProfileFanControl.Mode == FanMode.ManualCurve))
+        {
+            PublishDeferredRecoveryPowerSourceCore(powerSource);
+            await MaintainDeferredManualFanSafetyFloorCoreAsync(
+                cancellationToken,
+                stillControlsSession: stillControlsSession)
+                .ConfigureAwait(false);
+            return false;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        RefreshControllerPresenceCore(cancellationToken);
+        await ObserveCoreAsync(
+            powerSource,
+            powerSourceConfirmed: true,
+            requestedLiveReadings: LiveReadingSensors.None,
+            batteryPowerFlowMilliwatts: null,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!stillControlsSession())
+        {
+            return false;
+        }
+
+        // Reclassify the adapter after the awaited device observation so an
+        // AC-to-USB-C transition cannot race a manual recovery write.
+        PowerSource confirmedPowerSource =
+            await ResolveCurrentPowerSourceAsync(cancellationToken).ConfigureAwait(false);
+        if (!stillControlsSession()
+            || confirmedPowerSource == PowerSource.ExternalUnknown)
+        {
+            return false;
+        }
+
+        if (confirmedPowerSource != powerSource)
+        {
+            _ = ChangePowerSourceCore(confirmedPowerSource);
+            PublishDeferredRecoveryPowerSourceCore(confirmedPowerSource);
+            if (confirmedPowerSource == PowerSource.UsbC)
+            {
+                await MaintainDeferredManualFanSafetyFloorCoreAsync(
+                    cancellationToken,
+                    stillControlsSession: stillControlsSession).ConfigureAwait(false);
+            }
+            return false;
+        }
+
+        ServiceStatusSnapshot current = GetStatus();
+        if (!current.DeviceVerified
+            || current.WritesBlocked
+            || current.ConfirmedState is not { } confirmed)
+        {
+            return false;
+        }
+
+        bool deferredFanStateConverged =
+            await ReconcileDeferredManualFanSafetyWithUserIntentCoreAsync(
+                confirmedPowerSource,
+                stillControlsSession,
+                cancellationToken).ConfigureAwait(false);
+        if (!stillControlsSession())
+        {
+            return false;
+        }
+
+        current = GetStatus();
+        if (current.ConfirmedState is not { } reconciledConfirmed)
+        {
+            return false;
+        }
+        confirmed = reconciledConfirmed;
+
+        if (!stillControlsSession())
+        {
+            return false;
+        }
+
+        bool expectedRendererShutdown =
+            pendingLightingRestore is { Effect: not LightingEffect.Off }
+            && confirmed.Lighting is { Effect: LightingEffect.Off }
+            && current.LightingRendererOwnership == LightingRendererOwnershipState.None;
+
+        unexpectedExitRecoveryDeferredForUserConfiguration = false;
+        startupProfileReconciliationRequested = true;
+        ObserveAutomaticState(confirmed);
+        if (!deferredFanStateConverged)
+        {
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
+        }
+        if (expectedRendererShutdown)
+        {
+            // Host-rendered effects cannot survive the service process. Firmware
+            // Off with no renderer ownership is the expected crash boundary, not
+            // evidence that another controller replaced the saved effect.
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: true);
+        }
+
+        current = GetStatus();
+        PublishIfChanged(current with
+        {
+            ExternalChanges = driftTracker.ExternalChanges,
+            DesiredState = Automation.Resolve(confirmed),
+        });
+        try
+        {
+            if (!stillControlsSession())
+            {
+                ResetDeferredUnexpectedExitClassificationCore();
+                return false;
+            }
+
+            await PrepareManualFanCurveRecoveryCoreAsync(
+                cancellationToken,
+                stillControlsSession).ConfigureAwait(false);
+            if (!stillControlsSession())
+            {
+                ResetDeferredUnexpectedExitClassificationCore();
+                return false;
+            }
+
+            RefreshControllerPresenceCore(cancellationToken);
+            if (!stillControlsSession())
+            {
+                ResetDeferredUnexpectedExitClassificationCore();
+                return false;
+            }
+
+            _ = await RestoreLightingRendererCoreAsync(
+                cancellationToken,
+                stillControlsSession).ConfigureAwait(false);
+        }
+        catch (IntentionalWriteCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            pendingLightingRestore = null;
+            pendingLightingRestoreFromLifecycle = false;
+            recoveryUserConfigurationLoaded = false;
+            suppressInitialUserProfileApplyAfterUnexpectedExit = false;
+            CompleteUnexpectedExitRecoveryCore();
+            throw;
+        }
+        catch (WriteAuthorityLostException)
+        {
+            ResetDeferredUnexpectedExitClassificationCore();
+            return false;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            ResetDeferredUnexpectedExitClassificationCore();
+            throw;
+        }
+
+        recoveryUserConfigurationLoaded = false;
+        suppressInitialUserProfileApplyAfterUnexpectedExit = false;
+        CompleteUnexpectedExitRecoveryCore();
+        return true;
+    }
+
+    private void ResetDeferredUnexpectedExitClassificationCore()
+    {
+        unexpectedExitRecoveryDeferredForUserConfiguration = true;
+        initialAutomaticComparisons.Clear();
+        driftTracker = new ConfirmedStateDriftTracker();
+        ServiceStatusSnapshot current = GetStatus();
+        if (current.ConfirmedState is { } confirmed)
+        {
+            driftTracker.Observe(confirmed);
+        }
+
+        PublishIfChanged(current with
+        {
+            ExternalChanges = driftTracker.ExternalChanges,
+        });
+    }
+
+    private void PublishDeferredRecoveryPowerSourceCore(PowerSource powerSource)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        ConfirmedDeviceState confirmed =
+            current.ConfirmedState ?? UnknownConfirmedState;
+        PublishIfChanged(current with
+        {
+            ActivePowerSource = powerSource,
+            WritesBlocked = false,
+            DesiredState = Automation.Resolve(confirmed),
+            Message =
+                "The power source changed while crash recovery waits for an authorized active-user request; no hardware profile was applied.",
+        });
+    }
+
     public async Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken)
     {
         EnsureInitialized();
@@ -2595,7 +3554,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             RefreshBatteryHealthAfterPowerSourceChangeCore();
             RefreshControllerPresenceCore(cancellationToken);
             bool changed = powerSource != PowerSource.ExternalUnknown
-                && Automation.ChangePowerSource(powerSource);
+                && ChangePowerSourceCore(powerSource);
+            if (unexpectedExitRecoveryDeferredForUserConfiguration)
+            {
+                PublishDeferredRecoveryPowerSourceCore(powerSource);
+                await MaintainDeferredManualFanSafetyFloorCoreAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+
             if (changed)
             {
                 RecordResumePowerSourceTransitionCore(powerSource);
@@ -2664,7 +3631,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return;
             }
 
-            if (Automation.ChangePowerSource(classified))
+            bool changed = ChangePowerSourceCore(classified);
+            if (unexpectedExitRecoveryDeferredForUserConfiguration)
+            {
+                PublishDeferredRecoveryPowerSourceCore(classified);
+                await MaintainDeferredManualFanSafetyFloorCoreAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (changed)
             {
                 await ApplyFullTransitionAsync(
                     classified,
@@ -3037,10 +4013,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
                 string unavailable = reasonLabel == "shutdown"
-                    ? "OpenBlade could not verify the laptop before releasing keyboard Driver mode."
+                    ? "No verified laptop was available during shutdown, so keyboard Driver mode was left unchanged."
                     : $"OpenBlade could not verify the laptop while releasing keyboard Driver mode {boundary}.";
-                history.RecordSummary(ControlOperationStatus.Failed, unavailable);
-                return new ControlOperationResult(ControlOperationStatus.Failed, unavailable);
+                ControlOperationStatus unavailableStatus = reasonLabel == "shutdown"
+                    ? ControlOperationStatus.Stored
+                    : ControlOperationStatus.Failed;
+                history.RecordSummary(unavailableStatus, unavailable);
+                return new ControlOperationResult(unavailableStatus, unavailable);
             }
 
             bool? active = await device.ReleaseDriverModeAsync(cancellationToken)
@@ -3315,8 +4294,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private async Task<bool> RestoreLightingRendererCoreAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<bool>? stillControlsSession = null)
     {
+        if (unexpectedExitRecoveryDeferredForUserConfiguration)
+        {
+            return true;
+        }
+
         if (IsKeyboardLightingDelegated)
         {
             pendingLightingRestore = null;
@@ -3339,6 +4324,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return true;
         }
 
+        if (stillControlsSession?.Invoke() == false)
+        {
+            return false;
+        }
+
+        if (stillControlsSession is not null)
+        {
+            RefreshControllerPresenceCore(cancellationToken);
+            current = GetStatus();
+            if (!stillControlsSession())
+            {
+                return false;
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
         pendingLightingRestore = null;
         if (requested.Effect == LightingEffect.Off
             && current.ConfirmedState?.Lighting is { } confirmedLighting
@@ -3390,8 +4391,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return false;
             }
         }
+        catch (IntentionalWriteCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            pendingLightingRestore = requested;
+            pendingLightingRestoreFromLifecycle = lifecycleRestore;
             throw;
         }
         catch
@@ -3404,17 +4412,56 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         ScopedApplyOutcome outcome;
+        bool recoveryLightingChanged = false;
+        Func<ConfirmedDeviceState, string?>? recoveryStateBlockReason =
+            stillControlsSession is null
+                || preferences.AlwaysOverrideExternalLightingChanges
+                ? null
+                : state =>
+                {
+                    if (state.Lighting is { Effect: not LightingEffect.Off } observed
+                        && LightingSettingsFactory.NormalizeLegacyOff(observed)
+                            != LightingSettingsFactory.NormalizeLegacyOff(requested))
+                    {
+                        recoveryLightingChanged = true;
+                        return "Lighting changed after crash-recovery classification; the saved effect was not restored.";
+                    }
+
+                    return null;
+                };
+        if (stillControlsSession?.Invoke() == false)
+        {
+            pendingLightingRestore = requested;
+            pendingLightingRestoreFromLifecycle = lifecycleRestore;
+            return false;
+        }
+
         try
         {
             outcome = await new ControlCoordinator(device)
                 .ApplyLightingOutcomeAsync(
                     requested,
                     cancellationToken,
-                    forceWrite: preferences.AlwaysOverrideExternalLightingChanges)
+                    forceWrite: preferences.AlwaysOverrideExternalLightingChanges,
+                    writeAllowed: stillControlsSession,
+                    initialStateBlockReason: recoveryStateBlockReason)
                 .ConfigureAwait(false);
+        }
+        catch (WriteAuthorityLostException)
+        {
+            pendingLightingRestore = requested;
+            pendingLightingRestoreFromLifecycle = lifecycleRestore;
+            throw;
+        }
+        catch (IntentionalWriteCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            pendingLightingRestore = requested;
+            pendingLightingRestoreFromLifecycle = lifecycleRestore;
             throw;
         }
         catch
@@ -3423,6 +4470,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PublishLightingRestoreFailure(
                 "OpenBlade lighting could not be restored after the system lifecycle change; it will not retry automatically.",
                 LightingRendererOwnershipState.Faulted);
+            return false;
+        }
+
+        if (recoveryLightingChanged)
+        {
+            pendingLightingRestoreFromLifecycle = false;
+            initialAutomaticComparisons.Add(DeviceSubsystem.Lighting);
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: false);
+            ServiceStatusSnapshot changed = GetStatus();
+            ConfirmedDeviceState? confirmed = outcome.Readback is null
+                ? changed.ConfirmedState
+                : MergeScopedReadback(
+                    DeviceSubsystem.Lighting,
+                    changed.ConfirmedState,
+                    outcome.Readback);
+            history.RecordSubsystemResult(DeviceSubsystem.Lighting, outcome.Result);
+            PublishIfChanged(changed with
+            {
+                ConfirmedState = confirmed,
+                DesiredState = Automation.Resolve(confirmed ?? UnknownConfirmedState),
+                ExternalChanges = driftTracker.ExternalChanges,
+                Message = outcome.Result.Message,
+            });
             return false;
         }
 
@@ -3499,6 +4569,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : null,
             CustomPerformance = value?.Lifetime == OverrideLifetime.Persistent
                 ? value.CustomPerformance
+                : null,
+            GpuClockTuning = value?.Lifetime == OverrideLifetime.Persistent
+                ? value.GpuClockTuning
                 : null,
         };
         await PersistOverridesIfChangedAsync(staged, cancellationToken);
@@ -3592,7 +4665,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveCurrentAvailability: true);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token);
             }
@@ -3662,7 +4735,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveCurrentAvailability: true);
             }
 
-            if (Automation.ChangePowerSource(powerSource))
+            if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token);
             }
@@ -4621,7 +5694,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 includeLiveReadings,
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            if (startupProfileReconciliationPending)
+            if (startupProfileReconciliationPending
+                && (!unexpectedExitRecoveryPending
+                    || unexpectedExitRecoveryDeferredForUserConfiguration))
             {
                 // A first sample has no preceding OpenBlade observation, so it
                 // cannot prove an external change. Establish a baseline; the
@@ -4644,6 +5719,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 batteryPowerFlowMilliwatts,
                 observation,
                 batteryHealth);
+
+            if (unexpectedExitRecoveryPending
+                && startupProfileReconciliationRequested
+                && powerSourceConfirmed)
+            {
+                CompleteUnexpectedExitRecoveryCore();
+            }
 
             if (powerSourceConfirmed)
             {
@@ -5229,6 +6311,50 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    private bool ChangePowerSourceCore(PowerSource powerSource)
+    {
+        bool changed = Automation.ChangePowerSource(powerSource);
+        if (!changed || !suppressInitialKnownPowerSourceApplyAfterUnexpectedExit)
+        {
+            return changed;
+        }
+
+        suppressInitialKnownPowerSourceApplyAfterUnexpectedExit = false;
+        ServiceStatusSnapshot current = GetStatus();
+        PublishIfChanged(current with
+        {
+            ActivePowerSource = powerSource,
+            WritesBlocked = false,
+            Message =
+                "The initial power adapter classification was recorded without hardware application during unexpected-exit recovery.",
+            DesiredState = Automation.Resolve(
+                current.ConfirmedState ?? UnknownConfirmedState),
+        });
+        return false;
+    }
+
+    private void CompleteUnexpectedExitRecoveryCore()
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (!unexpectedExitRecoveryPending
+            || unexpectedExitRecoveryDeferredForUserConfiguration
+            || !current.DeviceVerified
+            || current.WritesBlocked)
+        {
+            return;
+        }
+
+        startupProfileReconciliationPending = false;
+        unexpectedExitRecoveryPending = false;
+        string result = current.ExternalChanges.Count == 0
+            ? "No external control changes were observed. Owned long-running behavior is eligible for bounded recovery."
+            : $"External control changes remain latched for {string.Join(", ", current.ExternalChanges)}; ordinary profile writes were skipped.";
+        const string prefix =
+            "Unexpected service-exit recovery observed fresh exact-device state before any recovery write.";
+        history.RecordSummary(ControlOperationStatus.Stored, $"{prefix} {result}");
+        PublishIfChanged(current with { Message = $"{prefix} {result}" });
+    }
+
     private async Task ReconcileStartupProfileCoreAsync(
         PowerSource powerSource,
         CancellationToken cancellationToken)
@@ -5239,7 +6365,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        _ = Automation.ChangePowerSource(powerSource);
+        _ = ChangePowerSourceCore(powerSource);
         await ApplyFullTransitionAsync(
             powerSource,
             cancellationToken,
@@ -5406,10 +6532,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         CompareInitialAutomaticPerformance(confirmed, desired);
-        CompareInitialAutomaticValue(
-            DeviceSubsystem.Fans,
-            confirmed.Fans,
-            desired.Fans.Value);
+        CompareInitialAutomaticFans(confirmed.Fans, desired.Fans.Value);
         CompareInitialAutomaticValue(
             DeviceSubsystem.Lighting,
             confirmed.Lighting,
@@ -5499,6 +6622,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PerformanceMatchesDesired(confirmed, desired));
     }
 
+    private void CompareInitialAutomaticFans(
+        FanMode? confirmed,
+        FanMode desired)
+    {
+        if (confirmed is null
+            || !initialAutomaticComparisons.Add(DeviceSubsystem.Fans))
+        {
+            return;
+        }
+
+        bool matches = confirmed == desired
+            || DeviceSubsystemOrder.IsManualFanMode(confirmed.Value)
+                && DeviceSubsystemOrder.IsManualFanMode(desired);
+        driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matches);
+    }
+
     private void CompareTransitionAutomaticPerformance(
         ConfirmedDeviceState confirmed,
         DesiredDeviceState priorDesired,
@@ -5521,7 +6660,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DesiredDeviceState desired) =>
         confirmed.Performance == desired.Performance.Value
         && (confirmed.Performance != PerformancePreset.Custom
-            || confirmed.CustomPerformance == desired.CustomPerformance);
+            || confirmed.CustomPerformance == desired.CustomPerformance)
+        && (desired.GpuClockTuning is null
+            || confirmed.GpuClockOffsets?.Current
+                == desired.GpuClockTuning.EffectiveOffsets);
 
     private void CompareInitialAutomaticValue<T>(
         DeviceSubsystem subsystem,
@@ -5982,6 +7124,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private sealed record UserConfigurationStores(
         BatteryConfigurationStore Configuration,
         PersistentOverrideStore Overrides);
+
+    private enum DeferredManualFanSafetyState
+    {
+        PendingUnowned,
+        FloorOwned,
+        AutomaticOwned,
+        Lost,
+    }
 
     private void EnsureInitialized()
     {

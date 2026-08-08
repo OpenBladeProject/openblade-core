@@ -9,6 +9,7 @@ public sealed class ConfirmedStateDriftTracker
     private PerformancePreset? performance;
     private CustomPerformanceSettings? customPerformance;
     private bool customPerformanceObserved;
+    private GpuClockOffsetSettings? gpuClockOffsets;
     private FanMode? fans;
     private ConfirmedBatteryState? battery;
     private bool batteryObserved;
@@ -23,6 +24,10 @@ public sealed class ConfirmedStateDriftTracker
         ArgumentNullException.ThrowIfNull(state);
         ObserveValue(state.Performance, ref performance, DeviceSubsystem.Performance);
         ObserveCustomPerformance(state);
+        ObserveValue(
+            state.GpuClockOffsets?.Current,
+            ref gpuClockOffsets,
+            DeviceSubsystem.Performance);
         ObserveValue(state.Fans, ref fans, DeviceSubsystem.Fans);
         ObserveBattery(state.Battery);
         ObserveValue(state.Lighting, ref lighting, DeviceSubsystem.Lighting);

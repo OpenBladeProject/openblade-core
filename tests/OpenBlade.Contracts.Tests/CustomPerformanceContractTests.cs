@@ -113,5 +113,21 @@ public sealed class CustomPerformanceContractTests
             PerformancePreset.Balanced,
             OverrideLifetime.Persistent,
             CustomPerformanceSettings.Default).IsWellFormed());
+        Assert.True(new PerformanceOverride(
+            PerformancePreset.Balanced,
+            OverrideLifetime.Persistent)
+        {
+            GpuClockTuning = GpuClockTuningSettings.Disabled,
+        }.IsWellFormed());
+        Assert.False(new PerformanceOverride(
+            PerformancePreset.Custom,
+            OverrideLifetime.Persistent,
+            CustomPerformanceSettings.Default with
+            {
+                GpuClockOffsets = GpuClockOffsetSettings.Default,
+            })
+        {
+            GpuClockTuning = GpuClockTuningSettings.Disabled,
+        }.IsWellFormed());
     }
 }

@@ -448,6 +448,10 @@ public sealed class ControlCoordinatorTests
             GpuClockOffsets = new GpuClockOffsetSettings(5, 0),
         };
         RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            GpuOverclock = WritableGpuOverclockCapabilities,
+        };
         device.State = device.State with
         {
             Performance = PerformancePreset.Custom,
@@ -475,24 +479,40 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
-    public async Task FullReconcile_ClockOnlyChangeSkipsFirmwareWrite()
+    public async Task ScopedPerformance_UnsupportedGpuTuningDropsOnlyGpuComponent()
     {
-        var currentLevels = new CustomPerformanceSettings(
-            CustomPerformanceLevel.High,
-            CustomPerformanceLevel.Medium)
-        {
-            GpuClockOffsets = new GpuClockOffsetSettings(0, 0),
-        };
-        var requestedLevels = currentLevels with
-        {
-            GpuClockOffsets = new GpuClockOffsetSettings(5, 0),
-        };
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Balanced,
+            customPerformance: null,
+            new GpuClockTuningSettings(
+                Enabled: true,
+                new GpuClockOffsetSettings(5, 10)),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.True(outcome.ReadbackMatched);
+        Assert.Equal(1, device.PerformanceSetCalls);
+        Assert.Equal(0, device.GpuClockSetCalls);
+        Assert.Equal(PerformancePreset.Balanced, device.State.Performance);
+        Assert.Equal(
+            ["Capabilities", "State", "SetPerformance", "State"],
+            device.Calls);
+    }
+
+    [Fact]
+    public async Task FullReconcile_BalancedClockOnlyChangeSkipsFirmwareWrite()
+    {
+        var requestedOffsets = new GpuClockOffsetSettings(5, 0);
         RecordingBladeDevice device = CreateMatchingDevice();
         device.State = device.State with
         {
-            Performance = PerformancePreset.Custom,
+            Performance = PerformancePreset.Balanced,
             Fans = FanMode.Automatic,
-            CustomPerformance = currentLevels,
+            CustomPerformance = null,
             GpuClockOffsets = new GpuClockOffsetCapabilities(
                 "Test NVIDIA GPU",
                 new GpuClockOffsetRange(-1000, 1000, 0),
@@ -502,13 +522,14 @@ public sealed class ControlCoordinatorTests
         {
             PerformancePresets = new HashSet<PerformancePreset>
             {
-                PerformancePreset.Custom,
+                PerformancePreset.Balanced,
             },
             FanModes = new HashSet<FanMode> { FanMode.Automatic },
+            GpuOverclock = WritableGpuOverclockCapabilities,
         };
         var desired = new DesiredDeviceState(
             new ResolvedSetting<PerformancePreset>(
-                PerformancePreset.Custom,
+                PerformancePreset.Balanced,
                 SettingValueSource.PowerProfile),
             new ResolvedSetting<FanMode>(
                 FanMode.Automatic,
@@ -518,7 +539,9 @@ public sealed class ControlCoordinatorTests
                 SettingValueSource.PowerProfile),
             new DesiredBatteryState(BatteryPolicy.Create(75), true, false))
         {
-            CustomPerformance = requestedLevels,
+            GpuClockTuning = new GpuClockTuningSettings(
+                Enabled: true,
+                requestedOffsets),
         };
         var coordinator = new ControlCoordinator(device);
 
@@ -528,7 +551,32 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(ControlResultStatus.Applied, outcome.Results.Performance.Status);
         Assert.Equal(0, device.PerformanceSetCalls);
         Assert.Equal(1, device.GpuClockSetCalls);
-        Assert.Equal(requestedLevels.GpuClockOffsets, device.State.GpuClockOffsets?.Current);
+        Assert.Equal(requestedOffsets, device.State.GpuClockOffsets?.Current);
+    }
+
+    [Fact]
+    public async Task FullReconcile_UnsupportedGpuTuningDropsOnlyGpuComponent()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        DesiredDeviceState desired = CreateDesiredState() with
+        {
+            GpuClockTuning = new GpuClockTuningSettings(
+                Enabled: true,
+                new GpuClockOffsetSettings(5, 10)),
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
+            desired,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Applied, results.Fans.Status);
+        Assert.Equal(1, device.PerformanceSetCalls);
+        Assert.Equal(1, device.FanSetCalls);
+        Assert.Equal(0, device.GpuClockSetCalls);
+        Assert.Equal(PerformancePreset.Balanced, device.State.Performance);
+        Assert.Equal(FanMode.Maximum, device.State.Fans);
     }
 
     [Fact]
@@ -1361,6 +1409,12 @@ public sealed class ControlCoordinatorTests
         new RgbColor(10, 20, 30),
         40);
 
+    private static GpuOverclockCapabilities WritableGpuOverclockCapabilities { get; } =
+        new(
+            new DeviceNumericRange(-1000, 400, null),
+            new DeviceNumericRange(-1000, 3000, null),
+            DeviceFeatureAccess.ReadWrite);
+
     private sealed class RecordingBladeDevice : IBladeDevice
     {
         public List<string> Calls { get; } = [];
@@ -1513,6 +1567,22 @@ public sealed class ControlCoordinatorTests
 
             AfterSetter?.Invoke(DeviceSubsystem.Performance);
             return Task.CompletedTask;
+        }
+
+        public async Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            CancellationToken cancellationToken)
+        {
+            await SetPerformanceAsync(
+                value,
+                customPerformance,
+                cancellationToken);
+            if (gpuClockOffsets is not null)
+            {
+                await SetGpuClockOffsetsAsync(gpuClockOffsets, cancellationToken);
+            }
         }
 
         public Task SetGpuClockOffsetsAsync(

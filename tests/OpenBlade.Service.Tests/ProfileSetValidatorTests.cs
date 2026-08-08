@@ -384,6 +384,38 @@ public sealed class ProfileSetValidatorTests
             .Validate(profiles);
     }
 
+    [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    public void Validate_RejectsGpuClockTuningOutsidePluggedInProfile(
+        PowerSource source)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = source switch
+        {
+            PowerSource.Battery => defaults with
+            {
+                Battery = defaults.Battery with
+                {
+                    GpuClockTuning = GpuClockTuningSettings.Disabled,
+                },
+            },
+            PowerSource.UsbC => defaults with
+            {
+                UsbC = defaults.UsbC with
+                {
+                    GpuClockTuning = GpuClockTuningSettings.Disabled,
+                },
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(source)),
+        };
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            CreateValidator().Validate(profiles));
+
+        Assert.Contains("cannot configure GPU clock tuning", exception.Message);
+    }
+
     [Fact]
     public void ValidatePreferences_RejectsMissingPreferences()
     {

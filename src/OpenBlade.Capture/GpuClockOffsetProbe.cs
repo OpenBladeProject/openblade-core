@@ -23,6 +23,7 @@ public sealed class NvidiaNvmlGpuClockOffsetProbe : IGpuClockOffsetProbe
     private const int Success = 0;
     private const uint ClockOffsetStructVersion = (1u << 24) | 24u;
     private const int PerformanceStateZero = 0;
+    private const int NvmlMemoryOffsetMultiplier = 2;
 
     public GpuClockOffsetCapabilities Query()
     {
@@ -60,6 +61,17 @@ public sealed class NvidiaNvmlGpuClockOffsetProbe : IGpuClockOffsetProbe
         };
 
         EnsureSuccess(NvmlDeviceGetClockOffsets(device, ref info), $"read the {label} range");
+        int divisor = type == NvmlClockType.Memory
+            ? NvmlMemoryOffsetMultiplier
+            : 1;
+        if (info.MinimumMegahertz % divisor != 0
+            || info.MaximumMegahertz % divisor != 0
+            || info.CurrentMegahertz % divisor != 0)
+        {
+            throw new InvalidOperationException(
+                $"NVML returned an unrepresentable {label} value.");
+        }
+
         if (info.MinimumMegahertz > info.MaximumMegahertz ||
             info.CurrentMegahertz < info.MinimumMegahertz ||
             info.CurrentMegahertz > info.MaximumMegahertz)
@@ -68,9 +80,9 @@ public sealed class NvidiaNvmlGpuClockOffsetProbe : IGpuClockOffsetProbe
         }
 
         return new GpuClockOffsetRange(
-            info.MinimumMegahertz,
-            info.MaximumMegahertz,
-            info.CurrentMegahertz);
+            info.MinimumMegahertz / divisor,
+            info.MaximumMegahertz / divisor,
+            info.CurrentMegahertz / divisor);
     }
 
     private static void EnsureSuccess(int status, string action)

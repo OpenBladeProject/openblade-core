@@ -22,7 +22,7 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         Assert.NotNull(actual);
         Assert.Equal("Test NVIDIA GPU", actual.DeviceName);
         Assert.Equal(new GpuClockOffsetRange(-1000, 1000, 75), actual.Core);
-        Assert.Equal(new GpuClockOffsetRange(-2000, 6000, 300), actual.Memory);
+        Assert.Equal(new GpuClockOffsetRange(-1000, 3000, 150), actual.Memory);
         Assert.Equal(1, api.InitializeCalls);
         Assert.Equal(1, api.ShutdownCalls);
     }
@@ -48,11 +48,11 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         new NvidiaGpuClockOffsetController(api).Set(requested);
 
         Assert.Equal(125, api.CoreCurrent);
-        Assert.Equal(500, api.MemoryCurrent);
+        Assert.Equal(1000, api.MemoryCurrent);
         Assert.Equal(
             [
                 (NvmlClockType.Graphics, 125),
-                (NvmlClockType.Memory, 500),
+                (NvmlClockType.Memory, 1000),
             ],
             api.Writes);
         Assert.Equal(1, api.ShutdownCalls);
@@ -78,7 +78,7 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         var api = new FakeNvmlApi
         {
             CoreCurrent = 50,
-            MemoryCurrent = 200,
+            MemoryCurrent = 400,
             FailFirstMemoryWrite = true,
         };
 
@@ -89,11 +89,11 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
         Assert.Contains("restored", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(50, api.CoreCurrent);
-        Assert.Equal(200, api.MemoryCurrent);
+        Assert.Equal(400, api.MemoryCurrent);
         Assert.Equal(
             [
                 (NvmlClockType.Graphics, 125),
-                (NvmlClockType.Memory, 500),
+                (NvmlClockType.Memory, 1000),
                 (NvmlClockType.Graphics, 50),
             ],
             api.Writes);

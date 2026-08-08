@@ -52,6 +52,17 @@ public sealed class FanCurveCalculatorTests
     }
 
     [Fact]
+    public void MissingTemperatureUsesTheAdmittedDeviceMaximum()
+    {
+        FanTargetSpeeds targets = FanCurveCalculator.Calculate(
+            ManualFanCurve.Default,
+            new FanTemperatureReadings(null, null),
+            maximumRpm: 5000);
+
+        Assert.Equal(new FanTargetSpeeds(5000, 5000, FailSafe: true), targets);
+    }
+
+    [Fact]
     public void InactiveGpuUsesCpuTemperatureWithoutFailSafe()
     {
         FanTargetSpeeds targets = FanCurveCalculator.Calculate(

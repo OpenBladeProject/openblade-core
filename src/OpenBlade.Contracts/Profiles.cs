@@ -54,6 +54,23 @@ public sealed record GpuClockOffsetSettings
             >= MinimumAbsoluteOffsetMegahertz and <= MaximumAbsoluteOffsetMegahertz;
 }
 
+public sealed record GpuClockTuningSettings(
+    bool Enabled,
+    GpuClockOffsetSettings Offsets)
+{
+    public GpuClockOffsetSettings EffectiveOffsets => Enabled
+        ? Offsets
+        : GpuClockOffsetSettings.Default;
+
+    public static GpuClockTuningSettings Disabled { get; } = new(
+        Enabled: false,
+        GpuClockOffsetSettings.Default);
+
+    public static bool IsWellFormed(GpuClockTuningSettings? value) =>
+        value is not null
+        && GpuClockOffsetSettings.IsWellFormed(value.Offsets);
+}
+
 public sealed record CustomPerformanceSettings
 {
     public CustomPerformanceSettings(
@@ -78,6 +95,8 @@ public sealed record CustomPerformanceSettings
         CustomPerformanceLevel.Medium,
         CustomPerformanceLevel.High);
 
+    // Retained for backward-compatible profile and IPC migration. New code
+    // stores GPU tuning beside the power preset on PowerProfile.
     public GpuClockOffsetSettings? GpuClockOffsets { get; init; }
 
     public static bool IsWellFormed(CustomPerformanceSettings? value) =>
@@ -406,6 +425,10 @@ public sealed record PowerProfile(
     // Retained while another preset is selected so switching back to Custom
     // restores the user's last valid CPU/GPU pair.
     public CustomPerformanceSettings? CustomPerformance { get; init; }
+
+    // Null leaves NVIDIA clock state unmanaged. A non-null setting opts this
+    // profile into independent GPU tuning for any admitted power preset.
+    public GpuClockTuningSettings? GpuClockTuning { get; init; }
 
     // Optional for JSON compatibility with profiles written before adjustable
     // fixed speed and manual curves were introduced.

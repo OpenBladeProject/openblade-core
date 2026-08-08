@@ -38,8 +38,9 @@ public sealed class WorkerTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             Worker.RunWithShutdownCleanupAsync(
                 token => Task.FromCanceled(token),
-                token =>
+                (intentionalStop, token) =>
                 {
+                    Assert.True(intentionalStop);
                     Assert.False(token.IsCancellationRequested);
                     cleanupRan = true;
                     return Task.CompletedTask;
@@ -47,6 +48,75 @@ public sealed class WorkerTests
                 stopping.Token));
 
         Assert.True(cleanupRan);
+    }
+
+    [Fact]
+    public async Task UnexpectedBackgroundFailure_IsReportedToCleanup()
+    {
+        bool? intentionalStop = null;
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            Worker.RunWithShutdownCleanupAsync(
+                _ => Task.FromException(new IOException("background failed")),
+                (intentional, _) =>
+                {
+                    intentionalStop = intentional;
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None));
+
+        Assert.False(intentionalStop);
+    }
+
+    [Fact]
+    public async Task UnexpectedBackgroundFailure_AttemptsCleanupButRetainsRunMarker()
+    {
+        int cleanupCalls = 0;
+
+        bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+            startupCompleted: true,
+            intentionalStop: false,
+            _ =>
+            {
+                cleanupCalls++;
+                return Task.FromResult(new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    "Hardware cleanup completed."));
+            },
+            new RecordingLogger(),
+            CancellationToken.None);
+
+        Assert.Equal(1, cleanupCalls);
+        Assert.False(clearRunMarker);
+    }
+
+    [Fact]
+    public async Task StartupFailure_SkipsCleanupWithoutHardwareWarning()
+    {
+        bool cleanupCalled = false;
+        var logger = new RecordingLogger();
+
+        bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+            startupCompleted: false,
+            intentionalStop: false,
+            _ =>
+            {
+                cleanupCalled = true;
+                return Task.FromResult(new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    "Hardware cleanup completed."));
+            },
+            logger,
+            CancellationToken.None);
+
+        Assert.Null(clearRunMarker);
+        Assert.False(cleanupCalled);
+        LogEntry entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Information, entry.Level);
+        Assert.Contains(
+            "startup did not complete",
+            entry.Message,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -88,6 +158,27 @@ public sealed class WorkerTests
             logger.Entries,
             entry => entry.Level == LogLevel.Warning);
         Assert.Contains(reason, warning.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ControlOperationStatus.Applied, true)]
+    [InlineData(ControlOperationStatus.Stored, true)]
+    [InlineData(ControlOperationStatus.Blocked, false)]
+    [InlineData(ControlOperationStatus.Failed, false)]
+    public async Task RunMarker_IsClearedOnlyAfterConfirmedOrDeliberatelySkippedCleanup(
+        ControlOperationStatus status,
+        bool expected)
+    {
+        bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+            startupCompleted: true,
+            intentionalStop: true,
+            _ => Task.FromResult(new ControlOperationResult(status, "result")),
+            new RecordingLogger(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            expected,
+            clearRunMarker);
     }
 
     private sealed class RecordingLogger : ILogger

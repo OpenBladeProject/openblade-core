@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -65,6 +65,7 @@ public static class ProfileExportSerializer
             3 => DeserializeVersion3(json),
             4 => DeserializeVersion4(json),
             5 => DeserializeVersion5(json),
+            6 => DeserializeVersion6(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
@@ -100,27 +101,38 @@ public static class ProfileExportSerializer
     // its own DTO and migrate to ProfileSet before returning from Deserialize.
     private static ProfileSet DeserializeVersion1(string json)
     {
-        return NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles);
+        return NormalizeLegacyGpuClockTuning(
+            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
     }
 
     private static ProfileSet DeserializeVersion2(string json)
     {
-        return NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles);
+        return NormalizeLegacyGpuClockTuning(
+            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
     }
 
     private static ProfileSet DeserializeVersion3(string json)
     {
-        return NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles);
+        return NormalizeLegacyGpuClockTuning(
+            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
     }
 
     private static ProfileSet DeserializeVersion4(string json)
     {
-        return NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles);
+        return NormalizeLegacyGpuClockTuning(
+            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
     }
 
     private static ProfileSet DeserializeVersion5(string json)
     {
-        return NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles);
+        return NormalizeLegacyGpuClockTuning(
+            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
+    }
+
+    private static ProfileSet DeserializeVersion6(string json)
+    {
+        return NormalizeLegacyGpuClockTuning(
+            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
     }
 
     private static ProfileSet NormalizeAudioMeterDecay(ProfileSet profiles) => profiles with
@@ -129,6 +141,32 @@ public static class ProfileExportSerializer
         Battery = NormalizeAudioMeterDecay(profiles.Battery),
         UsbC = NormalizeAudioMeterDecay(profiles.UsbC),
     };
+
+    private static ProfileSet NormalizeLegacyGpuClockTuning(ProfileSet profiles) => profiles with
+    {
+        PluggedIn = NormalizeLegacyGpuClockTuning(profiles.PluggedIn),
+    };
+
+    private static PowerProfile NormalizeLegacyGpuClockTuning(PowerProfile profile)
+    {
+        if (profile.GpuClockTuning is not null
+            || profile.Performance != PerformancePreset.Custom
+            || profile.CustomPerformance?.GpuClockOffsets is not { } legacyOffsets)
+        {
+            return profile;
+        }
+
+        return profile with
+        {
+            CustomPerformance = profile.CustomPerformance with
+            {
+                GpuClockOffsets = null,
+            },
+            GpuClockTuning = new GpuClockTuningSettings(
+                Enabled: true,
+                legacyOffsets),
+        };
+    }
 
     private static PowerProfile NormalizeAudioMeterDecay(PowerProfile profile) => profile with
     {

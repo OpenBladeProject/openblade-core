@@ -33,6 +33,14 @@ internal sealed class IntentionalWriteCanceledException(
     public IReadOnlySet<DeviceSubsystem> WriteAttempted { get; } = writeAttempted;
 }
 
+internal sealed class WriteAuthorityLostException : InvalidOperationException
+{
+    public WriteAuthorityLostException()
+        : base("The active Windows session changed before the recovery write.")
+    {
+    }
+}
+
 public sealed class ControlCoordinator
 {
     private readonly IBladeDevice device;
@@ -94,28 +102,69 @@ public sealed class ControlCoordinator
     internal Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
         PerformancePreset value,
         CustomPerformanceSettings? customPerformance,
-        CancellationToken cancellationToken) => ApplyScopedAsync(
+        CancellationToken cancellationToken) => ApplyPerformanceOutcomeAsync(
+            value,
+            customPerformance,
+            gpuClockTuning: null,
+            cancellationToken);
+
+    internal Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
+        PerformancePreset value,
+        CustomPerformanceSettings? customPerformance,
+        GpuClockTuningSettings? gpuClockTuning,
+        CancellationToken cancellationToken)
+    {
+        NormalizeLegacyGpuClockTuning(ref customPerformance, ref gpuClockTuning);
+        GpuClockTuningSettings? effectiveGpuClockTuning = gpuClockTuning;
+        bool PerformanceSupported(DeviceCapabilities capabilities)
+        {
+            effectiveGpuClockTuning = FilterUnsupportedGpuClockTuning(
+                gpuClockTuning,
+                capabilities);
+            return capabilities.PerformancePresets.Contains(value)
+                && (value != PerformancePreset.Custom
+                    || capabilities.CustomPerformance?.Supports(customPerformance) != false);
+        }
+
+        return ApplyScopedAsync(
             DeviceSubsystem.Performance,
             "Performance",
             IsDefined(value)
                 && (value == PerformancePreset.Custom
                     ? CustomPerformanceSettings.IsWellFormed(customPerformance)
-                    : customPerformance is null),
-            capabilities => capabilities.PerformancePresets.Contains(value)
-                && (value != PerformancePreset.Custom
-                    || capabilities.CustomPerformance?.Supports(customPerformance) != false),
-            state => PerformanceMatches(state, value, customPerformance),
-            token => device.SetPerformanceAsync(value, customPerformance, token),
+                    : customPerformance is null)
+                && (gpuClockTuning is null
+                    || GpuClockTuningSettings.IsWellFormed(gpuClockTuning)),
+            PerformanceSupported,
+            state => PerformanceMatches(
+                state,
+                value,
+                customPerformance,
+                effectiveGpuClockTuning),
+            token => ApplyPerformanceAndGpuClockTuningAsync(
+                value,
+                customPerformance,
+                effectiveGpuClockTuning,
+                token),
             cancellationToken,
             state => DeviceSubsystemOrder.IsManualFanMode(state.Fans)
                 ? "Performance changes require Automatic fan mode."
                 : null,
             stateAwareSetter: (state, token) =>
-                CanApplyGpuClockOffsetsOnly(state, value, customPerformance)
+                CanApplyGpuClockOffsetsOnly(
+                    state,
+                    value,
+                    customPerformance,
+                    effectiveGpuClockTuning)
                     ? device.SetGpuClockOffsetsAsync(
-                        customPerformance!.GpuClockOffsets!,
+                        effectiveGpuClockTuning!.EffectiveOffsets,
                         token)
-                    : device.SetPerformanceAsync(value, customPerformance, token));
+                    : ApplyPerformanceAndGpuClockTuningAsync(
+                        value,
+                        customPerformance,
+                        effectiveGpuClockTuning,
+                        token));
+    }
 
     internal Task<ScopedApplyOutcome> ApplyFanOutcomeAsync(
         FanMode value,
@@ -125,9 +174,22 @@ public sealed class ControlCoordinator
 
     internal Task<ScopedApplyOutcome> ApplyFanControlOutcomeAsync(
         FanControlSettings value,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<bool>? writeAllowed = null,
+        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null)
     {
         ArgumentNullException.ThrowIfNull(value);
+        Func<ConfirmedDeviceState, string?>? manualEntryBlockReason =
+            DeviceSubsystemOrder.IsManualFanMode(value.Mode)
+                ? state => IsConfirmedManualFanWriteBaseline(state)
+                    ? null
+                    : "Fixed and manual fan control require confirmed Balanced Automatic fans to enter manual mode, or an already-confirmed manual fan state."
+                : null;
+        Func<ConfirmedDeviceState, string?>? combinedBlockReason =
+            initialStateBlockReason is null
+                ? manualEntryBlockReason
+                : state => initialStateBlockReason(state)
+                    ?? manualEntryBlockReason?.Invoke(state);
         return ApplyScopedAsync(
             DeviceSubsystem.Fans,
             "Fans",
@@ -138,11 +200,8 @@ public sealed class ControlCoordinator
             state => FanModeMatches(state.Fans, value.Mode),
             token => device.SetFanControlAsync(value, token),
             cancellationToken,
-            DeviceSubsystemOrder.IsManualFanMode(value.Mode)
-                ? state => IsConfirmedManualFanWriteBaseline(state)
-                        ? null
-                        : "Fixed and manual fan control require confirmed Balanced Automatic fans to enter manual mode, or an already-confirmed manual fan state."
-                : null,
+            combinedBlockReason,
+            writeAllowed: writeAllowed,
             acceptSetterCompletionWithoutReadback:
                 DeviceSubsystemOrder.IsManualFanMode(value.Mode),
             setterCompletionEvidence: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
@@ -151,7 +210,8 @@ public sealed class ControlCoordinator
             // Firmware exposes only Automatic versus manual state. It cannot
             // read back a fixed target or distinguish Fixed, Curve and Maximum,
             // so every explicit manual-mode action must submit its RPM target.
-            forceWrite: DeviceSubsystemOrder.IsManualFanMode(value.Mode));
+            forceWrite: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
+                || initialStateBlockReason is not null);
     }
 
     internal async Task<ScopedApplyOutcome> ApplyFanControlTransitionOutcomeAsync(
@@ -445,7 +505,10 @@ public sealed class ControlCoordinator
     internal Task<ScopedApplyOutcome> ApplyLightingOutcomeAsync(
         LightingSettings value,
         CancellationToken cancellationToken,
-        bool forceWrite = false) => ApplyScopedAsync(
+        bool forceWrite = false,
+        Func<bool>? writeAllowed = null,
+        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null) =>
+        ApplyScopedAsync(
             DeviceSubsystem.Lighting,
             "Lighting",
             IsLightingValid(value),
@@ -453,9 +516,11 @@ public sealed class ControlCoordinator
             state => LightingMatches(state, value),
             token => device.SetLightingAsync(value, token),
             cancellationToken,
+            initialStateBlockReason,
             acceptSetterCompletionWithoutReadback: value.Effect != LightingEffect.Off,
             setterCompletionEvidence: state => LogoMatches(state, value),
             forceWrite: forceWrite,
+            writeAllowed: writeAllowed,
             stateReader: device.ReadLightingStateAsync);
 
     internal async Task<FullTransitionApplyOutcome> ApplyDesiredStateOutcomeAsync(
@@ -496,6 +561,7 @@ public sealed class ControlCoordinator
                 DeviceAccessFailed: true);
         }
 
+        desired = DropUnsupportedGpuClockTuning(desired, capabilities);
         Dictionary<DeviceSubsystem, PendingSubsystem> states =
             CreatePendingSubsystems(desired, capabilities, initial);
 
@@ -592,18 +658,21 @@ public sealed class ControlCoordinator
             || PerformanceMatches(
                 state,
                 desired.Performance.Value,
-                desired.CustomPerformance);
+                desired.CustomPerformance,
+                desired.GpuClockTuning);
         return new Dictionary<DeviceSubsystem, PendingSubsystem>
         {
             [DeviceSubsystem.Performance] = new(
                 "Performance",
                 thermalCombinationSupported
                     && IsDefined(desired.Performance.Value)
-                    && capabilities.PerformancePresets.Contains(desired.Performance.Value),
+                    && capabilities.PerformancePresets.Contains(desired.Performance.Value)
+                    && GpuClockTuningSupported(capabilities, desired.GpuClockTuning),
                 PerformanceStateMatches(initial),
-                token => device.SetPerformanceAsync(
+                token => ApplyPerformanceAndGpuClockTuningAsync(
                     desired.Performance.Value,
                     desired.CustomPerformance,
+                    desired.GpuClockTuning,
                     token),
                 PerformanceStateMatches)
             {
@@ -611,13 +680,15 @@ public sealed class ControlCoordinator
                     CanApplyGpuClockOffsetsOnly(
                         state,
                         desired.Performance.Value,
-                        desired.CustomPerformance)
+                        desired.CustomPerformance,
+                        desired.GpuClockTuning)
                         ? device.SetGpuClockOffsetsAsync(
-                            desired.CustomPerformance!.GpuClockOffsets!,
+                            desired.GpuClockTuning!.EffectiveOffsets,
                             token)
-                        : device.SetPerformanceAsync(
+                        : ApplyPerformanceAndGpuClockTuningAsync(
                             desired.Performance.Value,
                             desired.CustomPerformance,
+                            desired.GpuClockTuning,
                             token),
             },
             [DeviceSubsystem.Fans] = new(
@@ -949,7 +1020,8 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, bool>? setterCompletionEvidence = null,
         bool forceWrite = false,
         Func<ConfirmedDeviceState, CancellationToken, Task>? stateAwareSetter = null,
-        Func<CancellationToken, Task<ConfirmedDeviceState>>? stateReader = null)
+        Func<CancellationToken, Task<ConfirmedDeviceState>>? stateReader = null,
+        Func<bool>? writeAllowed = null)
     {
         if (!valid)
         {
@@ -1009,6 +1081,11 @@ public sealed class ControlCoordinator
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            if (writeAllowed?.Invoke() == false)
+            {
+                throw new WriteAuthorityLostException();
+            }
+
             writeAttempted = true;
             await (stateAwareSetter is null
                 ? setter(cancellationToken)
@@ -1071,6 +1148,10 @@ public sealed class ControlCoordinator
                 exception);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (WriteAuthorityLostException)
         {
             throw;
         }
@@ -1452,26 +1533,92 @@ public sealed class ControlCoordinator
     private static bool PerformanceMatches(
         ConfirmedDeviceState state,
         PerformancePreset performance,
-        CustomPerformanceSettings? customPerformance) =>
+        CustomPerformanceSettings? customPerformance,
+        GpuClockTuningSettings? gpuClockTuning) =>
         state.Performance == performance
         && (performance != PerformancePreset.Custom
             || state.CustomPerformance is { } confirmed
                 && customPerformance is { } desired
                 && confirmed.Cpu == desired.Cpu
-                && confirmed.Gpu == desired.Gpu
-                && (desired.GpuClockOffsets is null
-                    || state.GpuClockOffsets?.Current == desired.GpuClockOffsets));
+                && confirmed.Gpu == desired.Gpu)
+        && (gpuClockTuning is null
+            || state.GpuClockOffsets?.Current == gpuClockTuning.EffectiveOffsets);
 
     private static bool CanApplyGpuClockOffsetsOnly(
         ConfirmedDeviceState state,
         PerformancePreset performance,
-        CustomPerformanceSettings? customPerformance) =>
-        performance == PerformancePreset.Custom
-        && customPerformance?.GpuClockOffsets is not null
-        && state.Performance == PerformancePreset.Custom
-        && state.CustomPerformance is { } confirmed
-        && confirmed.Cpu == customPerformance.Cpu
-        && confirmed.Gpu == customPerformance.Gpu;
+        CustomPerformanceSettings? customPerformance,
+        GpuClockTuningSettings? gpuClockTuning) =>
+        gpuClockTuning is not null
+        && state.Performance == performance
+        && (performance != PerformancePreset.Custom
+            || state.CustomPerformance is { } confirmed
+                && customPerformance is { } desired
+                && confirmed.Cpu == desired.Cpu
+                && confirmed.Gpu == desired.Gpu);
+
+    private Task ApplyPerformanceAndGpuClockTuningAsync(
+        PerformancePreset performance,
+        CustomPerformanceSettings? customPerformance,
+        GpuClockTuningSettings? gpuClockTuning,
+        CancellationToken cancellationToken) => device.SetPerformanceAsync(
+            performance,
+            customPerformance,
+            gpuClockTuning?.EffectiveOffsets,
+            cancellationToken);
+
+    private static bool GpuClockTuningSupported(
+        DeviceCapabilities capabilities,
+        GpuClockTuningSettings? gpuClockTuning) =>
+        gpuClockTuning is null
+        || capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite };
+
+    private static DesiredDeviceState DropUnsupportedGpuClockTuning(
+        DesiredDeviceState desired,
+        DeviceCapabilities capabilities)
+    {
+        GpuClockTuningSettings? gpuClockTuning = FilterUnsupportedGpuClockTuning(
+            desired.GpuClockTuning,
+            capabilities);
+        if (ReferenceEquals(gpuClockTuning, desired.GpuClockTuning))
+        {
+            return desired;
+        }
+
+        return desired with { GpuClockTuning = gpuClockTuning };
+    }
+
+    private static GpuClockTuningSettings? FilterUnsupportedGpuClockTuning(
+        GpuClockTuningSettings? gpuClockTuning,
+        DeviceCapabilities capabilities)
+    {
+        if (gpuClockTuning is null
+            || capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite })
+        {
+            return gpuClockTuning;
+        }
+
+        // Legacy profiles may retain GPU offsets on firmware where the model
+        // policy is unavailable. Ignore only that optional component so power
+        // mode and fan reconciliation can continue safely.
+        return null;
+    }
+
+    private static void NormalizeLegacyGpuClockTuning(
+        ref CustomPerformanceSettings? customPerformance,
+        ref GpuClockTuningSettings? gpuClockTuning)
+    {
+        if (gpuClockTuning is not null
+            || customPerformance?.GpuClockOffsets is not { } legacyOffsets)
+        {
+            return;
+        }
+
+        customPerformance = customPerformance with { GpuClockOffsets = null };
+        gpuClockTuning = new GpuClockTuningSettings(
+            Enabled: true,
+            legacyOffsets);
+    }
 
     private static bool IsThermalSubsystem(DeviceSubsystem subsystem) =>
         subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans;

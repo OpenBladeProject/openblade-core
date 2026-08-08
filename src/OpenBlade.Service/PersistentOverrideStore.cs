@@ -9,7 +9,8 @@ public sealed record PersistentOverrideState(
     FanMode? Fans,
     LightingSettings? Lighting,
     CustomPerformanceSettings? CustomPerformance = null,
-    FanControlSettings? FanControl = null)
+    FanControlSettings? FanControl = null,
+    GpuClockTuningSettings? GpuClockTuning = null)
 {
     public static PersistentOverrideState Empty { get; } = new(null, null, null);
 }
@@ -43,7 +44,8 @@ internal sealed record LegacyPersistentOverrideDocument(
 
 public sealed class PersistentOverrideStore
 {
-    private const int CurrentSchemaVersion = 5;
+    private const int CurrentSchemaVersion = 6;
+    private const int SchemaFiveVersion = 5;
     private const int SchemaFourVersion = 4;
     private const int SchemaThreeVersion = 3;
     private const int SchemaTwoVersion = 2;
@@ -116,7 +118,8 @@ public sealed class PersistentOverrideStore
         PersistentOverrideState overrides,
         CancellationToken cancellationToken)
     {
-        overrides = NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides));
+        overrides = NormalizeLegacyGpuClockTuning(
+            NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides)));
         Validate(overrides);
         await gate.WaitAsync(cancellationToken);
         try
@@ -143,6 +146,14 @@ public sealed class PersistentOverrideStore
         {
             throw new InvalidDataException(
                 "The persistent custom performance override is invalid.");
+        }
+
+        if (overrides.GpuClockTuning is not null
+            && (!GpuClockTuningSettings.IsWellFormed(overrides.GpuClockTuning)
+                || overrides.CustomPerformance?.GpuClockOffsets is not null))
+        {
+            throw new InvalidDataException(
+                "The persistent GPU clock tuning override is invalid.");
         }
 
         if (overrides.Fans is { } fans && !Enum.IsDefined(fans))
@@ -179,7 +190,10 @@ public sealed class PersistentOverrideStore
 
 
         PersistentOverrideState overrides;
-        if (schemaVersion is CurrentSchemaVersion or SchemaFourVersion or SchemaThreeVersion)
+        if (schemaVersion is CurrentSchemaVersion
+            or SchemaFiveVersion
+            or SchemaFourVersion
+            or SchemaThreeVersion)
         {
             PersistentOverrideDocument? document =
                 JsonSerializer.Deserialize<PersistentOverrideDocument>(json, SerializerOptions);
@@ -221,7 +235,8 @@ public sealed class PersistentOverrideStore
         }
 
         PersistentOverrideState normalized =
-            NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides));
+            NormalizeLegacyGpuClockTuning(
+                NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides)));
         migrated = schemaVersion != CurrentSchemaVersion || normalized != overrides;
         overrides = normalized;
         Validate(overrides);
@@ -242,6 +257,28 @@ public sealed class PersistentOverrideStore
         overrides.Fans is { } fans && overrides.FanControl is null
             ? overrides with { FanControl = FanControlSettings.FromLegacy(fans) }
             : overrides;
+
+    internal static PersistentOverrideState NormalizeLegacyGpuClockTuning(
+        PersistentOverrideState overrides)
+    {
+        if (overrides.GpuClockTuning is not null
+            || overrides.Performance != PerformancePreset.Custom
+            || overrides.CustomPerformance?.GpuClockOffsets is not { } legacyOffsets)
+        {
+            return overrides;
+        }
+
+        return overrides with
+        {
+            CustomPerformance = overrides.CustomPerformance with
+            {
+                GpuClockOffsets = null,
+            },
+            GpuClockTuning = new GpuClockTuningSettings(
+                Enabled: true,
+                legacyOffsets),
+        };
+    }
 
     private async Task WriteCoreAsync(
         PersistentOverrideState overrides,
