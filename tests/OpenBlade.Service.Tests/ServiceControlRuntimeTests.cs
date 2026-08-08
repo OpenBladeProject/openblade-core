@@ -2590,6 +2590,36 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task UnexpectedRestart_InitialUsbCManualStateRemainsUnowned()
+    {
+        FixedUserConfigurationRepository repository =
+            CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            initialPowerSource: PowerSource.UsbC);
+
+        Assert.Equal(PowerSource.UsbC, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(FanMode.Maximum, context.Runtime.GetStatus().ConfirmedState!.Fans);
+        Assert.Equal(FanMode.Automatic, context.Runtime.GetStatus().DesiredState.Fans.Value);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Empty(context.Device.FanTargets);
+        Assert.Empty(context.Device.FanWrites);
+        Assert.Equal(0, repository.LoadCount);
+
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Empty(context.Device.FanTargets);
+        Assert.Empty(context.Device.FanWrites);
+        Assert.Equal(1, repository.LoadCount);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
     public async Task UnexpectedRestart_IndeterminateUsbCHandbackIsNotRetried()
     {
         var repository = new FixedUserConfigurationRepository(
@@ -7985,7 +8015,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
     private async Task<TestContext> CreateDeferredRecoveryContextAsync(
         IUserConfigurationRepository repository,
-        bool prepareFanRecovery = true)
+        bool prepareFanRecovery = true,
+        PowerSource initialPowerSource = PowerSource.PluggedIn)
     {
         DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
@@ -8009,7 +8040,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             initialize: false,
             profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities),
             userConfigurationRepository: repository,
-            initialPowerSource: PowerSource.PluggedIn);
+            initialPowerSource: initialPowerSource);
         BatteryConfiguration machineConfiguration = await context.Store.LoadAsync(
             CancellationToken.None);
         context.Device.Capabilities = capabilities;
@@ -8027,7 +8058,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.FanTargetsAvailable = true;
         context.Runtime.Initialize(
             machineConfiguration,
-            PowerSource.PluggedIn,
+            initialPowerSource,
             PersistentOverrideState.Empty,
             recoveringUnexpectedExit: true);
         await context.Runtime.ObserveAsync(CancellationToken.None);

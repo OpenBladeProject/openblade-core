@@ -23,9 +23,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   Recovery on multi-user installs now waits for the active user's saved intent
   instead of comparing retained hardware state with the machine bootstrap, and
   rechecks session, power, controller, and lighting state before recovery writes.
-  A signed-out restart now establishes one device-admitted maximum fan target
-  when retained firmware state is manual, then safely hands that owned floor
-  back to Automatic on USB-C without an unbounded retry loop.
+  A signed-out restart on full AC or battery now establishes one device-admitted
+  maximum fan target when retained firmware state is manual, then safely hands
+  that owned floor back to Automatic on USB-C without an unbounded retry loop.
+  A manual state first observed on USB-C remains unchanged until ownership can
+  be established on a compatible source.
   In-process failures still attempt bounded hardware cleanup, while markers
   from an earlier Windows boot no longer suppress ordinary startup profiles.
 

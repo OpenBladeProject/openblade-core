@@ -25,7 +25,9 @@ Unexpected-exit recovery performs these operations in order:
 2. If retained firmware state is manual on full AC or battery power, establish
    one device-admitted maximum-RPM safety floor without loading or applying a
    user's profile. Hand that owned floor back to firmware Automatic once if the
-   machine moves to USB-C; do not retry an indeterminate handback.
+   machine moves to USB-C; do not retry an indeterminate handback. A manual
+   state first observed on USB-C remains unowned and unchanged because readback
+   alone cannot prove that OpenBlade wrote it.
 3. Wait for an authorized active-user request before recovering user-owned
    producers. The machine bootstrap is not treated as that user's saved intent.
 4. Load the active user's profiles and persistent overrides without applying
@@ -37,8 +39,8 @@ Unexpected-exit recovery performs these operations in order:
 7. Resume only the continuously owned producers that still pass their normal
    write gates.
 
-The run marker is recovery evidence, not hardware admission. Every recovery
-write still performs fresh device and safety checks.
+The run marker is recovery evidence, not hardware admission or fan-ownership
+evidence. Every recovery write still performs fresh device and safety checks.
 
 The marker stores both `StartedAtUtc` and monotonic system uptime. A restart is
 accepted only when current uptime is lower than the stored uptime and the wall
@@ -52,7 +54,7 @@ into unexpected-exit recovery.
 | Producer | Recovery behavior |
 | --- | --- |
 | Keyboard Driver mode | Maintenance runs only after the first exact-device observation. Unknown status remains fail-closed for function-row input. |
-| Manual fan curve | A retained firmware manual state on full AC or battery receives one device-admitted maximum target even before a user signs in, so a dead host process cannot leave a low target indefinitely. The service keeps user intent deferred, hands its temporary floor back to Automatic on USB-C, and reconciles that owned state with the authorized user's saved intent before drift classification. A manual curve starts only after that classification and a fresh temperature sample; unavailable CPU telemetry keeps the admitted maximum. |
+| Manual fan curve | A retained firmware manual state on full AC or battery receives one device-admitted maximum target even before a user signs in, so a dead host process cannot leave a low target indefinitely on those sources. The service keeps user intent deferred, hands its temporary floor back to Automatic on USB-C, and reconciles that owned state with the authorized user's saved intent before drift classification. If the first recovery observation is already on USB-C, the generic manual readback cannot establish prior OpenBlade ownership, so the service leaves it unchanged and waits for a compatible source rather than overwriting a possible external controller. A manual curve starts only after classification and a fresh temperature sample; unavailable CPU telemetry keeps the admitted maximum. |
 | Keyboard lighting renderer | Only a previously confirmed `LastKnownLighting` value is eligible. External lighting drift blocks restoration unless the user enabled the existing override policy. |
 | Persistent overrides | Overrides remain visible as desired intent, but recovery does not use them to bypass external-change latches or perform ordinary profile writes. |
 | Session Agent renderers | Service reconnect notifications cancel the old Ambient Awareness or Audio Meter request and dispose its producer before a new confirmed ownership status starts another one. Reactive input and LampArray observation use the same reconnect status feed. |

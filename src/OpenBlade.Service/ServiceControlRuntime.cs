@@ -564,7 +564,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 recoveringUnexpectedExit && userConfigurationRepository is not null;
             deferredManualFanSafetyState =
                 unexpectedExitRecoveryDeferredForUserConfiguration
-                    ? DeferredManualFanSafetyState.Pending
+                    ? DeferredManualFanSafetyState.PendingUnowned
                     : DeferredManualFanSafetyState.Lost;
             recoveryUserConfigurationLoaded = false;
             suppressInitialUserProfileApplyAfterUnexpectedExit = recoveringUnexpectedExit;
@@ -2886,6 +2886,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         if (powerSource == PowerSource.UsbC)
         {
+            // PendingUnowned is intentionally not eligible. A first manual
+            // readback cannot prove that the prior service instance wrote it;
+            // only this process's confirmed floor write permits handback.
             await HandBackDeferredManualFanSafetyFloorCoreAsync(
                 powerSource,
                 cancellationToken,
@@ -2894,7 +2897,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         bool pendingBaseline =
-            deferredManualFanSafetyState == DeferredManualFanSafetyState.Pending
+            deferredManualFanSafetyState == DeferredManualFanSafetyState.PendingUnowned
             && DeviceSubsystemOrder.IsManualFanMode(
                 current.ConfirmedState?.Fans ?? FanMode.Automatic);
         bool ownedAutomaticBaseline =
@@ -2909,7 +2912,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             || current.WritesBlocked
             || current.ExternalChanges.Contains(DeviceSubsystem.Fans))
         {
-            if (deferredManualFanSafetyState == DeferredManualFanSafetyState.Pending
+            if (deferredManualFanSafetyState == DeferredManualFanSafetyState.PendingUnowned
                 && current.ConfirmedState?.Fans is not null
                 && !pendingBaseline)
             {
@@ -2953,6 +2956,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         var safetyFloor = FanControlSettings.FromLegacy(FanMode.ManualCurve);
         DeferredManualFanSafetyState priorState = deferredManualFanSafetyState;
         FanControlSettings? priorOwnedSettings = lastOwnedFanControlSettings;
+        // Revoke any stale ownership before submission. ApplyScopedIntentAsync
+        // records the staged ManualCurve settings again only after an Applied
+        // floor write, so shutdown cleanup cannot act on an uncertain attempt.
         deferredManualFanSafetyState = DeferredManualFanSafetyState.Lost;
         manualFanCurveRecoveryPending = false;
         lastOwnedFanControlSettings = null;
@@ -3131,7 +3137,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         bool matches = expected switch
         {
-            DeferredManualFanSafetyState.Pending or
+            DeferredManualFanSafetyState.PendingUnowned or
                 DeferredManualFanSafetyState.FloorOwned =>
                 DeviceSubsystemOrder.IsManualFanMode(
                     state.Fans ?? FanMode.Automatic),
@@ -3170,7 +3176,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 Automation.Resolve(current.ConfirmedState ?? UnknownConfirmedState)
                     .Fans
                     .Value);
-        if (deferredManualFanSafetyState == DeferredManualFanSafetyState.Pending)
+        if (deferredManualFanSafetyState == DeferredManualFanSafetyState.PendingUnowned)
         {
             return true;
         }
@@ -7108,7 +7114,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private enum DeferredManualFanSafetyState
     {
-        Pending,
+        PendingUnowned,
         FloorOwned,
         AutomaticOwned,
         Lost,
