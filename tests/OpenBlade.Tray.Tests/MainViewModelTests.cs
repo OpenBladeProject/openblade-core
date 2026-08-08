@@ -239,12 +239,33 @@ public sealed class MainViewModelTests
         Assert.Contains("Maximum", viewModel.PluggedInProfileThermalSummary);
         Assert.Contains("Static", viewModel.PluggedInProfileLightingSummary);
         Assert.Contains("drr-48-240", viewModel.PluggedInProfileDisplaySummary);
-        Assert.Equal("Silent", viewModel.PluggedInProfilePresentation.PowerMode);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.GpuTuning);
-        Assert.Equal("Automatic", viewModel.PluggedInProfilePresentation.Fans);
-        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.LightingEffect);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+        Assert.Equal("Silent", viewModel.PluggedInProfilePresentation.PowerMode.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.GpuTuning.Text);
+        Assert.Equal("Automatic", viewModel.PluggedInProfilePresentation.Fans.Text);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.LightingEffect.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayRefreshRate.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayColorProfile.Text);
+        Assert.True(viewModel.PluggedInProfilePresentation.PowerMode.IsPending);
+        Assert.Equal(
+            "Pending: Balanced",
+            viewModel.PluggedInProfilePresentation.PowerMode.PendingDescription);
+        Assert.True(viewModel.PluggedInProfilePresentation.Fans.IsPending);
+        Assert.Equal(
+            "Pending: Maximum",
+            viewModel.PluggedInProfilePresentation.Fans.PendingDescription);
+        Assert.True(viewModel.PluggedInProfilePresentation.LightingEffect.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.LightingBrightness.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.LightingColor.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayHdr.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayColorProfile.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.GpuTuning.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.LogoLighting.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.LightingDisplayOff.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.LightingIdle.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.FunctionKeyBehavior.IsPending);
+        Assert.False(viewModel.UsbCProfilePresentation.PowerMode.IsPending);
+        Assert.False(viewModel.BatteryProfilePresentation.PowerMode.IsPending);
         Assert.Equal(PowerSource.PluggedIn, viewModel.SelectedProfileComparisonOption.Source);
         Assert.True(viewModel.IsSelectedProfileActive);
         Assert.True(viewModel.IsSelectedProfileDraft);
@@ -281,6 +302,11 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.HasUnsavedProfileChanges);
         Assert.False(viewModel.IsPluggedInProfileDraft);
         Assert.Contains("Maximum", viewModel.PluggedInProfileThermalSummary);
+        Assert.Equal("Balanced", viewModel.PluggedInProfilePresentation.PowerMode.Text);
+        Assert.False(viewModel.PluggedInProfilePresentation.PowerMode.IsPending);
+        Assert.Equal(string.Empty, viewModel.PluggedInProfilePresentation.PowerMode.PendingDescription);
+        Assert.Equal("Maximum", viewModel.PluggedInProfilePresentation.Fans.Text);
+        Assert.False(viewModel.PluggedInProfilePresentation.Fans.IsPending);
     }
 
     [Fact]
@@ -559,6 +585,11 @@ public sealed class MainViewModelTests
             new DisplayProfileSettings("240", true, null),
             originalDisplay);
         Assert.True(viewModel.HasActiveProfileDraft);
+        Assert.True(viewModel.PluggedInProfilePresentation.Fans.IsPending);
+        Assert.Equal(
+            "Pending: Maximum",
+            viewModel.PluggedInProfilePresentation.Fans.PendingDescription);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardProfileDraftCommand)
             .ExecuteAsync(null);
@@ -568,6 +599,73 @@ public sealed class MainViewModelTests
         Assert.Equal(originalDisplay, restoredDisplay);
         Assert.Equal(original.Profiles, viewModel.Profiles);
         Assert.False(viewModel.HasActiveProfileDraft);
+        Assert.False(viewModel.PluggedInProfilePresentation.Fans.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
+    }
+
+    [Fact]
+    public async Task PendingProfileValue_MarksChangedManualFanCurveWithSameLabel()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var savedFanControl = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+        ProfileSet profiles = baseline.Profiles with
+        {
+            PluggedIn = baseline.Profiles.PluggedIn with
+            {
+                Fans = FanMode.ManualCurve,
+                FanControl = savedFanControl,
+            },
+        };
+        client.Publish(baseline with
+        {
+            Profiles = profiles,
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.ManualCurve,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                Fans = new ResolvedSetting<FanMode>(
+                    FanMode.ManualCurve,
+                    SettingValueSource.PowerProfile),
+                FanControl = savedFanControl,
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && viewModel.SelectedFanMode == FanMode.ManualCurve);
+        FanCurvePoint[] changedCpu = ManualFanCurve.Default.Cpu
+            .Select((point, index) => index == 1
+                ? new FanCurvePoint(point.TemperatureCelsius, point.SpeedRpm + 100)
+                : point)
+            .ToArray();
+        var changedFanControl = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            new ManualFanCurve(
+                changedCpu,
+                ManualFanCurve.Default.Gpu,
+                ManualFanCurve.Default.UseHigherTemperatureForBoth));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanControlCommand)
+            .ExecuteAsync(changedFanControl);
+
+        Assert.Equal("Manual fan curve", viewModel.PluggedInProfilePresentation.Fans.Text);
+        Assert.True(viewModel.PluggedInProfilePresentation.Fans.IsPending);
+        Assert.Equal(
+            "Pending: Manual fan curve",
+            viewModel.PluggedInProfilePresentation.Fans.PendingDescription);
+        Assert.Equal(
+            "AC Fans: Manual fan curve. Pending: Manual fan curve",
+            viewModel.PluggedInProfilePresentation.Fans.AccessibilityDescription);
+        Assert.Equal(changedFanControl, client.LastFanControlSettings);
     }
 
     [Fact]
@@ -661,18 +759,27 @@ public sealed class MainViewModelTests
         viewModel.RecordDisplayProfileChange(PowerSource.PluggedIn, current);
 
         Assert.True(viewModel.HasActiveProfileDraft);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayHdr);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayRefreshRate.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayHdr.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayColorProfile.Text);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.Equal(
+            "Pending: Dynamic 48–240 Hz",
+            viewModel.PluggedInProfilePresentation.DisplayRefreshRate.PendingDescription);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayHdr.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayColorProfile.IsPending);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
             .ExecuteAsync(null);
 
         Assert.Equal(current, client.LastProfiles?.PluggedIn.Display);
         Assert.False(viewModel.HasActiveProfileDraft);
-        Assert.Equal("Dynamic 48–240 Hz", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
-        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.DisplayHdr);
-        Assert.Equal("sRGB", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+        Assert.Equal("Dynamic 48–240 Hz", viewModel.PluggedInProfilePresentation.DisplayRefreshRate.Text);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.DisplayHdr.Text);
+        Assert.Equal("sRGB", viewModel.PluggedInProfilePresentation.DisplayColorProfile.Text);
+        Assert.False(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.DisplayHdr.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.DisplayColorProfile.IsPending);
     }
 
     [Fact]
@@ -704,7 +811,7 @@ public sealed class MainViewModelTests
             && viewModel.CanControlLighting
             && viewModel.HasLightingProfileSaveOpportunity);
 
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.LogoLighting);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.LogoLighting.Text);
         Assert.False(viewModel.HasLightingProfileDraft);
         Assert.True(viewModel.HasLightingProfileSaveOpportunity);
         Assert.True(viewModel.CanControlHardware);
@@ -749,7 +856,7 @@ public sealed class MainViewModelTests
 
         Assert.Equal(
             "Not set",
-            viewModel.PluggedInProfilePresentation.StartupAnimation);
+            viewModel.PluggedInProfilePresentation.StartupAnimation.Text);
         Assert.False(viewModel.HasLaptopPageProfileDraft);
         Assert.True(viewModel.HasLaptopPageProfileSaveOpportunity);
         Assert.True(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
@@ -803,20 +910,20 @@ public sealed class MainViewModelTests
             GamingModeEnabled = false,
         });
         await WaitUntilAsync(() =>
-            viewModel.PluggedInProfilePresentation.GamingMode == "Off");
+            viewModel.PluggedInProfilePresentation.GamingMode.Text == "Off");
 
         Assert.Equal(
             expectedWindowsKey,
-            viewModel.PluggedInProfilePresentation.GamingModeWindowsKey);
+            viewModel.PluggedInProfilePresentation.GamingModeWindowsKey.Text);
         Assert.Equal(
             expectedAltTab,
-            viewModel.PluggedInProfilePresentation.GamingModeAltTab);
+            viewModel.PluggedInProfilePresentation.GamingModeAltTab.Text);
         Assert.Equal(
             expectedWindowsKey,
-            viewModel.SelectedProfilePresentation.GamingModeWindowsKey);
+            viewModel.SelectedProfilePresentation.GamingModeWindowsKey.Text);
         Assert.Equal(
             expectedAltTab,
-            viewModel.SelectedProfilePresentation.GamingModeAltTab);
+            viewModel.SelectedProfilePresentation.GamingModeAltTab.Text);
     }
 
     [Fact]

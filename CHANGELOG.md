@@ -5,6 +5,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Added a dot beside each saved Profiles value that has a pending change.
+  The value cell exposes the new value through its tooltip and accessible name.
+
 ### Fixed
 
 - Showed the effective **Off** defaults for Gaming mode's Windows-key and
