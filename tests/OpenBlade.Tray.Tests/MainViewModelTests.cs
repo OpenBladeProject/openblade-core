@@ -763,6 +763,11 @@ public sealed class MainViewModelTests
                 FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
                 GamingModeEnabled: false),
             client.LastProfiles?.PluggedIn.LaptopBehavior);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.GamingModeWindowsKey);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.GamingModeAltTab);
+        Assert.Equal(
+            viewModel.PluggedInProfilePresentation,
+            viewModel.SelectedProfilePresentation);
         Assert.False(viewModel.HasLaptopPageProfileDraft);
         Assert.False(viewModel.HasLaptopPageProfileSaveOpportunity);
     }
@@ -805,6 +810,8 @@ public sealed class MainViewModelTests
                 .EffectiveGamingModeKeyPolicy);
         Assert.True(viewModel.BlockWindowsKeyInGamingMode);
         Assert.True(viewModel.BlockAltTabInGamingMode);
+        Assert.Equal("On", viewModel.PluggedInProfilePresentation.GamingModeWindowsKey);
+        Assert.Equal("On", viewModel.PluggedInProfilePresentation.GamingModeAltTab);
         Assert.False(viewModel.HasLaptopProfileDraft);
     }
 
