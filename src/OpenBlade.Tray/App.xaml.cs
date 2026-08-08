@@ -213,7 +213,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             ShutdownOpenBladeAsync);
         trayIconHost = new WinFormsTrayIconHost(
             point => Enqueue(() => _ = ToggleTrayDashboardWhenReadyAsync(point)),
-            () => Enqueue(ShowMainWindow),
+            () => Enqueue(OpenMainWindowFromTrayIcon),
             () => Enqueue(() => _ = RequestTrayExitAsync()),
             mainWindow.ViewModel,
             trayIconThemeSource,
@@ -402,6 +402,12 @@ public partial class App : Microsoft.UI.Xaml.Application
     }
 
     private void ShowMainWindow() => _ = ShowMainWindowWhenReadyAsync(initialLaunch: false);
+
+    private void OpenMainWindowFromTrayIcon()
+    {
+        trayDashboardWindow?.DismissForMainWindow();
+        ShowMainWindow();
+    }
 
     private async Task ToggleTrayDashboardWhenReadyAsync(TrayDashboardPoint point)
     {

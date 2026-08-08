@@ -110,6 +110,38 @@ public sealed class TrayDashboardPreferenceTests
         Assert.Equal(expected, TrayIconActivationPolicy.Resolve(button));
     }
 
+    [Theory]
+    [InlineData(TrayIconPointerButton.Left, TrayIconActivation.OpenMainWindow)]
+    [InlineData(TrayIconPointerButton.Right, TrayIconActivation.None)]
+    [InlineData(TrayIconPointerButton.Middle, TrayIconActivation.None)]
+    [InlineData(TrayIconPointerButton.Other, TrayIconActivation.None)]
+    public void TrayIconDoubleClickRoutesOnlyLeftButtonToMainWindow(
+        TrayIconPointerButton button,
+        TrayIconActivation expected)
+    {
+        Assert.Equal(
+            expected,
+            TrayIconActivationPolicy.ResolveDoubleClick(button));
+    }
+
+    [Theory]
+    [InlineData(-1, 500, false)]
+    [InlineData(0, 500, true)]
+    [InlineData(500, 500, true)]
+    [InlineData(501, 500, false)]
+    [InlineData(1, 0, false)]
+    public void TrayIconTrailingClickSuppressionUsesSystemDoubleClickTime(
+        int elapsedMilliseconds,
+        int systemDoubleClickMilliseconds,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            TrayIconActivationPolicy.ShouldSuppressTrailingClick(
+                TimeSpan.FromMilliseconds(elapsedMilliseconds),
+                TimeSpan.FromMilliseconds(systemDoubleClickMilliseconds)));
+    }
+
     [Fact]
     public void PlacementClampsToWorkAreaAndOpensAboveBottomTaskbar()
     {

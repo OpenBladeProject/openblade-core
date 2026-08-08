@@ -157,6 +157,14 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         Hide();
     }
 
+    public void DismissForMainWindow()
+    {
+        if (!pinnedForEditing)
+        {
+            Hide();
+        }
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0)

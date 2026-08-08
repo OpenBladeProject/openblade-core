@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 
 namespace OpenBlade.Tray;
 
@@ -11,10 +12,12 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private readonly TrayHoverTelemetryRefreshGate hoverTelemetryRefreshGate = new();
     private readonly Action hoverTelemetryRefreshRequested;
     private readonly Action<TrayDashboardPoint> openDashboard;
+    private readonly Action openTray;
     private readonly Action<TrayNotificationDestination> notificationInvoked;
     private readonly WindowsAppNotificationPresenter? notificationPresenter;
     private readonly NotificationDeduplicator notificationDeduplicator = new();
     private long liveReadingsObservationIntervalTicks;
+    private long lastDoubleClickTimestamp;
     private Icon? currentIcon;
     private TrayNotificationDestination lastBalloonDestination;
     private int disposed;
@@ -30,7 +33,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     {
         this.openDashboard = openDashboard
             ?? throw new ArgumentNullException(nameof(openDashboard));
-        ArgumentNullException.ThrowIfNull(openTray);
+        this.openTray = openTray ?? throw new ArgumentNullException(nameof(openTray));
         ArgumentNullException.ThrowIfNull(exitTray);
         this.viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         this.themeSource = themeSource ?? throw new ArgumentNullException(nameof(themeSource));
@@ -52,6 +55,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             Visible = true,
         };
         trayIcon.MouseClick += OnTrayIconMouseClick;
+        trayIcon.MouseDoubleClick += OnTrayIconMouseDoubleClick;
         trayIcon.MouseMove += OnTrayIconMouseMove;
         trayIcon.BalloonTipClicked += OnBalloonTipClicked;
         notificationPresenter = WindowsAppNotificationPresenter.CreateBestEffort(
@@ -73,6 +77,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         themeSource.TrayIconThemeChanged -= OnTrayIconThemeChanged;
         trayIcon.MouseClick -= OnTrayIconMouseClick;
+        trayIcon.MouseDoubleClick -= OnTrayIconMouseDoubleClick;
         trayIcon.MouseMove -= OnTrayIconMouseMove;
         trayIcon.BalloonTipClicked -= OnBalloonTipClicked;
         trayIcon.Visible = false;
@@ -167,13 +172,13 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
 
     private void OnTrayIconMouseClick(object? sender, MouseEventArgs args)
     {
-        TrayIconPointerButton button = args.Button switch
+        TrayIconPointerButton button = ToTrayIconPointerButton(args.Button);
+        if (button == TrayIconPointerButton.Left
+            && ShouldSuppressTrailingLeftClick())
         {
-            MouseButtons.Left => TrayIconPointerButton.Left,
-            MouseButtons.Right => TrayIconPointerButton.Right,
-            MouseButtons.Middle => TrayIconPointerButton.Middle,
-            _ => TrayIconPointerButton.Other,
-        };
+            return;
+        }
+
         if (Volatile.Read(ref disposed) == 0
             && TrayIconActivationPolicy.Resolve(button)
                 == TrayIconActivation.ShowDashboard)
@@ -182,6 +187,38 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             openDashboard(new TrayDashboardPoint(cursorPosition.X, cursorPosition.Y));
         }
     }
+
+    private void OnTrayIconMouseDoubleClick(object? sender, MouseEventArgs args)
+    {
+        TrayIconPointerButton button = ToTrayIconPointerButton(args.Button);
+        if (Volatile.Read(ref disposed) == 0
+            && TrayIconActivationPolicy.ResolveDoubleClick(button)
+                == TrayIconActivation.OpenMainWindow)
+        {
+            Interlocked.Exchange(
+                ref lastDoubleClickTimestamp,
+                Stopwatch.GetTimestamp());
+            openTray();
+        }
+    }
+
+    private bool ShouldSuppressTrailingLeftClick()
+    {
+        long timestamp = Interlocked.Exchange(ref lastDoubleClickTimestamp, 0);
+        return timestamp != 0
+            && TrayIconActivationPolicy.ShouldSuppressTrailingClick(
+                Stopwatch.GetElapsedTime(timestamp),
+                TimeSpan.FromMilliseconds(SystemInformation.DoubleClickTime));
+    }
+
+    private static TrayIconPointerButton ToTrayIconPointerButton(MouseButtons button) =>
+        button switch
+        {
+            MouseButtons.Left => TrayIconPointerButton.Left,
+            MouseButtons.Right => TrayIconPointerButton.Right,
+            MouseButtons.Middle => TrayIconPointerButton.Middle,
+            _ => TrayIconPointerButton.Other,
+        };
 
     private void UpdateTrayIcon()
     {
@@ -197,7 +234,10 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private static ContextMenuStrip BuildTrayMenu(Action openTray, Action exitTray)
     {
         var menu = new ContextMenuStrip();
-        var open = new ToolStripMenuItem("Open");
+        var open = new ToolStripMenuItem("Open")
+        {
+            ShortcutKeyDisplayString = "Double-click",
+        };
         open.Click += (_, _) => openTray();
         var exit = new ToolStripMenuItem("Exit");
         exit.Click += (_, _) => exitTray();

@@ -1036,7 +1036,14 @@ public sealed class WinUiShellContractTests
         Assert.Contains("new ToolStripMenuItem(\"Open\")", trayHost, StringComparison.Ordinal);
         Assert.Contains("new ToolStripMenuItem(\"Exit\")", trayHost, StringComparison.Ordinal);
         Assert.Contains("menu.Items.Add(new ToolStripSeparator())", trayHost, StringComparison.Ordinal);
-        Assert.DoesNotContain("trayIcon.DoubleClick +=", trayHost, StringComparison.Ordinal);
+        Assert.Contains(
+            "trayIcon.MouseDoubleClick += OnTrayIconMouseDoubleClick",
+            trayHost,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "trayIcon.MouseDoubleClick -= OnTrayIconMouseDoubleClick",
+            trayHost,
+            StringComparison.Ordinal);
         Assert.Contains("viewModel.TrayHoverLabelText", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.PropertyChanged +=", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.PropertyChanged -=", trayHost, StringComparison.Ordinal);
@@ -1734,11 +1741,30 @@ public sealed class WinUiShellContractTests
             "TrayDashboardWindow.xaml.cs");
 
         Assert.Contains("trayIcon.MouseClick += OnTrayIconMouseClick", trayHost, StringComparison.Ordinal);
+        Assert.Contains(
+            "trayIcon.MouseDoubleClick += OnTrayIconMouseDoubleClick",
+            trayHost,
+            StringComparison.Ordinal);
         Assert.Contains("TrayIconActivationPolicy.Resolve(button)", trayHost, StringComparison.Ordinal);
+        Assert.Contains(
+            "TrayIconActivationPolicy.ResolveDoubleClick(button)",
+            trayHost,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "TrayIconActivationPolicy.ShouldSuppressTrailingClick(",
+            trayHost,
+            StringComparison.Ordinal);
+        Assert.Contains("SystemInformation.DoubleClickTime", trayHost, StringComparison.Ordinal);
         Assert.Contains("System.Drawing.Point cursorPosition = Cursor.Position", trayHost, StringComparison.Ordinal);
         Assert.Contains("new ToolStripMenuItem(\"Open\")", trayHost, StringComparison.Ordinal);
+        Assert.Contains(
+            "ShortcutKeyDisplayString = \"Double-click\"",
+            trayHost,
+            StringComparison.Ordinal);
         Assert.Contains("new ToolStripMenuItem(\"Exit\")", trayHost, StringComparison.Ordinal);
         Assert.Contains("new TrayDashboardWindow(", app, StringComparison.Ordinal);
+        Assert.Contains("OpenMainWindowFromTrayIcon", app, StringComparison.Ordinal);
+        Assert.Contains("DismissForMainWindow()", app, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardEditSessionChanged +=", app, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnCustomizeTrayDashboard\"", mainXaml, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(true)", mainWindow, StringComparison.Ordinal);

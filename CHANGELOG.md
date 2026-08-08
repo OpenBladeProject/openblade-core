@@ -10,7 +10,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Added a compact quick-controls dashboard that opens with one click on the
   tray icon. Its controls, order, tile sizes, expanded control, and status row
   can be customized from Settings while the actual popup updates live. Open the
-  main window with **More** or the tray icon's right-click **Open** command.
+  main window with a tray-icon double-click, **More**, or the tray icon's
+  right-click **Open** command.
 
 ### Changed
 

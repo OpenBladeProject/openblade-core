@@ -73,6 +73,7 @@ public enum TrayIconActivation
 {
     None,
     ShowDashboard,
+    OpenMainWindow,
 }
 
 public static class TrayIconActivationPolicy
@@ -81,4 +82,16 @@ public static class TrayIconActivationPolicy
         button == TrayIconPointerButton.Left
             ? TrayIconActivation.ShowDashboard
             : TrayIconActivation.None;
+
+    public static TrayIconActivation ResolveDoubleClick(TrayIconPointerButton button) =>
+        button == TrayIconPointerButton.Left
+            ? TrayIconActivation.OpenMainWindow
+            : TrayIconActivation.None;
+
+    public static bool ShouldSuppressTrailingClick(
+        TimeSpan elapsedSinceDoubleClick,
+        TimeSpan systemDoubleClickTime) =>
+        systemDoubleClickTime > TimeSpan.Zero
+        && elapsedSinceDoubleClick >= TimeSpan.Zero
+        && elapsedSinceDoubleClick <= systemDoubleClickTime;
 }
