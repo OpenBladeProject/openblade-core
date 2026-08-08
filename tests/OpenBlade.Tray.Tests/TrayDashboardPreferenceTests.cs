@@ -147,9 +147,9 @@ public sealed class TrayDashboardPreferenceTests
     [Theory]
     [InlineData(-1, 100)]
     [InlineData(0, 100)]
-    [InlineData(100, 84)]
-    [InlineData(200, 50)]
-    [InlineData(400, 0)]
+    [InlineData(50, 84)]
+    [InlineData(100, 50)]
+    [InlineData(200, 0)]
     [InlineData(500, 0)]
     public void PopupRevealUsesSmoothDashboardMotion(
         int elapsedMilliseconds,
@@ -165,17 +165,17 @@ public sealed class TrayDashboardPreferenceTests
     }
 
     [Fact]
-    public void PopupMotionCompletesAtFourHundredMilliseconds()
+    public void PopupDismissUsesTheReverseTwoHundredMillisecondMotion()
     {
         Assert.Equal(
             50,
             WindowsPopupSlidePolicy.ResolvePosition(
                 start: 0,
                 end: 100,
-                TimeSpan.FromMilliseconds(200),
+                TimeSpan.FromMilliseconds(100),
                 hiding: true));
-        Assert.True(WindowsPopupSlidePolicy.IsComplete(TimeSpan.FromMilliseconds(400)));
-        Assert.False(WindowsPopupSlidePolicy.IsComplete(TimeSpan.FromMilliseconds(399)));
+        Assert.True(WindowsPopupSlidePolicy.IsComplete(TimeSpan.FromMilliseconds(200)));
+        Assert.False(WindowsPopupSlidePolicy.IsComplete(TimeSpan.FromMilliseconds(199)));
     }
 
     [Theory]

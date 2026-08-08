@@ -3706,13 +3706,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public Task ObserveStateAsync(CancellationToken cancellationToken) =>
-        ObserveStateAsync(includeDashboardReadings: true, cancellationToken);
+        ObserveStateAsync(
+            includeDashboardReadings: true,
+            additionalLiveReadings: LiveReadingSensors.None,
+            cancellationToken);
 
     public Task ObserveTrayStateAsync(CancellationToken cancellationToken) =>
-        ObserveStateAsync(includeDashboardReadings: false, cancellationToken);
+        ObserveStateAsync(
+            includeDashboardReadings: false,
+            additionalLiveReadings: LiveReadingSensors.None,
+            cancellationToken);
+
+    public Task ObserveTrayDashboardStateAsync(CancellationToken cancellationToken) =>
+        ObserveStateAsync(
+            includeDashboardReadings: true,
+            additionalLiveReadings: LiveReadingSensors.All,
+            cancellationToken);
 
     private async Task ObserveStateAsync(
         bool includeDashboardReadings,
+        LiveReadingSensors additionalLiveReadings,
         CancellationToken cancellationToken)
     {
         ObservationRequestStamp stamp = default;
@@ -3726,6 +3739,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     subscriptionConnected);
                 requestedLiveReadings = ResolveRequestedLiveReadings(
                     includeDashboardReadings);
+                if (LiveReadingsEnabled)
+                {
+                    requestedLiveReadings |= additionalLiveReadings;
+                }
                 refreshControlAccess = IsConnected
                     && latestStatus?.ControlAccess != SessionControlAccess.Active;
             },

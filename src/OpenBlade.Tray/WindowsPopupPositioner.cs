@@ -48,6 +48,25 @@ internal static class WindowsPopupPositioner
         Marshal.ThrowExceptionForHR(result);
     }
 
+    public static nint GetForegroundWindowHandle() => GetForegroundWindow();
+
+    public static bool TryActivate(nint window) =>
+        window != 0
+        && (GetForegroundWindow() == window
+            || SetForegroundWindow(window)
+            && GetForegroundWindow() == window);
+
+    public static void TryRestoreForeground(nint popup, nint previous)
+    {
+        if (previous != 0
+            && previous != popup
+            && IsWindow(previous)
+            && GetForegroundWindow() == popup)
+        {
+            _ = SetForegroundWindow(previous);
+        }
+    }
+
     public static nint FindTaskbarForMonitor(nint monitor)
     {
         lock (CacheLock)
@@ -177,6 +196,13 @@ internal static class WindowsPopupPositioner
 
     [DllImport("user32.dll")]
     private static extern nint MonitorFromWindow(nint window, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(nint window);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(

@@ -1766,6 +1766,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("new ToolStripMenuItem(\"Exit\")", trayHost, StringComparison.Ordinal);
         Assert.Contains("new TrayDashboardWindow(", app, StringComparison.Ordinal);
+        Assert.Contains("mainWindow.SetTrayDashboardVisible(visible)", app, StringComparison.Ordinal);
         Assert.Contains("OpenMainWindowFromTrayIcon", app, StringComparison.Ordinal);
         Assert.Contains("DismissForMainWindow()", app, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardEditSessionChanged +=", app, StringComparison.Ordinal);
@@ -1825,6 +1826,17 @@ public sealed class WinUiShellContractTests
         Assert.Contains("WindowsMotionSettings.AreAnimationsEnabled()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupPositioner.PositionTopmost(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupPositioner.DisableTransitions(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("TryPrimeSurface();", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("TryStartDismissAnimation()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("hiding: revealHiding", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("ParkSurface();", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("AppWindow.Hide()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("foregroundTimer.Start()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("WindowsPopupPositioner.TryActivate(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("SetForegroundWindow", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains("trayDashboardObservationLoop.StartOrWake()", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("trayDashboardObservationLoop.Stop()", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ObserveTrayDashboardStateAsync", mainWindow, StringComparison.Ordinal);
         int revealRendering = dashboardWindow.IndexOf(
             "private void OnRevealRendering(",
             StringComparison.Ordinal);
@@ -1834,7 +1846,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         string revealRenderingBody = dashboardWindow[revealRendering..cancelReveal];
         int primeFrame = revealRenderingBody.IndexOf(
-            "if (revealPrimingFrames < 2)",
+            "if (!revealHiding && revealPrimingFrames < 2)",
             StringComparison.Ordinal);
         int elapsedFrame = revealRenderingBody.IndexOf(
             "TimeSpan elapsed =",

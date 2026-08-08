@@ -2,7 +2,7 @@ namespace OpenBlade.Tray;
 
 public static class WindowsPopupSlidePolicy
 {
-    public const double DurationMilliseconds = 400;
+    public const double DurationMilliseconds = 200;
 
     public static int ResolvePosition(
         int start,

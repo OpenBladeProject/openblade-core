@@ -43,6 +43,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
     private readonly VisibleObservationLoop trayObservationLoop;
+    private readonly VisibleObservationLoop trayDashboardObservationLoop;
     private readonly WindowsProcessorEfficiencyPolicy processorPolicy;
     private readonly Func<TrayNotification, bool> showNotification;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
@@ -86,6 +87,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool? profilesUseCompactLayout;
     private bool enforcingMinimumWindowSize;
     private bool windowVisible;
+    private bool trayDashboardVisible;
     private int openDisplayPickerCount;
     private int updateCheckingStarted;
     private int disposed;
@@ -168,6 +170,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "OpenBlade on-demand tray telemetry refresh failed: {0}",
                 exception),
             observationIntervalProvider: () => Timeout.InfiniteTimeSpan);
+        trayDashboardObservationLoop = new VisibleObservationLoop(
+            ViewModel.ObserveTrayDashboardStateAsync,
+            errorHandler: exception => Trace.TraceError(
+                "OpenBlade tray dashboard observation failed: {0}",
+                exception),
+            observationIntervalProvider: () =>
+                ViewModel.LiveReadingsObservationInterval);
         displayRefreshTimer = dispatcherQueue.CreateTimer();
         displayRefreshTimer.Interval = DisplayRefreshInterval;
         displayRefreshTimer.IsRepeating = true;
@@ -340,8 +349,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         _ = processorPolicy.TryAllowAllProcessorsForCurrentThread();
         _ = processorPolicy.TrySetProcessEcoQos(enabled: false);
         windowVisible = true;
-        ViewModel.SetDashboardTelemetryPresentationActive(
-            HomePage.Visibility == Visibility.Visible);
+        UpdateDashboardTelemetryPresentationState();
         trayObservationLoop.Stop();
         visibleObservationLoop.StartOrWake();
         UpdateDisplayRefreshState();
@@ -351,7 +359,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public void StartHiddenObservation()
     {
         windowVisible = false;
-        ViewModel.SetDashboardTelemetryPresentationActive(false);
+        UpdateDashboardTelemetryPresentationState();
         visibleObservationLoop.Stop();
         trayObservationLoop.Stop();
         displayRefreshTimer.Stop();
@@ -488,6 +496,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await DisposeComponentSafelyAsync(
             "on-demand tray observation loop",
             trayObservationLoop.DisposeAsync);
+        await DisposeComponentSafelyAsync(
+            "tray dashboard observation loop",
+            trayDashboardObservationLoop.DisposeAsync);
         await DisposeComponentSafelyAsync(
             "update checker",
             UpdateViewModel.DisposeAsync);
@@ -2379,8 +2390,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         AboutPage.Visibility = destination == "about"
             ? Visibility.Visible
             : Visibility.Collapsed;
-        ViewModel.SetDashboardTelemetryPresentationActive(
-            windowVisible && destination == "home");
+        UpdateDashboardTelemetryPresentationState();
         if (destination == "profiles")
         {
             dispatcherQueue.TryEnqueue(
@@ -2458,6 +2468,30 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             visibleObservationLoop.StartOrWake();
         }
     }
+
+    public void SetTrayDashboardVisible(bool visible)
+    {
+        if (trayDashboardVisible == visible)
+        {
+            return;
+        }
+
+        trayDashboardVisible = visible;
+        UpdateDashboardTelemetryPresentationState();
+        if (visible)
+        {
+            trayDashboardObservationLoop.StartOrWake();
+        }
+        else
+        {
+            trayDashboardObservationLoop.Stop();
+        }
+    }
+
+    private void UpdateDashboardTelemetryPresentationState() =>
+        ViewModel.SetDashboardTelemetryPresentationActive(
+            trayDashboardVisible
+            || (windowVisible && HomePage.Visibility == Visibility.Visible));
 
     public void RequestTrayTelemetryRefresh()
     {

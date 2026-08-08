@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -18,6 +19,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private const uint MonitorDefaultToNearest = 2;
 
     private readonly Action openMainWindow;
+    private readonly Action<bool> visibilityChanged;
+    private readonly DispatcherQueueTimer foregroundTimer;
     private TrayDashboardPreference preference = TrayDashboardPreferenceDefaults.Preference;
     private TrayDashboardLayout layout = TrayDashboardLayoutPolicy.Resolve(
         TrayDashboardPreferenceDefaults.Preference.Controls!,
@@ -35,19 +38,34 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private nint revealTaskbarHandle;
     private TrayDashboardRect revealPlacement;
     private int revealStartY;
+    private int revealStagingY;
+    private int revealCurrentY;
     private int revealPrimingFrames;
     private bool revealAnimationsEnabled;
     private bool revealAnimationActive;
+    private bool revealHiding;
     private bool awaitingRevealActivation;
+    private bool surfaceShown;
+    private nint previousForegroundWindow;
+    private bool foregroundEstablished;
     private int disposed;
 
-    public TrayDashboardWindow(MainViewModel viewModel, Action openMainWindow)
+    public TrayDashboardWindow(
+        MainViewModel viewModel,
+        Action openMainWindow,
+        Action<bool> visibilityChanged)
     {
         ViewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         this.openMainWindow = openMainWindow
             ?? throw new ArgumentNullException(nameof(openMainWindow));
+        this.visibilityChanged = visibilityChanged
+            ?? throw new ArgumentNullException(nameof(visibilityChanged));
         InitializeComponent();
         Root.DataContext = ViewModel;
+        foregroundTimer = Root.DispatcherQueue.CreateTimer();
+        foregroundTimer.Interval = TimeSpan.FromMilliseconds(50);
+        foregroundTimer.IsRepeating = true;
+        foregroundTimer.Tick += OnForegroundTimerTick;
 
         ThemeManager.Apply(Root, ViewModel.Theme);
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -72,6 +90,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
 
         ApplyPreferences(preference);
+        TryPrimeSurface();
     }
 
     public MainViewModel ViewModel { get; }
@@ -186,7 +205,14 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         Activated -= OnActivated;
         AppWindow.Closing -= OnClosing;
+        foregroundTimer.Stop();
+        foregroundTimer.Tick -= OnForegroundTimerTick;
         CancelRevealAnimation();
+        if (visible)
+        {
+            visible = false;
+            visibilityChanged(false);
+        }
         Close();
     }
 
@@ -206,7 +232,14 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             DisplayAreaFallback.Nearest);
         visibleAnchor = anchor;
         visibleDisplayArea = displayArea;
+        previousForegroundWindow = WindowsPopupPositioner.GetForegroundWindowHandle();
+        foregroundEstablished = false;
         visible = true;
+        visibilityChanged(true);
+        if (!editing)
+        {
+            foregroundTimer.Start();
+        }
         if (TryResolvePlacement(anchor, displayArea, out ResolvedPlacement placement)
             && TryStartReveal(placement, displayArea, editing))
         {
@@ -220,9 +253,12 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 displayArea);
         }
         AppWindow.Show(activateWindow: !editing);
+        surfaceShown = true;
         if (!editing)
         {
             Activate();
+            _ = WindowsPopupPositioner.TryActivate(
+                WindowNative.GetWindowHandle(this));
         }
     }
 
@@ -244,9 +280,63 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private void PositionAt(TrayDashboardPoint anchor, DisplayArea displayArea)
     {
         ResolvedPlacement placement = ResolvePlacement(anchor, displayArea);
-        AppWindow.MoveAndResize(
-            ToRectInt32(placement.Rect),
-            displayArea);
+        revealPlacement = placement.Rect;
+        revealStagingY = placement.Reveal.StagingY;
+        revealCurrentY = placement.Rect.Y;
+        revealWindowHandle = WindowNative.GetWindowHandle(this);
+        revealTaskbarHandle =
+            WindowsPopupPositioner.FindTaskbarForMonitor(placement.Monitor);
+        WindowsPopupPositioner.PositionTopmost(
+            revealWindowHandle,
+            placement.Rect.X,
+            placement.Rect.Y,
+            placement.Rect.Width,
+            placement.Rect.Height);
+    }
+
+    private void TryPrimeSurface()
+    {
+        try
+        {
+            DisplayArea displayArea = DisplayArea.Primary;
+            RectInt32 workArea = displayArea.WorkArea;
+            var anchor = new TrayDashboardPoint(
+                checked(workArea.X + workArea.Width - 1),
+                checked(workArea.Y + workArea.Height - 1));
+            ResolvedPlacement placement = ResolvePlacement(anchor, displayArea);
+            revealPlacement = placement.Rect;
+            revealStagingY = placement.Reveal.StagingY;
+            revealCurrentY = revealStagingY;
+            revealWindowHandle = WindowNative.GetWindowHandle(this);
+            revealTaskbarHandle =
+                WindowsPopupPositioner.FindTaskbarForMonitor(placement.Monitor);
+            WindowsPopupPositioner.DisableTransitions(revealWindowHandle);
+            var staged = new TrayDashboardRect(
+                placement.Rect.X,
+                revealStagingY,
+                placement.Rect.Width,
+                placement.Rect.Height);
+            AppWindow.MoveAndResize(ToRectInt32(staged), displayArea);
+            Root.UpdateLayout();
+            if (!surfaceShown)
+            {
+                AppWindow.Show(activateWindow: false);
+                surfaceShown = true;
+            }
+            WindowsPopupPositioner.PositionBehindTaskbar(
+                revealWindowHandle,
+                revealTaskbarHandle,
+                staged.X,
+                staged.Y,
+                staged.Width,
+                staged.Height);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard surface prewarm failed: {0}",
+                exception.Message);
+        }
     }
 
     private ResolvedPlacement ResolvePlacement(
@@ -327,13 +417,16 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             CancelRevealAnimation();
             revealPlacement = placement.Rect;
             int stagingY = placement.Reveal.StagingY;
+            revealStagingY = stagingY;
             revealStartY = stagingY;
+            revealCurrentY = stagingY;
             revealWindowHandle = WindowNative.GetWindowHandle(this);
             revealTaskbarHandle =
                 WindowsPopupPositioner.FindTaskbarForMonitor(placement.Monitor);
             revealStartedTimestamp = 0;
             revealPrimingFrames = 0;
             revealAnimationsEnabled = WindowsMotionSettings.AreAnimationsEnabled();
+            revealHiding = false;
             awaitingRevealActivation = !editing;
             WindowsPopupPositioner.DisableTransitions(revealWindowHandle);
 
@@ -344,7 +437,11 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 placement.Rect.Height);
             AppWindow.MoveAndResize(ToRectInt32(staged), displayArea);
             Root.UpdateLayout();
-            AppWindow.Show(activateWindow: !editing);
+            if (!surfaceShown)
+            {
+                AppWindow.Show(activateWindow: false);
+                surfaceShown = true;
+            }
             WindowsPopupPositioner.PositionBehindTaskbar(
                 revealWindowHandle,
                 revealTaskbarHandle,
@@ -368,12 +465,12 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     private void OnRevealRendering(object? sender, object args)
     {
-        if (!revealAnimationActive || !visible)
+        if (!revealAnimationActive || (!visible && !revealHiding))
         {
             return;
         }
 
-        if (revealPrimingFrames < 2)
+        if (!revealHiding && revealPrimingFrames < 2)
         {
             revealPrimingFrames++;
             if (revealPrimingFrames == 2)
@@ -384,13 +481,17 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
 
         TimeSpan elapsed = Stopwatch.GetElapsedTime(revealStartedTimestamp);
+        int endY = revealHiding
+            ? revealStagingY
+            : revealPlacement.Y;
         int y = revealAnimationsEnabled
             ? WindowsPopupSlidePolicy.ResolvePosition(
                 revealStartY,
-                revealPlacement.Y,
+                endY,
                 elapsed,
-                hiding: false)
-            : revealPlacement.Y;
+                hiding: revealHiding)
+            : endY;
+        revealCurrentY = y;
         try
         {
             WindowsPopupPositioner.PositionBehindTaskbar(
@@ -410,11 +511,13 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             y = revealPlacement.Y;
         }
 
-        if (awaitingRevealActivation)
+        if (!revealHiding && awaitingRevealActivation)
         {
-            awaitingRevealActivation = false;
             AppWindow.Show(activateWindow: true);
             Activate();
+            awaitingRevealActivation =
+                !WindowsPopupPositioner.TryActivate(revealWindowHandle);
+            foregroundEstablished = !awaitingRevealActivation;
             try
             {
                 WindowsPopupPositioner.PositionBehindTaskbar(
@@ -434,9 +537,19 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
 
         if (!revealAnimationsEnabled
-            || y == revealPlacement.Y
+            || y == endY
             || WindowsPopupSlidePolicy.IsComplete(elapsed))
         {
+            if (revealHiding)
+            {
+                ParkSurface();
+                WindowsPopupPositioner.TryRestoreForeground(
+                    revealWindowHandle,
+                    previousForegroundWindow);
+                CancelRevealAnimation();
+                return;
+            }
+
             try
             {
                 WindowsPopupPositioner.PositionTopmost(
@@ -445,6 +558,13 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                     revealPlacement.Y,
                     revealPlacement.Width,
                     revealPlacement.Height);
+                if (awaitingRevealActivation)
+                {
+                    AppWindow.Show(activateWindow: true);
+                    Activate();
+                    foregroundEstablished =
+                        WindowsPopupPositioner.TryActivate(revealWindowHandle);
+                }
             }
             catch (Exception exception)
             {
@@ -463,10 +583,58 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             CompositionTarget.Rendering -= OnRevealRendering;
         }
         revealAnimationActive = false;
+        revealHiding = false;
         awaitingRevealActivation = false;
         revealStartedTimestamp = 0;
         revealPrimingFrames = 0;
         revealAnimationsEnabled = false;
+    }
+
+    private bool TryStartDismissAnimation()
+    {
+        if (!surfaceShown
+            || revealWindowHandle == 0
+            || revealPlacement.Width <= 0
+            || revealPlacement.Height <= 0)
+        {
+            return false;
+        }
+
+        CancelRevealAnimation();
+        revealStartY = revealCurrentY;
+        revealStartedTimestamp = Stopwatch.GetTimestamp();
+        revealPrimingFrames = 2;
+        revealAnimationsEnabled = WindowsMotionSettings.AreAnimationsEnabled();
+        revealHiding = true;
+        revealAnimationActive = true;
+        CompositionTarget.Rendering += OnRevealRendering;
+        return true;
+    }
+
+    private void ParkSurface()
+    {
+        if (!surfaceShown || revealWindowHandle == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            WindowsPopupPositioner.PositionBehindTaskbar(
+                revealWindowHandle,
+                revealTaskbarHandle,
+                revealPlacement.X,
+                revealStagingY,
+                revealPlacement.Width,
+                revealPlacement.Height);
+            revealCurrentY = revealStagingY;
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard parking failed: {0}",
+                exception.Message);
+        }
     }
 
     private static RectInt32 ToRectInt32(TrayDashboardRect rect) =>
@@ -535,23 +703,69 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             return;
         }
 
-        CancelRevealAnimation();
-        AppWindow.Hide();
         visible = false;
+        foregroundTimer.Stop();
+        visibilityChanged(false);
         if (suppressNextTrayToggle)
         {
             lastDeactivationHideTimestamp = Stopwatch.GetTimestamp();
+        }
+
+        if (!TryStartDismissAnimation())
+        {
+            ParkSurface();
+            WindowsPopupPositioner.TryRestoreForeground(
+                revealWindowHandle,
+                previousForegroundWindow);
         }
     }
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
+        if (args.WindowActivationState != WindowActivationState.Deactivated)
+        {
+            foregroundEstablished = true;
+            return;
+        }
+
         if (args.WindowActivationState == WindowActivationState.Deactivated
             && !pinnedForEditing
             && !awaitingRevealActivation)
         {
             Hide(suppressNextTrayToggle: true);
         }
+    }
+
+    private void OnForegroundTimerTick(DispatcherQueueTimer sender, object args)
+    {
+        if (!visible || pinnedForEditing)
+        {
+            sender.Stop();
+            return;
+        }
+
+        if (awaitingRevealActivation)
+        {
+            return;
+        }
+
+        nint foreground = WindowsPopupPositioner.GetForegroundWindowHandle();
+        if (foreground == revealWindowHandle)
+        {
+            foregroundEstablished = true;
+            return;
+        }
+
+        if (!foregroundEstablished)
+        {
+            AppWindow.Show(activateWindow: true);
+            Activate();
+            foregroundEstablished =
+                WindowsPopupPositioner.TryActivate(revealWindowHandle);
+            return;
+        }
+
+        Hide(suppressNextTrayToggle: true);
     }
 
     private void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)

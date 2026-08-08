@@ -1461,6 +1461,7 @@ public sealed class MainViewModelTests
 
         viewModel.LiveReadingsEnabled = false;
         await viewModel.ObserveStateAsync(CancellationToken.None);
+        await viewModel.ObserveTrayDashboardStateAsync(CancellationToken.None);
 
         Assert.Equal([true], client.IncludeLiveReadingsRequests);
         Assert.Null(viewModel.LiveReadings);
@@ -1491,12 +1492,19 @@ public sealed class MainViewModelTests
         client.PendingObservation.SetResult(CreateStatus(true, false));
         await hidden;
 
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task dashboard = viewModel.ObserveTrayDashboardStateAsync(CancellationToken.None);
+        client.PendingObservation.SetResult(CreateStatus(true, false));
+        await dashboard;
+
         Assert.Equal(
             [
                 LiveReadingSensors.BatteryPower
                     | LiveReadingSensors.CpuTemperature
                     | LiveReadingSensors.GpuTemperature,
                 LiveReadingSensors.BatteryPower,
+                LiveReadingSensors.All,
             ],
             client.RequestedLiveReadings);
         Assert.True(viewModel.HasEnabledTrayHoverLiveReadings);
