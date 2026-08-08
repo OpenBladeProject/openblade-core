@@ -20,7 +20,13 @@ public static class WindowsPopupSlidePolicy
             elapsedMilliseconds / DurationMilliseconds,
             0,
             1);
-        double easedProgress = progress * progress * (3 - (2 * progress));
+        double easedProgress = hiding
+            ? progress == 0
+                ? 0
+                : Math.Pow(2, 10 * progress - 10)
+            : progress == 1
+                ? 1
+                : 1 - Math.Pow(2, -10 * progress);
         return checked((int)Math.Round(
             start + ((double)end - start) * easedProgress));
     }

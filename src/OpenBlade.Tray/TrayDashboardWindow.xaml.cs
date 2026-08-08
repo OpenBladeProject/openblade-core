@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -6,7 +7,6 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using OpenBlade.Contracts;
 using Windows.Graphics;
 using WinRT.Interop;
@@ -17,10 +17,20 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 {
     private const int PopupWidth = 360;
     private const uint MonitorDefaultToNearest = 2;
+    private const uint WindowMessageNonClientDestroy = 0x0082;
+    private const nuint RevealSubclassId = 0x4F425244; // "OBRD"
+
+    private static readonly ConcurrentDictionary<nint, TrayDashboardWindow>
+        RevealHosts = new();
+    private static readonly SubclassProcedure RevealSubclassCallback =
+        ProcessRevealWindowMessage;
 
     private readonly Action openMainWindow;
     private readonly Action<bool> visibilityChanged;
+    private readonly DispatcherQueue dispatcherQueue;
     private readonly DispatcherQueueTimer foregroundTimer;
+    private readonly nint hostWindowHandle;
+    private readonly uint advanceRevealMessage;
     private TrayDashboardPreference preference = TrayDashboardPreferenceDefaults.Preference;
     private TrayDashboardLayout layout = TrayDashboardLayoutPolicy.Resolve(
         TrayDashboardPreferenceDefaults.Preference.Controls!,
@@ -48,6 +58,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private bool surfaceShown;
     private nint previousForegroundWindow;
     private bool foregroundEstablished;
+    private CancellationTokenSource? revealFrameClockCancellation;
+    private int revealFramePending;
+    private bool revealSubclassAttached;
     private int disposed;
 
     public TrayDashboardWindow(
@@ -62,10 +75,15 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             ?? throw new ArgumentNullException(nameof(visibilityChanged));
         InitializeComponent();
         Root.DataContext = ViewModel;
-        foregroundTimer = Root.DispatcherQueue.CreateTimer();
+        dispatcherQueue = Root.DispatcherQueue;
+        foregroundTimer = dispatcherQueue.CreateTimer();
         foregroundTimer.Interval = TimeSpan.FromMilliseconds(50);
         foregroundTimer.IsRepeating = true;
         foregroundTimer.Tick += OnForegroundTimerTick;
+        hostWindowHandle = WindowNative.GetWindowHandle(this);
+        advanceRevealMessage = RegisterWindowMessage(
+            "OpenBlade.TrayDashboard.AdvanceReveal.v1");
+        TryAttachRevealSubclass();
 
         ThemeManager.Apply(Root, ViewModel.Theme);
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -208,6 +226,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         foregroundTimer.Stop();
         foregroundTimer.Tick -= OnForegroundTimerTick;
         CancelRevealAnimation();
+        DetachRevealSubclass();
         if (visible)
         {
             visible = false;
@@ -449,8 +468,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 staged.Y,
                 staged.Width,
                 staged.Height);
-            revealAnimationActive = true;
-            CompositionTarget.Rendering += OnRevealRendering;
+            StartRevealFrameClock();
             return true;
         }
         catch (Exception exception)
@@ -463,8 +481,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
     }
 
-    private void OnRevealRendering(object? sender, object args)
+    private void AdvanceRevealAnimation()
     {
+        Interlocked.Exchange(ref revealFramePending, 0);
         if (!revealAnimationActive || (!visible && !revealHiding))
         {
             return;
@@ -578,16 +597,151 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     private void CancelRevealAnimation()
     {
-        if (revealAnimationActive)
-        {
-            CompositionTarget.Rendering -= OnRevealRendering;
-        }
         revealAnimationActive = false;
+        CancellationTokenSource? cancellation = revealFrameClockCancellation;
+        revealFrameClockCancellation = null;
+        if (cancellation is not null)
+        {
+            cancellation.Cancel();
+            cancellation.Dispose();
+        }
+        Interlocked.Exchange(ref revealFramePending, 0);
         revealHiding = false;
         awaitingRevealActivation = false;
         revealStartedTimestamp = 0;
         revealPrimingFrames = 0;
         revealAnimationsEnabled = false;
+    }
+
+    private void StartRevealFrameClock()
+    {
+        var cancellation = new CancellationTokenSource();
+        revealFrameClockCancellation = cancellation;
+        revealAnimationActive = true;
+        _ = Task.Run(() => RunRevealFrameClock(cancellation.Token));
+    }
+
+    private void RunRevealFrameClock(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (DwmFlush() < 0)
+                {
+                    Thread.Sleep(1);
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Interlocked.Exchange(ref revealFramePending, 1) == 0
+                    && !TryPostRevealFrame())
+                {
+                    Interlocked.Exchange(ref revealFramePending, 0);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard frame clock failed: {0}",
+                exception.Message);
+        }
+    }
+
+    private bool TryPostRevealFrame()
+    {
+        if (revealSubclassAttached)
+        {
+            return PostMessage(hostWindowHandle, advanceRevealMessage, 0, 0);
+        }
+
+        return dispatcherQueue.TryEnqueue(
+            DispatcherQueuePriority.High,
+            AdvanceRevealAnimation);
+    }
+
+    private void TryAttachRevealSubclass()
+    {
+        if (hostWindowHandle == 0 || advanceRevealMessage == 0)
+        {
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard could not register its native frame host; "
+                + "using the WinUI dispatcher fallback.");
+            return;
+        }
+
+        if (!RevealHosts.TryAdd(hostWindowHandle, this))
+        {
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard already has a native frame host; "
+                + "using the WinUI dispatcher fallback.");
+            return;
+        }
+
+        if (!SetWindowSubclass(
+                hostWindowHandle,
+                RevealSubclassCallback,
+                RevealSubclassId,
+                0))
+        {
+            RevealHosts.TryRemove(hostWindowHandle, out _);
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard could not attach its native frame host; "
+                + "using the WinUI dispatcher fallback. Win32 error: {0}",
+                Marshal.GetLastWin32Error());
+            return;
+        }
+
+        revealSubclassAttached = true;
+    }
+
+    private void DetachRevealSubclass()
+    {
+        if (!revealSubclassAttached)
+        {
+            return;
+        }
+
+        revealSubclassAttached = false;
+        _ = RemoveWindowSubclass(
+            hostWindowHandle,
+            RevealSubclassCallback,
+            RevealSubclassId);
+        RevealHosts.TryRemove(hostWindowHandle, out _);
+    }
+
+    private static nint ProcessRevealWindowMessage(
+        nint window,
+        uint message,
+        nuint windowParameter,
+        nint longParameter,
+        nuint subclassId,
+        nuint referenceData)
+    {
+        if (RevealHosts.TryGetValue(window, out TrayDashboardWindow? dashboard))
+        {
+            if (message == dashboard.advanceRevealMessage)
+            {
+                dashboard.AdvanceRevealAnimation();
+                return 1;
+            }
+
+            if (message == WindowMessageNonClientDestroy)
+            {
+                dashboard.revealSubclassAttached = false;
+                RevealHosts.TryRemove(window, out _);
+                _ = RemoveWindowSubclass(
+                    window,
+                    RevealSubclassCallback,
+                    RevealSubclassId);
+            }
+        }
+
+        return DefSubclassProc(window, message, windowParameter, longParameter);
     }
 
     private bool TryStartDismissAnimation()
@@ -606,8 +760,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         revealPrimingFrames = 2;
         revealAnimationsEnabled = WindowsMotionSettings.AreAnimationsEnabled();
         revealHiding = true;
-        revealAnimationActive = true;
-        CompositionTarget.Rendering += OnRevealRendering;
+        StartRevealFrameClock();
         return true;
     }
 
@@ -948,6 +1101,14 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         Effective = 0,
     }
 
+    private delegate nint SubclassProcedure(
+        nint window,
+        uint message,
+        nuint windowParameter,
+        nint longParameter,
+        nuint subclassId,
+        nuint referenceData);
+
     private readonly record struct ResolvedPlacement(
         TrayDashboardRect Rect,
         nint Monitor,
@@ -962,4 +1123,44 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         MonitorDpiType dpiType,
         out uint dpiX,
         out uint dpiY);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
+
+    [DllImport(
+        "user32.dll",
+        EntryPoint = "RegisterWindowMessageW",
+        SetLastError = true,
+        CharSet = CharSet.Unicode)]
+    private static extern uint RegisterWindowMessage(string messageName);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostMessage(
+        nint window,
+        uint message,
+        nuint windowParameter,
+        nint longParameter);
+
+    [DllImport("comctl32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowSubclass(
+        nint window,
+        SubclassProcedure subclassProcedure,
+        nuint subclassId,
+        nuint referenceData);
+
+    [DllImport("comctl32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool RemoveWindowSubclass(
+        nint window,
+        SubclassProcedure subclassProcedure,
+        nuint subclassId);
+
+    [DllImport("comctl32.dll")]
+    private static extern nint DefSubclassProc(
+        nint window,
+        uint message,
+        nuint windowParameter,
+        nint longParameter);
 }

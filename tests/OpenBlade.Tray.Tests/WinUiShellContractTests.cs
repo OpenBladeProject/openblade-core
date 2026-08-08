@@ -1818,7 +1818,11 @@ public sealed class WinUiShellContractTests
             dashboardWindow[tryPosition..position],
             StringComparison.Ordinal);
         Assert.Contains("TrayDashboardInteractionPolicy.ShouldSuppressReopen", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("CompositionTarget.Rendering += OnRevealRendering", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("DwmFlush()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("PostMessage(hostWindowHandle", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("SetWindowSubclass(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("DispatcherQueuePriority.High", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("StartRevealFrameClock()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupSlidePolicy.ResolvePosition(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupPositioner.FindTaskbarForMonitor", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardPlacement.ResolveRevealGeometry(", dashboardWindow, StringComparison.Ordinal);
@@ -1838,7 +1842,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("trayDashboardObservationLoop.Stop()", mainWindow, StringComparison.Ordinal);
         Assert.Contains("ViewModel.ObserveTrayDashboardStateAsync", mainWindow, StringComparison.Ordinal);
         int revealRendering = dashboardWindow.IndexOf(
-            "private void OnRevealRendering(",
+            "private void AdvanceRevealAnimation()",
             StringComparison.Ordinal);
         int cancelReveal = dashboardWindow.IndexOf(
             "private void CancelRevealAnimation()",

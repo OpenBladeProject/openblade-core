@@ -147,11 +147,11 @@ public sealed class TrayDashboardPreferenceTests
     [Theory]
     [InlineData(-1, 100)]
     [InlineData(0, 100)]
-    [InlineData(50, 84)]
-    [InlineData(100, 50)]
+    [InlineData(50, 18)]
+    [InlineData(100, 3)]
     [InlineData(200, 0)]
     [InlineData(500, 0)]
-    public void PopupRevealUsesSmoothDashboardMotion(
+    public void PopupRevealUsesBrightnessOsdEaseOut(
         int elapsedMilliseconds,
         int expectedPosition)
     {
@@ -165,10 +165,10 @@ public sealed class TrayDashboardPreferenceTests
     }
 
     [Fact]
-    public void PopupDismissUsesTheReverseTwoHundredMillisecondMotion()
+    public void PopupDismissUsesBrightnessOsdEaseInOverTwoHundredMilliseconds()
     {
         Assert.Equal(
-            50,
+            3,
             WindowsPopupSlidePolicy.ResolvePosition(
                 start: 0,
                 end: 100,
