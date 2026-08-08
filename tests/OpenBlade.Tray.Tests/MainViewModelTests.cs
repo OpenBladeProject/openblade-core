@@ -2314,6 +2314,65 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task PerformanceSelection_NormalizesLegacyGpuTuningAfterDraft()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var legacyOffsets = new GpuClockOffsetSettings(100, 200);
+        client.Publish(baseline with
+        {
+            Message = "Legacy GPU tuning profile ready",
+            Capabilities = baseline.Capabilities! with
+            {
+                GpuOverclock = new GpuOverclockCapabilities(
+                    new DeviceNumericRange(-1000, 400, null),
+                    new DeviceNumericRange(-1000, 3000, null),
+                    DeviceFeatureAccess.ReadWrite),
+            },
+            Profiles = baseline.Profiles with
+            {
+                PluggedIn = baseline.Profiles.PluggedIn with
+                {
+                    CustomPerformance = CustomPerformanceSettings.Default with
+                    {
+                        GpuClockOffsets = legacyOffsets,
+                    },
+                },
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Legacy GPU tuning profile ready");
+        Assert.Equal(legacyOffsets, viewModel.CurrentGpuClockOffsets);
+
+        await viewModel.SetGpuClockTuningEnabledAsync(
+            enabled: false,
+            CancellationToken.None);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Custom);
+
+        PerformanceOverride requested = Assert.IsType<PerformanceOverride>(
+            client.PerformanceOverride);
+        Assert.True(requested.IsWellFormed());
+        Assert.Null(requested.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(
+            new GpuClockTuningSettings(
+                Enabled: false,
+                legacyOffsets),
+            requested.GpuClockTuning);
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(
+            encoded,
+            new SetPerformanceOverrideRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                requested),
+            CancellationToken.None);
+        Assert.NotEqual(0, encoded.Length);
+    }
+
+    [Fact]
     public async Task PerformanceSelection_StaysRequestedAcrossInFlightStaleStatus()
     {
         var client = new FakeServiceClient { BlockMutations = true };

@@ -4562,38 +4562,46 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         PerformancePreset requested = (PerformancePreset)parameter!;
         await ApplyPerformanceAsync(
-            new PerformanceOverride(
+            CreatePerformanceOverride(
                 requested,
                 OverrideLifetime.UntilPowerSourceChange,
                 requested == PerformancePreset.Custom
                     ? GetActiveProfileCustomPerformance()
-                    : null)
-            {
-                GpuClockTuning = GetActiveProfileGpuClockTuning(),
-            },
+                    : null,
+                GetActiveProfileGpuClockTuning()),
             token);
     }
 
     private async Task SetCustomPerformanceAsync(object? parameter, CancellationToken token)
     {
         CustomPerformanceSettings requested = (CustomPerformanceSettings)parameter!;
-        GpuClockTuningSettings? gpuClockTuning = GetActiveProfileGpuClockTuning();
-        if (requested.GpuClockOffsets is { } legacyOffsets)
+        await ApplyPerformanceAsync(
+            CreatePerformanceOverride(
+                PerformancePreset.Custom,
+                OverrideLifetime.UntilPowerSourceChange,
+                requested,
+                GetActiveProfileGpuClockTuning()),
+            token);
+    }
+
+    private static PerformanceOverride CreatePerformanceOverride(
+        PerformancePreset performance,
+        OverrideLifetime lifetime,
+        CustomPerformanceSettings? customPerformance,
+        GpuClockTuningSettings? gpuClockTuning)
+    {
+        if (customPerformance?.GpuClockOffsets is { } legacyOffsets)
         {
-            requested = requested with { GpuClockOffsets = null };
+            customPerformance = customPerformance with { GpuClockOffsets = null };
             gpuClockTuning ??= new GpuClockTuningSettings(
                 Enabled: true,
                 legacyOffsets);
         }
-        await ApplyPerformanceAsync(
-            new PerformanceOverride(
-                PerformancePreset.Custom,
-                OverrideLifetime.UntilPowerSourceChange,
-                requested)
-            {
-                GpuClockTuning = gpuClockTuning,
-            },
-            token);
+
+        return new PerformanceOverride(performance, lifetime, customPerformance)
+        {
+            GpuClockTuning = gpuClockTuning,
+        };
     }
 
     public Task SetGpuClockTuningEnabledAsync(
