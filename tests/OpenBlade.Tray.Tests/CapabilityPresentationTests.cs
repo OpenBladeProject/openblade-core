@@ -372,6 +372,11 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{StaticResource SettingsNeutralSubcardStyle}",
             Attribute(toggleRow, "Style"));
+        Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));
+        Assert.Equal("Center", Attribute(toggle, "VerticalAlignment"));
+        Assert.Equal("0", Attribute(toggle, "MinWidth"));
+        Assert.Equal(string.Empty, Attribute(toggle, "OffContent"));
+        Assert.Equal(string.Empty, Attribute(toggle, "OnContent"));
         Assert.Equal(
             [coreRow, memoryRow],
             toggleRow.ElementsAfterSelf()

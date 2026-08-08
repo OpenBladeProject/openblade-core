@@ -464,6 +464,11 @@
                                     </StackPanel>
                                     <ToggleSwitch x:Name="GpuClockTuningToggle"
                                                   Grid.Column="1"
+                                                  HorizontalAlignment="Right"
+                                                  VerticalAlignment="Center"
+                                                  MinWidth="0"
+                                                  OffContent=""
+                                                  OnContent=""
                                                   IsOn="{Binding IsGpuClockTuningEnabled, Mode=OneWay}"
                                                   IsEnabled="{Binding CanToggleGpuClockTuning}"
                                                   AutomationProperties.Name="GPU tuning"
