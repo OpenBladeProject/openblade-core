@@ -3498,7 +3498,7 @@
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Shut down OpenBlade"
                                                    Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Stop the app, display helper, and hardware service until Windows restarts."
+                                        <TextBlock Text="Stop the app, display helper, and hardware service. You can start OpenBlade again from troubleshooting."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <Button Grid.Column="1"
@@ -4006,7 +4006,7 @@
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="OpenBlade service" Style="{StaticResource TroubleshootingLabelStyle}" />
                                             <Grid Grid.Column="1">
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                                 <Grid VerticalAlignment="Center">
                                                     <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
                                                              Fill="{ThemeResource SystemFillColorCriticalBrush}"
@@ -4014,6 +4014,14 @@
                                                              Visibility="{x:Bind ViewModel.IsServiceUnavailable, Mode=OneWay}" />
                                                 </Grid>
                                                 <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TroubleshootingServiceStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
+                                                <Button x:Name="StartOpenBladeButton"
+                                                        Grid.Column="2"
+                                                        Margin="12,0,0,0"
+                                                        VerticalAlignment="Center"
+                                                        Content="Start OpenBlade"
+                                                        Visibility="{x:Bind ViewModel.IsServiceUnavailable, Mode=OneWay}"
+                                                        Click="OnStartOpenBlade"
+                                                        AutomationProperties.Name="Start OpenBlade" />
                                             </Grid>
                                         </Grid>
                                     </Border>

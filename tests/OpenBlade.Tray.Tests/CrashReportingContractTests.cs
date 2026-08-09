@@ -17,6 +17,7 @@ public sealed class CrashReportingContractTests
             app,
             StringComparison.Ordinal);
         Assert.Contains("RegisterCrashReporting(componentName);", app, StringComparison.Ordinal);
+        Assert.Contains("OpenBlade.Tray.StartHelper", app, StringComparison.Ordinal);
         Assert.Contains("OpenBlade.Tray.ShutdownHelper", app, StringComparison.Ordinal);
         Assert.Contains("CrashReportWriter.CreateDefault", app, StringComparison.Ordinal);
         Assert.Contains("Interlocked.Exchange(ref fatalCrashReported, 0)", app, StringComparison.Ordinal);

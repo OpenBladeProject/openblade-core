@@ -989,6 +989,14 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(troubleshooting.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") is "Controller detection" or "Last operation");
+        XElement startService = NamedElement(document, "Button", "StartOpenBladeButton");
+        Assert.Contains(troubleshooting.Descendants(), element => ReferenceEquals(element, startService));
+        Assert.Equal("Start OpenBlade", Attribute(startService, "Content"));
+        Assert.Equal("OnStartOpenBlade", Attribute(startService, "Click"));
+        Assert.Contains(
+            "ViewModel.IsServiceUnavailable",
+            Attribute(startService, "Visibility"),
+            StringComparison.Ordinal);
         foreach (string label in new[]
                  {
                      "OpenBlade service",

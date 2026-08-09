@@ -36,18 +36,31 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         base.OnLaunched(args);
         string[] commandLineArguments = Environment.GetCommandLineArgs();
-        bool elevatedShutdownHelper = ElevatedServiceShutdownLauncher.IsHelperLaunch(
-            commandLineArguments);
-        string componentName = elevatedShutdownHelper
-            ? "OpenBlade.Tray.ShutdownHelper"
+        ElevatedServiceHelperParseResult helperParseResult =
+            ElevatedServiceControlLauncher.ParseHelperAction(
+            commandLineArguments,
+            out ElevatedServiceControlAction helperAction);
+        bool elevatedServiceHelper = helperParseResult == ElevatedServiceHelperParseResult.Valid;
+        string componentName = elevatedServiceHelper
+            ? helperAction == ElevatedServiceControlAction.Start
+                ? "OpenBlade.Tray.StartHelper"
+                : "OpenBlade.Tray.ShutdownHelper"
             : "OpenBlade.Tray";
         RegisterCrashReporting(componentName);
         traceLogRegistration ??= PersistentTraceLog.RegisterDefault(
             componentName,
             OpenBladeProductVersion.Read(typeof(App).Assembly));
-        if (elevatedShutdownHelper)
+        if (helperParseResult == ElevatedServiceHelperParseResult.Invalid)
         {
-            _ = RunElevatedServiceShutdownHelperAsync();
+            Trace.TraceWarning("OpenBlade rejected malformed elevated service helper arguments.");
+            traceLogRegistration.Dispose();
+            traceLogRegistration = null;
+            Exit();
+            return;
+        }
+        if (elevatedServiceHelper)
+        {
+            _ = RunElevatedServiceControlHelperAsync(helperAction);
             return;
         }
 
@@ -295,14 +308,53 @@ public partial class App : Microsoft.UI.Xaml.Application
         return exitLifecycle.ExitAsync();
     }
 
+    public async Task StartOpenBladeAsync()
+    {
+        WindowsServiceStartPreflightResult preflight =
+            await WindowsServiceStartOperation.PreflightAsync(CancellationToken.None);
+        if (preflight == WindowsServiceStartPreflightResult.AlreadyRunning)
+        {
+            return;
+        }
+        if (preflight == WindowsServiceStartPreflightResult.Unavailable)
+        {
+            throw new InvalidOperationException(
+                "OpenBlade service is missing, inaccessible, or cannot be started from its current state.");
+        }
+
+        string executablePath = Environment.ProcessPath
+            ?? throw new InvalidOperationException("Tray executable path is unavailable.");
+        var launcher = new ElevatedServiceControlLauncher();
+        var coordinator = new TrayServiceStartCoordinator(
+            token => launcher.RequestAsync(
+                executablePath,
+                ElevatedServiceControlAction.Start,
+                token),
+            WindowsServiceStateConfirmation.WaitForRunningAsync);
+        TrayServiceStartResult result = await coordinator.StartAsync(CancellationToken.None);
+        if (result == TrayServiceStartResult.Canceled)
+        {
+            Trace.TraceInformation("OpenBlade service start elevation was canceled.");
+            return;
+        }
+        if (result == TrayServiceStartResult.Unconfirmed)
+        {
+            throw new InvalidOperationException(
+                "The elevated service start could not be confirmed. OpenBlade did not retry the request.");
+        }
+    }
+
     public async Task ShutdownOpenBladeAsync()
     {
         string executablePath = Environment.ProcessPath
             ?? throw new InvalidOperationException("Tray executable path is unavailable.");
-        var launcher = new ElevatedServiceShutdownLauncher();
+        var launcher = new ElevatedServiceControlLauncher();
         var coordinator = new TrayCompleteShutdownCoordinator(
-            token => launcher.RequestAsync(executablePath, token),
-            WindowsServiceShutdownConfirmation.WaitForStoppedAsync,
+            token => launcher.RequestAsync(
+                executablePath,
+                ElevatedServiceControlAction.Shutdown,
+                token),
+            WindowsServiceStateConfirmation.WaitForStoppedAsync,
             () => _ = SessionAgentLauncher.TryStopSibling(),
             ExitTrayAsync);
         TrayCompleteShutdownResult result = await coordinator.ShutdownAsync(
@@ -319,18 +371,27 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 
-    private async Task RunElevatedServiceShutdownHelperAsync()
+    private async Task RunElevatedServiceControlHelperAsync(
+        ElevatedServiceControlAction action)
     {
         int exitCode = 1;
         try
         {
-            await using var serviceClient = new ServiceClient();
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            ControlOperationResult result = await serviceClient.ShutdownOpenBladeAsync(
-                timeout.Token);
-            if (result.Status != ControlOperationStatus.Stored)
+            if (action == ElevatedServiceControlAction.Start)
             {
-                throw new InvalidOperationException(result.Message);
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(65));
+                await WindowsServiceStartOperation.StartAsync(timeout.Token);
+            }
+            else
+            {
+                await using var serviceClient = new ServiceClient();
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                ControlOperationResult result = await serviceClient.ShutdownOpenBladeAsync(
+                    timeout.Token);
+                if (result.Status != ControlOperationStatus.Stored)
+                {
+                    throw new InvalidOperationException(result.Message);
+                }
             }
 
             exitCode = 0;
@@ -338,7 +399,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         catch (Exception exception)
         {
             Trace.TraceError(
-                "OpenBlade elevated service shutdown failed: {0}",
+                "OpenBlade elevated service {0} failed: {1}",
+                action.ToString().ToLowerInvariant(),
                 exception);
         }
         finally

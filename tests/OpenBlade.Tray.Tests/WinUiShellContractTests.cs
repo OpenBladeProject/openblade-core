@@ -360,7 +360,8 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Content=\"View\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnShutdownOpenBlade\"", xaml, StringComparison.Ordinal);
         Assert.Contains("app.ShutdownOpenBladeAsync()", window, StringComparison.Ordinal);
-        Assert.Contains("new ElevatedServiceShutdownLauncher()", app, StringComparison.Ordinal);
+        Assert.Contains("new ElevatedServiceControlLauncher()", app, StringComparison.Ordinal);
+        Assert.Contains("app.StartOpenBladeAsync()", window, StringComparison.Ordinal);
         Assert.Contains("SessionAgentLauncher.TryStopSibling()", app, StringComparison.Ordinal);
     }
 
@@ -1255,7 +1256,7 @@ public sealed class WinUiShellContractTests
             normalizedApp,
             StringComparison.Ordinal);
         Assert.Contains(
-            "WindowsServiceShutdownConfirmation.WaitForStoppedAsync,\n"
+            "WindowsServiceStateConfirmation.WaitForStoppedAsync,\n"
                 + "            () => _ = SessionAgentLauncher.TryStopSibling(),\n"
                 + "            ExitTrayAsync);",
             normalizedApp,
@@ -1263,15 +1264,15 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void ElevatedShutdownHelperRunsBeforeTrayAndSessionInitialization()
+    public void ElevatedServiceHelpersRunBeforeTrayAndSessionInitialization()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         int helperGate = app.IndexOf(
-            "bool elevatedShutdownHelper = ElevatedServiceShutdownLauncher.IsHelperLaunch",
+            "ElevatedServiceControlLauncher.ParseHelperAction",
             StringComparison.Ordinal);
-        int helperBranch = app.IndexOf("if (elevatedShutdownHelper)", StringComparison.Ordinal);
+        int helperBranch = app.IndexOf("if (elevatedServiceHelper)", StringComparison.Ordinal);
         int helperCall = app.IndexOf(
-            "_ = RunElevatedServiceShutdownHelperAsync();",
+            "_ = RunElevatedServiceControlHelperAsync(helperAction);",
             helperBranch,
             StringComparison.Ordinal);
         int helperReturn = app.IndexOf("return;", helperCall, StringComparison.Ordinal);
@@ -1289,20 +1290,27 @@ public sealed class WinUiShellContractTests
         Assert.True(helperBranch < helperCall);
         Assert.True(helperCall < helperReturn);
         Assert.True(helperReturn < normalInitialization);
+        Assert.Contains("ElevatedServiceHelperParseResult.Invalid", app, StringComparison.Ordinal);
+        Assert.Contains("rejected malformed elevated service helper arguments", app, StringComparison.Ordinal);
         Assert.True(normalInitialization < instanceClaim);
         Assert.True(normalInitialization < windowCreation);
         Assert.True(normalInitialization < sessionAgentStart);
         Assert.Contains("new ServiceClient()", app, StringComparison.Ordinal);
         Assert.Contains("new CancellationTokenSource(TimeSpan.FromSeconds(10))", app, StringComparison.Ordinal);
         Assert.Contains("serviceClient.ShutdownOpenBladeAsync", app, StringComparison.Ordinal);
+        Assert.Contains("WindowsServiceStartOperation.StartAsync", app, StringComparison.Ordinal);
+        Assert.Contains("new CancellationTokenSource(TimeSpan.FromSeconds(65))", app, StringComparison.Ordinal);
+        Assert.Contains("new TrayServiceStartCoordinator", app, StringComparison.Ordinal);
+        Assert.Contains("WindowsServiceStateConfirmation.WaitForRunningAsync", app, StringComparison.Ordinal);
+        Assert.Contains("TrayServiceStartResult.Unconfirmed", app, StringComparison.Ordinal);
         Assert.Contains("new TrayCompleteShutdownCoordinator", app, StringComparison.Ordinal);
-        Assert.Contains("WindowsServiceShutdownConfirmation.WaitForStoppedAsync", app, StringComparison.Ordinal);
+        Assert.Contains("WindowsServiceStateConfirmation.WaitForStoppedAsync", app, StringComparison.Ordinal);
         Assert.Contains("TrayCompleteShutdownResult.Unconfirmed", app, StringComparison.Ordinal);
         Assert.Contains("did not retry the request", app, StringComparison.Ordinal);
         string launcher = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
-            "ElevatedServiceShutdownLauncher.cs");
+            "ElevatedServiceControlLauncher.cs");
         int taskRun = launcher.IndexOf("await Task.Run(", StringComparison.Ordinal);
         int processStart = launcher.IndexOf("Process.Start(startInfo)", StringComparison.Ordinal);
         int waitForExit = launcher.IndexOf("WaitForExitAsync", StringComparison.Ordinal);
@@ -1701,7 +1709,7 @@ public sealed class WinUiShellContractTests
             "string[] commandLineArguments = Environment.GetCommandLineArgs()",
             StringComparison.Ordinal);
         int helperGate = app.IndexOf(
-            "bool elevatedShutdownHelper = ElevatedServiceShutdownLauncher.IsHelperLaunch",
+            "ElevatedServiceControlLauncher.ParseHelperAction",
             StringComparison.Ordinal);
         int instanceClaim = app.IndexOf(
             "TrayInstanceCoordinator.TryStart",

@@ -5,7 +5,7 @@ public sealed class TrayCompleteShutdownCoordinatorTests
     [Fact]
     public async Task CompletedRequestStopsSessionAgentAndExitsWithoutReadback()
     {
-        RecordingShutdownSteps steps = CreateSteps(ElevatedServiceShutdownOutcome.Completed);
+        RecordingShutdownSteps steps = CreateSteps(ElevatedServiceControlOutcome.Completed);
 
         TrayCompleteShutdownResult result = await steps.Coordinator.ShutdownAsync(
             CancellationToken.None);
@@ -19,7 +19,7 @@ public sealed class TrayCompleteShutdownCoordinatorTests
     [Fact]
     public async Task CanceledRequestLeavesAllProcessesRunning()
     {
-        RecordingShutdownSteps steps = CreateSteps(ElevatedServiceShutdownOutcome.Canceled);
+        RecordingShutdownSteps steps = CreateSteps(ElevatedServiceControlOutcome.Canceled);
 
         TrayCompleteShutdownResult result = await steps.Coordinator.ShutdownAsync(
             CancellationToken.None);
@@ -41,7 +41,7 @@ public sealed class TrayCompleteShutdownCoordinatorTests
     {
         var expected = (TrayCompleteShutdownResult)expectedValue;
         RecordingShutdownSteps steps = CreateSteps(
-            ElevatedServiceShutdownOutcome.Indeterminate,
+            ElevatedServiceControlOutcome.Indeterminate,
             serviceStopped);
 
         TrayCompleteShutdownResult result = await steps.Coordinator.ShutdownAsync(
@@ -54,7 +54,7 @@ public sealed class TrayCompleteShutdownCoordinatorTests
     }
 
     private static RecordingShutdownSteps CreateSteps(
-        ElevatedServiceShutdownOutcome outcome,
+        ElevatedServiceControlOutcome outcome,
         bool serviceStopped = false)
     {
         var steps = new RecordingShutdownSteps();

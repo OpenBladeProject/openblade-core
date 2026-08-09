@@ -26,14 +26,18 @@
              Link="StartupShortcutWriter.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\WindowsStartupRegistration.cs"
              Link="WindowsStartupRegistration.cs" />
-    <Compile Include="..\..\src\OpenBlade.Tray\ElevatedServiceShutdownLauncher.cs"
-             Link="ElevatedServiceShutdownLauncher.cs" />
-    <Compile Include="..\..\src\OpenBlade.Tray\ServiceShutdownConfirmation.cs"
-             Link="ServiceShutdownConfirmation.cs" />
-    <Compile Include="..\..\src\OpenBlade.Tray\WindowsServiceShutdownConfirmation.cs"
-             Link="WindowsServiceShutdownConfirmation.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\ElevatedServiceControlLauncher.cs"
+             Link="ElevatedServiceControlLauncher.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\ServiceStateConfirmation.cs"
+             Link="ServiceStateConfirmation.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\WindowsServiceStateConfirmation.cs"
+             Link="WindowsServiceStateConfirmation.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\WindowsServiceStartOperation.cs"
+             Link="WindowsServiceStartOperation.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\TrayCompleteShutdownCoordinator.cs"
              Link="TrayCompleteShutdownCoordinator.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\TrayServiceStartCoordinator.cs"
+             Link="TrayServiceStartCoordinator.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -14,13 +14,13 @@ internal enum TrayCompleteShutdownResult
 /// </summary>
 internal sealed class TrayCompleteShutdownCoordinator
 {
-    private readonly Func<CancellationToken, Task<ElevatedServiceShutdownOutcome>> requestAsync;
+    private readonly Func<CancellationToken, Task<ElevatedServiceControlOutcome>> requestAsync;
     private readonly Func<CancellationToken, Task<bool>> confirmStoppedAsync;
     private readonly Action stopSessionAgent;
     private readonly Func<Task> exitTrayAsync;
 
     public TrayCompleteShutdownCoordinator(
-        Func<CancellationToken, Task<ElevatedServiceShutdownOutcome>> requestAsync,
+        Func<CancellationToken, Task<ElevatedServiceControlOutcome>> requestAsync,
         Func<CancellationToken, Task<bool>> confirmStoppedAsync,
         Action stopSessionAgent,
         Func<Task> exitTrayAsync)
@@ -38,13 +38,13 @@ internal sealed class TrayCompleteShutdownCoordinator
     public async Task<TrayCompleteShutdownResult> ShutdownAsync(
         CancellationToken cancellationToken)
     {
-        ElevatedServiceShutdownOutcome outcome = await requestAsync(cancellationToken);
-        if (outcome == ElevatedServiceShutdownOutcome.Canceled)
+        ElevatedServiceControlOutcome outcome = await requestAsync(cancellationToken);
+        if (outcome == ElevatedServiceControlOutcome.Canceled)
         {
             return TrayCompleteShutdownResult.Canceled;
         }
 
-        if (outcome == ElevatedServiceShutdownOutcome.Indeterminate
+        if (outcome == ElevatedServiceControlOutcome.Indeterminate
             && !await confirmStoppedAsync(cancellationToken))
         {
             return TrayCompleteShutdownResult.Unconfirmed;

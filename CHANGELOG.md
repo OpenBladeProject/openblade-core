@@ -28,7 +28,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Prompted for administrator approval when **Shut down completely** is chosen
-  from the normal tray, while keeping the tray and Session Agent unelevated.
+  from the normal tray, while keeping the tray and Session Agent unelevated,
+  and added a troubleshooting action that starts the stopped service again.
 - Prevented the first nightly after a product-version change from replaying
   entries already published under the preceding version when its generated
   changelog pull request is still outstanding.

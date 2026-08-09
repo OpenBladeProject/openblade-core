@@ -1,22 +1,25 @@
 namespace OpenBlade.Tray;
 
-internal enum ObservedServiceShutdownState
+internal enum ObservedServiceState
 {
     Running,
+    StartPending,
+    ContinuePending,
     StopPending,
     Stopped,
+    Other,
     Unavailable,
 }
 
-internal sealed class ServiceShutdownConfirmation
+internal sealed class ServiceStateConfirmation
 {
-    private readonly Func<ObservedServiceShutdownState> readState;
+    private readonly Func<ObservedServiceState> readState;
     private readonly Func<TimeSpan, CancellationToken, Task> delayAsync;
     private readonly int maximumPolls;
     private readonly TimeSpan pollInterval;
 
-    public ServiceShutdownConfirmation(
-        Func<ObservedServiceShutdownState> readState,
+    public ServiceStateConfirmation(
+        Func<ObservedServiceState> readState,
         Func<TimeSpan, CancellationToken, Task> delayAsync,
         int maximumPolls,
         TimeSpan pollInterval)
@@ -31,17 +34,25 @@ internal sealed class ServiceShutdownConfirmation
             : throw new ArgumentOutOfRangeException(nameof(pollInterval));
     }
 
-    public async Task<bool> WaitForStoppedAsync(CancellationToken cancellationToken)
+    public async Task<bool> WaitForAsync(
+        ObservedServiceState expectedState,
+        CancellationToken cancellationToken)
     {
+        if (expectedState is not ObservedServiceState.Running
+            and not ObservedServiceState.Stopped)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedState));
+        }
+
         for (int poll = 0; poll < maximumPolls; poll++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ObservedServiceShutdownState state = readState();
-            if (state == ObservedServiceShutdownState.Stopped)
+            ObservedServiceState state = readState();
+            if (state == expectedState)
             {
                 return true;
             }
-            if (state == ObservedServiceShutdownState.Unavailable)
+            if (state == ObservedServiceState.Unavailable)
             {
                 return false;
             }
