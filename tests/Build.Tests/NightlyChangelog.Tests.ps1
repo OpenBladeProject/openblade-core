@@ -29,6 +29,28 @@ function Assert-Equal {
     }
 }
 
+function Assert-ThrowsLike {
+    param(
+        [Parameter(Mandatory)][scriptblock]$Action,
+        [Parameter(Mandatory)][string]$Pattern,
+        [Parameter(Mandatory)][string]$Message
+    )
+
+    try {
+        & $Action
+    }
+    catch {
+        if ($_.Exception.Message -notlike $Pattern) {
+            throw (
+                "$Message Expected an error like '$Pattern', received " +
+                "'$($_.Exception.Message)'.")
+        }
+        return
+    }
+
+    throw "$Message Expected an error like '$Pattern', but no error was thrown."
+}
+
 $nightly6Source = @'
 # Changelog
 
@@ -137,6 +159,73 @@ $latestMain = @'
 [0.1.0-nightly.6]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...v0.1.0-nightly.6
 [0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
 '@
+
+$parsedNightly = ConvertFrom-OpenBladeNightlyTag `
+    -TagName 'v1.2.3-nightly.1'
+Assert-Equal '1.2.3' $parsedNightly.BaseVersion `
+    'The nightly parser must retain the canonical base version.'
+Assert-Equal 1 $parsedNightly.BuildRevision `
+    'The nightly parser must retain the build revision.'
+Assert-Equal '1.2.3-nightly.1' $parsedNightly.Version `
+    'The nightly parser must produce the canonical version.'
+Assert-Equal 0 $parsedNightly.Attempt `
+    'A canonical nightly tag must have attempt zero.'
+$parsedAttempt = ConvertFrom-OpenBladeNightlyTag `
+    -TagName 'v1.2.3-nightly.65535-attempt.3'
+Assert-Equal 65535 $parsedAttempt.BuildRevision `
+    'The nightly parser must accept the maximum build revision.'
+Assert-Equal 3 $parsedAttempt.Attempt `
+    'The nightly parser must expose the attempt suffix.'
+foreach ($invalidTag in @(
+        'v1.2.3',
+        'v01.2.3-nightly.1',
+        'v1.2.3-nightly.0',
+        'v1.2.3-nightly.65536',
+        'v1.2.3-nightly.01',
+        'v1.2.3-nightly.1-attempt.03')) {
+    Assert-True ($null -eq (
+            ConvertFrom-OpenBladeNightlyTag -TagName $invalidTag)) `
+        "The nightly parser must reject noncanonical tag '$invalidTag'."
+}
+Assert-ThrowsLike `
+    -Action {
+        Write-OpenBladeNightlyChangelogSnapshot `
+            -RepositoryRoot $repository `
+            -ChangelogPath 'unused-changelog.md' `
+            -OutputPath 'unused-output.md' `
+            -PublishedReleasesPath 'unused-releases.json' `
+            -BaseVersion '1.2.3' `
+            -BuildRevision 1 `
+            -CurrentTag 'v1.2.3-nightly.1-attempt.03' `
+            -CurrentSourceRevision ('0' * 40) `
+            -CurrentPublishedAt ([DateTimeOffset]::MinValue) | Out-Null
+    } `
+    -Pattern '*does not match build revision 1*' `
+    -Message 'The wrapper must reject a noncanonical current nightly tag.'
+
+$collisionRecords = @(
+    [pscustomobject]@{
+        BuildRevision = 8
+        Version = '0.1.0-nightly.8'
+        TagName = 'v0.1.0-nightly.8'
+        PublishedAt = [DateTimeOffset]::Parse('2026-08-06T09:17:00Z')
+        SourceContent = $nightly8Source
+    },
+    [pscustomobject]@{
+        BuildRevision = 8
+        Version = '0.2.0-nightly.8'
+        TagName = 'v0.2.0-nightly.8'
+        PublishedAt = [DateTimeOffset]::Parse('2026-08-06T10:17:00Z')
+        SourceContent = $nightly8Source
+    })
+Assert-ThrowsLike `
+    -Action {
+        Select-OpenBladeNightlyReleaseRecords `
+            -ReleaseRecord $collisionRecords `
+            -BaseVersion '0.2.0' | Out-Null
+    } `
+    -Pattern '*v0.1.0-nightly.8*v0.2.0-nightly.8*' `
+    -Message 'A global nightly revision must not identify multiple versions.'
 
 $releaseRecords = @(
     [pscustomobject]@{
@@ -424,6 +513,92 @@ try {
         Assert-Equal 0 $bareLfCount `
             'The file wrapper must preserve CRLF without mixed line endings.'
 
+        [IO.File]::WriteAllText(
+            $manifestPath,
+            '[]',
+            [Text.UTF8Encoding]::new($false))
+        $emptyManifestResult = Write-OpenBladeNightlyChangelogSnapshot `
+            -RepositoryRoot $temporaryRoot `
+            -ChangelogPath $changelogPath `
+            -OutputPath 'generated\EMPTY-MANIFEST.md' `
+            -PublishedReleasesPath $manifestPath `
+            -BaseVersion '0.2.0' `
+            -BuildRevision 7 `
+            -CurrentTag 'v0.2.0-nightly.7' `
+            -CurrentSourceRevision $sourceRevision `
+            -CurrentPublishedAt ([DateTimeOffset]::Parse('2026-08-05T23:59:59Z'))
+        $normalizedEmptyManifest = ConvertTo-OpenBladeNormalizedText `
+            -Text $emptyManifestResult.Content
+        $emptyManifestSection = Get-OpenBladeChangelogSection `
+            -Content $normalizedEmptyManifest `
+            -Heading '## [0.2.0-nightly.7] - 2026-08-05'
+        Assert-Equal (
+            "## [0.2.0-nightly.7] - 2026-08-05`n`n" +
+            "### Fixed`n`n- Fixed the first nightly regression.`n") `
+            $emptyManifestSection.Content `
+            'An empty manifest must still diff from the exact old-base baseline.'
+        Assert-True (-not $emptyManifestSection.Content.Contains(
+                '- Already shipped before automation.')) `
+            'An empty manifest must not replay entries published by the baseline.'
+        Assert-Equal 1 ([Regex]::Matches(
+                $normalizedEmptyManifest,
+                '(?m)^\[0\.2\.0-nightly\.7\]: .+/compare/' +
+                    'v0\.1\.0-nightly\.6\.\.\.v0\.2\.0-nightly\.7$')).Count `
+            'The empty-manifest nightly must compare from the exact baseline tag.'
+
+        $missingReferenceContent = [Regex]::Replace(
+            $crlfLatestMain,
+            '(?m)^\[Unreleased\]:.*(?:\r?\n|$)',
+            '')
+        Assert-ThrowsLike `
+            -Action {
+                Get-OpenBladeUnreleasedReferenceTag `
+                    -Content $missingReferenceContent | Out-Null
+            } `
+            -Pattern '*Unreleased*missing*malformed*' `
+            -Message 'A missing Unreleased reference must fail deliberately.'
+        $malformedReferenceContent = $crlfLatestMain.Replace(
+            'v0.1.0-nightly.6...HEAD',
+            'v0.1.0-nightly.6..HEAD')
+        Assert-ThrowsLike `
+            -Action {
+                Get-OpenBladeUnreleasedReferenceTag `
+                    -Content $malformedReferenceContent | Out-Null
+            } `
+            -Pattern '*Unreleased*missing*malformed*' `
+            -Message 'A malformed Unreleased reference must fail deliberately.'
+
+        $missingTagContent = $crlfLatestMain.Replace(
+            'v0.1.0-nightly.6...HEAD',
+            'v0.1.0-nightly.5...HEAD')
+        [IO.File]::WriteAllText(
+            $changelogPath,
+            $missingTagContent,
+            [Text.UTF8Encoding]::new($false))
+        $missingTagOutput = Join-Path $temporaryRoot 'generated\MISSING-TAG.md'
+        Assert-ThrowsLike `
+            -Action {
+                Write-OpenBladeNightlyChangelogSnapshot `
+                    -RepositoryRoot $temporaryRoot `
+                    -ChangelogPath $changelogPath `
+                    -OutputPath $missingTagOutput `
+                    -PublishedReleasesPath $manifestPath `
+                    -BaseVersion '0.2.0' `
+                    -BuildRevision 7 `
+                    -CurrentTag 'v0.2.0-nightly.7' `
+                    -CurrentSourceRevision $sourceRevision `
+                    -CurrentPublishedAt ([DateTimeOffset]::Parse(
+                            '2026-08-05T23:59:59Z')) | Out-Null
+            } `
+            -Pattern "*baseline tag 'v0.1.0-nightly.5'*not available*" `
+            -Message 'An unavailable baseline tag must stop reconstruction.'
+        Assert-True (-not (Test-Path -LiteralPath $missingTagOutput)) `
+            'A missing baseline tag must not create a changelog snapshot.'
+        [IO.File]::WriteAllText(
+            $changelogPath,
+            $crlfLatestMain,
+            [Text.UTF8Encoding]::new($false))
+
         & git tag v0.1.0-nightly.7-attempt.2 $sourceRevision
         $crlfNightly8 = (ConvertTo-OpenBladeNormalizedText -Text $nightly8Source).
             Replace("`n", "`r`n")
@@ -535,6 +710,88 @@ try {
             -CurrentPublishedAt ([DateTimeOffset]::Parse('2026-08-06T23:59:59Z'))
         Assert-Equal $versionBumpResult.Content $versionBumpRerun.Content `
             'Rerunning the cross-base reconstruction must be idempotent.'
+
+        $stableSource = @'
+# Changelog
+
+## [Unreleased]
+
+## [0.3.0] - 2026-08-06
+
+### Added
+
+- Added the stable release.
+
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.3.0
+'@
+        $firstNightlySource = @'
+# Changelog
+
+## [Unreleased]
+
+### Added
+
+- Added the first post-stable nightly change.
+
+## [0.3.0] - 2026-08-06
+
+### Added
+
+- Added the stable release.
+
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.3.0
+'@
+        [IO.File]::WriteAllText(
+            $changelogPath,
+            $stableSource,
+            [Text.UTF8Encoding]::new($false))
+        & git add -- CHANGELOG.md
+        & git commit --quiet -m 'stable baseline source'
+        & git tag v0.3.0
+        [IO.File]::WriteAllText(
+            $changelogPath,
+            $firstNightlySource,
+            [Text.UTF8Encoding]::new($false))
+        & git add -- CHANGELOG.md
+        & git commit --quiet -m 'post-stable nightly source'
+        $firstNightlyRevision = (& git rev-parse HEAD).Trim()
+        [IO.File]::WriteAllText(
+            $manifestPath,
+            '[]',
+            [Text.UTF8Encoding]::new($false))
+        $stableBaselineResult = Write-OpenBladeNightlyChangelogSnapshot `
+            -RepositoryRoot $temporaryRoot `
+            -ChangelogPath $changelogPath `
+            -OutputPath 'generated\STABLE-BASELINE.md' `
+            -PublishedReleasesPath $manifestPath `
+            -BaseVersion '0.4.0' `
+            -BuildRevision 9 `
+            -CurrentTag 'v0.4.0-nightly.9' `
+            -CurrentSourceRevision $firstNightlyRevision `
+            -CurrentPublishedAt ([DateTimeOffset]::Parse('2026-08-07T23:59:59Z'))
+        $normalizedStableBaseline = ConvertTo-OpenBladeNormalizedText `
+            -Text $stableBaselineResult.Content
+        $stableBaselineSection = Get-OpenBladeChangelogSection `
+            -Content $normalizedStableBaseline `
+            -Heading '## [0.4.0-nightly.9] - 2026-08-07'
+        Assert-Equal (
+            "## [0.4.0-nightly.9] - 2026-08-07`n`n" +
+            "### Added`n`n" +
+            "- Added the first post-stable nightly change.`n") `
+            $stableBaselineSection.Content `
+            'A stable baseline must produce the exact first nightly section.'
+        Assert-Equal 1 ([Regex]::Matches(
+                $normalizedStableBaseline,
+                [Regex]::Escape(
+                    '- Added the first post-stable nightly change.'))).Count `
+            'The first post-stable entry must be released exactly once.'
+        Assert-Equal 1 ([Regex]::Matches(
+                $normalizedStableBaseline,
+                '(?m)^\[0\.4\.0-nightly\.9\]: .+/compare/' +
+                    'v0\.3\.0\.\.\.v0\.4\.0-nightly\.9$')).Count `
+            'The first post-stable nightly must compare from the stable tag.'
     }
     finally {
         Pop-Location
