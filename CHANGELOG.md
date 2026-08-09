@@ -40,8 +40,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   Alt+Tab blocks instead of presenting missing profile overrides as **Not set**.
 - Fixed `IPC request body is invalid` errors and rejected profile saves after
   editing GPU clock tuning from a legacy profile.
-- Removed the highlighted background from the dashboard's Custom CPU and GPU
-  rows so they match the other Power mode controls.
+- Made dashboard Power mode subcards neutral at rest while preserving the
+  standard hover highlight for GPU tuning and Custom CPU/GPU rows.
 
 ## [0.1.0-nightly.11] - 2026-08-08
 

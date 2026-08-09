@@ -401,6 +401,15 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(neutralStyle.Elements(), setter =>
             Attribute(setter, "Property") == "Background"
             && Attribute(setter, "Value") == "Transparent");
+        Assert.Contains(neutralStyle.Elements(), setter =>
+            Attribute(setter, "Property")
+                == "local:SettingsCardPointerVisual.IsEnabled"
+            && Attribute(setter, "Value") == "True");
+        Assert.Contains(neutralStyle.Elements(), setter =>
+            Attribute(setter, "Property")
+                == "local:SettingsCardPointerVisual.PointerOverBackground"
+            && Attribute(setter, "Value")
+                == "{ThemeResource SubtleFillColorSecondaryBrush}");
     }
 
     [Fact]

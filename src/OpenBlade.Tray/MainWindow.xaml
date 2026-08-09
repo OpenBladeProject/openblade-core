@@ -74,6 +74,9 @@
                    TargetType="Border"
                    BasedOn="{StaticResource SettingsSubcardStyle}">
                 <Setter Property="Background" Value="Transparent" />
+                <Setter Property="local:SettingsCardPointerVisual.IsEnabled" Value="True" />
+                <Setter Property="local:SettingsCardPointerVisual.PointerOverBackground"
+                        Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
             </Style>
             <Style x:Key="InlineCardSliderStyle"
                    TargetType="Slider"
