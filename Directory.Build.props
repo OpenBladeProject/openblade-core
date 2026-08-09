@@ -6,7 +6,7 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
-    <OpenBladeVersion>0.3.1</OpenBladeVersion>
+    <OpenBladeVersion>0.3.2</OpenBladeVersion>
     <Version>$(OpenBladeVersion)</Version>
     <AssemblyVersion>$(OpenBladeVersion).0</AssemblyVersion>
     <FileVersion>$(OpenBladeVersion).0</FileVersion>
