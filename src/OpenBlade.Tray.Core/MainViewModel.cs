@@ -7654,9 +7654,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : subsystem == DeviceSubsystem.Lighting
                 && !confirmed
                 && !status.AlwaysOverrideExternalLightingChanges
-                && (status.PotentialControllers.Any(
-                        CompetingLightingControllers.Contains)
-                    || !string.IsNullOrWhiteSpace(status.ControllerDetectionWarning))
+                && status.PotentialControllers.Any(
+                    CompetingLightingControllers.Contains)
             ? "Other controller may be active"
             : confirmed
                 ? "Current setting"

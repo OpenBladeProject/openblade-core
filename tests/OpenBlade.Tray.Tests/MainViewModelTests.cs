@@ -1398,6 +1398,30 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task DetectionWarningDoesNotClaimLightingOwnership()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status with
+        {
+            ConfirmedState = status.ConfirmedState! with { Lighting = null },
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+            ControllerDetectionWarning = "Controller detection was incomplete.",
+        });
+        await WaitUntilAsync(() => viewModel.HasControllerDetectionWarning);
+
+        Assert.False(viewModel.HasControllerAdvisory);
+        Assert.True(viewModel.HasControllerDetectionWarning);
+        Assert.Equal("Controls unavailable", viewModel.LightingSourceLabel);
+        Assert.DoesNotContain(
+            "yields automatic keyboard lighting",
+            viewModel.ControllerAdvisoryText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AttentionTextClearsWhenTheLastWarningClears()
     {
         var client = new FakeServiceClient();
