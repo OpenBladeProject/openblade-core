@@ -1474,6 +1474,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         Assert.Equal(0, scenario.LightingPort.DrainCount);
         Assert.Equal(0, scenario.LightingPort.DisposeCount);
+        Assert.Equal(0, scenario.GpuActivitySource.DisposeCount);
         await scenario.ReleaseAndDrainAsync();
     }
 
@@ -1487,6 +1488,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         Assert.Equal(1, scenario.LightingPort.DrainCount);
         Assert.Equal(1, scenario.LightingPort.DisposeCount);
+        Assert.Equal(1, scenario.GpuActivitySource.DisposeCount);
     }
 
     [Fact]
@@ -1528,6 +1530,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         FakeQueryPort blockedPort =
             FakeQueryPort.Blocked(BatteryValidationSetting.Limit80);
         var lightingPort = new FakeLightingPort();
+        var gpuActivitySource = new CountingGpuActivitySource();
         var providerClosing = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var provider = new WindowsVerifiedBladeDeviceProvider(
@@ -1536,7 +1539,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             UnavailableFanRpmFactory(),
             new FakeLightingFactory(lightingPort),
             shutdownBudget: TestShutdownBudget,
-            onClosing: () => providerClosing.TrySetResult());
+            onClosing: () => providerClosing.TrySetResult(),
+            gpuActivitySource: gpuActivitySource);
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
         await device.SetLightingAsync(
             LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
@@ -1547,6 +1551,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             provider,
             device,
             lightingPort,
+            gpuActivitySource,
             blockedPort,
             providerClosing.Task,
             hardwareOperation);
@@ -2036,6 +2041,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         WindowsVerifiedBladeDeviceProvider Provider,
         IBladeDevice Device,
         FakeLightingPort LightingPort,
+        CountingGpuActivitySource GpuActivitySource,
         FakeQueryPort BlockedPort,
         Task ProviderClosing,
         Task<ConfirmedDeviceState> HardwareOperation)
@@ -2046,6 +2052,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             await Task.WhenAll(HardwareOperation, LightingPort.DrainStarted.Task)
                 .WaitAsync(TestDeadlockGuard);
         }
+    }
+
+    private sealed class CountingGpuActivitySource : IGpuActivitySource, IDisposable
+    {
+        public int DisposeCount { get; private set; }
+
+        public bool IsActive() => false;
+
+        public void Dispose() => DisposeCount++;
     }
 
     private sealed class FakeQueryPort : IBatteryQuerySequencePort

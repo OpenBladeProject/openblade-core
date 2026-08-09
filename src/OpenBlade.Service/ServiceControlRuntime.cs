@@ -3892,9 +3892,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            bool gpuClockOffsetConfirmationInvalidated = false;
+            if (deviceProvider is IGpuClockOffsetConfirmationInvalidator invalidator)
+            {
+                gpuClockOffsetConfirmationInvalidated =
+                    await invalidator.InvalidateGpuClockOffsetConfirmationAsync(
+                        cancellationToken).ConfigureAwait(false);
+            }
+
             if (pendingResumeStateBaseline is { } baseline)
             {
-                pendingResumeStateBaseline = baseline with { ResumeStarted = true };
+                pendingResumeStateBaseline = baseline with
+                {
+                    ResumeStarted = true,
+                    GpuClockOffsetConfirmationInvalidated =
+                        gpuClockOffsetConfirmationInvalidated,
+                };
             }
         }
         finally
@@ -5909,7 +5922,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         var compared = new List<DeviceSubsystem>(4);
         if (baseline.Confirmed.Performance is not null
-            && observed.Performance is not null)
+            && observed.Performance is not null
+            && !baseline.GpuClockOffsetConfirmationInvalidated
+            && (baseline.Confirmed.GpuClockOffsets is null
+                || observed.GpuClockOffsets is not null))
         {
             compared.Add(DeviceSubsystem.Performance);
         }
@@ -6662,7 +6678,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && (confirmed.Performance != PerformancePreset.Custom
             || confirmed.CustomPerformance == desired.CustomPerformance)
         && (desired.GpuClockTuning is null
-            || confirmed.GpuClockOffsets?.Current
+            || confirmed.GpuClockOffsets is null
+            || confirmed.GpuClockOffsets.Current
                 == desired.GpuClockTuning.EffectiveOffsets);
 
     private void CompareInitialAutomaticValue<T>(
@@ -7581,7 +7598,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool LightingRestoredDuringResume,
         bool LightingWriteApplied,
         ConfirmedDeviceState? Observed,
-        long? ObservationWindowStartedAt);
+        long? ObservationWindowStartedAt,
+        bool GpuClockOffsetConfirmationInvalidated = false);
 
     private sealed record FullDeviceObservation(
         DeviceCapabilities Capabilities,
