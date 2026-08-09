@@ -238,8 +238,8 @@ public sealed class CapabilityPresentationTests
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
         string[] expectedBadgeBindings =
         [
-            "{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}",
-            "{x:Bind ViewModel.HasProfileEditorChanges, Mode=OneWay}",
+            "{x:Bind ViewModel.HasDashboardProfileDraft, Mode=OneWay}",
+            "{x:Bind ViewModel.HasUnsavedProfileChanges, Mode=OneWay}",
             "{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}",
             "{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}",
             "{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}",
@@ -1478,13 +1478,14 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "ContentTemplate")
                     == "{StaticResource CompactProfileValuePresentationTemplate}")
             .ToArray();
-        Assert.Equal(51, comparisonValues.Length);
-        Assert.Equal(17, compactValues.Length);
+        Assert.Equal(55, comparisonValues.Length);
+        Assert.Equal(19, compactValues.Length);
         string[] expectedProperties =
         [
             "PowerMode",
             "GpuTuning",
             "Fans",
+            "BatteryProtection",
             "LightingEffect",
             "LightingBrightness",
             "LightingColor",
@@ -1511,6 +1512,14 @@ public sealed class CapabilityPresentationTests
                     $"ProfilePresentation.{property},",
                     StringComparison.Ordinal) is true);
         }
+        Assert.Single(comparisonValues, value =>
+            Attribute(value, "Content")?.Contains(
+                "BatteryPolicyPresentation,",
+                StringComparison.Ordinal) is true);
+        Assert.Single(compactValues, value =>
+            Attribute(value, "Content")?.Contains(
+                "BatteryPolicyPresentation,",
+                StringComparison.Ordinal) is true);
         Assert.All(comparisonValues, value =>
             Assert.Equal("Stretch", Attribute(value, "HorizontalContentAlignment")));
         Assert.All(compactValues, value =>

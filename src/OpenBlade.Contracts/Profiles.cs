@@ -443,6 +443,11 @@ public sealed record PowerProfile(
     // until the user saves a value for that power source.
     public LaptopBehaviorProfileSettings? LaptopBehavior { get; init; }
 
+    // Nullable only while reading profiles written before per-power-source
+    // battery protection was introduced. Persisted current-schema profiles are
+    // normalized and validated with an explicit value.
+    public bool? BatteryProtectionEnabled { get; init; }
+
     [System.Text.Json.Serialization.JsonIgnore]
     public LightingPowerPolicy EffectiveLightingPowerPolicy =>
         LightingPowerPolicy ?? OpenBlade.Contracts.LightingPowerPolicy.Disabled;
@@ -450,6 +455,10 @@ public sealed record PowerProfile(
     [System.Text.Json.Serialization.JsonIgnore]
     public LaptopBehaviorProfileSettings EffectiveLaptopBehavior =>
         LaptopBehavior ?? LaptopBehaviorProfileSettings.Unconfigured();
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool EffectiveBatteryProtectionEnabled =>
+        BatteryProtectionEnabled ?? true;
 }
 
 public sealed record LaptopBehaviorProfileSettings(
@@ -648,6 +657,7 @@ public static class ProfileDefaults
         {
             CustomPerformance = CustomPerformanceSettings.Default,
             LightingPowerPolicy = OpenBlade.Contracts.LightingPowerPolicy.Disabled,
+            BatteryProtectionEnabled = true,
         },
         new PowerProfile(
             PerformancePreset.BatterySaver,
@@ -656,6 +666,7 @@ public static class ProfileDefaults
             DisplayProfileSettings.Unconfigured())
         {
             LightingPowerPolicy = OpenBlade.Contracts.LightingPowerPolicy.Disabled,
+            BatteryProtectionEnabled = true,
         },
         new PowerProfile(
             PerformancePreset.Balanced,
@@ -664,6 +675,7 @@ public static class ProfileDefaults
             DisplayProfileSettings.Unconfigured())
         {
             LightingPowerPolicy = OpenBlade.Contracts.LightingPowerPolicy.Disabled,
+            BatteryProtectionEnabled = true,
         },
         BatteryPolicy.Create(80));
 }

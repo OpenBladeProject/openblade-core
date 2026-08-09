@@ -32,12 +32,16 @@ public sealed class ProfileAutomationStateTests
     }
 
     [Fact]
-    public void DisabledProtectionPreferenceSurvivesProfileUpdate()
+    public void DisabledProtectionProfileSurvivesProfileUpdate()
     {
-        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { BatteryProtectionEnabled = false },
+        };
         ProfileAutomationState state = new(
             profiles,
-            new BatteryAutomationPreferences(ProtectionEnabled: false),
+            new BatteryAutomationPreferences(),
             PowerSource.PluggedIn);
         ProfileSet updated = profiles with
         {
@@ -54,8 +58,14 @@ public sealed class ProfileAutomationStateTests
     public void DisabledProtectionCannotEnableTemporaryFullCharge()
     {
         ProfileAutomationState state = new(
-            ProfileDefaults.CreateSafeDefaults(),
-            new BatteryAutomationPreferences(ProtectionEnabled: false),
+            ProfileDefaults.CreateSafeDefaults() with
+            {
+                PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+                {
+                    BatteryProtectionEnabled = false,
+                },
+            },
+            new BatteryAutomationPreferences(),
             PowerSource.PluggedIn);
 
         state.EnableTemporaryFullCharge();
@@ -75,8 +85,40 @@ public sealed class ProfileAutomationStateTests
 
         state.CommitBatteryState(desired);
 
-        Assert.Same(desired, state.DesiredBattery);
-        Assert.Equal(BatteryPolicy.Create(75), state.Profiles.BatteryPolicy);
+        Assert.Equal(desired, state.DesiredBattery);
+        Assert.Equal(BatteryPolicy.Create(75), state.BatteryPolicyOverride);
+        Assert.False(state.BatteryProtectionOverride);
+        Assert.Equal(BatteryPolicy.Create(80), state.Profiles.BatteryPolicy);
+    }
+
+    [Fact]
+    public void BatteryProtection_ResolvesPerPowerProfileAndClearsOverrideOnTransition()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { BatteryProtectionEnabled = false },
+            Battery = defaults.Battery with { BatteryProtectionEnabled = true },
+            UsbC = defaults.UsbC with { BatteryProtectionEnabled = false },
+        };
+        var state = new ProfileAutomationState(
+            profiles,
+            new BatteryAutomationPreferences(),
+            PowerSource.PluggedIn);
+
+        Assert.False(state.DesiredBattery.ProtectionEnabled);
+        state.CommitBatteryState(new DesiredBatteryState(
+            profiles.BatteryPolicy,
+            protectionEnabled: true,
+            temporaryFullCharge: false));
+        Assert.True(state.BatteryProtectionOverride);
+
+        state.ChangePowerSource(PowerSource.Battery);
+        Assert.Null(state.BatteryProtectionOverride);
+        Assert.True(state.DesiredBattery.ProtectionEnabled);
+
+        state.ChangePowerSource(PowerSource.UsbC);
+        Assert.False(state.DesiredBattery.ProtectionEnabled);
     }
 
     [Fact]
@@ -175,7 +217,7 @@ public sealed class ProfileAutomationStateTests
         };
         var state = new ProfileAutomationState(
             profiles,
-            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            new BatteryAutomationPreferences(),
             PowerSource.PluggedIn);
 
         DesiredDeviceState onAc = state.Resolve(
@@ -228,7 +270,7 @@ public sealed class ProfileAutomationStateTests
         };
         ProfileAutomationState state = new(
             profiles,
-            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            new BatteryAutomationPreferences(),
             PowerSource.PluggedIn);
         state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
             PerformancePreset.Performance,
@@ -292,7 +334,7 @@ public sealed class ProfileAutomationStateTests
     {
         ProfileAutomationState state = new(
             ProfileDefaults.CreateSafeDefaults(),
-            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            new BatteryAutomationPreferences(),
             PowerSource.PluggedIn,
             new PersistentOverrideState(
                 PerformancePreset.Performance,
@@ -311,7 +353,6 @@ public sealed class ProfileAutomationStateTests
         ProfileAutomationState state = new(
             profiles,
             new BatteryAutomationPreferences(
-                ProtectionEnabled: true,
                 LastKnownLighting: profiles.PluggedIn.Lighting),
             PowerSource.PluggedIn);
 
@@ -348,7 +389,6 @@ public sealed class ProfileAutomationStateTests
         ProfileAutomationState state = new(
             ProfileDefaults.CreateSafeDefaults(),
             new BatteryAutomationPreferences(
-                ProtectionEnabled: true,
                 LastKnownLighting: lastKnown),
             PowerSource.PluggedIn);
 
@@ -419,6 +459,6 @@ public sealed class ProfileAutomationStateTests
 
     private static ProfileAutomationState CreateState(PowerSource powerSource) => new(
         ProfileDefaults.CreateSafeDefaults(),
-        new BatteryAutomationPreferences(ProtectionEnabled: true),
+        new BatteryAutomationPreferences(),
         powerSource);
 }

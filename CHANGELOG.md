@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added per-power-profile battery protection, including migration from the
+  former global setting and pending-value indicators for AC, USB-C, and battery.
+- Added the global charge limit to Profiles pending-change presentation.
 - Added a dot beside each saved Profiles value that has a pending change.
   The value cell exposes the new value through its tooltip and accessible name.
 

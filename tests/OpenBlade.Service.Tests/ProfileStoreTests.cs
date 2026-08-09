@@ -346,7 +346,10 @@ public sealed class ProfileStoreTests : IDisposable
             Assert.IsType<AudioMeterLightingParameters>(
                 result.Profiles.PluggedIn.Lighting.Parameters).DecayMilliseconds);
         string rewritten = await File.ReadAllTextAsync(path);
-        Assert.Contains("\"schemaVersion\": 10", rewritten, StringComparison.Ordinal);
+        Assert.Contains(
+            $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
+            rewritten,
+            StringComparison.Ordinal);
         Assert.Contains("\"decayMilliseconds\": 500", rewritten, StringComparison.Ordinal);
     }
 
@@ -393,7 +396,7 @@ public sealed class ProfileStoreTests : IDisposable
             Assert.IsType<AudioMeterLightingParameters>(
                 result.Profiles.PluggedIn.Lighting.Parameters).DecayMilliseconds);
         Assert.Contains(
-            "\"schemaVersion\": 10",
+            $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
             await File.ReadAllTextAsync(path),
             StringComparison.Ordinal);
     }

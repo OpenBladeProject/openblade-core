@@ -1,9 +1,14 @@
+using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
 
+// ProtectionEnabled is read only while migrating schema 1-10 configuration.
+// Current-schema writes omit it because PowerProfile owns the setting.
 public sealed record BatteryAutomationPreferences(
-    bool ProtectionEnabled,
+    [property: JsonPropertyName("protectionEnabled")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    bool? ProtectionEnabled = null,
     bool AlwaysOverrideExternalLightingChanges = false,
     LightingSettings? LastKnownLighting = null,
     KeyboardLightingControlMode KeyboardLightingControlMode =

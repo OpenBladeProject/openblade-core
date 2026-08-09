@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionThirtyEightAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionThirtyNineAndRetainExactSizeLimit()
     {
-        Assert.Equal(38, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(39, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -59,7 +59,8 @@ public sealed class ServiceMessageContractTests
             "ControllerDetectionWarning", "ExternalChanges", "Message",
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
             "ActivePowerSource", "LiveReadings",
-            "PerformanceOverride", "FanOverride", "FanControlOverride", "LightingOverride", "FullChargeOverride",
+            "PerformanceOverride", "FanOverride", "FanControlOverride", "LightingOverride",
+            "BatteryPolicyOverride", "BatteryProtectionOverride", "FullChargeOverride",
             "Firmware", "ServiceVersion", "LightingRendererOwnership", "LightingSuppressions",
             "StartupAnimationEnabled", "FunctionKeyPrimary", "GamingModeEnabled",
             "AlwaysOverrideExternalLightingChanges", "KeyboardDriverModeActive",
@@ -86,6 +87,8 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(SessionControlAccess), typeof(ServiceStatusSnapshot).GetProperty("ControlAccess")!.PropertyType);
         Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("AllowUntestedFirmware")!.PropertyType);
         Assert.Equal(typeof(FirmwareCompatibilityStatus), typeof(ServiceStatusSnapshot).GetProperty("FirmwareCompatibility")!.PropertyType);
+        Assert.Equal(typeof(BatteryPolicy), typeof(ServiceStatusSnapshot).GetProperty("BatteryPolicyOverride")!.PropertyType);
+        Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("BatteryProtectionOverride")!.PropertyType);
     }
 
     [Fact]
