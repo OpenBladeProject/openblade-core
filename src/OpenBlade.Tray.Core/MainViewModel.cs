@@ -2371,7 +2371,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         if (BatteryProtectionOverride is { } protectionEnabled)
         {
-            active.Add($"Battery protection: {(protectionEnabled ? "On" : "Off")} not saved to profile");
+            active.Add($"Battery protection: {(protectionEnabled ? "On" : "Off")} (not saved to profile)");
         }
         if (BatteryPolicyOverride is { } policy)
         {
@@ -5643,7 +5643,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool draftControlsRestored = await ClearActiveProfileHardwareOverridesAsync(
             token,
             thermalDifference ? ProfileDraftGroup.Lighting : null);
-        bool controlsRestored = thermalControlsRestored & draftControlsRestored;
+        bool controlsRestored = thermalControlsRestored && draftControlsRestored;
         bool displayRestored = activeProfileDraftDisplay is null
             || await RestoreSavedDisplayProfileAsync(source.Value, displayToRestore, token);
         LaptopBehaviorProfileSettings savedLaptop = GetProfile(source.Value).EffectiveLaptopBehavior;

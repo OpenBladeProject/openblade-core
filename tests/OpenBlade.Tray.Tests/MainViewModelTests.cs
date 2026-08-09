@@ -1634,7 +1634,7 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.HasActiveChanges);
 
         Assert.Contains(
-            "Battery protection: Off not saved to profile",
+            "Battery protection: Off (not saved to profile)",
             viewModel.ActiveChangesText,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -1642,7 +1642,7 @@ public sealed class MainViewModelTests
             viewModel.ActiveChangesText,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Battery protection: Off not saved to profile",
+            "Battery protection: Off (not saved to profile)",
             viewModel.ManualOverrideStatus,
             StringComparison.Ordinal);
     }
