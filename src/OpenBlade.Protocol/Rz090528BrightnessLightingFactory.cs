@@ -732,6 +732,28 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         CancellationToken cancellationToken) =>
         Reject(cancellationToken);
 
+    public async Task<LightingRendererOwnershipState> RelinquishRendererAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await StopStreamCoreAsync().ConfigureAwait(false);
+            lock (effectSync)
+            {
+                LightingRendererOwnershipState observed = ownershipState;
+                activeEffect = null;
+                lastDeliveredState = null;
+                ownershipState = LightingRendererOwnershipState.None;
+                return observed;
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public Task<LightingRendererOwnershipState> InvalidateAsync() => CloseAsync();
 
     public ValueTask DisposeAsync() => new(CloseAsync());

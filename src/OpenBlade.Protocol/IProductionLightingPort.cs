@@ -87,6 +87,13 @@ public interface IProductionLightingPort : IAsyncDisposable
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Stops the live renderer and relinquishes effect ownership without
+    /// closing the command port or changing keyboard Driver mode.
+    /// </summary>
+    Task<LightingRendererOwnershipState> RelinquishRendererAsync(
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Stops and disposes the live renderer, returning its final ownership state
     /// after the render stream has settled and before ownership is relinquished.
     /// </summary>
