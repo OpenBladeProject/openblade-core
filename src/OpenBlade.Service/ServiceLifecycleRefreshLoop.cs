@@ -106,6 +106,7 @@ public sealed class ServiceLifecycleRefreshLoop
                             break;
                         case ServiceLifecycleTrigger.Resumed:
                             await runtime.InvalidateLightingRendererAsync(stoppingToken);
+                            await runtime.BeginResumeValidationAsync(stoppingToken);
                             if (lowPowerGate.IsActive)
                             {
                                 await runtime.CancelResumeValidationAsync(stoppingToken);
@@ -114,7 +115,6 @@ public sealed class ServiceLifecycleRefreshLoop
                             }
                             else
                             {
-                                await runtime.BeginResumeValidationAsync(stoppingToken);
                                 await runtime.HandlePowerSourceChangedAsync(stoppingToken);
                                 await runtime.RestoreLightingRendererAsync(stoppingToken);
                                 await runtime.CompleteResumeValidationAsync(stoppingToken);

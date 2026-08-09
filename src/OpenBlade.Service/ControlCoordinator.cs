@@ -3,23 +3,6 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
-internal interface IGpuClockOffsetManagementDevice
-{
-    Task SetPerformanceAsync(
-        PerformancePreset value,
-        CustomPerformanceSettings? customPerformance,
-        GpuClockOffsetSettings? gpuClockOffsets,
-        bool retainGpuClockOffsetManagement,
-        CancellationToken cancellationToken);
-
-    Task SetGpuClockOffsetsAsync(
-        GpuClockOffsetSettings value,
-        bool retainManagement,
-        CancellationToken cancellationToken);
-
-    Task RelinquishGpuClockOffsetManagementAsync(CancellationToken cancellationToken);
-}
-
 internal sealed record ScopedApplyOutcome(
     ControlResult Result,
     ConfirmedDeviceState? Readback,
@@ -572,6 +555,7 @@ public sealed class ControlCoordinator
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
+            EnsureGpuClockOffsetManagementContract(capabilities);
             desired = DropUnsupportedGpuClockTuning(desired, capabilities);
             if (desired.GpuClockTuning is null)
             {
@@ -934,6 +918,7 @@ public sealed class ControlCoordinator
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
+            EnsureGpuClockOffsetManagementContract(capabilities);
             cancellationToken.ThrowIfCancellationRequested();
             ConfirmedDeviceState initial = await device.ReadStateAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
@@ -1085,6 +1070,7 @@ public sealed class ControlCoordinator
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
+            EnsureGpuClockOffsetManagementContract(capabilities);
             cancellationToken.ThrowIfCancellationRequested();
             if (!supported(capabilities))
             {
@@ -1578,7 +1564,7 @@ public sealed class ControlCoordinator
             : DeviceSubsystemOrder.IsManualFanMode(desired)
                 && DeviceSubsystemOrder.IsManualFanMode(confirmed);
 
-    private static bool PerformanceMatches(
+    private bool PerformanceMatches(
         ConfirmedDeviceState state,
         PerformancePreset performance,
         CustomPerformanceSettings? customPerformance,
@@ -1592,7 +1578,25 @@ public sealed class ControlCoordinator
         && (gpuClockTuning is null
             || (gpuClockTuning.Enabled
                 ? state.GpuClockOffsets?.Current == gpuClockTuning.EffectiveOffsets
-                : state.GpuClockOffsets is null));
+                : device is IGpuClockOffsetManagementDevice managedDevice
+                    ? state.GpuClockOffsets is null
+                        && managedDevice.GpuClockOffsetManagementState is
+                            GpuClockOffsetManagementState.ResetConfirmed
+                            or GpuClockOffsetManagementState
+                                .RelinquishedDefaultConfirmed
+                    : state.GpuClockOffsets?.Current ==
+                        GpuClockOffsetSettings.Default));
+
+    private void EnsureGpuClockOffsetManagementContract(
+        DeviceCapabilities capabilities)
+    {
+        if (capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite }
+            && device is not IGpuClockOffsetManagementDevice)
+        {
+            throw new CapabilityUnavailableException(
+                "Writable GPU tuning requires serialized service management support.");
+        }
+    }
 
     private static bool CanApplyGpuClockOffsetsOnly(
         ConfirmedDeviceState state,

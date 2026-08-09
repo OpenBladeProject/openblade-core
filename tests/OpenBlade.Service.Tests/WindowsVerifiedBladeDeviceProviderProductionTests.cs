@@ -130,6 +130,49 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task ResumeInvalidation_DropsStaleConfirmationAndRefreshesWhenGpuActivates()
+    {
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var firstReadPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var secondReadPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var gpu = new FakeGpuClockOffsetController();
+        var activity = new FixedGpuActivitySource(IsActive: false);
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, firstReadPort, secondReadPort),
+            gpu,
+            activity);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        IGpuClockOffsetConfirmationInvalidator invalidator = provider;
+        var requested = new GpuClockOffsetSettings(125, 500);
+
+        await device.SetGpuClockOffsetsAsync(requested, default);
+        await invalidator.InvalidateGpuClockOffsetConfirmationAsync(default);
+        gpu.SetCurrent(GpuClockOffsetSettings.Default);
+
+        ConfirmedDeviceState inactive = await device.ReadStateAsync(default);
+        activity.Active = true;
+        ConfirmedDeviceState active = await device.ReadStateAsync(default);
+
+        Assert.Equal(2, gpu.QueryCount);
+        Assert.Null(inactive.GpuClockOffsets);
+        Assert.Equal(GpuClockOffsetSettings.Default, active.GpuClockOffsets?.Current);
+    }
+
+    [Fact]
     public async Task RelinquishedOffsets_AreNotQueriedEvenWhenGpuIsActive()
     {
         DeviceCapabilities capabilities = WritableGpuCapabilities(
@@ -155,6 +198,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
         await device.SetGpuClockOffsetsAsync(requested, default);
         await managedDevice.RelinquishGpuClockOffsetManagementAsync(default);
+        await ((IGpuClockOffsetConfirmationInvalidator)provider)
+            .InvalidateGpuClockOffsetConfirmationAsync(default);
         ConfirmedDeviceState state = await device.ReadStateAsync(default);
 
         Assert.Equal(1, gpu.QueryCount);
@@ -508,6 +553,145 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(2, gpu.QueryCount);
         Assert.Equal([requested, GpuClockOffsetSettings.Default], gpu.Writes);
         Assert.Null(state.GpuClockOffsets);
+    }
+
+    [Fact]
+    public async Task SetPerformance_DisabledResetRelinquishesAfterCombinedWrite()
+    {
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Silent,
+                FanMode.Automatic));
+        var statePort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var gpu = new FakeGpuClockOffsetController();
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, port, statePort),
+            gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        IGpuClockOffsetManagementDevice managedDevice =
+            Assert.IsAssignableFrom<IGpuClockOffsetManagementDevice>(device);
+
+        await managedDevice.SetPerformanceAsync(
+            PerformancePreset.Balanced,
+            customPerformance: null,
+            GpuClockOffsetSettings.Default,
+            retainGpuClockOffsetManagement: false,
+            default);
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Equal(1, port.SetPerformanceCount);
+        Assert.Equal(1, gpu.QueryCount);
+        Assert.Equal([GpuClockOffsetSettings.Default], gpu.Writes);
+        Assert.Null(state.GpuClockOffsets);
+    }
+
+    [Fact]
+    public async Task DisabledUnknownOffsets_ResetOnceThenRemainWakeFree()
+    {
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        FakeProductionPort[] ports = Enumerable.Range(0, 5)
+            .Select(_ => new FakeProductionPort(
+                capabilities,
+                BatteryValidationSetting.Limit80,
+                temporary: null,
+                performanceFan: new ProductionPerformanceFanState(
+                    PerformancePreset.Balanced,
+                    FanMode.Automatic)))
+            .ToArray();
+        var gpu = new FakeGpuClockOffsetController();
+        gpu.SetCurrent(new GpuClockOffsetSettings(125, 500));
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, ports),
+            gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome first = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Balanced,
+            customPerformance: null,
+            GpuClockTuningSettings.Disabled,
+            default);
+        ScopedApplyOutcome second = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Balanced,
+            customPerformance: null,
+            GpuClockTuningSettings.Disabled,
+            default);
+
+        Assert.Equal(ControlResultStatus.Applied, first.Result.Status);
+        Assert.Equal(ControlResultStatus.Unchanged, second.Result.Status);
+        Assert.Equal(1, gpu.QueryCount);
+        Assert.Equal([GpuClockOffsetSettings.Default], gpu.Writes);
+        Assert.Equal(
+            GpuClockOffsetManagementState.ResetConfirmed,
+            ((IGpuClockOffsetManagementDevice)device).GpuClockOffsetManagementState);
+    }
+
+    [Fact]
+    public async Task ConfirmedDefaultReset_SkipsNvmlAcrossPresetAndProfileTransitions()
+    {
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
+            new HashSet<PerformancePreset>
+            {
+                PerformancePreset.Balanced,
+                PerformancePreset.Performance,
+            },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var performancePort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var balancedPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var gpu = new FakeGpuClockOffsetController();
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, performancePort, balancedPort),
+            gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        IGpuClockOffsetManagementDevice managedDevice =
+            Assert.IsAssignableFrom<IGpuClockOffsetManagementDevice>(device);
+
+        await managedDevice.SetGpuClockOffsetsAsync(
+            GpuClockOffsetSettings.Default,
+            retainManagement: false,
+            default);
+        await managedDevice.SetPerformanceAsync(
+            PerformancePreset.Performance,
+            customPerformance: null,
+            GpuClockOffsetSettings.Default,
+            retainGpuClockOffsetManagement: false,
+            default);
+        await managedDevice.RelinquishGpuClockOffsetManagementAsync(default);
+        await managedDevice.RelinquishGpuClockOffsetManagementAsync(default);
+        await managedDevice.SetPerformanceAsync(
+            PerformancePreset.Balanced,
+            customPerformance: null,
+            GpuClockOffsetSettings.Default,
+            retainGpuClockOffsetManagement: false,
+            default);
+
+        Assert.Equal(1, gpu.QueryCount);
+        Assert.Equal([GpuClockOffsetSettings.Default], gpu.Writes);
+        Assert.Equal(1, performancePort.SetPerformanceCount);
+        Assert.Equal(1, balancedPort.SetPerformanceCount);
+        Assert.Equal(
+            GpuClockOffsetManagementState.ResetConfirmed,
+            managedDevice.GpuClockOffsetManagementState);
     }
 
     [Fact]
@@ -1197,6 +1381,63 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task RelinquishWaitsForPairedGpuWriteAndWinsManagementOrdering()
+    {
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic }) with
+        {
+            ChargeLimits = new HashSet<int> { 80 },
+        };
+        var blockedWrite = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            blockPerformanceWrite: true);
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, blockedWrite),
+            new FakeGpuClockOffsetController());
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        IGpuClockOffsetManagementDevice managedDevice =
+            Assert.IsAssignableFrom<IGpuClockOffsetManagementDevice>(device);
+
+        Task write = managedDevice.SetPerformanceAsync(
+            PerformancePreset.Balanced,
+            customPerformance: null,
+            new GpuClockOffsetSettings(100, 500),
+            retainGpuClockOffsetManagement: true,
+            default);
+        await blockedWrite.WriteStarted.Task;
+        Task relinquish = managedDevice.RelinquishGpuClockOffsetManagementAsync(default);
+
+        Assert.False(relinquish.IsCompleted);
+
+        blockedWrite.ReleaseWrite();
+        await write;
+        await relinquish;
+
+        Assert.Equal(
+            GpuClockOffsetManagementState.Relinquished,
+            managedDevice.GpuClockOffsetManagementState);
+    }
+
+    [Fact]
+    public async Task RelinquishAfterDisposeIsRejected()
+    {
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var provider = ReadyProvider(new FakeProductionFactory(capabilities));
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        IGpuClockOffsetManagementDevice managedDevice =
+            Assert.IsAssignableFrom<IGpuClockOffsetManagementDevice>(device);
+        provider.Dispose();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => managedDevice.RelinquishGpuClockOffsetManagementAsync(default));
+    }
+
+    [Fact]
     public async Task DisposalDrainsActiveWriteAndRejectsPrecheckedQueuedWriteWithoutOpeningPort()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
@@ -1472,12 +1713,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         bool blockWrite = false,
         ProductionPerformanceFanState? performanceFan = null,
         string? mcuVersion = null,
-        bool? startupAnimation = null) : IProductionBatteryPort
+        bool? startupAnimation = null,
+        bool blockPerformanceWrite = false) : IProductionBatteryPort
     {
         private readonly TaskCompletionSource? protectionRelease = blockProtectionQuery
             ? new(TaskCreationOptions.RunContinuationsAsynchronously)
             : null;
-        private readonly TaskCompletionSource? writeRelease = blockWrite
+        private readonly TaskCompletionSource? writeRelease =
+            blockWrite || blockPerformanceWrite
             ? new(TaskCreationOptions.RunContinuationsAsynchronously)
             : null;
 
@@ -1570,7 +1813,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
                 : Task.FromException<bool?>(StartupAnimationFailure);
         }
 
-        public Task SetPerformanceAsync(
+        public async Task SetPerformanceAsync(
             PerformancePreset value,
             CancellationToken cancellationToken)
         {
@@ -1578,10 +1821,18 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             SetPerformanceCount++;
             LastPerformance = value;
             AfterPerformanceWrite?.Invoke();
-            return WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
+            if (blockPerformanceWrite)
+            {
+                WriteStarted.TrySetResult();
+                await writeRelease!.Task.WaitAsync(cancellationToken);
+            }
+            if (WriteFailure is not null)
+            {
+                throw WriteFailure;
+            }
         }
 
-        public Task SetCustomPerformanceAsync(
+        public async Task SetCustomPerformanceAsync(
             CustomPerformanceSettings value,
             CancellationToken cancellationToken)
         {
@@ -1589,7 +1840,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             SetCustomPerformanceCount++;
             LastCustomPerformance = value;
             AfterPerformanceWrite?.Invoke();
-            return WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
+            if (blockPerformanceWrite)
+            {
+                WriteStarted.TrySetResult();
+                await writeRelease!.Task.WaitAsync(cancellationToken);
+            }
+            if (WriteFailure is not null)
+            {
+                throw WriteFailure;
+            }
         }
 
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken)
@@ -1710,11 +1969,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         }
     }
 
-    private sealed record FixedGpuActivitySource(bool IsActive) : IGpuActivitySource, IDisposable
+    private sealed class FixedGpuActivitySource(bool IsActive)
+        : IGpuActivitySource, IDisposable
     {
+        public bool Active { get; set; } = IsActive;
+
         public bool Disposed { get; private set; }
 
-        bool IGpuActivitySource.IsActive() => IsActive;
+        bool IGpuActivitySource.IsActive() => Active;
 
         public void Dispose() => Disposed = true;
     }

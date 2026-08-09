@@ -5242,6 +5242,41 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Resume_InvalidatesGpuClockConfirmationBeforeStateRead()
+    {
+        TestContext context = CreateWritableContext();
+        var calls = new List<string>();
+        context.Provider.AfterGpuClockOffsetInvalidation = () => calls.Add("InvalidateGpu");
+        context.Device.AfterReadState = () => calls.Add("State");
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new SingleLifecycleEventSource(ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Provider.GpuClockOffsetInvalidationCount);
+        Assert.Equal("InvalidateGpu", calls[0]);
+        Assert.Contains("State", calls);
+    }
+
+    [Fact]
+    public async Task Resume_InvalidatesGpuClockConfirmationWhenDeviceIsUnavailable()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new SingleLifecycleEventSource(ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Provider.GpuClockOffsetInvalidationCount);
+    }
+
+    [Fact]
     public async Task ResumeValidation_LifecyclePathDisclosesLightingRestoreWrite()
     {
         TestContext context = CreateWritableContext();
@@ -5276,6 +5311,82 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(settersBeforeResume + 1, context.Device.TotalSetterCalls);
         Assert.Equal(1, context.Device.LightingSetCalls);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_DoesNotClaimPowerRetainedAfterDefaultResetInvalidates()
+    {
+        TestContext context = CreateWritableContext();
+        context.Provider.GpuClockOffsetConfirmationRequiresRevalidation = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new SequenceLifecycleEventSource(
+                ServiceLifecycleTrigger.Suspending,
+                ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.DoesNotContain(
+            "retained control state for Power mode",
+            validation.Detail,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Unavailable for comparison: Power mode.",
+            validation.Detail,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DisabledGpuReset_DoesNotBecomeExternalDuringPowerTransition()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            GpuOverclock = new GpuOverclockCapabilities(
+                new DeviceNumericRange(-1000, 400, null),
+                new DeviceNumericRange(-1000, 3000, null),
+                DeviceFeatureAccess.ReadWrite),
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                GpuClockTuning = GpuClockTuningSettings.Disabled,
+            },
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            profiles.PluggedIn.Performance,
+            profiles.PluggedIn.Fans,
+            ConfirmedBattery(80),
+            profiles.PluggedIn.Lighting);
+        context.Device.GpuClockOffsetManagementState =
+            GpuClockOffsetManagementState.ResetConfirmed;
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            GpuClockTuningSettings.Disabled,
+            context.Runtime.GetStatus().Profiles.PluggedIn.GpuClockTuning);
+        Assert.Null(context.Runtime.GetStatus().Profiles.Battery.GpuClockTuning);
+        int performanceWrites = context.Device.PerformanceSetCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(
+            DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(performanceWrites + 1, context.Device.PerformanceSetCalls);
     }
 
     [Fact]
@@ -8478,7 +8589,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     private sealed class CountingProvider(bool available, IBladeDevice device)
-        : IVerifiedBladeDeviceProvider
+        : IVerifiedBladeDeviceProvider, IGpuClockOffsetConfirmationInvalidator
     {
         public bool Available { get; set; } = available;
 
@@ -8507,6 +8618,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Action? AfterTryGet { get; set; }
 
         public int InvalidationCount { get; private set; }
+
+        public int GpuClockOffsetInvalidationCount { get; private set; }
+
+        public Action? AfterGpuClockOffsetInvalidation { get; set; }
 
         public Exception? InvalidationFailure { get; set; }
 
@@ -8570,10 +8685,28 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 observed,
                 InvalidationDriverModeRestoreOutcome));
         }
+
+        public bool GpuClockOffsetConfirmationRequiresRevalidation { get; set; }
+
+        public Task<bool> InvalidateGpuClockOffsetConfirmationAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            GpuClockOffsetInvalidationCount++;
+            AfterGpuClockOffsetInvalidation?.Invoke();
+            return Task.FromResult(GpuClockOffsetConfirmationRequiresRevalidation);
+        }
     }
 
-    private sealed class CountingBladeDevice : IBladeDevice
+    private sealed class CountingBladeDevice :
+        IBladeDevice,
+        IGpuClockOffsetManagementDevice
     {
+        public GpuClockOffsetManagementState GpuClockOffsetManagementState
+        {
+            get;
+            set;
+        } = GpuClockOffsetManagementState.Relinquished;
         public int TotalCalls { get; private set; }
 
         public int PerformanceSetCalls { get; private set; }
@@ -8866,10 +8999,88 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Task SetGpuClockOffsetsAsync(
             GpuClockOffsetSettings value,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Capabilities.GpuOverclock is not { Access: DeviceFeatureAccess.ReadWrite })
+            {
+                return Task.FromException(
+                    new CapabilityUnavailableException(
+                        "GPU clock tuning is unavailable in this test device."));
+            }
+
+            GpuClockOffsetManagementState = GpuClockOffsetManagementState.Managed;
+            ConfirmedState = ConfirmedState with
+            {
+                GpuClockOffsets = new GpuClockOffsetCapabilities(
+                    "Test NVIDIA GPU",
+                    new GpuClockOffsetRange(-1000, 400, value.CoreMegahertz),
+                    new GpuClockOffsetRange(-1000, 3000, value.MemoryMegahertz)),
+            };
+            return Task.CompletedTask;
+        }
+
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            bool retainGpuClockOffsetManagement,
             CancellationToken cancellationToken) =>
-            Task.FromException(
-                new CapabilityUnavailableException(
-                    "GPU clock tuning is unavailable in this test device."));
+            SetManagedPerformanceAsync(
+                value,
+                customPerformance,
+                gpuClockOffsets,
+                retainGpuClockOffsetManagement,
+                cancellationToken);
+
+        public Task SetGpuClockOffsetsAsync(
+            GpuClockOffsetSettings value,
+            bool retainManagement,
+            CancellationToken cancellationToken)
+        {
+            if (!retainManagement && value == GpuClockOffsetSettings.Default)
+            {
+                GpuClockOffsetManagementState =
+                    GpuClockOffsetManagementState.ResetConfirmed;
+                ConfirmedState = ConfirmedState with { GpuClockOffsets = null };
+                return Task.CompletedTask;
+            }
+            return SetGpuClockOffsetsAsync(value, cancellationToken);
+        }
+
+        public Task RelinquishGpuClockOffsetManagementAsync(
+            CancellationToken cancellationToken)
+        {
+            GpuClockOffsetManagementState =
+                GpuClockOffsetManagementState.Relinquished;
+            ConfirmedState = ConfirmedState with { GpuClockOffsets = null };
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> InvalidateGpuClockOffsetConfirmationAsync(
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
+        private async Task SetManagedPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            bool retainManagement,
+            CancellationToken cancellationToken)
+        {
+            await SetPerformanceAsync(value, customPerformance, cancellationToken);
+            if (gpuClockOffsets is null
+                || !retainManagement
+                    && gpuClockOffsets == GpuClockOffsetSettings.Default
+                    && GpuClockOffsetManagementState ==
+                        GpuClockOffsetManagementState.ResetConfirmed)
+            {
+                return;
+            }
+            await SetGpuClockOffsetsAsync(
+                gpuClockOffsets,
+                retainManagement,
+                cancellationToken);
+        }
 
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken)
         {

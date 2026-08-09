@@ -588,8 +588,10 @@ public sealed class ControlRequestHandlerTests
         }
     }
 
-    private sealed class CountingDevice : IBladeDevice
+    private sealed class CountingDevice : IBladeDevice, IGpuClockOffsetManagementDevice
     {
+        public GpuClockOffsetManagementState GpuClockOffsetManagementState =>
+            GpuClockOffsetManagementState.Relinquished;
         public int Calls { get; private set; }
         public Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken) => Count(DeviceCapabilities.Unavailable());
         public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken) => Count(new ConfirmedDeviceState(null, null, null, null));
@@ -610,6 +612,20 @@ public sealed class ControlRequestHandlerTests
         public Task SetGpuClockOffsetsAsync(
             GpuClockOffsetSettings value,
             CancellationToken cancellationToken) => Count();
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            bool retainGpuClockOffsetManagement,
+            CancellationToken cancellationToken) => Count();
+        public Task SetGpuClockOffsetsAsync(
+            GpuClockOffsetSettings value,
+            bool retainManagement,
+            CancellationToken cancellationToken) => Count();
+        public Task RelinquishGpuClockOffsetManagementAsync(
+            CancellationToken cancellationToken) => Count();
+        public Task<bool> InvalidateGpuClockOffsetConfirmationAsync(
+            CancellationToken cancellationToken) => Task.FromResult(false);
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken) => Count();
         public Task SetFanControlAsync(
             FanControlSettings value,
