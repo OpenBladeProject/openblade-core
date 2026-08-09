@@ -159,6 +159,13 @@ submodules.
 
 ## Change workflow
 
+All work that may modify repository files must use a dedicated Git worktree for
+the task. Do not implement changes, run change-producing builds or tests, stage,
+or commit from the primary landing checkout, even when it is clean. Read-only
+inspection may use the landing checkout. Create the worktree from `main` by
+default unless the user explicitly requests another base, and preserve all
+unrelated worktrees and checkout changes.
+
 1. Inspect `git status`, the affected contracts, and existing tests before
    editing. User changes and unrelated dirty files are not cleanup targets.
 2. Whenever creating an issue, apply the relevant repository labels.
