@@ -455,6 +455,12 @@ public static class FirmwareSmokeAssessment
                 "None",
                 List(snapshot.ExternalChanges)),
             Check(
+                "device.unconfirmed-writes",
+                "No hardware writes are awaiting confirmation",
+                snapshot.UnconfirmedWrites.Count == 0,
+                "None",
+                List(snapshot.UnconfirmedWrites)),
+            Check(
                 "power.source",
                 "Laptop is on the full-power AC adapter",
                 snapshot.Controls.ActivePowerSource == "PluggedIn",

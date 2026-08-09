@@ -837,12 +837,25 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Visibility=\"{x:Bind ViewModel.HasExternalChanges, Mode=OneWay}\"",
+            "Visibility=\"{x:Bind ViewModel.ShowReapplyChangedSettings, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("OnReapplyChangedSettingsClick", window, StringComparison.Ordinal);
         Assert.Contains(
             "ViewModel.ReapplyChangedSettingsAsync(CancellationToken.None)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"Check current state\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.HasUnconfirmedWrites, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("OnCheckCurrentStateClick", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.CheckCurrentStateAsync(CancellationToken.None)",
             window,
             StringComparison.Ordinal);
     }

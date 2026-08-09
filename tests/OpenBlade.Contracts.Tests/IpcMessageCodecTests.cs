@@ -414,7 +414,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(39, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(40, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -678,7 +678,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(39, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(40, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1275,6 +1275,107 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task UnconfirmedWrites_RoundTripWhenPopulated()
+    {
+        ServiceStatusSnapshot expected = CreateStatus() with
+        {
+            UnconfirmedWrites = [DeviceSubsystem.Performance, DeviceSubsystem.Battery],
+        };
+
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+
+        Assert.Equal(expected.UnconfirmedWrites, actual.UnconfirmedWrites);
+    }
+
+    [Fact]
+    public async Task UnconfirmedWrites_DefaultToEmptyWhenOlderWriterOmitsProperty()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        byte[] framedBytes = encoded.ToArray();
+        int payloadLength = BinaryPrimitives.ReadInt32LittleEndian(framedBytes);
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(Encoding.UTF8.GetString(
+                framedBytes,
+                sizeof(int),
+                payloadLength)));
+        JsonObject status = Assert.IsType<JsonObject>(
+            root["status"]);
+        Assert.True(status.Remove("unconfirmedWrites"));
+
+        ServiceStatusEvent actual = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Empty(actual.Status.UnconfirmedWrites);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsMissingUnconfirmedWriteCollection()
+    {
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            UnconfirmedWrites = null!,
+        });
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnsortedUnconfirmedWrites()
+    {
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            UnconfirmedWrites = [DeviceSubsystem.Lighting, DeviceSubsystem.Fans],
+        });
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsDuplicateUnconfirmedWrites()
+    {
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            UnconfirmedWrites = [DeviceSubsystem.Fans, DeviceSubsystem.Fans],
+        });
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsMoreThanFourUnconfirmedWrites()
+    {
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            UnconfirmedWrites =
+            [
+                DeviceSubsystem.Performance,
+                DeviceSubsystem.Fans,
+                DeviceSubsystem.Battery,
+                DeviceSubsystem.Lighting,
+                DeviceSubsystem.Lighting,
+            ],
+        });
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsUnknownUnconfirmedSubsystemValue()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            UnconfirmedWrites = [(DeviceSubsystem)9],
+        };
+        ServiceServerFrame frame = new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(JsonSerializer.Serialize(frame)),
+                CancellationToken.None));
+    }
+
+    [Fact]
     public async Task WriteServerFrameAsync_RejectsMoreThanFourExternalChanges()
     {
         ServiceStatusSnapshot status = CreateStatus() with
@@ -1531,6 +1632,7 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.PotentialControllers, actual.PotentialControllers);
         Assert.Equal(expected.ControllerDetectionWarning, actual.ControllerDetectionWarning);
         Assert.Equal(expected.ExternalChanges, actual.ExternalChanges);
+        Assert.Equal(expected.UnconfirmedWrites, actual.UnconfirmedWrites);
         Assert.Equal(expected.Message, actual.Message);
         Assert.NotNull(expected.Capabilities);
         Assert.NotNull(actual.Capabilities);

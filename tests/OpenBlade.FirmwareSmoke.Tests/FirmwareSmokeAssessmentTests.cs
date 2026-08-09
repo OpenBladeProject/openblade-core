@@ -580,6 +580,7 @@ public sealed class FirmwareSmokeAssessmentTests
         PotentialControllers: [],
         ControllerDetectionWarning: null,
         ExternalChanges: [],
+        UnconfirmedWrites: [],
         Message: "Verified device state observed.",
         new FirmwareIdentity("3.01", "1.04", mcu, "98.3.5c.40.3d"),
         new FirmwareSmokeCapabilities(

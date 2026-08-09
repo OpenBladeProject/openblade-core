@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 39;
+    public const int ProtocolVersion = 40;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -306,6 +306,31 @@ public static class IpcMessageCodec
         if (!status.ExternalChanges.SequenceEqual(status.ExternalChanges.Order()))
         {
             throw InvalidStatus("external-change collection is not sorted");
+        }
+
+        if (status.UnconfirmedWrites is null)
+        {
+            throw InvalidStatus("unconfirmed-write collection is missing");
+        }
+
+        if (status.UnconfirmedWrites.Count > 4)
+        {
+            throw InvalidStatus("unconfirmed-write collection exceeds four entries");
+        }
+
+        if (!status.UnconfirmedWrites.All(Enum.IsDefined))
+        {
+            throw InvalidStatus("unconfirmed-write collection contains an unknown subsystem");
+        }
+
+        if (status.UnconfirmedWrites.Distinct().Count() != status.UnconfirmedWrites.Count)
+        {
+            throw InvalidStatus("unconfirmed-write collection contains duplicates");
+        }
+
+        if (!status.UnconfirmedWrites.SequenceEqual(status.UnconfirmedWrites.Order()))
+        {
+            throw InvalidStatus("unconfirmed-write collection is not sorted");
         }
 
         if (status.Message is null)

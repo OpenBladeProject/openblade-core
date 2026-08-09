@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionThirtyNineAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionFortyAndRetainExactSizeLimit()
     {
-        Assert.Equal(39, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(40, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -56,7 +56,7 @@ public sealed class ServiceMessageContractTests
         string[] expected =
         [
             "Revision", "DeviceVerified", "WritesBlocked", "PotentialControllers",
-            "ControllerDetectionWarning", "ExternalChanges", "Message",
+            "ControllerDetectionWarning", "ExternalChanges", "UnconfirmedWrites", "Message",
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
             "ActivePowerSource", "LiveReadings",
             "PerformanceOverride", "FanOverride", "FanControlOverride", "LightingOverride",

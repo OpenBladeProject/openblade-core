@@ -27,6 +27,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Indeterminate hardware writes are now shown as unconfirmed instead of as
+  external changes. OpenBlade blocks retries until a read-only current-state
+  check confirms the result or identifies a real mismatch.
 - Stopped OpenBlade's keyboard renderer from fighting Razer Synapse when
   **Override external lighting changes** is off. OpenBlade now stops its frame
   stream without closing the lighting port or changing keyboard Driver mode,

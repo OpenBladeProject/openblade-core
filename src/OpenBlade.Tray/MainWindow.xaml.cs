@@ -1405,6 +1405,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             () => ViewModel.ReapplyChangedSettingsAsync(CancellationToken.None),
             nameof(OnReapplyChangedSettingsClick));
 
+    private async void OnCheckCurrentStateClick(
+        object sender,
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => ViewModel.CheckCurrentStateAsync(CancellationToken.None),
+            nameof(OnCheckCurrentStateClick));
+
     private async void OnWindowsDynamicLightingToggled(
         object sender,
         RoutedEventArgs args) =>

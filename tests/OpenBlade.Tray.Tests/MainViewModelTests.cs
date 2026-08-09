@@ -1602,6 +1602,51 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task UnconfirmedWrite_OffersReadOnlyCheckAndHidesReapply()
+    {
+        var observation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var client = new FakeServiceClient { PendingObservation = observation };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot pending = CreateStatus(verified: true, blocked: true) with
+        {
+            ExternalChanges = [DeviceSubsystem.Fans],
+            UnconfirmedWrites = [DeviceSubsystem.Performance],
+        };
+        client.Publish(pending);
+        await WaitUntilAsync(() => viewModel.HasUnconfirmedWrites);
+
+        Assert.Equal("State not confirmed", viewModel.AttentionSummary);
+        Assert.Equal("State not confirmed", viewModel.AttentionBadgeLabel);
+        Assert.True(viewModel.CanCheckCurrentState);
+        Assert.False(viewModel.CanReapplyChangedSettings);
+        Assert.False(viewModel.ShowReapplyChangedSettings);
+        Assert.Contains("will not retry", viewModel.UnconfirmedWritesText);
+
+        Task<bool> check = viewModel.CheckCurrentStateAsync(CancellationToken.None);
+        await client.ObservationStarted.Task;
+        Assert.Equal([LiveReadingSensors.None], client.RequestedLiveReadings);
+        Assert.Equal(0, client.ReapplyChangedSettingsCalls);
+        observation.SetResult(pending with
+        {
+            Revision = 2,
+            WritesBlocked = false,
+            ExternalChanges = [],
+            UnconfirmedWrites = [],
+            ConfirmedState = pending.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Performance,
+            },
+        });
+
+        Assert.True(await check);
+        Assert.False(viewModel.HasUnconfirmedWrites);
+        Assert.False(viewModel.IsCheckCurrentStateOperationInProgress);
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+    }
+
+    [Fact]
     public async Task UsbC_InvalidObservedThermalStateKeepsProfileSelectionPresentable()
     {
         var client = new FakeServiceClient();
