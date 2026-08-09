@@ -5,6 +5,26 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void DashboardCustomPerformanceRowsUseNeutralSubcardBackgrounds()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string powerModeCard = SliceMethod(
+            xaml,
+            "<DataTemplate x:Key=\"DashboardPowerModeCardTemplate\"",
+            "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
+
+        Assert.Equal(
+            5,
+            CountOccurrences(
+                powerModeCard,
+                "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.DoesNotContain(
+            "Style=\"{StaticResource SettingsSubcardStyle}\"",
+            powerModeCard,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DashboardGpuTuningDescriptionUsesDefinedSharedStyle()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
@@ -868,8 +888,8 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
-        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
+        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);

@@ -2671,6 +2671,100 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task PerformanceSelection_NormalizesLegacyGpuTuningAfterDraft()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
+            CreateLegacyGpuTuningStatus("Legacy GPU tuning profile ready");
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Legacy GPU tuning profile ready");
+        Assert.Equal(legacyOffsets, viewModel.CurrentGpuClockOffsets);
+
+        await viewModel.SetGpuClockTuningEnabledAsync(
+            enabled: false,
+            CancellationToken.None);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Custom);
+
+        PerformanceOverride requested = Assert.IsType<PerformanceOverride>(
+            client.PerformanceOverride);
+        Assert.True(requested.IsWellFormed());
+        Assert.Null(requested.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(
+            new GpuClockTuningSettings(
+                Enabled: false,
+                legacyOffsets),
+            requested.GpuClockTuning);
+        // WriteRequestAsync validates the request before serializing it.
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(
+            encoded,
+            new SetPerformanceOverrideRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                requested),
+            CancellationToken.None);
+        Assert.NotEqual(0, encoded.Length);
+    }
+
+    [Fact]
+    public async Task PerformanceSelection_PromotesDormantLegacyGpuTuningForCustom()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
+            CreateLegacyGpuTuningStatus("Dormant legacy GPU tuning profile ready");
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Dormant legacy GPU tuning profile ready");
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Custom);
+
+        PerformanceOverride requested = Assert.IsType<PerformanceOverride>(
+            client.PerformanceOverride);
+        Assert.Null(requested.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(
+            new GpuClockTuningSettings(
+                Enabled: true,
+                legacyOffsets),
+            requested.GpuClockTuning);
+    }
+
+    [Fact]
+    public async Task ThermalProfileSave_NormalizesLegacyGpuTuningAfterDraft()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
+            CreateLegacyGpuTuningStatus("Legacy GPU tuning save profile ready");
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Legacy GPU tuning save profile ready");
+
+        await viewModel.SetGpuClockTuningEnabledAsync(
+            enabled: false,
+            CancellationToken.None);
+        Assert.True(viewModel.SaveThermalProfileDraftCommand.CanExecute(null));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveThermalProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        PowerProfile saved = Assert.IsType<ProfileSet>(client.LastProfiles).PluggedIn;
+        Assert.Null(saved.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(
+            new GpuClockTuningSettings(
+                Enabled: false,
+                legacyOffsets),
+            saved.GpuClockTuning);
+        Assert.False(viewModel.HasThermalProfileDraft);
+    }
+
+    [Fact]
     public async Task PerformanceSelection_StaysRequestedAcrossInFlightStaleStatus()
     {
         var client = new FakeServiceClient { BlockMutations = true };
@@ -6665,6 +6759,37 @@ public sealed class MainViewModelTests
             false,
             Firmware: null,
             ServiceVersion: "0.1.0-test");
+    }
+
+    private static (
+        ServiceStatusSnapshot Status,
+        GpuClockOffsetSettings LegacyOffsets) CreateLegacyGpuTuningStatus(string message)
+    {
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var legacyOffsets = new GpuClockOffsetSettings(100, 200);
+        return (
+            baseline with
+            {
+                Message = message,
+                Capabilities = baseline.Capabilities! with
+                {
+                    GpuOverclock = new GpuOverclockCapabilities(
+                        new DeviceNumericRange(-1000, 400, 10),
+                        new DeviceNumericRange(-1000, 3000, 10),
+                        DeviceFeatureAccess.ReadWrite),
+                },
+                Profiles = baseline.Profiles with
+                {
+                    PluggedIn = baseline.Profiles.PluggedIn with
+                    {
+                        CustomPerformance = CustomPerformanceSettings.Default with
+                        {
+                            GpuClockOffsets = legacyOffsets,
+                        },
+                    },
+                },
+            },
+            legacyOffsets);
     }
 
     private static HashSet<int> ChargeLimits() => [50, 55, 60, 65, 70, 75, 80];

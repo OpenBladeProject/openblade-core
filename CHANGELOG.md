@@ -43,6 +43,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   instead of being replaced by an older cached value.
 - Showed the effective **Off** defaults for Gaming mode's Windows-key and
   Alt+Tab blocks instead of presenting missing profile overrides as **Not set**.
+- Fixed `IPC request body is invalid` errors and rejected profile saves after
+  editing GPU clock tuning from a legacy profile.
+- Made dashboard Power mode subcards neutral at rest while preserving the
+  standard hover highlight for GPU tuning and Custom CPU/GPU rows.
 
 ## [0.1.0-nightly.11] - 2026-08-08
 
