@@ -1135,6 +1135,8 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
+type static class OpenBlade.Contracts.OpenBladeWindowsService
+  field const System.String Name = "OpenBlade"
 type enum OpenBlade.Contracts.OverrideLifetime
   field System.Int32 value__
   field const OpenBlade.Contracts.OverrideLifetime Persistent = 1

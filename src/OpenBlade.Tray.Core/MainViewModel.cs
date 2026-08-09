@@ -3860,17 +3860,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public async Task ShutdownOpenBladeAsync(CancellationToken cancellationToken)
-    {
-        ControlOperationResult result = await serviceClient
-            .ShutdownOpenBladeAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (result.Status != ControlOperationStatus.Stored)
-        {
-            throw new InvalidOperationException(result.Message);
-        }
-    }
-
     private readonly record struct ObservationRequestStamp(
         long Generation,
         bool BeganWithConnectedSubscription);

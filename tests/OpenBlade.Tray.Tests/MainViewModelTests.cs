@@ -5879,17 +5879,6 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ShutdownOpenBlade_RequestsTypedServiceShutdown()
-    {
-        var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
-
-        await viewModel.ShutdownOpenBladeAsync(CancellationToken.None);
-
-        Assert.True(client.ShutdownRequested);
-    }
-
-    [Fact]
     public async Task Command_SendsTypedTemporaryOverrideAndDisplaysOperationResult()
     {
         var client = new FakeServiceClient
@@ -6911,7 +6900,6 @@ public sealed class MainViewModelTests
         public bool? BatteryProtectionEnabled { get; private set; }
         public BatteryPolicy? BatteryPolicy { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
-        public bool ShutdownRequested { get; private set; }
         public ProfileSet? LastProfiles { get; private set; }
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -7161,16 +7149,6 @@ public sealed class MainViewModelTests
         {
             OneShotLaptopControl = value;
             return MutateAsync(token);
-        }
-
-        public override Task<ControlOperationResult> ShutdownOpenBladeAsync(
-            CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-            ShutdownRequested = true;
-            return Task.FromResult(new ControlOperationResult(
-                ControlOperationStatus.Stored,
-                "OpenBlade is shutting down."));
         }
 
         private async Task<ControlOperationResult> MutateAsync(CancellationToken token)

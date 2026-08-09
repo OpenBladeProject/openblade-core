@@ -2732,7 +2732,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             XamlRoot = Root.XamlRoot,
             Title = "Shut down OpenBlade?",
             Content = "This stops the app, display helper, and hardware service. "
-                + "OpenBlade will remain off until Windows restarts or the service is started again.",
+                + "Reopen OpenBlade and use Start OpenBlade in troubleshooting to turn it back on.",
             PrimaryButtonText = "Shut down",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
@@ -2763,6 +2763,66 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             };
             await failure.ShowAsync();
         }
+    }
+
+    private async void OnStartOpenBlade(object sender, RoutedEventArgs args)
+    {
+        if (!ViewModel.IsServiceUnavailable || !StartOpenBladeButton.IsEnabled)
+        {
+            return;
+        }
+
+        SetStartOpenBladeProgress(isStarting: true);
+        try
+        {
+            if (Microsoft.UI.Xaml.Application.Current is App app)
+            {
+                StartOpenBladeResult result = await app.StartOpenBladeAsync();
+                if (result == StartOpenBladeResult.AlreadyRunning)
+                {
+                    SetStartOpenBladeProgress(isStarting: false);
+                    var alreadyRunning = new ContentDialog
+                    {
+                        XamlRoot = Root.XamlRoot,
+                        Title = "OpenBlade service is already running",
+                        Content = "The tray will reconnect automatically. This can take a few seconds.",
+                        CloseButtonText = "Close",
+                        DefaultButton = ContentDialogButton.Close,
+                    };
+                    await alreadyRunning.ShowAsync();
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade service start failed: {0}", exception);
+            var failure = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "OpenBlade could not start",
+                Content = exception.Message,
+                CloseButtonText = "Close",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            await failure.ShowAsync();
+        }
+        finally
+        {
+            if (Volatile.Read(ref disposed) == 0)
+            {
+                SetStartOpenBladeProgress(isStarting: false);
+            }
+        }
+    }
+
+    private void SetStartOpenBladeProgress(bool isStarting)
+    {
+        StartOpenBladeButton.IsEnabled = !isStarting;
+        AutomationProperties.SetName(
+            StartOpenBladeButton,
+            isStarting ? "Starting OpenBlade" : "Start OpenBlade");
+        StartOpenBladeProgressRing.IsActive = isStarting;
+        StartOpenBladeProgressRing.Opacity = isStarting ? 1 : 0;
     }
 
     private async void OnExportProfiles(object sender, RoutedEventArgs args)

@@ -33,6 +33,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   keeps a fresh manual lighting action active, preserves recovery state when
   controller detection is temporarily incomplete, and reflects the active
   user's saved toggle after sign-in.
+- Prompted for administrator approval when **Shut down completely** is chosen
+  from the normal tray, while keeping the tray and Session Agent unelevated,
+  and added a troubleshooting action that starts the stopped service again.
 - Prevented the first nightly after a product-version change from replaying
   entries already published under the preceding version when its generated
   changelog pull request is still outstanding.
