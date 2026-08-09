@@ -1294,15 +1294,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     return confirmed;
                 }
 
-                GpuClockOffsetCapabilities? refreshed =
-                    ApplyGpuPolicy(gpuClockOffsets.Query());
-                if (refreshed is not null)
+                GpuClockOffsetCapabilities? observed = gpuClockOffsets.Query();
+                if (observed is null)
                 {
-                    confirmedManagedGpuClockOffsets = refreshed;
-                    return refreshed;
+                    return confirmed;
                 }
 
-                return confirmed;
+                GpuClockOffsetCapabilities? refreshed = ApplyGpuPolicy(observed);
+                confirmedManagedGpuClockOffsets = refreshed;
+                return refreshed;
             }
         }
 

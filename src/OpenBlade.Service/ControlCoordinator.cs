@@ -58,7 +58,7 @@ public sealed class ControlCoordinator
     public async Task<ControlResult> ApplyPerformanceAsync(
         PerformancePreset value,
         CancellationToken cancellationToken) =>
-        (await ApplyPerformanceOutcomeAsync(
+        (await ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
             value,
             value == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null,
             cancellationToken)).Result;
@@ -92,14 +92,24 @@ public sealed class ControlCoordinator
         CancellationToken cancellationToken) =>
         (await ApplyLightingOutcomeAsync(value, cancellationToken)).Result;
 
-    internal Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
+    /// <summary>
+    /// Applies a preset without treating omitted GPU tuning as an instruction
+    /// to relinquish existing GPU clock-offset management.
+    /// </summary>
+    internal Task<ScopedApplyOutcome> ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
         PerformancePreset value,
-        CancellationToken cancellationToken) => ApplyPerformanceOutcomeAsync(
+        CancellationToken cancellationToken) =>
+        ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
             value,
             value == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null,
             cancellationToken);
 
-    internal Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
+    /// <summary>
+    /// Applies performance without treating omitted standalone GPU tuning as
+    /// an instruction to relinquish management. Legacy offsets embedded in
+    /// custom performance are still normalized and applied.
+    /// </summary>
+    internal Task<ScopedApplyOutcome> ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
         PerformancePreset value,
         CustomPerformanceSettings? customPerformance,
         CancellationToken cancellationToken) => ApplyPerformanceOutcomeAsync(
@@ -109,6 +119,11 @@ public sealed class ControlCoordinator
             relinquishWhenUnconfigured: false,
             cancellationToken);
 
+    /// <summary>
+    /// Applies resolved profile or override GPU tuning intent. A null
+    /// <paramref name="gpuClockTuning"/> explicitly relinquishes GPU
+    /// clock-offset management before reading state.
+    /// </summary>
     internal Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
         PerformancePreset value,
         CustomPerformanceSettings? customPerformance,
@@ -315,10 +330,11 @@ public sealed class ControlCoordinator
         ScopedApplyOutcome? balancedBridge = null;
         if (requiresAutomaticBridge)
         {
-            balancedBridge = await ApplyPerformanceOutcomeAsync(
-                PerformancePreset.Balanced,
-                customPerformance: null,
-                cancellationToken).ConfigureAwait(false);
+            balancedBridge =
+                await ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
+                    PerformancePreset.Balanced,
+                    customPerformance: null,
+                    cancellationToken).ConfigureAwait(false);
             RecordWriteAttempt(writeAttempted, DeviceSubsystem.Performance, balancedBridge);
             RecordConfirmedCoupledWrite(
                 confirmedCoupledWrites,
@@ -353,7 +369,8 @@ public sealed class ControlCoordinator
                 && !fans.WriteAttempted
                 && performanceIntent != PerformancePreset.Balanced)
             {
-                ScopedApplyOutcome restored = await ApplyPerformanceOutcomeAsync(
+                ScopedApplyOutcome restored =
+                    await ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
                     performanceIntent,
                     customPerformanceIntent,
                     cancellationToken).ConfigureAwait(false);
@@ -397,7 +414,8 @@ public sealed class ControlCoordinator
             return fans;
         }
 
-        ScopedApplyOutcome performance = await ApplyPerformanceOutcomeAsync(
+        ScopedApplyOutcome performance =
+            await ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
             performanceIntent,
             customPerformanceIntent,
             cancellationToken).ConfigureAwait(false);

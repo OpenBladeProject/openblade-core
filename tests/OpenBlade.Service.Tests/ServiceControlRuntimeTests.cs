@@ -5242,7 +5242,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task Resume_InvalidatesGpuClockConfirmationBeforeStateRead()
+    public async Task ResumeOnAc_InvalidatesGpuClockConfirmationBeforeStateRead()
     {
         TestContext context = CreateWritableContext();
         var calls = new List<string>();

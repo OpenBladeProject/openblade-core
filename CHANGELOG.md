@@ -27,7 +27,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   reset is confirmed once without turning unmanaged profile reads into NVIDIA
   polls. Unmanaged transitions intentionally do not wake NVIDIA to reset
   offsets, so driver-held values may remain applied while OpenBlade stops
-  reporting them, until tuning is managed again or the driver reloads.
+  reporting them, until tuning is managed again or the driver reloads. A live
+  reading outside OpenBlade's admitted range is now reported as unavailable
+  instead of being replaced by an older cached value.
 - Showed the effective **Off** defaults for Gaming mode's Windows-key and
   Alt+Tab blocks instead of presenting missing profile overrides as **Not set**.
 
