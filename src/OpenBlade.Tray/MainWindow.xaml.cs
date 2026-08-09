@@ -3041,8 +3041,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         });
         additionalContent.Children.Add(new TextBlock
         {
-            Text = "Slider controls appear only in the middle section. Drag them into "
-                + "the order you want.",
+            Text = "Choose up to two controls for the fixed middle section. Drag them "
+                + "into the order you want.",
             Style = (Style)Root.Resources["SecondaryTextStyle"],
             TextWrapping = TextWrapping.Wrap,
         });
@@ -3088,7 +3088,43 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 queueSave: true);
         }
 
+        bool changingSliderOptions = false;
         PropertyChangedEventHandler optionChanged = (_, _) => ApplyEditor();
+        PropertyChangedEventHandler sliderChanged = (sender, args) =>
+        {
+            if (changingSliderOptions)
+            {
+                return;
+            }
+
+            changingSliderOptions = true;
+            try
+            {
+                if (args.PropertyName == nameof(TrayDashboardSliderOption.IsVisible)
+                    && sender is TrayDashboardSliderOption selected
+                    && selected.IsVisible)
+                {
+                    int excess = sliders.Count(option => option.IsVisible)
+                        - TrayDashboardPreferenceDefaults.MaximumVisibleSliders;
+                    foreach (TrayDashboardSliderOption option in sliders.Where(option =>
+                                 option != selected && option.IsVisible))
+                    {
+                        if (excess-- <= 0)
+                        {
+                            break;
+                        }
+
+                        option.IsVisible = false;
+                    }
+                }
+
+                ApplyEditor();
+            }
+            finally
+            {
+                changingSliderOptions = false;
+            }
+        };
         NotifyCollectionChangedEventHandler orderChanged = (_, _) => ApplyEditor();
         foreach (TrayDashboardControlOption option in controls)
         {
@@ -3100,7 +3136,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         foreach (TrayDashboardSliderOption option in sliders)
         {
-            option.PropertyChanged += optionChanged;
+            option.PropertyChanged += sliderChanged;
         }
         controls.CollectionChanged += orderChanged;
         sliders.CollectionChanged += orderChanged;
@@ -3124,7 +3160,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             }
             foreach (TrayDashboardSliderOption option in sliders)
             {
-                option.PropertyChanged -= optionChanged;
+                option.PropertyChanged -= sliderChanged;
             }
             TrayDashboardEditSessionChanged?.Invoke(false);
             trayDashboardCustomizationActive = false;

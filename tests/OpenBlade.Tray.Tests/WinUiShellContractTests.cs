@@ -1927,8 +1927,21 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<Setter Property=\"FontSize\" Value=\"12\" />", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"FontSize\" Value=\"11\" />", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("Padding=\"20,14,20,10\"", dashboardXaml, StringComparison.Ordinal);
-        Assert.Contains("<RowDefinition Height=\"211\" />", dashboardXaml, StringComparison.Ordinal);
+        int dashboardPage = dashboardXaml.IndexOf(
+            "<Grid x:Name=\"DashboardPage\">",
+            StringComparison.Ordinal);
+        int controlScroller = dashboardXaml.IndexOf(
+            "<ScrollViewer x:Name=\"ControlScroller\"",
+            dashboardPage,
+            StringComparison.Ordinal);
+        string dashboardRows = dashboardXaml[dashboardPage..controlScroller];
+        Assert.Contains("<RowDefinition Height=\"*\" />", dashboardRows, StringComparison.Ordinal);
+        Assert.Contains("<RowDefinition Height=\"Auto\" />", dashboardRows, StringComparison.Ordinal);
+        Assert.DoesNotContain("Height=\"211\"", dashboardRows, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"SliderSection\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Visibility=\"Collapsed\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"SliderGrid\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"SliderScroller\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ChargeLimitSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LightingBrightnessSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"GpuCoreClockSliderRow\"", dashboardXaml, StringComparison.Ordinal);
@@ -1936,12 +1949,13 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("x:Name=\"BatteryTile\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"BatteryDetail\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnBatteryProtectionClick\"", dashboardXaml, StringComparison.Ordinal);
-        Assert.Contains("IsChecked=\"{Binding BatteryProtectionEnabled, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsChecked=\"{Binding BatteryProtectionEnabled, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("IsEnabled=\"{Binding CanChangeBatteryProtection, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardChargeLimitLabel", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"BatteryPowerStatus\"", dashboardXaml, StringComparison.Ordinal);
-        Assert.Contains("Glyph=\"&#xE713;\"", dashboardXaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Open OpenBlade\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Glyph=\"&#xE713;\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("AutomationProperties.Name=\"Open OpenBlade\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Click=\"OnSettingsClick\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("DisplayMemberPath=\"Label\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("SizeChanged=\"OnRootSizeChanged\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DetailPage\"", dashboardXaml, StringComparison.Ordinal);
@@ -1953,6 +1967,9 @@ public sealed class WinUiShellContractTests
         Assert.Contains("x:Name=\"FansDetailsColumn\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("AvailableActiveFanModeOptions.Count > 1", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("UpdateSliderRows();", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("SliderSection.Visibility = row == 0", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("MaximumVisibleSliders", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("Choose up to two controls", mainWindow, StringComparison.Ordinal);
         Assert.Contains("gpuClockOffsetCommits.Schedule(requested)", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("CreateSliderOptions", mainWindow, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardSliderOptionTemplate", mainXaml, StringComparison.Ordinal);

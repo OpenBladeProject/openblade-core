@@ -31,7 +31,7 @@
             <Style x:Key="QuickTileIconStyle" TargetType="FontIcon">
                 <Setter Property="FontSize" Value="16" />
             </Style>
-            <Style x:Key="QuickSliderToggleStyle" TargetType="ToggleButton">
+            <Style x:Key="QuickSliderIconButtonStyle" TargetType="Button">
                 <Setter Property="Width" Value="36" />
                 <Setter Property="Height" Value="36" />
                 <Setter Property="Padding" Value="0" />
@@ -39,6 +39,8 @@
                 <Setter Property="MinHeight" Value="0" />
                 <Setter Property="HorizontalContentAlignment" Value="Center" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
             </Style>
             <Style x:Key="QuickTileTitleStyle"
                    TargetType="TextBlock"
@@ -58,7 +60,7 @@
             <Style x:Key="StatusTextStyle"
                    TargetType="TextBlock"
                    BasedOn="{StaticResource CaptionTextBlockStyle}">
-                <Setter Property="FontSize" Value="11" />
+                <Setter Property="FontSize" Value="12" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextTrimming" Value="CharacterEllipsis" />
                 <Setter Property="MaxLines" Value="1" />
@@ -66,7 +68,7 @@
             <Style x:Key="QuickSliderValueStyle"
                    TargetType="TextBlock"
                    BasedOn="{StaticResource CaptionTextBlockStyle}">
-                <Setter Property="FontSize" Value="11" />
+                <Setter Property="FontSize" Value="12" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="VerticalAlignment" Value="Center" />
                 <Setter Property="TextAlignment" Value="Right" />
@@ -81,8 +83,8 @@
 
         <Grid x:Name="DashboardPage">
             <Grid.RowDefinitions>
-                <RowDefinition Height="211" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <ScrollViewer x:Name="ControlScroller"
                           Padding="20,14,20,10"
@@ -221,17 +223,13 @@
                 </Grid>
             </ScrollViewer>
 
-            <Border Grid.Row="1"
-                    Padding="20,7,20,7"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="0,1,0,0">
-                <ScrollViewer x:Name="SliderScroller"
-                              HorizontalContentAlignment="Stretch"
-                              HorizontalScrollMode="Disabled"
-                              HorizontalScrollBarVisibility="Hidden"
-                              VerticalScrollMode="Enabled"
-                              VerticalScrollBarVisibility="Auto">
-                    <Grid x:Name="SliderGrid" RowSpacing="4">
+            <Border x:Name="SliderSection"
+                    Grid.Row="1"
+                    Padding="20,7"
+                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="0,1,0,0"
+                    Visibility="Collapsed">
+                <Grid x:Name="SliderGrid" RowSpacing="4">
                         <Grid x:Name="ChargeLimitSliderRow"
                               Height="48"
                               ColumnSpacing="10"
@@ -241,16 +239,15 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ToggleButton Style="{StaticResource QuickSliderToggleStyle}"
-                                          IsChecked="{Binding BatteryProtectionEnabled, Mode=OneWay}"
-                                          IsEnabled="{Binding CanChangeBatteryProtection, Mode=OneWay}"
-                                          Click="OnBatteryProtectionClick"
-                                          ToolTipService.ToolTip="Toggle charge limit"
-                                          AutomationProperties.Name="Toggle charge limit">
+                            <Button Style="{StaticResource QuickSliderIconButtonStyle}"
+                                    IsEnabled="{Binding CanChangeBatteryProtection, Mode=OneWay}"
+                                    Click="OnBatteryProtectionClick"
+                                    ToolTipService.ToolTip="Toggle charge limit"
+                                    AutomationProperties.Name="Toggle charge limit">
                                 <FontIcon Glyph="&#xE83F;"
                                           Style="{StaticResource QuickTileIconStyle}" />
-                            </ToggleButton>
-                            <Slider x:Name="GpuCoreClockSlider"
+                            </Button>
+                            <Slider x:Name="ChargeLimitSlider"
                                     Grid.Column="1"
                                     Minimum="50"
                                     Maximum="80"
@@ -307,17 +304,17 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ToggleButton Style="{StaticResource QuickSliderToggleStyle}"
-                                          IsChecked="{Binding IsGpuClockTuningEnabled, Mode=OneWay}"
-                                          IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
-                                          Click="OnGpuClockTuningClick"
-                                          ToolTipService.ToolTip="Toggle GPU clock tuning"
-                                          AutomationProperties.Name="Toggle GPU clock tuning">
+                            <Button Style="{StaticResource QuickSliderIconButtonStyle}"
+                                    IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
+                                    Click="OnGpuClockTuningClick"
+                                    ToolTipService.ToolTip="Toggle GPU clock tuning"
+                                    AutomationProperties.Name="Toggle GPU clock tuning">
                                 <TextBlock Text="C"
-                                           FontSize="11"
+                                           FontSize="12"
                                            FontWeight="SemiBold" />
-                            </ToggleButton>
-                            <Slider Grid.Column="1"
+                            </Button>
+                            <Slider x:Name="GpuCoreClockSlider"
+                                    Grid.Column="1"
                                     Minimum="{Binding GpuCoreClockOffsetMinimum, Mode=OneWay}"
                                     Maximum="{Binding GpuCoreClockOffsetMaximum, Mode=OneWay}"
                                     Value="{Binding GpuCoreClockOffsetMegahertz, Mode=OneWay}"
@@ -343,16 +340,15 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ToggleButton Style="{StaticResource QuickSliderToggleStyle}"
-                                          IsChecked="{Binding IsGpuClockTuningEnabled, Mode=OneWay}"
-                                          IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
-                                          Click="OnGpuClockTuningClick"
-                                          ToolTipService.ToolTip="Toggle GPU clock tuning"
-                                          AutomationProperties.Name="Toggle GPU clock tuning">
+                            <Button Style="{StaticResource QuickSliderIconButtonStyle}"
+                                    IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
+                                    Click="OnGpuClockTuningClick"
+                                    ToolTipService.ToolTip="Toggle GPU clock tuning"
+                                    AutomationProperties.Name="Toggle GPU clock tuning">
                                 <TextBlock Text="M"
-                                           FontSize="11"
+                                           FontSize="12"
                                            FontWeight="SemiBold" />
-                            </ToggleButton>
+                            </Button>
                             <Slider x:Name="GpuMemoryClockSlider"
                                     Grid.Column="1"
                                     Minimum="{Binding GpuMemoryClockOffsetMinimum, Mode=OneWay}"
@@ -370,8 +366,7 @@
                                 <Run Text=" MHz" />
                             </TextBlock>
                         </Grid>
-                    </Grid>
-                </ScrollViewer>
+                </Grid>
             </Border>
         </Grid>
 
@@ -429,58 +424,47 @@
         </Grid>
 
         <Border Grid.Row="1"
-                Padding="14,11"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                Height="48"
+                Padding="20,0"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                 BorderThickness="0,1,0,0">
-            <Grid ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <Grid>
                 <Grid x:Name="StatusItemsHost"
-                      ColumnSpacing="8"
+                      ColumnSpacing="12"
                       VerticalAlignment="Center">
-                    <Grid x:Name="BatteryPowerStatus" ColumnSpacing="4">
+                    <Grid x:Name="BatteryPowerStatus" ColumnSpacing="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE83F;" FontSize="12" />
+                        <FontIcon Glyph="&#xE83F;" FontSize="14" />
                         <TextBlock Grid.Column="1"
                                    Text="{Binding TrayDashboardBatteryPowerFlowLabel, Mode=OneWay}"
                                    ToolTipService.ToolTip="{Binding BatteryPowerFlowLabel, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
-                    <Grid x:Name="TemperatureStatus" ColumnSpacing="4">
+                    <Grid x:Name="TemperatureStatus" ColumnSpacing="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE9CA;" FontSize="12" />
+                        <FontIcon Glyph="&#xE9CA;" FontSize="14" />
                         <TextBlock Grid.Column="1"
                                    Text="{Binding TrayDashboardTemperatureLabel, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
-                    <Grid x:Name="FansStatus" ColumnSpacing="4">
+                    <Grid x:Name="FansStatus" ColumnSpacing="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE895;" FontSize="12" />
+                        <FontIcon Glyph="&#xE895;" FontSize="14" />
                         <TextBlock Grid.Column="1"
                                    Text="{Binding TrayDashboardFanModeLabel, Mode=OneWay}"
                                    ToolTipService.ToolTip="{Binding ActiveFanModeLabel, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
                 </Grid>
-                <Button Grid.Column="1"
-                        Width="36"
-                        Height="36"
-                        Padding="0"
-                        Click="OnSettingsClick"
-                        AutomationProperties.Name="Open OpenBlade">
-                    <FontIcon Glyph="&#xE713;" FontSize="16" />
-                </Button>
             </Grid>
         </Border>
     </Grid>

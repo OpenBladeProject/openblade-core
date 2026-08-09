@@ -160,6 +160,41 @@ public sealed class TrayDashboardPreferenceTests
             normalized.Sliders!.Select(slider => (slider.Kind, slider.IsVisible)));
     }
 
+    [Fact]
+    public void NormalizeAllowsZeroOrOneSliderAndCapsVisibleSlidersAtTwo()
+    {
+        TrayDashboardPreference none = TrayDashboardPreferenceDefaults.Normalize(new(
+            Sliders:
+            [
+                new(TrayDashboardSliderKind.ChargeLimit, false),
+                new(TrayDashboardSliderKind.LightingBrightness, false),
+            ]));
+        TrayDashboardPreference one = TrayDashboardPreferenceDefaults.Normalize(new(
+            Sliders:
+            [
+                new(TrayDashboardSliderKind.GpuCoreClock, true),
+            ]));
+        TrayDashboardPreference three = TrayDashboardPreferenceDefaults.Normalize(new(
+            Sliders:
+            [
+                new(TrayDashboardSliderKind.GpuMemoryClock, true),
+                new(TrayDashboardSliderKind.ChargeLimit, true),
+                new(TrayDashboardSliderKind.LightingBrightness, true),
+            ]));
+
+        Assert.DoesNotContain(none.Sliders!, slider => slider.IsVisible);
+        Assert.Equal(
+            [TrayDashboardSliderKind.GpuCoreClock],
+            one.Sliders!.Where(slider => slider.IsVisible).Select(slider => slider.Kind));
+        Assert.Equal(
+            [
+                TrayDashboardSliderKind.GpuMemoryClock,
+                TrayDashboardSliderKind.ChargeLimit,
+            ],
+            three.Sliders!.Where(slider => slider.IsVisible).Select(slider => slider.Kind));
+        Assert.Equal(2, TrayDashboardPreferenceDefaults.MaximumVisibleSliders);
+    }
+
     [Theory]
     [InlineData(TrayIconPointerButton.Left, TrayIconActivation.ShowDashboard)]
     [InlineData(TrayIconPointerButton.Right, TrayIconActivation.None)]

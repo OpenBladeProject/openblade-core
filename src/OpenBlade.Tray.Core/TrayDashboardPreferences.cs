@@ -165,6 +165,8 @@ public sealed class TrayDashboardSliderOption : INotifyPropertyChanged
 
 public static class TrayDashboardPreferenceDefaults
 {
+    public const int MaximumVisibleSliders = 2;
+
     private sealed record ControlDefinition(
         TrayDashboardControlKind Kind,
         string Label,
@@ -325,6 +327,22 @@ public static class TrayDashboardPreferenceDefaults
                 }
                 : false;
             sliders.Add(new TrayDashboardSliderPreference(kind, isVisible));
+        }
+
+        int visibleSliderCount = 0;
+        for (int index = 0; index < sliders.Count; index++)
+        {
+            TrayDashboardSliderPreference slider = sliders[index];
+            if (!slider.IsVisible)
+            {
+                continue;
+            }
+
+            visibleSliderCount++;
+            if (visibleSliderCount > MaximumVisibleSliders)
+            {
+                sliders[index] = slider with { IsVisible = false };
+            }
         }
 
         return new TrayDashboardPreference(controls, null, statusItems, sliders);

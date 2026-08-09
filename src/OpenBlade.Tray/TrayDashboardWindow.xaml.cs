@@ -28,7 +28,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private static readonly SubclassProcedure RevealSubclassCallback =
         ProcessRevealWindowMessage;
 
-    private readonly Action openMainWindow;
     private readonly Action<bool> visibilityChanged;
     private readonly DispatcherQueue dispatcherQueue;
     private readonly DispatcherQueueTimer foregroundTimer;
@@ -72,12 +71,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     public TrayDashboardWindow(
         MainViewModel viewModel,
-        Action openMainWindow,
         Action<bool> visibilityChanged)
     {
         ViewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
-        this.openMainWindow = openMainWindow
-            ?? throw new ArgumentNullException(nameof(openMainWindow));
         this.visibilityChanged = visibilityChanged
             ?? throw new ArgumentNullException(nameof(visibilityChanged));
         InitializeComponent();
@@ -861,6 +857,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             Grid.SetRow(element, row++);
             element.Visibility = Visibility.Visible;
         }
+
+        SliderSection.Visibility = row == 0
+            ? Visibility.Collapsed
+            : Visibility.Visible;
     }
 
     private void UpdateFansDetailsAvailability()
@@ -997,13 +997,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             Hide();
             args.Handled = true;
         }
-    }
-
-    private void OnSettingsClick(object sender, RoutedEventArgs args)
-    {
-        pinnedForEditing = false;
-        Hide();
-        openMainWindow();
     }
 
     private async void OnPerformanceChanged(object sender, SelectionChangedEventArgs args)
@@ -1191,9 +1184,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private async void OnBatteryProtectionClick(object sender, RoutedEventArgs args)
     {
         if (changingBatteryProtection
-            || Volatile.Read(ref disposed) != 0
-            || sender is not ToggleButton toggle
-            || toggle.IsChecked == ViewModel.BatteryProtectionEnabled)
+            || Volatile.Read(ref disposed) != 0)
         {
             return;
         }
@@ -1215,7 +1206,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         finally
         {
-            toggle.IsChecked = ViewModel.BatteryProtectionEnabled;
             changingBatteryProtection = false;
         }
     }
@@ -1287,9 +1277,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private async void OnGpuClockTuningClick(object sender, RoutedEventArgs args)
     {
         if (changingGpuClockTuning
-            || Volatile.Read(ref disposed) != 0
-            || sender is not ToggleButton toggle
-            || toggle.IsChecked == ViewModel.IsGpuClockTuningEnabled)
+            || Volatile.Read(ref disposed) != 0)
         {
             return;
         }
@@ -1298,7 +1286,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         try
         {
             await ViewModel.SetGpuClockTuningEnabledAsync(
-                toggle.IsChecked == true,
+                !ViewModel.IsGpuClockTuningEnabled,
                 CancellationToken.None);
         }
         catch (Exception exception)
@@ -1309,7 +1297,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         finally
         {
-            toggle.IsChecked = ViewModel.IsGpuClockTuningEnabled;
             changingGpuClockTuning = false;
         }
     }
