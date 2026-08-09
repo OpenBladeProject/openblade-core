@@ -208,6 +208,13 @@ public sealed class Rz090528LightingValidationCommandTests
             Task.FromException(
                 new CapabilityUnavailableException("Unavailable in test."));
 
+        public Task<LightingRendererOwnershipState> RelinquishRendererAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(OwnershipState);
+        }
+
         public Task<LightingRendererOwnershipState> InvalidateAsync() =>
             Task.FromResult(OwnershipState);
 

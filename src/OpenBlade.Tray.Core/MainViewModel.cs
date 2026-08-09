@@ -76,6 +76,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan PerformancePresentationHoldGracePeriod =
         TimeSpan.FromSeconds(2);
+    private static readonly HashSet<string> CompetingLightingControllers = new(
+        ["RazerAppEngine", "Razer Synapse Service"],
+        StringComparer.OrdinalIgnoreCase);
 
     private enum ProfileDraftGroup
     {
@@ -3940,17 +3943,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public async Task ShutdownOpenBladeAsync(CancellationToken cancellationToken)
-    {
-        ControlOperationResult result = await serviceClient
-            .ShutdownOpenBladeAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (result.Status != ControlOperationStatus.Stored)
-        {
-            throw new InvalidOperationException(result.Message);
-        }
-    }
-
     private readonly record struct ObservationRequestStamp(
         long Generation,
         bool BeganWithConnectedSubscription);
@@ -4245,8 +4237,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ConnectionStatus = status.Message;
         ControlAccessStatus = FormatControlAccessStatus(status);
         HasControllerAdvisory = status.PotentialControllers.Count > 0;
+        bool competingLightingController = status.PotentialControllers.Any(
+            CompetingLightingControllers.Contains);
         ControllerAdvisoryText = HasControllerAdvisory
-            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. Automatic profile changes pause for settings changed elsewhere; manual actions still apply."
+            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. "
+                + (competingLightingController
+                    ? "OpenBlade yields automatic keyboard lighting to Synapse while external lighting override is off. "
+                    : string.Empty)
+                + "Confirmed external changes pause automatic profile updates; manual actions still apply."
             : string.Empty;
         HasControllerDetectionWarning = !string.IsNullOrWhiteSpace(
             status.ControllerDetectionWarning);
@@ -7744,6 +7742,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ? UnavailableLaptopReason
             : externalChanges.Contains(subsystem)
             ? "Changed outside OpenBlade"
+            : subsystem == DeviceSubsystem.Lighting
+                && !confirmed
+                && !status.AlwaysOverrideExternalLightingChanges
+                && status.PotentialControllers.Any(
+                    CompetingLightingControllers.Contains)
+            ? "Other controller may be active"
             : confirmed
                 ? "Current setting"
                 : "Controls unavailable";
