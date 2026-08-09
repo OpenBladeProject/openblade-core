@@ -271,12 +271,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly ProfileSetValidator validator;
     private readonly object initializationGate = new();
     private readonly object statusPublishGate = new();
+    private readonly object pendingWriteConfirmationGate = new();
     private ProfileAutomationState? automation;
     private volatile BatteryAutomationPreferences preferences =
         new();
     private PersistentOverrideState persistentOverrides = PersistentOverrideState.Empty;
     private ConfirmedStateDriftTracker driftTracker = new();
     private readonly HashSet<DeviceSubsystem> initialAutomaticComparisons = [];
+    // Process-local by design. Service startup establishes a fresh read-only
+    // baseline before startup reconciliation can apply saved intent.
     private readonly Dictionary<DeviceSubsystem, PendingWriteConfirmation>
         pendingWriteConfirmations = [];
     private ServiceStatusSnapshot? status;
@@ -1589,7 +1592,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            if (pendingWriteConfirmations.Count > 0)
+            if (HasPendingWriteConfirmations())
             {
                 const string pendingMessage =
                     "OpenBlade must confirm the current laptop state before settings can be reapplied.";
@@ -3540,7 +3543,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         unexpectedExitRecoveryDeferredForUserConfiguration = true;
         initialAutomaticComparisons.Clear();
         driftTracker = new ConfirmedStateDriftTracker();
-        pendingWriteConfirmations.Clear();
+        // An unexpected-exit classification reset is not hardware evidence.
+        // Retain pending writes until a later full observation resolves them.
         ServiceStatusSnapshot current = GetStatus();
         if (current.ConfirmedState is { } confirmed)
         {
@@ -4904,7 +4908,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && outcome.WriteAttempted
             && !outcome.ConfirmationUnavailable)
         {
-            pendingWriteConfirmations.Remove(subsystem);
+            RemovePendingWriteConfirmation(subsystem);
             driftTracker.ConfirmIntentional(subsystem, matched: false);
         }
 
@@ -4934,10 +4938,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (outcome.ConfirmationUnavailable
             && outcome.PreWriteState is { } preWriteState)
         {
-            pendingWriteConfirmations[subsystem] = new PendingWriteConfirmation(
+            SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
                 powerSource,
                 desired,
-                preWriteState);
+                preWriteState));
         }
 
         if (outcome.Result.Status is
@@ -5125,12 +5129,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             // Matching hardware becomes the new drift baseline only after any durable
             // intent commit and in-memory commit have both succeeded.
-            pendingWriteConfirmations.Remove(subsystem);
+            RemovePendingWriteConfirmation(subsystem);
             driftTracker.ConfirmIntentional(subsystem, matched: true);
         }
         else if (outcome.Result.Status == ControlResultStatus.Applied)
         {
-            pendingWriteConfirmations.Remove(subsystem);
+            RemovePendingWriteConfirmation(subsystem);
             driftTracker.AcknowledgeIntentionalWithoutReadback(subsystem);
         }
 
@@ -5156,8 +5160,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? current.DeviceVerified
                 : !outcome.DeviceAccessFailed,
             writesBlocked: preserveCurrentAvailability
-                ? current.WritesBlocked || pendingWriteConfirmations.Count > 0
-                : outcome.DeviceAccessFailed || pendingWriteConfirmations.Count > 0);
+                ? current.WritesBlocked || HasPendingWriteConfirmations()
+                : outcome.DeviceAccessFailed || HasPendingWriteConfirmations());
         return ToOperationResult(outcome.Result);
     }
 
@@ -5242,10 +5246,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             foreach (DeviceSubsystem subsystem in
                 outcome.ConfirmationUnavailable ?? new HashSet<DeviceSubsystem>())
             {
-                pendingWriteConfirmations[subsystem] = new PendingWriteConfirmation(
+                SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
                     powerSource,
                     desired,
-                    preWriteState);
+                    preWriteState));
             }
         }
 
@@ -5415,23 +5419,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             if (outcome.ReadbackMatched.Contains(subsystem))
             {
-                pendingWriteConfirmations.Remove(subsystem);
+                RemovePendingWriteConfirmation(subsystem);
                 driftTracker.ConfirmIntentional(subsystem, matched: true);
             }
             else if (ResultFor(outcome.Results, subsystem).Status == ControlResultStatus.Applied)
             {
-                pendingWriteConfirmations.Remove(subsystem);
+                RemovePendingWriteConfirmation(subsystem);
                 driftTracker.AcknowledgeIntentionalWithoutReadback(subsystem);
             }
             else if (outcome.WriteAttempted.Contains(subsystem)
                 && !confirmationUnavailable.Contains(subsystem))
             {
-                pendingWriteConfirmations.Remove(subsystem);
+                RemovePendingWriteConfirmation(subsystem);
                 driftTracker.ConfirmIntentional(subsystem, matched: false);
             }
             else if (outcome.ReadbackContradicted.Contains(subsystem))
             {
-                pendingWriteConfirmations.Remove(subsystem);
+                RemovePendingWriteConfirmation(subsystem);
                 driftTracker.ConfirmIntentional(subsystem, matched: false);
             }
         }
@@ -5480,7 +5484,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? GetStatus().DeviceVerified
                 : !outcome.DeviceAccessFailed,
             writesBlocked: outcome.DeviceAccessFailed
-                || pendingWriteConfirmations.Count > 0);
+                || HasPendingWriteConfirmations());
     }
 
     private async Task<string?> ApplyProfileLaptopBehaviorAsync(
@@ -5787,7 +5791,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 ReconcilePendingWriteConfirmations(
                     observation.Confirmed,
-                    powerSource);
+                    powerSource,
+                    device);
             }
             consecutiveVerifiedAccessFailures = 0;
             fullObservationCompleted = true;
@@ -6636,14 +6641,59 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    private IReadOnlyList<DeviceSubsystem> CurrentUnconfirmedWrites() =>
-        [.. pendingWriteConfirmations.Keys.Order()];
+    private IReadOnlyList<DeviceSubsystem> CurrentUnconfirmedWrites()
+    {
+        lock (pendingWriteConfirmationGate)
+        {
+            return [.. pendingWriteConfirmations.Keys.Order()];
+        }
+    }
 
-    private bool IsWritePendingFor(DeviceSubsystem subsystem) =>
-        pendingWriteConfirmations.ContainsKey(subsystem)
-        || DeviceSubsystemOrder.IsThermal(subsystem)
-            && (pendingWriteConfirmations.ContainsKey(DeviceSubsystem.Performance)
-                || pendingWriteConfirmations.ContainsKey(DeviceSubsystem.Fans));
+    private bool HasPendingWriteConfirmations()
+    {
+        lock (pendingWriteConfirmationGate)
+        {
+            return pendingWriteConfirmations.Count > 0;
+        }
+    }
+
+    private void SetPendingWriteConfirmation(
+        DeviceSubsystem subsystem,
+        PendingWriteConfirmation pending)
+    {
+        lock (pendingWriteConfirmationGate)
+        {
+            pendingWriteConfirmations[subsystem] = pending;
+        }
+    }
+
+    private void RemovePendingWriteConfirmation(DeviceSubsystem subsystem)
+    {
+        lock (pendingWriteConfirmationGate)
+        {
+            pendingWriteConfirmations.Remove(subsystem);
+        }
+    }
+
+    private KeyValuePair<DeviceSubsystem, PendingWriteConfirmation>[]
+        SnapshotPendingWriteConfirmations()
+    {
+        lock (pendingWriteConfirmationGate)
+        {
+            return [.. pendingWriteConfirmations];
+        }
+    }
+
+    private bool IsWritePendingFor(DeviceSubsystem subsystem)
+    {
+        lock (pendingWriteConfirmationGate)
+        {
+            return pendingWriteConfirmations.ContainsKey(subsystem)
+                || DeviceSubsystemOrder.IsThermal(subsystem)
+                    && (pendingWriteConfirmations.ContainsKey(DeviceSubsystem.Performance)
+                        || pendingWriteConfirmations.ContainsKey(DeviceSubsystem.Fans));
+        }
+    }
 
     private ControlOperationResult PendingWriteBlockedResult(DeviceSubsystem subsystem)
     {
@@ -6656,26 +6706,32 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private void InvalidatePendingWriteConfirmations(bool markExternal)
     {
+        KeyValuePair<DeviceSubsystem, PendingWriteConfirmation>[] pending;
+        lock (pendingWriteConfirmationGate)
+        {
+            pending = [.. pendingWriteConfirmations];
+            pendingWriteConfirmations.Clear();
+        }
+
         if (markExternal)
         {
-            foreach (DeviceSubsystem subsystem in pendingWriteConfirmations.Keys)
+            foreach ((DeviceSubsystem subsystem, _) in pending)
             {
                 driftTracker.ConfirmIntentional(subsystem, matched: false);
             }
         }
-
-        pendingWriteConfirmations.Clear();
     }
 
     private void ReconcilePendingWriteConfirmations(
         ConfirmedDeviceState confirmed,
-        PowerSource powerSource)
+        PowerSource powerSource,
+        IBladeDevice device)
     {
         foreach ((DeviceSubsystem subsystem, PendingWriteConfirmation pending) in
-            pendingWriteConfirmations.ToArray())
+            SnapshotPendingWriteConfirmations())
         {
             PendingConfirmationResult result = pending.PowerSource == powerSource
-                ? MatchPendingWrite(subsystem, pending, confirmed)
+                ? MatchPendingWrite(subsystem, pending, confirmed, device)
                 : PendingConfirmationResult.Mismatch;
             if (result == PendingConfirmationResult.Unavailable)
             {
@@ -6688,16 +6744,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             driftTracker.ConfirmIntentional(
                 subsystem,
                 matched: result == PendingConfirmationResult.Match);
-            pendingWriteConfirmations.Remove(subsystem);
+            RemovePendingWriteConfirmation(subsystem);
         }
     }
 
     private static PendingConfirmationResult MatchPendingWrite(
         DeviceSubsystem subsystem,
         PendingWriteConfirmation pending,
-        ConfirmedDeviceState confirmed) => subsystem switch
+        ConfirmedDeviceState confirmed,
+        IBladeDevice device) => subsystem switch
         {
-            DeviceSubsystem.Performance => MatchPendingPerformance(pending, confirmed),
+            DeviceSubsystem.Performance => MatchPendingPerformance(
+                pending,
+                confirmed,
+                device),
             DeviceSubsystem.Fans => confirmed.Fans is null
                 ? PendingConfirmationResult.Unavailable
                 : confirmed.Fans == (pending.Target.FanControl?.Mode
@@ -6714,13 +6774,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : confirmed.Lighting == pending.Target.Lighting.Value
                     ? PendingConfirmationResult.Match
                     : PendingConfirmationResult.Mismatch,
-            _ => PendingConfirmationResult.Mismatch,
+            _ => PendingConfirmationResult.Unavailable,
         };
 
     private static PendingConfirmationResult MatchPendingPerformance(
         PendingWriteConfirmation pending,
-        ConfirmedDeviceState confirmed)
+        ConfirmedDeviceState confirmed,
+        IBladeDevice device)
     {
+        FanMode desiredFans = pending.Target.FanControl?.Mode
+            ?? pending.Target.Fans.Value;
+        if (DeviceSubsystemOrder.IsManualFanMode(desiredFans)
+            && DeviceSubsystemOrder.IsManualFanMode(confirmed.Fans))
+        {
+            // Manual thermal modes do not expose a separate performance preset.
+            // This is the same semantic match used by ControlCoordinator.
+            return PendingConfirmationResult.Match;
+        }
+
         if (confirmed.Performance is null)
         {
             return PendingConfirmationResult.Unavailable;
@@ -6734,6 +6805,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         if (pending.Target.GpuClockTuning is { } tuning)
         {
+            if (!tuning.Enabled)
+            {
+                if (confirmed.GpuClockOffsets is not null)
+                {
+                    return PendingConfirmationResult.Mismatch;
+                }
+
+                return device is IGpuClockOffsetManagementDevice managedDevice
+                    ? managedDevice.GpuClockOffsetManagementState is
+                        GpuClockOffsetManagementState.ResetConfirmed
+                        or GpuClockOffsetManagementState.RelinquishedDefaultConfirmed
+                        ? PendingConfirmationResult.Match
+                        : PendingConfirmationResult.Mismatch
+                    : PendingConfirmationResult.Unavailable;
+            }
+
             return confirmed.GpuClockOffsets is null
                 ? PendingConfirmationResult.Unavailable
                 : confirmed.GpuClockOffsets.Current == tuning.EffectiveOffsets
@@ -6763,7 +6850,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             exclusions.Remove(DeviceSubsystem.Lighting);
         }
-        exclusions.UnionWith(pendingWriteConfirmations.Keys);
+        exclusions.UnionWith(
+            SnapshotPendingWriteConfirmations().Select(entry => entry.Key));
         if (exclusions.Contains(DeviceSubsystem.Performance)
             || exclusions.Contains(DeviceSubsystem.Fans))
         {
@@ -6776,7 +6864,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private IReadOnlySet<DeviceSubsystem> GetPendingWriteExclusions()
     {
-        var exclusions = pendingWriteConfirmations.Keys.ToHashSet();
+        var exclusions = SnapshotPendingWriteConfirmations()
+            .Select(entry => entry.Key)
+            .ToHashSet();
         if (exclusions.Contains(DeviceSubsystem.Performance)
             || exclusions.Contains(DeviceSubsystem.Fans))
         {
@@ -7399,11 +7489,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             ServiceStatusSnapshot previous = GetStatus();
             ServiceStatusSnapshot updated = update(previous);
+            IReadOnlyList<DeviceSubsystem> unconfirmedWrites =
+                CurrentUnconfirmedWrites();
             ServiceStatusSnapshot candidate = updated with
             {
                 WritesBlocked = updated.WritesBlocked
-                    || pendingWriteConfirmations.Count > 0,
-                UnconfirmedWrites = CurrentUnconfirmedWrites(),
+                    || unconfirmedWrites.Count > 0,
+                UnconfirmedWrites = unconfirmedWrites,
             };
             if (Equivalent(previous, candidate))
             {

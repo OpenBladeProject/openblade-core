@@ -6304,6 +6304,63 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ScopedReadbackFailure_DisabledGpuResetClearsAfterReadOnlyConfirmation()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            GpuOverclock = new GpuOverclockCapabilities(
+                new DeviceNumericRange(-1000, 400, null),
+                new DeviceNumericRange(-1000, 3000, null),
+                DeviceFeatureAccess.ReadWrite),
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        context.Device.Capabilities = capabilities;
+        PowerProfile active = context.Runtime.GetStatus().Profiles.PluggedIn;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            active.Performance,
+            active.Fans,
+            ConfirmedBattery(80),
+            active.Lighting)
+        {
+            GpuClockOffsets = new GpuClockOffsetCapabilities(
+                "Test NVIDIA GPU",
+                new GpuClockOffsetRange(-1000, 400, 100),
+                new GpuClockOffsetRange(-1000, 3000, 200)),
+        };
+        context.Device.GpuClockOffsetManagementState =
+            GpuClockOffsetManagementState.Managed;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    active.Performance,
+                    OverrideLifetime.Persistent)
+                {
+                    GpuClockTuning = GpuClockTuningSettings.Disabled,
+                },
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(
+            GpuClockOffsetManagementState.ResetConfirmed,
+            context.Device.GpuClockOffsetManagementState);
+        Assert.Equal(
+            [DeviceSubsystem.Performance],
+            context.Runtime.GetStatus().UnconfirmedWrites);
+
+        context.Device.ReadStateFailureOnCall = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
     public async Task ScopedReadbackFailure_LaterMismatchBecomesExternalWithoutRetry()
     {
         TestContext context = CreateWritableContext();
@@ -6328,6 +6385,53 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             [DeviceSubsystem.Performance],
             context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(1, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task PendingConfirmation_IsSafeDuringConcurrentPreviewPublishing()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Guid sessionId = Guid.NewGuid();
+        Task previews = Task.Run(async () =>
+        {
+            for (int generation = 1; generation <= 500; generation++)
+            {
+                await context.Runtime.SetPerformanceShortcutPreviewAsync(
+                    sessionId,
+                    generation,
+                    generation % 2 == 0
+                        ? PerformancePreset.Balanced
+                        : PerformancePreset.Performance,
+                    CancellationToken.None);
+            }
+        });
+
+        for (int iteration = 0; iteration < 20; iteration++)
+        {
+            PerformancePreset target = iteration % 2 == 0
+                ? PerformancePreset.Performance
+                : PerformancePreset.Balanced;
+            context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+            ControlOperationResult result = await context.Runtime
+                .SetPerformanceOverrideAsync(
+                    new ManualOverride<PerformancePreset>(
+                        target,
+                        OverrideLifetime.UntilPowerSourceChange),
+                    CancellationToken.None);
+            Assert.Equal(ControlOperationStatus.Failed, result.Status);
+            Assert.Contains(
+                DeviceSubsystem.Performance,
+                context.Runtime.GetStatus().UnconfirmedWrites);
+
+            context.Device.ReadStateFailureOnCall = null;
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+            Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        }
+
+        await previews;
+
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
     [Fact]
@@ -6658,6 +6762,53 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
         Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task PowerTransition_ManualFansClearHiddenPerformanceConfirmation()
+    {
+        TestContext context = CreateWritableContext(
+            initialPowerSource: PowerSource.Battery);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Maximum,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        };
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles,
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Contains(
+            DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().UnconfirmedWrites);
+        context.Device.ReadStateFailureOnCall = null;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            CustomPerformance = null,
+            Fans = FanMode.Maximum,
+        };
+        int setters = context.Device.TotalSetterCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(
+            DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(setters, context.Device.TotalSetterCalls);
     }
 
@@ -8700,9 +8851,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
     private sealed class FakeHub : IStatusSubscriptionHub
     {
+        private readonly object publishGate = new();
+
         public List<ServiceStatusSnapshot> Published { get; } = [];
 
-        public void Publish(ServiceStatusSnapshot snapshot) => Published.Add(snapshot);
+        public void Publish(ServiceStatusSnapshot snapshot)
+        {
+            lock (publishGate)
+            {
+                Published.Add(snapshot);
+            }
+        }
 
         public StatusSubscriptionLease Subscribe(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
