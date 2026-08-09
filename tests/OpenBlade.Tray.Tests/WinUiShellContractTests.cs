@@ -1923,9 +1923,22 @@ public sealed class WinUiShellContractTests
                 "<ColumnDefinition Width=\"*\" />"));
         Assert.Contains("QuickTileSurfaceStyle", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"Height\" Value=\"48\" />", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"CornerRadius\" Value=\"6\" />", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Setter Property=\"CornerRadius\" Value=\"8\" />", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"FontSize\" Value=\"16\" />", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"FontSize\" Value=\"12\" />", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"FontSize\" Value=\"11\" />", dashboardXaml, StringComparison.Ordinal);
+        int quickSliderIconStyle = dashboardXaml.IndexOf(
+            "<Style x:Key=\"QuickSliderIconStyle\"",
+            StringComparison.Ordinal);
+        int quickSliderButtonStyle = dashboardXaml.IndexOf(
+            "<Style x:Key=\"QuickSliderIconButtonStyle\"",
+            quickSliderIconStyle,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<Setter Property=\"FontSize\" Value=\"20\" />",
+            dashboardXaml[quickSliderIconStyle..quickSliderButtonStyle],
+            StringComparison.Ordinal);
         Assert.Contains("Padding=\"20,14,20,10\"", dashboardXaml, StringComparison.Ordinal);
         int dashboardPage = dashboardXaml.IndexOf(
             "<Grid x:Name=\"DashboardPage\">",
@@ -1942,6 +1955,20 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Visibility=\"Collapsed\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"SliderGrid\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"SliderScroller\"", dashboardXaml, StringComparison.Ordinal);
+        int sliderSection = dashboardXaml.IndexOf(
+            "<Border x:Name=\"SliderSection\"",
+            StringComparison.Ordinal);
+        int detailPage = dashboardXaml.IndexOf(
+            "<Grid x:Name=\"DetailPage\"",
+            sliderSection,
+            StringComparison.Ordinal);
+        string sliderSectionXaml = dashboardXaml[sliderSection..detailPage];
+        Assert.Equal(8, CountOccurrences(sliderSectionXaml, "<ColumnDefinition"));
+        Assert.DoesNotContain("Grid.Column=\"2\"", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("QuickSliderValueStyle", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("TrayDashboardChargeLimitLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(" MHz", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(" %", sliderSectionXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ChargeLimitSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LightingBrightnessSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"GpuCoreClockSliderRow\"", dashboardXaml, StringComparison.Ordinal);
@@ -1951,7 +1978,6 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Click=\"OnBatteryProtectionClick\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("IsChecked=\"{Binding BatteryProtectionEnabled, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("IsEnabled=\"{Binding CanChangeBatteryProtection, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
-        Assert.Contains("TrayDashboardChargeLimitLabel", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"BatteryPowerStatus\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Glyph=\"&#xE713;\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("AutomationProperties.Name=\"Open OpenBlade\"", dashboardXaml, StringComparison.Ordinal);

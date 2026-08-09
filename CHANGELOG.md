@@ -21,9 +21,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   controls, and a fixed quick-adjustment section for up to two charge-limit,
   lighting-brightness, or GPU-clock sliders. Unused slider space expands the
   tile viewport without changing the popup's overall height. The popup now
-  matches Windows' tile, type, and panel proportions; single-choice fan
-  controls omit the details chevron, and active charge-limit protection is
-  available from its slider-row icon.
+  matches Windows' tile, corner, type, and panel proportions; single-choice
+  fan controls omit the details chevron, and quick-adjustment rows use larger,
+  consistently aligned icons and full-width tracks without trailing labels.
 
 ### Fixed
 
