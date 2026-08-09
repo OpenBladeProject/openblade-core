@@ -267,7 +267,7 @@ public sealed class ControlRequestHandler
 
         var inactiveAutomation = new ProfileAutomationState(
             InactiveSessionProfiles,
-            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            new BatteryAutomationPreferences(),
             snapshot.ActivePowerSource);
         ConfirmedDeviceState confirmed = snapshot.ConfirmedState
             ?? new ConfirmedDeviceState(null, null, null, null);

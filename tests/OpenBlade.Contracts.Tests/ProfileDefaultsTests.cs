@@ -21,6 +21,9 @@ public sealed class ProfileDefaultsTests
         Assert.False(profiles.PluggedIn.Display!.IsConfigured);
         Assert.False(profiles.Battery.Display!.IsConfigured);
         Assert.False(profiles.UsbC.Display!.IsConfigured);
+        Assert.True(profiles.PluggedIn.BatteryProtectionEnabled);
+        Assert.True(profiles.Battery.BatteryProtectionEnabled);
+        Assert.True(profiles.UsbC.BatteryProtectionEnabled);
         Assert.Equal(80, profiles.BatteryPolicy.ChargeLimitPercent);
     }
 

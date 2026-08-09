@@ -390,6 +390,13 @@ public sealed class IpcMessageCodecTests
         };
         var desired = new DesiredBatteryState(BatteryPolicy.Create(80), true, false);
         var confirmed = new ConfirmedBatteryState(true, 80, false);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { BatteryProtectionEnabled = false },
+            Battery = defaults.Battery with { BatteryProtectionEnabled = true },
+            UsbC = defaults.UsbC with { BatteryProtectionEnabled = false },
+        };
         ServiceRequest request = new SetBatteryProtectionRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -402,9 +409,12 @@ public sealed class IpcMessageCodecTests
             Capabilities = capabilities,
             ConfirmedState = new ConfirmedDeviceState(null, null, confirmed, null),
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
+            Profiles = profiles,
+            BatteryPolicyOverride = BatteryPolicy.Create(75),
+            BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(38, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(39, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -424,6 +434,9 @@ public sealed class IpcMessageCodecTests
             roundTrip.Capabilities.ObservedPowerSourceBehaviors);
         Assert.Equal(desired, roundTrip.DesiredState.Battery);
         Assert.Equal(confirmed, roundTrip.ConfirmedState!.Battery);
+        Assert.Equal(profiles, roundTrip.Profiles);
+        Assert.Equal(BatteryPolicy.Create(75), roundTrip.BatteryPolicyOverride);
+        Assert.False(roundTrip.BatteryProtectionOverride);
     }
 
     [Fact]
@@ -665,7 +678,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(38, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(39, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

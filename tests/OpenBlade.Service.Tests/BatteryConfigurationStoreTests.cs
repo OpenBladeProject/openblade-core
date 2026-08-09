@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using OpenBlade.Contracts;
 using OpenBlade.Service;
@@ -34,7 +35,8 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.Equal(BatteryPolicy.Create(80), configuration.Profiles.BatteryPolicy);
         Assert.Equal(PerformancePreset.Balanced, configuration.Profiles.PluggedIn.Performance);
         Assert.Equal(PerformancePreset.BatterySaver, configuration.Profiles.Battery.Performance);
-        Assert.True(configuration.Preferences.ProtectionEnabled);
+        AssertBatteryProtection(configuration.Profiles, expected: true);
+        Assert.Null(configuration.Preferences.ProtectionEnabled);
         Assert.All(paths.All, path => Assert.True(File.Exists(path)));
         Assert.All(paths.All, path => Assert.False(File.Exists(path + ".tmp")));
 
@@ -62,7 +64,6 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         BatteryConfiguration initial = await store.LoadAsync(CancellationToken.None);
         LightingSettings lastKnown = initial.Profiles.PluggedIn.Lighting;
         var preferences = new BatteryAutomationPreferences(
-            ProtectionEnabled: true,
             AlwaysOverrideExternalLightingChanges: true,
             LastKnownLighting: lastKnown,
             AllowUntestedFirmware: true);
@@ -128,10 +129,12 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
             {
                 Performance = PerformancePreset.Silent,
+                BatteryProtectionEnabled = null,
             },
             Battery = ProfileDefaults.CreateSafeDefaults().Battery with
             {
                 Performance = PerformancePreset.Balanced,
+                BatteryProtectionEnabled = null,
             },
         };
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
@@ -149,7 +152,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         byte[] preferences = JsonSerializer.SerializeToUtf8Bytes(
             new BatteryPreferencesDocument(
                 1,
-                new BatteryAutomationPreferences(ProtectionEnabled: true)),
+                new BatteryAutomationPreferences(ProtectionEnabled: false)),
             options);
         byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
             new BatteryConfigurationCommit(1, Hash(profiles), Hash(preferences)),
@@ -166,7 +169,14 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.Equal(
             PerformancePreset.BatteryBalanced,
             configuration.Profiles.Battery.Performance);
-        Assert.Equal(ProfileDefaults.CreateSafeDefaults().UsbC, configuration.Profiles.UsbC);
+        Assert.Equal(
+            ProfileDefaults.CreateSafeDefaults().UsbC with
+            {
+                BatteryProtectionEnabled = false,
+            },
+            configuration.Profiles.UsbC);
+        AssertBatteryProtection(configuration.Profiles, expected: false);
+        Assert.Null(configuration.Preferences.ProtectionEnabled);
         using JsonDocument persisted = JsonDocument.Parse(
             await File.ReadAllBytesAsync(paths.Profiles));
         Assert.Equal(
@@ -195,7 +205,8 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
         Assert.True(configuration.Recovered);
         Assert.Equal(ProfileDefaults.CreateSafeDefaults(), configuration.Profiles);
-        Assert.True(configuration.Preferences.ProtectionEnabled);
+        AssertBatteryProtection(configuration.Profiles, expected: true);
+        Assert.Null(configuration.Preferences.ProtectionEnabled);
         Assert.All(paths.All, path => Assert.True(File.Exists(path)));
     }
 
@@ -216,7 +227,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
         Assert.True(configuration.Recovered);
         Assert.Equal(BatteryPolicy.Create(80), configuration.Profiles.BatteryPolicy);
-        Assert.True(configuration.Preferences.ProtectionEnabled);
+        AssertBatteryProtection(configuration.Profiles, expected: true);
     }
 
     [Fact]
@@ -233,7 +244,41 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
         Assert.True(configuration.Recovered);
         Assert.Equal(BatteryPolicy.Create(80), configuration.Profiles.BatteryPolicy);
-        Assert.True(configuration.Preferences.ProtectionEnabled);
+        AssertBatteryProtection(configuration.Profiles, expected: true);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidPreferenceDocuments))]
+    public async Task LoadAsync_InvalidPreferenceShapeRecoversWholeAggregate(
+        int schemaVersion,
+        string preferenceJson)
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(schemaVersion, ProfileDefaults.CreateSafeDefaults()),
+            options);
+        byte[] preferences = Encoding.UTF8.GetBytes(preferenceJson);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(
+                schemaVersion,
+                Hash(profiles),
+                Hash(preferences)),
+            options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+
+        BatteryConfiguration configuration =
+            await CreateStore(paths).LoadAsync(CancellationToken.None);
+
+        Assert.True(configuration.Recovered);
+        Assert.Equal(ProfileDefaults.CreateSafeDefaults(), configuration.Profiles);
+        Assert.Null(configuration.Preferences.ProtectionEnabled);
     }
 
     [Fact]
@@ -258,7 +303,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         byte[] preferences = JsonSerializer.SerializeToUtf8Bytes(
             new BatteryPreferencesDocument(
                 ProfileStore.CurrentSchemaVersion,
-                new BatteryAutomationPreferences(ProtectionEnabled: false)),
+                new BatteryAutomationPreferences()),
             options);
         byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
             new BatteryConfigurationCommit(
@@ -280,7 +325,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.Equal(preferences, await File.ReadAllBytesAsync(paths.Preferences));
         BatteryConfiguration loaded = await store.LoadAsync(CancellationToken.None);
         Assert.Equal(updated, loaded.Profiles);
-        Assert.False(loaded.Preferences.ProtectionEnabled);
+        Assert.Null(loaded.Preferences.ProtectionEnabled);
     }
 
     [Theory]
@@ -382,9 +427,21 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         await store.LoadAsync(CancellationToken.None);
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
         {
+            PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+            {
+                BatteryProtectionEnabled = false,
+            },
+            Battery = ProfileDefaults.CreateSafeDefaults().Battery with
+            {
+                BatteryProtectionEnabled = false,
+            },
+            UsbC = ProfileDefaults.CreateSafeDefaults().UsbC with
+            {
+                BatteryProtectionEnabled = false,
+            },
             BatteryPolicy = BatteryPolicy.Create(75),
         };
-        var preferences = new BatteryAutomationPreferences(ProtectionEnabled: false);
+        var preferences = new BatteryAutomationPreferences();
 
         await store.SaveConfigurationAsync(profiles, preferences, CancellationToken.None);
 
@@ -426,7 +483,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         {
             BatteryPolicy = BatteryPolicy.Create(75),
         };
-        var intendedPreferences = new BatteryAutomationPreferences(ProtectionEnabled: false);
+        var intendedPreferences = new BatteryAutomationPreferences();
         armed = true;
 
         await Assert.ThrowsAsync<IOException>(
@@ -470,7 +527,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         {
             BatteryPolicy = BatteryPolicy.Create(75),
         };
-        var intendedPreferences = new BatteryAutomationPreferences(ProtectionEnabled: false);
+        var intendedPreferences = new BatteryAutomationPreferences();
         armed = true;
 
         if (IsBeforeCommitPoint(cancellationBoundary))
@@ -540,7 +597,8 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
         Assert.True(replaced);
         Assert.True(configuration.Recovered);
-        Assert.True(configuration.Preferences.ProtectionEnabled);
+        AssertBatteryProtection(configuration.Profiles, expected: true);
+        Assert.Null(configuration.Preferences.ProtectionEnabled);
         BatteryConfiguration verified = await store.LoadAsync(CancellationToken.None);
         Assert.False(verified.Recovered);
         Assert.Equal(configuration.Profiles, verified.Profiles);
@@ -561,6 +619,37 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
     public static TheoryData<string> AllCommitBoundaries() => new(
         Enum.GetNames<BatteryConfigurationCommitBoundary>());
+
+    public static TheoryData<int, string> InvalidPreferenceDocuments() => new()
+    {
+        {
+            ProfileStore.PreviousSchemaVersion,
+            $$"""
+            {
+              "schemaVersion": {{ProfileStore.PreviousSchemaVersion}},
+              "preferences": {}
+            }
+            """
+        },
+        {
+            ProfileStore.CurrentSchemaVersion,
+            $$"""
+            {
+              "schemaVersion": {{ProfileStore.CurrentSchemaVersion}},
+              "preferences": { "protectionEnabled": true }
+            }
+            """
+        },
+        {
+            ProfileStore.CurrentSchemaVersion,
+            $$"""
+            {
+              "schemaVersion": {{ProfileStore.CurrentSchemaVersion}},
+              "preferences": null
+            }
+            """
+        },
+    };
 
     private BatteryConfigurationStore CreateStore(Paths paths) =>
         new(paths.Profiles, paths.Preferences, paths.Marker);
@@ -606,6 +695,13 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         left.Profiles.AsSpan().SequenceEqual(right.Profiles)
         && left.Preferences.AsSpan().SequenceEqual(right.Preferences)
         && left.Marker.AsSpan().SequenceEqual(right.Marker);
+
+    private static void AssertBatteryProtection(ProfileSet profiles, bool expected)
+    {
+        Assert.Equal(expected, profiles.PluggedIn.BatteryProtectionEnabled);
+        Assert.Equal(expected, profiles.Battery.BatteryProtectionEnabled);
+        Assert.Equal(expected, profiles.UsbC.BatteryProtectionEnabled);
+    }
 
     public void Dispose()
     {

@@ -83,7 +83,7 @@ public sealed class BatteryConfigurationStore
                 {
                     CommittedSnapshot committed =
                         await ReadCommittedSnapshotAsync(cancellationToken);
-                    return committed.ProfileMigrated
+                    return committed.ConfigurationMigrated
                         ? await CommitAndVerifyAsync(
                             committed.Configuration,
                             cancellationToken)
@@ -104,7 +104,7 @@ public sealed class BatteryConfigurationStore
             {
                 configuration = new BatteryConfiguration(
                     migrated,
-                    new BatteryAutomationPreferences(ProtectionEnabled: true),
+                    new BatteryAutomationPreferences(),
                     Recovered: false);
             }
             else
@@ -124,7 +124,10 @@ public sealed class BatteryConfigurationStore
         ProfileSet profiles,
         CancellationToken cancellationToken)
     {
-        profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
+        profiles = ProfileStore.NormalizeLegacyBatteryProfile(
+            profiles,
+            out _,
+            batteryProtectionDefault: null);
         validator.Validate(profiles);
         await gate.WaitAsync(cancellationToken);
         try
@@ -135,7 +138,7 @@ public sealed class BatteryConfigurationStore
                 profiles,
                 committed.Configuration.Preferences,
                 cancellationToken,
-                committed.ProfileMigrated ? null : committed.PreferenceJson);
+                committed.ConfigurationMigrated ? null : committed.PreferenceJson);
         }
         finally
         {
@@ -148,7 +151,10 @@ public sealed class BatteryConfigurationStore
         BatteryAutomationPreferences preferences,
         CancellationToken cancellationToken)
     {
-        profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
+        profiles = ProfileStore.NormalizeLegacyBatteryProfile(
+            profiles,
+            out _,
+            batteryProtectionDefault: null);
         validator.Validate(profiles);
         validator.ValidatePreferences(preferences);
         await gate.WaitAsync(cancellationToken);
@@ -186,6 +192,7 @@ public sealed class BatteryConfigurationStore
                 or ProfileStore.AncientSupportedSchemaVersion
                 or ProfileStore.PrehistoricSupportedSchemaVersion
                 or ProfileStore.ArchaicSupportedSchemaVersion
+                or ProfileStore.AntiqueSupportedSchemaVersion
                 or ProfileStore.CurrentSchemaVersion))
         {
             throw new InvalidDataException("The battery configuration marker is unsupported.");
@@ -197,25 +204,29 @@ public sealed class BatteryConfigurationStore
             throw new InvalidDataException("The battery configuration hashes do not match.");
         }
 
+        BatteryAutomationPreferences preferences = ReadPreferences(
+            preferenceJson,
+            marker.SchemaVersion);
+        bool legacyProtectionEnabled = preferences.ProtectionEnabled ?? true;
         ProfileSet profiles = profileStore.ReadDocument(
             profileJson,
             out bool profileMigrated,
-            out int profileSchemaVersion);
+            out int profileSchemaVersion,
+            legacyProtectionEnabled);
         if (profileSchemaVersion != marker.SchemaVersion)
         {
             throw new InvalidDataException(
                 "The profile and battery configuration marker schemas do not match.");
         }
 
-        BatteryAutomationPreferences preferences = ReadPreferences(
-            preferenceJson,
-            marker.SchemaVersion);
+        bool preferencesMigrated = preferences.ProtectionEnabled.HasValue;
+        preferences = preferences with { ProtectionEnabled = null };
         return new CommittedSnapshot(
             new BatteryConfiguration(profiles, preferences, Recovered: false),
             profileJson,
             preferenceJson,
             markerJson,
-            profileMigrated);
+            profileMigrated || preferencesMigrated);
     }
 
     private async Task<ProfileSet?> TryReadLegacyAsync(CancellationToken cancellationToken)
@@ -251,7 +262,10 @@ public sealed class BatteryConfigurationStore
             battery,
             ProfileDefaults.CreateSafeDefaults().UsbC,
             BatteryPolicy.Create(ReadInt32(policy, "chargeLimitPercent")));
-        profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
+        profiles = ProfileStore.NormalizeLegacyBatteryProfile(
+            profiles,
+            out _,
+            batteryProtectionDefault: true);
         validator.Validate(profiles);
         return profiles;
     }
@@ -288,6 +302,23 @@ public sealed class BatteryConfigurationStore
         {
             throw new InvalidDataException("The battery preference schema is unsupported.");
         }
+        if (document.Preferences is null)
+        {
+            throw new InvalidDataException("The battery preferences are missing.");
+        }
+
+        if (expectedSchemaVersion < ProfileStore.CurrentSchemaVersion
+            && !document.Preferences.ProtectionEnabled.HasValue)
+        {
+            throw new InvalidDataException(
+                "The legacy battery protection preference is missing.");
+        }
+        if (expectedSchemaVersion == ProfileStore.CurrentSchemaVersion
+            && document.Preferences.ProtectionEnabled.HasValue)
+        {
+            throw new InvalidDataException(
+                "The current battery preference document contains a legacy setting.");
+        }
 
         validator.ValidatePreferences(document.Preferences);
         return document.Preferences;
@@ -298,6 +329,7 @@ public sealed class BatteryConfigurationStore
         BatteryAutomationPreferences preferences,
         CancellationToken cancellationToken)
     {
+        preferences = preferences with { ProtectionEnabled = null };
         validator.Validate(profiles);
         validator.ValidatePreferences(preferences);
         byte[] profileJson = SerializeProfiles(profiles);
@@ -316,6 +348,7 @@ public sealed class BatteryConfigurationStore
         CancellationToken cancellationToken,
         byte[]? committedPreferenceJson = null)
     {
+        preferences = preferences with { ProtectionEnabled = null };
         byte[] profileJson = SerializeProfiles(profiles);
         byte[] preferenceJson = committedPreferenceJson ??
             JsonSerializer.SerializeToUtf8Bytes(
@@ -633,7 +666,7 @@ public sealed class BatteryConfigurationStore
 
     private static BatteryConfiguration SafeConfiguration(bool recovered) => new(
         ProfileDefaults.CreateSafeDefaults(),
-        new BatteryAutomationPreferences(ProtectionEnabled: true),
+        new BatteryAutomationPreferences(),
         recovered);
 
     private static byte ReadByte(JsonElement element, string name) =>
@@ -763,5 +796,5 @@ public sealed class BatteryConfigurationStore
         byte[] ProfileJson,
         byte[] PreferenceJson,
         byte[] MarkerJson,
-        bool ProfileMigrated);
+        bool ConfigurationMigrated);
 }

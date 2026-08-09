@@ -19,7 +19,7 @@ public sealed class ProfileExportSerializerTests
 
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
-        Assert.Equal(6, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(7, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("0.1.0+abcdef0", root.GetProperty("applicationVersion").GetString());
         Assert.Equal(exportedAt, root.GetProperty("exportedAtUtc").GetDateTimeOffset());
         JsonElement exportedProfiles = root.GetProperty("profiles");
@@ -37,6 +37,12 @@ public sealed class ProfileExportSerializerTests
             exportedProfiles.GetProperty("batteryPolicy")
                 .GetProperty("chargeLimitPercent")
                 .GetInt32());
+        Assert.True(exportedProfiles.GetProperty("pluggedIn")
+            .GetProperty("batteryProtectionEnabled").GetBoolean());
+        Assert.True(exportedProfiles.GetProperty("battery")
+            .GetProperty("batteryProtectionEnabled").GetBoolean());
+        Assert.True(exportedProfiles.GetProperty("usbC")
+            .GetProperty("batteryProtectionEnabled").GetBoolean());
     }
 
     [Fact]
@@ -106,7 +112,7 @@ public sealed class ProfileExportSerializerTests
             legacy,
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 6",
+                "\"schemaVersion\": 7",
                 "\"schemaVersion\": 5",
                 StringComparison.Ordinal);
 
@@ -146,7 +152,7 @@ public sealed class ProfileExportSerializerTests
             legacy,
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 6",
+                "\"schemaVersion\": 7",
                 "\"schemaVersion\": 5",
                 StringComparison.Ordinal);
 
@@ -165,14 +171,14 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 6",
                 "\"schemaVersion\": 7",
+                "\"schemaVersion\": 8",
                 StringComparison.Ordinal);
 
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => ProfileExportSerializer.Deserialize(json));
 
-        Assert.Contains("schema 7", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("schema 8", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("newer version", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -183,7 +189,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 6",
+                "\"schemaVersion\": 7",
                 "\"schemaVersion\": 0",
                 StringComparison.Ordinal);
 
@@ -200,7 +206,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 6",
+                "\"schemaVersion\": 7",
                 "\"schemaVersion\": 1",
                 StringComparison.Ordinal);
 

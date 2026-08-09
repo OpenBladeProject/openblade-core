@@ -78,6 +78,10 @@ public sealed class WinUiShellContractTests
     public void ProfilesPageIsReadOnlyAndSubsystemPagesOwnProfileActions()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string profilesPage = SliceMethod(
+            xaml,
+            "<ScrollViewer x:Name=\"ProfilesPage\"",
+            "<ScrollViewer x:Name=\"LaptopPage\"");
 
         Assert.Contains("x:Name=\"ProfilesComparisonLayout\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ProfilesCompactLayout\"", xaml, StringComparison.Ordinal);
@@ -94,8 +98,16 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ViewModel.IsUsbCProfileDraft", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.SavedActiveProfileSummary", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.PendingActiveProfileSummary", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("ViewModel.DiscardProfileDraftCommand", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("ViewModel.SaveProfilesCommand", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "ViewModel.DiscardProfileDraftCommand",
+            profilesPage,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "ViewModel.SaveProfilesCommand",
+            profilesPage,
+            StringComparison.Ordinal);
+        Assert.Contains("ViewModel.DiscardProfileDraftCommand", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SaveProfilesCommand", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"Current display\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("OnCaptureCurrentDisplaySettings", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.SaveLaptopProfileDraftCommand", xaml, StringComparison.Ordinal);
@@ -104,15 +116,23 @@ public sealed class WinUiShellContractTests
         Assert.Contains("x:Name=\"DashboardPageHeader\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LightingPageHeader\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DisplayPageHeader\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(4, CountOccurrences(
+        Assert.Equal(3, CountOccurrences(
             xaml,
             "Content=\"{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}\""));
+        Assert.Contains(
+            "Content=\"{x:Bind ViewModel.DashboardProfileSaveLabel, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"Not saved\"", xaml, StringComparison.Ordinal);
         Assert.Equal(4, CountOccurrences(xaml, "Content=\"Use profile settings\""));
-        Assert.Equal(2, CountOccurrences(
+        Assert.Equal(1, CountOccurrences(
             xaml,
             "Visibility=\"{x:Bind ViewModel.HasLaptopPageProfileDifference, Mode=OneWay}\""));
+        Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.HasDashboardProfileRestoreOpportunity, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
         Assert.Contains(
             "Visibility=\"{x:Bind ViewModel.HasLightingProfileDifference, Mode=OneWay}\"",
             xaml,

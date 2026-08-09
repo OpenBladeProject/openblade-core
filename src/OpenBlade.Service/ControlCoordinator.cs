@@ -756,8 +756,12 @@ public sealed class ControlCoordinator
                 batteryPlan.Name,
                 batteryPlan.Supported,
                 batteryPlan.InitiallyMatching,
-                batteryPlan.Setter,
-                state => batteryPlan.Matches(state.Battery)),
+                token => ApplyBatteryTransitionAsync(
+                    desired.Battery,
+                    capabilities,
+                    initial.Battery,
+                    token),
+                state => BatteryMatches(desired.Battery, state.Battery)),
             [DeviceSubsystem.Lighting] = new(
                 "Lighting",
                 IsLightingValid(desired.Lighting.Value)
@@ -768,6 +772,40 @@ public sealed class ControlCoordinator
                 AcceptSetterCompletionWithoutReadback:
                     desired.Lighting.Value.Effect != LightingEffect.Off),
         };
+    }
+
+    private async Task ApplyBatteryTransitionAsync(
+        DesiredBatteryState desired,
+        DeviceCapabilities capabilities,
+        ConfirmedBatteryState? initial,
+        CancellationToken cancellationToken)
+    {
+        BatteryOperationPlan plan = CreateBatteryPlan(desired, capabilities, initial);
+        await plan.Setter(cancellationToken).ConfigureAwait(false);
+
+        if (initial?.TemporaryFullCharge is not true
+            || desired.TemporaryFullCharge)
+        {
+            return;
+        }
+
+        ConfirmedBatteryState? refreshed = (await device.ReadStateAsync(cancellationToken)
+            .ConfigureAwait(false)).Battery;
+        if (refreshed?.TemporaryFullCharge is not false)
+        {
+            return;
+        }
+
+        // Keep one intent bounded to the cancellation plus one confirmed follow-up.
+        // Any remaining multi-step mismatch is retried by the next automation cycle.
+        BatteryOperationPlan followUp = CreateBatteryPlan(
+            desired,
+            capabilities,
+            refreshed);
+        if (followUp.Supported && !followUp.InitiallyMatching)
+        {
+            await followUp.Setter(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task ApplyPendingSubsystemWritesAsync(
