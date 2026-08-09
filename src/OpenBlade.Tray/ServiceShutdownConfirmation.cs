@@ -1,13 +1,14 @@
 namespace OpenBlade.Tray;
 
-public enum ObservedServiceShutdownState
+internal enum ObservedServiceShutdownState
 {
     Running,
     StopPending,
     Stopped,
+    Unavailable,
 }
 
-public sealed class ServiceShutdownConfirmation
+internal sealed class ServiceShutdownConfirmation
 {
     private readonly Func<ObservedServiceShutdownState> readState;
     private readonly Func<TimeSpan, CancellationToken, Task> delayAsync;
@@ -35,9 +36,14 @@ public sealed class ServiceShutdownConfirmation
         for (int poll = 0; poll < maximumPolls; poll++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (readState() == ObservedServiceShutdownState.Stopped)
+            ObservedServiceShutdownState state = readState();
+            if (state == ObservedServiceShutdownState.Stopped)
             {
                 return true;
+            }
+            if (state == ObservedServiceShutdownState.Unavailable)
+            {
+                return false;
             }
 
             if (poll + 1 < maximumPolls)

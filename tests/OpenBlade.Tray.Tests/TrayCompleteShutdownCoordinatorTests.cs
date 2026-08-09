@@ -31,14 +31,15 @@ public sealed class TrayCompleteShutdownCoordinatorTests
     }
 
     [Theory]
-    [InlineData(false, TrayCompleteShutdownResult.Unconfirmed, 0, 0)]
-    [InlineData(true, TrayCompleteShutdownResult.Completed, 1, 1)]
+    [InlineData(false, (int)TrayCompleteShutdownResult.Unconfirmed, 0, 0)]
+    [InlineData(true, (int)TrayCompleteShutdownResult.Completed, 1, 1)]
     public async Task IndeterminateRequestRequiresStoppedReadback(
         bool serviceStopped,
-        TrayCompleteShutdownResult expected,
+        int expectedValue,
         int expectedStopCalls,
         int expectedExitCalls)
     {
+        var expected = (TrayCompleteShutdownResult)expectedValue;
         RecordingShutdownSteps steps = CreateSteps(
             ElevatedServiceShutdownOutcome.Indeterminate,
             serviceStopped);

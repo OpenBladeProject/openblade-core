@@ -3,14 +3,14 @@ using System.Diagnostics;
 
 namespace OpenBlade.Tray;
 
-public enum ElevatedServiceShutdownOutcome
+internal enum ElevatedServiceShutdownOutcome
 {
     Completed,
     Canceled,
     Indeterminate,
 }
 
-public sealed class ElevatedServiceShutdownLauncher
+internal sealed class ElevatedServiceShutdownLauncher
 {
     public const string HelperArgument = "--shutdown-service";
 
@@ -81,9 +81,12 @@ public sealed class ElevatedServiceShutdownLauncher
         ProcessStartInfo startInfo,
         CancellationToken cancellationToken)
     {
-        using Process process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException(
-                "Windows did not start the elevated OpenBlade shutdown helper.");
+        using Process process = await Task.Run(
+                () => Process.Start(startInfo)
+                    ?? throw new InvalidOperationException(
+                        "Windows did not start the elevated OpenBlade shutdown helper."),
+                cancellationToken)
+            .ConfigureAwait(false);
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
         return process.ExitCode;
     }

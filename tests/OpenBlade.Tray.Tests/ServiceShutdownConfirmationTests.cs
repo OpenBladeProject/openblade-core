@@ -31,11 +31,12 @@ public sealed class ServiceShutdownConfirmationTests
     }
 
     [Theory]
-    [InlineData(ObservedServiceShutdownState.Running)]
-    [InlineData(ObservedServiceShutdownState.StopPending)]
+    [InlineData((int)ObservedServiceShutdownState.Running)]
+    [InlineData((int)ObservedServiceShutdownState.StopPending)]
     public async Task WaitForStoppedAsyncNonStoppedStateTimesOutClosed(
-        ObservedServiceShutdownState state)
+        int stateValue)
     {
+        var state = (ObservedServiceShutdownState)stateValue;
         int reads = 0;
         int delays = 0;
         var confirmation = new ServiceShutdownConfirmation(
@@ -57,6 +58,32 @@ public sealed class ServiceShutdownConfirmationTests
         Assert.False(stopped);
         Assert.Equal(3, reads);
         Assert.Equal(2, delays);
+    }
+
+    [Fact]
+    public async Task WaitForStoppedAsyncUnavailableStateFailsClosedImmediately()
+    {
+        int reads = 0;
+        int delays = 0;
+        var confirmation = new ServiceShutdownConfirmation(
+            () =>
+            {
+                reads++;
+                return ObservedServiceShutdownState.Unavailable;
+            },
+            (_, _) =>
+            {
+                delays++;
+                return Task.CompletedTask;
+            },
+            maximumPolls: 3,
+            TimeSpan.FromMilliseconds(1));
+
+        bool stopped = await confirmation.WaitForStoppedAsync(CancellationToken.None);
+
+        Assert.False(stopped);
+        Assert.Equal(1, reads);
+        Assert.Equal(0, delays);
     }
 
     [Fact]

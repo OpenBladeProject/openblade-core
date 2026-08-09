@@ -35,7 +35,7 @@ public sealed class ElevatedServiceShutdownLauncherTests
     }
 
     [Fact]
-    public async Task RequestAsyncSuccessfulHelperReturnsTrue()
+    public async Task RequestAsyncSuccessfulHelperReturnsCompletedOutcome()
     {
         ProcessStartInfo? observed = null;
         var launcher = new ElevatedServiceShutdownLauncher((startInfo, token) =>
@@ -55,7 +55,7 @@ public sealed class ElevatedServiceShutdownLauncherTests
     }
 
     [Fact]
-    public async Task RequestAsyncCanceledElevationReturnsFalse()
+    public async Task RequestAsyncCanceledElevationReturnsCanceledOutcome()
     {
         var launcher = new ElevatedServiceShutdownLauncher((_, _) =>
             throw new Win32Exception(1223));

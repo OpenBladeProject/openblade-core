@@ -8,6 +8,7 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
@@ -29,6 +30,8 @@
              Link="ElevatedServiceShutdownLauncher.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\ServiceShutdownConfirmation.cs"
              Link="ServiceShutdownConfirmation.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\WindowsServiceShutdownConfirmation.cs"
+             Link="WindowsServiceShutdownConfirmation.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\TrayCompleteShutdownCoordinator.cs"
              Link="TrayCompleteShutdownCoordinator.cs" />
   </ItemGroup>

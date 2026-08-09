@@ -38,11 +38,12 @@ public partial class App : Microsoft.UI.Xaml.Application
         string[] commandLineArguments = Environment.GetCommandLineArgs();
         bool elevatedShutdownHelper = ElevatedServiceShutdownLauncher.IsHelperLaunch(
             commandLineArguments);
-        RegisterCrashReporting();
+        string componentName = elevatedShutdownHelper
+            ? "OpenBlade.Tray.ShutdownHelper"
+            : "OpenBlade.Tray";
+        RegisterCrashReporting(componentName);
         traceLogRegistration ??= PersistentTraceLog.RegisterDefault(
-            elevatedShutdownHelper
-                ? "OpenBlade.Tray.ShutdownHelper"
-                : "OpenBlade.Tray",
+            componentName,
             OpenBladeProductVersion.Read(typeof(App).Assembly));
         if (elevatedShutdownHelper)
         {
@@ -506,7 +507,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         // Intentionally leave Handled false so WinUI terminates normally.
     }
 
-    private void RegisterCrashReporting()
+    private void RegisterCrashReporting(string componentName)
     {
         if (crashReportWriter is not null)
         {
@@ -514,7 +515,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         crashReportWriter = CrashReportWriter.CreateDefault(
-            "OpenBlade.Tray",
+            componentName,
             OpenBladeProductVersion.Read(typeof(App).Assembly));
         UnhandledException += OnXamlUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;

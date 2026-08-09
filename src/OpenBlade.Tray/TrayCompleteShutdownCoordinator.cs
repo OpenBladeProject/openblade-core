@@ -1,13 +1,18 @@
 namespace OpenBlade.Tray;
 
-public enum TrayCompleteShutdownResult
+internal enum TrayCompleteShutdownResult
 {
     Completed,
     Canceled,
     Unconfirmed,
 }
 
-public sealed class TrayCompleteShutdownCoordinator
+/// <summary>
+/// Coordinates UI-affine tray teardown. Its awaits intentionally capture the
+/// caller's synchronization context so Session Agent signaling and tray exit
+/// resume on the WinUI thread. Do not add ConfigureAwait(false) here.
+/// </summary>
+internal sealed class TrayCompleteShutdownCoordinator
 {
     private readonly Func<CancellationToken, Task<ElevatedServiceShutdownOutcome>> requestAsync;
     private readonly Func<CancellationToken, Task<bool>> confirmStoppedAsync;

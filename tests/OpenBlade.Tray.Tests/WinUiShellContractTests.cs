@@ -1222,9 +1222,24 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ShowTrayTaskDialog", app, StringComparison.Ordinal);
         Assert.Contains("WindowNative.GetWindowHandle(window)", app, StringComparison.Ordinal);
         Assert.Contains("service shutdown elevation was canceled", app, StringComparison.Ordinal);
-        Assert.True(
-            CountOccurrences(app, "ExitTrayAsync") >= 4,
-            "The setup event and both exit choices must retain the shared tray exit path.");
+        string normalizedApp = app.Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.Contains(
+            "(_, _) => Enqueue(() => _ = ExitTrayAsync())",
+            normalizedApp,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new TrayExitController(\n"
+                + "            ShowTrayExitDialog,\n"
+                + "            ExitTrayAsync,\n"
+                + "            ShutdownOpenBladeAsync);",
+            normalizedApp,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "WindowsServiceShutdownConfirmation.WaitForStoppedAsync,\n"
+                + "            () => _ = SessionAgentLauncher.TryStopSibling(),\n"
+                + "            ExitTrayAsync);",
+            normalizedApp,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1264,6 +1279,16 @@ public sealed class WinUiShellContractTests
         Assert.Contains("WindowsServiceShutdownConfirmation.WaitForStoppedAsync", app, StringComparison.Ordinal);
         Assert.Contains("TrayCompleteShutdownResult.Unconfirmed", app, StringComparison.Ordinal);
         Assert.Contains("did not retry the request", app, StringComparison.Ordinal);
+        string launcher = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "ElevatedServiceShutdownLauncher.cs");
+        int taskRun = launcher.IndexOf("await Task.Run(", StringComparison.Ordinal);
+        int processStart = launcher.IndexOf("Process.Start(startInfo)", StringComparison.Ordinal);
+        int waitForExit = launcher.IndexOf("WaitForExitAsync", StringComparison.Ordinal);
+        Assert.True(taskRun >= 0);
+        Assert.True(taskRun < processStart);
+        Assert.True(processStart < waitForExit);
         Assert.DoesNotContain(
             "window.ViewModel.ShutdownOpenBladeAsync",
             app,
