@@ -13,7 +13,6 @@ public sealed class TrayDashboardPreferenceTests
             [
                 TrayDashboardControlKind.Performance,
                 TrayDashboardControlKind.Fans,
-                TrayDashboardControlKind.Battery,
                 TrayDashboardControlKind.Lighting,
             ],
             preference.Controls!.Select(control => control.Kind));
@@ -23,6 +22,17 @@ public sealed class TrayDashboardPreferenceTests
             control => Assert.Equal(TrayDashboardControlSize.Compact, control.Size));
         Assert.Null(preference.ExpandedControl);
         Assert.All(preference.StatusItems!, status => Assert.True(status.IsVisible));
+        Assert.Equal(
+            [
+                TrayDashboardSliderKind.LightingBrightness,
+                TrayDashboardSliderKind.ChargeLimit,
+                TrayDashboardSliderKind.GpuCoreClock,
+                TrayDashboardSliderKind.GpuMemoryClock,
+            ],
+            preference.Sliders!.Select(slider => slider.Kind));
+        Assert.Equal(
+            [true, true, false, false],
+            preference.Sliders!.Select(slider => slider.IsVisible));
     }
 
     [Fact]
@@ -56,11 +66,10 @@ public sealed class TrayDashboardPreferenceTests
                 TrayDashboardControlKind.Lighting,
                 TrayDashboardControlKind.Performance,
                 TrayDashboardControlKind.Fans,
-                TrayDashboardControlKind.Battery,
             ],
             normalized.Controls!.Select(control => control.Kind));
         Assert.Equal(
-            [true, false, false, false],
+            [true, false, false],
             normalized.Controls!.Select(control => control.IsVisible));
         Assert.All(
             normalized.Controls!,
@@ -76,6 +85,9 @@ public sealed class TrayDashboardPreferenceTests
         Assert.Equal(
             [true, false, false],
             normalized.StatusItems!.Select(status => status.IsVisible));
+        Assert.Equal(
+            [true, false, false, false],
+            normalized.Sliders!.Select(slider => slider.IsVisible));
     }
 
     [Fact]
@@ -96,6 +108,56 @@ public sealed class TrayDashboardPreferenceTests
             TrayDashboardControlSize.Compact,
             normalized.Controls!.Single(control =>
                 control.Kind == TrayDashboardControlKind.Fans).Size);
+    }
+
+    [Fact]
+    public void NormalizeMigratesLegacyBatteryAndLightingTilesToSliders()
+    {
+        TrayDashboardPreference normalized = TrayDashboardPreferenceDefaults.Normalize(new(
+            Controls:
+            [
+                new(
+                    TrayDashboardControlKind.Battery,
+                    true,
+                    TrayDashboardControlSize.Wide),
+                new(
+                    TrayDashboardControlKind.Lighting,
+                    false,
+                    TrayDashboardControlSize.Compact),
+            ]));
+
+        Assert.DoesNotContain(
+            normalized.Controls!,
+            control => control.Kind == TrayDashboardControlKind.Battery);
+        Assert.Equal(
+            [
+                (TrayDashboardSliderKind.LightingBrightness, false),
+                (TrayDashboardSliderKind.ChargeLimit, true),
+                (TrayDashboardSliderKind.GpuCoreClock, false),
+                (TrayDashboardSliderKind.GpuMemoryClock, false),
+            ],
+            normalized.Sliders!.Select(slider => (slider.Kind, slider.IsVisible)));
+    }
+
+    [Fact]
+    public void NormalizePreservesSliderOrderAndDropsDuplicates()
+    {
+        TrayDashboardPreference normalized = TrayDashboardPreferenceDefaults.Normalize(new(
+            Sliders:
+            [
+                new(TrayDashboardSliderKind.GpuMemoryClock, true),
+                new(TrayDashboardSliderKind.ChargeLimit, false),
+                new(TrayDashboardSliderKind.GpuMemoryClock, false),
+            ]));
+
+        Assert.Equal(
+            [
+                (TrayDashboardSliderKind.GpuMemoryClock, true),
+                (TrayDashboardSliderKind.ChargeLimit, false),
+                (TrayDashboardSliderKind.LightingBrightness, false),
+                (TrayDashboardSliderKind.GpuCoreClock, false),
+            ],
+            normalized.Sliders!.Select(slider => (slider.Kind, slider.IsVisible)));
     }
 
     [Theory]
@@ -292,9 +354,9 @@ public sealed class TrayDashboardPreferenceTests
     }
 
     [Theory]
-    [InlineData(96, 360, 278, 8)]
-    [InlineData(144, 540, 417, 12)]
-    [InlineData(192, 720, 556, 16)]
+    [InlineData(96, 360, 388, 8)]
+    [InlineData(144, 540, 582, 12)]
+    [InlineData(192, 720, 776, 16)]
     public void PlacementScalesRedesignedPopupAtCommonMonitorDpis(
         int dpi,
         int expectedWidth,
@@ -305,7 +367,7 @@ public sealed class TrayDashboardPreferenceTests
         TrayDashboardRect result = TrayDashboardPlacement.Resolve(
             new TrayDashboardPoint(3839, 2159),
             workArea,
-            new TrayDashboardSize(360, 278),
+            new TrayDashboardSize(360, 388),
             dpi);
 
         Assert.Equal(expectedWidth, result.Width);
@@ -375,7 +437,7 @@ public sealed class TrayDashboardPreferenceTests
         ],
             layout.Controls);
         Assert.Equal(
-            278,
+            388,
             TrayDashboardLayoutPolicy.CalculatePreferredHeight(layout));
     }
 
@@ -398,7 +460,7 @@ public sealed class TrayDashboardPreferenceTests
         Assert.True(layout.HasOverflow);
         Assert.Equal(2, layout.Controls[6].Row);
         Assert.Equal(0, layout.Controls[6].Column);
-        Assert.Equal(278, TrayDashboardLayoutPolicy.CalculatePreferredHeight(layout));
+        Assert.Equal(388, TrayDashboardLayoutPolicy.CalculatePreferredHeight(layout));
     }
 
     [Fact]
@@ -420,7 +482,7 @@ public sealed class TrayDashboardPreferenceTests
         Assert.Equal(1, layout.VisibleRowCount);
         Assert.False(layout.HasOverflow);
         Assert.Equal(
-            180,
+            388,
             TrayDashboardLayoutPolicy.CalculatePreferredHeight(layout));
     }
 

@@ -14,10 +14,7 @@ public sealed record TrayDashboardLayout(
 
 public static class TrayDashboardLayoutPolicy
 {
-    private const int BaseHeightDip = 82;
-    private const int ControlRowHeightDip = 98;
-    private const int MinimumHeightDip = 180;
-    private const int MaximumHeightDip = 278;
+    private const int PreferredHeightDip = 388;
     private const int ColumnCount = 3;
     private const int MaximumVisibleRows = 2;
 
@@ -51,10 +48,7 @@ public static class TrayDashboardLayoutPolicy
     public static int CalculatePreferredHeight(TrayDashboardLayout layout)
     {
         ArgumentNullException.ThrowIfNull(layout);
-        return Math.Clamp(
-            checked(BaseHeightDip + (layout.VisibleRowCount * ControlRowHeightDip)),
-            MinimumHeightDip,
-            MaximumHeightDip);
+        return PreferredHeightDip;
     }
 }
 

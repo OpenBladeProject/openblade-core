@@ -6,6 +6,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using OpenBlade.Contracts;
 using Windows.Graphics;
@@ -16,6 +17,8 @@ namespace OpenBlade.Tray;
 public sealed partial class TrayDashboardWindow : Window, IDisposable
 {
     private const int PopupWidth = 360;
+    private static readonly TimeSpan GpuClockOffsetCommitDelay =
+        TimeSpan.FromMilliseconds(500);
     private const uint MonitorDefaultToNearest = 2;
     private const uint WindowMessageNonClientDestroy = 0x0082;
     private const nuint RevealSubclassId = 0x4F425244; // "OBRD"
@@ -29,6 +32,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private readonly Action<bool> visibilityChanged;
     private readonly DispatcherQueue dispatcherQueue;
     private readonly DispatcherQueueTimer foregroundTimer;
+    private DispatcherQueueTimer? gpuClockOffsetCommitTimer;
+    private readonly CoalescingCommitState<GpuClockOffsetSettings>
+        gpuClockOffsetCommits = new();
     private readonly nint hostWindowHandle;
     private readonly uint advanceRevealMessage;
     private TrayDashboardPreference preference = TrayDashboardPreferenceDefaults.Preference;
@@ -36,7 +42,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         TrayDashboardPreferenceDefaults.Preference.Controls!);
     private bool changingPerformance;
     private bool changingFans;
-    private bool changingBattery;
+    private bool changingBatteryProtection;
+    private bool changingGpuClockTuning;
+    private bool chargeLimitPointerInteraction;
     private TrayDashboardControlKind? detailControl;
     private bool pinnedForEditing;
     private bool visible;
@@ -79,6 +87,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         foregroundTimer.Interval = TimeSpan.FromMilliseconds(50);
         foregroundTimer.IsRepeating = true;
         foregroundTimer.Tick += OnForegroundTimerTick;
+        gpuClockOffsetCommitTimer = dispatcherQueue.CreateTimer();
+        gpuClockOffsetCommitTimer.Interval = GpuClockOffsetCommitDelay;
+        gpuClockOffsetCommitTimer.Tick += OnGpuClockOffsetCommitTimerTick;
         hostWindowHandle = WindowNative.GetWindowHandle(this);
         advanceRevealMessage = RegisterWindowMessage(
             "OpenBlade.TrayDashboard.AdvanceReveal.v1");
@@ -162,6 +173,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         StatusItemsHost.Visibility = preference.StatusItems.Any(status => status.IsVisible)
             ? Visibility.Visible
             : Visibility.Collapsed;
+        UpdateSliderRows();
+        UpdateFansDetailsAvailability();
         if (visible && visibleDisplayArea is not null)
         {
             TryPositionAt(visibleAnchor, visibleDisplayArea);
@@ -227,6 +240,12 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         AppWindow.Closing -= OnClosing;
         foregroundTimer.Stop();
         foregroundTimer.Tick -= OnForegroundTimerTick;
+        if (gpuClockOffsetCommitTimer is { } gpuTimer)
+        {
+            gpuTimer.Stop();
+            gpuTimer.Tick -= OnGpuClockOffsetCommitTimerTick;
+            gpuClockOffsetCommitTimer = null;
+        }
         CancelRevealAnimation();
         DetachRevealSubclass();
         if (visible)
@@ -802,9 +821,58 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         {
             [TrayDashboardControlKind.Performance] = PerformanceTile,
             [TrayDashboardControlKind.Fans] = FansTile,
-            [TrayDashboardControlKind.Battery] = BatteryTile,
             [TrayDashboardControlKind.Lighting] = LightingTile,
         };
+
+    private IReadOnlyDictionary<TrayDashboardSliderKind, FrameworkElement>
+        SlidersByKind() =>
+        new Dictionary<TrayDashboardSliderKind, FrameworkElement>
+        {
+            [TrayDashboardSliderKind.ChargeLimit] = ChargeLimitSliderRow,
+            [TrayDashboardSliderKind.LightingBrightness] = LightingBrightnessSliderRow,
+            [TrayDashboardSliderKind.GpuCoreClock] = GpuCoreClockSliderRow,
+            [TrayDashboardSliderKind.GpuMemoryClock] = GpuMemoryClockSliderRow,
+        };
+
+    private void UpdateSliderRows()
+    {
+        IReadOnlyDictionary<TrayDashboardSliderKind, FrameworkElement> sliders =
+            SlidersByKind();
+        foreach (FrameworkElement slider in sliders.Values)
+        {
+            slider.Visibility = Visibility.Collapsed;
+        }
+
+        SliderGrid.RowDefinitions.Clear();
+        int row = 0;
+        foreach (TrayDashboardSliderPreference slider in preference.Sliders!)
+        {
+            bool available = slider.Kind is not (
+                    TrayDashboardSliderKind.GpuCoreClock
+                    or TrayDashboardSliderKind.GpuMemoryClock)
+                || ViewModel.IsGpuClockTuningVisible;
+            FrameworkElement element = sliders[slider.Kind];
+            if (!slider.IsVisible || !available)
+            {
+                continue;
+            }
+
+            SliderGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(element, row++);
+            element.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void UpdateFansDetailsAvailability()
+    {
+        bool hasChoices = ViewModel.AvailableActiveFanModeOptions.Count > 1;
+        FansDetailsColumn.Width = hasChoices
+            ? new GridLength(36)
+            : new GridLength(0);
+        FansDetailsHost.Visibility = hasChoices
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
 
     private IReadOnlyDictionary<TrayDashboardStatusItemKind, FrameworkElement>
         StatusItemsByKind() =>
@@ -901,6 +969,14 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         if (args.PropertyName == nameof(MainViewModel.Theme))
         {
             ThemeManager.Apply(Root, ViewModel.Theme);
+        }
+        else if (args.PropertyName == nameof(MainViewModel.AvailableActiveFanModeOptions))
+        {
+            UpdateFansDetailsAvailability();
+        }
+        else if (args.PropertyName == nameof(MainViewModel.IsGpuClockTuningVisible))
+        {
+            UpdateSliderRows();
         }
     }
 
@@ -1042,18 +1118,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
     }
 
-    private async void OnBatteryCycleClick(object sender, RoutedEventArgs args)
-    {
-        IReadOnlyList<int> options = ViewModel.ChargeLimitOptions;
-        int next = TrayDashboardInteractionPolicy.ResolveNextIndex(
-            options.Count,
-            FindIndex(options, option => option == ViewModel.ChargeLimitPercent));
-        if (next >= 0)
-        {
-            await CommitChargeLimitAsync(options[next]);
-        }
-    }
-
     private void OnLightingCycleClick(object sender, RoutedEventArgs args)
     {
         IReadOnlyList<LightingEffectOption> options =
@@ -1074,9 +1138,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private void OnFansDetailsClick(object sender, RoutedEventArgs args) =>
         ShowDetail(TrayDashboardControlKind.Fans, "Fans");
 
-    private void OnBatteryDetailsClick(object sender, RoutedEventArgs args) =>
-        ShowDetail(TrayDashboardControlKind.Battery, "Charge limit");
-
     private void OnLightingDetailsClick(object sender, RoutedEventArgs args) =>
         ShowDetail(TrayDashboardControlKind.Lighting, "Lighting");
 
@@ -1091,9 +1152,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             ? Visibility.Visible
             : Visibility.Collapsed;
         FansDetail.Visibility = kind == TrayDashboardControlKind.Fans
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        BatteryDetail.Visibility = kind == TrayDashboardControlKind.Battery
             ? Visibility.Visible
             : Visibility.Collapsed;
         LightingDetail.Visibility = kind == TrayDashboardControlKind.Lighting
@@ -1130,26 +1188,70 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         return -1;
     }
 
-    private async void OnChargeLimitChanged(object sender, SelectionChangedEventArgs args)
+    private async void OnBatteryProtectionClick(object sender, RoutedEventArgs args)
     {
-        if (changingBattery
+        if (changingBatteryProtection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ListView selector
-            || selector.SelectedItem is not int selected
-            || selected == ViewModel.ChargeLimitPercent)
+            || sender is not ToggleButton toggle
+            || toggle.IsChecked == ViewModel.BatteryProtectionEnabled)
         {
             return;
         }
 
-        changingBattery = true;
+        changingBatteryProtection = true;
         try
         {
-            await CommitChargeLimitAsync(selected);
+            if (ViewModel.ToggleBatteryProtectionCommand is AsyncRelayCommand command
+                && command.CanExecute(null))
+            {
+                await command.ExecuteAsync(null);
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade tray dashboard battery-protection change failed: {0}",
+                exception);
         }
         finally
         {
-            selector.SelectedItem = ViewModel.ChargeLimitPercent;
-            changingBattery = false;
+            toggle.IsChecked = ViewModel.BatteryProtectionEnabled;
+            changingBatteryProtection = false;
+        }
+    }
+
+    private void OnChargeLimitPointerPressed(object sender, PointerRoutedEventArgs args) =>
+        chargeLimitPointerInteraction = Volatile.Read(ref disposed) == 0;
+
+    private async void OnChargeLimitPointerReleased(
+        object sender,
+        PointerRoutedEventArgs args)
+    {
+        if (!chargeLimitPointerInteraction)
+        {
+            return;
+        }
+
+        chargeLimitPointerInteraction = false;
+        if (sender is Slider slider)
+        {
+            await CommitChargeLimitAsync(slider.Value);
+        }
+    }
+
+    private async void OnChargeLimitKeyUp(object sender, KeyRoutedEventArgs args)
+    {
+        if (sender is Slider slider
+            && args.Key is Windows.System.VirtualKey.Left
+                or Windows.System.VirtualKey.Right
+                or Windows.System.VirtualKey.Up
+                or Windows.System.VirtualKey.Down
+                or Windows.System.VirtualKey.PageUp
+                or Windows.System.VirtualKey.PageDown
+                or Windows.System.VirtualKey.Home
+                or Windows.System.VirtualKey.End)
+        {
+            await CommitChargeLimitAsync(slider.Value);
         }
     }
 
@@ -1179,6 +1281,128 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             Trace.TraceError(
                 "OpenBlade tray dashboard charge-limit change failed: {0}",
                 exception);
+        }
+    }
+
+    private async void OnGpuClockTuningClick(object sender, RoutedEventArgs args)
+    {
+        if (changingGpuClockTuning
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleButton toggle
+            || toggle.IsChecked == ViewModel.IsGpuClockTuningEnabled)
+        {
+            return;
+        }
+
+        changingGpuClockTuning = true;
+        try
+        {
+            await ViewModel.SetGpuClockTuningEnabledAsync(
+                toggle.IsChecked == true,
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade tray dashboard GPU tuning change failed: {0}",
+                exception);
+        }
+        finally
+        {
+            toggle.IsChecked = ViewModel.IsGpuClockTuningEnabled;
+            changingGpuClockTuning = false;
+        }
+    }
+
+    private void OnGpuCoreClockOffsetChanged(
+        object sender,
+        RangeBaseValueChangedEventArgs args)
+    {
+        gpuClockOffsetCommits.TryPeekPending(out GpuClockOffsetSettings? pending);
+        ScheduleGpuClockOffsetCommit(
+            coreMegahertz: checked((int)Math.Round(args.NewValue)),
+            memoryMegahertz: pending?.MemoryMegahertz
+                ?? ViewModel.GpuMemoryClockOffsetMegahertz);
+    }
+
+    private void OnGpuMemoryClockOffsetChanged(
+        object sender,
+        RangeBaseValueChangedEventArgs args)
+    {
+        gpuClockOffsetCommits.TryPeekPending(out GpuClockOffsetSettings? pending);
+        ScheduleGpuClockOffsetCommit(
+            coreMegahertz: pending?.CoreMegahertz
+                ?? ViewModel.GpuCoreClockOffsetMegahertz,
+            memoryMegahertz: checked((int)Math.Round(args.NewValue)));
+    }
+
+    private void ScheduleGpuClockOffsetCommit(
+        int coreMegahertz,
+        int memoryMegahertz)
+    {
+        if (gpuClockOffsetCommitTimer is not { } timer
+            || Volatile.Read(ref disposed) != 0
+            || !ViewModel.CanEditGpuClockTuning)
+        {
+            return;
+        }
+
+        var requested = new GpuClockOffsetSettings(coreMegahertz, memoryMegahertz);
+        if (ViewModel.GpuClockOffsetCapabilities?.Supports(requested) != true)
+        {
+            return;
+        }
+
+        if (requested == ViewModel.CurrentGpuClockOffsets)
+        {
+            gpuClockOffsetCommits.ClearPending();
+            timer.Stop();
+            return;
+        }
+
+        gpuClockOffsetCommits.Schedule(requested);
+        timer.Stop();
+        timer.Start();
+    }
+
+    private async void OnGpuClockOffsetCommitTimerTick(
+        DispatcherQueueTimer sender,
+        object args)
+    {
+        sender.Stop();
+        CoalescingCommitBeginStatus status =
+            gpuClockOffsetCommits.TryBegin(out GpuClockOffsetSettings? requested);
+        if (status == CoalescingCommitBeginStatus.InProgress)
+        {
+            sender.Start();
+            return;
+        }
+        if (status != CoalescingCommitBeginStatus.Started || requested is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (ViewModel.CanEditGpuClockTuning)
+            {
+                await ViewModel.SetGpuClockOffsetsAsync(
+                    requested,
+                    CancellationToken.None);
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade tray dashboard GPU clock-offset change failed: {0}",
+                exception);
+        }
+        finally
+        {
+            if (gpuClockOffsetCommits.Complete())
+            {
+                sender.Start();
+            }
         }
     }
 

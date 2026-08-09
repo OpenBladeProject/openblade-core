@@ -5019,6 +5019,38 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.ToggleFullChargeCommand.CanExecute(true));
     }
 
+    [Fact]
+    public async Task TrayDashboardChargeLimitLabelReflectsProtectionState()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        ServiceStatusSnapshot enabled = CreateStatus(verified: true, blocked: false);
+        client.Publish(enabled);
+        await WaitUntilAsync(() =>
+            viewModel.TrayDashboardChargeLimitLabel == "80 %");
+
+        client.Publish(enabled with
+        {
+            Revision = 2,
+            ConfirmedState = enabled.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(false, null, false),
+            },
+            DesiredState = enabled.DesiredState with
+            {
+                Battery = new DesiredBatteryState(
+                    enabled.DesiredState.Battery.ConfiguredPolicy,
+                    protectionEnabled: false,
+                    temporaryFullCharge: false),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.TrayDashboardChargeLimitLabel == "Off");
+
+        Assert.False(viewModel.BatteryProtectionEnabled);
+    }
+
     [Theory]
     [InlineData("performance")]
     [InlineData("fans")]

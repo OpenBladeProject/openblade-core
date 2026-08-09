@@ -8,18 +8,21 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Added a compact quick-controls dashboard that opens with one click on the
-  tray icon. Its controls, order, tile sizes, expanded control, and status row
-  can be customized from Settings while the actual popup updates live. Open the
-  main window with a tray-icon double-click, **More**, or the tray icon's
-  right-click **Open** command.
+  tray icon. Its tile controls, slider controls, order, visibility, and status
+  row can be customized from Settings while the actual popup updates live.
+  Open the main window with a tray-icon double-click, the popup's Settings
+  button, or the tray icon's right-click **Open** command.
 
 ### Changed
 
 - Refined the dashboard into a Windows Quick Settings-style panel with a
   uniform three-column tile grid, quick actions that cycle through available
   options, chevrons that open focused choice screens, scrolling beyond six
-  controls, and a gear-only button for opening the main window. Settings keeps
-  control visibility, order, and the status row customizable.
+  controls, a separate quick-adjustment section for charge limit, lighting
+  brightness, and GPU clock sliders, and a gear-only button for opening the
+  main window. The popup now matches Windows' tile, type, and panel proportions;
+  single-choice fan controls omit the details chevron, and active charge-limit
+  protection is highlighted by its toggle.
 
 ### Fixed
 

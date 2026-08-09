@@ -184,6 +184,11 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 [
                     new(TrayDashboardStatusItemKind.BatteryPower, true),
                     new(TrayDashboardStatusItemKind.Fans, false),
+                ],
+                Sliders:
+                [
+                    new(TrayDashboardSliderKind.GpuMemoryClock, true),
+                    new(TrayDashboardSliderKind.ChargeLimit, true),
                 ])));
 
         UiPreferences reloaded = await store.LoadAsync();
@@ -279,12 +284,18 @@ public sealed class UiPreferenceStoreTests : IDisposable
             "RZ09-0581|bios=3.01|ec=1.04|mcu=1.06",
             reloaded.LastNotifiedFirmwareSignature);
         Assert.Equal(
-            TrayDashboardControlKind.Battery,
+            TrayDashboardControlKind.Performance,
             reloaded.EffectiveTrayDashboard.Controls![0].Kind);
         Assert.Equal(
             TrayDashboardControlSize.Compact,
             reloaded.EffectiveTrayDashboard.Controls[0].Size);
         Assert.Null(reloaded.EffectiveTrayDashboard.ExpandedControl);
+        Assert.True(reloaded.EffectiveTrayDashboard.Sliders!
+            .Single(slider => slider.Kind == TrayDashboardSliderKind.ChargeLimit)
+            .IsVisible);
+        Assert.Equal(
+            TrayDashboardSliderKind.GpuMemoryClock,
+            reloaded.EffectiveTrayDashboard.Sliders![0].Kind);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -297,6 +308,13 @@ public sealed class UiPreferenceStoreTests : IDisposable
             "EveryTenSeconds",
             document.RootElement.GetProperty("liveReadingsRefreshCadence").GetString());
         Assert.True(document.RootElement.GetProperty("startMinimized").GetBoolean());
+        Assert.Equal(
+            "GpuMemoryClock",
+            document.RootElement
+                .GetProperty("trayDashboard")
+                .GetProperty("sliders")[0]
+                .GetProperty("kind")
+                .GetString());
         Assert.Equal(
             "GpuTemperature",
             document.RootElement.GetProperty("dashboardTelemetryItems")[0].GetString());

@@ -1977,6 +1977,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             chargeLimitEditorDirty = true;
             SetField(ref chargeLimitPercent, value);
+            Notify(nameof(TrayDashboardChargeLimitLabel));
             NotifyCommands();
         }
     }
@@ -2009,12 +2010,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             SetField(ref batteryProtectionEnabled, value);
             Notify(nameof(BatteryProtectionActionLabel));
+            Notify(nameof(TrayDashboardChargeLimitLabel));
         }
     }
 
     public string BatteryProtectionActionLabel => BatteryProtectionEnabled
         ? "Turn off battery protection"
         : "Restore charge limit";
+
+    public string TrayDashboardChargeLimitLabel => BatteryProtectionEnabled
+        ? $"{ChargeLimitPercent} %"
+        : "Off";
 
     public bool FullChargeOverride
     {

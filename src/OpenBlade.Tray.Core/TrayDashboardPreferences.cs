@@ -23,6 +23,14 @@ public enum TrayDashboardStatusItemKind
     Fans,
 }
 
+public enum TrayDashboardSliderKind
+{
+    ChargeLimit,
+    LightingBrightness,
+    GpuCoreClock,
+    GpuMemoryClock,
+}
+
 public sealed record TrayDashboardControlPreference(
     TrayDashboardControlKind Kind,
     bool IsVisible,
@@ -32,10 +40,15 @@ public sealed record TrayDashboardStatusItemPreference(
     TrayDashboardStatusItemKind Kind,
     bool IsVisible);
 
+public sealed record TrayDashboardSliderPreference(
+    TrayDashboardSliderKind Kind,
+    bool IsVisible);
+
 public sealed record TrayDashboardPreference(
     IReadOnlyList<TrayDashboardControlPreference>? Controls = null,
     TrayDashboardControlKind? ExpandedControl = null,
-    IReadOnlyList<TrayDashboardStatusItemPreference>? StatusItems = null);
+    IReadOnlyList<TrayDashboardStatusItemPreference>? StatusItems = null,
+    IReadOnlyList<TrayDashboardSliderPreference>? Sliders = null);
 
 public sealed class TrayDashboardControlOption : INotifyPropertyChanged
 {
@@ -114,6 +127,42 @@ public sealed class TrayDashboardStatusItemOption : INotifyPropertyChanged
     }
 }
 
+public sealed class TrayDashboardSliderOption : INotifyPropertyChanged
+{
+    private bool isVisible;
+
+    public TrayDashboardSliderOption(
+        TrayDashboardSliderKind kind,
+        string label,
+        bool isVisible)
+    {
+        Kind = kind;
+        Label = label;
+        this.isVisible = isVisible;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public TrayDashboardSliderKind Kind { get; }
+
+    public string Label { get; }
+
+    public bool IsVisible
+    {
+        get => isVisible;
+        set
+        {
+            if (isVisible == value)
+            {
+                return;
+            }
+
+            isVisible = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsVisible)));
+        }
+    }
+}
+
 public static class TrayDashboardPreferenceDefaults
 {
     private sealed record ControlDefinition(
@@ -138,12 +187,6 @@ public static class TrayDashboardPreferenceDefaults
             true,
             TrayDashboardControlSize.Compact),
         new(
-            TrayDashboardControlKind.Battery,
-            "Battery",
-            "Adjust the battery charge limit.",
-            true,
-            TrayDashboardControlSize.Compact),
-        new(
             TrayDashboardControlKind.Lighting,
             "Lighting",
             "Choose the keyboard effect and brightness.",
@@ -153,6 +196,15 @@ public static class TrayDashboardPreferenceDefaults
 
     private static readonly TrayDashboardStatusItemKind[] StatusDefinitions =
         Enum.GetValues<TrayDashboardStatusItemKind>();
+
+    private static readonly (TrayDashboardSliderKind Kind, string Label, bool IsVisible)[]
+        SliderDefinitions =
+        [
+            (TrayDashboardSliderKind.LightingBrightness, "Lighting brightness", true),
+            (TrayDashboardSliderKind.ChargeLimit, "Charge limit", true),
+            (TrayDashboardSliderKind.GpuCoreClock, "GPU core clock", false),
+            (TrayDashboardSliderKind.GpuMemoryClock, "GPU memory clock", false),
+        ];
 
     public static TrayDashboardPreference Preference { get; } = new(
         ControlDefinitions
@@ -164,6 +216,11 @@ public static class TrayDashboardPreferenceDefaults
         null,
         StatusDefinitions
             .Select(kind => new TrayDashboardStatusItemPreference(kind, true))
+            .ToArray(),
+        SliderDefinitions
+            .Select(definition => new TrayDashboardSliderPreference(
+                definition.Kind,
+                definition.IsVisible))
             .ToArray());
 
     public static TrayDashboardPreference Normalize(TrayDashboardPreference? preference)
@@ -224,7 +281,53 @@ public static class TrayDashboardPreferenceDefaults
             }
         }
 
-        return new TrayDashboardPreference(controls, null, statusItems);
+        IReadOnlyDictionary<TrayDashboardSliderKind, (string Label, bool IsVisible)>
+            sliderDefinitions = SliderDefinitions.ToDictionary(
+                definition => definition.Kind,
+                definition => (definition.Label, definition.IsVisible));
+        var seenSliders = new HashSet<TrayDashboardSliderKind>();
+        var sliders = new List<TrayDashboardSliderPreference>(SliderDefinitions.Length);
+        foreach (TrayDashboardSliderPreference slider in preference.Sliders ?? [])
+        {
+            if (!Enum.IsDefined(slider.Kind)
+                || !sliderDefinitions.ContainsKey(slider.Kind)
+                || !seenSliders.Add(slider.Kind))
+            {
+                continue;
+            }
+
+            sliders.Add(slider);
+        }
+
+        bool migratingLegacyControls = preference.Sliders is null;
+        foreach ((TrayDashboardSliderKind kind, _, bool defaultVisibility) in
+                 SliderDefinitions)
+        {
+            if (!seenSliders.Add(kind))
+            {
+                continue;
+            }
+
+            bool isVisible = migratingLegacyControls
+                ? kind switch
+                {
+                    TrayDashboardSliderKind.ChargeLimit =>
+                        LegacyControlVisibility(
+                            preference,
+                            TrayDashboardControlKind.Battery,
+                            defaultVisibility),
+                    TrayDashboardSliderKind.LightingBrightness =>
+                        LegacyControlVisibility(
+                            preference,
+                            TrayDashboardControlKind.Lighting,
+                            defaultVisibility),
+                    _ => defaultVisibility,
+                }
+                : false;
+            sliders.Add(new TrayDashboardSliderPreference(kind, isVisible));
+        }
+
+        return new TrayDashboardPreference(controls, null, statusItems, sliders);
     }
 
     public static IReadOnlyList<TrayDashboardControlOption> CreateControlOptions(
@@ -256,6 +359,38 @@ public static class TrayDashboardPreferenceDefaults
                 StatusLabel(status.Kind),
                 status.IsVisible))
             .ToArray();
+    }
+
+    public static IReadOnlyList<TrayDashboardSliderOption> CreateSliderOptions(
+        TrayDashboardPreference? preference)
+    {
+        TrayDashboardPreference normalized = Normalize(preference);
+        IReadOnlyDictionary<TrayDashboardSliderKind, string> labels =
+            SliderDefinitions.ToDictionary(
+                definition => definition.Kind,
+                definition => definition.Label);
+        return normalized.Sliders!
+            .Select(slider => new TrayDashboardSliderOption(
+                slider.Kind,
+                labels[slider.Kind],
+                slider.IsVisible))
+            .ToArray();
+    }
+
+    private static bool LegacyControlVisibility(
+        TrayDashboardPreference preference,
+        TrayDashboardControlKind kind,
+        bool defaultVisibility)
+    {
+        if (preference.Controls is null)
+        {
+            return defaultVisibility;
+        }
+
+        return preference.Controls
+            .FirstOrDefault(control => control.Kind == kind)?
+            .IsVisible
+            ?? false;
     }
 
     private static string StatusLabel(TrayDashboardStatusItemKind kind) => kind switch

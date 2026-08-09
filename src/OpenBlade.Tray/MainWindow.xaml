@@ -398,6 +398,32 @@
                           Margin="0,2,18,2"
                           AutomationProperties.Name="{x:Bind Label, Mode=OneTime}" />
             </DataTemplate>
+            <DataTemplate x:Key="TrayDashboardSliderOptionTemplate"
+                          x:DataType="local:TrayDashboardSliderOption">
+                <Grid ColumnSpacing="10"
+                      Padding="2,6,8,6"
+                      MinWidth="580"
+                      HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE76F;"
+                              FontSize="14"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1"
+                               Text="{x:Bind Label, Mode=OneTime}"
+                               Style="{StaticResource CardTitleStyle}"
+                               VerticalAlignment="Center" />
+                    <CheckBox Grid.Column="2"
+                              IsChecked="{x:Bind IsVisible, Mode=TwoWay}"
+                              AutomationProperties.Name="{x:Bind Label, Mode=OneTime}"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Center" />
+                </Grid>
+            </DataTemplate>
             <DataTemplate x:Key="PageSectionOptionTemplate"
                           x:DataType="local:PageSectionOption">
                 <Grid ColumnSpacing="10"

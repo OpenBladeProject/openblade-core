@@ -28,30 +28,49 @@
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
+            <Style x:Key="QuickTileIconStyle" TargetType="FontIcon">
+                <Setter Property="FontSize" Value="16" />
+            </Style>
+            <Style x:Key="QuickSliderToggleStyle" TargetType="ToggleButton">
+                <Setter Property="Width" Value="36" />
+                <Setter Property="Height" Value="36" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="MinHeight" Value="0" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+            </Style>
             <Style x:Key="QuickTileTitleStyle"
                    TargetType="TextBlock"
                    BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="FontSize" Value="12" />
                 <Setter Property="TextTrimming" Value="CharacterEllipsis" />
                 <Setter Property="MaxLines" Value="1" />
             </Style>
             <Style x:Key="QuickTileValueStyle"
                    TargetType="TextBlock"
                    BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="FontSize" Value="11" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextTrimming" Value="CharacterEllipsis" />
                 <Setter Property="MaxLines" Value="1" />
-            </Style>
-            <Style x:Key="SecondaryStyle"
-                   TargetType="TextBlock"
-                   BasedOn="{StaticResource CaptionTextBlockStyle}">
-                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
             </Style>
             <Style x:Key="StatusTextStyle"
                    TargetType="TextBlock"
                    BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="FontSize" Value="11" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextTrimming" Value="CharacterEllipsis" />
                 <Setter Property="MaxLines" Value="1" />
+            </Style>
+            <Style x:Key="QuickSliderValueStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="TextAlignment" Value="Right" />
+                <Setter Property="MinWidth" Value="34" />
             </Style>
         </Grid.Resources>
 
@@ -61,8 +80,12 @@
         </Grid.RowDefinitions>
 
         <Grid x:Name="DashboardPage">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="211" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
             <ScrollViewer x:Name="ControlScroller"
-                          Padding="14,14,14,10"
+                          Padding="20,14,20,10"
                           HorizontalContentAlignment="Stretch"
                           HorizontalScrollMode="Disabled"
                           HorizontalScrollBarVisibility="Hidden"
@@ -94,7 +117,8 @@
                                         IsEnabled="{Binding CanEditPerformance, Mode=OneWay}"
                                         Click="OnPerformanceCycleClick"
                                         AutomationProperties.Name="Cycle performance mode">
-                                    <FontIcon Glyph="&#xE7F4;" FontSize="19" />
+                                    <FontIcon Glyph="&#xE7F4;"
+                                              Style="{StaticResource QuickTileIconStyle}" />
                                 </Button>
                                 <Border Grid.Column="1"
                                         BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
@@ -125,16 +149,18 @@
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="36" />
+                                    <ColumnDefinition x:Name="FansDetailsColumn" Width="36" />
                                 </Grid.ColumnDefinitions>
                                 <Button Style="{StaticResource QuickTileActionStyle}"
                                         CornerRadius="7,0,0,7"
                                         IsEnabled="{Binding CanEditFanControl, Mode=OneWay}"
                                         Click="OnFansCycleClick"
                                         AutomationProperties.Name="Cycle fan mode">
-                                    <FontIcon Glyph="&#xE895;" FontSize="19" />
+                                    <FontIcon Glyph="&#xE895;"
+                                              Style="{StaticResource QuickTileIconStyle}" />
                                 </Button>
-                                <Border Grid.Column="1"
+                                <Border x:Name="FansDetailsHost"
+                                        Grid.Column="1"
                                         BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                                         BorderThickness="1,0,0,0">
                                     <Button Style="{StaticResource QuickTileActionStyle}"
@@ -154,46 +180,6 @@
                         </StackPanel>
                     </Grid>
 
-                    <Grid x:Name="BatteryTile" MinWidth="0">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <Border Style="{StaticResource QuickTileSurfaceStyle}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="36" />
-                                </Grid.ColumnDefinitions>
-                                <Button Style="{StaticResource QuickTileActionStyle}"
-                                        CornerRadius="7,0,0,7"
-                                        IsEnabled="{Binding CanAdjustChargeLimit, Mode=OneWay}"
-                                        Click="OnBatteryCycleClick"
-                                        AutomationProperties.Name="Cycle charge limit">
-                                    <FontIcon Glyph="&#xE83F;" FontSize="18" />
-                                </Button>
-                                <Border Grid.Column="1"
-                                        BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
-                                        BorderThickness="1,0,0,0">
-                                    <Button Style="{StaticResource QuickTileActionStyle}"
-                                            CornerRadius="0,7,7,0"
-                                            IsEnabled="{Binding CanAdjustChargeLimit, Mode=OneWay}"
-                                            Click="OnBatteryDetailsClick"
-                                            AutomationProperties.Name="Choose charge limit">
-                                        <FontIcon Glyph="&#xE76C;" FontSize="12" />
-                                    </Button>
-                                </Border>
-                            </Grid>
-                        </Border>
-                        <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
-                            <TextBlock Text="Charge limit" Style="{StaticResource QuickTileTitleStyle}" />
-                            <TextBlock Style="{StaticResource QuickTileValueStyle}">
-                                <Run Text="{Binding ChargeLimitPercent, Mode=OneWay}" />
-                                <Run Text="%" />
-                            </TextBlock>
-                        </StackPanel>
-                    </Grid>
-
                     <Grid x:Name="LightingTile" MinWidth="0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -210,7 +196,8 @@
                                         IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
                                         Click="OnLightingCycleClick"
                                         AutomationProperties.Name="Cycle lighting effect">
-                                    <FontIcon Glyph="&#xE706;" FontSize="18" />
+                                    <FontIcon Glyph="&#xE706;"
+                                              Style="{StaticResource QuickTileIconStyle}" />
                                 </Button>
                                 <Border Grid.Column="1"
                                         BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
@@ -233,6 +220,159 @@
                     </Grid>
                 </Grid>
             </ScrollViewer>
+
+            <Border Grid.Row="1"
+                    Padding="20,7,20,7"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="0,1,0,0">
+                <ScrollViewer x:Name="SliderScroller"
+                              HorizontalContentAlignment="Stretch"
+                              HorizontalScrollMode="Disabled"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollMode="Enabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <Grid x:Name="SliderGrid" RowSpacing="4">
+                        <Grid x:Name="ChargeLimitSliderRow"
+                              Height="48"
+                              ColumnSpacing="10"
+                              Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="36" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ToggleButton Style="{StaticResource QuickSliderToggleStyle}"
+                                          IsChecked="{Binding BatteryProtectionEnabled, Mode=OneWay}"
+                                          IsEnabled="{Binding CanChangeBatteryProtection, Mode=OneWay}"
+                                          Click="OnBatteryProtectionClick"
+                                          ToolTipService.ToolTip="Toggle charge limit"
+                                          AutomationProperties.Name="Toggle charge limit">
+                                <FontIcon Glyph="&#xE83F;"
+                                          Style="{StaticResource QuickTileIconStyle}" />
+                            </ToggleButton>
+                            <Slider x:Name="GpuCoreClockSlider"
+                                    Grid.Column="1"
+                                    Minimum="50"
+                                    Maximum="80"
+                                    StepFrequency="5"
+                                    SmallChange="5"
+                                    LargeChange="5"
+                                    SnapsTo="StepValues"
+                                    IsThumbToolTipEnabled="True"
+                                    IsEnabled="{Binding CanAdjustChargeLimit, Mode=OneWay}"
+                                    AutomationProperties.Name="Charge limit"
+                                    Value="{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                    PointerPressed="OnChargeLimitPointerPressed"
+                                    PointerReleased="OnChargeLimitPointerReleased"
+                                    PointerCaptureLost="OnChargeLimitPointerReleased"
+                                    KeyUp="OnChargeLimitKeyUp" />
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding TrayDashboardChargeLimitLabel, Mode=OneWay}"
+                                       Style="{StaticResource QuickSliderValueStyle}" />
+                        </Grid>
+
+                        <Grid x:Name="LightingBrightnessSliderRow"
+                              Height="48"
+                              ColumnSpacing="10"
+                              Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="36" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE706;"
+                                      Style="{StaticResource QuickTileIconStyle}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" />
+                            <Slider Grid.Column="1"
+                                    Minimum="0"
+                                    Maximum="100"
+                                    StepFrequency="5"
+                                    IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
+                                    AutomationProperties.Name="Lighting brightness"
+                                    Value="{Binding LightingBrightnessEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                            <TextBlock Grid.Column="2"
+                                       Style="{StaticResource QuickSliderValueStyle}">
+                                <Run Text="{Binding LightingBrightnessEditor, Mode=OneWay}" />
+                                <Run Text=" %" />
+                            </TextBlock>
+                        </Grid>
+
+                        <Grid x:Name="GpuCoreClockSliderRow"
+                              Height="48"
+                              ColumnSpacing="10"
+                              Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="36" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ToggleButton Style="{StaticResource QuickSliderToggleStyle}"
+                                          IsChecked="{Binding IsGpuClockTuningEnabled, Mode=OneWay}"
+                                          IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
+                                          Click="OnGpuClockTuningClick"
+                                          ToolTipService.ToolTip="Toggle GPU clock tuning"
+                                          AutomationProperties.Name="Toggle GPU clock tuning">
+                                <TextBlock Text="C"
+                                           FontSize="11"
+                                           FontWeight="SemiBold" />
+                            </ToggleButton>
+                            <Slider Grid.Column="1"
+                                    Minimum="{Binding GpuCoreClockOffsetMinimum, Mode=OneWay}"
+                                    Maximum="{Binding GpuCoreClockOffsetMaximum, Mode=OneWay}"
+                                    Value="{Binding GpuCoreClockOffsetMegahertz, Mode=OneWay}"
+                                    StepFrequency="5"
+                                    SmallChange="5"
+                                    LargeChange="25"
+                                    IsEnabled="{Binding CanEditGpuClockTuning, Mode=OneWay}"
+                                    AutomationProperties.Name="GPU core clock offset"
+                                    ValueChanged="OnGpuCoreClockOffsetChanged" />
+                            <TextBlock Grid.Column="2"
+                                       Style="{StaticResource QuickSliderValueStyle}">
+                                <Run Text="{Binding Value, ElementName=GpuCoreClockSlider}" />
+                                <Run Text=" MHz" />
+                            </TextBlock>
+                        </Grid>
+
+                        <Grid x:Name="GpuMemoryClockSliderRow"
+                              Height="48"
+                              ColumnSpacing="10"
+                              Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="36" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ToggleButton Style="{StaticResource QuickSliderToggleStyle}"
+                                          IsChecked="{Binding IsGpuClockTuningEnabled, Mode=OneWay}"
+                                          IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
+                                          Click="OnGpuClockTuningClick"
+                                          ToolTipService.ToolTip="Toggle GPU clock tuning"
+                                          AutomationProperties.Name="Toggle GPU clock tuning">
+                                <TextBlock Text="M"
+                                           FontSize="11"
+                                           FontWeight="SemiBold" />
+                            </ToggleButton>
+                            <Slider x:Name="GpuMemoryClockSlider"
+                                    Grid.Column="1"
+                                    Minimum="{Binding GpuMemoryClockOffsetMinimum, Mode=OneWay}"
+                                    Maximum="{Binding GpuMemoryClockOffsetMaximum, Mode=OneWay}"
+                                    Value="{Binding GpuMemoryClockOffsetMegahertz, Mode=OneWay}"
+                                    StepFrequency="5"
+                                    SmallChange="5"
+                                    LargeChange="25"
+                                    IsEnabled="{Binding CanEditGpuClockTuning, Mode=OneWay}"
+                                    AutomationProperties.Name="GPU memory clock offset"
+                                    ValueChanged="OnGpuMemoryClockOffsetChanged" />
+                            <TextBlock Grid.Column="2"
+                                       Style="{StaticResource QuickSliderValueStyle}">
+                                <Run Text="{Binding Value, ElementName=GpuMemoryClockSlider}" />
+                                <Run Text=" MHz" />
+                            </TextBlock>
+                        </Grid>
+                    </Grid>
+                </ScrollViewer>
+            </Border>
         </Grid>
 
         <Grid x:Name="DetailPage" Visibility="Collapsed">
@@ -255,7 +395,8 @@
                 <TextBlock x:Name="DetailTitle"
                            Grid.Column="1"
                            VerticalAlignment="Center"
-                           Style="{StaticResource SubtitleTextBlockStyle}" />
+                           FontSize="16"
+                           FontWeight="SemiBold" />
             </Grid>
 
             <Grid Grid.Row="1">
@@ -276,60 +417,14 @@
                           SelectionMode="Single"
                           SelectionChanged="OnFanModeChanged"
                           AutomationProperties.Name="Fan choices" />
-                <ListView x:Name="BatteryDetail"
+                <ListView x:Name="LightingDetail"
                           Margin="14,2,14,10"
                           Visibility="Collapsed"
-                          ItemsSource="{Binding ChargeLimitOptions, Mode=OneWay}"
-                          SelectedItem="{Binding ChargeLimitPercent, Mode=OneWay}"
+                          ItemsSource="{Binding AvailableLightingEffectOptions, Mode=OneWay}"
+                          DisplayMemberPath="Label"
+                          SelectedItem="{Binding SelectedLightingEffectOption, Mode=TwoWay}"
                           SelectionMode="Single"
-                          SelectionChanged="OnChargeLimitChanged"
-                          AutomationProperties.Name="Charge limit choices">
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock>
-                                <Run Text="{Binding}" />
-                                <Run Text="%" />
-                            </TextBlock>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-                <Grid x:Name="LightingDetail" Visibility="Collapsed">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <ListView Margin="14,2,14,8"
-                              ItemsSource="{Binding AvailableLightingEffectOptions, Mode=OneWay}"
-                              DisplayMemberPath="Label"
-                              SelectedItem="{Binding SelectedLightingEffectOption, Mode=TwoWay}"
-                              SelectionMode="Single"
-                              AutomationProperties.Name="Lighting effect choices" />
-                    <Border Grid.Row="1"
-                            Padding="18,10,18,14"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="0,1,0,0">
-                        <StackPanel Spacing="6">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Brightness"
-                                           Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                <TextBlock Grid.Column="1" Style="{StaticResource SecondaryStyle}">
-                                    <Run Text="{Binding LightingBrightnessEditor, Mode=OneWay}" />
-                                    <Run Text="%" />
-                                </TextBlock>
-                            </Grid>
-                            <Slider Minimum="0"
-                                    Maximum="100"
-                                    StepFrequency="5"
-                                    IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
-                                    AutomationProperties.Name="Lighting brightness"
-                                    Value="{Binding LightingBrightnessEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
-                        </StackPanel>
-                    </Border>
-                </Grid>
+                          AutomationProperties.Name="Lighting effect choices" />
             </Grid>
         </Grid>
 

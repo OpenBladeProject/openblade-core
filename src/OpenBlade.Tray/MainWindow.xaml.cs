@@ -2997,6 +2997,26 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             TrayDashboardPreferenceDefaults.CreateControlOptions(trayDashboardPreference));
         var statusItems = new ObservableCollection<TrayDashboardStatusItemOption>(
             TrayDashboardPreferenceDefaults.CreateStatusOptions(trayDashboardPreference));
+        var sliders = new ObservableCollection<TrayDashboardSliderOption>(
+            TrayDashboardPreferenceDefaults.CreateSliderOptions(trayDashboardPreference));
+
+        var sliderList = new Microsoft.UI.Xaml.Controls.ListView
+        {
+            ItemsSource = sliders,
+            SelectionMode = ListViewSelectionMode.None,
+            CanDragItems = true,
+            CanReorderItems = true,
+            ReorderMode = ListViewReorderMode.Enabled,
+            AllowDrop = true,
+            MaxHeight = 240,
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            ItemTemplate = (DataTemplate)Root.Resources[
+                "TrayDashboardSliderOptionTemplate"],
+            ItemContainerStyle = (Style)Root.Resources[
+                "DashboardReorderListItemStyle"],
+        };
+        AutomationProperties.SetName(sliderList, "Tray dashboard slider controls");
 
         var statusList = new ItemsControl
         {
@@ -3013,6 +3033,20 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             Style = (Style)Root.Resources["SecondaryTextStyle"],
             TextWrapping = TextWrapping.Wrap,
         });
+        additionalContent.Children.Add(new TextBlock
+        {
+            Text = "Slider controls",
+            Style = (Style)Root.Resources["CardTitleStyle"],
+            Margin = new Thickness(0, 4, 0, 0),
+        });
+        additionalContent.Children.Add(new TextBlock
+        {
+            Text = "Slider controls appear only in the middle section. Drag them into "
+                + "the order you want.",
+            Style = (Style)Root.Resources["SecondaryTextStyle"],
+            TextWrapping = TextWrapping.Wrap,
+        });
+        additionalContent.Children.Add(sliderList);
         additionalContent.Children.Add(new TextBlock
         {
             Text = "Status row",
@@ -3045,6 +3079,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     .Select(option => new TrayDashboardStatusItemPreference(
                         option.Kind,
                         option.IsVisible))
+                    .ToArray(),
+                sliders
+                    .Select(option => new TrayDashboardSliderPreference(
+                        option.Kind,
+                        option.IsVisible))
                     .ToArray()),
                 queueSave: true);
         }
@@ -3059,7 +3098,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             option.PropertyChanged += optionChanged;
         }
+        foreach (TrayDashboardSliderOption option in sliders)
+        {
+            option.PropertyChanged += optionChanged;
+        }
         controls.CollectionChanged += orderChanged;
+        sliders.CollectionChanged += orderChanged;
 
         TrayDashboardEditSessionChanged?.Invoke(true);
         try
@@ -3069,11 +3113,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         finally
         {
             controls.CollectionChanged -= orderChanged;
+            sliders.CollectionChanged -= orderChanged;
             foreach (TrayDashboardControlOption option in controls)
             {
                 option.PropertyChanged -= optionChanged;
             }
             foreach (TrayDashboardStatusItemOption option in statusItems)
+            {
+                option.PropertyChanged -= optionChanged;
+            }
+            foreach (TrayDashboardSliderOption option in sliders)
             {
                 option.PropertyChanged -= optionChanged;
             }
