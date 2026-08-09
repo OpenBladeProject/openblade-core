@@ -10,6 +10,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Added a dot beside each saved Profiles value that has a pending change.
   The value cell exposes the new value through its tooltip and accessible name.
 
+### Changed
+
+- Advanced the product version from the stale 0.1.x baseline to 0.2.0 for the
+  backward-compatible capabilities added since the initial non-nightly release
+  and required each future product-changing pull request to apply its SemVer bump
+  directly, with pull-request fields and CI validation rejecting missing, stale,
+  or incorrect increments while keeping description-only rechecks separate from
+  the full build workflow.
+
 ### Fixed
 
 - Showed the effective **Off** defaults for Gaming mode's Windows-key and

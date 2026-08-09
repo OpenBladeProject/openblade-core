@@ -1,0 +1,70 @@
+name: PR version
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-version-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate-pr-version:
+    name: Validate PR version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source metadata
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+
+      - name: Validate pull request version
+        shell: pwsh
+        env:
+          OPENBLADE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          OPENBLADE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          OPENBLADE_PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $baseSha = $env:OPENBLADE_BASE_SHA
+          $headSha = $env:OPENBLADE_HEAD_SHA
+          if ([string]::IsNullOrWhiteSpace($baseSha) -or
+              [string]::IsNullOrWhiteSpace($headSha) -or
+              $baseSha -match '^0{40}$') {
+            throw 'Pull request version validation requires base and head commits.'
+          }
+
+          . ./build/PullRequestVersion.ps1
+          $baseProperties = @(git show "${baseSha}:Directory.Build.props")
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to read Directory.Build.props from the pull request base.'
+          }
+          $headProperties = @(git show "${headSha}:Directory.Build.props")
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to read Directory.Build.props from the pull request head.'
+          }
+          $baseVersion = Get-OpenBladeVersionFromBuildProperties `
+            -Content ($baseProperties -join "`n") `
+            -Source 'The pull request base Directory.Build.props'
+          $headVersion = Get-OpenBladeVersionFromBuildProperties `
+            -Content ($headProperties -join "`n") `
+            -Source 'The pull request head Directory.Build.props'
+          $versionResult = Assert-OpenBladePullRequestVersion `
+            -BaseVersion $baseVersion `
+            -HeadVersion $headVersion `
+            -Body $env:OPENBLADE_PR_BODY
+          Write-Host (
+            "Version policy passed: $($versionResult.Impact), " +
+            "$($versionResult.VersionChange).")

@@ -75,6 +75,10 @@ Assert-Equal $true (Test-OpenBladeCiInstallerRequired `
 $ci = Get-Content -LiteralPath (
     Join-Path $repository '.github\workflows\ci.yml') -Raw
 foreach ($requiredContract in @(
+        '- opened',
+        '- synchronize',
+        '- reopened',
+        '- ready_for_review',
         'classify-changes:',
         'fetch-depth: 0',
         'git diff --name-only --no-renames',
@@ -87,6 +91,9 @@ foreach ($requiredContract in @(
     if (-not $ci.Contains($requiredContract)) {
         throw "CI workflow is missing '$requiredContract'."
     }
+}
+if ($ci.Contains('- edited')) {
+    throw 'PR description edits must not rerun the full CI workflow.'
 }
 
 Write-Host 'CI build scope tests passed.'

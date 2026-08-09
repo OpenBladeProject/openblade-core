@@ -218,6 +218,10 @@ Follow [VERSIONING.md](VERSIONING.md). The short form is:
 - Base new work branches on `main` by default. Use a different base only when
   the user explicitly requests one.
 - `Directory.Build.props` is the product-version source of truth.
+- Every pull request must complete the `Version impact`, exact `Version change`,
+  and `Reason` fields defined in `VERSIONING.md`. Apply any required bump to
+  `OpenBladeVersion` in that same pull request, then refresh from `main` and
+  recalculate before marking it ready or merging.
 - Profile/config schema and IPC protocol versions are independent integers with
   explicit compatibility rules and migrations.
 - Use Conventional Commits:
