@@ -4946,7 +4946,9 @@ public sealed class MainViewModelTests
         Assert.Equal(
             "Unavailable",
             viewModel.TroubleshootingKeyboardDriverModeStatus);
-        Assert.Matches("^0\\.1\\.0\\+[0-9a-f]{8}$", viewModel.AboutUiVersionStatus);
+        Assert.Equal(
+            OpenBladeProductVersion.Read(typeof(MainViewModel).Assembly),
+            viewModel.AboutUiVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutDetectedLaptopStatus);
         Assert.Equal("Unavailable", viewModel.TroubleshootingUsbDeviceStatus);

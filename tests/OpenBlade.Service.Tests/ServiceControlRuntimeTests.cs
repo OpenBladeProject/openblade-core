@@ -810,7 +810,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             OpenBladeProductVersion.Read(typeof(ServiceControlRuntime).Assembly),
             status.ServiceVersion);
-        Assert.Matches("^0\\.1\\.0\\+[0-9a-f]{8}$", status.ServiceVersion);
         Assert.Equal(0, context.Provider.TryGetCount);
         Assert.Equal(0, context.Device.TotalCalls);
     }
