@@ -424,9 +424,28 @@ try {
         Assert-Equal 0 $bareLfCount `
             'The file wrapper must preserve CRLF without mixed line endings.'
 
+        & git tag v0.1.0-nightly.7-attempt.2 $sourceRevision
+        $crlfNightly8 = (ConvertTo-OpenBladeNormalizedText -Text $nightly8Source).
+            Replace("`n", "`r`n")
+        [IO.File]::WriteAllText(
+            $changelogPath,
+            $crlfNightly8,
+            [Text.UTF8Encoding]::new($false))
+        & git add -- CHANGELOG.md
+        & git commit --quiet -m 'first new-base nightly source'
+        $newBaseSourceRevision = (& git rev-parse HEAD).Trim()
+        [IO.File]::WriteAllText(
+            $changelogPath,
+            $crlfLatestMain,
+            [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText(
             $manifestPath,
-            '[]',
+            ('[{"tagName":"v0.1.0-nightly.6",' +
+                '"publishedAt":"2026-08-04T11:47:22Z"},' +
+                '{"tagName":"v0.1.0-nightly.7-attempt.2",' +
+                '"publishedAt":"2026-08-05T23:59:59Z"},' +
+                '{"tagName":"v0.2.0-nightly.8",' +
+                '"publishedAt":"2026-08-06T23:59:59Z"}]'),
             [Text.UTF8Encoding]::new($false))
         $versionBumpResult = Write-OpenBladeNightlyChangelogSnapshot `
             -RepositoryRoot $temporaryRoot `
@@ -434,16 +453,88 @@ try {
             -OutputPath 'generated\VERSION-BUMP.md' `
             -PublishedReleasesPath $manifestPath `
             -BaseVersion '0.2.0' `
-            -BuildRevision 7 `
-            -CurrentTag 'v0.2.0-nightly.7' `
-            -CurrentSourceRevision $sourceRevision `
-            -CurrentPublishedAt ([DateTimeOffset]::Parse('2026-08-05T23:59:59Z'))
-        Assert-True ($versionBumpResult.CurrentSection.Contains(
-                '## [0.2.0-nightly.7] - 2026-08-05')) `
-            'The first nightly after a version bump must not require a base tag.'
-        Assert-True ($versionBumpResult.Content.Contains(
-                '[0.2.0-nightly.7]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.2.0-nightly.7')) `
-            'A version bump must retain the prior Unreleased comparison baseline.'
+            -BuildRevision 8 `
+            -CurrentTag 'v0.2.0-nightly.8' `
+            -CurrentSourceRevision $newBaseSourceRevision `
+            -CurrentPublishedAt ([DateTimeOffset]::Parse('2026-08-06T23:59:59Z'))
+        $normalizedVersionBump = ConvertTo-OpenBladeNormalizedText `
+            -Text $versionBumpResult.Content
+        $oldBaseSection = Get-OpenBladeChangelogSection `
+            -Content $normalizedVersionBump `
+            -Heading '## [0.1.0-nightly.7] - 2026-08-05'
+        Assert-Equal (
+            "## [0.1.0-nightly.7] - 2026-08-05`n`n" +
+            "### Fixed`n`n- Fixed the first nightly regression.`n") `
+            $oldBaseSection.Content `
+            'An outstanding old-base nightly must retain its exact section.'
+        $newBaseSection = Get-OpenBladeChangelogSection `
+            -Content $normalizedVersionBump `
+            -Heading '## [0.2.0-nightly.8] - 2026-08-06'
+        Assert-Equal (
+            "## [0.2.0-nightly.8] - 2026-08-06`n`n" +
+            "### Added`n`n- Added the next nightly capability.`n") `
+            $newBaseSection.Content `
+            'The first new-base nightly must contain only its new entries.'
+        $unreleasedSection = Get-OpenBladeChangelogSection `
+            -Content $normalizedVersionBump `
+            -Heading '## [Unreleased]'
+        Assert-Equal (
+            "## [Unreleased]`n`n### Changed`n`n" +
+            "- Preserved a change merged after the nightly source commit.`n") `
+            $unreleasedSection.Content `
+            'Post-source changes must remain under Unreleased.'
+        Assert-Equal '0.1.0-nightly.7,0.2.0-nightly.8' `
+            ($versionBumpResult.PendingVersions -join ',') `
+            'Pending sections must remain ordered across version bases.'
+        foreach ($entry in @(
+                '- Fixed the first nightly regression.',
+                '- Added the next nightly capability.',
+                '- Preserved a change merged after the nightly source commit.')) {
+            Assert-Equal 1 ([Regex]::Matches(
+                    $normalizedVersionBump,
+                    [Regex]::Escape($entry))).Count `
+                "The cross-base changelog must contain '$entry' exactly once."
+        }
+        foreach ($reference in @(
+                @{
+                    Key = 'Unreleased'
+                    Line = '[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.2.0-nightly.8...HEAD'
+                },
+                @{
+                    Key = '0.2.0-nightly.8'
+                    Line = '[0.2.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.7-attempt.2...v0.2.0-nightly.8'
+                },
+                @{
+                    Key = '0.1.0-nightly.7'
+                    Line = '[0.1.0-nightly.7]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.7-attempt.2'
+                })) {
+            Assert-Equal 1 ([Regex]::Matches(
+                    $normalizedVersionBump,
+                    "(?m)^$([Regex]::Escape($reference.Line))$")).Count `
+                "The cross-base changelog must contain '$($reference.Line)' exactly once."
+            Assert-Equal 1 ([Regex]::Matches(
+                    $normalizedVersionBump,
+                    "(?m)^\[$([Regex]::Escape($reference.Key))\]:\s+\S+$")).Count `
+                "The cross-base changelog must define '$($reference.Key)' exactly once."
+        }
+        & git tag v0.2.0-nightly.8 $newBaseSourceRevision
+        [IO.File]::WriteAllText(
+            $changelogPath,
+            $versionBumpResult.Content,
+            [Text.UTF8Encoding]::new($false))
+        $rerunOutput = Join-Path $temporaryRoot 'generated\VERSION-BUMP-RERUN.md'
+        $versionBumpRerun = Write-OpenBladeNightlyChangelogSnapshot `
+            -RepositoryRoot $temporaryRoot `
+            -ChangelogPath $changelogPath `
+            -OutputPath $rerunOutput `
+            -PublishedReleasesPath $manifestPath `
+            -BaseVersion '0.2.0' `
+            -BuildRevision 8 `
+            -CurrentTag 'v0.2.0-nightly.8' `
+            -CurrentSourceRevision $newBaseSourceRevision `
+            -CurrentPublishedAt ([DateTimeOffset]::Parse('2026-08-06T23:59:59Z'))
+        Assert-Equal $versionBumpResult.Content $versionBumpRerun.Content `
+            'Rerunning the cross-base reconstruction must be idempotent.'
     }
     finally {
         Pop-Location
