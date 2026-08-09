@@ -4660,38 +4660,78 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         PerformancePreset requested = (PerformancePreset)parameter!;
         await ApplyPerformanceAsync(
-            new PerformanceOverride(
+            CreatePerformanceOverride(
                 requested,
                 OverrideLifetime.UntilPowerSourceChange,
                 requested == PerformancePreset.Custom
                     ? GetActiveProfileCustomPerformance()
-                    : null)
-            {
-                GpuClockTuning = GetActiveProfileGpuClockTuning(),
-            },
+                    : null,
+                GetActiveProfileGpuClockTuning()),
             token);
     }
 
     private async Task SetCustomPerformanceAsync(object? parameter, CancellationToken token)
     {
         CustomPerformanceSettings requested = (CustomPerformanceSettings)parameter!;
-        GpuClockTuningSettings? gpuClockTuning = GetActiveProfileGpuClockTuning();
-        if (requested.GpuClockOffsets is { } legacyOffsets)
-        {
-            requested = requested with { GpuClockOffsets = null };
-            gpuClockTuning ??= new GpuClockTuningSettings(
-                Enabled: true,
-                legacyOffsets);
-        }
         await ApplyPerformanceAsync(
-            new PerformanceOverride(
+            CreatePerformanceOverride(
                 PerformancePreset.Custom,
                 OverrideLifetime.UntilPowerSourceChange,
-                requested)
-            {
-                GpuClockTuning = gpuClockTuning,
-            },
+                requested,
+                GetActiveProfileGpuClockTuning()),
             token);
+    }
+
+    private static PerformanceOverride CreatePerformanceOverride(
+        PerformancePreset performance,
+        OverrideLifetime lifetime,
+        CustomPerformanceSettings? customPerformance,
+        GpuClockTuningSettings? gpuClockTuning)
+    {
+        var normalized = NormalizeLegacyGpuClockTuning(
+            customPerformance,
+            gpuClockTuning);
+
+        return new PerformanceOverride(performance, lifetime, normalized.CustomPerformance)
+        {
+            GpuClockTuning = normalized.GpuClockTuning,
+        };
+    }
+
+    private static (
+        CustomPerformanceSettings? CustomPerformance,
+        GpuClockTuningSettings? GpuClockTuning) NormalizeLegacyGpuClockTuning(
+            CustomPerformanceSettings? customPerformance,
+            GpuClockTuningSettings? gpuClockTuning)
+    {
+        if (customPerformance?.GpuClockOffsets is not { } legacyOffsets)
+        {
+            return (customPerformance, gpuClockTuning);
+        }
+
+        return (
+            customPerformance with { GpuClockOffsets = null },
+            gpuClockTuning ?? new GpuClockTuningSettings(
+                Enabled: true,
+                legacyOffsets));
+    }
+
+    private static PowerProfile NormalizeLegacyGpuClockTuning(PowerProfile profile)
+    {
+        if (profile.Performance != PerformancePreset.Custom
+            && profile.GpuClockTuning is null)
+        {
+            return profile;
+        }
+
+        var normalized = NormalizeLegacyGpuClockTuning(
+            profile.CustomPerformance,
+            profile.GpuClockTuning);
+        return profile with
+        {
+            CustomPerformance = normalized.CustomPerformance,
+            GpuClockTuning = normalized.GpuClockTuning,
+        };
     }
 
     public Task SetGpuClockTuningEnabledAsync(
@@ -4727,17 +4767,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private Task ApplyGpuClockTuningAsync(
         GpuClockTuningSettings gpuClockTuning,
         CancellationToken token) => ApplyPerformanceAsync(
-            new PerformanceOverride(
+            CreatePerformanceOverride(
                 SelectedPerformance,
                 OverrideLifetime.UntilPowerSourceChange,
                 SelectedPerformance == PerformancePreset.Custom
                     ? new CustomPerformanceSettings(
                         SelectedCustomCpuLevel,
                         SelectedCustomGpuLevel)
-                    : null)
-            {
-                GpuClockTuning = gpuClockTuning,
-            },
+                    : null,
+                gpuClockTuning),
             token);
 
     private async Task ApplyPerformanceAsync(
@@ -6249,7 +6287,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         PowerProfile profile = GetProfile(source);
-        return profile with
+        PowerProfile draft = profile with
         {
             Performance = activeProfileDraftPerformance ?? profile.Performance,
             CustomPerformance = activeProfileDraftCustomPerformance
@@ -6267,6 +6305,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             BatteryProtectionEnabled = activeProfileDraftBatteryProtectionEnabled
                 ?? profile.BatteryProtectionEnabled,
         };
+        return NormalizeLegacyGpuClockTuning(draft);
     }
 
     private ProfileSet CreateProfileSetWithDashboardDraft()
@@ -6335,6 +6374,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             },
             _ => throw new ArgumentOutOfRangeException(nameof(group)),
         };
+        draft = NormalizeLegacyGpuClockTuning(draft);
         return source switch
         {
             PowerSource.PluggedIn => Profiles with { PluggedIn = draft },
