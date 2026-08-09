@@ -239,12 +239,37 @@ public sealed class MainViewModelTests
         Assert.Contains("Maximum", viewModel.PluggedInProfileThermalSummary);
         Assert.Contains("Static", viewModel.PluggedInProfileLightingSummary);
         Assert.Contains("drr-48-240", viewModel.PluggedInProfileDisplaySummary);
-        Assert.Equal("Silent", viewModel.PluggedInProfilePresentation.PowerMode);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.GpuTuning);
-        Assert.Equal("Automatic", viewModel.PluggedInProfilePresentation.Fans);
-        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.LightingEffect);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+        Assert.Equal("Silent", viewModel.PluggedInProfilePresentation.PowerMode.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.GpuTuning.Text);
+        Assert.Equal("Automatic", viewModel.PluggedInProfilePresentation.Fans.Text);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.LightingEffect.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayRefreshRate.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayColorProfile.Text);
+        Assert.True(viewModel.PluggedInProfilePresentation.PowerMode.IsPending);
+        Assert.Equal(
+            "Pending: Balanced",
+            viewModel.PluggedInProfilePresentation.PowerMode.PendingDescription);
+        Assert.True(viewModel.PluggedInProfilePresentation.Fans.IsPending);
+        Assert.Equal(
+            "Pending: Maximum",
+            viewModel.PluggedInProfilePresentation.Fans.PendingDescription);
+        Assert.True(viewModel.PluggedInProfilePresentation.LightingEffect.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.LightingBrightness.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.LightingColor.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayHdr.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayColorProfile.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.GpuTuning.IsPending);
+        Assert.Null(viewModel.PluggedInProfilePresentation.GpuTuning.PendingDescription);
+        Assert.Equal(
+            "AC GPU tuning: Not set",
+            viewModel.PluggedInProfilePresentation.GpuTuning.AccessibilityDescription);
+        Assert.False(viewModel.PluggedInProfilePresentation.LogoLighting.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.LightingDisplayOff.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.LightingIdle.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.FunctionKeyBehavior.IsPending);
+        Assert.False(viewModel.UsbCProfilePresentation.PowerMode.IsPending);
+        Assert.False(viewModel.BatteryProfilePresentation.PowerMode.IsPending);
         Assert.Equal(PowerSource.PluggedIn, viewModel.SelectedProfileComparisonOption.Source);
         Assert.True(viewModel.IsSelectedProfileActive);
         Assert.True(viewModel.IsSelectedProfileDraft);
@@ -281,6 +306,11 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.HasUnsavedProfileChanges);
         Assert.False(viewModel.IsPluggedInProfileDraft);
         Assert.Contains("Maximum", viewModel.PluggedInProfileThermalSummary);
+        Assert.Equal("Balanced", viewModel.PluggedInProfilePresentation.PowerMode.Text);
+        Assert.False(viewModel.PluggedInProfilePresentation.PowerMode.IsPending);
+        Assert.Null(viewModel.PluggedInProfilePresentation.PowerMode.PendingDescription);
+        Assert.Equal("Maximum", viewModel.PluggedInProfilePresentation.Fans.Text);
+        Assert.False(viewModel.PluggedInProfilePresentation.Fans.IsPending);
     }
 
     [Fact]
@@ -331,6 +361,43 @@ public sealed class MainViewModelTests
 
         Assert.Null(client.LightingOverride);
         Assert.False(viewModel.HasLightingProfileDraft);
+        Assert.False(viewModel.HasActiveProfileDraft);
+    }
+
+    [Fact]
+    public async Task DashboardDiscard_ClearsThermalAndLightingOverridesTogether()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+            });
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(LightingSettingsFactory.Static(
+                new RgbColor(12, 34, 56),
+                brightness: 67));
+
+        Assert.True(viewModel.HasThermalProfileDifference);
+        Assert.True(viewModel.HasLightingProfileDraft);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Contains("performance:<clear>", client.MutationOperations);
+        Assert.Contains("lighting:<clear>", client.MutationOperations);
+        Assert.Null(client.PerformanceOverride);
+        Assert.Null(client.LightingOverride);
         Assert.False(viewModel.HasActiveProfileDraft);
     }
 
@@ -559,6 +626,11 @@ public sealed class MainViewModelTests
             new DisplayProfileSettings("240", true, null),
             originalDisplay);
         Assert.True(viewModel.HasActiveProfileDraft);
+        Assert.True(viewModel.PluggedInProfilePresentation.Fans.IsPending);
+        Assert.Equal(
+            "Pending: Maximum",
+            viewModel.PluggedInProfilePresentation.Fans.PendingDescription);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardProfileDraftCommand)
             .ExecuteAsync(null);
@@ -568,6 +640,182 @@ public sealed class MainViewModelTests
         Assert.Equal(originalDisplay, restoredDisplay);
         Assert.Equal(original.Profiles, viewModel.Profiles);
         Assert.False(viewModel.HasActiveProfileDraft);
+        Assert.False(viewModel.PluggedInProfilePresentation.Fans.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
+    }
+
+    [Fact]
+    public async Task PendingProfileValue_MarksChangedManualFanCurveWithSameLabel()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var savedFanControl = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+        ProfileSet profiles = baseline.Profiles with
+        {
+            PluggedIn = baseline.Profiles.PluggedIn with
+            {
+                Fans = FanMode.ManualCurve,
+                FanControl = savedFanControl,
+            },
+        };
+        client.Publish(baseline with
+        {
+            Profiles = profiles,
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.ManualCurve,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                Fans = new ResolvedSetting<FanMode>(
+                    FanMode.ManualCurve,
+                    SettingValueSource.PowerProfile),
+                FanControl = savedFanControl,
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && viewModel.SelectedFanMode == FanMode.ManualCurve);
+        FanCurvePoint[] changedCpu = ManualFanCurve.Default.Cpu
+            .Select((point, index) => index == 1
+                ? new FanCurvePoint(point.TemperatureCelsius, point.SpeedRpm + 100)
+                : point)
+            .ToArray();
+        var changedFanControl = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            new ManualFanCurve(
+                changedCpu,
+                ManualFanCurve.Default.Gpu,
+                ManualFanCurve.Default.UseHigherTemperatureForBoth));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanControlCommand)
+            .ExecuteAsync(changedFanControl);
+
+        Assert.Equal("Manual fan curve", viewModel.PluggedInProfilePresentation.Fans.Text);
+        Assert.True(viewModel.PluggedInProfilePresentation.Fans.IsPending);
+        Assert.Equal(
+            "Pending: Manual fan curve",
+            viewModel.PluggedInProfilePresentation.Fans.PendingDescription);
+        Assert.Equal(
+            "AC Fans: Manual fan curve. Pending: Manual fan curve",
+            viewModel.PluggedInProfilePresentation.Fans.AccessibilityDescription);
+        Assert.Equal(changedFanControl, client.LastFanControlSettings);
+    }
+
+    [Fact]
+    public async Task PendingProfileValue_IgnoresHiddenOffsetsWhileGpuTuningIsOff()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var savedOffsets = new GpuClockOffsetSettings(100, 200);
+        var currentOffsets = new GpuClockOffsetSettings(0, 0);
+        var gpuCapabilities = new GpuClockOffsetCapabilities(
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            new GpuClockOffsetRange(-1000, 1000, currentOffsets.CoreMegahertz),
+            new GpuClockOffsetRange(-1000, 3000, currentOffsets.MemoryMegahertz));
+        ProfileSet profiles = baseline.Profiles with
+        {
+            PluggedIn = baseline.Profiles.PluggedIn with
+            {
+                GpuClockTuning = new GpuClockTuningSettings(
+                    Enabled: false,
+                    savedOffsets),
+            },
+        };
+        client.Publish(baseline with
+        {
+            Profiles = profiles,
+            Capabilities = baseline.Capabilities! with
+            {
+                GpuOverclock = new GpuOverclockCapabilities(
+                    new DeviceNumericRange(-1000, 400, null),
+                    new DeviceNumericRange(-1000, 3000, null),
+                    DeviceFeatureAccess.ReadWrite),
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                GpuClockOffsets = gpuCapabilities,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                GpuClockTuning = new GpuClockTuningSettings(
+                    Enabled: false,
+                    currentOffsets),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.CanToggleGpuClockTuning);
+
+        await viewModel.SetGpuClockTuningEnabledAsync(
+            enabled: false,
+            CancellationToken.None);
+
+        Assert.True(viewModel.HasActiveProfileDraft);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.GpuTuning.Text);
+        Assert.False(viewModel.PluggedInProfilePresentation.GpuTuning.IsPending);
+        Assert.Null(viewModel.PluggedInProfilePresentation.GpuTuning.PendingDescription);
+    }
+
+    [Fact]
+    public async Task PendingProfileValue_MarksBrightnessWhenEffectMakesItVisible()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 50));
+
+        Assert.True(viewModel.PluggedInProfilePresentation.LightingEffect.IsPending);
+        Assert.Equal("Not applicable", viewModel.PluggedInProfilePresentation.LightingBrightness.Text);
+        Assert.True(viewModel.PluggedInProfilePresentation.LightingBrightness.IsPending);
+        Assert.Equal(
+            "Pending: 50%",
+            viewModel.PluggedInProfilePresentation.LightingBrightness.PendingDescription);
+    }
+
+    [Fact]
+    public async Task PendingProfileValue_MarksOnlyTheBatteryDraftColumn()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with { ActivePowerSource = PowerSource.Battery });
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && viewModel.ActivePowerSource == PowerSource.Battery);
+
+        viewModel.RecordDisplayProfileChange(
+            PowerSource.Battery,
+            new DisplayProfileSettings("dynamic-48-240", false, null));
+
+        Assert.False(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.False(viewModel.UsbCProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.True(viewModel.BatteryProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.Equal(
+            "On battery Refresh rate: Not set. Pending: Dynamic 48–240 Hz",
+            viewModel.BatteryProfilePresentation.DisplayRefreshRate.AccessibilityDescription);
     }
 
     [Fact]
@@ -661,18 +909,27 @@ public sealed class MainViewModelTests
         viewModel.RecordDisplayProfileChange(PowerSource.PluggedIn, current);
 
         Assert.True(viewModel.HasActiveProfileDraft);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayHdr);
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayRefreshRate.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayHdr.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayColorProfile.Text);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.Equal(
+            "Pending: Dynamic 48–240 Hz",
+            viewModel.PluggedInProfilePresentation.DisplayRefreshRate.PendingDescription);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayHdr.IsPending);
+        Assert.True(viewModel.PluggedInProfilePresentation.DisplayColorProfile.IsPending);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
             .ExecuteAsync(null);
 
         Assert.Equal(current, client.LastProfiles?.PluggedIn.Display);
         Assert.False(viewModel.HasActiveProfileDraft);
-        Assert.Equal("Dynamic 48–240 Hz", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
-        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.DisplayHdr);
-        Assert.Equal("sRGB", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+        Assert.Equal("Dynamic 48–240 Hz", viewModel.PluggedInProfilePresentation.DisplayRefreshRate.Text);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.DisplayHdr.Text);
+        Assert.Equal("sRGB", viewModel.PluggedInProfilePresentation.DisplayColorProfile.Text);
+        Assert.False(viewModel.PluggedInProfilePresentation.DisplayRefreshRate.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.DisplayHdr.IsPending);
+        Assert.False(viewModel.PluggedInProfilePresentation.DisplayColorProfile.IsPending);
     }
 
     [Fact]
@@ -704,7 +961,7 @@ public sealed class MainViewModelTests
             && viewModel.CanControlLighting
             && viewModel.HasLightingProfileSaveOpportunity);
 
-        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.LogoLighting);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.LogoLighting.Text);
         Assert.False(viewModel.HasLightingProfileDraft);
         Assert.True(viewModel.HasLightingProfileSaveOpportunity);
         Assert.True(viewModel.CanControlHardware);
@@ -749,7 +1006,7 @@ public sealed class MainViewModelTests
 
         Assert.Equal(
             "Not set",
-            viewModel.PluggedInProfilePresentation.StartupAnimation);
+            viewModel.PluggedInProfilePresentation.StartupAnimation.Text);
         Assert.False(viewModel.HasLaptopPageProfileDraft);
         Assert.True(viewModel.HasLaptopPageProfileSaveOpportunity);
         Assert.True(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
@@ -765,6 +1022,58 @@ public sealed class MainViewModelTests
             client.LastProfiles?.PluggedIn.LaptopBehavior);
         Assert.False(viewModel.HasLaptopPageProfileDraft);
         Assert.False(viewModel.HasLaptopPageProfileSaveOpportunity);
+    }
+
+    [Theory]
+    [InlineData(false, false, false, "Off", "Off")]
+    [InlineData(true, true, false, "On", "Off")]
+    public async Task ProfilePresentation_UsesEffectiveGamingModeKeyPolicy(
+        bool hasPolicy,
+        bool blockWindowsKey,
+        bool blockAltTab,
+        string expectedWindowsKey,
+        string expectedAltTab)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        ProfileSet profiles = status.Profiles with
+        {
+            PluggedIn = status.Profiles.PluggedIn with
+            {
+                LaptopBehavior = new LaptopBehaviorProfileSettings(
+                    StartupAnimationEnabled: null,
+                    FunctionKeyPrimary: null,
+                    GamingModeEnabled: false)
+                {
+                    GamingModeKeyPolicy = hasPolicy
+                        ? new GamingModeKeyPolicy(blockWindowsKey, blockAltTab)
+                        : null,
+                },
+            },
+        };
+
+        client.Publish(status with
+        {
+            Profiles = profiles,
+            GamingModeEnabled = false,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.PluggedInProfilePresentation.GamingMode.Text == "Off");
+
+        Assert.Equal(
+            expectedWindowsKey,
+            viewModel.PluggedInProfilePresentation.GamingModeWindowsKey.Text);
+        Assert.Equal(
+            expectedAltTab,
+            viewModel.PluggedInProfilePresentation.GamingModeAltTab.Text);
+        Assert.Equal(
+            expectedWindowsKey,
+            viewModel.SelectedProfilePresentation.GamingModeWindowsKey.Text);
+        Assert.Equal(
+            expectedAltTab,
+            viewModel.SelectedProfilePresentation.GamingModeAltTab.Text);
     }
 
     [Fact]
@@ -1309,6 +1618,54 @@ public sealed class MainViewModelTests
             viewModel.ManualOverrideStatus,
             StringComparison.Ordinal);
         Assert.DoesNotContain("LightingSettings {", viewModel.ActiveChangesText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ActiveChanges_IncludesUnsavedBatteryOverrides()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            BatteryProtectionOverride = false,
+            BatteryPolicyOverride = BatteryPolicy.Create(75),
+        });
+        await WaitUntilAsync(() => viewModel.HasActiveChanges);
+
+        Assert.Contains(
+            "Battery protection: Off (not saved to profile)",
+            viewModel.ActiveChangesText,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Charge limit: 75% not saved to profile",
+            viewModel.ActiveChangesText,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Battery protection: Off (not saved to profile)",
+            viewModel.ManualOverrideStatus,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ClearManualOverrides_RestoresSavedBatterySettings()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            BatteryProtectionOverride = false,
+            BatteryPolicyOverride = BatteryPolicy.Create(75),
+        });
+        await WaitUntilAsync(() => viewModel.HasActiveChanges);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ClearManualOverridesCommand)
+            .ExecuteAsync(null);
+
+        Assert.True(client.BatteryProtectionEnabled);
+        Assert.Equal(BatteryPolicy.Create(80), client.BatteryPolicy);
+        Assert.Equal("Manual overrides cleared.", viewModel.OperationStatusMessage);
     }
 
     [Fact]
@@ -3407,6 +3764,135 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AppliedBatteryProtectionToggle_MarksAndSavesOnlyActiveProfile()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.CanChangeBatteryProtection);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ToggleBatteryProtectionCommand)
+            .ExecuteAsync(null);
+
+        Assert.False(client.BatteryProtectionEnabled);
+        Assert.True(viewModel.HasBatteryProtectionProfileDraft);
+        Assert.True(viewModel.HasDashboardProfileDraft);
+        Assert.True(viewModel.HasUnsavedProfileChanges);
+        Assert.True(viewModel.PluggedInProfilePresentation.BatteryProtection.IsPending);
+        Assert.False(viewModel.UsbCProfilePresentation.BatteryProtection.IsPending);
+        Assert.False(viewModel.BatteryProfilePresentation.BatteryProtection.IsPending);
+        Assert.Equal(
+            "AC Battery protection: On. Pending: Off",
+            viewModel.PluggedInProfilePresentation.BatteryProtection.AccessibilityDescription);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
+            .ExecuteAsync(null);
+
+        ProfileSet saved = Assert.IsType<ProfileSet>(client.LastProfiles);
+        Assert.False(saved.PluggedIn.BatteryProtectionEnabled);
+        Assert.True(saved.UsbC.BatteryProtectionEnabled);
+        Assert.True(saved.Battery.BatteryProtectionEnabled);
+        Assert.False(viewModel.HasBatteryProtectionProfileDraft);
+        Assert.False(viewModel.HasUnsavedProfileChanges);
+    }
+
+    [Fact]
+    public async Task AppliedChargeLimit_CreatesGlobalDraftThatSurvivesSourceChange()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(75);
+
+        Assert.Equal(BatteryPolicy.Create(75), client.BatteryPolicy);
+        Assert.True(viewModel.HasGlobalBatteryPolicyDraft);
+        Assert.True(viewModel.BatteryPolicyPresentation.IsPending);
+        Assert.Equal("75%", viewModel.BatteryPolicyPresentation.PendingText);
+
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            ActivePowerSource = PowerSource.Battery,
+            DesiredState = initial.DesiredState with
+            {
+                Battery = new DesiredBatteryState(
+                    BatteryPolicy.Create(75),
+                    initial.DesiredState.Battery.ProtectionEnabled,
+                    initial.DesiredState.Battery.TemporaryFullCharge),
+            },
+            BatteryPolicyOverride = BatteryPolicy.Create(75),
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
+
+        Assert.True(viewModel.HasGlobalBatteryPolicyDraft);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
+            .ExecuteAsync(null);
+        ProfileSet saved = Assert.IsType<ProfileSet>(client.LastProfiles);
+        Assert.Equal(BatteryPolicy.Create(75), saved.BatteryPolicy);
+        Assert.Equal(initial.Profiles.PluggedIn, saved.PluggedIn);
+        Assert.Equal(initial.Profiles.Battery, saved.Battery);
+        Assert.Equal(initial.Profiles.UsbC, saved.UsbC);
+        Assert.False(viewModel.HasGlobalBatteryPolicyDraft);
+    }
+
+    [Fact]
+    public async Task AppliedChargeLimit_CanBeDiscardedBeforeStatusRefresh()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(75);
+
+        Assert.True(viewModel.HasGlobalBatteryPolicyDraft);
+        Assert.True(viewModel.HasDashboardProfileRestoreOpportunity);
+        Assert.True(viewModel.DiscardProfileDraftCommand.CanExecute(null));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(initial.Profiles.BatteryPolicy, client.BatteryPolicy);
+        Assert.False(viewModel.HasGlobalBatteryPolicyDraft);
+        Assert.False(viewModel.HasUnsavedProfileChanges);
+        Assert.False(viewModel.BatteryPolicyPresentation.IsPending);
+    }
+
+    [Fact]
+    public async Task StoredBatteryResults_DoNotCreateSaveableDrafts()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                "Intent was stored without confirmed application."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(75);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ToggleBatteryProtectionCommand)
+            .ExecuteAsync(null);
+
+        Assert.False(viewModel.HasGlobalBatteryPolicyDraft);
+        Assert.False(viewModel.HasBatteryProtectionProfileDraft);
+        Assert.False(viewModel.HasUnsavedProfileChanges);
+    }
+
+    [Fact]
     public async Task AppliedLightingReleasesEditGuardToConfirmedReadback()
     {
         var client = new FakeServiceClient { BlockMutations = true };
@@ -4768,7 +5254,9 @@ public sealed class MainViewModelTests
         Assert.Equal(
             "Unavailable",
             viewModel.TroubleshootingKeyboardDriverModeStatus);
-        Assert.Matches("^0\\.1\\.0\\+[0-9a-f]{8}$", viewModel.AboutUiVersionStatus);
+        Assert.Equal(
+            OpenBladeProductVersion.Read(typeof(MainViewModel).Assembly),
+            viewModel.AboutUiVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutDetectedLaptopStatus);
         Assert.Equal("Unavailable", viewModel.TroubleshootingUsbDeviceStatus);
@@ -6395,6 +6883,7 @@ public sealed class MainViewModelTests
         public bool? FirmwareCompatibilityOverride { get; private set; }
         public int ReapplyChangedSettingsCalls { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
+        public BatteryPolicy? BatteryPolicy { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
         public bool ShutdownRequested { get; private set; }
         public ProfileSet? LastProfiles { get; private set; }
@@ -6483,6 +6972,27 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             LastProfiles = profiles;
+            if (CurrentStatus is not null)
+            {
+                PowerProfile active = CurrentStatus.ActivePowerSource switch
+                {
+                    PowerSource.Battery => profiles.Battery,
+                    PowerSource.UsbC => profiles.UsbC,
+                    _ => profiles.PluggedIn,
+                };
+                CurrentStatus = CurrentStatus with
+                {
+                    Profiles = profiles,
+                    BatteryPolicyOverride = CurrentStatus.BatteryPolicyOverride
+                        == profiles.BatteryPolicy
+                            ? null
+                            : CurrentStatus.BatteryPolicyOverride,
+                    BatteryProtectionOverride = CurrentStatus.BatteryProtectionOverride
+                        == active.EffectiveBatteryProtectionEnabled
+                            ? null
+                            : CurrentStatus.BatteryProtectionOverride,
+                };
+            }
             return MutateAsync(token);
         }
 
@@ -6570,13 +7080,42 @@ public sealed class MainViewModelTests
 
         public override Task<ControlOperationResult> SetBatteryPolicyAsync(
             BatteryPolicy value,
-            CancellationToken token) => MutateAsync(token);
+            CancellationToken token)
+        {
+            BatteryPolicy = value;
+            if (CurrentStatus is not null)
+            {
+                CurrentStatus = CurrentStatus with
+                {
+                    BatteryPolicyOverride = value == CurrentStatus.Profiles.BatteryPolicy
+                        ? null
+                        : value,
+                };
+            }
+            return MutateAsync(token);
+        }
 
         public override Task<ControlOperationResult> SetBatteryProtectionAsync(
             bool enabled,
             CancellationToken token)
         {
             BatteryProtectionEnabled = enabled;
+            if (CurrentStatus is not null)
+            {
+                PowerProfile active = CurrentStatus.ActivePowerSource switch
+                {
+                    PowerSource.Battery => CurrentStatus.Profiles.Battery,
+                    PowerSource.UsbC => CurrentStatus.Profiles.UsbC,
+                    _ => CurrentStatus.Profiles.PluggedIn,
+                };
+                CurrentStatus = CurrentStatus with
+                {
+                    BatteryProtectionOverride =
+                        enabled == active.EffectiveBatteryProtectionEnabled
+                            ? null
+                            : enabled,
+                };
+            }
             return MutateAsync(token);
         }
 

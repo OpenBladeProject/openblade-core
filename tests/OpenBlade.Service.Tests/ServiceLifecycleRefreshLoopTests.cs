@@ -221,6 +221,8 @@ public sealed class ServiceLifecycleRefreshLoopTests
         await running;
 
         Assert.Equal(1, runtime.LightingInvalidationCount);
+        Assert.Equal(1, runtime.ResumeValidationBeginCount);
+        Assert.Equal(1, runtime.ResumeValidationCancelCount);
         Assert.Equal(0, runtime.PowerSourceChangeCount);
         Assert.Equal(0, runtime.LightingRestoreCount);
     }
@@ -324,6 +326,8 @@ public sealed class ServiceLifecycleRefreshLoopTests
         private int lightingRestoreCount;
         private int lightingSuppressionCount;
         private int lowPowerPreparationCount;
+        private int resumeValidationBeginCount;
+        private int resumeValidationCancelCount;
         private int totalOperationCount;
 
         public int ControllerPresenceRefreshCount =>
@@ -340,6 +344,12 @@ public sealed class ServiceLifecycleRefreshLoopTests
         public int LightingSuppressionCount => Volatile.Read(ref lightingSuppressionCount);
 
         public int LowPowerPreparationCount => Volatile.Read(ref lowPowerPreparationCount);
+
+        public int ResumeValidationBeginCount =>
+            Volatile.Read(ref resumeValidationBeginCount);
+
+        public int ResumeValidationCancelCount =>
+            Volatile.Read(ref resumeValidationCancelCount);
 
         public List<Operation> Operations { get; } = [];
 
@@ -367,6 +377,18 @@ public sealed class ServiceLifecycleRefreshLoopTests
 
         public Task RestoreLightingRendererAsync(CancellationToken cancellationToken) =>
             RecordRefreshAsync(Operation.RestoreLighting);
+
+        public Task BeginResumeValidationAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref resumeValidationBeginCount);
+            return Task.CompletedTask;
+        }
+
+        public Task CancelResumeValidationAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref resumeValidationCancelCount);
+            return Task.CompletedTask;
+        }
 
         public async Task<ControlOperationResult> PrepareForLowPowerAsync(
             CancellationToken cancellationToken)

@@ -13,7 +13,9 @@ public sealed class ProfileAutomationState
     private FanControlSettings? persistentFanControl;
     private ManualOverride<LightingSettings>? temporaryLighting;
     private ManualOverride<LightingSettings>? persistentLighting;
-    private DesiredBatteryState desiredBattery;
+    private BatteryPolicy? temporaryBatteryPolicy;
+    private bool? temporaryBatteryProtectionEnabled;
+    private bool temporaryFullCharge;
 
     public ProfileAutomationState(
         ProfileSet profiles,
@@ -67,17 +69,22 @@ public sealed class ProfileAutomationState
                     lastKnownLighting,
                     OverrideLifetime.UntilPowerSourceChange)
                 : null;
-        desiredBattery = new DesiredBatteryState(
-            profiles.BatteryPolicy,
-            preferences.ProtectionEnabled,
-            temporaryFullCharge: false);
     }
 
     public PowerSource PowerSource { get; private set; }
 
-    public BatteryPolicy BatteryPolicy => desiredBattery.ConfiguredPolicy;
+    public BatteryPolicy BatteryPolicy => temporaryBatteryPolicy ?? profiles.BatteryPolicy;
 
-    public DesiredBatteryState DesiredBattery => desiredBattery;
+    public DesiredBatteryState DesiredBattery => new(
+        BatteryPolicy,
+        temporaryBatteryProtectionEnabled
+            ?? GetActiveProfile()?.EffectiveBatteryProtectionEnabled
+            ?? true,
+        temporaryFullCharge);
+
+    public BatteryPolicy? BatteryPolicyOverride => temporaryBatteryPolicy;
+
+    public bool? BatteryProtectionOverride => temporaryBatteryProtectionEnabled;
 
     public ProfileSet Profiles => profiles;
 
@@ -96,10 +103,15 @@ public sealed class ProfileAutomationState
     {
         ArgumentNullException.ThrowIfNull(value);
         profiles = value;
-        desiredBattery = new DesiredBatteryState(
-            value.BatteryPolicy,
-            desiredBattery.ProtectionEnabled,
-            desiredBattery.TemporaryFullCharge);
+        if (temporaryBatteryPolicy == value.BatteryPolicy)
+        {
+            temporaryBatteryPolicy = null;
+        }
+        if (temporaryBatteryProtectionEnabled
+            == GetActiveProfile()?.EffectiveBatteryProtectionEnabled)
+        {
+            temporaryBatteryProtectionEnabled = null;
+        }
     }
 
     public void SetBatteryPolicy(BatteryPolicy value)
@@ -107,15 +119,21 @@ public sealed class ProfileAutomationState
         ArgumentNullException.ThrowIfNull(value);
         CommitBatteryState(new DesiredBatteryState(
             value,
-            desiredBattery.ProtectionEnabled,
-            desiredBattery.TemporaryFullCharge));
+            DesiredBattery.ProtectionEnabled,
+            DesiredBattery.TemporaryFullCharge));
     }
 
     public void CommitBatteryState(DesiredBatteryState value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        profiles = profiles with { BatteryPolicy = value.ConfiguredPolicy };
-        desiredBattery = value;
+        temporaryBatteryPolicy = value.ConfiguredPolicy == profiles.BatteryPolicy
+            ? null
+            : value.ConfiguredPolicy;
+        temporaryBatteryProtectionEnabled = value.ProtectionEnabled
+            == GetActiveProfile()?.EffectiveBatteryProtectionEnabled
+                ? null
+                : value.ProtectionEnabled;
+        temporaryFullCharge = value.TemporaryFullCharge;
     }
 
     public bool ChangePowerSource(PowerSource powerSource)
@@ -130,7 +148,8 @@ public sealed class ProfileAutomationState
         temporaryFans = null;
         temporaryFanControl = null;
         temporaryLighting = null;
-        if (powerSource == PowerSource.Battery && desiredBattery.TemporaryFullCharge)
+        temporaryBatteryProtectionEnabled = null;
+        if (powerSource == PowerSource.Battery && temporaryFullCharge)
         {
             CancelTemporaryFullCharge();
         }
@@ -183,21 +202,15 @@ public sealed class ProfileAutomationState
 
     public void EnableTemporaryFullCharge()
     {
-        if (PowerSource == PowerSource.Battery || !desiredBattery.ProtectionEnabled)
+        if (PowerSource == PowerSource.Battery || !DesiredBattery.ProtectionEnabled)
         {
             return;
         }
 
-        desiredBattery = new DesiredBatteryState(
-            desiredBattery.ConfiguredPolicy,
-            desiredBattery.ProtectionEnabled,
-            temporaryFullCharge: true);
+        temporaryFullCharge = true;
     }
 
-    public void CancelTemporaryFullCharge() => desiredBattery = new DesiredBatteryState(
-        desiredBattery.ConfiguredPolicy,
-        desiredBattery.ProtectionEnabled,
-        temporaryFullCharge: false);
+    public void CancelTemporaryFullCharge() => temporaryFullCharge = false;
 
     public DesiredDeviceState Resolve(ConfirmedDeviceState confirmed)
     {
@@ -343,6 +356,15 @@ public sealed class ProfileAutomationState
         confirmed.Lighting ?? profiles.UsbC.Lighting)
     {
         CustomPerformance = confirmed.CustomPerformance,
+        BatteryProtectionEnabled = DesiredBattery.ProtectionEnabled,
+    };
+
+    private PowerProfile? GetActiveProfile() => PowerSource switch
+    {
+        PowerSource.PluggedIn => profiles.PluggedIn,
+        PowerSource.Battery => profiles.Battery,
+        PowerSource.UsbC => profiles.UsbC,
+        _ => null,
     };
 
     private static bool IsFanCompatibleWithSource(FanMode fans, PowerSource source) =>

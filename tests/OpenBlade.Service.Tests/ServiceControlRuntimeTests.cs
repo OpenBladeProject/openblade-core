@@ -810,7 +810,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             OpenBladeProductVersion.Read(typeof(ServiceControlRuntime).Assembly),
             status.ServiceVersion);
-        Assert.Matches("^0\\.1\\.0\\+[0-9a-f]{8}$", status.ServiceVersion);
         Assert.Equal(0, context.Provider.TryGetCount);
         Assert.Equal(0, context.Device.TotalCalls);
     }
@@ -908,7 +907,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             null);
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        ProfileSet updated = ProfileDefaults.CreateSafeDefaults() with
+        ProfileSet updated = context.Runtime.GetStatus().Profiles with
         {
             BatteryPolicy = BatteryPolicy.Create(75),
         };
@@ -918,8 +917,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Stored, result.Status);
         Assert.False(context.Runtime.GetStatus().DesiredState!.Battery.ProtectionEnabled);
-        Assert.False((await context.Store.LoadAsync(CancellationToken.None))
-            .Preferences.ProtectionEnabled);
+        BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.False(committed.Profiles.PluggedIn.EffectiveBatteryProtectionEnabled);
+        Assert.Null(committed.Preferences.ProtectionEnabled);
         Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
@@ -5243,6 +5243,41 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ResumeOnAc_InvalidatesGpuClockConfirmationBeforeStateRead()
+    {
+        TestContext context = CreateWritableContext();
+        var calls = new List<string>();
+        context.Provider.AfterGpuClockOffsetInvalidation = () => calls.Add("InvalidateGpu");
+        context.Device.AfterReadState = () => calls.Add("State");
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new SingleLifecycleEventSource(ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Provider.GpuClockOffsetInvalidationCount);
+        Assert.Equal("InvalidateGpu", calls[0]);
+        Assert.Contains("State", calls);
+    }
+
+    [Fact]
+    public async Task Resume_InvalidatesGpuClockConfirmationWhenDeviceIsUnavailable()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new SingleLifecycleEventSource(ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Provider.GpuClockOffsetInvalidationCount);
+    }
+
+    [Fact]
     public async Task ResumeValidation_LifecyclePathDisclosesLightingRestoreWrite()
     {
         TestContext context = CreateWritableContext();
@@ -5277,6 +5312,82 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(settersBeforeResume + 1, context.Device.TotalSetterCalls);
         Assert.Equal(1, context.Device.LightingSetCalls);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_DoesNotClaimPowerRetainedAfterDefaultResetInvalidates()
+    {
+        TestContext context = CreateWritableContext();
+        context.Provider.GpuClockOffsetConfirmationRequiresRevalidation = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new SequenceLifecycleEventSource(
+                ServiceLifecycleTrigger.Suspending,
+                ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.DoesNotContain(
+            "retained control state for Power mode",
+            validation.Detail,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Unavailable for comparison: Power mode.",
+            validation.Detail,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DisabledGpuReset_DoesNotBecomeExternalDuringPowerTransition()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            GpuOverclock = new GpuOverclockCapabilities(
+                new DeviceNumericRange(-1000, 400, null),
+                new DeviceNumericRange(-1000, 3000, null),
+                DeviceFeatureAccess.ReadWrite),
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                GpuClockTuning = GpuClockTuningSettings.Disabled,
+            },
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            profiles.PluggedIn.Performance,
+            profiles.PluggedIn.Fans,
+            ConfirmedBattery(80),
+            profiles.PluggedIn.Lighting);
+        context.Device.GpuClockOffsetManagementState =
+            GpuClockOffsetManagementState.ResetConfirmed;
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            GpuClockTuningSettings.Disabled,
+            context.Runtime.GetStatus().Profiles.PluggedIn.GpuClockTuning);
+        Assert.Null(context.Runtime.GetStatus().Profiles.Battery.GpuClockTuning);
+        int performanceWrites = context.Device.PerformanceSetCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(
+            DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(performanceWrites + 1, context.Device.PerformanceSetCalls);
     }
 
     [Fact]
@@ -5891,11 +6002,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(readsBeforeAction + 2, context.Device.StateReadCalls);
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
         Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
-        Assert.True(committed.Preferences.ProtectionEnabled);
+        Assert.Null(committed.Preferences.ProtectionEnabled);
     }
 
     [Fact]
-    public async Task DisableProtection_UnchangedCommitsPreferenceWithoutSetter()
+    public async Task DisableProtection_UnchangedCreatesTemporaryOverrideWithoutSetter()
     {
         TestContext context = CreateWritableContext();
         context.Device.ConfirmedState = context.Device.ConfirmedState with
@@ -5910,12 +6021,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(0, context.Device.BatterySetCalls);
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
-        Assert.False(committed.Preferences.ProtectionEnabled);
+        Assert.False(context.Runtime.GetStatus().BatteryProtectionOverride);
+        Assert.True(committed.Profiles.PluggedIn.EffectiveBatteryProtectionEnabled);
+        Assert.Null(committed.Preferences.ProtectionEnabled);
         Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
     }
 
     [Fact]
-    public async Task DisableProtection_AppliedCommitsPreferenceAfterMatchingReadback()
+    public async Task DisableProtection_AppliedCreatesTemporaryOverrideAfterMatchingReadback()
     {
         TestContext context = CreateWritableContext();
 
@@ -5926,12 +6039,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(["SetProtectionOff"], context.Device.BatterySetterCalls);
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
-        Assert.False(committed.Preferences.ProtectionEnabled);
+        Assert.False(context.Runtime.GetStatus().BatteryProtectionOverride);
+        Assert.True(committed.Profiles.PluggedIn.EffectiveBatteryProtectionEnabled);
+        Assert.Null(committed.Preferences.ProtectionEnabled);
         Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
     }
 
     [Fact]
-    public async Task UnchangedChargeLimit_CommitsConfiguredLimitAfterConfirmedMatch()
+    public async Task UnchangedChargeLimit_CreatesGlobalOverrideAfterConfirmedMatch()
     {
         TestContext context = CreateWritableContext();
         context.Device.ConfirmedState = context.Device.ConfirmedState with
@@ -5946,8 +6061,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Empty(context.Device.BatterySetterCalls);
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
-        Assert.Equal(BatteryPolicy.Create(75), committed.Profiles.BatteryPolicy);
-        Assert.True(committed.Preferences.ProtectionEnabled);
+        Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
+        Assert.Equal(BatteryPolicy.Create(75), context.Runtime.GetStatus().BatteryPolicyOverride);
+        Assert.Null(committed.Preferences.ProtectionEnabled);
     }
 
     [Fact]
@@ -5964,7 +6080,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
         Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
-        Assert.True(committed.Preferences.ProtectionEnabled);
+        Assert.Null(committed.Preferences.ProtectionEnabled);
         Assert.Equal(BatteryPolicy.Create(80), context.Runtime.GetStatus().Profiles.BatteryPolicy);
         Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
     }
@@ -5972,7 +6088,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task PostReadbackPersistenceFailure_PreservesIntentAndLatchesBatteryDrift(
+    public async Task TemporaryBatteryOverride_DoesNotPersistAfterMatchingReadback(
         bool unauthorized)
     {
         Exception failure = unauthorized
@@ -5993,18 +6109,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             BatteryPolicy.Create(75),
             CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(["SetChargeLimit"], context.Device.BatterySetterCalls);
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
         Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
         Assert.Equal(BatteryPolicy.Create(80), context.Runtime.GetStatus().Profiles.BatteryPolicy);
-        Assert.Equal(BatteryPolicy.Create(80),
+        Assert.Equal(BatteryPolicy.Create(75),
             context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy);
-        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(BatteryPolicy.Create(75), context.Runtime.GetStatus().BatteryPolicyOverride);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
     }
 
     [Fact]
-    public async Task PostReadbackPersistenceCancellation_PreservesIntentAndLatchesBatteryDrift()
+    public async Task TemporaryBatteryOverride_DoesNotReachConfigurationCancellationBoundary()
     {
         using var cancellation = new CancellationTokenSource();
         TestContext context = CreateWritableContext(
@@ -6019,18 +6136,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 return Task.CompletedTask;
             });
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => context.Runtime.SetBatteryPolicyAsync(
-                BatteryPolicy.Create(75),
-                cancellation.Token));
+        ControlOperationResult result = await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(75),
+            cancellation.Token);
 
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(["SetChargeLimit"], context.Device.BatterySetterCalls);
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
         Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
         Assert.Equal(BatteryPolicy.Create(80), context.Runtime.GetStatus().Profiles.BatteryPolicy);
-        Assert.Equal(BatteryPolicy.Create(80),
+        Assert.Equal(BatteryPolicy.Create(75),
             context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy);
-        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(BatteryPolicy.Create(75), context.Runtime.GetStatus().BatteryPolicyOverride);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
     }
 
     [Fact]
@@ -6063,8 +6181,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             ["SetChargeLimit", "SetProtectionOff"],
             context.Device.BatterySetterCalls);
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
-        Assert.Equal(BatteryPolicy.Create(75), committed.Profiles.BatteryPolicy);
-        Assert.False(committed.Preferences.ProtectionEnabled);
+        Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
+        Assert.Null(committed.Preferences.ProtectionEnabled);
+        Assert.Equal(BatteryPolicy.Create(75), context.Runtime.GetStatus().BatteryPolicyOverride);
+        Assert.False(context.Runtime.GetStatus().BatteryProtectionOverride);
     }
 
     [Fact]
@@ -6083,7 +6203,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.Empty(context.Device.BatterySetterCalls);
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
-        Assert.True(committed.Preferences.ProtectionEnabled);
+        Assert.Null(committed.Preferences.ProtectionEnabled);
         Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
     }
 
@@ -6100,7 +6220,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.DoesNotContain("stored", result.Message, StringComparison.OrdinalIgnoreCase);
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
         Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
-        Assert.True(committed.Preferences.ProtectionEnabled);
+        Assert.Null(committed.Preferences.ProtectionEnabled);
     }
 
     [Fact]
@@ -6129,7 +6249,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.True(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
         Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
-        Assert.True(committed.Preferences.ProtectionEnabled);
+        Assert.Null(committed.Preferences.ProtectionEnabled);
     }
 
     [Fact]
@@ -6271,6 +6391,33 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(restored.ConfirmedState!.Battery!.TemporaryFullCharge);
         Assert.Equal(80, restored.ConfirmedState.Battery.ChargeLimitPercent);
         Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+    }
+
+    [Fact]
+    public async Task PowerTransition_CancelsFullChargeBeforeApplyingProtectionOffProfile()
+    {
+        TestContext context = CreateWritableContext();
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            Battery = profiles.Battery with { BatteryProtectionEnabled = false },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, true),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(
+            ["SetTemporaryFullCharge", "SetProtectionOff"],
+            context.Device.BatterySetterCalls);
+        Assert.Equal(ProtectionOff(), context.Runtime.GetStatus().ConfirmedState!.Battery);
+        Assert.False(context.Runtime.GetStatus().DesiredState.Battery.ProtectionEnabled);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
     }
 
     [Fact]
@@ -8110,9 +8257,25 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             .GetResult();
         if (!protectionEnabled)
         {
+            ProfileSet profiles = configuration.Profiles;
             configuration = configuration with
             {
-                Preferences = new BatteryAutomationPreferences(ProtectionEnabled: false),
+                Profiles = profiles with
+                {
+                    PluggedIn = profiles.PluggedIn with
+                    {
+                        BatteryProtectionEnabled = false,
+                    },
+                    Battery = profiles.Battery with
+                    {
+                        BatteryProtectionEnabled = false,
+                    },
+                    UsbC = profiles.UsbC with
+                    {
+                        BatteryProtectionEnabled = false,
+                    },
+                },
+                Preferences = new BatteryAutomationPreferences(),
             };
             SeedConfiguration(
                 profilePath,
@@ -8479,7 +8642,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     private sealed class CountingProvider(bool available, IBladeDevice device)
-        : IVerifiedBladeDeviceProvider
+        : IVerifiedBladeDeviceProvider, IGpuClockOffsetConfirmationInvalidator
     {
         public bool Available { get; set; } = available;
 
@@ -8508,6 +8671,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Action? AfterTryGet { get; set; }
 
         public int InvalidationCount { get; private set; }
+
+        public int GpuClockOffsetInvalidationCount { get; private set; }
+
+        public Action? AfterGpuClockOffsetInvalidation { get; set; }
 
         public Exception? InvalidationFailure { get; set; }
 
@@ -8571,10 +8738,28 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 observed,
                 InvalidationDriverModeRestoreOutcome));
         }
+
+        public bool GpuClockOffsetConfirmationRequiresRevalidation { get; set; }
+
+        public Task<bool> InvalidateGpuClockOffsetConfirmationAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            GpuClockOffsetInvalidationCount++;
+            AfterGpuClockOffsetInvalidation?.Invoke();
+            return Task.FromResult(GpuClockOffsetConfirmationRequiresRevalidation);
+        }
     }
 
-    private sealed class CountingBladeDevice : IBladeDevice
+    private sealed class CountingBladeDevice :
+        IBladeDevice,
+        IGpuClockOffsetManagementDevice
     {
+        public GpuClockOffsetManagementState GpuClockOffsetManagementState
+        {
+            get;
+            set;
+        } = GpuClockOffsetManagementState.Relinquished;
         public int TotalCalls { get; private set; }
 
         public int PerformanceSetCalls { get; private set; }
@@ -8867,10 +9052,88 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Task SetGpuClockOffsetsAsync(
             GpuClockOffsetSettings value,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Capabilities.GpuOverclock is not { Access: DeviceFeatureAccess.ReadWrite })
+            {
+                return Task.FromException(
+                    new CapabilityUnavailableException(
+                        "GPU clock tuning is unavailable in this test device."));
+            }
+
+            GpuClockOffsetManagementState = GpuClockOffsetManagementState.Managed;
+            ConfirmedState = ConfirmedState with
+            {
+                GpuClockOffsets = new GpuClockOffsetCapabilities(
+                    "Test NVIDIA GPU",
+                    new GpuClockOffsetRange(-1000, 400, value.CoreMegahertz),
+                    new GpuClockOffsetRange(-1000, 3000, value.MemoryMegahertz)),
+            };
+            return Task.CompletedTask;
+        }
+
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            bool retainGpuClockOffsetManagement,
             CancellationToken cancellationToken) =>
-            Task.FromException(
-                new CapabilityUnavailableException(
-                    "GPU clock tuning is unavailable in this test device."));
+            SetManagedPerformanceAsync(
+                value,
+                customPerformance,
+                gpuClockOffsets,
+                retainGpuClockOffsetManagement,
+                cancellationToken);
+
+        public Task SetGpuClockOffsetsAsync(
+            GpuClockOffsetSettings value,
+            bool retainManagement,
+            CancellationToken cancellationToken)
+        {
+            if (!retainManagement && value == GpuClockOffsetSettings.Default)
+            {
+                GpuClockOffsetManagementState =
+                    GpuClockOffsetManagementState.ResetConfirmed;
+                ConfirmedState = ConfirmedState with { GpuClockOffsets = null };
+                return Task.CompletedTask;
+            }
+            return SetGpuClockOffsetsAsync(value, cancellationToken);
+        }
+
+        public Task RelinquishGpuClockOffsetManagementAsync(
+            CancellationToken cancellationToken)
+        {
+            GpuClockOffsetManagementState =
+                GpuClockOffsetManagementState.Relinquished;
+            ConfirmedState = ConfirmedState with { GpuClockOffsets = null };
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> InvalidateGpuClockOffsetConfirmationAsync(
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
+        private async Task SetManagedPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            bool retainManagement,
+            CancellationToken cancellationToken)
+        {
+            await SetPerformanceAsync(value, customPerformance, cancellationToken);
+            if (gpuClockOffsets is null
+                || !retainManagement
+                    && gpuClockOffsets == GpuClockOffsetSettings.Default
+                    && GpuClockOffsetManagementState ==
+                        GpuClockOffsetManagementState.ResetConfirmed)
+            {
+                return;
+            }
+            await SetGpuClockOffsetsAsync(
+                gpuClockOffsets,
+                retainManagement,
+                cancellationToken);
+        }
 
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken)
         {

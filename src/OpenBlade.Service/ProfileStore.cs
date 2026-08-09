@@ -8,15 +8,16 @@ public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromIn
 
 public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
 {
-    internal const int CurrentSchemaVersion = 10;
-    internal const int PreviousSchemaVersion = 9;
-    internal const int OlderSchemaVersion = 8;
-    internal const int OldestSupportedSchemaVersion = 7;
-    internal const int EarlierSupportedSchemaVersion = 6;
-    internal const int EarliestSupportedSchemaVersion = 5;
-    internal const int AncientSupportedSchemaVersion = 4;
-    internal const int PrehistoricSupportedSchemaVersion = 3;
-    internal const int ArchaicSupportedSchemaVersion = 2;
+    internal const int CurrentSchemaVersion = 11;
+    internal const int PreviousSchemaVersion = 10;
+    internal const int OlderSchemaVersion = 9;
+    internal const int OldestSupportedSchemaVersion = 8;
+    internal const int EarlierSupportedSchemaVersion = 7;
+    internal const int EarliestSupportedSchemaVersion = 6;
+    internal const int AncientSupportedSchemaVersion = 5;
+    internal const int PrehistoricSupportedSchemaVersion = 4;
+    internal const int ArchaicSupportedSchemaVersion = 3;
+    internal const int AntiqueSupportedSchemaVersion = 2;
     internal const int LegacySchemaVersion = 1;
 
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
@@ -34,7 +35,10 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
 
     public async Task SaveAsync(ProfileSet profiles, CancellationToken cancellationToken)
     {
-        profiles = NormalizeLegacyBatteryProfile(profiles, out _);
+        profiles = NormalizeLegacyBatteryProfile(
+            profiles,
+            out _,
+            batteryProtectionDefault: null);
         validator.Validate(profiles);
         byte[] json = JsonSerializer.SerializeToUtf8Bytes(
             new ProfileDocument(CurrentSchemaVersion, profiles),
@@ -77,7 +81,17 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
     internal ProfileSet ReadDocument(
         ReadOnlySpan<byte> json,
         out bool migrated,
-        out int schemaVersion)
+        out int schemaVersion) => ReadDocument(
+            json,
+            out migrated,
+            out schemaVersion,
+            legacyBatteryProtectionDefault: true);
+
+    internal ProfileSet ReadDocument(
+        ReadOnlySpan<byte> json,
+        out bool migrated,
+        out int schemaVersion,
+        bool legacyBatteryProtectionDefault)
     {
         BatteryConfigurationStore.RejectDuplicateMembers(json);
         using JsonDocument parsed = JsonDocument.Parse(json.ToArray());
@@ -96,7 +110,8 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
             or EarliestSupportedSchemaVersion
             or AncientSupportedSchemaVersion
             or PrehistoricSupportedSchemaVersion
-            or ArchaicSupportedSchemaVersion)
+            or ArchaicSupportedSchemaVersion
+            or AntiqueSupportedSchemaVersion)
         {
             ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
                 json,
@@ -106,7 +121,13 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
                 throw new InvalidDataException("The profile document is missing.");
             }
 
-            profiles = NormalizeLegacyBatteryProfile(document.Profiles, out migrated);
+            bool? protectionDefault = schemaVersion == CurrentSchemaVersion
+                ? null
+                : legacyBatteryProtectionDefault;
+            profiles = NormalizeLegacyBatteryProfile(
+                document.Profiles,
+                out migrated,
+                protectionDefault);
             migrated |= schemaVersion != CurrentSchemaVersion;
         }
         else if (schemaVersion == LegacySchemaVersion)
@@ -121,9 +142,15 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
             ProfileSet migratedProfiles = new(
                 document.Profiles.PluggedIn,
                 document.Profiles.Battery,
-                ProfileDefaults.CreateSafeDefaults().UsbC,
+                ProfileDefaults.CreateSafeDefaults().UsbC with
+                {
+                    BatteryProtectionEnabled = legacyBatteryProtectionDefault,
+                },
                 document.Profiles.BatteryPolicy);
-            profiles = NormalizeLegacyBatteryProfile(migratedProfiles, out _);
+            profiles = NormalizeLegacyBatteryProfile(
+                migratedProfiles,
+                out _,
+                legacyBatteryProtectionDefault);
             migrated = true;
         }
         else
@@ -137,7 +164,8 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
 
     internal static ProfileSet NormalizeLegacyBatteryProfile(
         ProfileSet profiles,
-        out bool migrated)
+        out bool migrated,
+        bool? batteryProtectionDefault)
     {
         PerformancePreset normalized = profiles.Battery.Performance switch
         {
@@ -159,6 +187,9 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         pluggedIn = NormalizeLightingPowerPolicy(pluggedIn, legacyLightingPowerPolicy);
         battery = NormalizeLightingPowerPolicy(battery, legacyLightingPowerPolicy);
         usbC = NormalizeLightingPowerPolicy(usbC, legacyLightingPowerPolicy);
+        pluggedIn = NormalizeBatteryProtection(pluggedIn, batteryProtectionDefault);
+        battery = NormalizeBatteryProtection(battery, batteryProtectionDefault);
+        usbC = NormalizeBatteryProtection(usbC, batteryProtectionDefault);
         migrated = pluggedIn != profiles.PluggedIn
             || battery != profiles.Battery
             || usbC != profiles.UsbC
@@ -215,6 +246,16 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         PowerProfile profile,
         LightingPowerPolicy legacyPolicy) => profile.LightingPowerPolicy is null
             ? profile with { LightingPowerPolicy = legacyPolicy }
+            : profile;
+
+    private static PowerProfile NormalizeBatteryProtection(
+        PowerProfile profile,
+        bool? batteryProtectionDefault) =>
+        profile.BatteryProtectionEnabled is null && batteryProtectionDefault.HasValue
+            ? profile with
+            {
+                BatteryProtectionEnabled = batteryProtectionDefault.Value,
+            }
             : profile;
 
     private async Task<ProfileLoadResult> RecoverSafeDefaultsAsync(

@@ -157,7 +157,10 @@ foreach ($requiredReleaseContract in @(
         'docs/nightly-changelog-automation',
         '--force-with-lease=',
         'gh pr create',
-        '--draft')) {
+        '--draft',
+        'Version impact: none',
+        'Version change: unchanged',
+        'Reason: Records published changelog metadata without changing product behavior.')) {
     Assert-True ($nightly.Contains($requiredReleaseContract)) `
         "Nightly release publishing is missing '$requiredReleaseContract'."
 }

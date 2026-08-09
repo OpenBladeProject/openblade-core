@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 7;
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -34,6 +34,7 @@ public static class ProfileExportSerializer
         DateTimeOffset exportedAtUtc)
     {
         ArgumentNullException.ThrowIfNull(profiles);
+        ValidateBatteryProtection(profiles);
         if (string.IsNullOrWhiteSpace(applicationVersion))
         {
             throw new ArgumentException(
@@ -66,6 +67,7 @@ public static class ProfileExportSerializer
             4 => DeserializeVersion4(json),
             5 => DeserializeVersion5(json),
             6 => DeserializeVersion6(json),
+            7 => DeserializeVersion7(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
@@ -101,38 +103,63 @@ public static class ProfileExportSerializer
     // its own DTO and migrate to ProfileSet before returning from Deserialize.
     private static ProfileSet DeserializeVersion1(string json)
     {
-        return NormalizeLegacyGpuClockTuning(
-            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
+        return NormalizeLegacyProfile(DeserializeDocument(json).Profiles);
     }
 
     private static ProfileSet DeserializeVersion2(string json)
     {
-        return NormalizeLegacyGpuClockTuning(
-            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
+        return NormalizeLegacyProfile(DeserializeDocument(json).Profiles);
     }
 
     private static ProfileSet DeserializeVersion3(string json)
     {
-        return NormalizeLegacyGpuClockTuning(
-            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
+        return NormalizeLegacyProfile(DeserializeDocument(json).Profiles);
     }
 
     private static ProfileSet DeserializeVersion4(string json)
     {
-        return NormalizeLegacyGpuClockTuning(
-            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
+        return NormalizeLegacyProfile(DeserializeDocument(json).Profiles);
     }
 
     private static ProfileSet DeserializeVersion5(string json)
     {
-        return NormalizeLegacyGpuClockTuning(
-            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
+        return NormalizeLegacyProfile(DeserializeDocument(json).Profiles);
     }
 
     private static ProfileSet DeserializeVersion6(string json)
     {
-        return NormalizeLegacyGpuClockTuning(
+        return NormalizeLegacyProfile(DeserializeDocument(json).Profiles);
+    }
+
+    private static ProfileSet DeserializeVersion7(string json)
+    {
+        ProfileSet profiles = NormalizeLegacyGpuClockTuning(
             NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
+        ValidateBatteryProtection(profiles);
+        return profiles;
+    }
+
+    private static ProfileSet NormalizeLegacyProfile(ProfileSet profiles) =>
+        NormalizeLegacyBatteryProtection(
+            NormalizeLegacyGpuClockTuning(NormalizeAudioMeterDecay(profiles)));
+
+    private static ProfileSet NormalizeLegacyBatteryProtection(ProfileSet profiles) =>
+        profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { BatteryProtectionEnabled = true },
+            Battery = profiles.Battery with { BatteryProtectionEnabled = true },
+            UsbC = profiles.UsbC with { BatteryProtectionEnabled = true },
+        };
+
+    private static void ValidateBatteryProtection(ProfileSet profiles)
+    {
+        if (!profiles.PluggedIn.BatteryProtectionEnabled.HasValue
+            || !profiles.Battery.BatteryProtectionEnabled.HasValue
+            || !profiles.UsbC.BatteryProtectionEnabled.HasValue)
+        {
+            throw new InvalidDataException(
+                "The profile file is missing a battery protection setting.");
+        }
     }
 
     private static ProfileSet NormalizeAudioMeterDecay(ProfileSet profiles) => profiles with
