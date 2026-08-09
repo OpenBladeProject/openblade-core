@@ -218,15 +218,10 @@ Follow [VERSIONING.md](VERSIONING.md). The short form is:
 - Base new work branches on `main` by default. Use a different base only when
   the user explicitly requests one.
 - `Directory.Build.props` is the product-version source of truth.
-- Every pull request must declare `Version impact: major|minor|patch|none`, the
-  exact `Version change: old -> new` (or `unchanged` for `none`), and a
-  one-sentence reason. Classify mixed pull requests by their highest impact. A
-  `major`, `minor`, or `patch` pull request must update `OpenBladeVersion` in
-  `Directory.Build.props` in that same pull request; only `none` leaves it
-  unchanged. Refresh from `main` before marking the pull request ready or
-  merging, and recalculate the bump if another merge advanced the version. A
-  release-preparation pull request does not bump it again unless that pull
-  request independently changes product behavior.
+- Every pull request must complete the `Version impact`, exact `Version change`,
+  and `Reason` fields defined in `VERSIONING.md`. Apply any required bump to
+  `OpenBladeVersion` in that same pull request, then refresh from `main` and
+  recalculate before marking it ready or merging.
 - Profile/config schema and IPC protocol versions are independent integers with
   explicit compatibility rules and migrations.
 - Use Conventional Commits:

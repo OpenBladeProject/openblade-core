@@ -67,8 +67,19 @@ version change only when the impact is `none`. Apply these rules consistently:
    releases the version already established by merged product changes unless
    the release pull request itself contains a change that independently
    requires a bump.
-8. If the impact is uncertain, explain the ambiguity in the pull request and
+8. If earlier merged work missed its required increments, use a dedicated
+   baseline-correction pull request. Classify it by the highest accumulated
+   unversioned product impact, identify the affected release range, and state
+   explicitly that the increment is a one-time correction rather than impact
+   introduced by the correction pull request itself.
+9. If the impact is uncertain, explain the ambiguity in the pull request and
    resolve it during review instead of silently defaulting to `patch` or `none`.
+
+CI reads the base and head versions from their exact Git commits and verifies
+that the three pull request fields describe the required transition. Missing,
+placeholder, duplicate, stale, skipped, or double increments fail before build
+classification. CI cannot determine whether behavior changed, so reviewers
+remain responsible for validating the declared impact and reason.
 
 Use this form in the pull request body:
 
@@ -98,10 +109,10 @@ install all coordinated components together.
 Nightly builds retain the checked-in three-part `OpenBladeVersion` as their
 stable base. The dedicated nightly workflow adds its monotonic run number as a
 fourth numeric component for the Burn bundle, assembly, file, and installed
-ownership versions. For example, nightly run 42 from base `0.1.0` uses binary
-version `0.1.0.42` and informational version
-`0.1.0-nightly.42+<commit>`. The next stable `0.1.1` normalizes to
-`0.1.1.0` and therefore upgrades every `0.1.0.*` nightly.
+ownership versions. For example, nightly run 42 from base `1.4.2` uses binary
+version `1.4.2.42` and informational version
+`1.4.2-nightly.42+<commit>`. The next stable `1.4.3` normalizes to
+`1.4.3.0` and therefore upgrades every `1.4.2.*` nightly.
 
 Do not edit `OpenBladeVersion` merely to produce a nightly. Nightly identity is
 supplied only by `build/Publish.ps1`, and revision zero remains reserved for
@@ -115,6 +126,11 @@ current `main` changelog, leaves post-build entries under `Unreleased`, and
 opens or updates the workflow-owned draft documentation pull request. The job
 may replace only its dedicated branch with a force-with-lease guard; it never
 pushes directly to `main`.
+
+After changing the base version, inspect the first hosted nightly's binary
+identity, generated changelog section, and comparison link. Confirm that it
+contains only the entries still under `Unreleased` and advances monotonically
+from the previous published nightly.
 
 ## Service IPC
 

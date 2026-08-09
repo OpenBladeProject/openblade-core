@@ -12,10 +12,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Advanced the product version from 0.1.0 to 0.2.0 to account for the
+- Advanced the product version from the stale 0.1.x baseline to 0.2.0 for the
   backward-compatible capabilities added since the initial non-nightly release
   and required each future product-changing pull request to apply its SemVer bump
-  directly instead of deferring version changes indefinitely.
+  directly, with pull-request fields and CI validation rejecting missing, stale,
+  or incorrect increments.
 
 ### Fixed
 
