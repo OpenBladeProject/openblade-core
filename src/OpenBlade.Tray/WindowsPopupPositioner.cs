@@ -5,6 +5,8 @@ namespace OpenBlade.Tray;
 
 internal static class WindowsPopupPositioner
 {
+    private const int VirtualScreenLeftMetric = 76;
+    private const int VirtualScreenTopMetric = 77;
     private const uint SetWindowNoActivate = 0x0010;
     private const uint DisableTransitionsAttribute = 3;
     private static readonly nint NotTopmostWindow = new(-2);
@@ -22,6 +24,22 @@ internal static class WindowsPopupPositioner
             y,
             width,
             height);
+
+    public static void PositionOffscreen(
+        nint window,
+        int width,
+        int height)
+    {
+        int x = (int)Math.Clamp(
+            (long)GetSystemMetrics(VirtualScreenLeftMetric) - width - 1,
+            int.MinValue,
+            int.MaxValue);
+        int y = (int)Math.Clamp(
+            (long)GetSystemMetrics(VirtualScreenTopMetric) - height - 1,
+            int.MinValue,
+            int.MaxValue);
+        Position(window, NotTopmostWindow, x, y, width, height);
+    }
 
     public static void DisableTransitions(nint window)
     {
@@ -97,6 +115,9 @@ internal static class WindowsPopupPositioner
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(nint window);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(

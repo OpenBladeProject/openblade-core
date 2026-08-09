@@ -325,24 +325,20 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             revealCurrentY = revealStagingY;
             revealWindowHandle = WindowNative.GetWindowHandle(this);
             WindowsPopupPositioner.DisableTransitions(revealWindowHandle);
-            var staged = new TrayDashboardRect(
-                placement.Rect.X,
-                revealStagingY,
+            WindowsPopupPositioner.PositionOffscreen(
+                revealWindowHandle,
                 placement.Rect.Width,
                 placement.Rect.Height);
-            AppWindow.MoveAndResize(ToRectInt32(staged), displayArea);
             Root.UpdateLayout();
             if (!surfaceShown)
             {
                 AppWindow.Show(activateWindow: false);
                 surfaceShown = true;
             }
-            WindowsPopupPositioner.PositionInFront(
+            WindowsPopupPositioner.PositionOffscreen(
                 revealWindowHandle,
-                staged.X,
-                staged.Y,
-                staged.Width,
-                staged.Height);
+                placement.Rect.Width,
+                placement.Rect.Height);
         }
         catch (Exception exception)
         {
@@ -759,10 +755,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
         try
         {
-            WindowsPopupPositioner.PositionInFront(
+            WindowsPopupPositioner.PositionOffscreen(
                 revealWindowHandle,
-                revealPlacement.X,
-                revealStagingY,
                 revealPlacement.Width,
                 revealPlacement.Height);
             revealCurrentY = revealStagingY;

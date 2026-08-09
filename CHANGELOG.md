@@ -23,7 +23,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Fixed the quick-controls popup's blank black opening frame, raw lighting
   option text, missing fan icon, clipped controls, and truncated status labels.
-  The popup now keeps its composed surface prewarmed behind the taskbar, uses
+  The popup now keeps its composed surface prewarmed outside the virtual
+  desktop and uses
   matching 200 ms reveal and dismissal motion paced by the desktop compositor
   with the brightness overlay's easing, stays outside the taskbar's topmost
   band, reliably dismisses after an outside click, refreshes its telemetry
