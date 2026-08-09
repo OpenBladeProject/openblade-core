@@ -8,15 +8,75 @@ integers for persisted schemas and IPC protocols.
 `OpenBladeVersion` in `Directory.Build.props` is the single source of truth.
 Release tags use `vMAJOR.MINOR.PATCH`.
 
-- `MAJOR`: stable-release compatibility break. Before 1.0, reserve this for a
-  deliberate project-wide compatibility reset.
-- `MINOR`: a new user-facing capability, a newly supported Blade model, or a
-  compatible expansion of public behavior. During 0.x development, an
-  intentional breaking product change also increments `MINOR`.
-- `PATCH`: a backward-compatible bug fix, performance improvement, packaging
-  correction, or small presentation refinement.
-- Documentation, tests, capture evidence, and internal refactors alone do not
-  require a product-version bump.
+For a current version `X.Y.Z`, increment the leftmost component justified by
+the change and reset every component to its right to zero:
+
+- `MAJOR` (`X`): a stable-release compatibility break. This includes removing
+  or incompatibly changing a supported capability, persisted behavior, upgrade
+  path, or user-facing contract so existing users cannot upgrade without
+  intervention or an accepted loss of behavior. Moving from `0.x` to `1.0.0`
+  declares the initial stable product contract. During `0.x` development,
+  breaking changes increment `MINOR`; otherwise reserve `MAJOR` for `1.0.0` or
+  a deliberate project-wide compatibility reset.
+- `MINOR` (`Y`): a backward-compatible user-facing capability, newly supported
+  Blade model, or meaningful compatible expansion of existing behavior. During
+  `0.x` development, an intentional breaking product change also increments
+  `MINOR`.
+- `PATCH` (`Z`): a backward-compatible defect or security fix, measured
+  performance improvement, packaging correction, reliability improvement, or
+  small presentation refinement that does not add a distinct capability.
+- `NONE`: documentation, tests, capture evidence, CI changes, dependency
+  maintenance, and behavior-preserving internal refactors alone do not require
+  a product-version bump.
+
+Examples:
+
+- `1.4.2` becomes `2.0.0` when a stable supported contract is broken.
+- `1.4.2` becomes `1.5.0` when a backward-compatible capability is added.
+- `1.4.2` becomes `1.4.3` when existing behavior is corrected or refined.
+- `0.4.2` becomes `0.5.0` for either a new capability or an intentional
+  pre-1.0 breaking change.
+
+### Pull request version impact
+
+Every pull request must include a `Version impact` field set to `major`,
+`minor`, `patch`, or `none`, a `Version change` field containing the exact old
+and new versions, and a one-sentence justification. Use `unchanged` for the
+version change only when the impact is `none`. Apply these rules consistently:
+
+1. Classify the user-visible and compatibility impact, not the commit type,
+   number of files, or size of the diff.
+2. For a pull request with several kinds of changes, declare the highest impact:
+   `major` over `minor`, `minor` over `patch`, and `patch` over `none`.
+3. Product SemVer, service IPC versions, Session Agent IPC versions, and
+   persisted schema versions are separate decisions. An IPC or schema change
+   does not automatically determine Product SemVer, but any resulting break in
+   the supported user upgrade path does.
+4. A pull request classified as `major`, `minor`, or `patch` must update
+   `OpenBladeVersion` in `Directory.Build.props` in that same pull request. A
+   pull request classified as `none` must leave it unchanged.
+5. Calculate the new version from the current target-branch version. Before the
+   pull request is marked ready or merged, refresh it from `main` and recalculate
+   the bump if another merged pull request advanced the version. Never keep a
+   stale or duplicate version merely to avoid resolving the version-line
+   conflict.
+6. Reset components to the right of the selected bump. For example, a `minor`
+   change from `0.4.7` becomes `0.5.0`, while a `patch` change rebased after that
+   merge becomes `0.5.1`.
+7. A release-preparation pull request does not add another automatic bump. It
+   releases the version already established by merged product changes unless
+   the release pull request itself contains a change that independently
+   requires a bump.
+8. If the impact is uncertain, explain the ambiguity in the pull request and
+   resolve it during review instead of silently defaulting to `patch` or `none`.
+
+Use this form in the pull request body:
+
+```text
+Version impact: minor
+Version change: 0.4.7 -> 0.5.0
+Reason: Adds a backward-compatible user-facing capability.
+```
 
 Assembly identities are derived as follows:
 
@@ -94,13 +154,14 @@ schema reader and reject future versions with a clear error.
 ## Release process
 
 1. Keep user-visible work in `CHANGELOG.md` under `Unreleased`.
-2. Decide the SemVer increment from the rules above.
-3. Update `OpenBladeVersion`.
-4. Move `Unreleased` entries under the dated release heading and create a new
+2. Confirm every merged product-changing pull request applied its required
+   SemVer increment and that `OpenBladeVersion` is greater than the preceding
+   release tag.
+3. Move `Unreleased` entries under the dated release heading and create a new
    empty `Unreleased` section.
-5. Run the full build, tests, publish, payload validation, and applicable live
+4. Run the full build, tests, publish, payload validation, and applicable live
    device acceptance checks.
-6. Commit as `chore(release): prepare vX.Y.Z`, tag `vX.Y.Z`, then publish the
+5. Commit as `chore(release): prepare vX.Y.Z`, tag `vX.Y.Z`, then publish the
    immutable artifacts built from that tag.
 
 ## Commit messages
