@@ -170,6 +170,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private string controllerDetectionWarningText = string.Empty;
     private bool hasExternalChanges;
     private string externalChangesText = string.Empty;
+    private bool hasUnconfirmedWrites;
+    private string unconfirmedWritesText = string.Empty;
     private bool alwaysOverrideExternalLightingChanges;
     private bool allowUntestedFirmware;
     private KeyboardLightingControlMode keyboardLightingControlMode;
@@ -211,6 +213,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isBatteryProtectionOperationInProgress;
     private bool isFullChargeOperationInProgress;
     private bool isReapplyChangedSettingsOperationInProgress;
+    private bool isCheckCurrentStateOperationInProgress;
     private bool isStartupAnimationOperationInProgress;
     private bool isFunctionKeyOperationInProgress;
     private bool isGamingModeOperationInProgress;
@@ -1011,6 +1014,47 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         private set => SetField(ref externalChangesText, value);
     }
 
+    public bool HasUnconfirmedWrites
+    {
+        get => hasUnconfirmedWrites;
+        private set
+        {
+            if (hasUnconfirmedWrites == value)
+            {
+                return;
+            }
+            SetField(ref hasUnconfirmedWrites, value);
+            NotifyPresentationState();
+        }
+    }
+
+    public string UnconfirmedWritesText
+    {
+        get => unconfirmedWritesText;
+        private set => SetField(ref unconfirmedWritesText, value);
+    }
+
+    public bool IsCheckCurrentStateOperationInProgress
+    {
+        get => isCheckCurrentStateOperationInProgress;
+        private set
+        {
+            if (isCheckCurrentStateOperationInProgress == value)
+            {
+                return;
+            }
+            SetField(ref isCheckCurrentStateOperationInProgress, value);
+            Notify(nameof(CanCheckCurrentState));
+        }
+    }
+
+    public bool CanCheckCurrentState => IsConnected
+        && HasUnconfirmedWrites
+        && !IsCheckCurrentStateOperationInProgress;
+
+    public bool ShowReapplyChangedSettings => HasExternalChanges
+        && !HasUnconfirmedWrites;
+
     public bool IsReapplyChangedSettingsOperationInProgress
     {
         get => isReapplyChangedSettingsOperationInProgress;
@@ -1026,6 +1070,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool CanReapplyChangedSettings => HasExternalChanges
+        && !HasUnconfirmedWrites
         && CanControlHardware
         && HasReapplicableExternalChanges
         && !IsReapplyChangedSettingsOperationInProgress;
@@ -1148,10 +1193,38 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    public async Task<bool> CheckCurrentStateAsync(CancellationToken cancellationToken)
+    {
+        if (!CanCheckCurrentState)
+        {
+            return false;
+        }
+
+        IsCheckCurrentStateOperationInProgress = true;
+        try
+        {
+            ObservationRequestStamp stamp = new(
+                connectionGeneration,
+                subscriptionConnected);
+            ServiceStatusSnapshot status = await serviceClient
+                .ObserveStateAsync(LiveReadingSensors.None, cancellationToken);
+            bool accepted = false;
+            await dispatcher.InvokeAsync(
+                () => accepted = ApplyObservedStatus(status, stamp, trayOnly: false),
+                cancellationToken);
+            return accepted;
+        }
+        finally
+        {
+            IsCheckCurrentStateOperationInProgress = false;
+        }
+    }
+
     public bool HasAttention => IsConnected
         && (HasControllerAdvisory
             || HasControllerDetectionWarning
-            || HasExternalChanges);
+            || HasExternalChanges
+            || HasUnconfirmedWrites);
 
     public string AttentionSummary
     {
@@ -1160,6 +1233,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (!HasAttention)
             {
                 return string.Empty;
+            }
+            if (HasUnconfirmedWrites)
+            {
+                return "State not confirmed";
             }
             if (HasExternalChanges)
             {
@@ -1175,7 +1252,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string AttentionBadgeLabel => !HasAttention
         ? string.Empty
-        : HasExternalChanges
+        : HasUnconfirmedWrites
+            ? "State not confirmed"
+            : HasExternalChanges
             ? "Changed outside OpenBlade"
             : HasControllerDetectionWarning
                 ? "Check status"
@@ -1190,6 +1269,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return string.Empty;
             }
             List<string> details = [];
+            if (HasUnconfirmedWrites)
+            {
+                details.Add(UnconfirmedWritesText);
+            }
             if (HasExternalChanges)
             {
                 details.Add(ExternalChangesText);
@@ -4175,6 +4258,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         HasExternalChanges = externalChanges.Length > 0;
         ExternalChangesText = HasExternalChanges
             ? $"Changed outside OpenBlade: {string.Join(", ", externalChanges.Select(SubsystemLabel))}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade."
+            : string.Empty;
+        DeviceSubsystem[] unconfirmedWrites = status.UnconfirmedWrites
+            .Distinct()
+            .OrderBy(value => value.ToString(), StringComparer.Ordinal)
+            .ToArray();
+        HasUnconfirmedWrites = unconfirmedWrites.Length > 0;
+        UnconfirmedWritesText = HasUnconfirmedWrites
+            ? $"OpenBlade could not confirm {string.Join(", ", unconfirmedWrites.Select(SubsystemLabel))} after a write. The last confirmed values remain shown. Checking the current state is read-only; OpenBlade will not retry the write automatically."
             : string.Empty;
         AlwaysOverrideExternalLightingChanges =
             status.AlwaysOverrideExternalLightingChanges;
@@ -8201,6 +8292,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(ControlAccessStatus));
         Notify(nameof(CanRequestHardwareControl));
         Notify(nameof(CanReapplyChangedSettings));
+        Notify(nameof(CanCheckCurrentState));
+        Notify(nameof(ShowReapplyChangedSettings));
         Notify(nameof(CanEditPerformance));
         Notify(nameof(CanToggleGpuClockTuning));
         Notify(nameof(CanEditGpuClockTuning));

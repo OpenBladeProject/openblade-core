@@ -106,6 +106,9 @@ public sealed class DiagnosticArchiveProviderTests
             "Fans",
             configuration.RootElement.GetProperty("status.externalChanges").GetString());
         Assert.Equal(
+            "Battery",
+            configuration.RootElement.GetProperty("status.unconfirmedWrites").GetString());
+        Assert.Equal(
             FunctionKeyPrimaryMode.MultimediaKeys.ToString(),
             configuration.RootElement.GetProperty("laptop.functionKeyPrimary").GetString());
         Assert.Equal(
@@ -338,6 +341,7 @@ public sealed class DiagnosticArchiveProviderTests
             LightingOverride: null,
             FullChargeOverride: false)
         {
+            UnconfirmedWrites = [DeviceSubsystem.Battery],
             Firmware = new FirmwareVersions(
                 "2.02",
                 "1.09",

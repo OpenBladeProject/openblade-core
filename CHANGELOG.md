@@ -27,6 +27,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Indeterminate hardware writes are now shown as unconfirmed instead of as
+  external changes. OpenBlade blocks retries until a read-only current-state
+  check confirms the result or identifies a real mismatch.
 - Prevented the first nightly after a product-version change from replaying
   entries already published under the preceding version when its generated
   changelog pull request is still outstanding.

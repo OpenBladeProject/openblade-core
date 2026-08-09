@@ -251,6 +251,8 @@ public sealed record ServiceStatusSnapshot(
     FirmwareCompatibilityStatus FirmwareCompatibility =
         FirmwareCompatibilityStatus.Unknown)
 {
+    public IReadOnlyList<DeviceSubsystem> UnconfirmedWrites { get; init; } = [];
+
     public FanControlSettings? FanControlOverride { get; init; }
 
     public PerformanceShortcutPreview? PerformanceShortcutPreview { get; init; }

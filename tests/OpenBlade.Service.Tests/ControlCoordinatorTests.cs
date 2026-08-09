@@ -1267,6 +1267,7 @@ public sealed class ControlCoordinatorTests
         Assert.Contains("indeterminate", outcome.Result.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Same(device.State, outcome.Readback);
         Assert.False(outcome.ReadbackMatched);
+        Assert.False(outcome.ConfirmationUnavailable);
         Assert.Equal(["Capabilities", "State", "SetPerformance", "State"], device.Calls);
         Assert.Equal(1, device.PerformanceSetCalls);
     }
@@ -1278,12 +1279,20 @@ public sealed class ControlCoordinatorTests
         device.ReadStateFailureOnCall = 2;
         var coordinator = new ControlCoordinator(device);
 
-        ControlResult result = await coordinator.ApplyPerformanceAsync(
-            PerformancePreset.Balanced,
-            CancellationToken.None);
+        ConfirmedDeviceState before = device.State;
+        ScopedApplyOutcome outcome = await coordinator
+            .ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
+                PerformancePreset.Balanced,
+                CancellationToken.None);
 
-        Assert.Equal(ControlResultStatus.Failed, result.Status);
-        Assert.Contains("indeterminate", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.Contains(
+            "indeterminate",
+            outcome.Result.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.True(outcome.ConfirmationUnavailable);
+        Assert.Same(before, outcome.PreWriteState);
+        Assert.Null(outcome.Readback);
         Assert.Equal(["Capabilities", "State", "SetPerformance", "State"], device.Calls);
         Assert.Equal(1, device.PerformanceSetCalls);
     }

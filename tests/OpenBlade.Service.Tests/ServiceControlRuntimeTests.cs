@@ -6253,7 +6253,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task ScopedReadbackFailure_PreservesConfirmedAndLatchesOnlyNamedDriftWithoutRetry()
+    public async Task ScopedReadbackFailure_PreservesConfirmedAndWaitsForReadOnlyConfirmation()
     {
         TestContext context = CreateWritableContext();
         await context.Runtime.ObserveAsync(CancellationToken.None);
@@ -6268,10 +6268,66 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Failed, result.Status);
         Assert.Same(before, context.Runtime.GetStatus().ConfirmedState);
-        Assert.Equal([DeviceSubsystem.Performance], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(
+            [DeviceSubsystem.Performance],
+            context.Runtime.GetStatus().UnconfirmedWrites);
         Assert.Equal(1, context.Device.PerformanceSetCalls);
         Assert.Equal(3, context.Device.StateReadCalls);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
+
+        int readsBeforeGuard = context.Device.StateReadCalls;
+        ControlOperationResult blocked = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Balanced,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        ControlOperationResult reapply = await context.Runtime.ReapplyChangedSettingsAsync(
+            CancellationToken.None);
+        ControlOperationResult shortcut = await context.Runtime.CyclePerformanceShortcutAsync(
+            PerformanceShortcutSource.FunctionP,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, blocked.Status);
+        Assert.Equal(ControlOperationStatus.Blocked, reapply.Status);
+        Assert.Equal(ControlOperationStatus.Blocked, shortcut.Status);
+        Assert.Equal(readsBeforeGuard, context.Device.StateReadCalls);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+
+        context.Device.ReadStateFailureOnCall = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task ScopedReadbackFailure_LaterMismatchBecomesExternalWithoutRetry()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        context.Device.ReadStateFailureOnCall = null;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(
+            [DeviceSubsystem.Performance],
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
     }
 
     [Fact]
@@ -6590,8 +6646,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, context.Provider.TryGetCount);
         Assert.True(context.Device.TotalSetterCalls > 0);
         Assert.All(SetterCounts(context.Device), count => Assert.InRange(count, 0, 1));
+        Assert.NotEmpty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(
+            context.Runtime.GetStatus().UnconfirmedWrites.Intersect(
+                context.Runtime.GetStatus().ExternalChanges));
         Assert.False(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
+
+        int setters = context.Device.TotalSetterCalls;
+        context.Device.ReadStateFailureOnCall = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
     }
 
     [Fact]

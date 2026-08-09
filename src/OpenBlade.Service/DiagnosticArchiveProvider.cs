@@ -464,6 +464,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["status.controllerDetectionWarning"] =
                 status.ControllerDetectionWarning ?? "Unavailable",
             ["status.externalChanges"] = string.Join(", ", status.ExternalChanges),
+            ["status.unconfirmedWrites"] = string.Join(", ", status.UnconfirmedWrites),
             ["status.message"] = status.Message,
             ["laptop.functionKeyPrimary"] =
                 status.FunctionKeyPrimary?.ToString() ?? "Unavailable",

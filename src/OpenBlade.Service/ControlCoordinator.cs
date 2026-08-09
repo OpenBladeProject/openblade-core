@@ -10,7 +10,9 @@ internal sealed record ScopedApplyOutcome(
     bool ReadbackMatched,
     DeviceCapabilities? Capabilities,
     bool DeviceAccessFailed,
-    IReadOnlySet<DeviceSubsystem>? ConfirmedCoupledWrites = null);
+    IReadOnlySet<DeviceSubsystem>? ConfirmedCoupledWrites = null,
+    bool ConfirmationUnavailable = false,
+    ConfirmedDeviceState? PreWriteState = null);
 
 internal sealed record FullTransitionApplyOutcome(
     SubsystemApplyResults Results,
@@ -19,7 +21,9 @@ internal sealed record FullTransitionApplyOutcome(
     IReadOnlySet<DeviceSubsystem> ReadbackMatched,
     IReadOnlySet<DeviceSubsystem> ReadbackContradicted,
     DeviceCapabilities? Capabilities,
-    bool DeviceAccessFailed);
+    bool DeviceAccessFailed,
+    IReadOnlySet<DeviceSubsystem>? ConfirmationUnavailable = null,
+    ConfirmedDeviceState? PreWriteState = null);
 
 internal sealed class IntentionalWriteCanceledException(
     IReadOnlySet<DeviceSubsystem> writeAttempted,
@@ -662,7 +666,12 @@ public sealed class ControlCoordinator
                     transition.Matched,
                     transition.Contradicted,
                     capabilities,
-                    DeviceAccessFailed: true);
+                    DeviceAccessFailed: true,
+                    confirmationUnavailable: transition.Completed
+                        .Where(subsystem =>
+                            !states[subsystem].AcceptSetterCompletionWithoutReadback)
+                        .ToHashSet(),
+                    preWriteState: initial);
             }
 
             ReconcileFinalReadback(desired, states, final, transition);
@@ -870,6 +879,7 @@ public sealed class ControlCoordinator
                 await (pending.StateAwareSetter is null
                     ? pending.Setter(cancellationToken)
                     : pending.StateAwareSetter(initial, cancellationToken));
+                transition.Completed.Add(subsystem);
                 transition.Provisional[subsystem] = Indeterminate(pending.Name, null);
             }
             catch (CapabilityUnavailableException exception)
@@ -976,12 +986,14 @@ public sealed class ControlCoordinator
     {
         DeviceCapabilities? capabilities = null;
         bool submissionIndeterminate = false;
+        bool setterCompleted = false;
+        ConfirmedDeviceState? initial = null;
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
             EnsureGpuClockOffsetManagementContract(capabilities);
             cancellationToken.ThrowIfCancellationRequested();
-            ConfirmedDeviceState initial = await device.ReadStateAsync(cancellationToken);
+            initial = await device.ReadStateAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             BatteryOperationPlan plan = createPlan(capabilities, initial.Battery);
             if (!plan.Supported)
@@ -1011,6 +1023,7 @@ public sealed class ControlCoordinator
             {
                 await plan.Setter(cancellationToken);
                 submissionIndeterminate = true;
+                setterCompleted = true;
             }
             catch (CapabilityUnavailableException exception)
             {
@@ -1090,7 +1103,9 @@ public sealed class ControlCoordinator
                 WriteAttempted: submissionIndeterminate,
                 ReadbackMatched: false,
                 capabilities,
-                DeviceAccessFailed: true);
+                DeviceAccessFailed: true,
+                ConfirmationUnavailable: setterCompleted,
+                PreWriteState: setterCompleted ? initial : null);
         }
     }
 
@@ -1273,7 +1288,9 @@ public sealed class ControlCoordinator
                 capabilities,
                 DeviceAccessFailed: !writeAttempted
                     || setterCompleted
-                    || IsTerminalDeviceFailure(exception));
+                    || IsTerminalDeviceFailure(exception),
+                ConfirmationUnavailable: setterCompleted,
+                PreWriteState: setterCompleted ? initial : null);
         }
     }
 
@@ -1284,7 +1301,9 @@ public sealed class ControlCoordinator
         IReadOnlySet<DeviceSubsystem> matched,
         IReadOnlySet<DeviceSubsystem> contradicted,
         DeviceCapabilities capabilities,
-        bool DeviceAccessFailed) => new(
+        bool DeviceAccessFailed,
+        IReadOnlySet<DeviceSubsystem>? confirmationUnavailable = null,
+        ConfirmedDeviceState? preWriteState = null) => new(
             new SubsystemApplyResults(
                 results[DeviceSubsystem.Performance],
                 results[DeviceSubsystem.Fans],
@@ -1295,7 +1314,9 @@ public sealed class ControlCoordinator
             new HashSet<DeviceSubsystem>(matched),
             new HashSet<DeviceSubsystem>(contradicted),
             capabilities,
-            DeviceAccessFailed);
+            DeviceAccessFailed,
+            confirmationUnavailable,
+            preWriteState);
 
     private BatteryOperationPlan CreateBatteryPlan(
         DesiredBatteryState desired,
@@ -1767,6 +1788,7 @@ public sealed class ControlCoordinator
     {
         public Dictionary<DeviceSubsystem, ControlResult> Provisional { get; } = [];
         public HashSet<DeviceSubsystem> Attempted { get; } = [];
+        public HashSet<DeviceSubsystem> Completed { get; } = [];
         public HashSet<DeviceSubsystem> Matched { get; } = [];
         public HashSet<DeviceSubsystem> Contradicted { get; } = [];
         public bool DeviceAccessFailed { get; set; }

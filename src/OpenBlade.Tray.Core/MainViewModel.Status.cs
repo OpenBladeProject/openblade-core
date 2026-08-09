@@ -18,6 +18,7 @@ public sealed partial class MainViewModel
             right.ControllerDetectionWarning,
             StringComparison.Ordinal)
         && left.ExternalChanges.SequenceEqual(right.ExternalChanges)
+        && left.UnconfirmedWrites.SequenceEqual(right.UnconfirmedWrites)
         && string.Equals(left.Message, right.Message, StringComparison.Ordinal)
         && CapabilitiesEqual(left.Capabilities, right.Capabilities)
         && left.ConfirmedState == right.ConfirmedState
