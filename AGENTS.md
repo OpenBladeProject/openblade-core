@@ -214,6 +214,12 @@ unrelated worktrees and checkout changes.
     the branch. For a merged pull request, also prove that the branch tip is
     reachable from `origin/main`. If any safety check fails, report the blocker
     instead of silently leaving cleanup incomplete or deleting uncertain work.
+    After any successful branch merge, also update the primary non-linked-
+    worktree checkout to the latest `main` with `git pull --ff-only origin main`;
+    this synchronization is the required exception to the landing-checkout
+    read-only rule above. Confirm first that the pull will preserve local
+    changes. If local modifications or divergence prevent a safe fast-forward,
+    report the blocker rather than stashing, resetting, or discarding work.
 
 ## Versioning and commits
 
