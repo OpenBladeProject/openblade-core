@@ -172,14 +172,11 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 [
                     new(
                         TrayDashboardControlKind.Battery,
-                        true,
-                        TrayDashboardControlSize.Wide),
+                        true),
                     new(
                         TrayDashboardControlKind.Performance,
-                        false,
-                        TrayDashboardControlSize.Compact),
+                        false),
                 ],
-                ExpandedControl: TrayDashboardControlKind.Battery,
                 StatusItems:
                 [
                     new(TrayDashboardStatusItemKind.BatteryPower, true),
@@ -189,7 +186,8 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 [
                     new(TrayDashboardSliderKind.GpuMemoryClock, true),
                     new(TrayDashboardSliderKind.ChargeLimit, true),
-                ])));
+                ],
+                SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion)));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -287,9 +285,8 @@ public sealed class UiPreferenceStoreTests : IDisposable
             TrayDashboardControlKind.Performance,
             reloaded.EffectiveTrayDashboard.Controls![0].Kind);
         Assert.Equal(
-            TrayDashboardControlSize.Compact,
-            reloaded.EffectiveTrayDashboard.Controls[0].Size);
-        Assert.Null(reloaded.EffectiveTrayDashboard.ExpandedControl);
+            TrayDashboardPreferenceDefaults.CurrentSchemaVersion,
+            reloaded.EffectiveTrayDashboard.SchemaVersion);
         Assert.True(reloaded.EffectiveTrayDashboard.Sliders!
             .Single(slider => slider.Kind == TrayDashboardSliderKind.ChargeLimit)
             .IsVisible);
@@ -355,10 +352,77 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 .GetProperty("kind")
                 .GetString());
         Assert.Equal(
+            TrayDashboardPreferenceDefaults.CurrentSchemaVersion,
+            document.RootElement.GetProperty("trayDashboard")
+                .GetProperty("schemaVersion")
+                .GetInt32());
+        Assert.False(document.RootElement.GetProperty("trayDashboard")
+            .TryGetProperty("expandedControl", out _));
+        Assert.False(document.RootElement.GetProperty("trayDashboard")
+            .GetProperty("controls")[0]
+            .TryGetProperty("size", out _));
+        Assert.Equal(
             "2026-07-27T12:30:00+00:00",
             document.RootElement.GetProperty("lastSuccessfulUpdateCheckAt").GetString());
         Assert.True(
             document.RootElement.GetProperty("updateCheckPromptShown").GetBoolean());
+    }
+
+    [Fact]
+    public async Task LoadAsync_LegacyDashboardLayoutMigratesToCurrentSchema()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "theme": "Dark",
+              "trayDashboard": {
+                "controls": [
+                  { "kind": "Lighting", "isVisible": true, "size": "Wide" },
+                  { "kind": "Performance", "isVisible": false, "size": "Compact" }
+                ],
+                "expandedControl": "Lighting",
+                "statusItems": [
+                  { "kind": "Fans", "isVisible": true }
+                ]
+              }
+            }
+            """);
+        UiPreferenceStore store = new(path);
+
+        UiPreferences loaded = await store.LoadAsync();
+        TrayDashboardPreference migrated = loaded.EffectiveTrayDashboard;
+
+        Assert.Equal(0, loaded.TrayDashboard!.SchemaVersion);
+        Assert.Equal(
+            TrayDashboardPreferenceDefaults.CurrentSchemaVersion,
+            migrated.SchemaVersion);
+        Assert.Equal(
+            [
+                TrayDashboardControlKind.Lighting,
+                TrayDashboardControlKind.Performance,
+                TrayDashboardControlKind.Fans,
+            ],
+            migrated.Controls!.Select(control => control.Kind));
+        Assert.Equal(
+            [true, false, false],
+            migrated.Controls!.Select(control => control.IsVisible));
+        Assert.True(migrated.Sliders!
+            .Single(slider => slider.Kind == TrayDashboardSliderKind.LightingBrightness)
+            .IsVisible);
+
+        await store.SaveAsync(loaded with { TrayDashboard = migrated });
+        using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+        JsonElement dashboard = document.RootElement.GetProperty("trayDashboard");
+        Assert.Equal(
+            TrayDashboardPreferenceDefaults.CurrentSchemaVersion,
+            dashboard.GetProperty("schemaVersion").GetInt32());
+        Assert.False(dashboard.TryGetProperty("expandedControl", out _));
+        Assert.All(
+            dashboard.GetProperty("controls").EnumerateArray(),
+            control => Assert.False(control.TryGetProperty("size", out _)));
     }
 
     [Fact]

@@ -10,12 +10,6 @@ public enum TrayDashboardControlKind
     Lighting,
 }
 
-public enum TrayDashboardControlSize
-{
-    Compact,
-    Wide,
-}
-
 public enum TrayDashboardStatusItemKind
 {
     BatteryPower,
@@ -33,8 +27,7 @@ public enum TrayDashboardSliderKind
 
 public sealed record TrayDashboardControlPreference(
     TrayDashboardControlKind Kind,
-    bool IsVisible,
-    TrayDashboardControlSize Size);
+    bool IsVisible);
 
 public sealed record TrayDashboardStatusItemPreference(
     TrayDashboardStatusItemKind Kind,
@@ -46,9 +39,9 @@ public sealed record TrayDashboardSliderPreference(
 
 public sealed record TrayDashboardPreference(
     IReadOnlyList<TrayDashboardControlPreference>? Controls = null,
-    TrayDashboardControlKind? ExpandedControl = null,
     IReadOnlyList<TrayDashboardStatusItemPreference>? StatusItems = null,
-    IReadOnlyList<TrayDashboardSliderPreference>? Sliders = null);
+    IReadOnlyList<TrayDashboardSliderPreference>? Sliders = null,
+    int SchemaVersion = 0);
 
 public sealed class TrayDashboardControlOption : INotifyPropertyChanged
 {
@@ -165,14 +158,14 @@ public sealed class TrayDashboardSliderOption : INotifyPropertyChanged
 
 public static class TrayDashboardPreferenceDefaults
 {
+    public const int CurrentSchemaVersion = 1;
     public const int MaximumVisibleSliders = 2;
 
     private sealed record ControlDefinition(
         TrayDashboardControlKind Kind,
         string Label,
         string Description,
-        bool IsVisible,
-        TrayDashboardControlSize Size);
+        bool IsVisible);
 
     private static readonly ControlDefinition[] ControlDefinitions =
     [
@@ -180,20 +173,17 @@ public static class TrayDashboardPreferenceDefaults
             TrayDashboardControlKind.Performance,
             "Performance",
             "Choose the active power mode.",
-            true,
-            TrayDashboardControlSize.Compact),
+            true),
         new(
             TrayDashboardControlKind.Fans,
             "Fans",
             "Choose the current fan mode.",
-            true,
-            TrayDashboardControlSize.Compact),
+            true),
         new(
             TrayDashboardControlKind.Lighting,
             "Lighting",
             "Choose the keyboard effect and brightness.",
-            true,
-            TrayDashboardControlSize.Compact),
+            true),
     ];
 
     private static readonly TrayDashboardStatusItemKind[] StatusDefinitions =
@@ -212,22 +202,26 @@ public static class TrayDashboardPreferenceDefaults
         ControlDefinitions
             .Select(definition => new TrayDashboardControlPreference(
                 definition.Kind,
-                definition.IsVisible,
-                definition.Size))
+                definition.IsVisible))
             .ToArray(),
-        null,
-        StatusDefinitions
+        StatusItems: StatusDefinitions
             .Select(kind => new TrayDashboardStatusItemPreference(kind, true))
             .ToArray(),
-        SliderDefinitions
+        Sliders: SliderDefinitions
             .Select(definition => new TrayDashboardSliderPreference(
                 definition.Kind,
                 definition.IsVisible))
-            .ToArray());
+            .ToArray(),
+        SchemaVersion: CurrentSchemaVersion);
 
     public static TrayDashboardPreference Normalize(TrayDashboardPreference? preference)
     {
         if (preference is null)
+        {
+            return Preference;
+        }
+        if (preference.SchemaVersion < 0
+            || preference.SchemaVersion > CurrentSchemaVersion)
         {
             return Preference;
         }
@@ -245,10 +239,7 @@ public static class TrayDashboardPreferenceDefaults
                 continue;
             }
 
-            controls.Add(control with
-            {
-                Size = TrayDashboardControlSize.Compact,
-            });
+            controls.Add(control);
         }
 
         foreach (ControlDefinition definition in ControlDefinitions)
@@ -257,8 +248,7 @@ public static class TrayDashboardPreferenceDefaults
             {
                 controls.Add(new TrayDashboardControlPreference(
                     definition.Kind,
-                    false,
-                    TrayDashboardControlSize.Compact));
+                    false));
             }
         }
 
@@ -345,7 +335,11 @@ public static class TrayDashboardPreferenceDefaults
             }
         }
 
-        return new TrayDashboardPreference(controls, null, statusItems, sliders);
+        return new TrayDashboardPreference(
+            Controls: controls,
+            StatusItems: statusItems,
+            Sliders: sliders,
+            SchemaVersion: CurrentSchemaVersion);
     }
 
     public static IReadOnlyList<TrayDashboardControlOption> CreateControlOptions(

@@ -13,14 +13,18 @@ public readonly record struct TrayDashboardRect(int X, int Y, int Width, int Hei
 
 public readonly record struct TrayDashboardRevealGeometry(int StagingY);
 
+public readonly record struct TrayDashboardResolvedPlacement(
+    TrayDashboardRect Rect,
+    TrayDashboardRevealGeometry RevealGeometry);
+
 public static class TrayDashboardPlacement
 {
     /// <summary>
-    /// Resolves a physical-pixel popup rectangle within a physical-pixel work area.
-    /// The requested size and margin are device-independent pixels and are scaled
-    /// using the target monitor's DPI.
+    /// Resolves a physical-pixel popup rectangle and its off-work-area staging
+    /// coordinate from one edge decision. The requested size and margin are
+    /// device-independent pixels and are scaled using the target monitor's DPI.
     /// </summary>
-    public static TrayDashboardRect Resolve(
+    public static TrayDashboardResolvedPlacement Resolve(
         TrayDashboardPoint anchor,
         TrayDashboardRect workArea,
         TrayDashboardSize requestedSizeDip,
@@ -54,38 +58,17 @@ public static class TrayDashboardPlacement
         int desiredX = checked(anchor.X - (width / 2));
         int x = Math.Clamp(desiredX, minimumX, maximumX);
 
-        int y = UsesBottomEdge(anchor, workArea)
+        bool usesBottomEdge = UsesBottomEdge(anchor, workArea);
+        int y = usesBottomEdge
             ? checked(workArea.Bottom - verticalMargin - height)
             : checked(workArea.Y + verticalMargin);
+        int stagingY = usesBottomEdge
+            ? workArea.Bottom
+            : checked(workArea.Y - height);
 
-        return new TrayDashboardRect(x, y, width, height);
-    }
-
-    /// <summary>
-    /// Resolves a physical-pixel off-work-area staging coordinate from the same
-    /// top-or-bottom edge decision used by <see cref="Resolve"/>.
-    /// </summary>
-    public static TrayDashboardRevealGeometry ResolveRevealGeometry(
-        TrayDashboardPoint anchor,
-        TrayDashboardRect workArea,
-        TrayDashboardRect placement)
-    {
-        if (workArea.Width <= 0 || workArea.Height <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(workArea));
-        }
-        if (placement.Width <= 0 || placement.Height <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(placement));
-        }
-
-        if (UsesBottomEdge(anchor, workArea))
-        {
-            return new TrayDashboardRevealGeometry(workArea.Bottom);
-        }
-
-        return new TrayDashboardRevealGeometry(
-            checked(workArea.Y - placement.Height));
+        return new TrayDashboardResolvedPlacement(
+            new TrayDashboardRect(x, y, width, height),
+            new TrayDashboardRevealGeometry(stagingY));
     }
 
     private static bool UsesBottomEdge(

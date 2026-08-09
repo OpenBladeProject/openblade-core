@@ -31,7 +31,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   consistently aligned icons, Windows-sized thumbs and tracks, and no trailing
   labels. Performance and fan controls now use purpose-specific symbols, the
   telemetry footer distributes visible items evenly, and opening the popup no
-  longer leaves a focus border on its first tile.
+  longer leaves a focus border on its first tile. Legacy wide-tile and
+  expanded-control preferences now migrate to the fixed grid instead of being
+  retained as inactive settings.
 - Battery protection and charge-limit changes now remain temporary until saved
   to a profile. Battery protection also follows the destination power profile
   when the power source changes.

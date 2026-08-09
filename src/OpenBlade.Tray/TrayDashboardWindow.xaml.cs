@@ -373,7 +373,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     {
         RectInt32 workArea = displayArea.WorkArea;
         int preferredHeightDip =
-            TrayDashboardLayoutPolicy.CalculatePreferredHeight(layout);
+            TrayDashboardLayoutPolicy.CalculatePreferredHeight();
         nint monitor = MonitorFromPoint(
             new NativePoint(anchor.X, anchor.Y),
             MonitorDefaultToNearest);
@@ -399,17 +399,15 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             workArea.Y,
             workArea.Width,
             workArea.Height);
-        TrayDashboardRect placement = TrayDashboardPlacement.Resolve(
-            anchor,
-            physicalWorkArea,
-            new TrayDashboardSize(PopupWidth, preferredHeightDip),
-            checked((int)nativeDpi));
-        TrayDashboardRevealGeometry reveal =
-            TrayDashboardPlacement.ResolveRevealGeometry(
+        TrayDashboardResolvedPlacement resolvedPlacement =
+            TrayDashboardPlacement.Resolve(
                 anchor,
                 physicalWorkArea,
-                placement);
-        return new ResolvedPlacement(placement, reveal);
+                new TrayDashboardSize(PopupWidth, preferredHeightDip),
+                checked((int)nativeDpi));
+        return new ResolvedPlacement(
+            resolvedPlacement.Rect,
+            resolvedPlacement.RevealGeometry);
     }
 
     private bool TryResolvePlacement(

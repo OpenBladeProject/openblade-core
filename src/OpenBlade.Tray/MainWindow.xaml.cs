@@ -3068,23 +3068,22 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         void ApplyEditor()
         {
             ApplyTrayDashboardPreference(new TrayDashboardPreference(
-                controls
+                Controls: controls
                     .Select(option => new TrayDashboardControlPreference(
                         option.Kind,
-                        option.IsVisible,
-                        TrayDashboardControlSize.Compact))
+                        option.IsVisible))
                     .ToArray(),
-                null,
-                statusItems
+                StatusItems: statusItems
                     .Select(option => new TrayDashboardStatusItemPreference(
                         option.Kind,
                         option.IsVisible))
                     .ToArray(),
-                sliders
+                Sliders: sliders
                     .Select(option => new TrayDashboardSliderPreference(
                         option.Kind,
                         option.IsVisible))
-                    .ToArray()),
+                    .ToArray(),
+                SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion),
                 queueSave: true);
         }
 

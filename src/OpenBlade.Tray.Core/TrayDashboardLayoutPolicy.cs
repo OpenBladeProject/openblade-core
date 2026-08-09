@@ -45,11 +45,7 @@ public static class TrayDashboardLayoutPolicy
             rowCount > MaximumVisibleRows);
     }
 
-    public static int CalculatePreferredHeight(TrayDashboardLayout layout)
-    {
-        ArgumentNullException.ThrowIfNull(layout);
-        return PreferredHeightDip;
-    }
+    public static int CalculatePreferredHeight() => PreferredHeightDip;
 }
 
 public static class TrayDashboardInteractionPolicy

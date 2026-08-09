@@ -1763,6 +1763,10 @@ public sealed class WinUiShellContractTests
             "src",
             "OpenBlade.Tray",
             "WindowsPopupPositioner.cs");
+        string dashboardPreferences = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray.Core",
+            "TrayDashboardPreferences.cs");
         Assert.Contains("trayIcon.MouseClick += OnTrayIconMouseClick", trayHost, StringComparison.Ordinal);
         Assert.Contains(
             "trayIcon.MouseDoubleClick += OnTrayIconMouseDoubleClick",
@@ -1844,7 +1848,9 @@ public sealed class WinUiShellContractTests
         Assert.Contains("DispatcherQueuePriority.High", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("StartRevealFrameClock()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupSlidePolicy.ResolvePosition(", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("TrayDashboardPlacement.ResolveRevealGeometry(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardResolvedPlacement resolvedPlacement", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("resolvedPlacement.RevealGeometry", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResolveRevealGeometry", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("Root.UpdateLayout()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsMotionSettings.AreAnimationsEnabled()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupPositioner.PositionInFront(", dashboardWindow, StringComparison.Ordinal);
@@ -2073,6 +2079,9 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("IsSizeEnabled", mainXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("UpdateSizeAvailability", mainWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("GetEffectiveExpandedControl", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("TrayDashboardControlSize", dashboardPreferences, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExpandedControl", dashboardPreferences, StringComparison.Ordinal);
+        Assert.Contains("CurrentSchemaVersion = 1", dashboardPreferences, StringComparison.Ordinal);
         Assert.Contains("The first six controls stay visible.", mainWindow, StringComparison.Ordinal);
     }
 
