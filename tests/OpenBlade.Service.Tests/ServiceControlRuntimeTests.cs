@@ -164,6 +164,36 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ActivateUserAsync_DetectionWarningRelinquishesRendererWithoutInvalidation()
+    {
+        var repository = new FixedUserConfigurationRepository(
+            new BatteryConfiguration(
+                ProfileDefaults.CreateSafeDefaults(),
+                new BatteryAutomationPreferences(ProtectionEnabled: true),
+                Recovered: false),
+            PersistentOverrideState.Empty,
+            directory);
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            userConfigurationRepository: repository);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            [],
+            "Controller detection was incomplete.");
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+
+        Assert.Equal(1, context.Provider.RelinquishCount);
+        Assert.Equal(0, context.Provider.InvalidationCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Equal(
+            "Controller detection was incomplete.",
+            context.Runtime.GetStatus().ControllerDetectionWarning);
+    }
+
+    [Fact]
     public async Task ActivateUserAsync_NoControllerInvalidatesLightingPortBoundary()
     {
         var repository = new FixedUserConfigurationRepository(
@@ -2418,6 +2448,38 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PowerTransitionMessageOutranksLightingRelinquishDiagnostic()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
+        await context.Runtime.ReconcileStartupProfileAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["RazerAppEngine"],
+            null);
+        context.Provider.RelinquishFailure =
+            new IOException("synthetic handoff failure");
+        context.Device.PerformanceFailure =
+            new InvalidOperationException("write rejected");
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Contains(
+            "Performance write is indeterminate",
+            context.Runtime.GetStatus().Message,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "could not be relinquished",
+            context.Runtime.GetStatus().Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(
+                "Keyboard lighting control could not be relinquished",
+                StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
     public async Task ControllerAdvisory_ExplicitLightingActionRetainsRenderer()
     {
         TestContext context = await CreateOwnedStaticLightingContextAsync(
@@ -2698,6 +2760,51 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             KeyboardLightingControlMode.OpenBlade,
             context.Runtime.GetStatus().KeyboardLightingControlMode);
+    }
+
+    [Fact]
+    public async Task WindowsDynamicLightingMode_PersistenceFailurePausesRollbackUntilControllerCheckRecovers()
+    {
+        bool failPersistence = false;
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            (_, _) => failPersistence
+                ? Task.FromException(new IOException("Synthetic persistence failure."))
+                : Task.CompletedTask);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            [],
+            "Controller detection was incomplete.");
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        failPersistence = true;
+
+        IOException failure = await Assert.ThrowsAsync<IOException>(
+            () => context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None));
+
+        Assert.Contains("Synthetic persistence failure", failure.Message);
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Equal(
+            KeyboardLightingControlMode.OpenBlade,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+
+        context.Monitor.Current = new ControllerPresenceObservation([], null);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
     [Fact]
@@ -4009,6 +4116,48 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Resume_DetectionWarningObservesAndKeepsLifecycleRestorePending()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        int stateReadsBeforeLifecycle = context.Device.StateReadCalls;
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new InterleavedResumeLifecycleEventSource(() =>
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    Lighting = LightingSettingsFactory.Off(),
+                };
+                context.Monitor.Current = new ControllerPresenceObservation(
+                    [],
+                    "Controller detection was incomplete.");
+            }),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        Assert.True(context.Device.StateReadCalls > stateReadsBeforeLifecycle);
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+
+        context.Monitor.Current = new ControllerPresenceObservation([], null);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Fact]
     public async Task LifecycleRestore_OverridePolicyReclaimsLightingWithSynapseAdvisory()
     {
         TestContext context = await CreateOwnedStaticLightingContextAsync();
@@ -4256,6 +4405,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(1, context.Device.LightingSetCalls);
         Assert.Equal(0, context.Provider.RelinquishCount);
+        Assert.Single(
+            context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(
+                "paused automatic keyboard lighting recovery",
+                StringComparison.Ordinal) == true);
 
         context.Monitor.Current = new ControllerPresenceObservation([], null);
         await context.Runtime.RefreshPowerSourceClassificationAsync(
@@ -4267,6 +4421,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.GetStatus().LightingRendererOwnership);
         Assert.Empty(context.Runtime.GetStatus().PotentialControllers);
         Assert.Null(context.Runtime.GetStatus().ControllerDetectionWarning);
+
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.Faulted;
+        context.Monitor.Current = new ControllerPresenceObservation(
+            [],
+            "Controller detection was incomplete.");
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(
+            2,
+            context.History.Snapshot().CommandResults.Count(
+                result => result.Detail?.Contains(
+                    "paused automatic keyboard lighting recovery",
+                    StringComparison.Ordinal) == true));
     }
 
     [Fact]
