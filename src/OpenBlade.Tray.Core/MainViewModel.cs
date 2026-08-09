@@ -32,24 +32,40 @@ public sealed record LightingDirectionOption(
     LightingDirection Value,
     string Label);
 
+public sealed record ProfileValuePresentation(
+    string Text,
+    string SettingName,
+    string ProfileName,
+    bool IsPending = false,
+    string PendingText = "")
+{
+    public string? PendingDescription => IsPending
+        ? $"Pending: {PendingText}"
+        : null;
+
+    public string AccessibilityDescription => IsPending
+        ? $"{ProfileName} {SettingName}: {Text}. Pending: {PendingText}"
+        : $"{ProfileName} {SettingName}: {Text}";
+}
+
 public sealed record ProfilePresentation(
-    string PowerMode,
-    string GpuTuning,
-    string Fans,
-    string LightingEffect,
-    string LightingBrightness,
-    string LightingColor,
-    string LogoLighting,
-    string LightingDisplayOff,
-    string LightingIdle,
-    string DisplayRefreshRate,
-    string DisplayHdr,
-    string DisplayColorProfile,
-    string FunctionKeyBehavior,
-    string GamingMode,
-    string GamingModeWindowsKey,
-    string GamingModeAltTab,
-    string StartupAnimation);
+    ProfileValuePresentation PowerMode,
+    ProfileValuePresentation GpuTuning,
+    ProfileValuePresentation Fans,
+    ProfileValuePresentation LightingEffect,
+    ProfileValuePresentation LightingBrightness,
+    ProfileValuePresentation LightingColor,
+    ProfileValuePresentation LogoLighting,
+    ProfileValuePresentation LightingDisplayOff,
+    ProfileValuePresentation LightingIdle,
+    ProfileValuePresentation DisplayRefreshRate,
+    ProfileValuePresentation DisplayHdr,
+    ProfileValuePresentation DisplayColorProfile,
+    ProfileValuePresentation FunctionKeyBehavior,
+    ProfileValuePresentation GamingMode,
+    ProfileValuePresentation GamingModeWindowsKey,
+    ProfileValuePresentation GamingModeAltTab,
+    ProfileValuePresentation StartupAnimation);
 
 public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
@@ -2574,16 +2590,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         FormatDisplayProfile(GetPresentedProfile(PowerSource.UsbC).Display);
 
     public ProfilePresentation PluggedInProfilePresentation =>
-        CreateProfilePresentation(GetProfile(PowerSource.PluggedIn));
+        CreateProfilePresentation(PowerSource.PluggedIn);
 
     public ProfilePresentation UsbCProfilePresentation =>
-        CreateProfilePresentation(GetProfile(PowerSource.UsbC));
+        CreateProfilePresentation(PowerSource.UsbC);
 
     public ProfilePresentation BatteryProfilePresentation =>
-        CreateProfilePresentation(GetProfile(PowerSource.Battery));
+        CreateProfilePresentation(PowerSource.Battery);
 
     public ProfilePresentation SelectedProfilePresentation =>
-        CreateProfilePresentation(GetProfile(SelectedProfileComparisonOption.Source));
+        CreateProfilePresentation(SelectedProfileComparisonOption.Source);
 
     public string LightingDisplayOffPolicyPresentation =>
         GetProfile(SelectedProfileComparisonOption.Source)
@@ -6770,56 +6786,113 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return settings.Count == 0 ? "Not set" : string.Join(" | ", settings);
     }
 
-    private static ProfilePresentation CreateProfilePresentation(PowerProfile profile)
+    private ProfilePresentation CreateProfilePresentation(PowerSource source)
     {
+        string profileName = ComparisonOptions
+            .First(option => option.Source == source)
+            .Label;
+        PowerProfile savedProfile = GetProfile(source);
+        ProfilePresentation saved = CreateProfilePresentation(savedProfile, profileName);
+        if (activeProfileDraftSource != source || GetActiveProfileDraft() is not { } draft)
+        {
+            return saved;
+        }
+
+        ProfilePresentation pending = CreateProfilePresentation(draft, profileName);
+        return new ProfilePresentation(
+            MarkPending(saved.PowerMode, pending.PowerMode),
+            MarkPending(saved.GpuTuning, pending.GpuTuning),
+            MarkPending(
+                saved.Fans,
+                pending.Fans,
+                !FanControlSettingsMatch(
+                    savedProfile.FanControl
+                        ?? FanControlSettings.FromLegacy(savedProfile.Fans),
+                    draft.FanControl ?? FanControlSettings.FromLegacy(draft.Fans))),
+            MarkPending(saved.LightingEffect, pending.LightingEffect),
+            MarkPending(saved.LightingBrightness, pending.LightingBrightness),
+            MarkPending(saved.LightingColor, pending.LightingColor),
+            MarkPending(saved.LogoLighting, pending.LogoLighting),
+            MarkPending(saved.LightingDisplayOff, pending.LightingDisplayOff),
+            MarkPending(saved.LightingIdle, pending.LightingIdle),
+            MarkPending(saved.DisplayRefreshRate, pending.DisplayRefreshRate),
+            MarkPending(saved.DisplayHdr, pending.DisplayHdr),
+            MarkPending(saved.DisplayColorProfile, pending.DisplayColorProfile),
+            MarkPending(saved.FunctionKeyBehavior, pending.FunctionKeyBehavior),
+            MarkPending(saved.GamingMode, pending.GamingMode),
+            MarkPending(saved.GamingModeWindowsKey, pending.GamingModeWindowsKey),
+            MarkPending(saved.GamingModeAltTab, pending.GamingModeAltTab),
+            MarkPending(saved.StartupAnimation, pending.StartupAnimation));
+    }
+
+    private static ProfileValuePresentation MarkPending(
+        ProfileValuePresentation saved,
+        ProfileValuePresentation pending,
+        bool isPending = false) =>
+        saved with
+        {
+            IsPending = isPending
+                || !string.Equals(saved.Text, pending.Text, StringComparison.Ordinal),
+            PendingText = pending.Text,
+        };
+
+    private static ProfilePresentation CreateProfilePresentation(
+        PowerProfile profile,
+        string profileName)
+    {
+        ProfileValuePresentation Value(string settingName, string text) =>
+            new(text, settingName, profileName);
+
         DisplayProfileSettings display = profile.Display ?? DisplayProfileSettings.Unconfigured();
         return new ProfilePresentation(
-            FormatPerformanceProfile(profile),
-            FormatGpuClockOffsets(profile),
-            FormatFanControl(profile),
-            FormatLightingEffect(profile.Lighting),
-            profile.Lighting.Effect == LightingEffect.Off
+            Value("Power mode", FormatPerformanceProfile(profile)),
+            Value("GPU tuning", FormatGpuClockOffsets(profile)),
+            Value("Fans", FormatFanControl(profile)),
+            Value("Lighting effect", FormatLightingEffect(profile.Lighting)),
+            Value("Lighting brightness", profile.Lighting.Effect == LightingEffect.Off
                 ? "Not applicable"
-                : $"{profile.Lighting.Brightness}%",
-            FormatLightingColor(profile.Lighting),
-            profile.Lighting.LogoMode switch
+                : $"{profile.Lighting.Brightness}%"),
+            Value("Lighting color", FormatLightingColor(profile.Lighting)),
+            Value("Laptop lid logo", profile.Lighting.LogoMode switch
             {
                 LogoLightingMode.Static => "Static",
                 LogoLightingMode.Breathing => "Breathing",
                 LogoLightingMode.Off => "Off",
                 null => "Not set",
                 _ => "Not set",
-            },
-            profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
+            }),
+            Value("Display turns off", profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
                 ? "Turn lighting off"
-                : "Keep lighting on",
-            profile.EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
+                : "Keep lighting on"),
+            Value("Inactivity timeout", profile.EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
                 ? $"{minutes.ToString(CultureInfo.CurrentCulture)} minutes"
-                : "Never",
-            FormatDisplayRefreshRate(display.RefreshRateKey),
-            display.HdrEnabled switch
+                : "Never"),
+            Value("Refresh rate", FormatDisplayRefreshRate(display.RefreshRateKey)),
+            Value("HDR", display.HdrEnabled switch
             {
                 true => "On",
                 false => "Off",
                 null => "Not set",
-            },
-            FormatDisplayColorProfile(display.ColorProfileKey),
-            profile.EffectiveLaptopBehavior.FunctionKeyPrimary switch
+            }),
+            Value("Color profile", FormatDisplayColorProfile(display.ColorProfileKey)),
+            Value("Function keys", profile.EffectiveLaptopBehavior.FunctionKeyPrimary switch
             {
                 FunctionKeyPrimaryMode.FunctionKeys => "Function keys",
                 FunctionKeyPrimaryMode.MultimediaKeys => "Media keys",
                 _ => "Not set",
-            },
-            FormatOptionalToggle(profile.EffectiveLaptopBehavior.GamingModeEnabled),
-            FormatOptionalToggle(
+            }),
+            Value("Gaming mode", FormatOptionalToggle(profile.EffectiveLaptopBehavior.GamingModeEnabled)),
+            Value("Block Windows key", FormatOptionalToggle(
                 profile.EffectiveLaptopBehavior
                     .EffectiveGamingModeKeyPolicy
-                    .BlockWindowsKey),
-            FormatOptionalToggle(
+                    .BlockWindowsKey)),
+            Value("Block Alt+Tab", FormatOptionalToggle(
                 profile.EffectiveLaptopBehavior
                     .EffectiveGamingModeKeyPolicy
-                    .BlockAltTab),
-            FormatOptionalToggle(profile.EffectiveLaptopBehavior.StartupAnimationEnabled));
+                    .BlockAltTab)),
+            Value(
+                "Startup animation",
+                FormatOptionalToggle(profile.EffectiveLaptopBehavior.StartupAnimationEnabled)));
     }
 
     private static string FormatOptionalToggle(bool? value) => value switch
