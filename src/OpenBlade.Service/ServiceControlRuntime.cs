@@ -678,8 +678,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             if (!suppressProfileApply)
             {
-                await InvalidateLightingRendererCoreAsync(
-                    preserveForLifecycleRestore: false,
+                _ = await RelinquishLightingOwnershipCoreAsync(
+                    current,
                     cancellationToken).ConfigureAwait(false);
                 current = GetStatus();
             }
@@ -696,6 +696,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 context.Configuration.Preferences.AllowUntestedFirmware);
             persistentOverrides = overrides;
             lightingSuppressions.Clear();
+            lightingSuppressionWritePending = false;
             if (unexpectedExitRecoveryDeferredForUserConfiguration)
             {
                 recoveryUserConfigurationLoaded = true;
@@ -706,6 +707,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 pendingLightingRestore = null;
                 pendingLightingRestoreFromLifecycle = false;
+                await RefreshControllerPresenceAndRelinquishLightingAsync(
+                    cancellationToken).ConfigureAwait(false);
             }
 
             ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
@@ -736,6 +739,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 BatteryProtectionOverride = Automation.BatteryProtectionOverride,
                 FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
                 LightingSuppressions = CurrentLightingSuppressions(),
+                AlwaysOverrideExternalLightingChanges =
+                    context.Configuration.Preferences
+                        .AlwaysOverrideExternalLightingChanges,
+                KeyboardLightingControlMode =
+                    context.Configuration.Preferences.KeyboardLightingControlMode,
                 AllowUntestedFirmware =
                     context.Configuration.Preferences.AllowUntestedFirmware,
                 PerformanceShortcutPreview = null,
@@ -807,28 +815,31 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             });
             history.RecordSummary(ControlOperationStatus.Stored, message);
 
-            if (lightingWasSuppressed
-                && lightingSuppressions.Count == 0
-                && current.ActivePowerSource is
-                    PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
-                && (!current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
-                    || preferences.AlwaysOverrideExternalLightingChanges))
+            if (lightingWasSuppressed && lightingSuppressions.Count == 0)
             {
-                ControlOperationResult restored = await ApplyScopedIntentAsync(
-                    DeviceSubsystem.Lighting,
-                    current.ActivePowerSource,
-                    (coordinator, desired, cancellationToken) =>
-                        coordinator.ApplyLightingOutcomeAsync(
-                            desired.Lighting.Value,
-                            cancellationToken,
-                            forceWrite: true),
-                    token).ConfigureAwait(false);
-                if (restored.Status != ControlOperationStatus.Applied)
+                await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                    .ConfigureAwait(false);
+                current = GetStatus();
+                if (current.ActivePowerSource is
+                        PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+                    && !ShouldYieldAutomaticLighting(current))
                 {
-                    return restored with
+                    ControlOperationResult restored = await ApplyScopedIntentAsync(
+                        DeviceSubsystem.Lighting,
+                        current.ActivePowerSource,
+                        (coordinator, desired, cancellationToken) =>
+                            coordinator.ApplyLightingOutcomeAsync(
+                                desired.Lighting.Value,
+                                cancellationToken,
+                                forceWrite: true),
+                        token).ConfigureAwait(false);
+                    if (restored.Status != ControlOperationStatus.Applied)
                     {
-                        Message = $"Profiles were stored. Lighting restore result: {restored.Message}",
-                    };
+                        return restored with
+                        {
+                            Message = $"Profiles were stored. Lighting restore result: {restored.Message}",
+                        };
+                    }
                 }
             }
 
@@ -880,7 +891,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
                 .ConfigureAwait(false);
-            RefreshControllerPresenceCore(token);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                .ConfigureAwait(false);
             if (powerSource == PowerSource.ExternalUnknown)
             {
                 return PublishScopedUnavailable(
@@ -1204,7 +1216,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
                 .ConfigureAwait(false);
-            RefreshControllerPresenceCore(token);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                .ConfigureAwait(false);
             if (powerSource == PowerSource.ExternalUnknown)
             {
                 return PublishScopedUnavailable(
@@ -1552,6 +1565,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 faultedLightingRecoveryCandidate = null;
                 lastOwnedLightingSettings = null;
                 lightingSuppressions.Clear();
+                lightingSuppressionWritePending = false;
             }
 
             string message = delegateToWindows
@@ -1594,7 +1608,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
                 .ConfigureAwait(false);
-            RefreshControllerPresenceCore(token);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                .ConfigureAwait(false);
             if (powerSource == PowerSource.ExternalUnknown)
             {
                 const string blockedMessage =
@@ -1803,14 +1818,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (!enabled)
             {
-                if (GetStatus().ExternalChanges.Contains(DeviceSubsystem.Lighting)
-                    && (IsExplicitLightingOwnership(GetStatus().LightingRendererOwnership)
-                        || lastOwnedLightingSettings is not null))
-                {
-                    await InvalidateLightingRendererCoreAsync(
-                        preserveForLifecycleRestore: true,
-                        token).ConfigureAwait(false);
-                }
+                await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                    .ConfigureAwait(false);
 
                 return new ControlOperationResult(
                     ControlOperationStatus.Stored,
@@ -1986,7 +1995,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
                 .ConfigureAwait(false);
-            RefreshControllerPresenceCore(token);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                .ConfigureAwait(false);
             ServiceStatusSnapshot current = GetStatus();
             if (powerSource == PowerSource.ExternalUnknown)
             {
@@ -1996,12 +2006,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "The external power adapter could not be classified; lighting power policy writes are blocked.",
                     preserveCurrentAvailability: true);
             }
-            if (current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
-                && !preferences.AlwaysOverrideExternalLightingChanges)
+            if (ShouldYieldAutomaticLighting(current))
             {
+                bool wasSuppressedBeforeDeferred = lightingSuppressions.Count > 0;
+                if (alreadySet != suppressed)
+                {
+                    UpdateLightingSuppressionState(reason, suppressed);
+                }
+                if (wasSuppressedBeforeDeferred != (lightingSuppressions.Count > 0))
+                {
+                    lightingSuppressionWritePending = true;
+                }
+                const string deferred =
+                    "Lighting power policy state was recorded without changing externally controlled lighting.";
+                history.RecordSummary(ControlOperationStatus.Stored, deferred);
                 return new ControlOperationResult(
-                    ControlOperationStatus.Blocked,
-                    "Lighting power policy is paused because an external lighting change is present.");
+                    ControlOperationStatus.Stored,
+                    deferred);
             }
 
             if (ChangePowerSourceCore(powerSource))
@@ -2289,7 +2310,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            RefreshControllerPresenceCore(token);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                .ConfigureAwait(false);
             ServiceStatusSnapshot current = GetStatus();
             if (!current.DeviceVerified
                 || current.WritesBlocked
@@ -2526,7 +2548,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
-            RefreshControllerPresenceCore(token);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                .ConfigureAwait(false);
 
             if (powerSource == PowerSource.ExternalUnknown)
             {
@@ -2631,9 +2654,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 && CanUseObservationFastPath(
                     includeLiveReadings,
                     powerSource != PowerSource.ExternalUnknown);
-            RefreshControllerPresenceCore(
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
                 cancellationToken,
-                allowRecentObservation: canUseReadOnlyFastPath);
+                allowRecentObservation: canUseReadOnlyFastPath).ConfigureAwait(false);
             bool changed = powerSource != PowerSource.ExternalUnknown
                 && ChangePowerSourceCore(powerSource);
             if (changed)
@@ -2700,7 +2723,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(
                 cancellationToken).ConfigureAwait(false);
-            RefreshControllerPresenceCore(cancellationToken);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
+                cancellationToken).ConfigureAwait(false);
             if (powerSource == PowerSource.ExternalUnknown)
             {
                 return;
@@ -2729,7 +2753,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            RefreshControllerPresenceCore(cancellationToken);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
+                cancellationToken).ConfigureAwait(false);
             startupProfileReconciliationRequested = true;
             if (unexpectedExitRecoveryDeferredForUserConfiguration)
             {
@@ -2816,7 +2841,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        RefreshControllerPresenceCore(cancellationToken);
+        await RefreshControllerPresenceAndRelinquishLightingAsync(
+            cancellationToken).ConfigureAwait(false);
         if (stillControlsSession?.Invoke() == false)
         {
             return;
@@ -2938,7 +2964,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        RefreshControllerPresenceCore(cancellationToken);
+        await RefreshControllerPresenceAndRelinquishLightingAsync(
+            cancellationToken).ConfigureAwait(false);
         current = GetStatus();
         if (current.ControllerDetectionWarning is not null
             || current.PotentialControllers.Any(CompetingControllerProcesses.Contains)
@@ -3052,7 +3079,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        RefreshControllerPresenceCore(cancellationToken);
+        await RefreshControllerPresenceAndRelinquishLightingAsync(
+            cancellationToken).ConfigureAwait(false);
         current = GetStatus();
         if (current.ControllerDetectionWarning is not null
             || current.PotentialControllers.Any(CompetingControllerProcesses.Contains)
@@ -3256,7 +3284,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<bool> stillControlsSession,
         CancellationToken cancellationToken)
     {
-        RefreshControllerPresenceCore(cancellationToken);
+        await RefreshControllerPresenceAndRelinquishLightingAsync(
+            cancellationToken).ConfigureAwait(false);
         ServiceStatusSnapshot current = GetStatus();
         if (current.ControllerDetectionWarning is not null
             || current.PotentialControllers.Any(CompetingControllerProcesses.Contains)
@@ -3371,7 +3400,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        RefreshControllerPresenceCore(cancellationToken);
+        await RefreshControllerPresenceAndRelinquishLightingAsync(
+            cancellationToken).ConfigureAwait(false);
         await ObserveCoreAsync(
             powerSource,
             powerSourceConfirmed: true,
@@ -3480,7 +3510,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return false;
             }
 
-            RefreshControllerPresenceCore(cancellationToken);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
+                cancellationToken).ConfigureAwait(false);
             if (!stillControlsSession())
             {
                 ResetDeferredUnexpectedExitClassificationCore();
@@ -3561,7 +3592,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             RefreshBatteryHealthAfterPowerSourceChangeCore();
-            RefreshControllerPresenceCore(cancellationToken);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
+                cancellationToken).ConfigureAwait(false);
             bool changed = powerSource != PowerSource.ExternalUnknown
                 && ChangePowerSourceCore(powerSource);
             if (unexpectedExitRecoveryDeferredForUserConfiguration)
@@ -3622,7 +3654,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
-            RefreshControllerPresenceCore(cancellationToken);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
+                cancellationToken).ConfigureAwait(false);
             PowerSource classified =
                 await ResolveCurrentPowerSourceAsync(cancellationToken);
             ServiceStatusSnapshot current = GetStatus();
@@ -3689,7 +3722,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
-            RefreshControllerPresenceCore(cancellationToken);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
+                cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -4012,7 +4046,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             $"Attempting to release keyboard Driver mode {boundary}.");
         try
         {
-            RefreshControllerPresenceCore(cancellationToken);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
+                cancellationToken).ConfigureAwait(false);
             ServiceStatusSnapshot current = GetStatus();
             if (current.ControllerDetectionWarning is not null)
             {
@@ -4114,7 +4149,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         history.RecordSummary(
             ControlOperationStatus.Stored,
             "Attempting to restore firmware-managed Automatic fan control before shutdown.");
-        RefreshControllerPresenceCore(cancellationToken);
+        await RefreshControllerPresenceAndRelinquishLightingAsync(
+            cancellationToken).ConfigureAwait(false);
         current = GetStatus();
         if (current.ControllerDetectionWarning is not null)
         {
@@ -4346,6 +4382,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return true;
         }
 
+        if (ShouldYieldAutomaticLighting(current))
+        {
+            bool rendererWasOwned = IsExplicitLightingOwnership(
+                    current.LightingRendererOwnership)
+                || lastOwnedLightingSettings is not null;
+            bool ownershipRelinquished = await RelinquishLightingOwnershipCoreAsync(
+                current,
+                cancellationToken).ConfigureAwait(false);
+            if (ownershipRelinquished)
+            {
+                PublishLightingYield(GetStatus(), rendererWasOwned);
+            }
+            return true;
+        }
+
         if (stillControlsSession?.Invoke() == false)
         {
             return false;
@@ -4353,8 +4404,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         if (stillControlsSession is not null)
         {
-            RefreshControllerPresenceCore(cancellationToken);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
+                cancellationToken).ConfigureAwait(false);
             current = GetStatus();
+            if (ShouldYieldAutomaticLighting(current))
+            {
+                return true;
+            }
             if (!stillControlsSession())
             {
                 return false;
@@ -4677,7 +4733,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
-            RefreshControllerPresenceCore(token);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                .ConfigureAwait(false);
             if (powerSource == PowerSource.ExternalUnknown)
             {
                 return PublishScopedUnavailable(
@@ -4747,7 +4804,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
-            RefreshControllerPresenceCore(token);
+            await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                .ConfigureAwait(false);
             if (powerSource == PowerSource.ExternalUnknown)
             {
                 return PublishScopedUnavailable(
@@ -5140,6 +5198,112 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         });
     }
 
+    private async Task RefreshControllerPresenceAndRelinquishLightingAsync(
+        CancellationToken cancellationToken,
+        bool allowRecentObservation = false)
+    {
+        RefreshControllerPresenceCore(cancellationToken, allowRecentObservation);
+        ServiceStatusSnapshot current = GetStatus();
+        if (!ShouldYieldAutomaticLighting(current))
+        {
+            return;
+        }
+
+        bool rendererWasOwned = IsExplicitLightingOwnership(
+                current.LightingRendererOwnership)
+            || lastOwnedLightingSettings is not null;
+        bool ownershipRelinquished = await RelinquishLightingOwnershipCoreAsync(
+            current,
+            cancellationToken).ConfigureAwait(false);
+        if (!ownershipRelinquished)
+        {
+            return;
+        }
+
+        PublishLightingYield(GetStatus(), rendererWasOwned);
+    }
+
+    private async Task<bool> RelinquishLightingOwnershipCoreAsync(
+        ServiceStatusSnapshot current,
+        CancellationToken cancellationToken)
+    {
+        bool hasOwnedRenderer =
+            IsExplicitLightingOwnership(current.LightingRendererOwnership)
+            || lastOwnedLightingSettings is not null;
+        bool hasRememberedRenderer = hasOwnedRenderer
+            || pendingLightingRestore is not null
+            || faultedLightingRecoveryCandidate is not null;
+        if (!hasRememberedRenderer)
+        {
+            return false;
+        }
+
+        if (!hasOwnedRenderer)
+        {
+            RelinquishRememberedLightingOwnership();
+            current = GetStatus();
+            if (current.LightingRendererOwnership ==
+                LightingRendererOwnershipState.Faulted)
+            {
+                PublishIfChanged(current with
+                {
+                    ConfirmedState = current.ConfirmedState is null
+                        ? null
+                        : current.ConfirmedState with { Lighting = null },
+                    LightingRendererOwnership = LightingRendererOwnershipState.None,
+                });
+            }
+            return true;
+        }
+
+        _ = await deviceProvider
+            .RelinquishLightingRendererAsync(cancellationToken)
+            .ConfigureAwait(false);
+        RelinquishRememberedLightingOwnership();
+        current = GetStatus();
+        PublishIfChanged(current with
+        {
+            ConfirmedState = current.ConfirmedState is null
+                ? null
+                : current.ConfirmedState with { Lighting = null },
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        });
+        return true;
+    }
+
+    private bool ShouldYieldAutomaticLighting(ServiceStatusSnapshot current) =>
+        !preferences.AlwaysOverrideExternalLightingChanges
+        && (current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
+            || ControllerMayOwnLighting(current));
+
+    private static bool ControllerMayOwnLighting(ServiceStatusSnapshot current) =>
+        current.ControllerDetectionWarning is not null
+        || current.PotentialControllers.Any(CompetingControllerProcesses.Contains);
+
+    private void RelinquishRememberedLightingOwnership()
+    {
+        lastOwnedLightingSettings = null;
+        pendingLightingRestore = null;
+        pendingLightingRestoreFromLifecycle = false;
+        faultedLightingRecoveryCandidate = null;
+    }
+
+    private void PublishLightingYield(
+        ServiceStatusSnapshot current,
+        bool rendererReleased = true)
+    {
+        string action = rendererReleased
+            ? "released keyboard lighting control"
+            : "did not restore keyboard lighting";
+        string message = current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
+            ? $"OpenBlade {action} after a confirmed external lighting change."
+            : current.PotentialControllers.Any(CompetingControllerProcesses.Contains)
+                ? $"Razer Synapse is active; OpenBlade {action}."
+                : $"OpenBlade {action} because other-controller detection is incomplete.";
+        history.RecordSummary(ControlOperationStatus.Stored, message);
+        PublishIfChanged(current with { Message = message });
+    }
+
     private async Task ApplyFullTransitionAsync(
         PowerSource powerSource,
         CancellationToken token,
@@ -5245,6 +5409,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 preserveObservedExternalChanges
                     ? GetCoupledAutomaticWriteExclusions()
                     : []);
+            if (!preferences.AlwaysOverrideExternalLightingChanges
+                && ControllerMayOwnLighting(current))
+            {
+                exclusions.Add(DeviceSubsystem.Lighting);
+            }
             if (IsKeyboardLightingDelegated)
             {
                 exclusions.Add(DeviceSubsystem.Lighting);
@@ -5721,6 +5890,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 batteryPowerFlowMilliwatts,
                 observation,
                 batteryHealth);
+
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
+                cancellationToken,
+                allowRecentObservation: true).ConfigureAwait(false);
 
             if (unexpectedExitRecoveryPending
                 && startupProfileReconciliationRequested
@@ -7076,7 +7249,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private void RemoveDisabledLightingSuppressions()
     {
-        lightingSuppressions.RemoveWhere(reason => !IsLightingSuppressionConfigured(reason));
+        int removed = lightingSuppressions.RemoveWhere(
+            reason => !IsLightingSuppressionConfigured(reason));
+        if (removed > 0 && lightingSuppressions.Count == 0)
+        {
+            lightingSuppressionWritePending = false;
+        }
     }
 
     private ControlOperationResult RecordRejectedIntent(Exception exception)
@@ -7342,11 +7520,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         // action can establish a fresh ownership snapshot.
         faultedLightingRecoveryCandidate = null;
         current = GetStatus();
-        if ((current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
-                && !preferences.AlwaysOverrideExternalLightingChanges)
-            || !current.DeviceVerified
+        if (ShouldYieldAutomaticLighting(current))
+        {
+            RelinquishRememberedLightingOwnership();
+            PublishIfChanged(current with
+            {
+                ConfirmedState = current.ConfirmedState is null
+                    ? null
+                    : current.ConfirmedState with { Lighting = null },
+                LightingRendererOwnership = LightingRendererOwnershipState.None,
+            });
+            PublishLightingYield(GetStatus(), rendererReleased: false);
+            return;
+        }
+
+        if (!current.DeviceVerified
             || current.WritesBlocked)
         {
+            RelinquishRememberedLightingOwnership();
             PublishLightingRestoreFailure(
                 "Keyboard lighting stopped after a renderer error and was not restarted automatically.",
                 LightingRendererOwnershipState.Faulted);

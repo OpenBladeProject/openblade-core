@@ -3085,7 +3085,7 @@
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Override external lighting changes"
                                                        Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Reapply the last OpenBlade lighting effect after OpenBlade confirms it was changed elsewhere."
+                                            <TextBlock Text="When off, OpenBlade yields keyboard lighting to Synapse. Turn it on to reapply the last OpenBlade effect after an external change."
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>

@@ -1359,8 +1359,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.True(viewModel.HasControllerAdvisory);
         Assert.Equal(
-            "Another controller may change laptop settings: RazerAppEngine, Razer Synapse Service. Automatic profile changes pause for settings changed elsewhere; manual actions still apply.",
+            "Another controller may change laptop settings: RazerAppEngine, Razer Synapse Service. OpenBlade yields keyboard lighting to Synapse while external lighting override is off. Confirmed external changes pause automatic profile updates; manual actions still apply.",
             viewModel.ControllerAdvisoryText);
+        Assert.Equal("Other controller may be active", viewModel.LightingSourceLabel);
         Assert.True(viewModel.HasControllerDetectionWarning);
         Assert.Equal("Controller detection was incomplete.", viewModel.ControllerDetectionWarningText);
         Assert.True(viewModel.HasAttention);

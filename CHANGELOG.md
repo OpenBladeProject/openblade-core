@@ -27,6 +27,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Stopped OpenBlade's keyboard renderer from fighting Razer Synapse when
+  **Override external lighting changes** is off. OpenBlade now stops its frame
+  stream without closing the lighting port or changing keyboard Driver mode,
+  and the toggle reflects the active user's saved setting after sign-in.
 - Prevented the first nightly after a product-version change from replaying
   entries already published under the preceding version when its generated
   changelog pull request is still outstanding.

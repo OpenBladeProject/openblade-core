@@ -283,6 +283,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 DriverModeRestoreOutcome.NotOwned))
             : device.InvalidateLightingRendererAsync(cancellationToken);
 
+    public Task<LightingRendererOwnershipState> RelinquishLightingRendererAsync(
+        CancellationToken cancellationToken) =>
+        Volatile.Read(ref disposed) != 0
+            ? Task.FromResult(LightingRendererOwnershipState.None)
+            : device.RelinquishLightingRendererAsync(cancellationToken);
+
     Task<bool> IGpuClockOffsetConfirmationInvalidator.InvalidateGpuClockOffsetConfirmationAsync(
         CancellationToken cancellationToken) =>
         device.InvalidateGpuClockOffsetConfirmationAsync(cancellationToken);
@@ -1653,6 +1659,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
 
                 return new LightingRendererInvalidationResult(ownership, outcome);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        internal async Task<LightingRendererOwnershipState>
+            RelinquishLightingRendererAsync(CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                IProductionLightingPort? current = lightingPort;
+                return current is null
+                    ? LightingRendererOwnershipState.None
+                    : await current.RelinquishRendererAsync(cancellationToken)
+                        .ConfigureAwait(false);
             }
             finally
             {

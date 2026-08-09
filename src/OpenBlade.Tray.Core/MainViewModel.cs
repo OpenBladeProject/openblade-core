@@ -4163,7 +4163,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ControlAccessStatus = FormatControlAccessStatus(status);
         HasControllerAdvisory = status.PotentialControllers.Count > 0;
         ControllerAdvisoryText = HasControllerAdvisory
-            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. Automatic profile changes pause for settings changed elsewhere; manual actions still apply."
+            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. OpenBlade yields keyboard lighting to Synapse while external lighting override is off. Confirmed external changes pause automatic profile updates; manual actions still apply."
             : string.Empty;
         HasControllerDetectionWarning = !string.IsNullOrWhiteSpace(
             status.ControllerDetectionWarning);
@@ -7653,6 +7653,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ? UnavailableLaptopReason
             : externalChanges.Contains(subsystem)
             ? "Changed outside OpenBlade"
+            : subsystem == DeviceSubsystem.Lighting
+                && !confirmed
+                && !status.AlwaysOverrideExternalLightingChanges
+                && (status.PotentialControllers.Count > 0
+                    || !string.IsNullOrWhiteSpace(status.ControllerDetectionWarning))
+            ? "Other controller may be active"
             : confirmed
                 ? "Current setting"
                 : "Controls unavailable";
