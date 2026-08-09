@@ -271,8 +271,16 @@ function Select-OpenBladeNightlyReleaseRecords {
         [Parameter(Mandatory)][string]$BaseVersion
     )
 
+    # A stable baseline can carry the latest nightly revision as an ordering
+    # watermark, but it is not a nightly release candidate at that revision.
+    $nightlyRecords = @(
+        $ReleaseRecord |
+            Where-Object {
+                $null -ne (ConvertFrom-OpenBladeNightlyTag `
+                        -TagName ([string]$_.TagName))
+            })
     $selected = [Collections.Generic.List[object]]::new()
-    foreach ($group in @($ReleaseRecord | Group-Object BuildRevision)) {
+    foreach ($group in @($nightlyRecords | Group-Object BuildRevision)) {
         $normalizedRecords = [Collections.Generic.List[object]]::new()
         $versions = [Collections.Generic.HashSet[string]]::new(
             [StringComparer]::Ordinal)

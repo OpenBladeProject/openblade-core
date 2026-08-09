@@ -722,17 +722,31 @@ try {
 
 - Added the stable release.
 
+## [0.2.0-nightly.8] - 2026-08-06
+
+### Added
+
+- Added the next nightly capability.
+
+## [0.1.0] - 2026-07-17
+
+### Added
+
+- Initial release.
+
 [Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.3.0
+[0.3.0]: https://github.com/OSSBlade/openblade-core/compare/v0.2.0-nightly.8...v0.3.0
+[0.2.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.7-attempt.2...v0.2.0-nightly.8
+[0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
 '@
         $firstNightlySource = @'
 # Changelog
 
 ## [Unreleased]
 
-### Added
+### Fixed
 
-- Added the first post-stable nightly change.
+- Fixed the first post-stable nightly regression.
 
 ## [0.3.0] - 2026-08-06
 
@@ -740,8 +754,22 @@ try {
 
 - Added the stable release.
 
+## [0.2.0-nightly.8] - 2026-08-06
+
+### Added
+
+- Added the next nightly capability.
+
+## [0.1.0] - 2026-07-17
+
+### Added
+
+- Initial release.
+
 [Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.3.0
+[0.3.0]: https://github.com/OSSBlade/openblade-core/compare/v0.2.0-nightly.8...v0.3.0
+[0.2.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.7-attempt.2...v0.2.0-nightly.8
+[0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
 '@
         [IO.File]::WriteAllText(
             $changelogPath,
@@ -761,6 +789,50 @@ try {
             $manifestPath,
             '[]',
             [Text.UTF8Encoding]::new($false))
+        $sameRevisionOutput = Join-Path `
+            $temporaryRoot `
+            'generated\STABLE-SAME-REVISION.md'
+        $sameRevisionResult = Write-OpenBladeNightlyChangelogSnapshot `
+            -RepositoryRoot $temporaryRoot `
+            -ChangelogPath $changelogPath `
+            -OutputPath $sameRevisionOutput `
+            -PublishedReleasesPath $manifestPath `
+            -BaseVersion '0.2.0' `
+            -BuildRevision 8 `
+            -CurrentTag 'v0.2.0-nightly.8-attempt.2' `
+            -CurrentSourceRevision $newBaseSourceRevision `
+            -CurrentPublishedAt ([DateTimeOffset]::Parse('2026-08-07T22:59:59Z'))
+        Assert-Equal $firstNightlySource $sameRevisionResult.Content `
+            'A stale nightly rerun at the stable watermark must be a no-op.'
+        Assert-Equal 0 $sameRevisionResult.PendingVersions.Count `
+            'A stale nightly rerun must not report pending releases.'
+        Assert-Equal (
+            "## [0.2.0-nightly.8] - 2026-08-06`n`n" +
+            "### Added`n`n- Added the next nightly capability.") `
+            $sameRevisionResult.CurrentSection `
+            'A stale rerun must recover its retained nightly section.'
+        Assert-Equal $firstNightlySource `
+            ([IO.File]::ReadAllText($sameRevisionOutput)) `
+            'A stale nightly rerun must write the unchanged changelog.'
+        $normalizedSameRevision = ConvertTo-OpenBladeNormalizedText `
+            -Text $sameRevisionResult.Content
+        Assert-Equal 1 ([Regex]::Matches(
+                $normalizedSameRevision,
+                '(?m)^\[Unreleased\]: .+/compare/v0\.3\.0\.\.\.HEAD$')).Count `
+            'A stale rerun must retain the stable Unreleased baseline.'
+        Assert-Equal 1 ([Regex]::Matches(
+                $normalizedSameRevision,
+                [Regex]::Escape(
+                    '- Fixed the first post-stable nightly regression.'))).Count `
+            'A stale rerun must preserve the post-stable entry exactly once.'
+
+        # The absent attempt tag is deliberate: releases at or below a stable
+        # watermark must be filtered without requiring tag resolution.
+        [IO.File]::WriteAllText(
+            $manifestPath,
+            ('[{"tagName":"v0.2.0-nightly.8-attempt.2",' +
+                '"publishedAt":"2026-08-06T23:59:59Z"}]'),
+            [Text.UTF8Encoding]::new($false))
         $stableBaselineResult = Write-OpenBladeNightlyChangelogSnapshot `
             -RepositoryRoot $temporaryRoot `
             -ChangelogPath $changelogPath `
@@ -778,15 +850,27 @@ try {
             -Heading '## [0.4.0-nightly.9] - 2026-08-07'
         Assert-Equal (
             "## [0.4.0-nightly.9] - 2026-08-07`n`n" +
-            "### Added`n`n" +
-            "- Added the first post-stable nightly change.`n") `
+            "### Fixed`n`n" +
+            "- Fixed the first post-stable nightly regression.`n") `
             $stableBaselineSection.Content `
             'A stable baseline must produce the exact first nightly section.'
         Assert-Equal 1 ([Regex]::Matches(
                 $normalizedStableBaseline,
                 [Regex]::Escape(
-                    '- Added the first post-stable nightly change.'))).Count `
+                    '- Fixed the first post-stable nightly regression.'))).Count `
             'The first post-stable entry must be released exactly once.'
+        $retainedSection = Get-OpenBladeChangelogSection `
+            -Content $normalizedStableBaseline `
+            -Heading '## [0.2.0-nightly.8] - 2026-08-06'
+        Assert-Equal (
+            "## [0.2.0-nightly.8] - 2026-08-06`n`n" +
+            "### Added`n`n- Added the next nightly capability.`n") `
+            $retainedSection.Content `
+            'The stable watermark must retain the preceding nightly section.'
+        Assert-Equal 1 ([Regex]::Matches(
+                $normalizedStableBaseline,
+                '(?m)^## \[0\.2\.0-nightly\.8\] - 2026-08-06$')).Count `
+            'The preceding nightly section must occur exactly once.'
         Assert-Equal 1 ([Regex]::Matches(
                 $normalizedStableBaseline,
                 '(?m)^\[0\.4\.0-nightly\.9\]: .+/compare/' +
