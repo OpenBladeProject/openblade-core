@@ -41,7 +41,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             ProductionPortFactory(),
             ProductionFanRpmFactory(),
             ProductionLightingPortFactory(),
-            new NvidiaGpuClockOffsetController())
+            new NvidiaGpuClockOffsetController(),
+            gpuActivitySource: new WindowsGpuActivitySource())
     {
     }
 
@@ -54,7 +55,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         ILogger<WindowsVerifiedBladeDeviceProvider>? logger = null,
         TimeSpan? shutdownBudget = null,
         Action? onClosing = null,
-        FirmwareCompatibilityPolicy? compatibilityPolicy = null)
+        FirmwareCompatibilityPolicy? compatibilityPolicy = null,
+        IGpuActivitySource? gpuActivitySource = null)
     {
         TimeSpan effectiveShutdownBudget = shutdownBudget ?? DefaultShutdownBudget;
         if (effectiveShutdownBudget <= TimeSpan.Zero ||
@@ -71,6 +73,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             fanRpmFactory ?? throw new ArgumentNullException(nameof(fanRpmFactory)),
             lightingFactory ?? UnavailableProductionLightingFactory.Instance,
             gpuClockOffsets ?? UnavailableGpuClockOffsetController.Instance,
+            gpuActivitySource ?? InactiveGpuActivitySource.Instance,
             logger,
             effectiveShutdownBudget,
             onClosing);
@@ -291,7 +294,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         }
     }
 
-    private sealed class SerializedBladeDevice : IBladeDevice, IDisposable
+    private sealed class SerializedBladeDevice :
+        IBladeDevice,
+        IGpuClockOffsetManagementDevice,
+        IDisposable
     {
         private const int MaximumBatteryReadAttempts = 3;
 
@@ -299,6 +305,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private readonly IFanRpmQueryRunFactory fanRpmFactory;
         private readonly IProductionLightingPortFactory lightingFactory;
         private readonly IGpuClockOffsetController gpuClockOffsets;
+        private readonly IGpuActivitySource gpuActivitySource;
         private readonly ILogger<WindowsVerifiedBladeDeviceProvider>? logger;
         private readonly TimeSpan shutdownBudget;
         private readonly Action? onClosing;
@@ -310,10 +317,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private Task? deferredDisposal;
         private bool closing;
         private bool disposed;
-        // Querying NVML can wake an otherwise idle discrete GPU. Keep ranges
-        // undiscovered until a profile explicitly opts into GPU tuning and a
-        // successful OpenBlade write makes subsequent readback authoritative.
-        private bool gpuClockOffsetsManaged;
+        // Querying NVML can wake an otherwise idle discrete GPU. Retain the
+        // last confirmed OpenBlade write and refresh it only while Windows
+        // already reports NVIDIA GPU activity.
+        private GpuClockOffsetCapabilities? managedGpuClockOffsets;
         private IProductionLightingPort? lightingPort;
         // Desired Windows playback state, retained independently of any one
         // renderer port so a recycled exact-device session can reapply it.
@@ -360,6 +367,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             IFanRpmQueryRunFactory fanRpmFactory,
             IProductionLightingPortFactory lightingFactory,
             IGpuClockOffsetController gpuClockOffsets,
+            IGpuActivitySource gpuActivitySource,
             ILogger<WindowsVerifiedBladeDeviceProvider>? logger,
             TimeSpan shutdownBudget,
             Action? onClosing)
@@ -368,6 +376,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             this.fanRpmFactory = fanRpmFactory;
             this.lightingFactory = lightingFactory;
             this.gpuClockOffsets = gpuClockOffsets;
+            this.gpuActivitySource = gpuActivitySource;
             this.logger = logger;
             this.shutdownBudget = shutdownBudget;
             this.onClosing = onClosing;
@@ -589,10 +598,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 ProductionPerformanceFanState performanceFan =
                     await port.QueryPerformanceFanStateAsync(cancellationToken)
                         .ConfigureAwait(false);
-                GpuClockOffsetCapabilities? gpuOffsets =
-                    gpuClockOffsetsManaged
-                        ? ApplyGpuPolicy(gpuClockOffsets.Query())
-                        : null;
+                GpuClockOffsetCapabilities? gpuOffsets = ReadManagedGpuClockOffsets();
                 CustomPerformanceSettings? customPerformance =
                     performanceFan.CustomPerformance;
                 LightingSettings? lighting =
@@ -933,6 +939,18 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             PerformancePreset value,
             CustomPerformanceSettings? customPerformance,
             GpuClockOffsetSettings? gpuClockOffsets,
+            CancellationToken cancellationToken) => await SetPerformanceAsync(
+                value,
+                customPerformance,
+                gpuClockOffsets,
+                retainGpuClockOffsetManagement: true,
+                cancellationToken).ConfigureAwait(false);
+
+        public async Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            bool retainGpuClockOffsetManagement,
             CancellationToken cancellationToken)
         {
             if (customPerformance?.GpuClockOffsets is { } legacyOffsets)
@@ -992,8 +1010,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     // The firmware power mode has already been committed. Complete
                     // the paired NVML operation even if shutdown cancellation raced
                     // with the successful HID write.
-                    this.gpuClockOffsets.Set(appliedOffsets);
-                    gpuClockOffsetsManaged = true;
+                    GpuClockOffsetCapabilities confirmed =
+                        this.gpuClockOffsets.Set(appliedOffsets);
+                    managedGpuClockOffsets = retainGpuClockOffsetManagement
+                        ? ApplyGpuPolicy(confirmed)
+                        : null;
                 }
                 catch (BladeWriteException exception)
                 {
@@ -1007,6 +1028,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
         public async Task SetGpuClockOffsetsAsync(
             GpuClockOffsetSettings value,
+            CancellationToken cancellationToken) => await SetGpuClockOffsetsAsync(
+                value,
+                retainManagement: true,
+                cancellationToken).ConfigureAwait(false);
+
+        public async Task SetGpuClockOffsetsAsync(
+            GpuClockOffsetSettings value,
+            bool retainManagement,
             CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(value);
@@ -1051,14 +1080,30 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                gpuClockOffsets.Set(value);
-                gpuClockOffsetsManaged = true;
+                GpuClockOffsetCapabilities confirmed = gpuClockOffsets.Set(value);
+                managedGpuClockOffsets = retainManagement
+                    ? ApplyGpuPolicy(confirmed)
+                    : null;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw new BladeWriteException(
                     WriteSubmissionState.KnownNotApplied,
                     "GPU clock tuning was canceled before the NVIDIA write started.");
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        public async Task RelinquishGpuClockOffsetManagementAsync(
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                managedGpuClockOffsets = null;
             }
             finally
             {
@@ -1119,6 +1164,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     MaximumMegahertz = memoryMaximum,
                 },
             };
+        }
+
+        private GpuClockOffsetCapabilities? ReadManagedGpuClockOffsets()
+        {
+            GpuClockOffsetCapabilities? cached = managedGpuClockOffsets;
+            if (cached is null || !gpuActivitySource.IsActive())
+            {
+                return cached;
+            }
+
+            GpuClockOffsetCapabilities? refreshed = ApplyGpuPolicy(gpuClockOffsets.Query());
+            if (refreshed is not null)
+            {
+                managedGpuClockOffsets = refreshed;
+                return refreshed;
+            }
+
+            return cached;
         }
 
         private bool GpuClockOffsetsSupported(
@@ -1460,6 +1523,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 DisposeLightingPortWithinDeadlineAsync().GetAwaiter().GetResult();
+                DisposeGpuActivitySource();
 
                 lock (lifecycleSync)
                 {
@@ -1930,6 +1994,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 await DisposeLightingPortWithinDeadlineAsync().ConfigureAwait(false);
+                DisposeGpuActivitySource();
             }
             finally
             {
@@ -1962,6 +2027,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 logger?.LogError(
                     exception,
                     "The production lighting port failed during device-provider shutdown.");
+            }
+        }
+
+        private void DisposeGpuActivitySource()
+        {
+            if (gpuActivitySource is IDisposable disposable)
+            {
+                disposable.Dispose();
             }
         }
 

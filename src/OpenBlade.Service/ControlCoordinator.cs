@@ -3,6 +3,23 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
+internal interface IGpuClockOffsetManagementDevice
+{
+    Task SetPerformanceAsync(
+        PerformancePreset value,
+        CustomPerformanceSettings? customPerformance,
+        GpuClockOffsetSettings? gpuClockOffsets,
+        bool retainGpuClockOffsetManagement,
+        CancellationToken cancellationToken);
+
+    Task SetGpuClockOffsetsAsync(
+        GpuClockOffsetSettings value,
+        bool retainManagement,
+        CancellationToken cancellationToken);
+
+    Task RelinquishGpuClockOffsetManagementAsync(CancellationToken cancellationToken);
+}
+
 internal sealed record ScopedApplyOutcome(
     ControlResult Result,
     ConfirmedDeviceState? Readback,
@@ -106,12 +123,25 @@ public sealed class ControlCoordinator
             value,
             customPerformance,
             gpuClockTuning: null,
+            relinquishWhenUnconfigured: false,
             cancellationToken);
 
     internal Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
         PerformancePreset value,
         CustomPerformanceSettings? customPerformance,
         GpuClockTuningSettings? gpuClockTuning,
+        CancellationToken cancellationToken) => ApplyPerformanceOutcomeAsync(
+            value,
+            customPerformance,
+            gpuClockTuning,
+            relinquishWhenUnconfigured: true,
+            cancellationToken);
+
+    private Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
+        PerformancePreset value,
+        CustomPerformanceSettings? customPerformance,
+        GpuClockTuningSettings? gpuClockTuning,
+        bool relinquishWhenUnconfigured,
         CancellationToken cancellationToken)
     {
         NormalizeLegacyGpuClockTuning(ref customPerformance, ref gpuClockTuning);
@@ -156,14 +186,19 @@ public sealed class ControlCoordinator
                     value,
                     customPerformance,
                     effectiveGpuClockTuning)
-                    ? device.SetGpuClockOffsetsAsync(
+                    ? SetGpuClockOffsetsAsync(
                         effectiveGpuClockTuning!.EffectiveOffsets,
+                        effectiveGpuClockTuning.Enabled,
                         token)
                     : ApplyPerformanceAndGpuClockTuningAsync(
                         value,
                         customPerformance,
                         effectiveGpuClockTuning,
-                        token));
+                        token),
+            beforeInitialStateRead: (_, token) =>
+                relinquishWhenUnconfigured && effectiveGpuClockTuning is null
+                    ? RelinquishGpuClockOffsetManagementAsync(token)
+                    : Task.CompletedTask);
     }
 
     internal Task<ScopedApplyOutcome> ApplyFanOutcomeAsync(
@@ -537,6 +572,12 @@ public sealed class ControlCoordinator
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
+            desired = DropUnsupportedGpuClockTuning(desired, capabilities);
+            if (desired.GpuClockTuning is null)
+            {
+                await RelinquishGpuClockOffsetManagementAsync(cancellationToken);
+            }
+
             initial = await device.ReadStateAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (automaticWriteExclusionResolver is not null)
@@ -561,7 +602,6 @@ public sealed class ControlCoordinator
                 DeviceAccessFailed: true);
         }
 
-        desired = DropUnsupportedGpuClockTuning(desired, capabilities);
         Dictionary<DeviceSubsystem, PendingSubsystem> states =
             CreatePendingSubsystems(desired, capabilities, initial);
 
@@ -682,8 +722,9 @@ public sealed class ControlCoordinator
                         desired.Performance.Value,
                         desired.CustomPerformance,
                         desired.GpuClockTuning)
-                        ? device.SetGpuClockOffsetsAsync(
+                        ? SetGpuClockOffsetsAsync(
                             desired.GpuClockTuning!.EffectiveOffsets,
+                            desired.GpuClockTuning.Enabled,
                             token)
                         : ApplyPerformanceAndGpuClockTuningAsync(
                             desired.Performance.Value,
@@ -1021,7 +1062,8 @@ public sealed class ControlCoordinator
         bool forceWrite = false,
         Func<ConfirmedDeviceState, CancellationToken, Task>? stateAwareSetter = null,
         Func<CancellationToken, Task<ConfirmedDeviceState>>? stateReader = null,
-        Func<bool>? writeAllowed = null)
+        Func<bool>? writeAllowed = null,
+        Func<DeviceCapabilities, CancellationToken, Task>? beforeInitialStateRead = null)
     {
         if (!valid)
         {
@@ -1053,6 +1095,12 @@ public sealed class ControlCoordinator
                     ReadbackMatched: false,
                     capabilities,
                     DeviceAccessFailed: false);
+            }
+
+            if (beforeInitialStateRead is not null)
+            {
+                await beforeInitialStateRead(capabilities, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
             }
 
             initial = await readState(cancellationToken);
@@ -1542,7 +1590,9 @@ public sealed class ControlCoordinator
                 && confirmed.Cpu == desired.Cpu
                 && confirmed.Gpu == desired.Gpu)
         && (gpuClockTuning is null
-            || state.GpuClockOffsets?.Current == gpuClockTuning.EffectiveOffsets);
+            || (gpuClockTuning.Enabled
+                ? state.GpuClockOffsets?.Current == gpuClockTuning.EffectiveOffsets
+                : state.GpuClockOffsets is null));
 
     private static bool CanApplyGpuClockOffsetsOnly(
         ConfirmedDeviceState state,
@@ -1561,11 +1611,36 @@ public sealed class ControlCoordinator
         PerformancePreset performance,
         CustomPerformanceSettings? customPerformance,
         GpuClockTuningSettings? gpuClockTuning,
-        CancellationToken cancellationToken) => device.SetPerformanceAsync(
-            performance,
-            customPerformance,
-            gpuClockTuning?.EffectiveOffsets,
-            cancellationToken);
+        CancellationToken cancellationToken) =>
+        device is IGpuClockOffsetManagementDevice managedDevice
+            ? managedDevice.SetPerformanceAsync(
+                performance,
+                customPerformance,
+                gpuClockTuning?.EffectiveOffsets,
+                gpuClockTuning?.Enabled == true,
+                cancellationToken)
+            : device.SetPerformanceAsync(
+                performance,
+                customPerformance,
+                gpuClockTuning?.EffectiveOffsets,
+                cancellationToken);
+
+    private Task SetGpuClockOffsetsAsync(
+        GpuClockOffsetSettings value,
+        bool retainManagement,
+        CancellationToken cancellationToken) =>
+        device is IGpuClockOffsetManagementDevice managedDevice
+            ? managedDevice.SetGpuClockOffsetsAsync(
+                value,
+                retainManagement,
+                cancellationToken)
+            : device.SetGpuClockOffsetsAsync(value, cancellationToken);
+
+    private Task RelinquishGpuClockOffsetManagementAsync(
+        CancellationToken cancellationToken) =>
+        device is IGpuClockOffsetManagementDevice managedDevice
+            ? managedDevice.RelinquishGpuClockOffsetManagementAsync(cancellationToken)
+            : Task.CompletedTask;
 
     private static bool GpuClockTuningSupported(
         DeviceCapabilities capabilities,
