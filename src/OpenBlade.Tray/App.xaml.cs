@@ -35,14 +35,25 @@ public partial class App : Microsoft.UI.Xaml.Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         base.OnLaunched(args);
-        System.Windows.Forms.Application.EnableVisualStyles();
+        string[] commandLineArguments = Environment.GetCommandLineArgs();
+        bool elevatedShutdownHelper = ElevatedServiceShutdownLauncher.IsHelperLaunch(
+            commandLineArguments);
         RegisterCrashReporting();
         traceLogRegistration ??= PersistentTraceLog.RegisterDefault(
-            "OpenBlade.Tray",
+            elevatedShutdownHelper
+                ? "OpenBlade.Tray.ShutdownHelper"
+                : "OpenBlade.Tray",
             OpenBladeProductVersion.Read(typeof(App).Assembly));
+        if (elevatedShutdownHelper)
+        {
+            _ = RunElevatedServiceShutdownHelperAsync();
+            return;
+        }
+
+        System.Windows.Forms.Application.EnableVisualStyles();
         var startupRegistration = new WindowsStartupRegistration();
         if (!startupRegistration.ShouldStartForLaunchArguments(
-                Environment.GetCommandLineArgs()))
+                commandLineArguments))
         {
             Trace.TraceInformation(
                 "OpenBlade skipped the current user's disabled tray startup registration.");
@@ -285,19 +296,57 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     public async Task ShutdownOpenBladeAsync()
     {
-        MainWindow? window = mainWindow;
-        if (window is null)
+        string executablePath = Environment.ProcessPath
+            ?? throw new InvalidOperationException("Tray executable path is unavailable.");
+        var launcher = new ElevatedServiceShutdownLauncher();
+        var coordinator = new TrayCompleteShutdownCoordinator(
+            token => launcher.RequestAsync(executablePath, token),
+            WindowsServiceShutdownConfirmation.WaitForStoppedAsync,
+            () => _ = SessionAgentLauncher.TryStopSibling(),
+            ExitTrayAsync);
+        TrayCompleteShutdownResult result = await coordinator.ShutdownAsync(
+            CancellationToken.None);
+        if (result == TrayCompleteShutdownResult.Canceled)
         {
-            Trace.TraceWarning(
-                "OpenBlade could not request service shutdown because the main window is unavailable.");
+            Trace.TraceInformation("OpenBlade service shutdown elevation was canceled.");
+            return;
         }
-        else
+        if (result == TrayCompleteShutdownResult.Unconfirmed)
         {
-            await window.ViewModel.ShutdownOpenBladeAsync(CancellationToken.None);
+            throw new InvalidOperationException(
+                "The elevated shutdown result could not be confirmed. OpenBlade did not retry the request.");
         }
+    }
 
-        _ = SessionAgentLauncher.TryStopSibling();
-        await ExitTrayAsync();
+    private async Task RunElevatedServiceShutdownHelperAsync()
+    {
+        int exitCode = 1;
+        try
+        {
+            await using var serviceClient = new ServiceClient();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            ControlOperationResult result = await serviceClient.ShutdownOpenBladeAsync(
+                timeout.Token);
+            if (result.Status != ControlOperationStatus.Stored)
+            {
+                throw new InvalidOperationException(result.Message);
+            }
+
+            exitCode = 0;
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade elevated service shutdown failed: {0}",
+                exception);
+        }
+        finally
+        {
+            Environment.ExitCode = exitCode;
+            traceLogRegistration?.Dispose();
+            traceLogRegistration = null;
+            Exit();
+        }
     }
 
     private async Task RequestTrayExitAsync()

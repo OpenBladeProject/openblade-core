@@ -340,7 +340,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Content=\"View\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnShutdownOpenBlade\"", xaml, StringComparison.Ordinal);
         Assert.Contains("app.ShutdownOpenBladeAsync()", window, StringComparison.Ordinal);
-        Assert.Contains("window.ViewModel.ShutdownOpenBladeAsync", app, StringComparison.Ordinal);
+        Assert.Contains("new ElevatedServiceShutdownLauncher()", app, StringComparison.Ordinal);
         Assert.Contains("SessionAgentLauncher.TryStopSibling()", app, StringComparison.Ordinal);
     }
 
@@ -1221,10 +1221,53 @@ public sealed class WinUiShellContractTests
         Assert.Contains("System.Windows.Forms.Application.EnableVisualStyles()", app, StringComparison.Ordinal);
         Assert.Contains("ShowTrayTaskDialog", app, StringComparison.Ordinal);
         Assert.Contains("WindowNative.GetWindowHandle(window)", app, StringComparison.Ordinal);
-        Assert.Contains("main window is unavailable", app, StringComparison.Ordinal);
+        Assert.Contains("service shutdown elevation was canceled", app, StringComparison.Ordinal);
         Assert.True(
-            CountOccurrences(app, "ExitTrayAsync()") >= 3,
-            "The setup event and both exit choices must route through ExitTrayAsync().");
+            CountOccurrences(app, "ExitTrayAsync") >= 4,
+            "The setup event and both exit choices must retain the shared tray exit path.");
+    }
+
+    [Fact]
+    public void ElevatedShutdownHelperRunsBeforeTrayAndSessionInitialization()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        int helperGate = app.IndexOf(
+            "bool elevatedShutdownHelper = ElevatedServiceShutdownLauncher.IsHelperLaunch",
+            StringComparison.Ordinal);
+        int helperBranch = app.IndexOf("if (elevatedShutdownHelper)", StringComparison.Ordinal);
+        int helperCall = app.IndexOf(
+            "_ = RunElevatedServiceShutdownHelperAsync();",
+            helperBranch,
+            StringComparison.Ordinal);
+        int helperReturn = app.IndexOf("return;", helperCall, StringComparison.Ordinal);
+        int normalInitialization = app.IndexOf(
+            "System.Windows.Forms.Application.EnableVisualStyles()",
+            StringComparison.Ordinal);
+        int instanceClaim = app.IndexOf(
+            "TrayInstanceCoordinator.TryStart",
+            StringComparison.Ordinal);
+        int windowCreation = app.IndexOf("CreateMainWindow(", StringComparison.Ordinal);
+        int sessionAgentStart = app.IndexOf("StartSessionAgent();", StringComparison.Ordinal);
+
+        Assert.True(helperGate >= 0);
+        Assert.True(helperGate < helperBranch);
+        Assert.True(helperBranch < helperCall);
+        Assert.True(helperCall < helperReturn);
+        Assert.True(helperReturn < normalInitialization);
+        Assert.True(normalInitialization < instanceClaim);
+        Assert.True(normalInitialization < windowCreation);
+        Assert.True(normalInitialization < sessionAgentStart);
+        Assert.Contains("new ServiceClient()", app, StringComparison.Ordinal);
+        Assert.Contains("new CancellationTokenSource(TimeSpan.FromSeconds(10))", app, StringComparison.Ordinal);
+        Assert.Contains("serviceClient.ShutdownOpenBladeAsync", app, StringComparison.Ordinal);
+        Assert.Contains("new TrayCompleteShutdownCoordinator", app, StringComparison.Ordinal);
+        Assert.Contains("WindowsServiceShutdownConfirmation.WaitForStoppedAsync", app, StringComparison.Ordinal);
+        Assert.Contains("TrayCompleteShutdownResult.Unconfirmed", app, StringComparison.Ordinal);
+        Assert.Contains("did not retry the request", app, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "window.ViewModel.ShutdownOpenBladeAsync",
+            app,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1610,17 +1653,20 @@ public sealed class WinUiShellContractTests
             "startupRegistration.ShouldStartForLaunchArguments(",
             StringComparison.Ordinal);
         int commandLineArguments = app.IndexOf(
-            "Environment.GetCommandLineArgs()",
-            startupGate,
+            "string[] commandLineArguments = Environment.GetCommandLineArgs()",
+            StringComparison.Ordinal);
+        int helperGate = app.IndexOf(
+            "bool elevatedShutdownHelper = ElevatedServiceShutdownLauncher.IsHelperLaunch",
             StringComparison.Ordinal);
         int instanceClaim = app.IndexOf(
             "TrayInstanceCoordinator.TryStart",
             StringComparison.Ordinal);
 
         Assert.True(
-            startupGate >= 0
-            && commandLineArguments > startupGate
-            && commandLineArguments < instanceClaim);
+            commandLineArguments >= 0
+            && commandLineArguments < helperGate
+            && helperGate < startupGate
+            && startupGate < instanceClaim);
         Assert.DoesNotContain("args.Arguments", app, StringComparison.Ordinal);
     }
 
