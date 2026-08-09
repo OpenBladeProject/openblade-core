@@ -912,6 +912,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         if (args.WindowActivationState != WindowActivationState.Deactivated)
         {
             foregroundEstablished = true;
+            MoveFocusOffInitialTile();
             return;
         }
 
@@ -921,6 +922,25 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         {
             Hide(suppressNextTrayToggle: true);
         }
+    }
+
+    private void MoveFocusOffInitialTile()
+    {
+        if (!visible || pinnedForEditing || detailControl is not null)
+        {
+            return;
+        }
+
+        _ = InitialFocusTarget.Focus(FocusState.Programmatic);
+        _ = dispatcherQueue.TryEnqueue(
+            DispatcherQueuePriority.Low,
+            () =>
+            {
+                if (visible && !pinnedForEditing && detailControl is null)
+                {
+                    _ = InitialFocusTarget.Focus(FocusState.Programmatic);
+                }
+            });
     }
 
     private void OnForegroundTimerTick(DispatcherQueueTimer sender, object args)

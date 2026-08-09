@@ -23,7 +23,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   tile viewport without changing the popup's overall height. The popup now
   matches Windows' tile, corner, type, and panel proportions; single-choice
   fan controls omit the details chevron, and quick-adjustment rows use larger,
-  consistently aligned icons and full-width tracks without trailing labels.
+  consistently aligned icons, Windows-sized thumbs and tracks, and no trailing
+  labels. Performance and fan controls now use purpose-specific symbols, the
+  telemetry footer distributes visible items evenly, and opening the popup no
+  longer leaves a focus border on its first tile.
 
 ### Fixed
 

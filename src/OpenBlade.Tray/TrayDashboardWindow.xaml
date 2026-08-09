@@ -10,6 +10,8 @@
           SizeChanged="OnRootSizeChanged">
         <Grid.Resources>
             <local:Int32DoubleConverter x:Key="Int32Double" />
+            <x:Double x:Key="SliderHorizontalThumbWidth">16</x:Double>
+            <x:Double x:Key="SliderHorizontalThumbHeight">16</x:Double>
             <Style x:Key="QuickTileSurfaceStyle" TargetType="Border">
                 <Setter Property="Height" Value="48" />
                 <Setter Property="CornerRadius" Value="6" />
@@ -115,7 +117,7 @@
                                         IsEnabled="{Binding CanEditPerformance, Mode=OneWay}"
                                         Click="OnPerformanceCycleClick"
                                         AutomationProperties.Name="Cycle performance mode">
-                                    <FontIcon Glyph="&#xE7F4;"
+                                    <FontIcon Glyph="&#xEC4A;"
                                               Style="{StaticResource QuickTileIconStyle}" />
                                 </Button>
                                 <Border Grid.Column="1"
@@ -154,8 +156,9 @@
                                         IsEnabled="{Binding CanEditFanControl, Mode=OneWay}"
                                         Click="OnFansCycleClick"
                                         AutomationProperties.Name="Cycle fan mode">
-                                    <FontIcon Glyph="&#xE895;"
-                                              Style="{StaticResource QuickTileIconStyle}" />
+                                    <PathIcon Width="16"
+                                              Height="16"
+                                              Data="M8,6.5 C6.5,5.2 6.2,2.4 7.4,0.8 C8.5,0 10.2,0.3 10.8,1.8 C11.2,3.6 9.6,5.7 8,6.5 Z M9.5,8 C10.8,6.5 13.6,6.2 15.2,7.4 C16,8.5 15.7,10.2 14.2,10.8 C12.4,11.2 10.3,9.6 9.5,8 Z M8,9.5 C9.5,10.8 9.8,13.6 8.6,15.2 C7.5,16 5.8,15.7 5.2,14.2 C4.8,12.4 6.4,10.3 8,9.5 Z M6.5,8 C5.2,9.5 2.4,9.8 0.8,8.6 C0,7.5 0.3,5.8 1.8,5.2 C3.6,4.8 5.7,6.4 6.5,8 Z M8,6.75 A1.25,1.25 0 1 1 7.99,9.25 A1.25,1.25 0 1 1 8,6.75 Z" />
                                 </Button>
                                 <Border x:Name="FansDetailsHost"
                                         Grid.Column="1"
@@ -221,14 +224,14 @@
 
             <Border x:Name="SliderSection"
                     Grid.Row="1"
-                    Padding="20,7"
+                    Padding="12,7"
                     BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                     BorderThickness="0,1,0,0"
                     Visibility="Collapsed">
                 <Grid x:Name="SliderGrid" RowSpacing="4">
                         <Grid x:Name="ChargeLimitSliderRow"
                               Height="48"
-                              ColumnSpacing="10"
+                              ColumnSpacing="8"
                               Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="36" />
@@ -244,6 +247,7 @@
                             </Button>
                             <Slider x:Name="ChargeLimitSlider"
                                     Grid.Column="1"
+                                    Margin="0,0,10,0"
                                     VerticalAlignment="Center"
                                     Minimum="50"
                                     Maximum="80"
@@ -263,7 +267,7 @@
 
                         <Grid x:Name="LightingBrightnessSliderRow"
                               Height="48"
-                              ColumnSpacing="10"
+                              ColumnSpacing="8"
                               Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="36" />
@@ -274,6 +278,7 @@
                                       HorizontalAlignment="Center"
                                       VerticalAlignment="Center" />
                             <Slider Grid.Column="1"
+                                    Margin="0,0,10,0"
                                     VerticalAlignment="Center"
                                     Minimum="0"
                                     Maximum="100"
@@ -285,7 +290,7 @@
 
                         <Grid x:Name="GpuCoreClockSliderRow"
                               Height="48"
-                              ColumnSpacing="10"
+                              ColumnSpacing="8"
                               Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="36" />
@@ -302,6 +307,7 @@
                             </Button>
                             <Slider x:Name="GpuCoreClockSlider"
                                     Grid.Column="1"
+                                    Margin="0,0,10,0"
                                     VerticalAlignment="Center"
                                     Minimum="{Binding GpuCoreClockOffsetMinimum, Mode=OneWay}"
                                     Maximum="{Binding GpuCoreClockOffsetMaximum, Mode=OneWay}"
@@ -316,7 +322,7 @@
 
                         <Grid x:Name="GpuMemoryClockSliderRow"
                               Height="48"
-                              ColumnSpacing="10"
+                              ColumnSpacing="8"
                               Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="36" />
@@ -333,6 +339,7 @@
                             </Button>
                             <Slider x:Name="GpuMemoryClockSlider"
                                     Grid.Column="1"
+                                    Margin="0,0,10,0"
                                     VerticalAlignment="Center"
                                     Minimum="{Binding GpuMemoryClockOffsetMinimum, Mode=OneWay}"
                                     Maximum="{Binding GpuMemoryClockOffsetMaximum, Mode=OneWay}"
@@ -410,33 +417,41 @@
                 <Grid x:Name="StatusItemsHost"
                       ColumnSpacing="12"
                       VerticalAlignment="Center">
-                    <Grid x:Name="BatteryPowerStatus" ColumnSpacing="6">
+                    <Grid x:Name="BatteryPowerStatus"
+                          ColumnSpacing="6"
+                          HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="16" />
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE83F;" FontSize="14" />
+                        <FontIcon Glyph="&#xE83F;" FontSize="16" />
                         <TextBlock Grid.Column="1"
                                    Text="{Binding TrayDashboardBatteryPowerFlowLabel, Mode=OneWay}"
                                    ToolTipService.ToolTip="{Binding BatteryPowerFlowLabel, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
-                    <Grid x:Name="TemperatureStatus" ColumnSpacing="6">
+                    <Grid x:Name="TemperatureStatus"
+                          ColumnSpacing="6"
+                          HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="16" />
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE9CA;" FontSize="14" />
+                        <FontIcon Glyph="&#xE9CA;" FontSize="16" />
                         <TextBlock Grid.Column="1"
                                    Text="{Binding TrayDashboardTemperatureLabel, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
-                    <Grid x:Name="FansStatus" ColumnSpacing="6">
+                    <Grid x:Name="FansStatus"
+                          ColumnSpacing="6"
+                          HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="16" />
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE895;" FontSize="14" />
+                        <PathIcon Width="16"
+                                  Height="16"
+                                  Data="M8,6.5 C6.5,5.2 6.2,2.4 7.4,0.8 C8.5,0 10.2,0.3 10.8,1.8 C11.2,3.6 9.6,5.7 8,6.5 Z M9.5,8 C10.8,6.5 13.6,6.2 15.2,7.4 C16,8.5 15.7,10.2 14.2,10.8 C12.4,11.2 10.3,9.6 9.5,8 Z M8,9.5 C9.5,10.8 9.8,13.6 8.6,15.2 C7.5,16 5.8,15.7 5.2,14.2 C4.8,12.4 6.4,10.3 8,9.5 Z M6.5,8 C5.2,9.5 2.4,9.8 0.8,8.6 C0,7.5 0.3,5.8 1.8,5.2 C3.6,4.8 5.7,6.4 6.5,8 Z M8,6.75 A1.25,1.25 0 1 1 7.99,9.25 A1.25,1.25 0 1 1 8,6.75 Z" />
                         <TextBlock Grid.Column="1"
                                    Text="{Binding TrayDashboardFanModeLabel, Mode=OneWay}"
                                    ToolTipService.ToolTip="{Binding ActiveFanModeLabel, Mode=OneWay}"
@@ -445,5 +460,16 @@
                 </Grid>
             </Grid>
         </Border>
+
+        <Button x:Name="InitialFocusTarget"
+                Width="1"
+                Height="1"
+                Opacity="0"
+                IsHitTestVisible="False"
+                IsTabStop="True"
+                TabIndex="2147483647"
+                UseSystemFocusVisuals="False"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top" />
     </Grid>
 </Window>

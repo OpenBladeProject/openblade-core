@@ -1928,6 +1928,15 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<Setter Property=\"FontSize\" Value=\"16\" />", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"FontSize\" Value=\"12\" />", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"FontSize\" Value=\"11\" />", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "<x:Double x:Key=\"SliderHorizontalThumbWidth\">16</x:Double>",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<x:Double x:Key=\"SliderHorizontalThumbHeight\">16</x:Double>",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Key=\"SliderTrackThemeHeight\"", dashboardXaml, StringComparison.Ordinal);
         int quickSliderIconStyle = dashboardXaml.IndexOf(
             "<Style x:Key=\"QuickSliderIconStyle\"",
             StringComparison.Ordinal);
@@ -1964,6 +1973,13 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         string sliderSectionXaml = dashboardXaml[sliderSection..detailPage];
         Assert.Equal(8, CountOccurrences(sliderSectionXaml, "<ColumnDefinition"));
+        Assert.Equal(
+            4,
+            CountOccurrences(sliderSectionXaml, "<ColumnDefinition Width=\"36\" />"));
+        Assert.Equal(4, CountOccurrences(sliderSectionXaml, "ColumnSpacing=\"8\""));
+        Assert.Equal(4, CountOccurrences(sliderSectionXaml, "Margin=\"0,0,10,0\""));
+        Assert.Contains("Padding=\"12,7\"", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<ColumnDefinition Width=\"28\" />", sliderSectionXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Grid.Column=\"2\"", sliderSectionXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("QuickSliderValueStyle", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("TrayDashboardChargeLimitLabel", dashboardXaml, StringComparison.Ordinal);
@@ -1979,6 +1995,9 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("IsChecked=\"{Binding BatteryProtectionEnabled, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("IsEnabled=\"{Binding CanChangeBatteryProtection, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"BatteryPowerStatus\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Equal(
+            3,
+            CountOccurrences(dashboardXaml, "HorizontalAlignment=\"Center\">\r\n                        <Grid.ColumnDefinitions>\r\n                            <ColumnDefinition Width=\"16\" />\r\n                            <ColumnDefinition Width=\"Auto\" />"));
         Assert.DoesNotContain("Glyph=\"&#xE713;\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("AutomationProperties.Name=\"Open OpenBlade\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Click=\"OnSettingsClick\"", dashboardXaml, StringComparison.Ordinal);
@@ -1990,6 +2009,18 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Click=\"OnPerformanceDetailsClick\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnFansCycleClick\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnLightingCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        int fansTile = dashboardXaml.IndexOf(
+            "x:Name=\"FansTile\"",
+            performanceTile,
+            StringComparison.Ordinal);
+        int lightingTile = dashboardXaml.IndexOf(
+            "x:Name=\"LightingTile\"",
+            fansTile,
+            StringComparison.Ordinal);
+        Assert.Contains("Glyph=\"&#xEC4A;\"", dashboardXaml[performanceTile..fansTile], StringComparison.Ordinal);
+        Assert.DoesNotContain("Glyph=\"&#xE7F4;\"", dashboardXaml[performanceTile..fansTile], StringComparison.Ordinal);
+        Assert.Contains("Data=\"M8,6.5", dashboardXaml[fansTile..lightingTile], StringComparison.Ordinal);
+        Assert.DoesNotContain("Glyph=\"&#xE895;\"", dashboardXaml[fansTile..lightingTile], StringComparison.Ordinal);
         Assert.Contains("x:Name=\"FansDetailsColumn\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("AvailableActiveFanModeOptions.Count > 1", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("UpdateSliderRows();", dashboardWindow, StringComparison.Ordinal);
@@ -2000,7 +2031,15 @@ public sealed class WinUiShellContractTests
         Assert.Contains("CreateSliderOptions", mainWindow, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardSliderOptionTemplate", mainXaml, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardInteractionPolicy.ResolveNextIndex(", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("Glyph=\"&#xE895;\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"InitialFocusTarget\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("IsTabStop=\"True\"", dashboardXaml[dashboardXaml.IndexOf("x:Name=\"InitialFocusTarget\"", StringComparison.Ordinal)..], StringComparison.Ordinal);
+        Assert.Contains("TabIndex=\"2147483647\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("MoveFocusOffInitialTile();", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("DispatcherQueuePriority.Low", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Glyph=\"&#xE895;\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            CountOccurrences(dashboardXaml, "Data=\"M8,6.5"));
         Assert.DoesNotContain("Glyph=\"&#xE9D0;\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardBatteryPowerFlowLabel", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardTemperatureLabel", dashboardXaml, StringComparison.Ordinal);
