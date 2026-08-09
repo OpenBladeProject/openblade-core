@@ -164,6 +164,110 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ActivateUserAsync_NoControllerInvalidatesLightingPortBoundary()
+    {
+        var repository = new FixedUserConfigurationRepository(
+            new BatteryConfiguration(
+                ProfileDefaults.CreateSafeDefaults(),
+                new BatteryAutomationPreferences(ProtectionEnabled: true),
+                Recovered: false),
+            PersistentOverrideState.Empty,
+            directory);
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            userConfigurationRepository: repository);
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+
+        Assert.Equal(1, context.Provider.InvalidationCount);
+        Assert.Equal(0, context.Provider.RelinquishCount);
+    }
+
+    [Fact]
+    public async Task ActivateUserAsync_WindowsLightingInvalidatesBoundaryWithSynapse()
+    {
+        var repository = new FixedUserConfigurationRepository(
+            new BatteryConfiguration(
+                ProfileDefaults.CreateSafeDefaults(),
+                new BatteryAutomationPreferences(
+                    ProtectionEnabled: true,
+                    KeyboardLightingControlMode:
+                        KeyboardLightingControlMode.WindowsDynamicLighting),
+                Recovered: false),
+            PersistentOverrideState.Empty,
+            directory);
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            userConfigurationRepository: repository);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["RazerAppEngine"],
+            null);
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+
+        Assert.Equal(1, context.Provider.InvalidationCount);
+        Assert.Equal(0, context.Provider.RelinquishCount);
+        Assert.Equal(
+            KeyboardLightingControlMode.WindowsDynamicLighting,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Fact]
+    public async Task ActivateUserAsync_PersistedLightingIsNotFreshExplicitOwnership()
+    {
+        LightingSettings lighting = LightingSettingsFactory.Static(
+            new RgbColor(24, 96, 240),
+            brightness: 45);
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        var repository = new FixedUserConfigurationRepository(
+            new BatteryConfiguration(
+                ProfileDefaults.CreateSafeDefaults(),
+                new BatteryAutomationPreferences(ProtectionEnabled: true),
+                Recovered: false),
+            new PersistentOverrideState(null, null, lighting),
+            directory);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities),
+            userConfigurationRepository: repository);
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(null, null, null, null);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+
+        Assert.Equal(lighting, context.Runtime.GetStatus().LightingOverride?.Value);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["RazerAppEngine"],
+            null);
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Provider.RelinquishCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Fact]
     public async Task ActivateUserAsync_DoesNotApplyConfigurationAfterSessionChanges()
     {
         ProfileSet initialProfiles = ProfileDefaults.CreateSafeDefaults();
@@ -488,6 +592,34 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(context.Runtime.GetStatus().KeyboardDriverModeActive);
         Assert.Equal(1, context.Device.DriverModeReleaseCalls);
         Assert.Equal(1, context.Device.DriverModeEnsureCalls);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_RelinquishFailureLeavesDriverModeUnchanged()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
+        context.Device.DriverModeActive = true;
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["RazerAppEngine"],
+            null);
+        context.Provider.RelinquishFailure = new IOException("synthetic handoff failure");
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.True(context.Device.DriverModeActive);
+        Assert.Equal(0, context.Device.DriverModeReleaseCalls);
+        Assert.Contains(
+            "Driver mode was left unchanged",
+            result.Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "lighting control could not be relinquished",
+            result.Message,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1404,7 +1536,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task AmbientFrame_SynapseRefreshRelinquishesAndBlocksFrames()
+    public async Task AmbientFrame_ExplicitRendererSurvivesSynapseRefresh()
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
         {
@@ -1436,11 +1568,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new AmbientLightingFrame(new RgbColor[AmbientLightingFrame.SlotCount]),
             CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Equal(0, context.Device.AmbientFrameCalls);
-        Assert.Equal(1, context.Provider.RelinquishCount);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(1, context.Device.AmbientFrameCalls);
+        Assert.Equal(0, context.Provider.RelinquishCount);
         Assert.Equal(
-            LightingRendererOwnershipState.None,
+            LightingRendererOwnershipState.AmbientAwareness,
             context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
@@ -2005,9 +2137,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task LightingPowerPolicy_SynapseStagesSuppressionWithoutLightingWrite()
+    public async Task LightingPowerPolicy_SynapseDefersSuppressionUntilControllerClears()
     {
-        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
         ProfileSet profiles = context.Runtime.GetStatus().Profiles with
         {
             PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
@@ -2041,6 +2174,20 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             "without changing externally controlled lighting",
             result.Message,
             StringComparison.Ordinal);
+
+        context.Monitor.Current = new ControllerPresenceObservation([], null);
+        ControlOperationResult restored = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, restored.Status);
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
     [Fact]
@@ -2094,7 +2241,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task LightingPowerPolicy_ConfirmedExternalChangeStillBlocksSuppression()
+    public async Task LightingPowerPolicy_ExternalChangeStagesSuppressionWithoutWrite()
     {
         TestContext context = CreateWritableContext();
         ProfileSet profiles = context.Runtime.GetStatus().Profiles with
@@ -2134,12 +2281,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Theory]
     [InlineData("RazerAppEngine", null)]
     [InlineData("razer synapse service", null)]
-    [InlineData(null, "Controller detection was incomplete.")]
-    public async Task PeriodicControllerRefresh_RelinquishesOwnedLightingByDefault(
+    [InlineData("RazerAppEngine", "Controller detection was incomplete.")]
+    public async Task PeriodicControllerRefresh_RelinquishesAutomaticLightingForSynapse(
         string? controller,
         string? detectionWarning)
     {
-        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
         context.Monitor.Current = new ControllerPresenceObservation(
             controller is null ? [] : [controller],
             detectionWarning);
@@ -2170,9 +2318,42 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PeriodicControllerRefresh_DetectionWarningPreservesOwnedLighting()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            [],
+            "Controller detection was incomplete.");
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(0, context.Provider.RelinquishCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Equal(
+            "Controller detection was incomplete.",
+            context.Runtime.GetStatus().ControllerDetectionWarning);
+
+        context.Monitor.Current = new ControllerPresenceObservation([], null);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Null(context.Runtime.GetStatus().ControllerDetectionWarning);
+    }
+
+    [Fact]
     public async Task PeriodicControllerRefresh_IgnoresNonCompetingRazerHelpers()
     {
-        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
         context.Monitor.Current = new ControllerPresenceObservation(
             ["Razer Central Service", "Razer Elevation Service"],
             null);
@@ -2190,7 +2371,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Fact]
     public async Task VisibleObservation_SynapseRelinquishesWithoutFullInvalidation()
     {
-        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
         context.Monitor.Current = new ControllerPresenceObservation(
             ["RazerAppEngine"],
             null);
@@ -2206,9 +2388,40 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task ControllerAdvisory_ExplicitLightingActionCanReclaimRenderer()
+    public async Task VisibleObservation_RelinquishFailurePreservesObservationHealth()
     {
-        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["RazerAppEngine"],
+            null);
+        context.Provider.RelinquishFailure = new IOException("synthetic handoff failure");
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot after = context.Runtime.GetStatus();
+        Assert.True(after.DeviceVerified);
+        Assert.False(after.WritesBlocked);
+        Assert.Equal(before.KeyboardDriverModeActive, after.KeyboardDriverModeActive);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            after.LightingRendererOwnership);
+        Assert.Contains(
+            "Keyboard lighting control could not be relinquished",
+            after.Message,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Verified device access failed",
+            after.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ControllerAdvisory_ExplicitLightingActionRetainsRenderer()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
         context.Monitor.Current = new ControllerPresenceObservation(
             ["RazerAppEngine"],
             null);
@@ -2235,18 +2448,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.RefreshPowerSourceClassificationAsync(
             CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
 
         Assert.Equal(2, context.Device.LightingSetCalls);
         Assert.Equal(
-            LightingRendererOwnershipState.None,
+            LightingRendererOwnershipState.Static,
             context.Runtime.GetStatus().LightingRendererOwnership);
-        Assert.Equal(2, context.Provider.RelinquishCount);
+        Assert.Equal(1, context.Provider.RelinquishCount);
     }
 
     [Fact]
     public async Task ExternalLightingOverridePolicy_PersistsAndReappliesLightingWithAdvisory()
     {
-        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
         context.Monitor.Current = new ControllerPresenceObservation(
             ["RazerAppEngine"],
             null);
@@ -3733,18 +3949,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
-    [Theory]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public async Task ControllerAdvisory_DropsPendingLifecycleRestore(
-        bool controllerRunning,
-        bool detectionWarning)
+    [Fact]
+    public async Task SynapseAdvisory_DropsPendingLifecycleRestore()
     {
         TestContext context = await CreateOwnedStaticLightingContextAsync();
         await context.Runtime.InvalidateLightingRendererAsync(CancellationToken.None);
         context.Monitor.Current = new ControllerPresenceObservation(
-            controllerRunning ? ["RazerAppEngine"] : [],
-            detectionWarning ? "Controller detection was incomplete." : null);
+            ["RazerAppEngine"],
+            null);
 
         await context.Runtime.RefreshPowerSourceClassificationAsync(
             CancellationToken.None);
@@ -3760,6 +3972,40 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             LightingRendererOwnershipState.None,
             context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Empty(context.Runtime.GetStatus().PotentialControllers);
+        Assert.Null(context.Runtime.GetStatus().ControllerDetectionWarning);
+    }
+
+    [Fact]
+    public async Task DetectionWarning_PreservesPendingLifecycleRestoreUntilCleanCheck()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        await context.Runtime.InvalidateLightingRendererAsync(CancellationToken.None);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            [],
+            "Controller detection was incomplete.");
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+
+        context.Monitor.Current = new ControllerPresenceObservation([], null);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Empty(context.Runtime.GetStatus().PotentialControllers);
+        Assert.Null(context.Runtime.GetStatus().ControllerDetectionWarning);
     }
 
     [Fact]
@@ -3960,20 +4206,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Theory]
-    [InlineData(LightingRendererOwnershipState.None, true, false)]
-    [InlineData(LightingRendererOwnershipState.None, false, true)]
-    [InlineData(LightingRendererOwnershipState.Faulted, true, false)]
-    [InlineData(LightingRendererOwnershipState.Faulted, false, true)]
-    public async Task PeriodicRefresh_DoesNotRecoverRendererWhileControllerMayBeActive(
-        LightingRendererOwnershipState ownership,
-        bool controllerRunning,
-        bool detectionWarning)
+    [InlineData(LightingRendererOwnershipState.None)]
+    [InlineData(LightingRendererOwnershipState.Faulted)]
+    public async Task PeriodicRefresh_SynapseDiscardsRendererRecoveryCandidate(
+        LightingRendererOwnershipState ownership)
     {
-        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
         context.Device.LightingRendererOwnership = ownership;
         context.Monitor.Current = new ControllerPresenceObservation(
-            controllerRunning ? ["RazerAppEngine"] : [],
-            detectionWarning ? "Controller detection was incomplete." : null);
+            ["RazerAppEngine"],
+            null);
 
         await context.Runtime.RefreshPowerSourceClassificationAsync(
             CancellationToken.None);
@@ -3989,6 +4232,41 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             LightingRendererOwnershipState.None,
             context.Runtime.GetStatus().LightingRendererOwnership);
         Assert.Equal(1, context.Provider.RelinquishCount);
+        Assert.Empty(context.Runtime.GetStatus().PotentialControllers);
+        Assert.Null(context.Runtime.GetStatus().ControllerDetectionWarning);
+    }
+
+    [Theory]
+    [InlineData(LightingRendererOwnershipState.None)]
+    [InlineData(LightingRendererOwnershipState.Faulted)]
+    public async Task PeriodicRefresh_DetectionWarningDefersRendererRecovery(
+        LightingRendererOwnershipState ownership)
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false);
+        context.Device.LightingRendererOwnership = ownership;
+        context.Monitor.Current = new ControllerPresenceObservation(
+            [],
+            "Controller detection was incomplete.");
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(0, context.Provider.RelinquishCount);
+
+        context.Monitor.Current = new ControllerPresenceObservation([], null);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Empty(context.Runtime.GetStatus().PotentialControllers);
+        Assert.Null(context.Runtime.GetStatus().ControllerDetectionWarning);
     }
 
     [Fact]
@@ -5041,7 +5319,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task ControllerPresenceRefresh_DropsPendingLightingWithoutDeviceReads()
+    public async Task ControllerPresenceRefresh_IsBoundedAndDoesNotTouchDevice()
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
@@ -8375,7 +8653,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
             transactionBoundary = null,
         LowPowerGate? lowPowerGate = null,
-        IUserConfigurationRepository? userConfigurationRepository = null)
+        IUserConfigurationRepository? userConfigurationRepository = null,
+        bool explicitAction = true)
     {
         LightingSettings lighting = LightingSettingsFactory.Static(
             new RgbColor(0, 128, 255),
@@ -8410,6 +8689,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 lighting,
                 OverrideLifetime.UntilPowerSourceChange),
             CancellationToken.None);
+        if (!explicitAction)
+        {
+            typeof(ServiceControlRuntime)
+                .GetField(
+                    "explicitLightingOwnershipActive",
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic)!
+                .SetValue(context.Runtime, false);
+        }
 
         Assert.Equal(ControlOperationStatus.Applied, applied.Status);
         Assert.Equal(1, context.Device.LightingSetCalls);
@@ -9090,6 +9378,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? InvalidationFailure { get; set; }
 
+        public Exception? RelinquishFailure { get; set; }
+
         public DriverModeRestoreOutcome InvalidationDriverModeRestoreOutcome { get; set; }
 
         public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
@@ -9156,6 +9446,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             RelinquishCount++;
+            if (RelinquishFailure is { } failure)
+            {
+                RelinquishFailure = null;
+                return Task.FromException<LightingRendererOwnershipState>(failure);
+            }
             if (device is not CountingBladeDevice counting)
             {
                 return Task.FromResult(LightingRendererOwnershipState.None);

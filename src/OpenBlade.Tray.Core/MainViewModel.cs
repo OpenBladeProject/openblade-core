@@ -76,6 +76,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan PerformancePresentationHoldGracePeriod =
         TimeSpan.FromSeconds(2);
+    private static readonly HashSet<string> CompetingLightingControllers = new(
+        ["RazerAppEngine", "Razer Synapse Service"],
+        StringComparer.OrdinalIgnoreCase);
 
     private enum ProfileDraftGroup
     {
@@ -4162,8 +4165,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ConnectionStatus = status.Message;
         ControlAccessStatus = FormatControlAccessStatus(status);
         HasControllerAdvisory = status.PotentialControllers.Count > 0;
+        bool competingLightingController = status.PotentialControllers.Any(
+            CompetingLightingControllers.Contains);
         ControllerAdvisoryText = HasControllerAdvisory
-            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. OpenBlade yields keyboard lighting to Synapse while external lighting override is off. Confirmed external changes pause automatic profile updates; manual actions still apply."
+            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. "
+                + (competingLightingController
+                    ? "OpenBlade yields automatic keyboard lighting to Synapse while external lighting override is off. "
+                    : string.Empty)
+                + "Confirmed external changes pause automatic profile updates; manual actions still apply."
             : string.Empty;
         HasControllerDetectionWarning = !string.IsNullOrWhiteSpace(
             status.ControllerDetectionWarning);
@@ -7656,7 +7665,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : subsystem == DeviceSubsystem.Lighting
                 && !confirmed
                 && !status.AlwaysOverrideExternalLightingChanges
-                && (status.PotentialControllers.Count > 0
+                && (status.PotentialControllers.Any(
+                        CompetingLightingControllers.Contains)
                     || !string.IsNullOrWhiteSpace(status.ControllerDetectionWarning))
             ? "Other controller may be active"
             : confirmed
