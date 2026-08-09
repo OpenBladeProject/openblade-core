@@ -202,18 +202,32 @@ Assert-ThrowsLike `
     -Pattern "*Version change must be '1.4.2 -> 1.4.3'*" `
     -Message 'The body must state the exact version change.'
 
-$ci = Get-Content -LiteralPath (
-    Join-Path $repository '.github\workflows\ci.yml') -Raw
+$versionWorkflow = Get-Content -LiteralPath (
+    Join-Path $repository '.github\workflows\pr-version.yml') -Raw
 foreach ($requiredContract in @(
+        '- opened',
+        '- synchronize',
+        '- reopened',
+        '- edited',
+        '- ready_for_review',
+        'OPENBLADE_BASE_SHA:',
+        'OPENBLADE_HEAD_SHA:',
         'OPENBLADE_PR_BODY:',
         './build/PullRequestVersion.ps1',
         'Get-OpenBladeVersionFromBuildProperties',
-        'Assert-OpenBladePullRequestVersion',
-        'types:',
-        '- edited')) {
-    if (-not $ci.Contains($requiredContract)) {
-        throw "CI workflow is missing '$requiredContract'."
+        'Assert-OpenBladePullRequestVersion')) {
+    if (-not $versionWorkflow.Contains($requiredContract)) {
+        throw "PR version workflow is missing '$requiredContract'."
     }
+}
+if ($versionWorkflow.Contains('build-and-test')) {
+    throw 'PR description edits must not invoke the full build workflow.'
+}
+
+$ci = Get-Content -LiteralPath (
+    Join-Path $repository '.github\workflows\ci.yml') -Raw
+if ($ci.Contains('- edited')) {
+    throw 'PR description edits must not rerun the full CI workflow.'
 }
 
 $template = Get-Content -LiteralPath (

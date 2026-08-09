@@ -11,7 +11,6 @@ on:
       - opened
       - synchronize
       - reopened
-      - edited
       - ready_for_review
   workflow_dispatch:
 
@@ -45,7 +44,6 @@ jobs:
           OPENBLADE_BEFORE_SHA: ${{ github.event.before }}
           OPENBLADE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           OPENBLADE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          OPENBLADE_PR_BODY: ${{ github.event.pull_request.body }}
           OPENBLADE_CURRENT_SHA: ${{ github.sha }}
         run: |
           $ErrorActionPreference = 'Stop'
@@ -66,37 +64,9 @@ jobs:
             if ([string]::IsNullOrWhiteSpace($baseSha) -or
                 [string]::IsNullOrWhiteSpace($headSha) -or
                 $baseSha -match '^0{40}$') {
-              if ($env:OPENBLADE_EVENT_NAME -eq 'pull_request') {
-                throw 'Pull request version validation requires base and head commits.'
-              }
               $forceBuild = $true
             }
             else {
-              if ($env:OPENBLADE_EVENT_NAME -eq 'pull_request') {
-                . ./build/PullRequestVersion.ps1
-                $baseProperties = @(git show "${baseSha}:Directory.Build.props")
-                if ($LASTEXITCODE -ne 0) {
-                  throw 'Unable to read Directory.Build.props from the pull request base.'
-                }
-                $headProperties = @(git show "${headSha}:Directory.Build.props")
-                if ($LASTEXITCODE -ne 0) {
-                  throw 'Unable to read Directory.Build.props from the pull request head.'
-                }
-                $baseVersion = Get-OpenBladeVersionFromBuildProperties `
-                  -Content ($baseProperties -join "`n") `
-                  -Source 'The pull request base Directory.Build.props'
-                $headVersion = Get-OpenBladeVersionFromBuildProperties `
-                  -Content ($headProperties -join "`n") `
-                  -Source 'The pull request head Directory.Build.props'
-                $versionResult = Assert-OpenBladePullRequestVersion `
-                  -BaseVersion $baseVersion `
-                  -HeadVersion $headVersion `
-                  -Body $env:OPENBLADE_PR_BODY
-                Write-Host (
-                  "Version policy passed: $($versionResult.Impact), " +
-                  "$($versionResult.VersionChange).")
-              }
-
               $changedPaths = @(
                 git diff --name-only --no-renames $baseSha $headSha --)
               if ($LASTEXITCODE -ne 0) {

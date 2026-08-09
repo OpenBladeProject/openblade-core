@@ -59,7 +59,10 @@ version change only when the impact is `none`. Apply these rules consistently:
    pull request is marked ready or merged, refresh it from `main` and recalculate
    the bump if another merged pull request advanced the version. Never keep a
    stale or duplicate version merely to avoid resolving the version-line
-   conflict.
+   conflict. Repository merge protection must require the branch to be current
+   with `main`; otherwise two pull requests can retain the same already-green
+   bump and merge without a conflict. This refresh applies to `none` pull
+   requests too because their unchanged version must match the current base.
 6. Reset components to the right of the selected bump. For example, a `minor`
    change from `0.4.7` becomes `0.5.0`, while a `patch` change rebased after that
    merge becomes `0.5.1`.
@@ -75,11 +78,22 @@ version change only when the impact is `none`. Apply these rules consistently:
 9. If the impact is uncertain, explain the ambiguity in the pull request and
    resolve it during review instead of silently defaulting to `patch` or `none`.
 
-CI reads the base and head versions from their exact Git commits and verifies
-that the three pull request fields describe the required transition. Missing,
-placeholder, duplicate, stale, skipped, or double increments fail before build
-classification. CI cannot determine whether behavior changed, so reviewers
-remain responsible for validating the declared impact and reason.
+The dedicated PR version workflow reads the base and head versions from their
+exact Git commits and verifies that the three pull request fields describe the
+required transition. Missing, placeholder, duplicate, stale, skipped, or double
+increments fail. Description edits rerun only this small workflow; source
+changes run the ordinary build workflow separately. A green version check is
+valid only for the base commit it inspected, which is why current-branch merge
+protection is mandatory. CI cannot determine whether behavior changed, so
+reviewers remain responsible for validating the declared impact and reason.
+
+The gate cannot force this final refresh unless repository merge protection is
+configured. Until protection is available, maintainers must update each pull
+request from `main` immediately before merge and confirm that the version check
+reran against the new base. A previously green check alone does not close the
+duplicate-bump race. Require the `Validate PR version` check, require branches
+to be up to date before merging, and disallow bypasses for `main` as soon as the
+repository supports those settings.
 
 Use this form in the pull request body:
 

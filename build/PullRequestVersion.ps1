@@ -77,14 +77,14 @@ function Get-OpenBladePullRequestField {
         [Parameter(Mandatory)][string]$Name
     )
 
-    $matches = [Regex]::Matches(
+    $fieldMatches = [Regex]::Matches(
         $Body,
         "(?im)^[ \t]*$([Regex]::Escape($Name))[ \t]*:[ \t]*(?<value>[^\r\n]*?)[ \t]*\r?$")
-    if ($matches.Count -ne 1) {
-        throw "The pull request body must contain exactly one '${Name}:' field; found $($matches.Count)."
+    if ($fieldMatches.Count -ne 1) {
+        throw "The pull request body must contain exactly one '${Name}:' field; found $($fieldMatches.Count)."
     }
 
-    $value = $matches[0].Groups['value'].Value.Trim()
+    $value = $fieldMatches[0].Groups['value'].Value.Trim()
     if ([string]::IsNullOrWhiteSpace($value) -or
         $value.IndexOf('<!--', [StringComparison]::Ordinal) -ge 0 -or
         $value.IndexOf('-->', [StringComparison]::Ordinal) -ge 0) {

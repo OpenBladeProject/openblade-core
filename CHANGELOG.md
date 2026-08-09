@@ -16,7 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   backward-compatible capabilities added since the initial non-nightly release
   and required each future product-changing pull request to apply its SemVer bump
   directly, with pull-request fields and CI validation rejecting missing, stale,
-  or incorrect increments.
+  or incorrect increments while keeping description-only rechecks separate from
+  the full build workflow.
 
 ### Fixed
 
