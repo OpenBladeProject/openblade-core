@@ -165,7 +165,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
     internal static ProfileSet NormalizeLegacyBatteryProfile(
         ProfileSet profiles,
         out bool migrated,
-        bool? batteryProtectionDefault = true)
+        bool? batteryProtectionDefault)
     {
         PerformancePreset normalized = profiles.Battery.Performance switch
         {

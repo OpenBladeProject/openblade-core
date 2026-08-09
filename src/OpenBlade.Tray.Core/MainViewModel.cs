@@ -432,7 +432,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             DiscardProfileDraftAsync,
             _ => HasActiveProfileDraft
                 || HasDashboardProfileDifference
-                || HasGlobalBatteryPolicyDifference);
+                || HasGlobalBatteryPolicyDraft);
         SaveThermalProfileDraftCommand = CreateCommand(
             (_, token) => SaveActiveProfileDraftAsync(ProfileDraftGroup.Thermal, token),
             _ => CanSaveActiveProfileDraft(ProfileDraftGroup.Thermal));
@@ -2371,11 +2371,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         if (BatteryProtectionOverride is { } protectionEnabled)
         {
-            active.Add($"Battery protection: {(protectionEnabled ? "On" : "Off")} until profile save");
+            active.Add($"Battery protection: {(protectionEnabled ? "On" : "Off")} not saved to profile");
         }
         if (BatteryPolicyOverride is { } policy)
         {
-            active.Add($"Charge limit: {policy.ChargeLimitPercent}% until profile save");
+            active.Add($"Charge limit: {policy.ChargeLimitPercent}% not saved to profile");
         }
     }
 
@@ -2606,6 +2606,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool HasDashboardProfileActionOpportunity =>
         HasDashboardProfileSaveOpportunity || HasDashboardProfileDifference;
+
+    public bool HasDashboardProfileRestoreOpportunity =>
+        HasDashboardProfileDraft || HasDashboardProfileDifference;
 
     public string ThermalProfileRelationshipStatus => ProfileRelationshipStatus(
         HasThermalProfileDraft,
@@ -5040,7 +5043,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             IsBatteryProtectionOperationInProgress = false;
         }
 
-        if (resultStatus is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
+        if (resultStatus == ControlOperationStatus.Applied)
         {
             await dispatcher.InvokeAsync(
                 () => MarkActiveProfileDraft(
@@ -5440,8 +5443,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private bool CanSaveProfiles(object? parameter) =>
         CanMutate
-        && (parameter is null && HasSaveableUnsetLaptopProfileField
-            || HasActiveProfileDraft || HasGlobalBatteryPolicyDraft
+        && ((parameter is null && HasSaveableUnsetLaptopProfileField
+            || HasActiveProfileDraft
+            || HasGlobalBatteryPolicyDraft)
             ? TryGetSupportedProfileDraft(CreateProfileSetWithDashboardDraft(), out _)
             : profileEditorsDirty && TryGetSupportedProfileDraft(parameter, out _));
 
@@ -5630,12 +5634,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             savedDisplay.RefreshRateKey ?? originalDisplay.RefreshRateKey,
             savedDisplay.HdrEnabled ?? originalDisplay.HdrEnabled,
             savedDisplay.ColorProfileKey ?? originalDisplay.ColorProfileKey);
-        bool controlsRestored = HasThermalProfileDifference
-            ? await ClearActiveProfileHardwareOverridesAsync(
+        bool thermalDifference = HasThermalProfileDifference;
+        bool thermalControlsRestored = !thermalDifference
+            || await ClearActiveProfileHardwareOverridesAsync(
                 token,
                 ProfileDraftGroup.Laptop,
-                force: true)
-            : await ClearActiveProfileHardwareOverridesAsync(token);
+                force: true);
+        bool draftControlsRestored = await ClearActiveProfileHardwareOverridesAsync(
+            token,
+            thermalDifference ? ProfileDraftGroup.Lighting : null);
+        bool controlsRestored = thermalControlsRestored & draftControlsRestored;
         bool displayRestored = activeProfileDraftDisplay is null
             || await RestoreSavedDisplayProfileAsync(source.Value, displayToRestore, token);
         LaptopBehaviorProfileSettings savedLaptop = GetProfile(source.Value).EffectiveLaptopBehavior;
@@ -6811,6 +6819,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(HasDashboardProfileDraft));
         Notify(nameof(HasDashboardProfileSaveOpportunity));
         Notify(nameof(HasDashboardProfileActionOpportunity));
+        Notify(nameof(HasDashboardProfileRestoreOpportunity));
         Notify(nameof(DashboardProfileSaveLabel));
         Notify(nameof(ThermalProfileRelationshipStatus));
         Notify(nameof(LightingProfileRelationshipStatus));
@@ -6843,6 +6852,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(HasDashboardProfileDraft));
         Notify(nameof(HasDashboardProfileSaveOpportunity));
         Notify(nameof(HasDashboardProfileActionOpportunity));
+        Notify(nameof(HasDashboardProfileRestoreOpportunity));
         Notify(nameof(DashboardProfileSaveLabel));
         Notify(nameof(HasUnsavedProfileChanges));
         Notify(nameof(BatteryPolicyPresentation));
@@ -7589,6 +7599,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(HasGlobalBatteryPolicyDifference));
         Notify(nameof(HasDashboardProfileDifference));
         Notify(nameof(HasDashboardProfileActionOpportunity));
+        Notify(nameof(HasDashboardProfileRestoreOpportunity));
     }
 
     private string SourceLabel(

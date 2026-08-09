@@ -143,7 +143,8 @@ public sealed class ProfileStoreTests : IDisposable
 
         ProfileSet normalized = ProfileStore.NormalizeLegacyBatteryProfile(
             legacy,
-            out _);
+            out _,
+            batteryProtectionDefault: true);
 
         Assert.Null(normalized.Battery.GpuClockTuning);
         Assert.Equal(offsets, normalized.Battery.CustomPerformance?.GpuClockOffsets);

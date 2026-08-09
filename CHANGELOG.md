@@ -15,6 +15,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Battery protection and charge-limit changes now remain temporary until saved
+  to a profile. Battery protection also follows the destination power profile
+  when the power source changes.
 - Advanced the product version from the stale 0.1.x baseline to 0.2.0 for the
   backward-compatible capabilities added since the initial non-nightly release
   and required each future product-changing pull request to apply its SemVer bump

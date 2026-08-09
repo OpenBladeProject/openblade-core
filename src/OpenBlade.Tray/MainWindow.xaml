@@ -1946,7 +1946,7 @@
                                             Command="{x:Bind ViewModel.SaveProfilesCommand}" />
                                     <Button Content="Use profile settings"
                                             Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                            Visibility="{x:Bind ViewModel.HasDashboardProfileDifference, Mode=OneWay}"
+                                            Visibility="{x:Bind ViewModel.HasDashboardProfileRestoreOpportunity, Mode=OneWay}"
                                             Command="{x:Bind ViewModel.DiscardProfileDraftCommand}" />
                                 </StackPanel>
                                 <Button Content="Customize"

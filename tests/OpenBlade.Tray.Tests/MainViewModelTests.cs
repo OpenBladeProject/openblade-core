@@ -365,6 +365,43 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task DashboardDiscard_ClearsThermalAndLightingOverridesTogether()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+            });
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(LightingSettingsFactory.Static(
+                new RgbColor(12, 34, 56),
+                brightness: 67));
+
+        Assert.True(viewModel.HasThermalProfileDifference);
+        Assert.True(viewModel.HasLightingProfileDraft);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Contains("performance:<clear>", client.MutationOperations);
+        Assert.Contains("lighting:<clear>", client.MutationOperations);
+        Assert.Null(client.PerformanceOverride);
+        Assert.Null(client.LightingOverride);
+        Assert.False(viewModel.HasActiveProfileDraft);
+    }
+
+    [Fact]
     public async Task UseLightingProfileSettings_RestoresConfirmedExternalDifferenceWithoutDraft()
     {
         var client = new FakeServiceClient();
@@ -1597,15 +1634,15 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.HasActiveChanges);
 
         Assert.Contains(
-            "Battery protection: Off until profile save",
+            "Battery protection: Off not saved to profile",
             viewModel.ActiveChangesText,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Charge limit: 75% until profile save",
+            "Charge limit: 75% not saved to profile",
             viewModel.ActiveChangesText,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Battery protection: Off until profile save",
+            "Battery protection: Off not saved to profile",
             viewModel.ManualOverrideStatus,
             StringComparison.Ordinal);
     }
@@ -3709,6 +3746,56 @@ public sealed class MainViewModelTests
         Assert.Equal(initial.Profiles.Battery, saved.Battery);
         Assert.Equal(initial.Profiles.UsbC, saved.UsbC);
         Assert.False(viewModel.HasGlobalBatteryPolicyDraft);
+    }
+
+    [Fact]
+    public async Task AppliedChargeLimit_CanBeDiscardedBeforeStatusRefresh()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(75);
+
+        Assert.True(viewModel.HasGlobalBatteryPolicyDraft);
+        Assert.True(viewModel.HasDashboardProfileRestoreOpportunity);
+        Assert.True(viewModel.DiscardProfileDraftCommand.CanExecute(null));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(initial.Profiles.BatteryPolicy, client.BatteryPolicy);
+        Assert.False(viewModel.HasGlobalBatteryPolicyDraft);
+        Assert.False(viewModel.HasUnsavedProfileChanges);
+        Assert.False(viewModel.BatteryPolicyPresentation.IsPending);
+    }
+
+    [Fact]
+    public async Task StoredBatteryResults_DoNotCreateSaveableDrafts()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                "Intent was stored without confirmed application."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(75);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ToggleBatteryProtectionCommand)
+            .ExecuteAsync(null);
+
+        Assert.False(viewModel.HasGlobalBatteryPolicyDraft);
+        Assert.False(viewModel.HasBatteryProtectionProfileDraft);
+        Assert.False(viewModel.HasUnsavedProfileChanges);
     }
 
     [Fact]

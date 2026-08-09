@@ -796,6 +796,8 @@ public sealed class ControlCoordinator
             return;
         }
 
+        // Keep one intent bounded to the cancellation plus one confirmed follow-up.
+        // Any remaining multi-step mismatch is retried by the next automation cycle.
         BatteryOperationPlan followUp = CreateBatteryPlan(
             desired,
             capabilities,

@@ -262,7 +262,10 @@ public sealed class BatteryConfigurationStore
             battery,
             ProfileDefaults.CreateSafeDefaults().UsbC,
             BatteryPolicy.Create(ReadInt32(policy, "chargeLimitPercent")));
-        profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
+        profiles = ProfileStore.NormalizeLegacyBatteryProfile(
+            profiles,
+            out _,
+            batteryProtectionDefault: true);
         validator.Validate(profiles);
         return profiles;
     }
@@ -298,6 +301,10 @@ public sealed class BatteryConfigurationStore
         if (document is null || document.SchemaVersion != expectedSchemaVersion)
         {
             throw new InvalidDataException("The battery preference schema is unsupported.");
+        }
+        if (document.Preferences is null)
+        {
+            throw new InvalidDataException("The battery preferences are missing.");
         }
 
         if (expectedSchemaVersion < ProfileStore.CurrentSchemaVersion

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using OpenBlade.Contracts;
 using OpenBlade.Service;
@@ -244,6 +245,40 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.True(configuration.Recovered);
         Assert.Equal(BatteryPolicy.Create(80), configuration.Profiles.BatteryPolicy);
         AssertBatteryProtection(configuration.Profiles, expected: true);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidPreferenceDocuments))]
+    public async Task LoadAsync_InvalidPreferenceShapeRecoversWholeAggregate(
+        int schemaVersion,
+        string preferenceJson)
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(schemaVersion, ProfileDefaults.CreateSafeDefaults()),
+            options);
+        byte[] preferences = Encoding.UTF8.GetBytes(preferenceJson);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(
+                schemaVersion,
+                Hash(profiles),
+                Hash(preferences)),
+            options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+
+        BatteryConfiguration configuration =
+            await CreateStore(paths).LoadAsync(CancellationToken.None);
+
+        Assert.True(configuration.Recovered);
+        Assert.Equal(ProfileDefaults.CreateSafeDefaults(), configuration.Profiles);
+        Assert.Null(configuration.Preferences.ProtectionEnabled);
     }
 
     [Fact]
@@ -584,6 +619,37 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
     public static TheoryData<string> AllCommitBoundaries() => new(
         Enum.GetNames<BatteryConfigurationCommitBoundary>());
+
+    public static TheoryData<int, string> InvalidPreferenceDocuments() => new()
+    {
+        {
+            ProfileStore.PreviousSchemaVersion,
+            $$"""
+            {
+              "schemaVersion": {{ProfileStore.PreviousSchemaVersion}},
+              "preferences": {}
+            }
+            """
+        },
+        {
+            ProfileStore.CurrentSchemaVersion,
+            $$"""
+            {
+              "schemaVersion": {{ProfileStore.CurrentSchemaVersion}},
+              "preferences": { "protectionEnabled": true }
+            }
+            """
+        },
+        {
+            ProfileStore.CurrentSchemaVersion,
+            $$"""
+            {
+              "schemaVersion": {{ProfileStore.CurrentSchemaVersion}},
+              "preferences": null
+            }
+            """
+        },
+    };
 
     private BatteryConfigurationStore CreateStore(Paths paths) =>
         new(paths.Profiles, paths.Preferences, paths.Marker);
