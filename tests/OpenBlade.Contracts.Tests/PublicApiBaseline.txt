@@ -1131,7 +1131,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 38
+  field const System.Int32 ProtocolVersion = 39
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1214,7 +1214,10 @@ type sealed class OpenBlade.Contracts.PowerProfile
   method OpenBlade.Contracts.LightingSettings get_Lighting()
   method OpenBlade.Contracts.PerformancePreset get_Performance()
   method OpenBlade.Contracts.PowerProfile <Clone>$()
+  method System.Boolean get_EffectiveBatteryProtectionEnabled()
+  method System.Nullable<System.Boolean> get_BatteryProtectionEnabled()
   method System.Void Deconstruct(out OpenBlade.Contracts.PerformancePreset Performance, out OpenBlade.Contracts.FanMode Fans, out OpenBlade.Contracts.LightingSettings Lighting, out OpenBlade.Contracts.DisplayProfileSettings Display)
+  method System.Void set_BatteryProtectionEnabled(System.Nullable<System.Boolean> value)
   method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceSettings value)
   method System.Void set_Display(OpenBlade.Contracts.DisplayProfileSettings value)
   method System.Void set_FanControl(OpenBlade.Contracts.FanControlSettings value)
@@ -1241,6 +1244,8 @@ type sealed class OpenBlade.Contracts.PowerProfile
   property OpenBlade.Contracts.LightingPowerPolicy LightingPowerPolicy { get; init; }
   property OpenBlade.Contracts.LightingSettings Lighting { get; init; }
   property OpenBlade.Contracts.PerformancePreset Performance { get; init; }
+  property System.Boolean EffectiveBatteryProtectionEnabled { get; }
+  property System.Nullable<System.Boolean> BatteryProtectionEnabled { get; init; }
 type enum OpenBlade.Contracts.PowerSource
   field System.Int32 value__
   field const OpenBlade.Contracts.PowerSource Battery = 1
@@ -1560,6 +1565,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   interface System.IEquatable<OpenBlade.Contracts.ServiceStatusSnapshot>
   ctor (System.Int64 Revision, System.Boolean DeviceVerified, System.Boolean WritesBlocked, System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers, System.String ControllerDetectionWarning, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> ExternalChanges, System.String Message, OpenBlade.Contracts.DeviceCapabilities Capabilities, OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState, OpenBlade.Contracts.ProfileSet Profiles, OpenBlade.Contracts.DesiredDeviceState DesiredState, OpenBlade.Contracts.PowerSource ActivePowerSource, OpenBlade.Contracts.LiveReadings LiveReadings, OpenBlade.Contracts.PerformanceOverride PerformanceOverride, OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> FanOverride, OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.LightingSettings> LightingOverride, System.Boolean FullChargeOverride, OpenBlade.Contracts.FirmwareVersions Firmware = null, System.String ServiceVersion = null, OpenBlade.Contracts.LightingRendererOwnershipState LightingRendererOwnership = None, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> LightingSuppressions = null, System.Nullable<System.Boolean> StartupAnimationEnabled = null, System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyPrimary = null, System.Nullable<System.Boolean> GamingModeEnabled = null, System.Boolean AlwaysOverrideExternalLightingChanges = false, System.Nullable<System.Boolean> KeyboardDriverModeActive = null, OpenBlade.Contracts.BatteryHealthStatus BatteryHealth = null, OpenBlade.Contracts.KeyboardLightingControlMode KeyboardLightingControlMode = OpenBlade, OpenBlade.Contracts.SessionControlAccess ControlAccess = Active, System.Boolean AllowUntestedFirmware = false, OpenBlade.Contracts.FirmwareCompatibilityStatus FirmwareCompatibility = Unknown)
   method OpenBlade.Contracts.BatteryHealthStatus get_BatteryHealth()
+  method OpenBlade.Contracts.BatteryPolicy get_BatteryPolicyOverride()
   method OpenBlade.Contracts.ConfirmedDeviceState get_ConfirmedState()
   method OpenBlade.Contracts.DesiredDeviceState get_DesiredState()
   method OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
@@ -1587,6 +1593,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Collections.Generic.IReadOnlyList<System.String> get_PotentialControllers()
   method System.Int64 get_Revision()
   method System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> get_FunctionKeyPrimary()
+  method System.Nullable<System.Boolean> get_BatteryProtectionOverride()
   method System.Nullable<System.Boolean> get_GamingModeEnabled()
   method System.Nullable<System.Boolean> get_KeyboardDriverModeActive()
   method System.Nullable<System.Boolean> get_StartupAnimationEnabled()
@@ -1598,6 +1605,8 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_AllowUntestedFirmware(System.Boolean value)
   method System.Void set_AlwaysOverrideExternalLightingChanges(System.Boolean value)
   method System.Void set_BatteryHealth(OpenBlade.Contracts.BatteryHealthStatus value)
+  method System.Void set_BatteryPolicyOverride(OpenBlade.Contracts.BatteryPolicy value)
+  method System.Void set_BatteryProtectionOverride(System.Nullable<System.Boolean> value)
   method System.Void set_Capabilities(OpenBlade.Contracts.DeviceCapabilities value)
   method System.Void set_ConfirmedState(OpenBlade.Contracts.ConfirmedDeviceState value)
   method System.Void set_ControlAccess(OpenBlade.Contracts.SessionControlAccess value)
@@ -1634,6 +1643,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method static System.Boolean op_Inequality(OpenBlade.Contracts.ServiceStatusSnapshot left, OpenBlade.Contracts.ServiceStatusSnapshot right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.ServiceStatusSnapshot other)
   property OpenBlade.Contracts.BatteryHealthStatus BatteryHealth { get; init; }
+  property OpenBlade.Contracts.BatteryPolicy BatteryPolicyOverride { get; init; }
   property OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState { get; init; }
   property OpenBlade.Contracts.DesiredDeviceState DesiredState { get; init; }
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; init; }
@@ -1660,6 +1670,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers { get; init; }
   property System.Int64 Revision { get; init; }
   property System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyPrimary { get; init; }
+  property System.Nullable<System.Boolean> BatteryProtectionOverride { get; init; }
   property System.Nullable<System.Boolean> GamingModeEnabled { get; init; }
   property System.Nullable<System.Boolean> KeyboardDriverModeActive { get; init; }
   property System.Nullable<System.Boolean> StartupAnimationEnabled { get; init; }

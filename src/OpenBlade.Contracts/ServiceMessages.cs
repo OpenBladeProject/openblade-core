@@ -254,6 +254,10 @@ public sealed record ServiceStatusSnapshot(
     public FanControlSettings? FanControlOverride { get; init; }
 
     public PerformanceShortcutPreview? PerformanceShortcutPreview { get; init; }
+
+    public BatteryPolicy? BatteryPolicyOverride { get; init; }
+
+    public bool? BatteryProtectionOverride { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

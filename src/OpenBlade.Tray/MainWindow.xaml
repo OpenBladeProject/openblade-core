@@ -314,6 +314,56 @@
                 <Setter Property="MinWidth" Value="8" />
                 <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
             </Style>
+            <Style x:Key="PendingProfileValueBadgeStyle"
+                   TargetType="InfoBadge"
+                   BasedOn="{StaticResource UnsavedNavigationBadgeStyle}">
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <DataTemplate x:Key="ProfileValuePresentationTemplate"
+                          x:DataType="local:ProfileValuePresentation">
+                <ContentControl HorizontalContentAlignment="Stretch"
+                                IsTabStop="{x:Bind IsPending, Mode=OneTime}"
+                                ToolTipService.ToolTip="{x:Bind PendingDescription, Mode=OneTime}"
+                                AutomationProperties.Name="{x:Bind AccessibilityDescription, Mode=OneTime}"
+                                AutomationProperties.HelpText="{x:Bind PendingDescription, Mode=OneTime}">
+                    <Grid ColumnSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{x:Bind Text, Mode=OneTime}"
+                                   TextWrapping="Wrap"
+                                   AutomationProperties.AccessibilityView="Raw" />
+                        <InfoBadge Grid.Column="1"
+                                   Style="{StaticResource PendingProfileValueBadgeStyle}"
+                                   Visibility="{x:Bind IsPending, Mode=OneTime}"
+                                   AutomationProperties.AccessibilityView="Raw" />
+                    </Grid>
+                </ContentControl>
+            </DataTemplate>
+            <DataTemplate x:Key="CompactProfileValuePresentationTemplate"
+                          x:DataType="local:ProfileValuePresentation">
+                <ContentControl HorizontalContentAlignment="Stretch"
+                                IsTabStop="{x:Bind IsPending, Mode=OneTime}"
+                                ToolTipService.ToolTip="{x:Bind PendingDescription, Mode=OneTime}"
+                                AutomationProperties.Name="{x:Bind AccessibilityDescription, Mode=OneTime}"
+                                AutomationProperties.HelpText="{x:Bind PendingDescription, Mode=OneTime}">
+                    <Grid ColumnSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{x:Bind Text, Mode=OneTime}"
+                                   TextWrapping="Wrap"
+                                   TextAlignment="Right"
+                                   AutomationProperties.AccessibilityView="Raw" />
+                        <InfoBadge Grid.Column="1"
+                                   Style="{StaticResource PendingProfileValueBadgeStyle}"
+                                   Visibility="{x:Bind IsPending, Mode=OneTime}"
+                                   AutomationProperties.AccessibilityView="Raw" />
+                    </Grid>
+                </ContentControl>
+            </DataTemplate>
             <Style x:Key="FirmwareProgressRingStyle" TargetType="ProgressRing">
                 <Setter Property="Width" Value="16" />
                 <Setter Property="Height" Value="16" />
@@ -1850,7 +1900,7 @@
                     </NavigationViewItem.Icon>
                     <NavigationViewItem.InfoBadge>
                         <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
-                                   Visibility="{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}"
+                                   Visibility="{x:Bind ViewModel.HasDashboardProfileDraft, Mode=OneWay}"
                                    AutomationProperties.Name="Dashboard has unsaved changes" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
@@ -1863,7 +1913,7 @@
                     </NavigationViewItem.Content>
                     <NavigationViewItem.InfoBadge>
                         <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
-                                   Visibility="{x:Bind ViewModel.HasProfileEditorChanges, Mode=OneWay}"
+                                   Visibility="{x:Bind ViewModel.HasUnsavedProfileChanges, Mode=OneWay}"
                                    AutomationProperties.Name="Profiles has unsaved changes" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
@@ -1951,15 +2001,15 @@
                                             Orientation="Horizontal"
                                             Spacing="8"
                                             VerticalAlignment="Center"
-                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileActionOpportunity, Mode=OneWay}">
-                                    <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
+                                            Visibility="{x:Bind ViewModel.HasDashboardProfileActionOpportunity, Mode=OneWay}">
+                                    <Button Content="{x:Bind ViewModel.DashboardProfileSaveLabel, Mode=OneWay}"
                                             Style="{StaticResource ProfileSaveButtonStyle}"
-                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}"
-                                            Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
+                                            Visibility="{x:Bind ViewModel.HasDashboardProfileSaveOpportunity, Mode=OneWay}"
+                                            Command="{x:Bind ViewModel.SaveProfilesCommand}" />
                                     <Button Content="Use profile settings"
                                             Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileDifference, Mode=OneWay}"
-                                            Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
+                                            Visibility="{x:Bind ViewModel.HasDashboardProfileRestoreOpportunity, Mode=OneWay}"
+                                            Command="{x:Bind ViewModel.DiscardProfileDraftCommand}" />
                                 </StackPanel>
                                 <Button Content="Customize"
                                         Style="{StaticResource PageHeaderSecondaryButtonStyle}"
@@ -2208,7 +2258,7 @@
                         </Grid>
                         <StackPanel x:Name="ProfilesSectionHost">
                         <StackPanel x:Name="ProfilesComparisonSection">
-                        <TextBlock Text="These are the settings saved in each profile. Unsaved changes from Laptop, Dashboard, Lighting, or Display appear here only after you save them."
+                        <TextBlock Text="These are the settings saved in each profile. A dot marks a value with a pending change; point to it to preview the new value."
                                    Style="{StaticResource SecondaryTextStyle}"
                                    Margin="0,0,0,16" />
 
@@ -2277,9 +2327,9 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
@@ -2291,9 +2341,9 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="GPU tuning" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.GpuTuning, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.GpuTuning, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.GpuTuning, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.GpuTuning, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.GpuTuning, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.GpuTuning, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
@@ -2305,9 +2355,31 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.Fans, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.Fans, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.Fans, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Text="Battery" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Battery protection" Style="{StaticResource CardTitleStyle}" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.BatteryProtection, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.BatteryProtection, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.BatteryProtection, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
+                                            <ContentControl Grid.Column="1" Grid.ColumnSpan="3" Content="{x:Bind ViewModel.BatteryPolicyPresentation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                 </StackPanel>
@@ -2320,54 +2392,54 @@
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Effect" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LightingEffect, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LightingEffect, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LightingEffect, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Brightness" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LightingBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LightingBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LightingBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Color" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LightingColor, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LightingColor, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LightingColor, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Laptop lid logo" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LogoLighting, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LogoLighting, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LogoLighting, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LogoLighting, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LogoLighting, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LogoLighting, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Display turns off" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LightingDisplayOff, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LightingDisplayOff, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LightingDisplayOff, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Inactivity timeout" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LightingIdle, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LightingIdle, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LightingIdle, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                 </StackPanel>
@@ -2380,27 +2452,27 @@
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Refresh rate" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayRefreshRate, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.DisplayRefreshRate, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.DisplayRefreshRate, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="HDR" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayHdr, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.DisplayHdr, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.DisplayHdr, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayColorProfile, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.DisplayColorProfile, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.DisplayColorProfile, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                 </StackPanel>
@@ -2413,45 +2485,45 @@
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Function keys" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.GamingMode, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.GamingMode, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.GamingMode, Mode=OneWay}" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.GamingMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.GamingMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.GamingMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Block Windows key" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Block Alt+Tab" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.GamingModeAltTab, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.GamingModeAltTab, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.GamingModeAltTab, Mode=OneWay}" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.GamingModeAltTab, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.GamingModeAltTab, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.GamingModeAltTab, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.StartupAnimation, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.StartupAnimation, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.StartupAnimation, Mode=OneWay}" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.StartupAnimation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.StartupAnimation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.StartupAnimation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                 </StackPanel>
@@ -2479,55 +2551,61 @@
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.PowerMode, Mode=OneWay}" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="GPU tuning" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.GpuTuning, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="GPU tuning" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GpuTuning, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.Fans, Mode=OneWay}" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.Fans, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting effect" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Battery protection" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.BatteryProtection, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting brightness" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingBrightness, Mode=OneWay}" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.BatteryPolicyPresentation, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting color" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting effect" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingEffect, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Laptop lid logo" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LogoLighting, Mode=OneWay}" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting brightness" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingBrightness, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Refresh rate" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayRefreshRate, Mode=OneWay}" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting color" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingColor, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="HDR" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayHdr, Mode=OneWay}" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Laptop lid logo" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LogoLighting, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Refresh rate" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayRefreshRate, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Display turns off" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="HDR" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayHdr, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Inactivity timeout" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayColorProfile, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Function keys" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextAlignment="Right" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Display turns off" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingDisplayOff, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.GamingMode, Mode=OneWay}" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Inactivity timeout" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingIdle, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Block Windows key" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Function keys" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Block Alt+Tab" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.GamingModeAltTab, Mode=OneWay}" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GamingMode, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Block Windows key" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Block Alt+Tab" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GamingModeAltTab, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.StartupAnimation, Mode=OneWay}" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.StartupAnimation, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                 </StackPanel>
                             </Border>

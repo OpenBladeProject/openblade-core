@@ -159,6 +159,13 @@ submodules.
 
 ## Change workflow
 
+All work that may modify repository files must use a dedicated Git worktree for
+the task. Do not implement changes, run change-producing builds or tests, stage,
+or commit from the primary landing checkout, even when it is clean. Read-only
+inspection may use the landing checkout. Create the worktree from `main` by
+default unless the user explicitly requests another base, and preserve all
+unrelated worktrees and checkout changes.
+
 1. Inspect `git status`, the affected contracts, and existing tests before
    editing. User changes and unrelated dirty files are not cleanup targets.
 2. Whenever creating an issue, apply the relevant repository labels.
@@ -207,6 +214,12 @@ submodules.
     the branch. For a merged pull request, also prove that the branch tip is
     reachable from `origin/main`. If any safety check fails, report the blocker
     instead of silently leaving cleanup incomplete or deleting uncertain work.
+    After any successful branch merge, also update the primary non-linked-
+    worktree checkout to the latest `main` with `git pull --ff-only origin main`;
+    this synchronization is the required exception to the landing-checkout
+    read-only rule above. Confirm first that the pull will preserve local
+    changes. If local modifications or divergence prevent a safe fast-forward,
+    report the blocker rather than stashing, resetting, or discarding work.
 
 ## Versioning and commits
 
@@ -218,6 +231,10 @@ Follow [VERSIONING.md](VERSIONING.md). The short form is:
 - Base new work branches on `main` by default. Use a different base only when
   the user explicitly requests one.
 - `Directory.Build.props` is the product-version source of truth.
+- Every pull request must complete the `Version impact`, exact `Version change`,
+  and `Reason` fields defined in `VERSIONING.md`. Apply any required bump to
+  `OpenBladeVersion` in that same pull request, then refresh from `main` and
+  recalculate before marking it ready or merging.
 - Profile/config schema and IPC protocol versions are independent integers with
   explicit compatibility rules and migrations.
 - Use Conventional Commits:

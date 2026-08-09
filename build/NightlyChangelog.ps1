@@ -122,17 +122,13 @@ function Get-OpenBladeChangelogEntries {
     return @($entries)
 }
 
-function Get-OpenBladeRecordedNightlyRevision {
+function Get-OpenBladeLatestRecordedNightlyRevision {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$Content,
-        [Parameter(Mandatory)][string]$BaseVersion
-    )
+    param([Parameter(Mandatory)][string]$Content)
 
-    $escapedBaseVersion = [Regex]::Escape($BaseVersion)
     $revisionMatches = [Regex]::Matches(
         (ConvertTo-OpenBladeNormalizedText -Text $Content),
-        "(?m)^## \[$escapedBaseVersion-nightly\.(?<revision>\d+)\] - \d{4}-\d{2}-\d{2}$")
+        '(?m)^## \[(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-nightly\.(?<revision>\d+)\] - \d{4}-\d{2}-\d{2}$')
     if ($revisionMatches.Count -eq 0) {
         return 0
     }
@@ -145,45 +141,88 @@ function Get-OpenBladeRecordedNightlyRevision {
 
 function Get-OpenBladeUnreleasedReferenceTag {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$Content,
-        [Parameter(Mandatory)][string]$FallbackVersion
-    )
+    param([Parameter(Mandatory)][string]$Content)
 
-    $referenceMatch = [Regex]::Match(
-        (ConvertTo-OpenBladeNormalizedText -Text $Content),
+    $normalizedContent = ConvertTo-OpenBladeNormalizedText -Text $Content
+    $referenceLines = [Regex]::Matches(
+        $normalizedContent,
+        '(?m)^\[Unreleased\]:.*$')
+    $referenceMatches = [Regex]::Matches(
+        $normalizedContent,
         '(?m)^\[Unreleased\]:\s+\S+/compare/(?<tag>\S+)\.\.\.HEAD$')
-    if ($referenceMatch.Success) {
-        return $referenceMatch.Groups['tag'].Value
+    if ($referenceLines.Count -ne 1 -or $referenceMatches.Count -ne 1) {
+        throw (
+            'The changelog [Unreleased] comparison reference is missing, ' +
+            'malformed, or duplicated.')
     }
 
-    return "v$FallbackVersion"
+    return $referenceMatches[0].Groups['tag'].Value
 }
 
-function Get-OpenBladeChangelogReferenceTag {
+function ConvertFrom-OpenBladeNightlyTag {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$TagName)
+
+    $match = [Regex]::Match(
+        $TagName,
+        '^v(?<base>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-nightly\.(?<revision>[1-9]\d*)(?:-attempt\.(?<attempt>[1-9]\d*))?$')
+    if (-not $match.Success) {
+        return $null
+    }
+
+    $revision = 0
+    if (-not [int]::TryParse($match.Groups['revision'].Value, [ref]$revision) -or
+        $revision -gt 65535) {
+        return $null
+    }
+
+    $attempt = 0
+    if ($match.Groups['attempt'].Success -and
+        -not [int]::TryParse($match.Groups['attempt'].Value, [ref]$attempt)) {
+        return $null
+    }
+
+    $baseVersion = $match.Groups['base'].Value
+    return [pscustomobject]@{
+        BaseVersion = $baseVersion
+        BuildRevision = $revision
+        Version = "$baseVersion-nightly.$revision"
+        Attempt = $attempt
+    }
+}
+
+function ConvertTo-OpenBladeNightlyRecord {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][string]$Content,
-        [Parameter(Mandatory)][string]$Version
+        [Parameter(Mandatory)]$InputObject,
+        [Parameter(Mandatory)][string]$FallbackBaseVersion
     )
 
-    $escapedVersion = [Regex]::Escape($Version)
-    $match = [Regex]::Match(
-        (ConvertTo-OpenBladeNormalizedText -Text $Content),
-        "(?m)^\[$escapedVersion\]:\s+(?<url>\S+)$")
-    if (-not $match.Success) {
-        return "v$Version"
+    $buildRevision = [int]$InputObject.BuildRevision
+    $version = if ($null -ne $InputObject.PSObject.Properties['Version']) {
+        [string]$InputObject.Version
+    }
+    else {
+        "$FallbackBaseVersion-nightly.$buildRevision"
+    }
+    $tagName = [string]$InputObject.TagName
+    $tagDetails = ConvertFrom-OpenBladeNightlyTag -TagName $tagName
+    if ($null -ne $tagDetails -and
+        ($tagDetails.BuildRevision -ne $buildRevision -or
+            -not $tagDetails.Version.Equals(
+                $version,
+                [StringComparison]::Ordinal))) {
+        throw "Nightly record '$tagName' does not match version '$version'."
     }
 
-    $url = $match.Groups['url'].Value
-    if ($url.IndexOf('...', [StringComparison]::Ordinal) -ge 0) {
-        return ($url -split '\.\.\.')[-1]
+    return [pscustomobject]@{
+        BuildRevision = $buildRevision
+        Version = $version
+        TagName = $tagName
+        Attempt = if ($null -eq $tagDetails) { 0 } else { $tagDetails.Attempt }
+        PublishedAt = [DateTimeOffset]$InputObject.PublishedAt
+        SourceContent = [string]$InputObject.SourceContent
     }
-    if ($url.IndexOf('/releases/tag/', [StringComparison]::Ordinal) -ge 0) {
-        return ($url -split '/releases/tag/')[-1]
-    }
-
-    return "v$Version"
 }
 
 function New-OpenBladeChangelogSectionLines {
@@ -232,24 +271,52 @@ function Select-OpenBladeNightlyReleaseRecords {
         [Parameter(Mandatory)][string]$BaseVersion
     )
 
+    # A stable baseline can carry the latest nightly revision as an ordering
+    # watermark, but it is not a nightly release candidate at that revision.
+    $nightlyRecords = @(
+        $ReleaseRecord |
+            Where-Object {
+                $null -ne (ConvertFrom-OpenBladeNightlyTag `
+                        -TagName ([string]$_.TagName))
+            })
     $selected = [Collections.Generic.List[object]]::new()
-    foreach ($group in @($ReleaseRecord | Group-Object BuildRevision)) {
-        $canonicalTag = "v$BaseVersion-nightly.$($group.Name)"
-        $canonicalRecords = @($group.Group | Where-Object TagName -EQ $canonicalTag)
+    foreach ($group in @($nightlyRecords | Group-Object BuildRevision)) {
+        $normalizedRecords = [Collections.Generic.List[object]]::new()
+        $versions = [Collections.Generic.HashSet[string]]::new(
+            [StringComparer]::Ordinal)
+        foreach ($item in $group.Group) {
+            # BaseVersion supports direct callers whose older records predate
+            # the explicit Version field used by the workflow wrapper.
+            $normalized = ConvertTo-OpenBladeNightlyRecord `
+                -InputObject $item `
+                -FallbackBaseVersion $BaseVersion
+            [void]$versions.Add($normalized.Version)
+            $normalizedRecords.Add($normalized)
+        }
+        if ($versions.Count -ne 1) {
+            $collidingTags = @(
+                $normalizedRecords.TagName |
+                    Sort-Object -Unique) -join ', '
+            throw (
+                "Nightly revision $($group.Name) appears under multiple " +
+                "base versions: $collidingTags.")
+        }
+
+        # GitHub's workflow run number is global, so one revision may identify
+        # attempts of one version only. Prefer its canonical tag when present.
+        $version = @($versions)[0]
+        $canonicalTag = "v$version"
+        $canonicalRecords = @(
+            $normalizedRecords | Where-Object TagName -EQ $canonicalTag)
         if ($canonicalRecords.Count -gt 0) {
             $record = $canonicalRecords[0]
         }
         else {
             $fallbackRecords = @(
-                $group.Group |
+                $normalizedRecords |
                     Sort-Object `
                         @{ Expression = { $_.PublishedAt }; Descending = $true }, `
-                        @{ Expression = {
-                                if ($_.TagName -match '-attempt\.(?<attempt>\d+)$') {
-                                    return [int]$Matches['attempt']
-                                }
-                                return 0
-                            }; Descending = $true }, `
+                        @{ Expression = { $_.Attempt }; Descending = $true }, `
                         TagName |
                     Select-Object -First 1)
             $record = $fallbackRecords[0]
@@ -270,25 +337,25 @@ function New-OpenBladeNightlyChangelogContent {
         [string]$RepositoryUrl = 'https://github.com/OSSBlade/openblade-core'
     )
 
-    $recordedRevision = Get-OpenBladeRecordedNightlyRevision `
-        -Content $CurrentContent `
-        -BaseVersion $BaseVersion
     $selectedRecords = @(Select-OpenBladeNightlyReleaseRecords `
             -ReleaseRecord $ReleaseRecord `
             -BaseVersion $BaseVersion)
+    $baselineTag = Get-OpenBladeUnreleasedReferenceTag -Content $CurrentContent
     $baselineRecords = @(
-        $selectedRecords |
-            Where-Object BuildRevision -EQ $recordedRevision |
+        $ReleaseRecord |
+            Where-Object TagName -EQ $baselineTag |
             Select-Object -First 1)
     if ($baselineRecords.Count -eq 0) {
-        throw "Release history is missing the recorded changelog baseline revision $recordedRevision."
+        throw "Release history is missing the changelog baseline tag '$baselineTag'."
     }
-    $baselineRecord = $baselineRecords[0]
+    $baselineRecord = ConvertTo-OpenBladeNightlyRecord `
+        -InputObject $baselineRecords[0] `
+        -FallbackBaseVersion $BaseVersion
 
     $pendingRecords = @(
         $selectedRecords |
             Where-Object {
-                $_.BuildRevision -gt $recordedRevision -and
+                $_.BuildRevision -gt $baselineRecord.BuildRevision -and
                 $_.BuildRevision -le $CurrentBuildRevision
             } |
             Sort-Object BuildRevision)
@@ -332,7 +399,7 @@ function New-OpenBladeNightlyChangelogContent {
         $releasedEntries = @(
             $sourceEntries |
                 Where-Object { -not $previousEntryTexts.Contains($_.Text) })
-        $version = "$BaseVersion-nightly.$($record.BuildRevision)"
+        $version = $record.Version
         $releaseDate = ([DateTimeOffset]$record.PublishedAt).
             ToUniversalTime().ToString('yyyy-MM-dd')
         $sectionLines = @(New-OpenBladeChangelogSectionLines `
@@ -460,7 +527,7 @@ function Get-OpenBladeGitFileContent {
 
     Push-Location $RepositoryRoot
     try {
-        $output = @(& git show "$Revision`:$Path")
+        $output = @(& git show "$Revision`:$Path" 2>$null)
         if ($LASTEXITCODE -ne 0) {
             throw "Unable to read $Path at revision '$Revision'."
         }
@@ -468,6 +535,59 @@ function Get-OpenBladeGitFileContent {
     }
     finally {
         Pop-Location
+    }
+}
+
+function Resolve-OpenBladeChangelogBaseline {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RepositoryRoot,
+        [Parameter(Mandatory)][string]$CurrentContent,
+        [Parameter(Mandatory)]
+        [ValidateRange(0, 65535)]
+        [int]$LatestRecordedRevision
+    )
+
+    $tagName = Get-OpenBladeUnreleasedReferenceTag -Content $CurrentContent
+    $tagDetails = ConvertFrom-OpenBladeNightlyTag -TagName $tagName
+    if ($null -eq $tagDetails) {
+        if ($tagName -notmatch '^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$') {
+            throw (
+                "The [Unreleased] comparison reference names unsupported tag " +
+                "'$tagName'.")
+        }
+        $buildRevision = $LatestRecordedRevision
+        $version = $tagName.Substring(1)
+        $attempt = 0
+        $kind = 'Stable'
+    }
+    else {
+        $buildRevision = $tagDetails.BuildRevision
+        $version = $tagDetails.Version
+        $attempt = $tagDetails.Attempt
+        $kind = 'Nightly'
+    }
+
+    try {
+        $sourceContent = Get-OpenBladeGitFileContent `
+            -RepositoryRoot $RepositoryRoot `
+            -Revision $tagName
+    }
+    catch {
+        throw (
+            "The changelog baseline tag '$tagName' is not available locally. " +
+            'Fetch the referenced tag before reconstruction; using an empty ' +
+            'baseline would replay published entries.')
+    }
+
+    return [pscustomobject]@{
+        BuildRevision = $buildRevision
+        Version = $version
+        TagName = $tagName
+        Attempt = $attempt
+        PublishedAt = [DateTimeOffset]::MinValue
+        SourceContent = $sourceContent
+        Kind = $kind
     }
 }
 
@@ -486,7 +606,12 @@ function Write-OpenBladeNightlyChangelogSnapshot {
         [string]$RepositoryUrl = 'https://github.com/OSSBlade/openblade-core'
     )
 
-    if ($CurrentTag -notmatch "^v$([Regex]::Escape($BaseVersion))-nightly\.$BuildRevision(?:-attempt\.\d+)?$") {
+    $currentTagDetails = ConvertFrom-OpenBladeNightlyTag -TagName $CurrentTag
+    if ($null -eq $currentTagDetails -or
+        $currentTagDetails.BuildRevision -ne $BuildRevision -or
+        -not $currentTagDetails.BaseVersion.Equals(
+            $BaseVersion,
+            [StringComparison]::Ordinal)) {
         throw "Current nightly tag '$CurrentTag' does not match build revision $BuildRevision."
     }
     if ($CurrentSourceRevision -notmatch '^[0-9a-fA-F]{40}$') {
@@ -515,9 +640,12 @@ function Write-OpenBladeNightlyChangelogSnapshot {
 
     $currentContent = [IO.File]::ReadAllText($resolvedChangelogPath)
     $newLine = Get-OpenBladeChangelogNewLine -Text $currentContent
-    $recordedRevision = Get-OpenBladeRecordedNightlyRevision `
-        -Content $currentContent `
-        -BaseVersion $BaseVersion
+    $latestRecordedRevision = Get-OpenBladeLatestRecordedNightlyRevision `
+        -Content $currentContent
+    $baseline = Resolve-OpenBladeChangelogBaseline `
+        -RepositoryRoot $RepositoryRoot `
+        -CurrentContent $currentContent `
+        -LatestRecordedRevision $latestRecordedRevision
     $rawManifest = Get-Content -LiteralPath $resolvedPublishedReleasesPath -Raw |
         ConvertFrom-Json
     $manifestItems = [Collections.Generic.List[object]]::new()
@@ -550,15 +678,25 @@ function Write-OpenBladeNightlyChangelogSnapshot {
         else {
             [DateTimeOffset]$item.published_at
         }
-        if ($tagName -notmatch "^v$([Regex]::Escape($BaseVersion))-nightly\.(?<revision>\d+)(?:-attempt\.\d+)?$") {
+        $tagDetails = ConvertFrom-OpenBladeNightlyTag -TagName $tagName
+        if ($null -eq $tagDetails) {
             continue
         }
-        $revision = [int]$Matches['revision']
-        if ($revision -lt $recordedRevision -or $revision -gt $BuildRevision) {
+        $revision = $tagDetails.BuildRevision
+        if ($revision -gt $BuildRevision) {
+            continue
+        }
+        if ($baseline.Kind -eq 'Nightly') {
+            if ($revision -lt $baseline.BuildRevision) {
+                continue
+            }
+        }
+        elseif ($revision -le $baseline.BuildRevision) {
             continue
         }
         $releaseRecords.Add([pscustomobject]@{
                 BuildRevision = $revision
+                Version = $tagDetails.Version
                 TagName = $tagName
                 PublishedAt = $publishedAt
                 SourceContent = Get-OpenBladeGitFileContent `
@@ -567,34 +705,13 @@ function Write-OpenBladeNightlyChangelogSnapshot {
             })
     }
 
-    $baselineTag = if ($recordedRevision -eq 0) {
-        Get-OpenBladeUnreleasedReferenceTag `
-            -Content $currentContent `
-            -FallbackVersion $BaseVersion
-    }
-    else {
-        Get-OpenBladeChangelogReferenceTag `
-            -Content $currentContent `
-            -Version "$BaseVersion-nightly.$recordedRevision"
-    }
-    if (@($releaseRecords | Where-Object BuildRevision -EQ $recordedRevision).Count -eq 0) {
-        $releaseRecords.Add([pscustomobject]@{
-                BuildRevision = $recordedRevision
-                TagName = $baselineTag
-                PublishedAt = [DateTimeOffset]::MinValue
-                SourceContent = if ($recordedRevision -eq 0) {
-                    "# Changelog`n`n## [Unreleased]`n"
-                }
-                else {
-                    Get-OpenBladeGitFileContent `
-                        -RepositoryRoot $RepositoryRoot `
-                        -Revision $baselineTag
-                }
-            })
+    if (@($releaseRecords | Where-Object TagName -EQ $baseline.TagName).Count -eq 0) {
+        $releaseRecords.Add($baseline)
     }
 
     $releaseRecords.Add([pscustomobject]@{
             BuildRevision = $BuildRevision
+            Version = "$BaseVersion-nightly.$BuildRevision"
             TagName = $CurrentTag
             PublishedAt = $CurrentPublishedAt
             SourceContent = Get-OpenBladeGitFileContent `

@@ -273,7 +273,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly object statusPublishGate = new();
     private ProfileAutomationState? automation;
     private volatile BatteryAutomationPreferences preferences =
-        new(ProtectionEnabled: true);
+        new();
     private PersistentOverrideState persistentOverrides = PersistentOverrideState.Empty;
     private ConfirmedStateDriftTracker driftTracker = new();
     private readonly HashSet<DeviceSubsystem> initialAutomaticComparisons = [];
@@ -525,7 +525,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ArgumentNullException.ThrowIfNull(configuration);
         ProfileSet profiles = ProfileStore.NormalizeLegacyBatteryProfile(
             configuration.Profiles,
-            out _);
+            out _,
+            batteryProtectionDefault: null);
         persistentOverrides = PersistentOverrideStore.NormalizeLegacyLighting(
             persistentOverrides);
         validator.Validate(profiles);
@@ -657,7 +658,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             ProfileSet profiles = ProfileStore.NormalizeLegacyBatteryProfile(
                 context.Configuration.Profiles,
-                out _);
+                out _,
+                batteryProtectionDefault: null);
             PersistentOverrideState overrides =
                 PersistentOverrideStore.NormalizeLegacyFanControl(
                     PersistentOverrideStore.NormalizeLegacyLighting(context.Overrides));
@@ -730,6 +732,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 FanOverride = Automation.FanOverride,
                 FanControlOverride = Automation.FanControlOverride,
                 LightingOverride = Automation.LightingOverride,
+                BatteryPolicyOverride = Automation.BatteryPolicyOverride,
+                BatteryProtectionOverride = Automation.BatteryProtectionOverride,
                 FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
                 LightingSuppressions = CurrentLightingSuppressions(),
                 AllowUntestedFirmware =
@@ -766,7 +770,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             bool lightingWasSuppressed = lightingSuppressions.Count > 0;
             try
             {
-                profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
+                profiles = ProfileStore.NormalizeLegacyBatteryProfile(
+                    profiles,
+                    out _,
+                    batteryProtectionDefault: null);
                 validator.Validate(profiles);
                 await ConfigurationStore.SaveProfilesAsync(profiles, token);
                 Automation.UpdateProfiles(profiles);
@@ -793,6 +800,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 FanOverride = Automation.FanOverride,
                 FanControlOverride = Automation.FanControlOverride,
                 LightingOverride = Automation.LightingOverride,
+                BatteryPolicyOverride = Automation.BatteryPolicyOverride,
+                BatteryProtectionOverride = Automation.BatteryProtectionOverride,
                 FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
                 LightingSuppressions = CurrentLightingSuppressions(),
             });
@@ -3892,9 +3901,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            bool gpuClockOffsetConfirmationInvalidated = false;
+            if (deviceProvider is IGpuClockOffsetConfirmationInvalidator invalidator)
+            {
+                gpuClockOffsetConfirmationInvalidated =
+                    await invalidator.InvalidateGpuClockOffsetConfirmationAsync(
+                        cancellationToken).ConfigureAwait(false);
+            }
+
             if (pendingResumeStateBaseline is { } baseline)
             {
-                pendingResumeStateBaseline = baseline with { ResumeStarted = true };
+                pendingResumeStateBaseline = baseline with
+                {
+                    ResumeStarted = true,
+                    GpuClockOffsetConfirmationInvalidated =
+                        gpuClockOffsetConfirmationInvalidated,
+                };
             }
         }
         finally
@@ -4749,19 +4771,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return blocked;
             }
 
-            ProfileSet stagedProfiles = Automation.Profiles with
-            {
-                BatteryPolicy = staged.ConfiguredPolicy,
-            };
-            try
-            {
-                validator.Validate(stagedProfiles);
-            }
-            catch (Exception exception) when (IsIntentFailure(exception))
-            {
-                return RecordRejectedIntent(exception);
-            }
-
             return await ApplyScopedIntentAsync(
                 DeviceSubsystem.Battery,
                 powerSource,
@@ -4769,17 +4778,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     apply(coordinator, staged, cancellationToken),
                 token,
                 desired => desired with { Battery = staged },
-                async cancellationToken =>
+                _ =>
                 {
-                    await ConfigurationStore.SaveConfigurationAsync(
-                        stagedProfiles,
-                        preferences with { ProtectionEnabled = staged.ProtectionEnabled },
-                        cancellationToken);
-                    preferences = preferences with
-                    {
-                        ProtectionEnabled = staged.ProtectionEnabled,
-                    };
                     Automation.CommitBatteryState(staged);
+                    return Task.CompletedTask;
                 });
         }
         finally
@@ -5909,7 +5911,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         var compared = new List<DeviceSubsystem>(4);
         if (baseline.Confirmed.Performance is not null
-            && observed.Performance is not null)
+            && observed.Performance is not null
+            && !baseline.GpuClockOffsetConfirmationInvalidated
+            && (baseline.Confirmed.GpuClockOffsets is null
+                || observed.GpuClockOffsets is not null))
         {
             compared.Add(DeviceSubsystem.Performance);
         }
@@ -6662,7 +6667,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && (confirmed.Performance != PerformancePreset.Custom
             || confirmed.CustomPerformance == desired.CustomPerformance)
         && (desired.GpuClockTuning is null
-            || confirmed.GpuClockOffsets?.Current
+            || confirmed.GpuClockOffsets is null
+            || confirmed.GpuClockOffsets.Current
                 == desired.GpuClockTuning.EffectiveOffsets);
 
     private void CompareInitialAutomaticValue<T>(
@@ -6860,6 +6866,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FirmwareCompatibility: deviceProvider.FirmwareCompatibility)
         {
             FanControlOverride = Automation.FanControlOverride,
+            BatteryPolicyOverride = Automation.BatteryPolicyOverride,
+            BatteryProtectionOverride = Automation.BatteryProtectionOverride,
         };
     }
 
@@ -6967,6 +6975,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FanOverride = Automation.FanOverride,
             FanControlOverride = Automation.FanControlOverride,
             LightingOverride = Automation.LightingOverride,
+            BatteryPolicyOverride = Automation.BatteryPolicyOverride,
+            BatteryProtectionOverride = Automation.BatteryProtectionOverride,
             FullChargeOverride = ResolveFullChargeOverride(confirmed),
             LightingRendererOwnership = deviceVerified
                 ? current.LightingRendererOwnership
@@ -7581,7 +7591,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool LightingRestoredDuringResume,
         bool LightingWriteApplied,
         ConfirmedDeviceState? Observed,
-        long? ObservationWindowStartedAt);
+        long? ObservationWindowStartedAt,
+        bool GpuClockOffsetConfirmationInvalidated = false);
 
     private sealed record FullDeviceObservation(
         DeviceCapabilities Capabilities,

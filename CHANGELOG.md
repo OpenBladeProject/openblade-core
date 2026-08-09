@@ -12,6 +12,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   row can be customized from Settings while the actual popup updates live.
   Open the main window with a tray-icon double-click or the tray icon's
   right-click **Open** command.
+- Added per-power-profile battery protection, including migration from the
+  former global setting and pending-value indicators for AC, USB-C, and battery.
+- Added the global charge limit to Profiles pending-change presentation.
+- Added a dot beside each saved Profiles value that has a pending change.
+  The value cell exposes the new value through its tooltip and accessible name.
 
 ### Changed
 
@@ -27,6 +32,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
   labels. Performance and fan controls now use purpose-specific symbols, the
   telemetry footer distributes visible items evenly, and opening the popup no
   longer leaves a focus border on its first tile.
+- Battery protection and charge-limit changes now remain temporary until saved
+  to a profile. Battery protection also follows the destination power profile
+  when the power source changes.
+- Advanced the product version from the stale 0.1.x baseline to 0.2.0 for the
+  backward-compatible capabilities added since the initial non-nightly release
+  and required each future product-changing pull request to apply its SemVer bump
+  directly, with pull-request fields and CI validation rejecting missing, stale,
+  or incorrect increments while keeping description-only rechecks separate from
+  the full build workflow.
 
 ### Fixed
 
@@ -39,6 +53,18 @@ All notable changes to OpenBlade are documented in this file. The project follow
   band, reliably dismisses after an outside click, refreshes its telemetry
   while open, and constrains its tiles to the live viewport at every display
   scale.
+- Prevented the first nightly after a product-version change from replaying
+  entries already published under the preceding version when its generated
+  changelog pull request is still outstanding.
+- Prevented idle NVIDIA GPUs from being woken by clock-offset status reads after
+  GPU tuning had already been applied, disabled, or left behind on another
+  power profile. Managed offsets are revalidated after resume, while a disabled
+  reset is confirmed once without turning unmanaged profile reads into NVIDIA
+  polls. Unmanaged transitions intentionally do not wake NVIDIA to reset
+  offsets, so driver-held values may remain applied while OpenBlade stops
+  reporting them, until tuning is managed again or the driver reloads. A live
+  reading outside OpenBlade's admitted range is now reported as unavailable
+  instead of being replaced by an older cached value.
 - Showed the effective **Off** defaults for Gaming mode's Windows-key and
   Alt+Tab blocks instead of presenting missing profile overrides as **Not set**.
 

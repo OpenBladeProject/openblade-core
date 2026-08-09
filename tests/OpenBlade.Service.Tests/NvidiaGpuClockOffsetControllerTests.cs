@@ -45,8 +45,10 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         var api = new FakeNvmlApi();
         var requested = new GpuClockOffsetSettings(125, 500);
 
-        new NvidiaGpuClockOffsetController(api).Set(requested);
+        GpuClockOffsetCapabilities confirmed =
+            new NvidiaGpuClockOffsetController(api).Set(requested);
 
+        Assert.Equal(requested, confirmed.Current);
         Assert.Equal(125, api.CoreCurrent);
         Assert.Equal(1000, api.MemoryCurrent);
         Assert.Equal(

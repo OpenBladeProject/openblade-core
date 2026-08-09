@@ -238,13 +238,14 @@ public sealed class CapabilityPresentationTests
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
         string[] expectedBadgeBindings =
         [
-            "{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}",
-            "{x:Bind ViewModel.HasProfileEditorChanges, Mode=OneWay}",
+            "{x:Bind ViewModel.HasDashboardProfileDraft, Mode=OneWay}",
+            "{x:Bind ViewModel.HasUnsavedProfileChanges, Mode=OneWay}",
             "{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}",
             "{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}",
             "{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}",
         ];
-        XElement[] badges = document.Descendants()
+        XElement navigation = NamedElement(document, "NavigationView", "MainNavigation");
+        XElement[] badges = navigation.Descendants()
             .Where(element => element.Name.LocalName == "InfoBadge")
             .ToArray();
         Assert.Equal(expectedBadgeBindings.Length, badges.Length);
@@ -1427,6 +1428,102 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("ViewModel.UsbCProfilePresentation.LightingEffect", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.BatteryProfilePresentation.DisplayRefreshRate", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.SelectedProfilePresentation.PowerMode", xaml, StringComparison.Ordinal);
+        XElement profileValueTemplate = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "DataTemplate"
+            && Attribute(element, "Key") == "ProfileValuePresentationTemplate");
+        XElement compactProfileValueTemplate = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "DataTemplate"
+            && Attribute(element, "Key") == "CompactProfileValuePresentationTemplate");
+        foreach (XElement template in new[]
+                 {
+                     profileValueTemplate,
+                     compactProfileValueTemplate,
+                 })
+        {
+            XElement presenter = Assert.Single(template.Elements(), element =>
+                element.Name.LocalName == "ContentControl");
+            Assert.Equal(
+                "{x:Bind IsPending, Mode=OneTime}",
+                Attribute(presenter, "IsTabStop"));
+            Assert.Equal(
+                "{x:Bind PendingDescription, Mode=OneTime}",
+                Attribute(presenter, "ToolTipService.ToolTip"));
+            Assert.Equal(
+                "{x:Bind AccessibilityDescription, Mode=OneTime}",
+                Attribute(presenter, "AutomationProperties.Name"));
+            Assert.Equal(
+                "{x:Bind PendingDescription, Mode=OneTime}",
+                Attribute(presenter, "AutomationProperties.HelpText"));
+            XElement valueText = Assert.Single(template.Descendants(), element =>
+                element.Name.LocalName == "TextBlock");
+            Assert.Equal(
+                "Raw",
+                Attribute(valueText, "AutomationProperties.AccessibilityView"));
+            XElement indicator = Assert.Single(template.Descendants(), element =>
+                element.Name.LocalName == "InfoBadge");
+            Assert.Equal(
+                "{x:Bind IsPending, Mode=OneTime}",
+                Attribute(indicator, "Visibility"));
+            Assert.Equal(
+                "Raw",
+                Attribute(indicator, "AutomationProperties.AccessibilityView"));
+        }
+        XElement[] comparisonValues = comparisonProfiles.Descendants()
+            .Where(element => element.Name.LocalName == "ContentControl"
+                && Attribute(element, "ContentTemplate")
+                    == "{StaticResource ProfileValuePresentationTemplate}")
+            .ToArray();
+        XElement[] compactValues = compactProfiles.Descendants()
+            .Where(element => element.Name.LocalName == "ContentControl"
+                && Attribute(element, "ContentTemplate")
+                    == "{StaticResource CompactProfileValuePresentationTemplate}")
+            .ToArray();
+        Assert.Equal(55, comparisonValues.Length);
+        Assert.Equal(19, compactValues.Length);
+        string[] expectedProperties =
+        [
+            "PowerMode",
+            "GpuTuning",
+            "Fans",
+            "BatteryProtection",
+            "LightingEffect",
+            "LightingBrightness",
+            "LightingColor",
+            "LogoLighting",
+            "LightingDisplayOff",
+            "LightingIdle",
+            "DisplayRefreshRate",
+            "DisplayHdr",
+            "DisplayColorProfile",
+            "FunctionKeyBehavior",
+            "GamingMode",
+            "GamingModeWindowsKey",
+            "GamingModeAltTab",
+            "StartupAnimation",
+        ];
+        foreach (string property in expectedProperties)
+        {
+            Assert.Equal(3, comparisonValues.Count(value =>
+                Attribute(value, "Content")?.Contains(
+                    $"ProfilePresentation.{property},",
+                    StringComparison.Ordinal) is true));
+            Assert.Single(compactValues, value =>
+                Attribute(value, "Content")?.Contains(
+                    $"ProfilePresentation.{property},",
+                    StringComparison.Ordinal) is true);
+        }
+        Assert.Single(comparisonValues, value =>
+            Attribute(value, "Content")?.Contains(
+                "BatteryPolicyPresentation,",
+                StringComparison.Ordinal) is true);
+        Assert.Single(compactValues, value =>
+            Attribute(value, "Content")?.Contains(
+                "BatteryPolicyPresentation,",
+                StringComparison.Ordinal) is true);
+        Assert.All(comparisonValues, value =>
+            Assert.Equal("Stretch", Attribute(value, "HorizontalContentAlignment")));
+        Assert.All(compactValues, value =>
+            Assert.Equal("Stretch", Attribute(value, "HorizontalContentAlignment")));
         Assert.DoesNotContain("ViewModel.AvailableUsbCPerformanceOptions", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.AvailableUsbCFanModes", xaml, StringComparison.Ordinal);
 

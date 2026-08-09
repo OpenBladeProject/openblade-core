@@ -8,15 +8,100 @@ integers for persisted schemas and IPC protocols.
 `OpenBladeVersion` in `Directory.Build.props` is the single source of truth.
 Release tags use `vMAJOR.MINOR.PATCH`.
 
-- `MAJOR`: stable-release compatibility break. Before 1.0, reserve this for a
-  deliberate project-wide compatibility reset.
-- `MINOR`: a new user-facing capability, a newly supported Blade model, or a
-  compatible expansion of public behavior. During 0.x development, an
-  intentional breaking product change also increments `MINOR`.
-- `PATCH`: a backward-compatible bug fix, performance improvement, packaging
-  correction, or small presentation refinement.
-- Documentation, tests, capture evidence, and internal refactors alone do not
-  require a product-version bump.
+For a current version `X.Y.Z`, increment the leftmost component justified by
+the change and reset every component to its right to zero:
+
+- `MAJOR` (`X`): a stable-release compatibility break. This includes removing
+  or incompatibly changing a supported capability, persisted behavior, upgrade
+  path, or user-facing contract so existing users cannot upgrade without
+  intervention or an accepted loss of behavior. Moving from `0.x` to `1.0.0`
+  declares the initial stable product contract. During `0.x` development,
+  breaking changes increment `MINOR`; otherwise reserve `MAJOR` for `1.0.0` or
+  a deliberate project-wide compatibility reset.
+- `MINOR` (`Y`): a backward-compatible user-facing capability, newly supported
+  Blade model, or meaningful compatible expansion of existing behavior. During
+  `0.x` development, an intentional breaking product change also increments
+  `MINOR`.
+- `PATCH` (`Z`): a backward-compatible defect or security fix, measured
+  performance improvement, packaging correction, reliability improvement, or
+  small presentation refinement that does not add a distinct capability.
+- `NONE`: documentation, tests, capture evidence, CI changes, dependency
+  maintenance, and behavior-preserving internal refactors alone do not require
+  a product-version bump.
+
+Examples:
+
+- `1.4.2` becomes `2.0.0` when a stable supported contract is broken.
+- `1.4.2` becomes `1.5.0` when a backward-compatible capability is added.
+- `1.4.2` becomes `1.4.3` when existing behavior is corrected or refined.
+- `0.4.2` becomes `0.5.0` for either a new capability or an intentional
+  pre-1.0 breaking change.
+
+### Pull request version impact
+
+Every pull request must include a `Version impact` field set to `major`,
+`minor`, `patch`, or `none`, a `Version change` field containing the exact old
+and new versions, and a one-sentence justification. Use `unchanged` for the
+version change only when the impact is `none`. Apply these rules consistently:
+
+1. Classify the user-visible and compatibility impact, not the commit type,
+   number of files, or size of the diff.
+2. For a pull request with several kinds of changes, declare the highest impact:
+   `major` over `minor`, `minor` over `patch`, and `patch` over `none`.
+3. Product SemVer, service IPC versions, Session Agent IPC versions, and
+   persisted schema versions are separate decisions. An IPC or schema change
+   does not automatically determine Product SemVer, but any resulting break in
+   the supported user upgrade path does.
+4. A pull request classified as `major`, `minor`, or `patch` must update
+   `OpenBladeVersion` in `Directory.Build.props` in that same pull request. A
+   pull request classified as `none` must leave it unchanged.
+5. Calculate the new version from the current target-branch version. Before the
+   pull request is marked ready or merged, refresh it from `main` and recalculate
+   the bump if another merged pull request advanced the version. Never keep a
+   stale or duplicate version merely to avoid resolving the version-line
+   conflict. Repository merge protection must require the branch to be current
+   with `main`; otherwise two pull requests can retain the same already-green
+   bump and merge without a conflict. This refresh applies to `none` pull
+   requests too because their unchanged version must match the current base.
+6. Reset components to the right of the selected bump. For example, a `minor`
+   change from `0.4.7` becomes `0.5.0`, while a `patch` change rebased after that
+   merge becomes `0.5.1`.
+7. A release-preparation pull request does not add another automatic bump. It
+   releases the version already established by merged product changes unless
+   the release pull request itself contains a change that independently
+   requires a bump.
+8. If earlier merged work missed its required increments, use a dedicated
+   baseline-correction pull request. Classify it by the highest accumulated
+   unversioned product impact, identify the affected release range, and state
+   explicitly that the increment is a one-time correction rather than impact
+   introduced by the correction pull request itself.
+9. If the impact is uncertain, explain the ambiguity in the pull request and
+   resolve it during review instead of silently defaulting to `patch` or `none`.
+
+The dedicated PR version workflow reads the base and head versions from their
+exact Git commits and verifies that the three pull request fields describe the
+required transition. Missing, placeholder, duplicate, stale, skipped, or double
+increments fail. Description edits rerun only this small workflow; source
+changes run the ordinary build workflow separately. A green version check is
+valid only for the base commit it inspected, which is why current-branch merge
+protection is mandatory. CI cannot determine whether behavior changed, so
+reviewers remain responsible for validating the declared impact and reason.
+
+The gate cannot force this final refresh unless repository merge protection is
+configured. Until protection is available, maintainers must update each pull
+request from `main` immediately before merge and confirm that the version check
+reran against the new base. A previously green check alone does not close the
+duplicate-bump race. Require the `Validate PR version` check, require branches
+to be up to date before merging, and disallow bypasses for `main` as soon as the
+repository supports those settings.
+
+Use this form in the pull request body:
+
+```text
+Version impact: minor
+Version change: 0.4.7 -> 0.5.0
+Reason: Adds a backward-compatible user-facing capability.
+```
 
 Assembly identities are derived as follows:
 
@@ -38,10 +123,10 @@ install all coordinated components together.
 Nightly builds retain the checked-in three-part `OpenBladeVersion` as their
 stable base. The dedicated nightly workflow adds its monotonic run number as a
 fourth numeric component for the Burn bundle, assembly, file, and installed
-ownership versions. For example, nightly run 42 from base `0.1.0` uses binary
-version `0.1.0.42` and informational version
-`0.1.0-nightly.42+<commit>`. The next stable `0.1.1` normalizes to
-`0.1.1.0` and therefore upgrades every `0.1.0.*` nightly.
+ownership versions. For example, nightly run 42 from base `1.4.2` uses binary
+version `1.4.2.42` and informational version
+`1.4.2-nightly.42+<commit>`. The next stable `1.4.3` normalizes to
+`1.4.3.0` and therefore upgrades every `1.4.2.*` nightly.
 
 Do not edit `OpenBladeVersion` merely to produce a nightly. Nightly identity is
 supplied only by `build/Publish.ps1`, and revision zero remains reserved for
@@ -55,6 +140,11 @@ current `main` changelog, leaves post-build entries under `Unreleased`, and
 opens or updates the workflow-owned draft documentation pull request. The job
 may replace only its dedicated branch with a force-with-lease guard; it never
 pushes directly to `main`.
+
+After changing the base version, inspect the first hosted nightly's binary
+identity, generated changelog section, and comparison link. Confirm that it
+contains only the entries still under `Unreleased` and advances monotonically
+from the previous published nightly.
 
 ## Service IPC
 
@@ -94,13 +184,14 @@ schema reader and reject future versions with a clear error.
 ## Release process
 
 1. Keep user-visible work in `CHANGELOG.md` under `Unreleased`.
-2. Decide the SemVer increment from the rules above.
-3. Update `OpenBladeVersion`.
-4. Move `Unreleased` entries under the dated release heading and create a new
+2. Confirm every merged product-changing pull request applied its required
+   SemVer increment and that `OpenBladeVersion` is greater than the preceding
+   release tag.
+3. Move `Unreleased` entries under the dated release heading and create a new
    empty `Unreleased` section.
-5. Run the full build, tests, publish, payload validation, and applicable live
+4. Run the full build, tests, publish, payload validation, and applicable live
    device acceptance checks.
-6. Commit as `chore(release): prepare vX.Y.Z`, tag `vX.Y.Z`, then publish the
+5. Commit as `chore(release): prepare vX.Y.Z`, tag `vX.Y.Z`, then publish the
    immutable artifacts built from that tag.
 
 ## Commit messages
