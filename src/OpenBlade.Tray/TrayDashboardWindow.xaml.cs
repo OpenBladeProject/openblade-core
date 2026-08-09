@@ -33,11 +33,11 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private readonly uint advanceRevealMessage;
     private TrayDashboardPreference preference = TrayDashboardPreferenceDefaults.Preference;
     private TrayDashboardLayout layout = TrayDashboardLayoutPolicy.Resolve(
-        TrayDashboardPreferenceDefaults.Preference.Controls!,
-        TrayDashboardPreferenceDefaults.Preference.ExpandedControl);
+        TrayDashboardPreferenceDefaults.Preference.Controls!);
     private bool changingPerformance;
     private bool changingFans;
-    private bool chargeLimitPointerInteraction;
+    private bool changingBattery;
+    private TrayDashboardControlKind? detailControl;
     private bool pinnedForEditing;
     private bool visible;
     private TrayDashboardPoint visibleAnchor;
@@ -115,9 +115,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     public void ApplyPreferences(TrayDashboardPreference preferences)
     {
         preference = TrayDashboardPreferenceDefaults.Normalize(preferences);
-        layout = TrayDashboardLayoutPolicy.Resolve(
-            preference.Controls!,
-            preference.ExpandedControl);
+        layout = TrayDashboardLayoutPolicy.Resolve(preference.Controls!);
         IReadOnlyDictionary<TrayDashboardControlKind, FrameworkElement> tiles =
             TilesByKind();
         foreach (FrameworkElement tile in tiles.Values)
@@ -136,7 +134,12 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             tile.Visibility = Visibility.Visible;
         }
 
-        SetExpandedControl(layout.ExpandedControl);
+        if (detailControl is { } selected
+            && preference.Controls!.All(control =>
+                control.Kind != selected || !control.IsVisible))
+        {
+            ShowDashboardPage();
+        }
         IReadOnlyDictionary<TrayDashboardStatusItemKind, FrameworkElement> statusItems =
             StatusItemsByKind();
         StatusItemsHost.ColumnDefinitions.Clear();
@@ -245,6 +248,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
 
         pinnedForEditing = editing;
+        ShowDashboardPage();
         DisplayArea displayArea = knownDisplayArea ?? DisplayArea.GetFromPoint(
             new PointInt32(anchor.X, anchor.Y),
             DisplayAreaFallback.Nearest);
@@ -767,6 +771,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 "OpenBlade tray dashboard parking failed: {0}",
                 exception.Message);
         }
+
+        ShowDashboardPage();
     }
 
     private static RectInt32 ToRectInt32(TrayDashboardRect rect) =>
@@ -785,8 +791,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     private void OnRootSizeChanged(object sender, SizeChangedEventArgs args)
     {
-        Thickness padding = DashboardScroller.Padding;
-        DashboardContent.Width = Math.Max(
+        Thickness padding = ControlScroller.Padding;
+        ControlGrid.Width = Math.Max(
             0,
             args.NewSize.Width - padding.Left - padding.Right);
     }
@@ -808,25 +814,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             [TrayDashboardStatusItemKind.Temperatures] = TemperatureStatus,
             [TrayDashboardStatusItemKind.Fans] = FansStatus,
         };
-
-    private void SetExpandedControl(TrayDashboardControlKind? kind)
-    {
-        ExpandedControlContainer.Visibility = kind is null
-            ? Visibility.Collapsed
-            : Visibility.Visible;
-        ExpandedPerformance.Visibility = kind == TrayDashboardControlKind.Performance
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        ExpandedFans.Visibility = kind == TrayDashboardControlKind.Fans
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        ExpandedBattery.Visibility = kind == TrayDashboardControlKind.Battery
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        ExpandedLighting.Visibility = kind == TrayDashboardControlKind.Lighting
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-    }
 
     private void Hide(bool suppressNextTrayToggle = false)
     {
@@ -919,14 +906,24 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     private void OnRootKeyDown(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key == Windows.System.VirtualKey.Escape && !pinnedForEditing)
+        if (args.Key != Windows.System.VirtualKey.Escape)
+        {
+            return;
+        }
+
+        if (detailControl is not null)
+        {
+            ShowDashboardPage();
+            args.Handled = true;
+        }
+        else if (!pinnedForEditing)
         {
             Hide();
             args.Handled = true;
         }
     }
 
-    private void OnMoreClick(object sender, RoutedEventArgs args)
+    private void OnSettingsClick(object sender, RoutedEventArgs args)
     {
         pinnedForEditing = false;
         Hide();
@@ -937,9 +934,19 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     {
         if (changingPerformance
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
+            || sender is not Microsoft.UI.Xaml.Controls.ListView selector
             || selector.SelectedItem is not PerformancePresetOption selected
             || selected.Value == ViewModel.SelectedPerformance)
+        {
+            return;
+        }
+
+        await ApplyPerformanceOptionAsync(selected);
+    }
+
+    private async Task ApplyPerformanceOptionAsync(PerformancePresetOption selected)
+    {
+        if (changingPerformance || Volatile.Read(ref disposed) != 0)
         {
             return;
         }
@@ -961,7 +968,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         finally
         {
-            selector.SelectedItem = ViewModel.SelectedPerformanceOption;
+            PerformanceDetail.SelectedItem = ViewModel.SelectedPerformanceOption;
             changingPerformance = false;
         }
     }
@@ -970,9 +977,19 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     {
         if (changingFans
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
+            || sender is not Microsoft.UI.Xaml.Controls.ListView selector
             || selector.SelectedItem is not FanModeOption selected
             || selected.Value == ViewModel.SelectedFanMode)
+        {
+            return;
+        }
+
+        await ApplyFanModeOptionAsync(selected);
+    }
+
+    private async Task ApplyFanModeOptionAsync(FanModeOption selected)
+    {
+        if (changingFans || Volatile.Read(ref disposed) != 0)
         {
             return;
         }
@@ -994,41 +1011,145 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         finally
         {
-            selector.SelectedItem = ViewModel.SelectedFanModeOption;
+            FansDetail.SelectedItem = ViewModel.SelectedFanModeOption;
             changingFans = false;
         }
     }
 
-    private void OnChargeLimitPointerPressed(object sender, PointerRoutedEventArgs args) =>
-        chargeLimitPointerInteraction = Volatile.Read(ref disposed) == 0;
-
-    private async void OnChargeLimitPointerReleased(object sender, PointerRoutedEventArgs args)
+    private async void OnPerformanceCycleClick(object sender, RoutedEventArgs args)
     {
-        if (!chargeLimitPointerInteraction)
+        IReadOnlyList<PerformancePresetOption> options =
+            ViewModel.AvailableActivePerformanceOptions;
+        int next = TrayDashboardInteractionPolicy.ResolveNextIndex(
+            options.Count,
+            FindIndex(options, option =>
+                option.Value == ViewModel.SelectedPerformance));
+        if (next >= 0)
+        {
+            await ApplyPerformanceOptionAsync(options[next]);
+        }
+    }
+
+    private async void OnFansCycleClick(object sender, RoutedEventArgs args)
+    {
+        IReadOnlyList<FanModeOption> options = ViewModel.AvailableActiveFanModeOptions;
+        int next = TrayDashboardInteractionPolicy.ResolveNextIndex(
+            options.Count,
+            FindIndex(options, option => option.Value == ViewModel.SelectedFanMode));
+        if (next >= 0)
+        {
+            await ApplyFanModeOptionAsync(options[next]);
+        }
+    }
+
+    private async void OnBatteryCycleClick(object sender, RoutedEventArgs args)
+    {
+        IReadOnlyList<int> options = ViewModel.ChargeLimitOptions;
+        int next = TrayDashboardInteractionPolicy.ResolveNextIndex(
+            options.Count,
+            FindIndex(options, option => option == ViewModel.ChargeLimitPercent));
+        if (next >= 0)
+        {
+            await CommitChargeLimitAsync(options[next]);
+        }
+    }
+
+    private void OnLightingCycleClick(object sender, RoutedEventArgs args)
+    {
+        IReadOnlyList<LightingEffectOption> options =
+            ViewModel.AvailableLightingEffectOptions;
+        int next = TrayDashboardInteractionPolicy.ResolveNextIndex(
+            options.Count,
+            FindIndex(options, option =>
+                option.Effect == ViewModel.LightingEffectEditor));
+        if (next >= 0)
+        {
+            ViewModel.SelectedLightingEffectOption = options[next];
+        }
+    }
+
+    private void OnPerformanceDetailsClick(object sender, RoutedEventArgs args) =>
+        ShowDetail(TrayDashboardControlKind.Performance, "Performance");
+
+    private void OnFansDetailsClick(object sender, RoutedEventArgs args) =>
+        ShowDetail(TrayDashboardControlKind.Fans, "Fans");
+
+    private void OnBatteryDetailsClick(object sender, RoutedEventArgs args) =>
+        ShowDetail(TrayDashboardControlKind.Battery, "Charge limit");
+
+    private void OnLightingDetailsClick(object sender, RoutedEventArgs args) =>
+        ShowDetail(TrayDashboardControlKind.Lighting, "Lighting");
+
+    private void OnDetailBackClick(object sender, RoutedEventArgs args) =>
+        ShowDashboardPage();
+
+    private void ShowDetail(TrayDashboardControlKind kind, string title)
+    {
+        detailControl = kind;
+        DetailTitle.Text = title;
+        PerformanceDetail.Visibility = kind == TrayDashboardControlKind.Performance
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        FansDetail.Visibility = kind == TrayDashboardControlKind.Fans
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        BatteryDetail.Visibility = kind == TrayDashboardControlKind.Battery
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        LightingDetail.Visibility = kind == TrayDashboardControlKind.Lighting
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        DashboardPage.Visibility = Visibility.Collapsed;
+        DetailPage.Visibility = Visibility.Visible;
+    }
+
+    private void ShowDashboardPage()
+    {
+        detailControl = null;
+        DetailPage.Visibility = Visibility.Collapsed;
+        DashboardPage.Visibility = Visibility.Visible;
+        _ = ControlScroller.ChangeView(
+            horizontalOffset: null,
+            verticalOffset: 0,
+            zoomFactor: null,
+            disableAnimation: true);
+    }
+
+    private static int FindIndex<T>(
+        IReadOnlyList<T> options,
+        Func<T, bool> predicate)
+    {
+        for (int index = 0; index < options.Count; index++)
+        {
+            if (predicate(options[index]))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private async void OnChargeLimitChanged(object sender, SelectionChangedEventArgs args)
+    {
+        if (changingBattery
+            || Volatile.Read(ref disposed) != 0
+            || sender is not Microsoft.UI.Xaml.Controls.ListView selector
+            || selector.SelectedItem is not int selected
+            || selected == ViewModel.ChargeLimitPercent)
         {
             return;
         }
 
-        chargeLimitPointerInteraction = false;
-        if (sender is Slider slider)
+        changingBattery = true;
+        try
         {
-            await CommitChargeLimitAsync(slider.Value);
+            await CommitChargeLimitAsync(selected);
         }
-    }
-
-    private async void OnChargeLimitKeyUp(object sender, KeyRoutedEventArgs args)
-    {
-        if (sender is Slider slider
-            && args.Key is Windows.System.VirtualKey.Left
-                or Windows.System.VirtualKey.Right
-                or Windows.System.VirtualKey.Up
-                or Windows.System.VirtualKey.Down
-                or Windows.System.VirtualKey.PageUp
-                or Windows.System.VirtualKey.PageDown
-                or Windows.System.VirtualKey.Home
-                or Windows.System.VirtualKey.End)
+        finally
         {
-            await CommitChargeLimitAsync(slider.Value);
+            selector.SelectedItem = ViewModel.ChargeLimitPercent;
+            changingBattery = false;
         }
     }
 

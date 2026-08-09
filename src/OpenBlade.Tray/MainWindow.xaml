@@ -372,7 +372,6 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <FontIcon Glyph="&#xE76F;"
                               FontSize="14"
@@ -385,15 +384,7 @@
                                    Style="{StaticResource SecondaryTextStyle}"
                                    TextWrapping="Wrap" />
                     </StackPanel>
-                    <ComboBox Grid.Column="2"
-                              MinWidth="110"
-                              IsEnabled="{x:Bind IsSizeEnabled, Mode=OneWay}"
-                              ItemsSource="{x:Bind AvailableSizes, Mode=OneTime}"
-                              SelectedItem="{x:Bind Size, Mode=TwoWay}"
-                              local:StableComboBoxSelection.Anchor="{x:Bind Size, Mode=OneWay}"
-                              AutomationProperties.Name="{x:Bind Label, Mode=OneTime}"
-                              VerticalAlignment="Center" />
-                    <CheckBox Grid.Column="3"
+                    <CheckBox Grid.Column="2"
                               IsChecked="{x:Bind IsVisible, Mode=TwoWay}"
                               AutomationProperties.Name="{x:Bind Label, Mode=OneTime}"
                               HorizontalAlignment="Right"

@@ -2995,23 +2995,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         trayDashboardCustomizationActive = true;
         var controls = new ObservableCollection<TrayDashboardControlOption>(
             TrayDashboardPreferenceDefaults.CreateControlOptions(trayDashboardPreference));
-        TrayDashboardPreferenceDefaults.UpdateSizeAvailability(
-            controls,
-            trayDashboardPreference.ExpandedControl);
         var statusItems = new ObservableCollection<TrayDashboardStatusItemOption>(
             TrayDashboardPreferenceDefaults.CreateStatusOptions(trayDashboardPreference));
-        IReadOnlyList<TrayDashboardExpandedControlOption> expandedOptions =
-            TrayDashboardPreferenceDefaults.ExpandedControls;
-        var expandedSelector = new Microsoft.UI.Xaml.Controls.ComboBox
-        {
-            MinWidth = 180,
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right,
-            ItemsSource = expandedOptions,
-            DisplayMemberPath = nameof(TrayDashboardExpandedControlOption.Label),
-            SelectedItem = expandedOptions.Single(option =>
-                option.Kind == trayDashboardPreference.ExpandedControl),
-        };
-        AutomationProperties.SetName(expandedSelector, "Expanded tray dashboard control");
 
         var statusList = new ItemsControl
         {
@@ -3020,20 +3005,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         };
         AutomationProperties.SetName(statusList, "Tray dashboard status row");
 
-        var expandedRow = new Grid { ColumnSpacing = 20 };
-        expandedRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        expandedRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        expandedRow.Children.Add(new TextBlock
-        {
-            Text = "Expanded control",
-            Style = (Style)Root.Resources["CardTitleStyle"],
-            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
-        });
-        Grid.SetColumn(expandedSelector, 1);
-        expandedRow.Children.Add(expandedSelector);
-
         var additionalContent = new StackPanel { Spacing = 10 };
-        additionalContent.Children.Add(expandedRow);
+        additionalContent.Children.Add(new TextBlock
+        {
+            Text = "The first six controls stay visible. Additional controls scroll "
+                + "within the top of the popup.",
+            Style = (Style)Root.Resources["SecondaryTextStyle"],
+            TextWrapping = TextWrapping.Wrap,
+        });
         additionalContent.Children.Add(new TextBlock
         {
             Text = "Status row",
@@ -3045,34 +3024,23 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ContentDialog dialog = CreateCustomizationDialog(
             "Customize tray dashboard",
             "Tray dashboard controls",
-            "Check controls to show, choose their size, and drag them into order. "
+            "Check controls to show and drag them into order. "
                 + "The actual tray popup stays open and updates while you edit.",
             controls,
             "TrayDashboardControlOptionTemplate",
             additionalContent,
             maxListHeight: 350);
 
-        TrayDashboardControlKind? GetEffectiveExpandedControl()
-        {
-            TrayDashboardControlKind? selected =
-                (expandedSelector.SelectedItem as TrayDashboardExpandedControlOption)?.Kind;
-            return selected is { } kind
-                && controls.Any(option => option.Kind == kind && option.IsVisible)
-                    ? kind
-                    : null;
-        }
-
         void ApplyEditor()
         {
-            TrayDashboardControlKind? expanded = GetEffectiveExpandedControl();
             ApplyTrayDashboardPreference(new TrayDashboardPreference(
                 controls
                     .Select(option => new TrayDashboardControlPreference(
                         option.Kind,
                         option.IsVisible,
-                        option.Size))
+                        TrayDashboardControlSize.Compact))
                     .ToArray(),
-                expanded,
+                null,
                 statusItems
                     .Select(option => new TrayDashboardStatusItemPreference(
                         option.Kind,
@@ -3081,24 +3049,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 queueSave: true);
         }
 
-        PropertyChangedEventHandler optionChanged = (_, args) =>
-        {
-            if (args.PropertyName != nameof(TrayDashboardControlOption.IsSizeEnabled))
-            {
-                TrayDashboardPreferenceDefaults.UpdateSizeAvailability(
-                    controls,
-                    GetEffectiveExpandedControl());
-                ApplyEditor();
-            }
-        };
+        PropertyChangedEventHandler optionChanged = (_, _) => ApplyEditor();
         NotifyCollectionChangedEventHandler orderChanged = (_, _) => ApplyEditor();
-        SelectionChangedEventHandler expandedChanged = (_, _) =>
-        {
-            TrayDashboardPreferenceDefaults.UpdateSizeAvailability(
-                controls,
-                GetEffectiveExpandedControl());
-            ApplyEditor();
-        };
         foreach (TrayDashboardControlOption option in controls)
         {
             option.PropertyChanged += optionChanged;
@@ -3108,7 +3060,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             option.PropertyChanged += optionChanged;
         }
         controls.CollectionChanged += orderChanged;
-        expandedSelector.SelectionChanged += expandedChanged;
 
         TrayDashboardEditSessionChanged?.Invoke(true);
         try
@@ -3117,7 +3068,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            expandedSelector.SelectionChanged -= expandedChanged;
             controls.CollectionChanged -= orderChanged;
             foreach (TrayDashboardControlOption option in controls)
             {

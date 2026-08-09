@@ -5,7 +5,7 @@ namespace OpenBlade.Tray.Tests;
 public sealed class TrayDashboardPreferenceTests
 {
     [Fact]
-    public void DefaultsExposeCoreControlsAndOneExpandedControl()
+    public void DefaultsExposeCoreControlsInTheUniformGrid()
     {
         TrayDashboardPreference preference = TrayDashboardPreferenceDefaults.Preference;
 
@@ -21,14 +21,12 @@ public sealed class TrayDashboardPreferenceTests
         Assert.All(
             preference.Controls!,
             control => Assert.Equal(TrayDashboardControlSize.Compact, control.Size));
-        Assert.Equal(
-            TrayDashboardControlKind.Performance,
-            preference.ExpandedControl);
+        Assert.Null(preference.ExpandedControl);
         Assert.All(preference.StatusItems!, status => Assert.True(status.IsVisible));
     }
 
     [Fact]
-    public void NormalizePreservesOrderAndRestoresMissingOptionsAsHidden()
+    public void NormalizePreservesOrderAndMigratesLegacyLayoutOptions()
     {
         TrayDashboardPreference normalized = TrayDashboardPreferenceDefaults.Normalize(new(
             Controls:
@@ -64,10 +62,10 @@ public sealed class TrayDashboardPreferenceTests
         Assert.Equal(
             [true, false, false, false],
             normalized.Controls!.Select(control => control.IsVisible));
-        Assert.Equal(
-            TrayDashboardControlSize.Wide,
-            normalized.Controls![0].Size);
-        Assert.Equal(TrayDashboardControlKind.Lighting, normalized.ExpandedControl);
+        Assert.All(
+            normalized.Controls!,
+            control => Assert.Equal(TrayDashboardControlSize.Compact, control.Size));
+        Assert.Null(normalized.ExpandedControl);
         Assert.Equal(
             [
                 TrayDashboardStatusItemKind.Fans,
@@ -81,7 +79,7 @@ public sealed class TrayDashboardPreferenceTests
     }
 
     [Fact]
-    public void NormalizeDropsHiddenExpandedControlAndInvalidSizes()
+    public void NormalizeDropsLegacyExpandedControlAndInvalidSizes()
     {
         TrayDashboardPreference normalized = TrayDashboardPreferenceDefaults.Normalize(new(
             Controls:
@@ -294,9 +292,9 @@ public sealed class TrayDashboardPreferenceTests
     }
 
     [Theory]
-    [InlineData(96, 360, 378, 8)]
-    [InlineData(144, 540, 567, 12)]
-    [InlineData(192, 720, 756, 16)]
+    [InlineData(96, 360, 278, 8)]
+    [InlineData(144, 540, 417, 12)]
+    [InlineData(192, 720, 556, 16)]
     public void PlacementScalesRedesignedPopupAtCommonMonitorDpis(
         int dpi,
         int expectedWidth,
@@ -307,7 +305,7 @@ public sealed class TrayDashboardPreferenceTests
         TrayDashboardRect result = TrayDashboardPlacement.Resolve(
             new TrayDashboardPoint(3839, 2159),
             workArea,
-            new TrayDashboardSize(360, 378),
+            new TrayDashboardSize(360, 278),
             dpi);
 
         Assert.Equal(expectedWidth, result.Width);
@@ -343,7 +341,7 @@ public sealed class TrayDashboardPreferenceTests
     }
 
     [Fact]
-    public void LayoutUsesOneFlowForPlacementAndPreferredHeight()
+    public void LayoutUsesAUniformThreeColumnFlow()
     {
         TrayDashboardLayout layout = TrayDashboardLayoutPolicy.Resolve(
         [
@@ -363,61 +361,48 @@ public sealed class TrayDashboardPreferenceTests
                 TrayDashboardControlKind.Lighting,
                 true,
                 TrayDashboardControlSize.Compact),
-        ],
-            TrayDashboardControlKind.Performance);
+        ]);
 
-        Assert.Equal(TrayDashboardControlKind.Performance, layout.ExpandedControl);
         Assert.Equal(2, layout.RowCount);
+        Assert.Equal(2, layout.VisibleRowCount);
+        Assert.False(layout.HasOverflow);
         Assert.Equal(
         [
-            new(TrayDashboardControlKind.Fans, 0, 0, 2),
-            new(TrayDashboardControlKind.Battery, 1, 0, 1),
-            new(TrayDashboardControlKind.Lighting, 1, 1, 1),
+            new(TrayDashboardControlKind.Performance, 0, 0, 1),
+            new(TrayDashboardControlKind.Fans, 0, 1, 1),
+            new(TrayDashboardControlKind.Battery, 0, 2, 1),
+            new(TrayDashboardControlKind.Lighting, 1, 0, 1),
         ],
             layout.Controls);
         Assert.Equal(
-            378,
+            278,
             TrayDashboardLayoutPolicy.CalculatePreferredHeight(layout));
     }
 
     [Fact]
-    public void LayoutOmitsExpandedControlFromCompactTiles()
+    public void LayoutCapsTheViewportAtSixControls()
     {
         TrayDashboardLayout layout = TrayDashboardLayoutPolicy.Resolve(
         [
-            new(
-                TrayDashboardControlKind.Performance,
-                true,
-                TrayDashboardControlSize.Compact),
-            new(
-                TrayDashboardControlKind.Fans,
-                true,
-                TrayDashboardControlSize.Compact),
-            new(
-                TrayDashboardControlKind.Battery,
-                true,
-                TrayDashboardControlSize.Compact),
-        ],
-            TrayDashboardControlKind.Performance);
+            new(TrayDashboardControlKind.Performance, true, TrayDashboardControlSize.Compact),
+            new(TrayDashboardControlKind.Fans, true, TrayDashboardControlSize.Compact),
+            new(TrayDashboardControlKind.Battery, true, TrayDashboardControlSize.Compact),
+            new(TrayDashboardControlKind.Lighting, true, TrayDashboardControlSize.Compact),
+            new(TrayDashboardControlKind.Performance, true, TrayDashboardControlSize.Compact),
+            new(TrayDashboardControlKind.Fans, true, TrayDashboardControlSize.Compact),
+            new(TrayDashboardControlKind.Battery, true, TrayDashboardControlSize.Compact),
+        ]);
 
-        Assert.DoesNotContain(
-            layout.Controls,
-            control => control.Kind == TrayDashboardControlKind.Performance);
-        Assert.Equal(
-        [
-            new(TrayDashboardControlKind.Fans, 0, 0, 1),
-            new(TrayDashboardControlKind.Battery, 0, 1, 1),
-        ],
-            layout.Controls);
-        Assert.Equal(1, layout.RowCount);
-        Assert.Equal(TrayDashboardControlKind.Performance, layout.ExpandedControl);
-        Assert.Equal(
-            272,
-            TrayDashboardLayoutPolicy.CalculatePreferredHeight(layout));
+        Assert.Equal(3, layout.RowCount);
+        Assert.Equal(2, layout.VisibleRowCount);
+        Assert.True(layout.HasOverflow);
+        Assert.Equal(2, layout.Controls[6].Row);
+        Assert.Equal(0, layout.Controls[6].Column);
+        Assert.Equal(278, TrayDashboardLayoutPolicy.CalculatePreferredHeight(layout));
     }
 
     [Fact]
-    public void LayoutDoesNotReserveExpandedHeightForHiddenControl()
+    public void LayoutDoesNotReserveRowsForHiddenControls()
     {
         TrayDashboardLayout layout = TrayDashboardLayoutPolicy.Resolve(
         [
@@ -429,33 +414,41 @@ public sealed class TrayDashboardPreferenceTests
                 TrayDashboardControlKind.Fans,
                 true,
                 TrayDashboardControlSize.Compact),
-        ],
-            TrayDashboardControlKind.Performance);
+        ]);
 
-        Assert.Null(layout.ExpandedControl);
+        Assert.Equal(1, layout.RowCount);
+        Assert.Equal(1, layout.VisibleRowCount);
+        Assert.False(layout.HasOverflow);
         Assert.Equal(
-            188,
+            180,
             TrayDashboardLayoutPolicy.CalculatePreferredHeight(layout));
     }
 
-    [Fact]
-    public void ExpandedControlDisablesOnlyItsSizeOption()
+    [Theory]
+    [InlineData(0, -1, -1)]
+    [InlineData(1, -1, 0)]
+    [InlineData(3, -1, 0)]
+    [InlineData(3, 0, 1)]
+    [InlineData(3, 1, 2)]
+    [InlineData(3, 2, 0)]
+    [InlineData(3, 99, 0)]
+    public void QuickActionCyclesToTheNextAvailableOption(
+        int optionCount,
+        int currentIndex,
+        int expected)
     {
-        IReadOnlyList<TrayDashboardControlOption> options =
-            TrayDashboardPreferenceDefaults.CreateControlOptions(null);
+        Assert.Equal(
+            expected,
+            TrayDashboardInteractionPolicy.ResolveNextIndex(
+                optionCount,
+                currentIndex));
+    }
 
-        TrayDashboardPreferenceDefaults.UpdateSizeAvailability(
-            options,
-            TrayDashboardControlKind.Lighting);
-
-        Assert.False(options.Single(option =>
-            option.Kind == TrayDashboardControlKind.Lighting).IsSizeEnabled);
-        Assert.All(
-            options.Where(option => option.Kind != TrayDashboardControlKind.Lighting),
-            option => Assert.True(option.IsSizeEnabled));
-
-        TrayDashboardPreferenceDefaults.UpdateSizeAvailability(options, null);
-        Assert.All(options, option => Assert.True(option.IsSizeEnabled));
+    [Fact]
+    public void QuickActionRejectsANegativeOptionCount()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            TrayDashboardInteractionPolicy.ResolveNextIndex(-1, 0));
     }
 
     [Theory]

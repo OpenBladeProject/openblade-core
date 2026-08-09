@@ -40,21 +40,17 @@ public sealed record TrayDashboardPreference(
 public sealed class TrayDashboardControlOption : INotifyPropertyChanged
 {
     private bool isVisible;
-    private bool isSizeEnabled = true;
-    private TrayDashboardControlSize size;
 
     public TrayDashboardControlOption(
         TrayDashboardControlKind kind,
         string label,
         string description,
-        bool isVisible,
-        TrayDashboardControlSize size)
+        bool isVisible)
     {
         Kind = kind;
         Label = label;
         Description = description;
         this.isVisible = isVisible;
-        this.size = size;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -64,26 +60,6 @@ public sealed class TrayDashboardControlOption : INotifyPropertyChanged
     public string Label { get; }
 
     public string Description { get; }
-
-    public IReadOnlyList<TrayDashboardControlSize> AvailableSizes { get; } =
-        Enum.GetValues<TrayDashboardControlSize>();
-
-    public bool IsSizeEnabled
-    {
-        get => isSizeEnabled;
-        internal set
-        {
-            if (isSizeEnabled == value)
-            {
-                return;
-            }
-
-            isSizeEnabled = value;
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsSizeEnabled)));
-        }
-    }
 
     public bool IsVisible
     {
@@ -100,20 +76,6 @@ public sealed class TrayDashboardControlOption : INotifyPropertyChanged
         }
     }
 
-    public TrayDashboardControlSize Size
-    {
-        get => size;
-        set
-        {
-            if (size == value)
-            {
-                return;
-            }
-
-            size = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Size)));
-        }
-    }
 }
 
 public sealed class TrayDashboardStatusItemOption : INotifyPropertyChanged
@@ -151,10 +113,6 @@ public sealed class TrayDashboardStatusItemOption : INotifyPropertyChanged
         }
     }
 }
-
-public sealed record TrayDashboardExpandedControlOption(
-    TrayDashboardControlKind? Kind,
-    string Label);
 
 public static class TrayDashboardPreferenceDefaults
 {
@@ -203,17 +161,10 @@ public static class TrayDashboardPreferenceDefaults
                 definition.IsVisible,
                 definition.Size))
             .ToArray(),
-        TrayDashboardControlKind.Performance,
+        null,
         StatusDefinitions
             .Select(kind => new TrayDashboardStatusItemPreference(kind, true))
             .ToArray());
-
-    public static IReadOnlyList<TrayDashboardExpandedControlOption> ExpandedControls { get; } =
-    [
-        new(null, "None"),
-        .. ControlDefinitions.Select(definition =>
-            new TrayDashboardExpandedControlOption(definition.Kind, definition.Label)),
-    ];
 
     public static TrayDashboardPreference Normalize(TrayDashboardPreference? preference)
     {
@@ -237,9 +188,7 @@ public static class TrayDashboardPreferenceDefaults
 
             controls.Add(control with
             {
-                Size = Enum.IsDefined(control.Size)
-                    ? control.Size
-                    : TrayDashboardControlSize.Compact,
+                Size = TrayDashboardControlSize.Compact,
             });
         }
 
@@ -275,15 +224,7 @@ public static class TrayDashboardPreferenceDefaults
             }
         }
 
-        TrayDashboardControlKind? expanded = preference.ExpandedControl;
-        if (expanded is { } selected
-            && (!Enum.IsDefined(selected)
-                || controls.All(control => control.Kind != selected || !control.IsVisible)))
-        {
-            expanded = null;
-        }
-
-        return new TrayDashboardPreference(controls, expanded, statusItems);
+        return new TrayDashboardPreference(controls, null, statusItems);
     }
 
     public static IReadOnlyList<TrayDashboardControlOption> CreateControlOptions(
@@ -300,8 +241,7 @@ public static class TrayDashboardPreferenceDefaults
                     control.Kind,
                     definition.Label,
                     definition.Description,
-                    control.IsVisible,
-                    control.Size);
+                    control.IsVisible);
             })
             .ToArray();
     }
@@ -316,17 +256,6 @@ public static class TrayDashboardPreferenceDefaults
                 StatusLabel(status.Kind),
                 status.IsVisible))
             .ToArray();
-    }
-
-    public static void UpdateSizeAvailability(
-        IEnumerable<TrayDashboardControlOption> options,
-        TrayDashboardControlKind? expandedControl)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        foreach (TrayDashboardControlOption option in options)
-        {
-            option.IsSizeEnabled = option.Kind != expandedControl;
-        }
     }
 
     private static string StatusLabel(TrayDashboardStatusItemKind kind) => kind switch

@@ -9,74 +9,50 @@ public readonly record struct TrayDashboardControlPlacement(
 public sealed record TrayDashboardLayout(
     IReadOnlyList<TrayDashboardControlPlacement> Controls,
     int RowCount,
-    TrayDashboardControlKind? ExpandedControl);
+    int VisibleRowCount,
+    bool HasOverflow);
 
 public static class TrayDashboardLayoutPolicy
 {
     private const int BaseHeightDip = 82;
-    private const int ControlRowHeightDip = 106;
-    private const int ExpandedControlHeightDip = 84;
-    private const int MinimumHeightDip = 188;
-    private const int MaximumHeightDip = 640;
+    private const int ControlRowHeightDip = 98;
+    private const int MinimumHeightDip = 180;
+    private const int MaximumHeightDip = 278;
+    private const int ColumnCount = 3;
+    private const int MaximumVisibleRows = 2;
 
     public static TrayDashboardLayout Resolve(
-        IEnumerable<TrayDashboardControlPreference> controls,
-        TrayDashboardControlKind? expandedControl = null)
+        IEnumerable<TrayDashboardControlPreference> controls)
     {
         ArgumentNullException.ThrowIfNull(controls);
 
         TrayDashboardControlPreference[] visibleControls = controls
             .Where(control => control.IsVisible)
             .ToArray();
-        TrayDashboardControlKind? effectiveExpandedControl = expandedControl is { } selected
-            && visibleControls.Any(control => control.Kind == selected)
-                ? selected
-                : null;
         var placements = new List<TrayDashboardControlPlacement>();
-        int row = 0;
-        int column = 0;
-        foreach (TrayDashboardControlPreference control in visibleControls.Where(control =>
-                     control.Kind != effectiveExpandedControl))
+        for (int index = 0; index < visibleControls.Length; index++)
         {
-            bool wide = control.Size == TrayDashboardControlSize.Wide;
-            if (wide && column != 0)
-            {
-                row++;
-                column = 0;
-            }
-
             placements.Add(new TrayDashboardControlPlacement(
-                control.Kind,
-                row,
-                column,
-                wide ? 2 : 1));
-
-            if (wide || column == 1)
-            {
-                row++;
-                column = 0;
-            }
-            else
-            {
-                column = 1;
-            }
+                visibleControls[index].Kind,
+                index / ColumnCount,
+                index % ColumnCount,
+                1));
         }
 
-        int rowCount = checked(row + (column == 0 ? 0 : 1));
+        int rowCount = checked((visibleControls.Length + ColumnCount - 1) / ColumnCount);
+        int visibleRowCount = Math.Min(rowCount, MaximumVisibleRows);
         return new TrayDashboardLayout(
             placements,
             rowCount,
-            effectiveExpandedControl);
+            visibleRowCount,
+            rowCount > MaximumVisibleRows);
     }
 
     public static int CalculatePreferredHeight(TrayDashboardLayout layout)
     {
         ArgumentNullException.ThrowIfNull(layout);
-        int expandedHeight = layout.ExpandedControl is not null
-            ? ExpandedControlHeightDip
-            : 0;
         return Math.Clamp(
-            checked(BaseHeightDip + (layout.RowCount * ControlRowHeightDip) + expandedHeight),
+            checked(BaseHeightDip + (layout.VisibleRowCount * ControlRowHeightDip)),
             MinimumHeightDip,
             MaximumHeightDip);
     }
@@ -90,4 +66,17 @@ public static class TrayDashboardInteractionPolicy
     public static bool ShouldSuppressReopen(TimeSpan elapsedSinceDeactivation) =>
         elapsedSinceDeactivation >= TimeSpan.Zero
         && elapsedSinceDeactivation <= DeactivationReopenSuppression;
+
+    public static int ResolveNextIndex(int optionCount, int currentIndex)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(optionCount);
+        if (optionCount == 0)
+        {
+            return -1;
+        }
+
+        return currentIndex >= 0 && currentIndex < optionCount
+            ? (currentIndex + 1) % optionCount
+            : 0;
+    }
 }

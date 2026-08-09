@@ -282,11 +282,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
             TrayDashboardControlKind.Battery,
             reloaded.EffectiveTrayDashboard.Controls![0].Kind);
         Assert.Equal(
-            TrayDashboardControlSize.Wide,
+            TrayDashboardControlSize.Compact,
             reloaded.EffectiveTrayDashboard.Controls[0].Size);
-        Assert.Equal(
-            TrayDashboardControlKind.Battery,
-            reloaded.EffectiveTrayDashboard.ExpandedControl);
+        Assert.Null(reloaded.EffectiveTrayDashboard.ExpandedControl);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",

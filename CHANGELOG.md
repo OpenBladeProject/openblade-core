@@ -15,9 +15,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Refined the dashboard into a Windows Quick Settings-style panel that stays
-  above other windows, does not repeat the selected expanded control, and
-  disables tile sizing when it does not affect that expanded control.
+- Refined the dashboard into a Windows Quick Settings-style panel with a
+  uniform three-column tile grid, quick actions that cycle through available
+  options, chevrons that open focused choice screens, scrolling beyond six
+  controls, and a gear-only button for opening the main window. Settings keeps
+  control visibility, order, and the status row customizable.
 
 ### Fixed
 

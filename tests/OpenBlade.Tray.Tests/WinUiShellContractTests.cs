@@ -1906,20 +1906,36 @@ public sealed class WinUiShellContractTests
             "DisplayInformation.DisplayContentsInvalidated",
             dashboardWindow,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "SetExpandedControl(layout.ExpandedControl)",
-            dashboardWindow,
-            StringComparison.Ordinal);
-
         Assert.Contains("x:Name=\"ControlGrid\"", dashboardXaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"ExpandedControlContainer\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ControlScroller\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", dashboardXaml, StringComparison.Ordinal);
+        int controlGrid = dashboardXaml.IndexOf(
+            "x:Name=\"ControlGrid\"",
+            StringComparison.Ordinal);
+        int performanceTile = dashboardXaml.IndexOf(
+            "x:Name=\"PerformanceTile\"",
+            controlGrid,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            3,
+            CountOccurrences(
+                dashboardXaml[controlGrid..performanceTile],
+                "<ColumnDefinition Width=\"*\" />"));
         Assert.Contains("QuickTileSurfaceStyle", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Charge limit\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"BatteryPowerStatus\"", dashboardXaml, StringComparison.Ordinal);
-        Assert.Contains("Content=\"More\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Glyph=\"&#xE713;\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Open OpenBlade\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("DisplayMemberPath=\"Label\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("SizeChanged=\"OnRootSizeChanged\"", dashboardXaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"DashboardContent\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"DetailPage\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnDetailBackClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnPerformanceCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnPerformanceDetailsClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnFansCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnBatteryCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnLightingCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardInteractionPolicy.ResolveNextIndex(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("Glyph=\"&#xE895;\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Glyph=\"&#xE9D0;\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardBatteryPowerFlowLabel", dashboardXaml, StringComparison.Ordinal);
@@ -1929,18 +1945,12 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Preview", dashboardXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("ControlGrid.Children.Remove", dashboardWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("ControlGrid.Children.Add", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains(
-            "IsEnabled=\"{x:Bind IsSizeEnabled, Mode=OneWay}\"",
-            mainXaml,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "TrayDashboardPreferenceDefaults.UpdateSizeAvailability(",
-            mainWindow,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "GetEffectiveExpandedControl()",
-            mainWindow,
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"ExpandedControlContainer\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"More\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsSizeEnabled", mainXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("UpdateSizeAvailability", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetEffectiveExpandedControl", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("The first six controls stay visible.", mainWindow, StringComparison.Ordinal);
     }
 
     [Fact]
