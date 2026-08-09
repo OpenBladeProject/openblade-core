@@ -605,7 +605,7 @@
                                     </Grid>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsSubcardStyle}"
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
@@ -628,7 +628,7 @@
                                               SelectionChanged="OnDashboardCustomCpuChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsSubcardStyle}"
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
