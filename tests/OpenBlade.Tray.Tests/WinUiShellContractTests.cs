@@ -362,6 +362,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("app.ShutdownOpenBladeAsync()", window, StringComparison.Ordinal);
         Assert.Contains("new ElevatedServiceControlLauncher()", app, StringComparison.Ordinal);
         Assert.Contains("app.StartOpenBladeAsync()", window, StringComparison.Ordinal);
+        Assert.Contains("StartOpenBladeResult.AlreadyRunning", window, StringComparison.Ordinal);
+        Assert.Contains("OpenBlade service is already running", window, StringComparison.Ordinal);
+        Assert.Contains("StartOpenBladeProgressRing.IsActive", window, StringComparison.Ordinal);
+        Assert.Contains("isStarting ? \"Starting OpenBlade\" : \"Start OpenBlade\"", window, StringComparison.Ordinal);
         Assert.Contains("SessionAgentLauncher.TryStopSibling()", app, StringComparison.Ordinal);
     }
 
@@ -1243,23 +1247,18 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ShowTrayTaskDialog", app, StringComparison.Ordinal);
         Assert.Contains("WindowNative.GetWindowHandle(window)", app, StringComparison.Ordinal);
         Assert.Contains("service shutdown elevation was canceled", app, StringComparison.Ordinal);
-        string normalizedApp = app.Replace("\r\n", "\n", StringComparison.Ordinal);
+        string compactApp = string.Concat(app.Where(character => !char.IsWhiteSpace(character)));
         Assert.Contains(
-            "(_, _) => Enqueue(() => _ = ExitTrayAsync())",
-            normalizedApp,
+            "(_,_)=>Enqueue(()=>_=ExitTrayAsync())",
+            compactApp,
             StringComparison.Ordinal);
         Assert.Contains(
-            "new TrayExitController(\n"
-                + "            ShowTrayExitDialog,\n"
-                + "            ExitTrayAsync,\n"
-                + "            ShutdownOpenBladeAsync);",
-            normalizedApp,
+            "newTrayExitController(ShowTrayExitDialog,ExitTrayAsync,ShutdownOpenBladeAsync);",
+            compactApp,
             StringComparison.Ordinal);
         Assert.Contains(
-            "WindowsServiceStateConfirmation.WaitForStoppedAsync,\n"
-                + "            () => _ = SessionAgentLauncher.TryStopSibling(),\n"
-                + "            ExitTrayAsync);",
-            normalizedApp,
+            "WindowsServiceStateConfirmation.WaitForStoppedAsync,()=>_=SessionAgentLauncher.TryStopSibling(),ExitTrayAsync);",
+            compactApp,
             StringComparison.Ordinal);
     }
 
@@ -1276,6 +1275,14 @@ public sealed class WinUiShellContractTests
             helperBranch,
             StringComparison.Ordinal);
         int helperReturn = app.IndexOf("return;", helperCall, StringComparison.Ordinal);
+        int invalidHelperBranch = app.IndexOf(
+            "if (helperParseResult == ElevatedServiceHelperParseResult.Invalid)",
+            StringComparison.Ordinal);
+        int invalidHelperExit = app.IndexOf("Exit();", invalidHelperBranch, StringComparison.Ordinal);
+        int invalidHelperReturn = app.IndexOf(
+            "return;",
+            invalidHelperExit,
+            StringComparison.Ordinal);
         int normalInitialization = app.IndexOf(
             "System.Windows.Forms.Application.EnableVisualStyles()",
             StringComparison.Ordinal);
@@ -1290,6 +1297,10 @@ public sealed class WinUiShellContractTests
         Assert.True(helperBranch < helperCall);
         Assert.True(helperCall < helperReturn);
         Assert.True(helperReturn < normalInitialization);
+        Assert.True(invalidHelperBranch >= 0);
+        Assert.True(invalidHelperBranch < invalidHelperExit);
+        Assert.True(invalidHelperExit < invalidHelperReturn);
+        Assert.True(invalidHelperReturn < normalInitialization);
         Assert.Contains("ElevatedServiceHelperParseResult.Invalid", app, StringComparison.Ordinal);
         Assert.Contains("rejected malformed elevated service helper arguments", app, StringComparison.Ordinal);
         Assert.True(normalInitialization < instanceClaim);
@@ -1300,6 +1311,16 @@ public sealed class WinUiShellContractTests
         Assert.Contains("serviceClient.ShutdownOpenBladeAsync", app, StringComparison.Ordinal);
         Assert.Contains("WindowsServiceStartOperation.StartAsync", app, StringComparison.Ordinal);
         Assert.Contains("new CancellationTokenSource(TimeSpan.FromSeconds(65))", app, StringComparison.Ordinal);
+        string helper = SliceMethod(
+            app,
+            "private async Task RunElevatedServiceControlHelperAsync(",
+            "private async Task RequestTrayExitAsync()");
+        string compactHelper = string.Concat(
+            helper.Where(character => !char.IsWhiteSpace(character)));
+        Assert.Contains(
+            "awaitTask.Run(()=>WindowsServiceStartOperation.StartAsync(timeout.Token),timeout.Token);",
+            compactHelper,
+            StringComparison.Ordinal);
         Assert.Contains("new TrayServiceStartCoordinator", app, StringComparison.Ordinal);
         Assert.Contains("WindowsServiceStateConfirmation.WaitForRunningAsync", app, StringComparison.Ordinal);
         Assert.Contains("TrayServiceStartResult.Unconfirmed", app, StringComparison.Ordinal);

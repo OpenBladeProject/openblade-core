@@ -56,6 +56,16 @@ public sealed class ElevatedServiceControlLauncherTests
         }
     }
 
+    [Fact]
+    public void BareLaunchIsNotAHelperLaunch()
+    {
+        Assert.Equal(
+            ElevatedServiceHelperParseResult.None,
+            ElevatedServiceControlLauncher.ParseHelperAction(
+                ["OpenBlade.Tray.exe"],
+                out _));
+    }
+
     [Theory]
     [InlineData((int)ElevatedServiceControlAction.Start, "--start-service")]
     [InlineData((int)ElevatedServiceControlAction.Shutdown, "--shutdown-service")]
@@ -112,6 +122,21 @@ public sealed class ElevatedServiceControlLauncherTests
             CancellationToken.None);
 
         Assert.Equal(ElevatedServiceControlOutcome.Canceled, outcome);
+    }
+
+    [Fact]
+    public async Task RequestAsyncUnexpectedWindowsErrorPropagates()
+    {
+        var launcher = new ElevatedServiceControlLauncher((_, _) =>
+            throw new Win32Exception(5));
+
+        Win32Exception exception = await Assert.ThrowsAsync<Win32Exception>(() =>
+            launcher.RequestAsync(
+                @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe",
+                ElevatedServiceControlAction.Start,
+                CancellationToken.None));
+
+        Assert.Equal(5, exception.NativeErrorCode);
     }
 
     [Fact]

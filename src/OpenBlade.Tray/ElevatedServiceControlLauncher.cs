@@ -48,22 +48,25 @@ internal sealed class ElevatedServiceControlLauncher
     {
         ArgumentNullException.ThrowIfNull(arguments);
         action = default;
-        if (arguments.Count == 2 && string.Equals(
-                arguments[1],
-                StartHelperArgument,
-                StringComparison.OrdinalIgnoreCase))
+        if (arguments.Count == 2)
         {
-            action = ElevatedServiceControlAction.Start;
-            return ElevatedServiceHelperParseResult.Valid;
-        }
+            if (string.Equals(
+                    arguments[1],
+                    StartHelperArgument,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                action = ElevatedServiceControlAction.Start;
+                return ElevatedServiceHelperParseResult.Valid;
+            }
 
-        if (arguments.Count == 2 && string.Equals(
-                arguments[1],
-                ShutdownHelperArgument,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            action = ElevatedServiceControlAction.Shutdown;
-            return ElevatedServiceHelperParseResult.Valid;
+            if (string.Equals(
+                    arguments[1],
+                    ShutdownHelperArgument,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                action = ElevatedServiceControlAction.Shutdown;
+                return ElevatedServiceHelperParseResult.Valid;
+            }
         }
 
         return arguments.Skip(1).Any(IsReservedHelperArgument)
@@ -75,6 +78,8 @@ internal sealed class ElevatedServiceControlLauncher
         string executablePath,
         ElevatedServiceControlAction action)
     {
+        // Production service control assumes the installer-owned tray under
+        // Program Files. Portable or user-writable deployments are unsupported.
         ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
         string workingDirectory = Path.GetDirectoryName(executablePath)
             ?? throw new ArgumentException(

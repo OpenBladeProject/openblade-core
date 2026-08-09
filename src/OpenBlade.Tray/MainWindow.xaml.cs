@@ -2772,12 +2772,25 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        StartOpenBladeButton.IsEnabled = false;
+        SetStartOpenBladeProgress(isStarting: true);
         try
         {
             if (Microsoft.UI.Xaml.Application.Current is App app)
             {
-                await app.StartOpenBladeAsync();
+                StartOpenBladeResult result = await app.StartOpenBladeAsync();
+                if (result == StartOpenBladeResult.AlreadyRunning)
+                {
+                    SetStartOpenBladeProgress(isStarting: false);
+                    var alreadyRunning = new ContentDialog
+                    {
+                        XamlRoot = Root.XamlRoot,
+                        Title = "OpenBlade service is already running",
+                        Content = "The tray will reconnect automatically. This can take a few seconds.",
+                        CloseButtonText = "Close",
+                        DefaultButton = ContentDialogButton.Close,
+                    };
+                    await alreadyRunning.ShowAsync();
+                }
             }
         }
         catch (Exception exception)
@@ -2797,9 +2810,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             if (Volatile.Read(ref disposed) == 0)
             {
-                StartOpenBladeButton.IsEnabled = true;
+                SetStartOpenBladeProgress(isStarting: false);
             }
         }
+    }
+
+    private void SetStartOpenBladeProgress(bool isStarting)
+    {
+        StartOpenBladeButton.IsEnabled = !isStarting;
+        AutomationProperties.SetName(
+            StartOpenBladeButton,
+            isStarting ? "Starting OpenBlade" : "Start OpenBlade");
+        StartOpenBladeProgressRing.IsActive = isStarting;
+        StartOpenBladeProgressRing.Opacity = isStarting ? 1 : 0;
     }
 
     private async void OnExportProfiles(object sender, RoutedEventArgs args)

@@ -9,6 +9,13 @@ using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
+internal enum StartOpenBladeResult
+{
+    Started,
+    AlreadyRunning,
+    Canceled,
+}
+
 public partial class App : Microsoft.UI.Xaml.Application
 {
     private const string PerformanceNotificationReplacementTag = "performance";
@@ -308,13 +315,13 @@ public partial class App : Microsoft.UI.Xaml.Application
         return exitLifecycle.ExitAsync();
     }
 
-    public async Task StartOpenBladeAsync()
+    internal async Task<StartOpenBladeResult> StartOpenBladeAsync()
     {
         WindowsServiceStartPreflightResult preflight =
             await WindowsServiceStartOperation.PreflightAsync(CancellationToken.None);
         if (preflight == WindowsServiceStartPreflightResult.AlreadyRunning)
         {
-            return;
+            return StartOpenBladeResult.AlreadyRunning;
         }
         if (preflight == WindowsServiceStartPreflightResult.Unavailable)
         {
@@ -335,13 +342,15 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (result == TrayServiceStartResult.Canceled)
         {
             Trace.TraceInformation("OpenBlade service start elevation was canceled.");
-            return;
+            return StartOpenBladeResult.Canceled;
         }
         if (result == TrayServiceStartResult.Unconfirmed)
         {
             throw new InvalidOperationException(
                 "The elevated service start could not be confirmed. OpenBlade did not retry the request.");
         }
+
+        return StartOpenBladeResult.Started;
     }
 
     public async Task ShutdownOpenBladeAsync()
@@ -380,7 +389,9 @@ public partial class App : Microsoft.UI.Xaml.Application
             if (action == ElevatedServiceControlAction.Start)
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(65));
-                await WindowsServiceStartOperation.StartAsync(timeout.Token);
+                await Task.Run(
+                    () => WindowsServiceStartOperation.StartAsync(timeout.Token),
+                    timeout.Token);
             }
             else
             {

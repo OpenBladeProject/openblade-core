@@ -991,8 +991,19 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Text") is "Controller detection" or "Last operation");
         XElement startService = NamedElement(document, "Button", "StartOpenBladeButton");
         Assert.Contains(troubleshooting.Descendants(), element => ReferenceEquals(element, startService));
-        Assert.Equal("Start OpenBlade", Attribute(startService, "Content"));
         Assert.Equal("OnStartOpenBlade", Attribute(startService, "Click"));
+        Assert.Equal("Start OpenBlade", Attribute(startService, "AutomationProperties.Name"));
+        Assert.Contains(startService.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Start OpenBlade");
+        XElement startProgress = NamedElement(
+            document,
+            "ProgressRing",
+            "StartOpenBladeProgressRing");
+        Assert.Contains(startService.Descendants(), element => ReferenceEquals(element, startProgress));
+        Assert.Equal("False", Attribute(startProgress, "IsActive"));
+        Assert.Equal("0", Attribute(startProgress, "Opacity"));
+        Assert.Equal("Polite", Attribute(startService, "AutomationProperties.LiveSetting"));
         Assert.Contains(
             "ViewModel.IsServiceUnavailable",
             Attribute(startService, "Visibility"),

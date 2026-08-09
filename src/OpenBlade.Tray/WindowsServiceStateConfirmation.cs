@@ -57,14 +57,14 @@ internal static class WindowsServiceStateConfirmation
         }
         catch (Exception exception)
         {
-            ObservedServiceState? mappedState = MapQueryError(exception);
-            if (mappedState is null)
+            int? errorCode = GetNativeErrorCode(exception);
+            ObservedServiceState? mappedState = MapQueryError(errorCode);
+            if (mappedState is null || errorCode is not int nativeErrorCode)
             {
                 throw;
             }
 
-            int errorCode = GetNativeErrorCode(exception)!.Value;
-            string reason = errorCode == ServiceDoesNotExistError
+            string reason = nativeErrorCode == ServiceDoesNotExistError
                 ? "the configured Windows service was not found"
                 : "Windows denied access to Service Control Manager state";
             Trace.TraceWarning(
@@ -85,7 +85,10 @@ internal static class WindowsServiceStateConfirmation
         };
 
     internal static ObservedServiceState? MapQueryError(
-        Exception exception) => GetNativeErrorCode(exception) switch
+        Exception exception) => MapQueryError(GetNativeErrorCode(exception));
+
+    private static ObservedServiceState? MapQueryError(int? nativeErrorCode) =>
+        nativeErrorCode switch
         {
             ServiceDoesNotExistError or AccessDeniedError =>
                 ObservedServiceState.Unavailable,

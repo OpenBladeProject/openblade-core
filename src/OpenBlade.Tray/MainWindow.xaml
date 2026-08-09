@@ -4018,10 +4018,20 @@
                                                         Grid.Column="2"
                                                         Margin="12,0,0,0"
                                                         VerticalAlignment="Center"
-                                                        Content="Start OpenBlade"
                                                         Visibility="{x:Bind ViewModel.IsServiceUnavailable, Mode=OneWay}"
                                                         Click="OnStartOpenBlade"
-                                                        AutomationProperties.Name="Start OpenBlade" />
+                                                        AutomationProperties.LiveSetting="Polite"
+                                                        AutomationProperties.Name="Start OpenBlade">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <ProgressRing x:Name="StartOpenBladeProgressRing"
+                                                                      Width="14"
+                                                                      Height="14"
+                                                                      IsActive="False"
+                                                                      Opacity="0"
+                                                                      AutomationProperties.AccessibilityView="Raw" />
+                                                        <TextBlock Text="Start OpenBlade" />
+                                                    </StackPanel>
+                                                </Button>
                                             </Grid>
                                         </Grid>
                                     </Border>
