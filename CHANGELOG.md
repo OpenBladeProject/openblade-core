@@ -27,6 +27,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevented the first nightly after a product-version change from replaying
+  entries already published under the preceding version when its generated
+  changelog pull request is still outstanding.
 - Prevented idle NVIDIA GPUs from being woken by clock-offset status reads after
   GPU tuning had already been applied, disabled, or left behind on another
   power profile. Managed offsets are revalidated after resume, while a disabled
