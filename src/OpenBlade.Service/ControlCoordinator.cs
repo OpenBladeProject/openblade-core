@@ -559,6 +559,11 @@ public sealed class ControlCoordinator
             desired = DropUnsupportedGpuClockTuning(desired, capabilities);
             if (desired.GpuClockTuning is null)
             {
+                // Null means OpenBlade no longer manages or reports NVIDIA
+                // offsets; it does not mean reset them. A reset would require
+                // touching NVML and could wake an idle dGPU. Driver-held
+                // offsets may therefore remain applied until a later managed
+                // profile applies new values or the driver reloads.
                 await RelinquishGpuClockOffsetManagementAsync(cancellationToken);
             }
 

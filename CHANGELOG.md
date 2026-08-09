@@ -25,7 +25,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   GPU tuning had already been applied, disabled, or left behind on another
   power profile. Managed offsets are revalidated after resume, while a disabled
   reset is confirmed once without turning unmanaged profile reads into NVIDIA
-  polls.
+  polls. Unmanaged transitions intentionally do not wake NVIDIA to reset
+  offsets, so driver-held values may remain applied while OpenBlade stops
+  reporting them, until tuning is managed again or the driver reloads.
 - Showed the effective **Off** defaults for Gaming mode's Windows-key and
   Alt+Tab blocks instead of presenting missing profile overrides as **Not set**.
 

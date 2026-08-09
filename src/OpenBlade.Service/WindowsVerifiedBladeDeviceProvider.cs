@@ -1156,6 +1156,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         public async Task RelinquishGpuClockOffsetManagementAsync(
             CancellationToken cancellationToken)
         {
+            // An already-relinquished snapshot must still pass through this
+            // gate: a paired firmware/NVML write may be in flight and publish
+            // managed state afterward. The gate also preserves closing checks.
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
