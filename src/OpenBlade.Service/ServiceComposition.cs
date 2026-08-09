@@ -73,7 +73,8 @@ internal static class ServiceComposition
                 provider.GetRequiredService<IProductionLightingPortFactory>(),
                 provider.GetRequiredService<IGpuClockOffsetController>(),
                 provider.GetService<ILogger<WindowsVerifiedBladeDeviceProvider>>(),
-                compatibilityPolicy: compatibilityPolicy);
+                compatibilityPolicy: compatibilityPolicy,
+                gpuActivitySource: new WindowsGpuActivitySource());
         });
         return services;
     }

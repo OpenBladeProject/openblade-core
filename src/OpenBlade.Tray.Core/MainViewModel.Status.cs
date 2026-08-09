@@ -28,6 +28,8 @@ public sealed partial class MainViewModel
         && left.FanOverride == right.FanOverride
         && left.FanControlOverride == right.FanControlOverride
         && left.LightingOverride == right.LightingOverride
+        && left.BatteryPolicyOverride == right.BatteryPolicyOverride
+        && left.BatteryProtectionOverride == right.BatteryProtectionOverride
         && left.FullChargeOverride == right.FullChargeOverride
         && left.LightingRendererOwnership == right.LightingRendererOwnership
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled

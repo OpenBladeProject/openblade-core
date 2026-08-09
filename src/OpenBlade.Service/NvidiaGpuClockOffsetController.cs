@@ -9,7 +9,7 @@ internal interface IGpuClockOffsetController
 {
     GpuClockOffsetCapabilities? Query();
 
-    void Set(GpuClockOffsetSettings settings);
+    GpuClockOffsetCapabilities Set(GpuClockOffsetSettings settings);
 }
 
 internal sealed class UnavailableGpuClockOffsetController : IGpuClockOffsetController
@@ -18,7 +18,7 @@ internal sealed class UnavailableGpuClockOffsetController : IGpuClockOffsetContr
 
     public GpuClockOffsetCapabilities? Query() => null;
 
-    public void Set(GpuClockOffsetSettings settings) => throw new BladeWriteException(
+    public GpuClockOffsetCapabilities Set(GpuClockOffsetSettings settings) => throw new BladeWriteException(
         WriteSubmissionState.KnownNotApplied,
         "GPU clock tuning is unavailable.");
 }
@@ -65,7 +65,7 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
         }
     }
 
-    public void Set(GpuClockOffsetSettings settings)
+    public GpuClockOffsetCapabilities Set(GpuClockOffsetSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         if (!GpuClockOffsetSettings.IsWellFormed(settings))
@@ -118,6 +118,8 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
                     + $"Core={settings.CoreMegahertz};"
                     + $"Memory={settings.MemoryMegahertz}.");
             }
+
+            return confirmed;
         }
         catch (BladeWriteException)
         {

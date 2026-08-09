@@ -282,7 +282,10 @@ public sealed class ProfileSetValidatorTests
             PluggedIn = new PowerProfile(
                 PerformancePreset.Performance,
                 FanMode.Maximum,
-                ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting),
+                ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+            {
+                BatteryProtectionEnabled = true,
+            },
         };
 
         Assert.Throws<InvalidDataException>(() => CreateValidator().Validate(profiles));
@@ -296,7 +299,10 @@ public sealed class ProfileSetValidatorTests
             PluggedIn = new PowerProfile(
                 PerformancePreset.Performance,
                 FanMode.Maximum,
-                ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting),
+                ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+            {
+                BatteryProtectionEnabled = true,
+            },
         };
         ProfileSetValidator validator = CreateValidator(
             combinations: new HashSet<PerformanceFanCombination>
@@ -421,6 +427,36 @@ public sealed class ProfileSetValidatorTests
     {
         Assert.Throws<ArgumentNullException>(() =>
             CreateValidator().ValidatePreferences(null!));
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    public void Validate_RejectsMissingBatteryProtectionForEveryProfile(PowerSource source)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = source switch
+        {
+            PowerSource.PluggedIn => defaults with
+            {
+                PluggedIn = defaults.PluggedIn with { BatteryProtectionEnabled = null },
+            },
+            PowerSource.Battery => defaults with
+            {
+                Battery = defaults.Battery with { BatteryProtectionEnabled = null },
+            },
+            PowerSource.UsbC => defaults with
+            {
+                UsbC = defaults.UsbC with { BatteryProtectionEnabled = null },
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(source)),
+        };
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            CreateValidator().Validate(profiles));
+
+        Assert.Contains("battery protection", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static ProfileSet WithPluggedInLighting(LightingSettings lighting) =>
