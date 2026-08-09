@@ -1709,6 +1709,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             Action? afterWrite = null)
         {
             ArgumentNullException.ThrowIfNull(write);
+            BladeWriteException? afterWriteFailure = null;
             try
             {
                 await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
@@ -1746,14 +1747,25 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     }
 
                     await write(port).ConfigureAwait(false);
-                    afterWrite?.Invoke();
+                    try
+                    {
+                        afterWrite?.Invoke();
+                    }
+                    catch (BladeWriteException exception)
+                    {
+                        // Preserve only the paired post-write failure. BladeWriteException
+                        // instances from the port retain the existing indeterminate mapping.
+                        afterWriteFailure = exception;
+                        throw;
+                    }
                 }
             }
             catch (CapabilityUnavailableException)
             {
                 throw;
             }
-            catch (BladeWriteException)
+            catch (BladeWriteException exception)
+                when (ReferenceEquals(exception, afterWriteFailure))
             {
                 throw;
             }

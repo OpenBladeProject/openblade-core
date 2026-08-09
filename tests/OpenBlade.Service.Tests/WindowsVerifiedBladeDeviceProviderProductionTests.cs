@@ -1625,6 +1625,53 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task KnownNotAppliedPortFailureRetainsIndeterminateProviderMapping()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var portFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "port rejected write");
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = portFailure,
+        };
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal("The hardware write outcome is indeterminate.", error.Message);
+        Assert.Same(portFailure, error.InnerException);
+        Assert.Equal(1, factory.OpenCount);
+    }
+
+    [Fact]
+    public async Task KnownNotAppliedOpenFailureRetainsIndeterminateProviderMapping()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var factory = new FailingProductionFactory(
+            capabilities,
+            HidSessionFailureKind.NativeIoFailure);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal("The hardware write outcome is indeterminate.", error.Message);
+        BladeWriteException openFailure = Assert.IsType<BladeWriteException>(error.InnerException);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, openFailure.SubmissionState);
+        Assert.Equal(1, factory.OpenCount);
+    }
+
+    [Fact]
     public async Task IdentityLossPoisonsNoFutureOperationAndFreshOpenRechecksBeforeWriting()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
