@@ -6360,6 +6360,49 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ScopedReadbackFailure_UnsupportedGpuTuningUsesEffectiveIntent(
+        bool enabled)
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.GpuClockOffsetManagementState =
+            GpuClockOffsetManagementState.Unknown;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        var tuning = new GpuClockTuningSettings(
+            enabled,
+            new GpuClockOffsetSettings(100, 200));
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Performance,
+                    OverrideLifetime.Persistent)
+                {
+                    GpuClockTuning = tuning,
+                },
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(
+            GpuClockOffsetManagementState.Relinquished,
+            context.Device.GpuClockOffsetManagementState);
+        Assert.Equal(
+            [DeviceSubsystem.Performance],
+            context.Runtime.GetStatus().UnconfirmedWrites);
+        int setters = context.Device.TotalSetterCalls;
+
+        context.Device.ReadStateFailureOnCall = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+    }
+
     [Fact]
     public async Task ScopedReadbackFailure_LaterMismatchBecomesExternalWithoutRetry()
     {
@@ -6809,6 +6852,68 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.DoesNotContain(
             DeviceSubsystem.Performance,
             context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PowerTransition_UnsupportedGpuTuningUsesEffectiveIntent(
+        bool enabled)
+    {
+        DeviceCapabilities profileCapabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            GpuOverclock = new GpuOverclockCapabilities(
+                new DeviceNumericRange(-1000, 400, null),
+                new DeviceNumericRange(-1000, 3000, null),
+                DeviceFeatureAccess.ReadWrite),
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.Battery,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(
+                profileCapabilities));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.GpuClockOffsetManagementState =
+            GpuClockOffsetManagementState.Unknown;
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                GpuClockTuning = new GpuClockTuningSettings(
+                    enabled,
+                    new GpuClockOffsetSettings(100, 200)),
+            },
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            profiles.Battery.Performance,
+            profiles.Battery.Fans,
+            ConfirmedBattery(80),
+            profiles.Battery.Lighting);
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles,
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(
+            GpuClockOffsetManagementState.Relinquished,
+            context.Device.GpuClockOffsetManagementState);
+        Assert.Contains(
+            DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().UnconfirmedWrites);
+        int setters = context.Device.TotalSetterCalls;
+
+        context.Device.ReadStateFailureOnCall = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Equal(setters, context.Device.TotalSetterCalls);
     }
 

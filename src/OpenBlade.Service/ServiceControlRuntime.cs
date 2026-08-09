@@ -860,9 +860,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             cancellationToken => SetPerformanceOverrideCoreAsync(value, cancellationToken),
             (coordinator, desired, cancellationToken) =>
                 coordinator.ApplyPerformanceOutcomeAsync(
-                    desired.Performance.Value,
-                    desired.CustomPerformance,
-                    desired.GpuClockTuning,
+                    desired,
                     cancellationToken),
             token,
             value is null
@@ -987,9 +985,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     powerSource,
                     (coordinator, desired, cancellationToken) =>
                         coordinator.ApplyPerformanceOutcomeAsync(
-                            desired.Performance.Value,
-                            desired.CustomPerformance,
-                            desired.GpuClockTuning,
+                            desired,
                             cancellationToken),
                     token,
                     desired => desired with
@@ -1730,9 +1726,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 powerSource,
                 (coordinator, desired, cancellationToken) =>
                     coordinator.ApplyPerformanceOutcomeAsync(
-                        desired.Performance.Value,
-                        desired.CustomPerformance,
-                        desired.GpuClockTuning,
+                        desired,
                         cancellationToken),
                 token),
             DeviceSubsystem.Fans => ApplyScopedIntentAsync(
@@ -4940,7 +4934,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
                 powerSource,
-                desired,
+                outcome.EffectiveDesired ?? desired,
                 preWriteState));
         }
 
@@ -5248,7 +5242,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
                     powerSource,
-                    desired,
+                    outcome.EffectiveDesired ?? desired,
                     preWriteState));
             }
         }
@@ -6684,6 +6678,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    private DeviceSubsystem[] SnapshotPendingWriteSubsystems()
+    {
+        lock (pendingWriteConfirmationGate)
+        {
+            return [.. pendingWriteConfirmations.Keys];
+        }
+    }
+
     private bool IsWritePendingFor(DeviceSubsystem subsystem)
     {
         lock (pendingWriteConfirmationGate)
@@ -6764,7 +6766,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ?? pending.Target.Fans.Value)
                     ? PendingConfirmationResult.Match
                     : PendingConfirmationResult.Mismatch,
-            DeviceSubsystem.Battery => confirmed.Battery is not { TemporaryFullCharge: not null } battery
+            DeviceSubsystem.Battery =>
+                // Temporary full charge changes the meaning of the other battery
+                // fields. A null value is insufficient evidence, so keep the write
+                // pending rather than guessing or retrying it.
+                confirmed.Battery is not { TemporaryFullCharge: not null } battery
                 ? PendingConfirmationResult.Unavailable
                 : BatteryMatchesDesired(battery, pending.Target.Battery)
                     ? PendingConfirmationResult.Match
@@ -6850,8 +6856,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             exclusions.Remove(DeviceSubsystem.Lighting);
         }
-        exclusions.UnionWith(
-            SnapshotPendingWriteConfirmations().Select(entry => entry.Key));
+        exclusions.UnionWith(SnapshotPendingWriteSubsystems());
         if (exclusions.Contains(DeviceSubsystem.Performance)
             || exclusions.Contains(DeviceSubsystem.Fans))
         {
@@ -6864,9 +6869,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private IReadOnlySet<DeviceSubsystem> GetPendingWriteExclusions()
     {
-        var exclusions = SnapshotPendingWriteConfirmations()
-            .Select(entry => entry.Key)
-            .ToHashSet();
+        var exclusions = SnapshotPendingWriteSubsystems().ToHashSet();
         if (exclusions.Contains(DeviceSubsystem.Performance)
             || exclusions.Contains(DeviceSubsystem.Fans))
         {

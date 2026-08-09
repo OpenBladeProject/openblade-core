@@ -3,6 +3,9 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
+// EffectiveDesired is the post-normalization, post-capability-filtered state
+// used by the coordinator. Runtime reconciliation must not compare a later
+// observation against optional intent that the coordinator dropped.
 internal sealed record ScopedApplyOutcome(
     ControlResult Result,
     ConfirmedDeviceState? Readback,
@@ -12,7 +15,8 @@ internal sealed record ScopedApplyOutcome(
     bool DeviceAccessFailed,
     IReadOnlySet<DeviceSubsystem>? ConfirmedCoupledWrites = null,
     bool ConfirmationUnavailable = false,
-    ConfirmedDeviceState? PreWriteState = null);
+    ConfirmedDeviceState? PreWriteState = null,
+    DesiredDeviceState? EffectiveDesired = null);
 
 internal sealed record FullTransitionApplyOutcome(
     SubsystemApplyResults Results,
@@ -23,7 +27,8 @@ internal sealed record FullTransitionApplyOutcome(
     DeviceCapabilities? Capabilities,
     bool DeviceAccessFailed,
     IReadOnlySet<DeviceSubsystem>? ConfirmationUnavailable = null,
-    ConfirmedDeviceState? PreWriteState = null);
+    ConfirmedDeviceState? PreWriteState = null,
+    DesiredDeviceState? EffectiveDesired = null);
 
 internal sealed class IntentionalWriteCanceledException(
     IReadOnlySet<DeviceSubsystem> writeAttempted,
@@ -139,12 +144,27 @@ public sealed class ControlCoordinator
             relinquishWhenUnconfigured: true,
             cancellationToken);
 
-    private Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
+    internal Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
+        DesiredDeviceState desired,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(desired);
+        return ApplyPerformanceOutcomeAsync(
+            desired.Performance.Value,
+            desired.CustomPerformance,
+            desired.GpuClockTuning,
+            relinquishWhenUnconfigured: true,
+            cancellationToken,
+            desired);
+    }
+
+    private async Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
         PerformancePreset value,
         CustomPerformanceSettings? customPerformance,
         GpuClockTuningSettings? gpuClockTuning,
         bool relinquishWhenUnconfigured,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DesiredDeviceState? requestedDesired = null)
     {
         NormalizeLegacyGpuClockTuning(ref customPerformance, ref gpuClockTuning);
         GpuClockTuningSettings? effectiveGpuClockTuning = gpuClockTuning;
@@ -158,7 +178,7 @@ public sealed class ControlCoordinator
                     || capabilities.CustomPerformance?.Supports(customPerformance) != false);
         }
 
-        return ApplyScopedAsync(
+        ScopedApplyOutcome outcome = await ApplyScopedAsync(
             DeviceSubsystem.Performance,
             "Performance",
             IsDefined(value)
@@ -200,7 +220,17 @@ public sealed class ControlCoordinator
             beforeInitialStateRead: (_, token) =>
                 relinquishWhenUnconfigured && effectiveGpuClockTuning is null
                     ? RelinquishGpuClockOffsetManagementAsync(token)
-                    : Task.CompletedTask);
+                    : Task.CompletedTask).ConfigureAwait(false);
+        return requestedDesired is null
+            ? outcome
+            : outcome with
+            {
+                EffectiveDesired = requestedDesired with
+                {
+                    CustomPerformance = customPerformance,
+                    GpuClockTuning = effectiveGpuClockTuning,
+                },
+            };
     }
 
     internal Task<ScopedApplyOutcome> ApplyFanOutcomeAsync(
@@ -635,7 +665,8 @@ public sealed class ControlCoordinator
                     transition.Matched,
                     transition.Contradicted,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: false,
+                    effectiveDesired: desired);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -671,7 +702,8 @@ public sealed class ControlCoordinator
                         .Where(subsystem =>
                             !states[subsystem].AcceptSetterCompletionWithoutReadback)
                         .ToHashSet(),
-                    preWriteState: initial);
+                    preWriteState: initial,
+                    effectiveDesired: desired);
             }
 
             ReconcileFinalReadback(desired, states, final, transition);
@@ -683,7 +715,8 @@ public sealed class ControlCoordinator
                 transition.Matched,
                 transition.Contradicted,
                 capabilities,
-                transition.DeviceAccessFailed);
+                transition.DeviceAccessFailed,
+                effectiveDesired: desired);
         }
         catch (OperationCanceledException exception)
             when (cancellationToken.IsCancellationRequested
@@ -1303,7 +1336,8 @@ public sealed class ControlCoordinator
         DeviceCapabilities capabilities,
         bool DeviceAccessFailed,
         IReadOnlySet<DeviceSubsystem>? confirmationUnavailable = null,
-        ConfirmedDeviceState? preWriteState = null) => new(
+        ConfirmedDeviceState? preWriteState = null,
+        DesiredDeviceState? effectiveDesired = null) => new(
             new SubsystemApplyResults(
                 results[DeviceSubsystem.Performance],
                 results[DeviceSubsystem.Fans],
@@ -1316,7 +1350,8 @@ public sealed class ControlCoordinator
             capabilities,
             DeviceAccessFailed,
             confirmationUnavailable,
-            preWriteState);
+            preWriteState,
+            effectiveDesired);
 
     private BatteryOperationPlan CreateBatteryPlan(
         DesiredBatteryState desired,
