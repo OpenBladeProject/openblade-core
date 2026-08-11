@@ -54,19 +54,19 @@ exact laptop and firmware.
   Windows user, backed by one machine-wide service
 - Fast User Switching without tray restarts; background trays stay connected
   with user-specific configuration redacted and regain control on switch-back
-- Hardware control limited to the active physical console user
 - A Session Agent for every user, with individual tray startup preferences;
   profile and display automation, configured special keys, and interactive
   lighting continue after tray exit
-- Machine-wide battery and firmware changes, regardless of which user requests
-  them
-- Read-only Remote Desktop sessions, with hardware writes blocked when no
-  physical console session is attached
 
 ## Hardware safety
 
 OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
 
+- Only the active physical console user can change hardware. Remote Desktop
+  sessions are read-only, and writes fail closed when no console session is
+  attached.
+- Battery and firmware changes affect the physical laptop regardless of which
+  user requests them.
 - The LocalSystem service is the only process that owns the laptop control HID
   handle, and it serializes every hardware operation.
 - The protocol layer encodes validated 90-byte Razer reports. Service IPC
@@ -132,20 +132,23 @@ policy, setup transactions, and release-payload boundaries.
 
 ## Publish and install
 
+Create the installer and production artifacts:
+
 ```powershell
 .\build\Publish.ps1
 ```
 
 - Graphical installer: `artifacts\win-x64\OpenBlade-Setup.exe`
-- Unpacked production bundle: `artifacts\win-x64\OpenBlade`
-- Developer tools published separately by the same script
 - Normal installation: double-click the graphical installer; do not use
   **Run as administrator**
 - Uninstall: use Windows Settings or the graphical installer; saved profiles
   and preferences remain unless explicitly purged
-- Quiet installation: setup does not launch OpenBlade, and the Microsoft Store
-  lifecycle remains incomplete until
-  [issue #25](https://github.com/OSSBlade/openblade-core/issues/25) is resolved
+- Quiet installation: setup does not launch OpenBlade; the caller must start
+  `OpenBlade.Tray.exe` from its original normal-integrity process and confirm
+  that the Tray and Session Agent are running
+- Microsoft Store quiet-install lifecycle remains incomplete until
+  [issue #25](https://github.com/OSSBlade/openblade-core/issues/25) is resolved;
+  see the [submission notes](docs/microsoft-store-submission.md)
 
 See [build, installation, and Nightly releases](docs/build-install-and-nightly.md)
 for development revisions, recovery commands, signing, Store constraints, and
@@ -157,8 +160,9 @@ installer troubleshooting.
 - Published as GitHub prereleases with the installer, checksum, metadata, and
   exact-commit changelog snapshot
 - Offered in the app only when the **Nightly** update channel is selected
-- Test builds that may be unsigned; verify the installer against its included
-  SHA-256 file
+- Test builds, not stable releases; unless release signing is connected, the
+  installer is expected to report `NotSigned`
+- Verify the installer against its included SHA-256 file
 
 ## Hardware development
 
