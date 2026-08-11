@@ -30,14 +30,8 @@ exact laptop and firmware.
 | Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` | `3.01`, `4.00` | `1.04` | `1.05`, `1.06` |
 | Razer Blade 16 (2025), `RZ09-0528` | `1532:02C6` | `2.02` | `1.09` | `1.09` |
 
-- Exact-device `RZ09-0528` support includes AC performance and custom levels,
-  fan control, battery care, keyboard brightness and Off, lid-logo lighting,
-  keyboard behavior, firmware reads, and Windows display controls
-- Seven additional Synapse quick effects are observed only, not writable,
-  because exact PID `02C6` captures did not reveal effect-specific payloads
-- Other controls and Blade models remain unsupported without equivalent capture
-  and restoration evidence; OpenBlade never borrows commands or relaxes
-  identity checks for similar laptops
+- Unlisted controls and Blade models remain unsupported without equivalent
+  capture and restoration evidence
 
 ## What it controls
 
