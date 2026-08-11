@@ -51,21 +51,18 @@ identity checks to make a device appear compatible.
 - Battery power and health, fan RPM, CPU temperature, and NVIDIA GPU telemetry
 - Optional GitHub release checks with a user-selected startup interval
 - Bounded, redacted diagnostics and guided firmware-update smoke tests
-
-The visible tray can exit without stopping profile automation, display
-automation, configured special keys, or interactive lighting. The per-user
-Session Agent keeps those features active.
-
-OpenBlade supports multiple Windows users through one machine-wide service.
-Each user has separate profiles, overrides, display state, and UI preferences.
-Only the currently active interactive Windows session may change the shared
-laptop hardware. Fast User Switching keeps background trays connected with
-user-specific configuration redacted, then restores control on switch-back
-without a tray restart. The Session Agent starts for every user, while tray
-startup remains an individual user preference. Battery and firmware changes
-still affect the physical laptop, regardless of which user requested them.
-Remote Desktop sessions are read-only; hardware control remains with the
-physical console session and fails closed when no console session is attached.
+- Separate profiles, overrides, display state, and UI preferences for each
+  Windows user, backed by one machine-wide service
+- Fast User Switching without tray restarts; background trays stay connected
+  with user-specific configuration redacted and regain control on switch-back
+- Hardware control limited to the active physical console user
+- A Session Agent for every user, with individual tray startup preferences;
+  profile and display automation, configured special keys, and interactive
+  lighting continue after tray exit
+- Machine-wide battery and firmware changes, regardless of which user requests
+  them
+- Read-only Remote Desktop sessions, with hardware writes blocked when no
+  physical console session is attached
 
 ## Hardware safety
 
