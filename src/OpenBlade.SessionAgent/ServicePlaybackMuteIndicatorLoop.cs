@@ -23,7 +23,9 @@ public sealed class ServicePlaybackMuteIndicatorLoop
         inner = new ServiceMuteIndicatorLoop(
             statusWatcher ?? serviceClient,
             muteStateSource.WatchMutedAsync,
-            capabilities => capabilities?.SupportsPlaybackMuteIndicator == true,
+            status => status.DeviceVerified
+                && !status.WritesBlocked
+                && status.Capabilities?.SupportsPlaybackMuteIndicator == true,
             serviceClient.SetPlaybackMuteIndicatorAsync,
             "The playback mute indicator status subscription ended unexpectedly.",
             "The Windows playback mute subscription ended unexpectedly.",

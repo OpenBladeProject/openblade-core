@@ -95,6 +95,60 @@ public sealed class ServiceMicrophoneMuteIndicatorLoopTests
         await running;
     }
 
+    [Fact]
+    public async Task BlockedWriteWaitsForFreshServiceStatusBeforeRetrying()
+    {
+        var client = new WatchClient();
+        client.Results.Enqueue(new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            "Writes are blocked."));
+        var source = new MutableMuteSource();
+        List<Exception> failures = [];
+        var loop = new ServiceMicrophoneMuteIndicatorLoop(
+            client,
+            source,
+            failures.Add);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        source.Publish(true);
+        client.PublishConnected();
+        await WaitUntilAsync(() => client.Requests.Count == 1, cancellation.Token);
+        await Task.Delay(50, cancellation.Token);
+
+        Assert.Single(client.Requests);
+        Assert.Single(failures);
+
+        client.PublishConnected();
+        await WaitUntilAsync(() => client.Requests.Count == 2, cancellation.Token);
+        Assert.Equal([true, true], client.Requests);
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public async Task WritesBlockedStatusDefersInitialIndicatorUntilUnblocked()
+    {
+        var client = new WatchClient();
+        var source = new MutableMuteSource();
+        var loop = new ServiceMicrophoneMuteIndicatorLoop(client, source);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        source.Publish(true);
+        client.PublishConnected(writesBlocked: true);
+        await Task.Delay(50, cancellation.Token);
+        Assert.Empty(client.Requests);
+
+        client.PublishConnected();
+        await WaitUntilAsync(() => client.Requests.Count == 1, cancellation.Token);
+        Assert.Equal([true], client.Requests);
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
     [Theory]
     [InlineData(new bool[] { true }, true)]
     [InlineData(new bool[] { true, true, true }, true)]
@@ -134,9 +188,13 @@ public sealed class ServiceMicrophoneMuteIndicatorLoopTests
 
         public ConcurrentQueue<bool> Requests { get; } = new();
 
-        public void PublishConnected(bool supportsMicrophoneMuteIndicator = true) =>
+        public ConcurrentQueue<ControlOperationResult> Results { get; } = new();
+
+        public void PublishConnected(
+            bool supportsMicrophoneMuteIndicator = true,
+            bool writesBlocked = false) =>
             updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(
-                Status(supportsMicrophoneMuteIndicator)));
+                Status(supportsMicrophoneMuteIndicator, writesBlocked)));
 
         public void PublishReconnecting() => updates.Writer.TryWrite(
             new ServiceWatchUpdate.Reconnecting());
@@ -159,20 +217,24 @@ public sealed class ServiceMicrophoneMuteIndicatorLoopTests
                 OneShotLaptopControl.MicrophoneMuteIndicator,
                 value.Control);
             Requests.Enqueue(value.Enabled!.Value);
-            return Task.FromResult(new ControlOperationResult(
-                ControlOperationStatus.Applied,
-                "Applied"));
+            return Task.FromResult(
+                Results.TryDequeue(out ControlOperationResult? result)
+                    ? result
+                    : new ControlOperationResult(
+                        ControlOperationStatus.Applied,
+                        "Applied"));
         }
     }
 
     private static ServiceStatusSnapshot Status(
-        bool supportsMicrophoneMuteIndicator)
+        bool supportsMicrophoneMuteIndicator,
+        bool writesBlocked = false)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         return new ServiceStatusSnapshot(
             1,
             DeviceVerified: true,
-            WritesBlocked: false,
+            WritesBlocked: writesBlocked,
             [],
             null,
             [],

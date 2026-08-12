@@ -10,7 +10,7 @@ internal sealed class ServiceMuteIndicatorLoop
 
     private readonly IServiceStatusWatcher statusWatcher;
     private readonly Func<CancellationToken, IAsyncEnumerable<bool?>> watchMuted;
-    private readonly Func<DeviceCapabilities?, bool> isSupported;
+    private readonly Func<ServiceStatusSnapshot, bool> canSend;
     private readonly Func<bool, CancellationToken, Task<ControlOperationResult>> setIndicator;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private readonly Action<Exception>? errorHandler;
@@ -24,14 +24,16 @@ internal sealed class ServiceMuteIndicatorLoop
             SingleWriter = false,
         });
     private int connected;
-    private int supported;
+    private int deliveryEnabled;
+    private int statusGeneration;
+    private int blockedStatusGeneration = -1;
     private int latestMuteState = -1;
     private int lastSentState = -1;
 
     public ServiceMuteIndicatorLoop(
         IServiceStatusWatcher statusWatcher,
         Func<CancellationToken, IAsyncEnumerable<bool?>> watchMuted,
-        Func<DeviceCapabilities?, bool> isSupported,
+        Func<ServiceStatusSnapshot, bool> canSend,
         Func<bool, CancellationToken, Task<ControlOperationResult>> setIndicator,
         string statusEndedMessage,
         string muteSubscriptionEndedMessage,
@@ -42,8 +44,8 @@ internal sealed class ServiceMuteIndicatorLoop
             ?? throw new ArgumentNullException(nameof(statusWatcher));
         this.watchMuted = watchMuted
             ?? throw new ArgumentNullException(nameof(watchMuted));
-        this.isSupported = isSupported
-            ?? throw new ArgumentNullException(nameof(isSupported));
+        this.canSend = canSend
+            ?? throw new ArgumentNullException(nameof(canSend));
         this.setIndicator = setIndicator
             ?? throw new ArgumentNullException(nameof(setIndicator));
         this.statusEndedMessage = statusEndedMessage
@@ -87,23 +89,25 @@ internal sealed class ServiceMuteIndicatorLoop
             switch (update)
             {
                 case ServiceWatchUpdate.Connected connectedUpdate:
-                    int nextSupported = isSupported(connectedUpdate.Status.Capabilities)
+                    Interlocked.Increment(ref statusGeneration);
+                    int nextEnabled = canSend(connectedUpdate.Status)
                         ? 1
                         : 0;
                     bool connectionChanged =
                         Interlocked.Exchange(ref connected, 1) == 0;
-                    bool supportChanged =
-                        Interlocked.Exchange(ref supported, nextSupported)
-                            != nextSupported;
-                    if (connectionChanged || supportChanged)
+                    bool deliveryChanged =
+                        Interlocked.Exchange(ref deliveryEnabled, nextEnabled)
+                            != nextEnabled;
+                    if (connectionChanged || deliveryChanged)
                     {
                         Interlocked.Exchange(ref lastSentState, -1);
                     }
                     SignalStateChanged();
                     break;
                 case ServiceWatchUpdate.Reconnecting:
+                    Interlocked.Increment(ref statusGeneration);
                     Volatile.Write(ref connected, 0);
-                    Volatile.Write(ref supported, 0);
+                    Volatile.Write(ref deliveryEnabled, 0);
                     Interlocked.Exchange(ref lastSentState, -1);
                     break;
             }
@@ -150,8 +154,11 @@ internal sealed class ServiceMuteIndicatorLoop
             .ConfigureAwait(false))
         {
             int encoded = Volatile.Read(ref latestMuteState);
+            int currentStatusGeneration = Volatile.Read(ref statusGeneration);
             if (Volatile.Read(ref connected) == 0
-                || Volatile.Read(ref supported) == 0
+                || Volatile.Read(ref deliveryEnabled) == 0
+                || Volatile.Read(ref blockedStatusGeneration)
+                    == currentStatusGeneration
                 || encoded is not (0 or 1)
                 || Volatile.Read(ref lastSentState) == encoded)
             {
@@ -163,9 +170,15 @@ internal sealed class ServiceMuteIndicatorLoop
                 ControlOperationResult result = await setIndicator(
                     encoded == 1,
                     cancellationToken).ConfigureAwait(false);
-                if (result.Status is
-                    ControlOperationStatus.Blocked or
-                    ControlOperationStatus.Failed)
+                if (result.Status == ControlOperationStatus.Blocked)
+                {
+                    Volatile.Write(
+                        ref blockedStatusGeneration,
+                        currentStatusGeneration);
+                    errorHandler?.Invoke(new InvalidOperationException(result.Message));
+                    continue;
+                }
+                if (result.Status == ControlOperationStatus.Failed)
                 {
                     throw new InvalidOperationException(result.Message);
                 }

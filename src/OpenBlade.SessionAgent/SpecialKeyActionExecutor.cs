@@ -21,7 +21,7 @@ public interface ISpecialKeyInputSender
 
     void SendMediaAction(SpecialKeyActionKind action);
 
-    bool ToggleMicrophoneMute();
+    void ToggleMicrophoneMute();
 
     void Launch(string target, bool requireWebAddress);
 }
@@ -122,7 +122,7 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
     private Task ToggleMicrophoneMuteAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _ = input.ToggleMicrophoneMute();
+        input.ToggleMicrophoneMute();
         return Task.CompletedTask;
     }
 
@@ -336,7 +336,7 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
         Send([KeyDown(key), KeyUp(key)]);
     }
 
-    public bool ToggleMicrophoneMute()
+    public void ToggleMicrophoneMute()
     {
         object? enumeratorObject = null;
         var endpoints = new List<DefaultCaptureEndpoint>();
@@ -418,7 +418,6 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
                     }
                 }
 
-                return targetMute;
             }
             catch
             {

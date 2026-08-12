@@ -20,6 +20,9 @@ internal enum CoreAudioRole
 
 internal static class WindowsCoreAudioMuteStateSource
 {
+    private static readonly TimeSpan RebindFailureRetryInterval =
+        TimeSpan.FromSeconds(2);
+
     public static async IAsyncEnumerable<bool?> WatchMutedAsync(
         CoreAudioDataFlow flow,
         IReadOnlyCollection<CoreAudioRole> roles,
@@ -71,7 +74,6 @@ internal static class WindowsCoreAudioMuteStateSource
         private const int ElementNotFoundHResult = unchecked((int)0x80070490);
         private const uint ClassContextAll = 23;
 
-        private readonly object sync = new();
         private readonly CoreAudioDataFlow flow;
         private readonly HashSet<CoreAudioRole> roles;
         private readonly Func<IReadOnlyCollection<bool>, bool?> aggregate;
@@ -79,8 +81,16 @@ internal static class WindowsCoreAudioMuteStateSource
         private readonly object enumeratorObject;
         private readonly IMMDeviceEnumerator enumerator;
         private readonly DeviceNotificationClient deviceNotification;
-        private readonly AudioEndpointVolumeCallback volumeNotification;
-        private List<EndpointBinding> endpoints = [];
+        private readonly Channel<byte> rebindRequests = Channel.CreateBounded<byte>(
+            new BoundedChannelOptions(1)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false,
+            });
+        private readonly CancellationTokenSource rebindCancellation = new();
+        private readonly Task rebindTask;
+        private EndpointBinding[] endpoints = [];
         private int disposed;
 
         public NativeSubscription(
@@ -96,18 +106,19 @@ internal static class WindowsCoreAudioMuteStateSource
             enumeratorObject = CoreAudioDeviceEnumerator.Create();
             enumerator = (IMMDeviceEnumerator)enumeratorObject;
             deviceNotification = new DeviceNotificationClient(this);
-            volumeNotification = new AudioEndpointVolumeCallback(this);
             Marshal.ThrowExceptionForHR(
                 enumerator.RegisterEndpointNotificationCallback(deviceNotification));
             try
             {
                 BindDefaultEndpoints();
+                rebindTask = RebindAsync(rebindCancellation.Token);
             }
             catch
             {
                 _ = enumerator.UnregisterEndpointNotificationCallback(
                     deviceNotification);
                 ReleaseCom(enumeratorObject);
+                rebindCancellation.Dispose();
                 throw;
             }
         }
@@ -119,61 +130,84 @@ internal static class WindowsCoreAudioMuteStateSource
                 return;
             }
 
-            List<EndpointBinding> oldEndpoints;
-            lock (sync)
+            rebindRequests.Writer.TryComplete();
+            rebindCancellation.Cancel();
+            try
             {
-                oldEndpoints = endpoints;
-                endpoints = [];
+                rebindTask.GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
             }
 
+            EndpointBinding[] oldEndpoints = Interlocked.Exchange(
+                ref endpoints,
+                []);
             ReleaseEndpoints(oldEndpoints);
             _ = enumerator.UnregisterEndpointNotificationCallback(deviceNotification);
             ReleaseCom(enumeratorObject);
+            rebindCancellation.Dispose();
+        }
+
+        private async Task RebindAsync(CancellationToken cancellationToken)
+        {
+            while (await rebindRequests.Reader
+                .WaitToReadAsync(cancellationToken)
+                .ConfigureAwait(false))
+            {
+                while (rebindRequests.Reader.TryRead(out _))
+                {
+                }
+
+                try
+                {
+                    BindDefaultEndpoints();
+                }
+                catch
+                {
+                    PublishUnknown();
+                    await Task.Delay(
+                        RebindFailureRetryInterval,
+                        cancellationToken).ConfigureAwait(false);
+                    rebindRequests.Writer.TryWrite(0);
+                }
+            }
         }
 
         private void BindDefaultEndpoints()
         {
-            lock (sync)
+            var nextEndpoints = new List<EndpointBinding>();
+            var deviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
             {
-                if (Volatile.Read(ref disposed) != 0)
+                foreach (CoreAudioRole role in roles)
                 {
-                    return;
+                    TryBindEndpoint(role, deviceIds, nextEndpoints);
                 }
 
-                var nextEndpoints = new List<EndpointBinding>();
-                var states = new List<bool>();
-                var deviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                try
-                {
-                    foreach (CoreAudioRole role in roles)
-                    {
-                        TryBindEndpoint(
-                            role,
-                            deviceIds,
-                            nextEndpoints,
-                            states);
-                    }
-
-                    ReplaceEndpoints(nextEndpoints);
-                    nextEndpoints = [];
-                    publish(aggregate(states));
-                }
-                finally
-                {
-                    ReleaseEndpoints(nextEndpoints);
-                }
+                EndpointBinding[] next = nextEndpoints.ToArray();
+                nextEndpoints.Clear();
+                EndpointBinding[] previous = Interlocked.Exchange(
+                    ref endpoints,
+                    next);
+                PublishCurrentState();
+                ReleaseEndpoints(previous);
+            }
+            finally
+            {
+                ReleaseEndpoints(nextEndpoints);
             }
         }
 
         private void TryBindEndpoint(
             CoreAudioRole role,
             HashSet<string> deviceIds,
-            List<EndpointBinding> bindings,
-            List<bool> states)
+            List<EndpointBinding> bindings)
         {
             object? deviceObject = null;
             object? endpointObject = null;
             IAudioEndpointVolume? endpointVolume = null;
+            EndpointBinding? binding = null;
             try
             {
                 int result = enumerator.GetDefaultAudioEndpoint(
@@ -201,108 +235,68 @@ internal static class WindowsCoreAudioMuteStateSource
                     out object endpoint));
                 endpointObject = endpoint;
                 endpointVolume = (IAudioEndpointVolume)endpoint;
-                Marshal.ThrowExceptionForHR(
-                    endpointVolume.RegisterControlChangeNotify(volumeNotification));
-                Marshal.ThrowExceptionForHR(endpointVolume.GetMute(out bool muted));
-                bindings.Add(new EndpointBinding(
+                binding = new EndpointBinding(
+                    this,
                     deviceObject,
                     endpointObject,
-                    endpointVolume));
-                states.Add(muted);
+                    endpointVolume);
                 deviceObject = null;
                 endpointObject = null;
                 endpointVolume = null;
+                binding.RegisterAndReadInitialState();
+                bindings.Add(binding);
+                binding = null;
             }
             finally
             {
-                if (endpointVolume is not null)
-                {
-                    _ = endpointVolume.UnregisterControlChangeNotify(
-                        volumeNotification);
-                }
+                binding?.Dispose();
                 ReleaseCom(endpointObject);
                 ReleaseCom(deviceObject);
             }
         }
 
-        private void ReplaceEndpoints(List<EndpointBinding> nextEndpoints)
-        {
-            List<EndpointBinding> previousEndpoints = endpoints;
-            endpoints = nextEndpoints;
-            ReleaseEndpoints(previousEndpoints);
-        }
-
-        private void OnDefaultDeviceChanged(
+        private void RequestRebind(
             CoreAudioDataFlow changedFlow,
             CoreAudioRole changedRole)
         {
-            if (changedFlow != flow
-                || !roles.Contains(changedRole)
-                || Volatile.Read(ref disposed) != 0)
+            if (changedFlow == flow
+                && roles.Contains(changedRole)
+                && Volatile.Read(ref disposed) == 0)
             {
-                return;
-            }
-
-            try
-            {
-                BindDefaultEndpoints();
-            }
-            catch
-            {
-                ClearEndpointsAndPublishFallback();
+                rebindRequests.Writer.TryWrite(0);
             }
         }
 
-        private void OnVolumeChanged(IntPtr notificationData)
+        private void PublishCurrentState()
         {
-            if (notificationData == IntPtr.Zero
-                || Volatile.Read(ref disposed) != 0)
-            {
-                return;
-            }
-
-            try
-            {
-                bool? muted;
-                lock (sync)
-                {
-                    var states = new List<bool>(endpoints.Count);
-                    foreach (EndpointBinding endpoint in endpoints)
-                    {
-                        Marshal.ThrowExceptionForHR(
-                            endpoint.Volume.GetMute(out bool endpointMuted));
-                        states.Add(endpointMuted);
-                    }
-                    muted = aggregate(states);
-                }
-                publish(muted);
-            }
-            catch
+            EndpointBinding[] current = Volatile.Read(ref endpoints);
+            if (current.Length == 0)
             {
                 publish(aggregate([]));
+                return;
             }
-        }
 
-        private void ClearEndpointsAndPublishFallback()
-        {
-            lock (sync)
+            var states = new bool[current.Length];
+            for (int index = 0; index < current.Length; index++)
             {
-                if (Volatile.Read(ref disposed) != 0)
+                int muted = current[index].Muted;
+                if (muted is not (0 or 1))
                 {
+                    PublishUnknown();
                     return;
                 }
-                ReplaceEndpoints([]);
+                states[index] = muted == 1;
             }
-            publish(aggregate([]));
+            publish(aggregate(states));
         }
 
-        private void ReleaseEndpoints(IEnumerable<EndpointBinding> bindings)
+        private void PublishUnknown() => publish(null);
+
+        private static void ReleaseEndpoints(IEnumerable<EndpointBinding> bindings)
         {
             foreach (EndpointBinding binding in bindings)
             {
-                _ = binding.Volume.UnregisterControlChangeNotify(volumeNotification);
-                ReleaseCom(binding.EndpointObject);
-                ReleaseCom(binding.DeviceObject);
+                binding.Dispose();
             }
         }
 
@@ -314,10 +308,97 @@ internal static class WindowsCoreAudioMuteStateSource
             }
         }
 
-        private sealed record EndpointBinding(
-            object DeviceObject,
-            object EndpointObject,
-            IAudioEndpointVolume Volume);
+        private sealed class EndpointBinding : IDisposable
+        {
+            private readonly NativeSubscription owner;
+            private readonly object deviceObject;
+            private readonly object endpointObject;
+            private readonly IAudioEndpointVolume volume;
+            private readonly AudioEndpointVolumeCallback volumeNotification;
+            private int muted = -1;
+            private int registered;
+            private int disposed;
+
+            public EndpointBinding(
+                NativeSubscription owner,
+                object deviceObject,
+                object endpointObject,
+                IAudioEndpointVolume volume)
+            {
+                this.owner = owner;
+                this.deviceObject = deviceObject;
+                this.endpointObject = endpointObject;
+                this.volume = volume;
+                volumeNotification = new AudioEndpointVolumeCallback(this);
+            }
+
+            public int Muted => Volatile.Read(ref muted);
+
+            public void RegisterAndReadInitialState()
+            {
+                Marshal.ThrowExceptionForHR(
+                    volume.RegisterControlChangeNotify(volumeNotification));
+                Volatile.Write(ref registered, 1);
+                Marshal.ThrowExceptionForHR(volume.GetMute(out bool initialMuted));
+                Interlocked.CompareExchange(
+                    ref muted,
+                    initialMuted ? 1 : 0,
+                    -1);
+            }
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref disposed, 1) != 0)
+                {
+                    return;
+                }
+
+                if (Interlocked.Exchange(ref registered, 0) != 0)
+                {
+                    _ = volume.UnregisterControlChangeNotify(volumeNotification);
+                }
+                ReleaseCom(endpointObject);
+                ReleaseCom(deviceObject);
+            }
+
+            private void OnVolumeChanged(IntPtr notificationData)
+            {
+                if (Volatile.Read(ref disposed) != 0)
+                {
+                    return;
+                }
+                if (notificationData == IntPtr.Zero)
+                {
+                    owner.PublishUnknown();
+                    return;
+                }
+
+                try
+                {
+                    var notification =
+                        Marshal.PtrToStructure<AudioVolumeNotificationData>(
+                            notificationData);
+                    Volatile.Write(ref muted, notification.Muted ? 1 : 0);
+                    owner.PublishCurrentState();
+                }
+                catch
+                {
+                    owner.PublishUnknown();
+                }
+            }
+
+            [ComVisible(true)]
+            [ClassInterface(ClassInterfaceType.None)]
+            private sealed class AudioEndpointVolumeCallback(EndpointBinding binding)
+                : IAudioEndpointVolumeCallback
+            {
+                public int OnNotify(IntPtr notificationData)
+                {
+                    binding.OnVolumeChanged(notificationData);
+                    return 0;
+                }
+            }
+        }
 
         [ComVisible(true)]
         [ClassInterface(ClassInterfaceType.None)]
@@ -335,25 +416,13 @@ internal static class WindowsCoreAudioMuteStateSource
                 CoreAudioRole role,
                 string? defaultDeviceId)
             {
-                owner.OnDefaultDeviceChanged(flow, role);
+                owner.RequestRebind(flow, role);
                 return 0;
             }
 
             public int OnPropertyValueChanged(
                 string deviceId,
                 PropertyKey propertyKey) => 0;
-        }
-
-        [ComVisible(true)]
-        [ClassInterface(ClassInterfaceType.None)]
-        private sealed class AudioEndpointVolumeCallback(NativeSubscription owner)
-            : IAudioEndpointVolumeCallback
-        {
-            public int OnNotify(IntPtr notificationData)
-            {
-                owner.OnVolumeChanged(notificationData);
-                return 0;
-            }
         }
     }
 
@@ -362,6 +431,18 @@ internal static class WindowsCoreAudioMuteStateSource
     {
         public readonly Guid FormatId;
         public readonly uint PropertyId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct AudioVolumeNotificationData
+    {
+        public Guid EventContext;
+
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool Muted;
+
+        public float MasterVolume;
+        public uint ChannelCount;
     }
 
     [ComImport]

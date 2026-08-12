@@ -23,8 +23,10 @@ public sealed class ServiceMicrophoneMuteIndicatorLoop
         inner = new ServiceMuteIndicatorLoop(
             statusWatcher ?? serviceClient,
             muteStateSource.WatchMutedAsync,
-            capabilities => capabilities?.OneShotLaptopControls.Contains(
-                OneShotLaptopControl.MicrophoneMuteIndicator) == true,
+            status => status.DeviceVerified
+                && !status.WritesBlocked
+                && status.Capabilities?.OneShotLaptopControls.Contains(
+                    OneShotLaptopControl.MicrophoneMuteIndicator) == true,
             (muted, token) => serviceClient.ApplyOneShotLaptopControlAsync(
                 new ApplyOneShotLaptopControl(
                     OneShotLaptopControl.MicrophoneMuteIndicator,

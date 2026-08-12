@@ -279,11 +279,10 @@ public sealed class SpecialKeyActionExecutorTests
 
         public void SendMediaAction(SpecialKeyActionKind action) => MediaActions.Add(action);
 
-        public bool ToggleMicrophoneMute()
+        public void ToggleMicrophoneMute()
         {
             MicrophoneMuteCount++;
             MicrophoneMuted = !MicrophoneMuted;
-            return MicrophoneMuted;
         }
 
         public void Launch(string target, bool requireWebAddress) =>

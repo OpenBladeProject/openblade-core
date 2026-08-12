@@ -38,6 +38,29 @@ public sealed class CoreAudioDeviceEnumeratorContractTests
         }
     }
 
+    [Fact]
+    public void MuteCallbacksUsePayloadsAndDeferEndpointRebinding()
+    {
+        string source = File.ReadAllText(RepositoryFile(
+            "src",
+            "OpenBlade.SessionAgent",
+            "WindowsCoreAudioMuteStateSource.cs"));
+
+        Assert.Contains(
+            "Marshal.PtrToStructure<AudioVolumeNotificationData>",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "rebindRequests.Writer.TryWrite(0)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "private void PublishUnknown() => publish(null);",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("lock (", source, StringComparison.Ordinal);
+    }
+
     private static string RepositoryFile(params string[] path)
     {
         string directory = AppContext.BaseDirectory;
