@@ -21,7 +21,7 @@ public interface ISpecialKeyInputSender
 
     void SendMediaAction(SpecialKeyActionKind action);
 
-    bool ToggleMicrophoneMute();
+    void ToggleMicrophoneMute();
 
     void Launch(string target, bool requireWebAddress);
 }
@@ -119,26 +119,11 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
         }
     }
 
-    private async Task ToggleMicrophoneMuteAsync(CancellationToken cancellationToken)
+    private Task ToggleMicrophoneMuteAsync(CancellationToken cancellationToken)
     {
-        bool muted = input.ToggleMicrophoneMute();
-        try
-        {
-            _ = await serviceClient.ApplyOneShotLaptopControlAsync(
-                new ApplyOneShotLaptopControl(
-                    OneShotLaptopControl.MicrophoneMuteIndicator,
-                    Enabled: muted),
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            // Windows microphone mute is the primary action. A disconnected
-            // service or unavailable indicator must not undo or break it.
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        input.ToggleMicrophoneMute();
+        return Task.CompletedTask;
     }
 
     private async Task CyclePowerModeAsync(CancellationToken cancellationToken)
@@ -351,7 +336,7 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
         Send([KeyDown(key), KeyUp(key)]);
     }
 
-    public bool ToggleMicrophoneMute()
+    public void ToggleMicrophoneMute()
     {
         object? enumeratorObject = null;
         var endpoints = new List<DefaultCaptureEndpoint>();
@@ -432,8 +417,6 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
                             "Windows did not retain the requested microphone mute state.");
                     }
                 }
-
-                return targetMute;
             }
             catch
             {

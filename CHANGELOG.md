@@ -27,6 +27,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Synchronized the microphone-mute key indicator with Windows at Session Agent
+  startup and after later mute or default capture-endpoint changes. Playback-mute
+  indicator updates now pause while hardware writes are blocked and resume after
+  fresh service status.
 - Indeterminate hardware writes are now shown as unconfirmed instead of as
   external changes. OpenBlade blocks retries until a read-only current-state
   check confirms the result or identifies a real mismatch.

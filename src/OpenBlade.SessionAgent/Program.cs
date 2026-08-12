@@ -221,6 +221,14 @@ internal static class Program
                         "OpenBlade playback mute indication failed: {0}",
                         exception.Message),
                     statusWatcher: statusFeed);
+                await using var microphoneMuteServiceClient = new ServiceClient();
+                var microphoneMuteIndicator = new ServiceMicrophoneMuteIndicatorLoop(
+                    microphoneMuteServiceClient,
+                    new WindowsMicrophoneMuteStateSource(),
+                    exception => System.Diagnostics.Trace.TraceWarning(
+                        "OpenBlade microphone mute indication failed: {0}",
+                        exception.Message),
+                    statusWatcher: statusFeed);
                 var lampArrayObservation = new ServiceLampArrayObservationLoop(
                     statusFeed,
                     new WindowsLampArrayObservationSource(),
@@ -240,6 +248,7 @@ internal static class Program
                 Task audioMeterTask = audioMeter.RunAsync(lifetime.Token);
                 Task lightingIdleTask = lightingIdlePolicy.RunAsync(lifetime.Token);
                 Task playbackMuteTask = playbackMuteIndicator.RunAsync(lifetime.Token);
+                Task microphoneMuteTask = microphoneMuteIndicator.RunAsync(lifetime.Token);
                 Task lampArrayObservationTask =
                     lampArrayObservation.RunAsync(lifetime.Token);
                 Task<bool> identityRegistrationTask =
@@ -256,6 +265,7 @@ internal static class Program
                     audioMeterTask,
                     lightingIdleTask,
                     playbackMuteTask,
+                    microphoneMuteTask,
                     lampArrayObservationTask,
                     identityRegistrationTask).ConfigureAwait(false);
                 bool relaunchForIdentity = completed == identityRegistrationTask
