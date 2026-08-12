@@ -10,7 +10,7 @@ public sealed class CoreAudioDeviceEnumeratorContractTests
             "MicrophoneMuteStateProbeCommand.cs",
             "ServiceAudioMeterLightingLoop.cs",
             "SpecialKeyActionExecutor.cs",
-            "WindowsPlaybackMuteStateSource.cs",
+            "WindowsCoreAudioMuteStateSource.cs",
         ];
 
         foreach (string consumer in consumers)

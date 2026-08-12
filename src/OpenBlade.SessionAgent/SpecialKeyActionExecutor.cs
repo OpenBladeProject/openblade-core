@@ -119,26 +119,11 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
         }
     }
 
-    private async Task ToggleMicrophoneMuteAsync(CancellationToken cancellationToken)
+    private Task ToggleMicrophoneMuteAsync(CancellationToken cancellationToken)
     {
-        bool muted = input.ToggleMicrophoneMute();
-        try
-        {
-            _ = await serviceClient.ApplyOneShotLaptopControlAsync(
-                new ApplyOneShotLaptopControl(
-                    OneShotLaptopControl.MicrophoneMuteIndicator,
-                    Enabled: muted),
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            // Windows microphone mute is the primary action. A disconnected
-            // service or unavailable indicator must not undo or break it.
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = input.ToggleMicrophoneMute();
+        return Task.CompletedTask;
     }
 
     private async Task CyclePowerModeAsync(CancellationToken cancellationToken)

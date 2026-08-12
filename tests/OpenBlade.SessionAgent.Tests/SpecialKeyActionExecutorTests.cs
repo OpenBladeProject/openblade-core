@@ -89,7 +89,7 @@ public sealed class SpecialKeyActionExecutorTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_DefaultM5PreservesMicrophoneMute()
+    public async Task ExecuteAsync_DefaultM5LeavesIndicatorToObserver()
     {
         var input = new RecordingInputSender();
         var client = new RecordingServiceClient();
@@ -103,7 +103,7 @@ public sealed class SpecialKeyActionExecutorTests
         await executor.ExecuteAsync(SpecialKeySlot.M5, CancellationToken.None);
 
         Assert.Equal(1, input.MicrophoneMuteCount);
-        Assert.Equal(true, client.MicrophoneMuteIndicator);
+        Assert.Null(client.MicrophoneMuteIndicator);
     }
 
     [Fact]
@@ -213,7 +213,7 @@ public sealed class SpecialKeyActionExecutorTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_MicrophoneMuteUsesInputSender()
+    public async Task ExecuteAsync_MicrophoneMuteLeavesIndicatorToObserver()
     {
         var input = new RecordingInputSender();
         var client = new RecordingServiceClient();
@@ -227,7 +227,7 @@ public sealed class SpecialKeyActionExecutorTests
         await executor.ExecuteAsync(SpecialKeySlot.M2, CancellationToken.None);
 
         Assert.Equal(1, input.MicrophoneMuteCount);
-        Assert.Equal(true, client.MicrophoneMuteIndicator);
+        Assert.Null(client.MicrophoneMuteIndicator);
     }
 
     private static SpecialKeyActionExecutor CreateExecutor(
