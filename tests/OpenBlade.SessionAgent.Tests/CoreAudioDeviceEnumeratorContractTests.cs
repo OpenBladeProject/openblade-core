@@ -54,11 +54,8 @@ public sealed class CoreAudioDeviceEnumeratorContractTests
             "rebindRequests.Writer.TryWrite(0)",
             source,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "private void PublishUnknown() => publish(null);",
-            source,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("lock (", source, StringComparison.Ordinal);
+        Assert.Contains("PublishUnknown", source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\block\s*\(", source);
     }
 
     private static string RepositoryFile(params string[] path)

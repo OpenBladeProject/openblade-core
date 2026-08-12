@@ -417,7 +417,6 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
                             "Windows did not retain the requested microphone mute state.");
                     }
                 }
-
             }
             catch
             {
