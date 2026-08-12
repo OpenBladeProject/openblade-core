@@ -2863,11 +2863,14 @@ public sealed class MainViewModelTests
     public async Task PerformanceSelection_StaysRequestedAcrossInFlightStaleStatus()
     {
         var client = new FakeServiceClient { BlockMutations = true };
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        int dispatchesBeforeBaseline = dispatcher.CompletedCalls;
         client.Publish(baseline);
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeBaseline);
+        Assert.True(viewModel.CanControlHardware);
 
         Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
             .ExecuteAsync(PerformancePreset.Performance);
@@ -2875,13 +2878,15 @@ public sealed class MainViewModelTests
 
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
+        int dispatchesBeforeIntermediateStatus = dispatcher.CompletedCalls;
         client.Publish(baseline with
         {
             Revision = baseline.Revision + 1,
             Message = "Intermediate status",
         });
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Intermediate status");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeIntermediateStatus);
 
+        Assert.Equal("Intermediate status", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
         client.CompleteMutation();
@@ -2897,11 +2902,14 @@ public sealed class MainViewModelTests
     public async Task PerformanceSelection_StaysRequestedAcrossPostCompletionStaleStatus()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        int dispatchesBeforeBaseline = dispatcher.CompletedCalls;
         client.Publish(baseline);
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeBaseline);
+        Assert.True(viewModel.CanControlHardware);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
             .ExecuteAsync(PerformancePreset.Performance);
@@ -2909,13 +2917,15 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.IsPerformanceOperationInProgress);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
+        int dispatchesBeforeLaggingStatus = dispatcher.CompletedCalls;
         client.Publish(baseline with
         {
             Revision = baseline.Revision + 1,
             Message = "Lagging status",
         });
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Lagging status");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeLaggingStatus);
 
+        Assert.Equal("Lagging status", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
         PerformanceOverride requested = Assert.IsType<PerformanceOverride>(
@@ -2936,9 +2946,12 @@ public sealed class MainViewModelTests
             },
             PerformanceOverride = requested,
         };
+        int dispatchesBeforeConfirmedStatus = dispatcher.CompletedCalls;
         client.Publish(confirmed);
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Confirmed status");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeConfirmedStatus);
+        Assert.Equal("Confirmed status", viewModel.ConnectionStatus);
 
+        int dispatchesBeforeExternalStatus = dispatcher.CompletedCalls;
         client.Publish(confirmed with
         {
             Revision = baseline.Revision + 3,
@@ -2955,8 +2968,9 @@ public sealed class MainViewModelTests
             },
             PerformanceOverride = null,
         });
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Later external status");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeExternalStatus);
 
+        Assert.Equal("Later external status", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
     }
 
