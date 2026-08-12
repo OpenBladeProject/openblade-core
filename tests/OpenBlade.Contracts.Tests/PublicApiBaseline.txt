@@ -2,6 +2,7 @@
 type enum OpenBlade.Contracts.AdapterPowerState
   field System.Int32 value__
   field const OpenBlade.Contracts.AdapterPowerState FullPower280W = 2
+  field const OpenBlade.Contracts.AdapterPowerState FullPower330W = 3
   field const OpenBlade.Contracts.AdapterPowerState Unknown = 0
   field const OpenBlade.Contracts.AdapterPowerState UsbCPower100W = 1
 type sealed class OpenBlade.Contracts.AmbientAwarenessLightingParameters

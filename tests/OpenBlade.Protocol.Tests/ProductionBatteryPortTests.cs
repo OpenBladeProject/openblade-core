@@ -20,6 +20,7 @@ public sealed class ProductionBatteryPortTests
     [Theory]
     [InlineData("0711", AdapterPowerState.UsbCPower100W)]
     [InlineData("1111", AdapterPowerState.FullPower280W)]
+    [InlineData("1211", AdapterPowerState.FullPower330W)]
     [InlineData("FFFF", AdapterPowerState.Unknown)]
     public async Task AdapterPowerQuery_IsSerializedAndReadOnly(
         string responseHex,
@@ -43,6 +44,7 @@ public sealed class ProductionBatteryPortTests
     [Theory]
     [InlineData("0711", AdapterPowerState.Unknown)]
     [InlineData("1111", AdapterPowerState.FullPower280W)]
+    [InlineData("1211", AdapterPowerState.Unknown)]
     [InlineData("FFFF", AdapterPowerState.Unknown)]
     public async Task AdapterPowerQuery_FiltersValuesOutsideDeviceAdmission(
         string responseHex,

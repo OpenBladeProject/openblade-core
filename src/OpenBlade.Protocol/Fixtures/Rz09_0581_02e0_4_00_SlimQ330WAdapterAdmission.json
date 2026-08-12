@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "slimQ330WAdapterSemanticAdmission",
+  "host": {
+    "manufacturer": "Razer",
+    "model": "Blade 16 - RZ09-0581",
+    "sku": "RZ09-05819EN4",
+    "admittedBiosVersions": [
+      "3.01",
+      "4.00"
+    ],
+    "vendorId": 5426,
+    "productId": 736
+  },
+  "adapter": {
+    "manufacturer": "SlimQ",
+    "advertisedPowerWatts": 330,
+    "commandClass": 7,
+    "commandId": 140,
+    "requestPayloadHex": "0000",
+    "responsePayloadHex": "1211",
+    "mappedState": "FullPower330W"
+  },
+  "evidence": {
+    "captureCommit": "4f99a0529817d496f8c9ff976a20ede6b50a3f60",
+    "validatedBiosVersion": "4.00",
+    "annotation": "captures/annotations/2026-08-12-rz09-0581-slimq-330w-production-admission.json",
+    "annotationSha256": "70A28BEA94213032CCB41425801F53CB5FFA3532D879860629162789AF916DE0",
+    "identicalReadCount": 10,
+    "powerOnlineSampleCount": 4
+  },
+  "gate": {
+    "exactReadbackValidated": true,
+    "bios301CompatibilityAdmissionApproved": true,
+    "productionPowerClassAdmitted": true
+  }
+}

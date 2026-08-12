@@ -38,6 +38,9 @@
     <EmbeddedResource
       Include="Fixtures\Rz09_0528_02c6_2_02_FireOracle.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_FireOracle.json" />
+    <EmbeddedResource
+      Include="Fixtures\Rz09_0581_02e0_4_00_SlimQ330WAdapterAdmission.json"
+      LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_SlimQ330WAdapterAdmission.json" />
   </ItemGroup>
 
 </Project>

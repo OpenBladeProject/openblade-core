@@ -10,6 +10,7 @@ public sealed class AdapterPowerCommandClientTests
     [Theory]
     [InlineData("0711", AdapterPowerState.UsbCPower100W)]
     [InlineData("1111", AdapterPowerState.FullPower280W)]
+    [InlineData("1211", AdapterPowerState.FullPower330W)]
     [InlineData("FFFF", AdapterPowerState.Unknown)]
     public async Task QueryAsync_UsesExactCommandAndReturnsTypedState(
         string responseHex,

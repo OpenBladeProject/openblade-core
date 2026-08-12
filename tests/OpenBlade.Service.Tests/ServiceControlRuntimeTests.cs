@@ -8844,8 +8844,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(2, context.Monitor.ObserveCount);
     }
 
-    [Fact]
-    public async Task PeriodicObservation_ReclassifiesUsbCToBarrelWithoutPowerEvent()
+    [Theory]
+    [InlineData(AdapterPowerState.FullPower280W)]
+    [InlineData(AdapterPowerState.FullPower330W)]
+    public async Task PeriodicObservation_ReclassifiesUsbCToBarrelWithoutPowerEvent(
+        AdapterPowerState fullPowerState)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -8868,7 +8871,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
         Assert.Equal(PowerSource.UsbC, context.Runtime.GetStatus().ActivePowerSource);
 
-        context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        context.Device.AdapterPowerState = fullPowerState;
         await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
 
         Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);

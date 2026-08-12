@@ -243,9 +243,12 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             hardwareAccessGuard,
             native,
             ControllerExclusivityPolicy.Advisory);
+        HostIdentityReadResult exactIdentity = hostIdentity.ReadExactIdentity();
         GpuOverclockCapabilities? gpuOverclockCapabilities = admitGpuOverclock
-            ? GetRz090581GpuOverclockCapabilities(hostIdentity.ReadExactIdentity())
+            ? GetRz090581GpuOverclockCapabilities(exactIdentity)
             : null;
+        IReadOnlySet<AdapterPowerState> admittedAdapterPowerStates =
+            GetRz090581AdmittedAdapterPowerStates(exactIdentity);
         return new ProductionBatteryFactory(
             catalog,
             readEvidence,
@@ -262,6 +265,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout,
             PendingDisposalRegistry.Shared,
+            admittedAdapterPowerStates: admittedAdapterPowerStates,
             gpuOverclockCapabilities: gpuOverclockCapabilities);
     }
 
@@ -287,6 +291,36 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 SupportsEnableDisable = true,
             }
             : null;
+
+    internal static IReadOnlySet<AdapterPowerState>
+        GetRz090581AdmittedAdapterPowerStates(
+            HostIdentityReadResult exactIdentity)
+    {
+        var states = new HashSet<AdapterPowerState>
+        {
+            AdapterPowerState.UsbCPower100W,
+            AdapterPowerState.FullPower280W,
+        };
+
+        if (exactIdentity is
+            {
+                Evidence:
+                {
+                    Manufacturer: "Razer",
+                    ProductName: "Blade 16 - RZ09-0581",
+                    Sku: "RZ09-05819EN4",
+                    BiosVersion: "3.01" or "4.00",
+                },
+                Failure: null,
+                FirmwareCompatibility: HostFirmwareCompatibility.Tested,
+            }
+            && SlimQ330WAdapterAdmissionSource.IsAdmitted())
+        {
+            states.Add(AdapterPowerState.FullPower330W);
+        }
+
+        return states;
+    }
 
     private static HidSessionResult<IProductionBatteryPort> Failure(
         HidSessionFailureKind failure) => new(null, failure);
