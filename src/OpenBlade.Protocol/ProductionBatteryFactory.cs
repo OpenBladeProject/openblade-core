@@ -294,7 +294,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 
     internal static IReadOnlySet<AdapterPowerState>
         GetRz090581AdmittedAdapterPowerStates(
-            HostIdentityReadResult exactIdentity)
+            HostIdentityReadResult exactIdentity,
+            Func<bool>? isSlimQAdmissionApproved = null)
     {
         var states = new HashSet<AdapterPowerState>
         {
@@ -302,7 +303,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             AdapterPowerState.FullPower280W,
         };
 
-        if (exactIdentity is
+        if (exactIdentity is not
             {
                 Evidence:
                 {
@@ -313,10 +314,25 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 },
                 Failure: null,
                 FirmwareCompatibility: HostFirmwareCompatibility.Tested,
-            }
-            && SlimQ330WAdapterAdmissionSource.IsAdmitted())
+            })
         {
-            states.Add(AdapterPowerState.FullPower330W);
+            return states;
+        }
+
+        // Keep this explicit BIOS set even though Tested currently implies it.
+        // Adding a general supported BIOS must not silently widen this adapter
+        // admission before its own policy is reviewed.
+        try
+        {
+            if ((isSlimQAdmissionApproved ?? SlimQ330WAdapterAdmissionSource.IsAdmitted)())
+            {
+                states.Add(AdapterPowerState.FullPower330W);
+            }
+        }
+        catch (UnvalidatedCommandException)
+        {
+            // Adapter evidence is optional for the read-only factory fallback.
+            // A missing or untrusted manifest removes only the 330 W mapping.
         }
 
         return states;

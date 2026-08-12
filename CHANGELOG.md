@@ -11,7 +11,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   Razer Blade 16 RZ09-0581 with BIOS 3.01 or 4.00. The admission is bound to
   ten identical typed adapter reads and four matching Windows online-power
   observations captured on BIOS 4.00; other models and responses remain
-  unchanged.
+  unchanged. The adapter now selects the normal AC profile, including its
+  performance mode, fan behavior, and configured GPU clock offsets.
 - Added per-power-profile battery protection, including migration from the
   former global setting and pending-value indicators for AC, USB-C, and battery.
 - Added the global charge limit to Profiles pending-change presentation.

@@ -22,10 +22,10 @@
     "mappedState": "FullPower330W"
   },
   "evidence": {
-    "captureCommit": "4f99a0529817d496f8c9ff976a20ede6b50a3f60",
+    "captureCommit": "7cb784d93de51bb8ef3fc6ac0a97fc80010d7b19",
     "validatedBiosVersion": "4.00",
     "annotation": "captures/annotations/2026-08-12-rz09-0581-slimq-330w-production-admission.json",
-    "annotationSha256": "70A28BEA94213032CCB41425801F53CB5FFA3532D879860629162789AF916DE0",
+    "annotationSha256": "6402DFA16478DDB80A6E7CE0442612E34215E4FC05DC400EA83EA2EDE3C148A6",
     "identicalReadCount": 10,
     "powerOnlineSampleCount": 4
   },

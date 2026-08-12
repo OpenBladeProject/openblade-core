@@ -80,6 +80,19 @@ public sealed class ProductionBatteryFactoryIntegrationTests
                     HidSessionFailureKind.IdentityBlocked)));
     }
 
+    [Fact]
+    public void Rz090581AdapterAdmission_UntrustedManifestPreservesReadOnlyFallback()
+    {
+        IReadOnlySet<AdapterPowerState> states =
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+                ExactRz090581Identity("4.00"),
+                static () => throw new UnvalidatedCommandException("invalid manifest"));
+
+        Assert.Equal(
+            [AdapterPowerState.UsbCPower100W, AdapterPowerState.FullPower280W],
+            states.Order().ToArray());
+    }
+
     private static HostIdentityReadResult ExactRz090581Identity(
         string biosVersion,
         HostFirmwareCompatibility compatibility = HostFirmwareCompatibility.Tested) => new(

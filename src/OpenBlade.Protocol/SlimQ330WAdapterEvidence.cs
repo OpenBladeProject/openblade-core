@@ -48,11 +48,11 @@ internal static class SlimQ330WAdapterAdmissionSource
     private const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_SlimQ330WAdapterAdmission.json";
     private const string ExpectedSha256 =
-        "B76DAE01CB1EE0A73C2E842837E016E8469490C2571F706DFF355D303ED54000";
+        "9A19B36FFA55FFE61A3F4EFE0D04AC2115E46315B1B45146906967779456125E";
     private const string AnnotationSha256 =
-        "70A28BEA94213032CCB41425801F53CB5FFA3532D879860629162789AF916DE0";
+        "6402DFA16478DDB80A6E7CE0442612E34215E4FC05DC400EA83EA2EDE3C148A6";
     private const string CaptureCommit =
-        "4f99a0529817d496f8c9ff976a20ede6b50a3f60";
+        "7cb784d93de51bb8ef3fc6ac0a97fc80010d7b19";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
