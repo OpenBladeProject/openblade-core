@@ -10,7 +10,7 @@ public sealed class CoreAudioDeviceEnumeratorContractTests
             "MicrophoneMuteStateProbeCommand.cs",
             "ServiceAudioMeterLightingLoop.cs",
             "SpecialKeyActionExecutor.cs",
-            "WindowsPlaybackMuteStateSource.cs",
+            "WindowsCoreAudioMuteStateSource.cs",
         ];
 
         foreach (string consumer in consumers)
@@ -36,6 +36,26 @@ public sealed class CoreAudioDeviceEnumeratorContractTests
                 source,
                 StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void MuteCallbacksUsePayloadsAndDeferEndpointRebinding()
+    {
+        string source = File.ReadAllText(RepositoryFile(
+            "src",
+            "OpenBlade.SessionAgent",
+            "WindowsCoreAudioMuteStateSource.cs"));
+
+        Assert.Contains(
+            "Marshal.PtrToStructure<AudioVolumeNotificationData>",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "rebindRequests.Writer.TryWrite(0)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("PublishUnknown", source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\block\s*\(", source);
     }
 
     private static string RepositoryFile(params string[] path)
