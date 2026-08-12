@@ -24,6 +24,7 @@ internal static class AdapterPowerProtocol
         {
             (0x07, 0x11) => AdapterPowerState.UsbCPower100W,
             (0x11, 0x11) => AdapterPowerState.FullPower280W,
+            (0x12, 0x11) => AdapterPowerState.FullPower330W,
             _ => AdapterPowerState.Unknown,
         };
         return true;

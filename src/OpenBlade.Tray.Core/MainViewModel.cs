@@ -76,6 +76,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan PerformancePresentationHoldGracePeriod =
         TimeSpan.FromSeconds(2);
+    private static readonly HashSet<string> CompetingLightingControllers = new(
+        ["RazerAppEngine", "Razer Synapse Service"],
+        StringComparer.OrdinalIgnoreCase);
 
     private enum ProfileDraftGroup
     {
@@ -170,6 +173,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private string controllerDetectionWarningText = string.Empty;
     private bool hasExternalChanges;
     private string externalChangesText = string.Empty;
+    private bool hasUnconfirmedWrites;
+    private string unconfirmedWritesText = string.Empty;
     private bool alwaysOverrideExternalLightingChanges;
     private bool allowUntestedFirmware;
     private KeyboardLightingControlMode keyboardLightingControlMode;
@@ -211,6 +216,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isBatteryProtectionOperationInProgress;
     private bool isFullChargeOperationInProgress;
     private bool isReapplyChangedSettingsOperationInProgress;
+    private bool isCheckCurrentStateOperationInProgress;
     private bool isStartupAnimationOperationInProgress;
     private bool isFunctionKeyOperationInProgress;
     private bool isGamingModeOperationInProgress;
@@ -1027,6 +1033,47 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         private set => SetField(ref externalChangesText, value);
     }
 
+    public bool HasUnconfirmedWrites
+    {
+        get => hasUnconfirmedWrites;
+        private set
+        {
+            if (hasUnconfirmedWrites == value)
+            {
+                return;
+            }
+            SetField(ref hasUnconfirmedWrites, value);
+            NotifyPresentationState();
+        }
+    }
+
+    public string UnconfirmedWritesText
+    {
+        get => unconfirmedWritesText;
+        private set => SetField(ref unconfirmedWritesText, value);
+    }
+
+    public bool IsCheckCurrentStateOperationInProgress
+    {
+        get => isCheckCurrentStateOperationInProgress;
+        private set
+        {
+            if (isCheckCurrentStateOperationInProgress == value)
+            {
+                return;
+            }
+            SetField(ref isCheckCurrentStateOperationInProgress, value);
+            Notify(nameof(CanCheckCurrentState));
+        }
+    }
+
+    public bool CanCheckCurrentState => IsConnected
+        && HasUnconfirmedWrites
+        && !IsCheckCurrentStateOperationInProgress;
+
+    public bool ShowReapplyChangedSettings => HasExternalChanges
+        && !HasUnconfirmedWrites;
+
     public bool IsReapplyChangedSettingsOperationInProgress
     {
         get => isReapplyChangedSettingsOperationInProgress;
@@ -1042,6 +1089,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool CanReapplyChangedSettings => HasExternalChanges
+        && !HasUnconfirmedWrites
         && CanControlHardware
         && HasReapplicableExternalChanges
         && !IsReapplyChangedSettingsOperationInProgress;
@@ -1164,10 +1212,38 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    public async Task<bool> CheckCurrentStateAsync(CancellationToken cancellationToken)
+    {
+        if (!CanCheckCurrentState)
+        {
+            return false;
+        }
+
+        IsCheckCurrentStateOperationInProgress = true;
+        try
+        {
+            ObservationRequestStamp stamp = new(
+                connectionGeneration,
+                subscriptionConnected);
+            ServiceStatusSnapshot status = await serviceClient
+                .ObserveStateAsync(LiveReadingSensors.None, cancellationToken);
+            bool accepted = false;
+            await dispatcher.InvokeAsync(
+                () => accepted = ApplyObservedStatus(status, stamp, trayOnly: false),
+                cancellationToken);
+            return accepted;
+        }
+        finally
+        {
+            IsCheckCurrentStateOperationInProgress = false;
+        }
+    }
+
     public bool HasAttention => IsConnected
         && (HasControllerAdvisory
             || HasControllerDetectionWarning
-            || HasExternalChanges);
+            || HasExternalChanges
+            || HasUnconfirmedWrites);
 
     public string AttentionSummary
     {
@@ -1176,6 +1252,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (!HasAttention)
             {
                 return string.Empty;
+            }
+            if (HasUnconfirmedWrites)
+            {
+                return "State not confirmed";
             }
             if (HasExternalChanges)
             {
@@ -1191,7 +1271,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string AttentionBadgeLabel => !HasAttention
         ? string.Empty
-        : HasExternalChanges
+        : HasUnconfirmedWrites
+            ? "State not confirmed"
+            : HasExternalChanges
             ? "Changed outside OpenBlade"
             : HasControllerDetectionWarning
                 ? "Check status"
@@ -1206,6 +1288,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return string.Empty;
             }
             List<string> details = [];
+            if (HasUnconfirmedWrites)
+            {
+                details.Add(UnconfirmedWritesText);
+            }
             if (HasExternalChanges)
             {
                 details.Add(ExternalChangesText);
@@ -3897,17 +3983,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public async Task ShutdownOpenBladeAsync(CancellationToken cancellationToken)
-    {
-        ControlOperationResult result = await serviceClient
-            .ShutdownOpenBladeAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (result.Status != ControlOperationStatus.Stored)
-        {
-            throw new InvalidOperationException(result.Message);
-        }
-    }
-
     private readonly record struct ObservationRequestStamp(
         long Generation,
         bool BeganWithConnectedSubscription);
@@ -4202,8 +4277,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ConnectionStatus = status.Message;
         ControlAccessStatus = FormatControlAccessStatus(status);
         HasControllerAdvisory = status.PotentialControllers.Count > 0;
+        bool competingLightingController = status.PotentialControllers.Any(
+            CompetingLightingControllers.Contains);
         ControllerAdvisoryText = HasControllerAdvisory
-            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. Automatic profile changes pause for settings changed elsewhere; manual actions still apply."
+            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. "
+                + (competingLightingController
+                    ? "OpenBlade yields automatic keyboard lighting to Synapse while external lighting override is off. "
+                    : string.Empty)
+                + "Confirmed external changes pause automatic profile updates; manual actions still apply."
             : string.Empty;
         HasControllerDetectionWarning = !string.IsNullOrWhiteSpace(
             status.ControllerDetectionWarning);
@@ -4215,6 +4296,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         HasExternalChanges = externalChanges.Length > 0;
         ExternalChangesText = HasExternalChanges
             ? $"Changed outside OpenBlade: {string.Join(", ", externalChanges.Select(SubsystemLabel))}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade."
+            : string.Empty;
+        DeviceSubsystem[] unconfirmedWrites = status.UnconfirmedWrites
+            .Distinct()
+            .OrderBy(value => value.ToString(), StringComparer.Ordinal)
+            .ToArray();
+        HasUnconfirmedWrites = unconfirmedWrites.Length > 0;
+        UnconfirmedWritesText = HasUnconfirmedWrites
+            ? $"OpenBlade could not confirm {string.Join(", ", unconfirmedWrites.Select(SubsystemLabel))} after a write. The last confirmed values remain shown. Checking the current state is read-only; OpenBlade will not retry the write automatically."
             : string.Empty;
         AlwaysOverrideExternalLightingChanges =
             status.AlwaysOverrideExternalLightingChanges;
@@ -4700,38 +4789,78 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         PerformancePreset requested = (PerformancePreset)parameter!;
         await ApplyPerformanceAsync(
-            new PerformanceOverride(
+            CreatePerformanceOverride(
                 requested,
                 OverrideLifetime.UntilPowerSourceChange,
                 requested == PerformancePreset.Custom
                     ? GetActiveProfileCustomPerformance()
-                    : null)
-            {
-                GpuClockTuning = GetActiveProfileGpuClockTuning(),
-            },
+                    : null,
+                GetActiveProfileGpuClockTuning()),
             token);
     }
 
     private async Task SetCustomPerformanceAsync(object? parameter, CancellationToken token)
     {
         CustomPerformanceSettings requested = (CustomPerformanceSettings)parameter!;
-        GpuClockTuningSettings? gpuClockTuning = GetActiveProfileGpuClockTuning();
-        if (requested.GpuClockOffsets is { } legacyOffsets)
-        {
-            requested = requested with { GpuClockOffsets = null };
-            gpuClockTuning ??= new GpuClockTuningSettings(
-                Enabled: true,
-                legacyOffsets);
-        }
         await ApplyPerformanceAsync(
-            new PerformanceOverride(
+            CreatePerformanceOverride(
                 PerformancePreset.Custom,
                 OverrideLifetime.UntilPowerSourceChange,
-                requested)
-            {
-                GpuClockTuning = gpuClockTuning,
-            },
+                requested,
+                GetActiveProfileGpuClockTuning()),
             token);
+    }
+
+    private static PerformanceOverride CreatePerformanceOverride(
+        PerformancePreset performance,
+        OverrideLifetime lifetime,
+        CustomPerformanceSettings? customPerformance,
+        GpuClockTuningSettings? gpuClockTuning)
+    {
+        var normalized = NormalizeLegacyGpuClockTuning(
+            customPerformance,
+            gpuClockTuning);
+
+        return new PerformanceOverride(performance, lifetime, normalized.CustomPerformance)
+        {
+            GpuClockTuning = normalized.GpuClockTuning,
+        };
+    }
+
+    private static (
+        CustomPerformanceSettings? CustomPerformance,
+        GpuClockTuningSettings? GpuClockTuning) NormalizeLegacyGpuClockTuning(
+            CustomPerformanceSettings? customPerformance,
+            GpuClockTuningSettings? gpuClockTuning)
+    {
+        if (customPerformance?.GpuClockOffsets is not { } legacyOffsets)
+        {
+            return (customPerformance, gpuClockTuning);
+        }
+
+        return (
+            customPerformance with { GpuClockOffsets = null },
+            gpuClockTuning ?? new GpuClockTuningSettings(
+                Enabled: true,
+                legacyOffsets));
+    }
+
+    private static PowerProfile NormalizeLegacyGpuClockTuning(PowerProfile profile)
+    {
+        if (profile.Performance != PerformancePreset.Custom
+            && profile.GpuClockTuning is null)
+        {
+            return profile;
+        }
+
+        var normalized = NormalizeLegacyGpuClockTuning(
+            profile.CustomPerformance,
+            profile.GpuClockTuning);
+        return profile with
+        {
+            CustomPerformance = normalized.CustomPerformance,
+            GpuClockTuning = normalized.GpuClockTuning,
+        };
     }
 
     public Task SetGpuClockTuningEnabledAsync(
@@ -4767,17 +4896,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private Task ApplyGpuClockTuningAsync(
         GpuClockTuningSettings gpuClockTuning,
         CancellationToken token) => ApplyPerformanceAsync(
-            new PerformanceOverride(
+            CreatePerformanceOverride(
                 SelectedPerformance,
                 OverrideLifetime.UntilPowerSourceChange,
                 SelectedPerformance == PerformancePreset.Custom
                     ? new CustomPerformanceSettings(
                         SelectedCustomCpuLevel,
                         SelectedCustomGpuLevel)
-                    : null)
-            {
-                GpuClockTuning = gpuClockTuning,
-            },
+                    : null,
+                gpuClockTuning),
             token);
 
     private async Task ApplyPerformanceAsync(
@@ -6289,7 +6416,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         PowerProfile profile = GetProfile(source);
-        return profile with
+        PowerProfile draft = profile with
         {
             Performance = activeProfileDraftPerformance ?? profile.Performance,
             CustomPerformance = activeProfileDraftCustomPerformance
@@ -6307,6 +6434,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             BatteryProtectionEnabled = activeProfileDraftBatteryProtectionEnabled
                 ?? profile.BatteryProtectionEnabled,
         };
+        return NormalizeLegacyGpuClockTuning(draft);
     }
 
     private ProfileSet CreateProfileSetWithDashboardDraft()
@@ -6375,6 +6503,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             },
             _ => throw new ArgumentOutOfRangeException(nameof(group)),
         };
+        draft = NormalizeLegacyGpuClockTuning(draft);
         return source switch
         {
             PowerSource.PluggedIn => Profiles with { PluggedIn = draft },
@@ -7653,6 +7782,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ? UnavailableLaptopReason
             : externalChanges.Contains(subsystem)
             ? "Changed outside OpenBlade"
+            : subsystem == DeviceSubsystem.Lighting
+                && !confirmed
+                && !status.AlwaysOverrideExternalLightingChanges
+                && status.PotentialControllers.Any(
+                    CompetingLightingControllers.Contains)
+            ? "Other controller may be active"
             : confirmed
                 ? "Current setting"
                 : "Controls unavailable";
@@ -8201,6 +8336,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(ControlAccessStatus));
         Notify(nameof(CanRequestHardwareControl));
         Notify(nameof(CanReapplyChangedSettings));
+        Notify(nameof(CanCheckCurrentState));
+        Notify(nameof(ShowReapplyChangedSettings));
         Notify(nameof(CanEditPerformance));
         Notify(nameof(CanToggleGpuClockTuning));
         Notify(nameof(CanEditGpuClockTuning));

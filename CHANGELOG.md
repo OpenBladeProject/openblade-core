@@ -12,6 +12,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
   row can be customized from Settings while the actual popup updates live.
   Open the main window with a tray-icon double-click or the tray icon's
   right-click **Open** command.
+- Added production recognition for the SlimQ 330 W adapter on the exact
+  Razer Blade 16 RZ09-0581 with BIOS 3.01 or 4.00. The admission is bound to
+  ten identical typed adapter reads and four matching Windows online-power
+  observations captured on BIOS 4.00; other models and responses remain
+  unchanged. The adapter now selects the normal AC profile, including its
+  performance mode, fan behavior, and configured GPU clock offsets.
 - Added per-power-profile battery protection, including migration from the
   former global setting and pending-value indicators for AC, USB-C, and battery.
 - Added the global charge limit to Profiles pending-change presentation.
@@ -55,6 +61,23 @@ All notable changes to OpenBlade are documented in this file. The project follow
   band, reliably dismisses after an outside click, refreshes its telemetry
   while open, and constrains its tiles to the live viewport at every display
   scale.
+- Synchronized the microphone-mute key indicator with Windows at Session Agent
+  startup and after later mute or default capture-endpoint changes. Playback-mute
+  indicator updates now pause while hardware writes are blocked and resume after
+  fresh service status.
+- Indeterminate hardware writes are now shown as unconfirmed instead of as
+  external changes. OpenBlade blocks retries until a read-only current-state
+  check confirms the result or identifies a real mismatch.
+- Stopped OpenBlade's keyboard renderer from fighting Razer Synapse when
+  **Override external lighting changes** is off. OpenBlade now stops its frame
+  stream without closing the lighting port or changing keyboard Driver mode,
+  keeps a fresh manual lighting action active, preserves recovery state when
+  controller detection is temporarily incomplete, and reflects the active
+  user's saved toggle after sign-in without attributing warning-only unavailable
+  lighting to Synapse.
+- Prompted for administrator approval when **Shut down completely** is chosen
+  from the normal tray, while keeping the tray and Session Agent unelevated,
+  and added a troubleshooting action that starts the stopped service again.
 - Prevented the first nightly after a product-version change from replaying
   entries already published under the preceding version when its generated
   changelog pull request is still outstanding.
@@ -69,6 +92,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   instead of being replaced by an older cached value.
 - Showed the effective **Off** defaults for Gaming mode's Windows-key and
   Alt+Tab blocks instead of presenting missing profile overrides as **Not set**.
+- Fixed `IPC request body is invalid` errors and rejected profile saves after
+  editing GPU clock tuning from a legacy profile.
+- Made dashboard Power mode subcards neutral at rest while preserving the
+  standard hover highlight for GPU tuning and Custom CPU/GPU rows.
 
 ## [0.1.0-nightly.11] - 2026-08-08
 

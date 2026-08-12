@@ -664,6 +664,36 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task RelinquishLightingRenderer_RetainsPortAndDriverModeSession()
+    {
+        var port = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        LightingSettings first = LightingSettingsFactory.Static(
+            new RgbColor(1, 2, 3),
+            50);
+        await device.SetLightingAsync(first, CancellationToken.None);
+
+        LightingRendererOwnershipState relinquished =
+            await provider.RelinquishLightingRendererAsync(CancellationToken.None);
+        LightingSettings second = LightingSettingsFactory.Static(
+            new RgbColor(4, 5, 6),
+            60);
+        await device.SetLightingAsync(second, CancellationToken.None);
+
+        Assert.Equal(LightingRendererOwnershipState.Static, relinquished);
+        Assert.Equal(1, port.RelinquishCount);
+        Assert.Equal(0, port.DisposeCount);
+        Assert.Equal([first, second], port.Writes);
+        Assert.Equal(1, lightingFactory.OpenCount);
+    }
+
+    [Fact]
     public async Task DisposeWhileProbeIsBlocked_PreventsStaleDevicePublication()
     {
         var probeStarted = new TaskCompletionSource(
@@ -1920,6 +1950,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int DisposeCount { get; private set; }
 
+        public int RelinquishCount { get; private set; }
+
         public int DrainCount { get; private set; }
 
         public bool DrainResult { get; init; } = true;
@@ -2012,6 +2044,16 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 return Task.FromException(failure);
             }
             return Task.CompletedTask;
+        }
+
+        public Task<LightingRendererOwnershipState> RelinquishRendererAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RelinquishCount++;
+            LightingRendererOwnershipState observed = OwnershipState;
+            OwnershipState = LightingRendererOwnershipState.None;
+            return Task.FromResult(observed);
         }
 
         public async Task<LightingRendererOwnershipState> InvalidateAsync()

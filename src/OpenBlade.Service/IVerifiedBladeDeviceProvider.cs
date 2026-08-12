@@ -26,6 +26,10 @@ public interface IVerifiedBladeDeviceProvider
     bool TryGetOwnedAmbientLightingDevice(out IBladeDevice device) =>
         TryGetVerifiedDevice(out device);
 
+    Task<LightingRendererOwnershipState> RelinquishLightingRendererAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult(LightingRendererOwnershipState.None);
+
     Task<LightingRendererInvalidationResult> InvalidateLightingRendererAsync(
         CancellationToken cancellationToken) =>
         Task.FromResult(new LightingRendererInvalidationResult(

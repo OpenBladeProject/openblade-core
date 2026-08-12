@@ -74,6 +74,9 @@
                    TargetType="Border"
                    BasedOn="{StaticResource SettingsSubcardStyle}">
                 <Setter Property="Background" Value="Transparent" />
+                <Setter Property="local:SettingsCardPointerVisual.IsEnabled" Value="True" />
+                <Setter Property="local:SettingsCardPointerVisual.PointerOverBackground"
+                        Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
             </Style>
             <Style x:Key="InlineCardSliderStyle"
                    TargetType="Slider"
@@ -667,7 +670,7 @@
                                     </Grid>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsSubcardStyle}"
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
@@ -690,7 +693,7 @@
                                               SelectionChanged="OnDashboardCustomCpuChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsSubcardStyle}"
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
@@ -2100,7 +2103,7 @@
                                                         <Button HorizontalAlignment="Left"
                                                                 Margin="0,4,0,0"
                                                                 IsEnabled="{x:Bind ViewModel.CanReapplyChangedSettings, Mode=OneWay}"
-                                                                Visibility="{x:Bind ViewModel.HasExternalChanges, Mode=OneWay}"
+                                                                Visibility="{x:Bind ViewModel.ShowReapplyChangedSettings, Mode=OneWay}"
                                                                 Click="OnReapplyChangedSettingsClick"
                                                                 AutomationProperties.Name="Reapply OpenBlade settings">
                                                             <StackPanel Orientation="Horizontal" Spacing="8">
@@ -2109,6 +2112,20 @@
                                                                               IsActive="{x:Bind ViewModel.IsReapplyChangedSettingsOperationInProgress, Mode=OneWay}"
                                                                               Visibility="{x:Bind ViewModel.IsReapplyChangedSettingsOperationInProgress, Mode=OneWay}" />
                                                                 <TextBlock Text="Reapply OpenBlade settings" />
+                                                            </StackPanel>
+                                                        </Button>
+                                                        <Button HorizontalAlignment="Left"
+                                                                Margin="0,4,0,0"
+                                                                IsEnabled="{x:Bind ViewModel.CanCheckCurrentState, Mode=OneWay}"
+                                                                Visibility="{x:Bind ViewModel.HasUnconfirmedWrites, Mode=OneWay}"
+                                                                Click="OnCheckCurrentStateClick"
+                                                                AutomationProperties.Name="Check current state">
+                                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                                <ProgressRing Width="14"
+                                                                              Height="14"
+                                                                              IsActive="{x:Bind ViewModel.IsCheckCurrentStateOperationInProgress, Mode=OneWay}"
+                                                                              Visibility="{x:Bind ViewModel.IsCheckCurrentStateOperationInProgress, Mode=OneWay}" />
+                                                                <TextBlock Text="Check current state" />
                                                             </StackPanel>
                                                         </Button>
                                                     </StackPanel>
@@ -3144,7 +3161,7 @@
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Override external lighting changes"
                                                        Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Reapply the last OpenBlade lighting effect after OpenBlade confirms it was changed elsewhere."
+                                            <TextBlock Text="When off, OpenBlade yields keyboard lighting to Synapse. Turn it on to reapply the last OpenBlade effect after an external change."
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
@@ -3576,7 +3593,7 @@
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Shut down OpenBlade"
                                                    Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Stop the app, display helper, and hardware service until Windows restarts."
+                                        <TextBlock Text="Stop the app, display helper, and hardware service. You can start OpenBlade again from troubleshooting."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <Button Grid.Column="1"
@@ -4084,7 +4101,7 @@
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="OpenBlade service" Style="{StaticResource TroubleshootingLabelStyle}" />
                                             <Grid Grid.Column="1">
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                                 <Grid VerticalAlignment="Center">
                                                     <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
                                                              Fill="{ThemeResource SystemFillColorCriticalBrush}"
@@ -4092,6 +4109,24 @@
                                                              Visibility="{x:Bind ViewModel.IsServiceUnavailable, Mode=OneWay}" />
                                                 </Grid>
                                                 <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TroubleshootingServiceStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
+                                                <Button x:Name="StartOpenBladeButton"
+                                                        Grid.Column="2"
+                                                        Margin="12,0,0,0"
+                                                        VerticalAlignment="Center"
+                                                        Visibility="{x:Bind ViewModel.IsServiceUnavailable, Mode=OneWay}"
+                                                        Click="OnStartOpenBlade"
+                                                        AutomationProperties.LiveSetting="Polite"
+                                                        AutomationProperties.Name="Start OpenBlade">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <ProgressRing x:Name="StartOpenBladeProgressRing"
+                                                                      Width="14"
+                                                                      Height="14"
+                                                                      IsActive="False"
+                                                                      Opacity="0"
+                                                                      AutomationProperties.AccessibilityView="Raw" />
+                                                        <TextBlock Text="Start OpenBlade" />
+                                                    </StackPanel>
+                                                </Button>
                                             </Grid>
                                         </Grid>
                                     </Border>

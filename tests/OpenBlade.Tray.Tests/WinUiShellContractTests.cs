@@ -5,6 +5,26 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void DashboardCustomPerformanceRowsUseNeutralSubcardBackgrounds()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string powerModeCard = SliceMethod(
+            xaml,
+            "<DataTemplate x:Key=\"DashboardPowerModeCardTemplate\"",
+            "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
+
+        Assert.Equal(
+            5,
+            CountOccurrences(
+                powerModeCard,
+                "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.DoesNotContain(
+            "Style=\"{StaticResource SettingsSubcardStyle}\"",
+            powerModeCard,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DashboardGpuTuningDescriptionUsesDefinedSharedStyle()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
@@ -340,7 +360,12 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Content=\"View\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnShutdownOpenBlade\"", xaml, StringComparison.Ordinal);
         Assert.Contains("app.ShutdownOpenBladeAsync()", window, StringComparison.Ordinal);
-        Assert.Contains("window.ViewModel.ShutdownOpenBladeAsync", app, StringComparison.Ordinal);
+        Assert.Contains("new ElevatedServiceControlLauncher()", app, StringComparison.Ordinal);
+        Assert.Contains("app.StartOpenBladeAsync()", window, StringComparison.Ordinal);
+        Assert.Contains("StartOpenBladeResult.AlreadyRunning", window, StringComparison.Ordinal);
+        Assert.Contains("OpenBlade service is already running", window, StringComparison.Ordinal);
+        Assert.Contains("StartOpenBladeProgressRing.IsActive", window, StringComparison.Ordinal);
+        Assert.Contains("isStarting ? \"Starting OpenBlade\" : \"Start OpenBlade\"", window, StringComparison.Ordinal);
         Assert.Contains("SessionAgentLauncher.TryStopSibling()", app, StringComparison.Ordinal);
     }
 
@@ -812,12 +837,25 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Visibility=\"{x:Bind ViewModel.HasExternalChanges, Mode=OneWay}\"",
+            "Visibility=\"{x:Bind ViewModel.ShowReapplyChangedSettings, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("OnReapplyChangedSettingsClick", window, StringComparison.Ordinal);
         Assert.Contains(
             "ViewModel.ReapplyChangedSettingsAsync(CancellationToken.None)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"Check current state\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.HasUnconfirmedWrites, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("OnCheckCurrentStateClick", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.CheckCurrentStateAsync(CancellationToken.None)",
             window,
             StringComparison.Ordinal);
     }
@@ -868,8 +906,8 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
-        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
+        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
@@ -1217,10 +1255,102 @@ public sealed class WinUiShellContractTests
         Assert.Contains("System.Windows.Forms.Application.EnableVisualStyles()", app, StringComparison.Ordinal);
         Assert.Contains("ShowTrayTaskDialog", app, StringComparison.Ordinal);
         Assert.Contains("WindowNative.GetWindowHandle(window)", app, StringComparison.Ordinal);
-        Assert.Contains("main window is unavailable", app, StringComparison.Ordinal);
-        Assert.True(
-            CountOccurrences(app, "ExitTrayAsync()") >= 3,
-            "The setup event and both exit choices must route through ExitTrayAsync().");
+        Assert.Contains("service shutdown elevation was canceled", app, StringComparison.Ordinal);
+        string compactApp = string.Concat(app.Where(character => !char.IsWhiteSpace(character)));
+        Assert.Contains(
+            "(_,_)=>Enqueue(()=>_=ExitTrayAsync())",
+            compactApp,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "newTrayExitController(ShowTrayExitDialog,ExitTrayAsync,ShutdownOpenBladeAsync);",
+            compactApp,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "WindowsServiceStateConfirmation.WaitForStoppedAsync,()=>_=SessionAgentLauncher.TryStopSibling(),ExitTrayAsync);",
+            compactApp,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ElevatedServiceHelpersRunBeforeTrayAndSessionInitialization()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        int helperGate = app.IndexOf(
+            "ElevatedServiceControlLauncher.ParseHelperAction",
+            StringComparison.Ordinal);
+        int helperBranch = app.IndexOf("if (elevatedServiceHelper)", StringComparison.Ordinal);
+        int helperCall = app.IndexOf(
+            "_ = RunElevatedServiceControlHelperAsync(helperAction);",
+            helperBranch,
+            StringComparison.Ordinal);
+        int helperReturn = app.IndexOf("return;", helperCall, StringComparison.Ordinal);
+        int invalidHelperBranch = app.IndexOf(
+            "if (helperParseResult == ElevatedServiceHelperParseResult.Invalid)",
+            StringComparison.Ordinal);
+        int invalidHelperExit = app.IndexOf("Exit();", invalidHelperBranch, StringComparison.Ordinal);
+        int invalidHelperReturn = app.IndexOf(
+            "return;",
+            invalidHelperExit,
+            StringComparison.Ordinal);
+        int normalInitialization = app.IndexOf(
+            "System.Windows.Forms.Application.EnableVisualStyles()",
+            StringComparison.Ordinal);
+        int instanceClaim = app.IndexOf(
+            "TrayInstanceCoordinator.TryStart",
+            StringComparison.Ordinal);
+        int windowCreation = app.IndexOf("CreateMainWindow(", StringComparison.Ordinal);
+        int sessionAgentStart = app.IndexOf("StartSessionAgent();", StringComparison.Ordinal);
+
+        Assert.True(helperGate >= 0);
+        Assert.True(helperGate < helperBranch);
+        Assert.True(helperBranch < helperCall);
+        Assert.True(helperCall < helperReturn);
+        Assert.True(helperReturn < normalInitialization);
+        Assert.True(invalidHelperBranch >= 0);
+        Assert.True(invalidHelperBranch < invalidHelperExit);
+        Assert.True(invalidHelperExit < invalidHelperReturn);
+        Assert.True(invalidHelperReturn < normalInitialization);
+        Assert.Contains("ElevatedServiceHelperParseResult.Invalid", app, StringComparison.Ordinal);
+        Assert.Contains("rejected malformed elevated service helper arguments", app, StringComparison.Ordinal);
+        Assert.True(normalInitialization < instanceClaim);
+        Assert.True(normalInitialization < windowCreation);
+        Assert.True(normalInitialization < sessionAgentStart);
+        Assert.Contains("new ServiceClient()", app, StringComparison.Ordinal);
+        Assert.Contains("new CancellationTokenSource(TimeSpan.FromSeconds(10))", app, StringComparison.Ordinal);
+        Assert.Contains("serviceClient.ShutdownOpenBladeAsync", app, StringComparison.Ordinal);
+        Assert.Contains("WindowsServiceStartOperation.StartAsync", app, StringComparison.Ordinal);
+        Assert.Contains("new CancellationTokenSource(TimeSpan.FromSeconds(65))", app, StringComparison.Ordinal);
+        string helper = SliceMethod(
+            app,
+            "private async Task RunElevatedServiceControlHelperAsync(",
+            "private async Task RequestTrayExitAsync()");
+        string compactHelper = string.Concat(
+            helper.Where(character => !char.IsWhiteSpace(character)));
+        Assert.Contains(
+            "awaitTask.Run(()=>WindowsServiceStartOperation.StartAsync(timeout.Token),timeout.Token);",
+            compactHelper,
+            StringComparison.Ordinal);
+        Assert.Contains("new TrayServiceStartCoordinator", app, StringComparison.Ordinal);
+        Assert.Contains("WindowsServiceStateConfirmation.WaitForRunningAsync", app, StringComparison.Ordinal);
+        Assert.Contains("TrayServiceStartResult.Unconfirmed", app, StringComparison.Ordinal);
+        Assert.Contains("new TrayCompleteShutdownCoordinator", app, StringComparison.Ordinal);
+        Assert.Contains("WindowsServiceStateConfirmation.WaitForStoppedAsync", app, StringComparison.Ordinal);
+        Assert.Contains("TrayCompleteShutdownResult.Unconfirmed", app, StringComparison.Ordinal);
+        Assert.Contains("did not retry the request", app, StringComparison.Ordinal);
+        string launcher = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "ElevatedServiceControlLauncher.cs");
+        int taskRun = launcher.IndexOf("await Task.Run(", StringComparison.Ordinal);
+        int processStart = launcher.IndexOf("Process.Start(startInfo)", StringComparison.Ordinal);
+        int waitForExit = launcher.IndexOf("WaitForExitAsync", StringComparison.Ordinal);
+        Assert.True(taskRun >= 0);
+        Assert.True(taskRun < processStart);
+        Assert.True(processStart < waitForExit);
+        Assert.DoesNotContain(
+            "window.ViewModel.ShutdownOpenBladeAsync",
+            app,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1606,17 +1736,20 @@ public sealed class WinUiShellContractTests
             "startupRegistration.ShouldStartForLaunchArguments(",
             StringComparison.Ordinal);
         int commandLineArguments = app.IndexOf(
-            "Environment.GetCommandLineArgs()",
-            startupGate,
+            "string[] commandLineArguments = Environment.GetCommandLineArgs()",
+            StringComparison.Ordinal);
+        int helperGate = app.IndexOf(
+            "ElevatedServiceControlLauncher.ParseHelperAction",
             StringComparison.Ordinal);
         int instanceClaim = app.IndexOf(
             "TrayInstanceCoordinator.TryStart",
             StringComparison.Ordinal);
 
         Assert.True(
-            startupGate >= 0
-            && commandLineArguments > startupGate
-            && commandLineArguments < instanceClaim);
+            commandLineArguments >= 0
+            && commandLineArguments < helperGate
+            && helperGate < startupGate
+            && startupGate < instanceClaim);
         Assert.DoesNotContain("args.Arguments", app, StringComparison.Ordinal);
     }
 

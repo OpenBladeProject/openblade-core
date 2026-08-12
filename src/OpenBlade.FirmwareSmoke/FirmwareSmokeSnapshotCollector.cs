@@ -5,7 +5,7 @@ namespace OpenBlade.FirmwareSmoke;
 
 public sealed class FirmwareSmokeSnapshotCollector(IFirmwareSmokeClient client)
 {
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 7;
     private const int MaximumObservationAttempts = 5;
 
     public async Task<FirmwareSmokeSnapshot> CaptureAsync(
@@ -69,6 +69,10 @@ public sealed class FirmwareSmokeSnapshotCollector(IFirmwareSmokeClient client)
             status.PotentialControllers.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
             status.ControllerDetectionWarning,
             status.ExternalChanges
+                .Select(value => value.ToString())
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            status.UnconfirmedWrites
                 .Select(value => value.ToString())
                 .Order(StringComparer.Ordinal)
                 .ToArray(),

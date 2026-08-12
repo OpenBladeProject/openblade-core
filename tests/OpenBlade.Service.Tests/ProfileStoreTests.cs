@@ -117,6 +117,40 @@ public sealed class ProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Load_PreviousSchemaKeepsBalancedGpuClockOffsetsDormant()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var offsets = new GpuClockOffsetSettings(125, 500);
+        ProfileSet legacy = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Balanced,
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.High,
+                    CustomPerformanceLevel.Medium)
+                {
+                    GpuClockOffsets = offsets,
+                },
+            },
+        };
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(
+                new ProfileDocument(ProfileStore.PreviousSchemaVersion, legacy),
+                ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Equal(offsets, result.Profiles.PluggedIn.CustomPerformance?.GpuClockOffsets);
+        Assert.Null(result.Profiles.PluggedIn.GpuClockTuning);
+    }
+
+    [Fact]
     public void NormalizeLegacyBatteryProfile_DoesNotMigrateGpuTuningOutsidePluggedIn()
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();

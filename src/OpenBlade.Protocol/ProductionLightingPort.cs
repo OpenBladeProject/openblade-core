@@ -548,6 +548,30 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
+    public async Task<LightingRendererOwnershipState> RelinquishRendererAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await StopStreamCoreAsync().ConfigureAwait(false);
+            LightingRendererOwnershipState observed = OwnershipState;
+            lock (effectSync)
+            {
+                activeEffect = null;
+                activeKeyTriggeredEffect = null;
+                pendingKeyTriggeredPulses.Clear();
+                lastDeliveredState = null;
+            }
+            SetOwnership(LightingRendererOwnershipState.None);
+            return observed;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<LightingRendererOwnershipState> InvalidateAsync() =>
         await CloseAsync().ConfigureAwait(false);
 

@@ -2,6 +2,7 @@
 type enum OpenBlade.Contracts.AdapterPowerState
   field System.Int32 value__
   field const OpenBlade.Contracts.AdapterPowerState FullPower280W = 2
+  field const OpenBlade.Contracts.AdapterPowerState FullPower330W = 3
   field const OpenBlade.Contracts.AdapterPowerState Unknown = 0
   field const OpenBlade.Contracts.AdapterPowerState UsbCPower100W = 1
 type sealed class OpenBlade.Contracts.AmbientAwarenessLightingParameters
@@ -1131,10 +1132,12 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 39
+  field const System.Int32 ProtocolVersion = 40
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
+type static class OpenBlade.Contracts.OpenBladeWindowsService
+  field const System.String Name = "OpenBlade"
 type enum OpenBlade.Contracts.OverrideLifetime
   field System.Int32 value__
   field const OpenBlade.Contracts.OverrideLifetime Persistent = 1
@@ -1589,6 +1592,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Boolean get_FullChargeOverride()
   method System.Boolean get_WritesBlocked()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> get_ExternalChanges()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> get_UnconfirmedWrites()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> get_LightingSuppressions()
   method System.Collections.Generic.IReadOnlyList<System.String> get_PotentialControllers()
   method System.Int64 get_Revision()
@@ -1635,6 +1639,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_Revision(System.Int64 value)
   method System.Void set_ServiceVersion(System.String value)
   method System.Void set_StartupAnimationEnabled(System.Nullable<System.Boolean> value)
+  method System.Void set_UnconfirmedWrites(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> value)
   method System.Void set_WritesBlocked(System.Boolean value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
@@ -1666,6 +1671,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property System.Boolean FullChargeOverride { get; init; }
   property System.Boolean WritesBlocked { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> ExternalChanges { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> UnconfirmedWrites { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> LightingSuppressions { get; init; }
   property System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers { get; init; }
   property System.Int64 Revision { get; init; }

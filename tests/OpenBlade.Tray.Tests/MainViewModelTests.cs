@@ -1359,8 +1359,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.True(viewModel.HasControllerAdvisory);
         Assert.Equal(
-            "Another controller may change laptop settings: RazerAppEngine, Razer Synapse Service. Automatic profile changes pause for settings changed elsewhere; manual actions still apply.",
+            "Another controller may change laptop settings: RazerAppEngine, Razer Synapse Service. OpenBlade yields automatic keyboard lighting to Synapse while external lighting override is off. Confirmed external changes pause automatic profile updates; manual actions still apply.",
             viewModel.ControllerAdvisoryText);
+        Assert.Equal("Other controller may be active", viewModel.LightingSourceLabel);
         Assert.True(viewModel.HasControllerDetectionWarning);
         Assert.Equal("Controller detection was incomplete.", viewModel.ControllerDetectionWarningText);
         Assert.True(viewModel.HasAttention);
@@ -1369,6 +1370,55 @@ public sealed class MainViewModelTests
         Assert.Equal(
             "RazerAppEngine, Razer Synapse Service; check incomplete: Controller detection was incomplete",
             viewModel.TroubleshootingOtherRazerSoftwareStatus);
+    }
+
+    [Fact]
+    public async Task NonCompetingRazerHelperDoesNotClaimLightingOwnership()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            conflicts: ["Razer Central Service"]);
+        client.Publish(status with
+        {
+            ConfirmedState = status.ConfirmedState! with { Lighting = null },
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        });
+        await WaitUntilAsync(() => viewModel.HasControllerAdvisory);
+
+        Assert.True(viewModel.HasControllerAdvisory);
+        Assert.Equal("Controls unavailable", viewModel.LightingSourceLabel);
+        Assert.DoesNotContain(
+            "yields automatic keyboard lighting",
+            viewModel.ControllerAdvisoryText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DetectionWarningDoesNotClaimLightingOwnership()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status with
+        {
+            ConfirmedState = status.ConfirmedState! with { Lighting = null },
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+            ControllerDetectionWarning = "Controller detection was incomplete.",
+        });
+        await WaitUntilAsync(() => viewModel.HasControllerDetectionWarning);
+
+        Assert.False(viewModel.HasControllerAdvisory);
+        Assert.True(viewModel.HasControllerDetectionWarning);
+        Assert.Equal("Controls unavailable", viewModel.LightingSourceLabel);
+        Assert.DoesNotContain(
+            "yields automatic keyboard lighting",
+            viewModel.ControllerAdvisoryText,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1549,6 +1599,51 @@ public sealed class MainViewModelTests
                 KeyboardLightingControlMode.WindowsDynamicLighting,
         });
         await WaitUntilAsync(() => viewModel.CanReapplyChangedSettings);
+    }
+
+    [Fact]
+    public async Task UnconfirmedWrite_OffersReadOnlyCheckAndHidesReapply()
+    {
+        var observation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var client = new FakeServiceClient { PendingObservation = observation };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot pending = CreateStatus(verified: true, blocked: true) with
+        {
+            ExternalChanges = [DeviceSubsystem.Fans],
+            UnconfirmedWrites = [DeviceSubsystem.Performance],
+        };
+        client.Publish(pending);
+        await WaitUntilAsync(() => viewModel.HasUnconfirmedWrites);
+
+        Assert.Equal("State not confirmed", viewModel.AttentionSummary);
+        Assert.Equal("State not confirmed", viewModel.AttentionBadgeLabel);
+        Assert.True(viewModel.CanCheckCurrentState);
+        Assert.False(viewModel.CanReapplyChangedSettings);
+        Assert.False(viewModel.ShowReapplyChangedSettings);
+        Assert.Contains("will not retry", viewModel.UnconfirmedWritesText);
+
+        Task<bool> check = viewModel.CheckCurrentStateAsync(CancellationToken.None);
+        await client.ObservationStarted.Task;
+        Assert.Equal([LiveReadingSensors.None], client.RequestedLiveReadings);
+        Assert.Equal(0, client.ReapplyChangedSettingsCalls);
+        observation.SetResult(pending with
+        {
+            Revision = 2,
+            WritesBlocked = false,
+            ExternalChanges = [],
+            UnconfirmedWrites = [],
+            ConfirmedState = pending.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Performance,
+            },
+        });
+
+        Assert.True(await check);
+        Assert.False(viewModel.HasUnconfirmedWrites);
+        Assert.False(viewModel.IsCheckCurrentStateOperationInProgress);
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
     }
 
     [Fact]
@@ -2679,14 +2774,111 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task PerformanceSelection_NormalizesLegacyGpuTuningAfterDraft()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
+            CreateLegacyGpuTuningStatus("Legacy GPU tuning profile ready");
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Legacy GPU tuning profile ready");
+        Assert.Equal(legacyOffsets, viewModel.CurrentGpuClockOffsets);
+
+        await viewModel.SetGpuClockTuningEnabledAsync(
+            enabled: false,
+            CancellationToken.None);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Custom);
+
+        PerformanceOverride requested = Assert.IsType<PerformanceOverride>(
+            client.PerformanceOverride);
+        Assert.True(requested.IsWellFormed());
+        Assert.Null(requested.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(
+            new GpuClockTuningSettings(
+                Enabled: false,
+                legacyOffsets),
+            requested.GpuClockTuning);
+        // WriteRequestAsync validates the request before serializing it.
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(
+            encoded,
+            new SetPerformanceOverrideRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                requested),
+            CancellationToken.None);
+        Assert.NotEqual(0, encoded.Length);
+    }
+
+    [Fact]
+    public async Task PerformanceSelection_PromotesDormantLegacyGpuTuningForCustom()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
+            CreateLegacyGpuTuningStatus("Dormant legacy GPU tuning profile ready");
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Dormant legacy GPU tuning profile ready");
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Custom);
+
+        PerformanceOverride requested = Assert.IsType<PerformanceOverride>(
+            client.PerformanceOverride);
+        Assert.Null(requested.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(
+            new GpuClockTuningSettings(
+                Enabled: true,
+                legacyOffsets),
+            requested.GpuClockTuning);
+    }
+
+    [Fact]
+    public async Task ThermalProfileSave_NormalizesLegacyGpuTuningAfterDraft()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
+            CreateLegacyGpuTuningStatus("Legacy GPU tuning save profile ready");
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Legacy GPU tuning save profile ready");
+
+        await viewModel.SetGpuClockTuningEnabledAsync(
+            enabled: false,
+            CancellationToken.None);
+        Assert.True(viewModel.SaveThermalProfileDraftCommand.CanExecute(null));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveThermalProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        PowerProfile saved = Assert.IsType<ProfileSet>(client.LastProfiles).PluggedIn;
+        Assert.Null(saved.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(
+            new GpuClockTuningSettings(
+                Enabled: false,
+                legacyOffsets),
+            saved.GpuClockTuning);
+        Assert.False(viewModel.HasThermalProfileDraft);
+    }
+
+    [Fact]
     public async Task PerformanceSelection_StaysRequestedAcrossInFlightStaleStatus()
     {
         var client = new FakeServiceClient { BlockMutations = true };
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        int dispatchesBeforeBaseline = dispatcher.CompletedCalls;
         client.Publish(baseline);
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeBaseline);
+        Assert.True(viewModel.CanControlHardware);
 
         Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
             .ExecuteAsync(PerformancePreset.Performance);
@@ -2694,13 +2886,15 @@ public sealed class MainViewModelTests
 
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
+        int dispatchesBeforeIntermediateStatus = dispatcher.CompletedCalls;
         client.Publish(baseline with
         {
             Revision = baseline.Revision + 1,
             Message = "Intermediate status",
         });
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Intermediate status");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeIntermediateStatus);
 
+        Assert.Equal("Intermediate status", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
         client.CompleteMutation();
@@ -2716,11 +2910,14 @@ public sealed class MainViewModelTests
     public async Task PerformanceSelection_StaysRequestedAcrossPostCompletionStaleStatus()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        int dispatchesBeforeBaseline = dispatcher.CompletedCalls;
         client.Publish(baseline);
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeBaseline);
+        Assert.True(viewModel.CanControlHardware);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
             .ExecuteAsync(PerformancePreset.Performance);
@@ -2728,13 +2925,15 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.IsPerformanceOperationInProgress);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
+        int dispatchesBeforeLaggingStatus = dispatcher.CompletedCalls;
         client.Publish(baseline with
         {
             Revision = baseline.Revision + 1,
             Message = "Lagging status",
         });
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Lagging status");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeLaggingStatus);
 
+        Assert.Equal("Lagging status", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
         PerformanceOverride requested = Assert.IsType<PerformanceOverride>(
@@ -2755,9 +2954,12 @@ public sealed class MainViewModelTests
             },
             PerformanceOverride = requested,
         };
+        int dispatchesBeforeConfirmedStatus = dispatcher.CompletedCalls;
         client.Publish(confirmed);
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Confirmed status");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeConfirmedStatus);
+        Assert.Equal("Confirmed status", viewModel.ConnectionStatus);
 
+        int dispatchesBeforeExternalStatus = dispatcher.CompletedCalls;
         client.Publish(confirmed with
         {
             Revision = baseline.Revision + 3,
@@ -2774,8 +2976,9 @@ public sealed class MainViewModelTests
             },
             PerformanceOverride = null,
         });
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Later external status");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeExternalStatus);
 
+        Assert.Equal("Later external status", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
     }
 
@@ -5799,17 +6002,6 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ShutdownOpenBlade_RequestsTypedServiceShutdown()
-    {
-        var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
-
-        await viewModel.ShutdownOpenBladeAsync(CancellationToken.None);
-
-        Assert.True(client.ShutdownRequested);
-    }
-
-    [Fact]
     public async Task Command_SendsTypedTemporaryOverrideAndDisplaysOperationResult()
     {
         var client = new FakeServiceClient
@@ -6718,6 +6910,37 @@ public sealed class MainViewModelTests
             ServiceVersion: "0.1.0-test");
     }
 
+    private static (
+        ServiceStatusSnapshot Status,
+        GpuClockOffsetSettings LegacyOffsets) CreateLegacyGpuTuningStatus(string message)
+    {
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var legacyOffsets = new GpuClockOffsetSettings(100, 200);
+        return (
+            baseline with
+            {
+                Message = message,
+                Capabilities = baseline.Capabilities! with
+                {
+                    GpuOverclock = new GpuOverclockCapabilities(
+                        new DeviceNumericRange(-1000, 400, 10),
+                        new DeviceNumericRange(-1000, 3000, 10),
+                        DeviceFeatureAccess.ReadWrite),
+                },
+                Profiles = baseline.Profiles with
+                {
+                    PluggedIn = baseline.Profiles.PluggedIn with
+                    {
+                        CustomPerformance = CustomPerformanceSettings.Default with
+                        {
+                            GpuClockOffsets = legacyOffsets,
+                        },
+                    },
+                },
+            },
+            legacyOffsets);
+    }
+
     private static HashSet<int> ChargeLimits() => [50, 55, 60, 65, 70, 75, 80];
 
     private sealed class ConcurrentPropertySet : IReadOnlyCollection<string>
@@ -6800,7 +7023,6 @@ public sealed class MainViewModelTests
         public bool? BatteryProtectionEnabled { get; private set; }
         public BatteryPolicy? BatteryPolicy { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
-        public bool ShutdownRequested { get; private set; }
         public ProfileSet? LastProfiles { get; private set; }
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -7050,16 +7272,6 @@ public sealed class MainViewModelTests
         {
             OneShotLaptopControl = value;
             return MutateAsync(token);
-        }
-
-        public override Task<ControlOperationResult> ShutdownOpenBladeAsync(
-            CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-            ShutdownRequested = true;
-            return Task.FromResult(new ControlOperationResult(
-                ControlOperationStatus.Stored,
-                "OpenBlade is shutting down."));
         }
 
         private async Task<ControlOperationResult> MutateAsync(CancellationToken token)

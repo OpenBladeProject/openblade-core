@@ -21,6 +21,7 @@ public sealed class AdapterPowerProtocolTests
     [Theory]
     [InlineData("0711", AdapterPowerState.UsbCPower100W)]
     [InlineData("1111", AdapterPowerState.FullPower280W)]
+    [InlineData("1211", AdapterPowerState.FullPower330W)]
     [InlineData("0000", AdapterPowerState.Unknown)]
     [InlineData("0710", AdapterPowerState.Unknown)]
     [InlineData("1110", AdapterPowerState.Unknown)]

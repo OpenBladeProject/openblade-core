@@ -41,6 +41,7 @@ public sealed class ServiceClientTests
         Assert.Equal(expected.PotentialControllers, actual.PotentialControllers);
         Assert.Equal(expected.ControllerDetectionWarning, actual.ControllerDetectionWarning);
         Assert.Equal(expected.ExternalChanges, actual.ExternalChanges);
+        Assert.Equal(expected.UnconfirmedWrites, actual.UnconfirmedWrites);
         Assert.Equal(expected.Message, actual.Message);
     }
 

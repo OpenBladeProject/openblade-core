@@ -123,6 +123,10 @@ the UI context because they mutate bound update status after awaiting the
 release client. `FirmwareUpdateAssistantViewModel.RunAutomaticCheckAsync` and
 `CheckAsync` capture it for the same reason after awaiting the Razer firmware
 client.
+`TrayCompleteShutdownCoordinator.ShutdownAsync` also captures it because its
+Session Agent signaling and tray-exit callbacks are UI-affine.
+`App.RunElevatedServiceControlHelperAsync` captures it after off-dispatcher
+service work because `Exit()` must run on the WinUI thread.
 Background pumps, loops, queues, and `ServiceClient` use
 `ConfigureAwait(false)`.
 

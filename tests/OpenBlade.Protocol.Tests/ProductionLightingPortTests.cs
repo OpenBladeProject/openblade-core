@@ -831,6 +831,51 @@ public sealed class ProductionLightingPortTests
             TimeSpan.FromSeconds(2));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RelinquishRenderer_StopsStreamWithoutClosingPortOrChangingDriverMode(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xFF)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        var time = new ManualTimeProvider();
+        MatrixWriter? writer = rz090528 ? null : new MatrixWriter();
+        await using IProductionLightingPort port = rz090528
+            ? new Rz090528BrightnessLightingPort(
+                new ValidationActor(
+                    session,
+                    new BatteryCommands(),
+                    new TemporaryCommands()),
+                TimeSpan.FromSeconds(1),
+                spectrumEffectAdmitted: true,
+                timeProvider: time)
+            : CreatePort(
+                session,
+                writer,
+                admitted: true,
+                timeProvider: time);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(brightness: 100),
+            default);
+
+        LightingRendererOwnershipState relinquished =
+            await port.RelinquishRendererAsync(default);
+        int commandsAfterRelinquish = session.Commands.Count;
+        int framesAfterRelinquish = writer?.Reports.Count ?? 0;
+        time.Advance(TimeSpan.FromSeconds(1));
+        await Task.Delay(50);
+
+        Assert.Equal(LightingRendererOwnershipState.Spectrum, relinquished);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(commandsAfterRelinquish, session.Commands.Count);
+        Assert.Equal(framesAfterRelinquish, writer?.Reports.Count ?? 0);
+        Assert.True(await port.ReadDriverModeAsync(default));
+    }
+
     [Fact]
     public async Task ReleaseDriverMode_DrainsTheLightingStreamBeforeModeWrite()
     {

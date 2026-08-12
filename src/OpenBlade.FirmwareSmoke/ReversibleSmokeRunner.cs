@@ -396,6 +396,7 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
             && !status.WritesBlocked
             && status.PotentialControllers.Count == 0
             && status.ExternalChanges.Count == 0
+            && status.UnconfirmedWrites.Count == 0
             && predicate(status);
     }
 
@@ -474,6 +475,7 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
             || status.WritesBlocked
             || status.PotentialControllers.Count > 0
             || status.ExternalChanges.Count > 0
+            || status.UnconfirmedWrites.Count > 0
             || status.ActivePowerSource != PowerSource.PluggedIn)
         {
             throw new InvalidOperationException(

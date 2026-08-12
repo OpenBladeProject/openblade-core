@@ -548,6 +548,15 @@ public sealed class LightingValidationCommandTests
             CancellationToken cancellationToken) =>
             Refuse("Playback mute indication is unavailable in this test port.");
 
+        public Task<LightingRendererOwnershipState> RelinquishRendererAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LightingRendererOwnershipState observed = OwnershipState;
+            OwnershipState = LightingRendererOwnershipState.None;
+            return Task.FromResult(observed);
+        }
+
         public Task<LightingRendererOwnershipState> InvalidateAsync()
         {
             LightingRendererOwnershipState observed = OwnershipState;

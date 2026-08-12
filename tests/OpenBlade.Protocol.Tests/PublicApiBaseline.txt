@@ -368,6 +368,7 @@ type interface OpenBlade.Protocol.IProductionLightingPort
   method abstract System.Threading.Tasks.Task SetLightingAsync(OpenBlade.Contracts.LightingSettings settings, System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task SetPlaybackMuteIndicatorAsync(System.Boolean muted, System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> InvalidateAsync()
+  method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> RelinquishRendererAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingSettings> ReadStateAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<System.Byte> StepBrightnessAsync(OpenBlade.Contracts.KeyboardBrightnessDirection direction, System.Threading.CancellationToken cancellationToken)
   method virtual OpenBlade.Protocol.DriverModeRestoreOutcome get_DriverModeRestoreOutcome()

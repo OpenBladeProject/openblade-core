@@ -89,6 +89,7 @@ public sealed record FirmwareSmokeSnapshot(
     IReadOnlyList<string> PotentialControllers,
     string? ControllerDetectionWarning,
     IReadOnlyList<string> ExternalChanges,
+    IReadOnlyList<string> UnconfirmedWrites,
     string Message,
     FirmwareIdentity Firmware,
     FirmwareSmokeCapabilities Capabilities,

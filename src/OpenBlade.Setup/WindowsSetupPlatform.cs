@@ -36,7 +36,7 @@ public sealed record WindowsSetupPlatformOptions(
 
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {
-    private const string ServiceName = "OpenBlade";
+    private const string ServiceName = OpenBladeWindowsService.Name;
     private const int ServiceDoesNotExist = 1060;
     private const int ServiceNotActive = 1062;
     private readonly SetupPaths paths;
