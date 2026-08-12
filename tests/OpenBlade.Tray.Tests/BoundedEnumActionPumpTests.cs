@@ -158,6 +158,46 @@ public sealed class BoundedEnumActionPumpTests
     }
 
     [Fact]
+    public async Task RepeatedClearPendingDoesNotAccumulateWorkerWakeups()
+    {
+        var firstStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var freshDelivered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using var pump = new BoundedEnumActionPump<FunctionRowAction>(
+            async (action, token) =>
+            {
+                if (action == FunctionRowAction.VolumeMute)
+                {
+                    firstStarted.TrySetResult();
+                    await releaseFirst.Task.WaitAsync(token);
+                }
+                else if (action == FunctionRowAction.PlayPause)
+                {
+                    freshDelivered.TrySetResult();
+                }
+            },
+            capacity: 2);
+
+        Assert.True(pump.TryEnqueue(FunctionRowAction.VolumeMute));
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        for (int iteration = 0; iteration < 100; iteration++)
+        {
+            Assert.True(pump.TryEnqueue(FunctionRowAction.VolumeDown));
+            Assert.True(pump.TryEnqueue(FunctionRowAction.VolumeUp));
+            pump.ClearPending();
+        }
+
+        Assert.Equal(0, GetSignal(pump).CurrentCount);
+        releaseFirst.TrySetResult();
+        Assert.True(pump.TryEnqueue(FunctionRowAction.PlayPause));
+        await freshDelivered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
     public async Task DisposeCancelsInFlightActionRejectsNewWorkAndIsIdempotent()
     {
         var started = new TaskCompletionSource(
@@ -188,5 +228,15 @@ public sealed class BoundedEnumActionPumpTests
         Assert.False(pump.TryEnqueue(FunctionRowAction.VolumeDown));
         await pump.DisposeAsync();
     }
+
+    private static SemaphoreSlim GetSignal(
+        BoundedEnumActionPump<FunctionRowAction> pump) =>
+        Assert.IsType<SemaphoreSlim>(
+            typeof(BoundedEnumActionPump<FunctionRowAction>)
+                .GetField(
+                    "signal",
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic)!
+                .GetValue(pump));
 
 }

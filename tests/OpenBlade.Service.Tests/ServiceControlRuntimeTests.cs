@@ -6839,6 +6839,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public void StatusEquivalence_DetectsBatteryOverrideChanges()
+    {
+        ServiceStatusSnapshot baseline = CreateContext(providerAvailable: false)
+            .Runtime
+            .GetStatus();
+
+        Assert.False(ServiceControlRuntime.Equivalent(
+            baseline,
+            baseline with { BatteryPolicyOverride = BatteryPolicy.Create(75) }));
+        Assert.False(ServiceControlRuntime.Equivalent(
+            baseline,
+            baseline with { BatteryProtectionOverride = false }));
+    }
+
+    [Fact]
     public async Task DisableProtection_UnchangedCreatesTemporaryOverrideWithoutSetter()
     {
         TestContext context = CreateWritableContext();

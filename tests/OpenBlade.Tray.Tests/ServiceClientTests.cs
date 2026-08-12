@@ -757,6 +757,50 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
+    public async Task WatchStatusAsync_CapacityRejectionBacksOffAndRecovers()
+    {
+        string pipeName = NewPipeName();
+        var time = new FakeTimeProvider();
+        using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(5));
+        Task rejectedServer = RunServerAsync(
+            pipeName,
+            request => new ServiceResponse(
+                OpenBladeIpc.ProtocolVersion,
+                request.RequestId,
+                Success: false,
+                Error: "Busy",
+                Status: null,
+                Result: null)
+            {
+                ErrorCode = ServiceResponseErrorCode.CapacityUnavailable,
+            },
+            cancellation.Token);
+        IServiceClient client = new ServiceClient(pipeName, time);
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
+            client.WatchStatusAsync(cancellation.Token).GetAsyncEnumerator();
+
+        Assert.True(await reader.MoveNextAsync());
+        Assert.IsType<ServiceWatchUpdate.Reconnecting>(reader.Current);
+        await rejectedServer;
+
+        Task acceptedServer = RunSubscriptionServerAsync(
+            pipeName,
+            CreateStatus(7),
+            [],
+            cancellation.Token);
+        Task<bool> reconnect = reader.MoveNextAsync().AsTask();
+        await WaitUntilAsync(() => time.Delays.Count == 1);
+        Assert.Equal(TimeSpan.FromMilliseconds(250), time.Delays[0]);
+        time.Advance(TimeSpan.FromMilliseconds(250));
+
+        Assert.True(await reconnect);
+        Assert.Equal(
+            7,
+            Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
+        await acceptedServer;
+    }
+
+    [Fact]
     public async Task WatchStatusAsync_ProtocolFailureTerminatesWithoutReconnect()
     {
         int attempts = 0;

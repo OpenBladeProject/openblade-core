@@ -351,4 +351,93 @@ public sealed class ReactiveKeyPulsePumpTests
         }
     }
 
+    [Fact]
+    public async Task RepeatedClearPendingDoesNotAccumulateWorkerWakeups()
+    {
+        var firstStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var freshDelivered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using var pump = new ReactiveKeyPulsePump(
+            async (pulse, token) =>
+            {
+                if (pulse.MatrixSlot == 19)
+                {
+                    firstStarted.TrySetResult();
+                    await releaseFirst.Task.WaitAsync(token);
+                }
+                else if (pulse.MatrixSlot == 71)
+                {
+                    freshDelivered.TrySetResult();
+                }
+            },
+            capacity: 4);
+
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(19)));
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        for (int iteration = 0; iteration < 100; iteration++)
+        {
+            Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(36)));
+            Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(53)));
+            pump.ClearPending();
+        }
+
+        Assert.Equal(0, GetSignal(pump).CurrentCount);
+        releaseFirst.TrySetResult();
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(71)));
+        await freshDelivered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RepeatedCapacityTrimmingKeepsSingleWakeAndDeliversFreshWork()
+    {
+        var firstStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var freshDelivered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using var pump = new ReactiveKeyPulsePump(
+            async (pulse, token) =>
+            {
+                if (pulse.MatrixSlot == 19)
+                {
+                    firstStarted.TrySetResult();
+                    await releaseFirst.Task.WaitAsync(token);
+                }
+                else if (pulse.MatrixSlot == 71)
+                {
+                    freshDelivered.TrySetResult();
+                }
+            },
+            capacity: 4);
+
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(19)));
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        for (int iteration = 0; iteration < 100; iteration++)
+        {
+            Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(20)));
+            Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(21)));
+            Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(22)));
+            Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(71)));
+        }
+
+        Assert.Equal(1, GetSignal(pump).CurrentCount);
+        releaseFirst.TrySetResult();
+        await freshDelivered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    private static SemaphoreSlim GetSignal(ReactiveKeyPulsePump pump) =>
+        Assert.IsType<SemaphoreSlim>(
+            typeof(ReactiveKeyPulsePump)
+                .GetField(
+                    "signal",
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic)!
+                .GetValue(pump));
+
 }

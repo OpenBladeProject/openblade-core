@@ -22,6 +22,7 @@ internal static class WindowsCoreAudioMuteStateSource
 {
     private static readonly TimeSpan RebindFailureRetryInterval =
         TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(5);
 
     public static async IAsyncEnumerable<bool?> WatchMutedAsync(
         CoreAudioDataFlow flow,
@@ -132,14 +133,14 @@ internal static class WindowsCoreAudioMuteStateSource
 
             rebindRequests.Writer.TryComplete();
             rebindCancellation.Cancel();
-            try
-            {
-                rebindTask.GetAwaiter().GetResult();
-            }
-            catch (OperationCanceledException)
-            {
-            }
+            CoreAudioSubscriptionShutdown.CompleteOrDefer(
+                rebindTask,
+                Task.Delay(ShutdownTimeout),
+                ReleaseNativeResources);
+        }
 
+        private void ReleaseNativeResources()
+        {
             EndpointBinding[] oldEndpoints = Interlocked.Exchange(
                 ref endpoints,
                 []);
@@ -559,5 +560,67 @@ internal static class WindowsCoreAudioMuteStateSource
         [PreserveSig] int GetChannelVolumeLevelScalar(uint channel, out float level);
         [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, ref Guid context);
         [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
+    }
+}
+
+internal static class CoreAudioSubscriptionShutdown
+{
+    public static void CompleteOrDefer(
+        Task worker,
+        Task timeout,
+        Action releaseResources)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        ArgumentNullException.ThrowIfNull(timeout);
+        ArgumentNullException.ThrowIfNull(releaseResources);
+
+        Task completed = Task.WhenAny(worker, timeout).GetAwaiter().GetResult();
+        if (completed == worker)
+        {
+            try
+            {
+                worker.GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            finally
+            {
+                releaseResources();
+            }
+            return;
+        }
+
+        _ = worker.ContinueWith(
+            static (completedWorker, state) =>
+            {
+                var release = (Action)state!;
+                try
+                {
+                    ObserveDeferredCompletion(completedWorker);
+                }
+                finally
+                {
+                    release();
+                }
+            },
+            releaseResources,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    private static void ObserveDeferredCompletion(Task worker)
+    {
+        try
+        {
+            worker.GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+        }
     }
 }

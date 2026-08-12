@@ -371,7 +371,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
             token.ThrowIfCancellationRequested();
             SubscriptionOpenResult openResult = await OpenSubscriptionAsync(token)
                 .ConfigureAwait(false);
-            if (openResult.TransportFailed)
+            if (openResult.RetryableFailure)
             {
                 yield return new ServiceWatchUpdate.Reconnecting();
                 await Task.Delay(reconnectDelay, timeProvider, token).ConfigureAwait(false);
@@ -539,6 +539,18 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ServiceServerFrame frame,
         ServiceRequest request)
     {
+        ServiceResponse response = ValidateResponseEnvelope(frame, request);
+        if (!response.Success)
+        {
+            throw new InvalidDataException(response.Error ?? "Service rejected the request.");
+        }
+        return response;
+    }
+
+    private static ServiceResponse ValidateResponseEnvelope(
+        ServiceServerFrame frame,
+        ServiceRequest request)
+    {
         if (frame is not ServiceResponse response)
         {
             throw new InvalidDataException("Service returned an unexpected server frame.");
@@ -552,11 +564,6 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         if (response.RequestId != request.RequestId)
         {
             throw new InvalidDataException("Service response request ID does not match the request.");
-        }
-
-        if (!response.Success)
-        {
-            throw new InvalidDataException(response.Error ?? "Service rejected the request.");
         }
 
         return response;
@@ -581,7 +588,16 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                     connection,
                     token)
                 .ConfigureAwait(false);
-            ServiceResponse response = ValidateResponse(frame, request);
+            ServiceResponse response = ValidateResponseEnvelope(frame, request);
+            if (!response.Success)
+            {
+                if (response.ErrorCode == ServiceResponseErrorCode.CapacityUnavailable)
+                {
+                    await connection.DisposeAsync().ConfigureAwait(false);
+                    return new SubscriptionOpenResult(null, null, true);
+                }
+                throw new InvalidDataException(response.Error ?? "Service rejected the request.");
+            }
             ServiceStatusSnapshot initial = response.Status
                 ?? throw new InvalidDataException(
                     "Service subscription response is missing its status body.");
@@ -631,7 +647,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
     private sealed record SubscriptionOpenResult(
         Stream? Connection,
         ServiceStatusSnapshot? InitialStatus,
-        bool TransportFailed);
+        bool RetryableFailure);
 
     private sealed record SubscriptionReadResult(
         ServiceServerFrame? Frame,

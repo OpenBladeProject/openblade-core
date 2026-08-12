@@ -120,11 +120,16 @@ public sealed class StatusSubscriptionHubTests
     }
 
     [Fact]
-    public void Capacity_ReservesFourConnectionsForShortRequests()
+    public void Capacity_ReservesOrdinaryConnectionsAndBothLightingStreams()
     {
-        Assert.True(
+        Assert.Equal(
+            NamedPipeControlServer.ReservedOrdinaryServerInstances,
             NamedPipeControlServer.MaximumServerInstances
-            - StatusSubscriptionHub.MaximumSubscribers >= 4);
+                - NamedPipeControlServer.MaximumPersistentConnections);
+        Assert.Equal(
+            StatusSubscriptionHub.MaximumSubscribers
+                + NamedPipeControlServer.MaximumLightingStreamConnections,
+            NamedPipeControlServer.MaximumPersistentConnections);
     }
 
     [Fact]

@@ -1132,7 +1132,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 40
+  field const System.Int32 ProtocolVersion = 41
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1513,10 +1513,12 @@ type sealed class OpenBlade.Contracts.ServiceResponse
   method OpenBlade.Contracts.ServiceStatusSnapshot get_Status()
   method System.Boolean get_Success()
   method System.Guid get_RequestId()
+  method System.Nullable<OpenBlade.Contracts.ServiceResponseErrorCode> get_ErrorCode()
   method System.String get_Error()
   method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Boolean Success, out System.String Error, out OpenBlade.Contracts.ServiceStatusSnapshot Status, out OpenBlade.Contracts.ControlOperationResult Result, out OpenBlade.Contracts.DiagnosticArchive Archive)
   method System.Void set_Archive(OpenBlade.Contracts.DiagnosticArchive value)
   method System.Void set_Error(System.String value)
+  method System.Void set_ErrorCode(System.Nullable<OpenBlade.Contracts.ServiceResponseErrorCode> value)
   method System.Void set_RequestId(System.Guid value)
   method System.Void set_Result(OpenBlade.Contracts.ControlOperationResult value)
   method System.Void set_Status(OpenBlade.Contracts.ServiceStatusSnapshot value)
@@ -1534,7 +1536,11 @@ type sealed class OpenBlade.Contracts.ServiceResponse
   property OpenBlade.Contracts.ServiceStatusSnapshot Status { get; init; }
   property System.Boolean Success { get; init; }
   property System.Guid RequestId { get; init; }
+  property System.Nullable<OpenBlade.Contracts.ServiceResponseErrorCode> ErrorCode { get; init; }
   property System.String Error { get; init; }
+type enum OpenBlade.Contracts.ServiceResponseErrorCode
+  field System.Int32 value__
+  field const OpenBlade.Contracts.ServiceResponseErrorCode CapacityUnavailable = 0
 type abstract class OpenBlade.Contracts.ServiceServerFrame
   interface System.IEquatable<OpenBlade.Contracts.ServiceServerFrame>
   method System.Int32 get_Version()

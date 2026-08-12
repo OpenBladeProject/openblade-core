@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 40;
+    public const int ProtocolVersion = 41;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -222,8 +222,13 @@ public static class IpcMessageCodec
             + (response.Result is null ? 0 : 1)
             + (response.Archive is null ? 0 : 1);
         bool valid = response.Success
-            ? response.Error is null && bodyCount == 1
-            : !string.IsNullOrWhiteSpace(response.Error) && bodyCount == 0;
+            ? response.Error is null
+                && response.ErrorCode is null
+                && bodyCount == 1
+            : !string.IsNullOrWhiteSpace(response.Error)
+                && bodyCount == 0
+                && (response.ErrorCode is null
+                    || Enum.IsDefined(response.ErrorCode.Value));
         return valid
             && (response.Status is null || ValidateStatus(response.Status))
             && (response.Archive is null || ValidateArchive(response.Archive));
@@ -268,17 +273,15 @@ public static class IpcMessageCodec
             throw InvalidStatus("potential-controller collection exceeds 16 entries");
         }
 
-        if (status.PotentialControllers.Distinct(StringComparer.Ordinal).Count()
-            != status.PotentialControllers.Count)
+        SortedCollectionStatus potentialControllerStatus = ValidateSortedUnique(
+            status.PotentialControllers,
+            StringComparer.Ordinal);
+        if (potentialControllerStatus == SortedCollectionStatus.Duplicate)
         {
             throw InvalidStatus("potential-controller collection contains duplicates");
         }
 
-        if (!status.PotentialControllers.SequenceEqual(
-                status.PotentialControllers.OrderBy(
-                    controller => controller,
-                    StringComparer.Ordinal),
-                StringComparer.Ordinal))
+        if (potentialControllerStatus == SortedCollectionStatus.Unsorted)
         {
             throw InvalidStatus("potential-controller collection is not ordinally sorted");
         }
@@ -298,12 +301,15 @@ public static class IpcMessageCodec
             throw InvalidStatus("external-change collection contains an unknown subsystem");
         }
 
-        if (status.ExternalChanges.Distinct().Count() != status.ExternalChanges.Count)
+        SortedCollectionStatus externalChangeStatus = ValidateSortedUnique(
+            status.ExternalChanges,
+            Comparer<DeviceSubsystem>.Default);
+        if (externalChangeStatus == SortedCollectionStatus.Duplicate)
         {
             throw InvalidStatus("external-change collection contains duplicates");
         }
 
-        if (!status.ExternalChanges.SequenceEqual(status.ExternalChanges.Order()))
+        if (externalChangeStatus == SortedCollectionStatus.Unsorted)
         {
             throw InvalidStatus("external-change collection is not sorted");
         }
@@ -323,12 +329,15 @@ public static class IpcMessageCodec
             throw InvalidStatus("unconfirmed-write collection contains an unknown subsystem");
         }
 
-        if (status.UnconfirmedWrites.Distinct().Count() != status.UnconfirmedWrites.Count)
+        SortedCollectionStatus unconfirmedWriteStatus = ValidateSortedUnique(
+            status.UnconfirmedWrites,
+            Comparer<DeviceSubsystem>.Default);
+        if (unconfirmedWriteStatus == SortedCollectionStatus.Duplicate)
         {
             throw InvalidStatus("unconfirmed-write collection contains duplicates");
         }
 
-        if (!status.UnconfirmedWrites.SequenceEqual(status.UnconfirmedWrites.Order()))
+        if (unconfirmedWriteStatus == SortedCollectionStatus.Unsorted)
         {
             throw InvalidStatus("unconfirmed-write collection is not sorted");
         }
@@ -428,8 +437,10 @@ public static class IpcMessageCodec
         if (status.LightingSuppressions is { } suppressions
             && (suppressions.Count > 2
                 || suppressions.Any(reason => !Enum.IsDefined(reason))
-                || suppressions.Distinct().Count() != suppressions.Count
-                || !suppressions.SequenceEqual(suppressions.Order())))
+                || ValidateSortedUnique(
+                    suppressions,
+                    Comparer<LightingSuppressionReason>.Default)
+                    != SortedCollectionStatus.Valid))
         {
             throw InvalidStatus("lighting-suppression collection is malformed");
         }
@@ -643,8 +654,16 @@ public static class IpcMessageCodec
                 throw new JsonException("Charge limits are invalid.");
             }
 
+            Span<int> sortedLimits = stackalloc int[value.Count];
+            int index = 0;
+            foreach (int limit in value)
+            {
+                sortedLimits[index++] = limit;
+            }
+            sortedLimits.Sort();
+
             writer.WriteStartArray();
-            foreach (int limit in value.Order())
+            foreach (int limit in sortedLimits)
             {
                 writer.WriteNumberValue(limit);
             }
@@ -667,5 +686,31 @@ public static class IpcMessageCodec
             IReadOnlySet<T> value,
             JsonSerializerOptions options) =>
             JsonSerializer.Serialize(writer, value.ToArray(), options);
+    }
+
+    private static SortedCollectionStatus ValidateSortedUnique<T>(
+        IReadOnlyList<T> values,
+        IComparer<T> comparer)
+    {
+        for (int index = 1; index < values.Count; index++)
+        {
+            int comparison = comparer.Compare(values[index - 1], values[index]);
+            if (comparison == 0)
+            {
+                return SortedCollectionStatus.Duplicate;
+            }
+            if (comparison > 0)
+            {
+                return SortedCollectionStatus.Unsorted;
+            }
+        }
+        return SortedCollectionStatus.Valid;
+    }
+
+    private enum SortedCollectionStatus
+    {
+        Valid,
+        Duplicate,
+        Unsorted,
     }
 }
