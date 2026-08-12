@@ -2863,11 +2863,14 @@ public sealed class MainViewModelTests
     public async Task PerformanceSelection_StaysRequestedAcrossInFlightStaleStatus()
     {
         var client = new FakeServiceClient { BlockMutations = true };
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        int dispatchesBeforeBaseline = dispatcher.CompletedCalls;
         client.Publish(baseline);
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeBaseline);
+        Assert.True(viewModel.CanControlHardware);
 
         Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
             .ExecuteAsync(PerformancePreset.Performance);
@@ -2875,13 +2878,15 @@ public sealed class MainViewModelTests
 
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
+        int dispatchesBeforeIntermediateStatus = dispatcher.CompletedCalls;
         client.Publish(baseline with
         {
             Revision = baseline.Revision + 1,
             Message = "Intermediate status",
         });
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Intermediate status");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeIntermediateStatus);
 
+        Assert.Equal("Intermediate status", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
         client.CompleteMutation();
