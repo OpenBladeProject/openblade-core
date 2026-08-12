@@ -38,6 +38,61 @@ public sealed class ProductionBatteryFactoryIntegrationTests
                 HostFirmwareCompatibility.UntestedBlocked)));
     }
 
+    [Fact]
+    public void Rz090581AdapterAdmission_Adds330WOnlyForExactAdmittedTarget()
+    {
+        AdapterPowerState[] expected =
+        [
+            AdapterPowerState.UsbCPower100W,
+            AdapterPowerState.FullPower280W,
+            AdapterPowerState.FullPower330W,
+        ];
+
+        Assert.Equal(
+            expected,
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+                ExactRz090581Identity("3.01")).Order().ToArray());
+        Assert.Equal(
+            expected,
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+                ExactRz090581Identity("4.00")).Order().ToArray());
+        Assert.DoesNotContain(
+            AdapterPowerState.FullPower330W,
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+                ExactRz090581Identity(
+                    "99.99",
+                    HostFirmwareCompatibility.UntestedAllowed)));
+        Assert.DoesNotContain(
+            AdapterPowerState.FullPower330W,
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(new(
+                new HostIdentityEvidence(
+                    "Razer",
+                    "Blade 16 - RZ09-0528",
+                    "RZ09-05289EN4",
+                    "4.00"),
+                null,
+                HostFirmwareCompatibility.Tested)));
+        Assert.DoesNotContain(
+            AdapterPowerState.FullPower330W,
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+                new HostIdentityReadResult(
+                    null,
+                    HidSessionFailureKind.IdentityBlocked)));
+    }
+
+    [Fact]
+    public void Rz090581AdapterAdmission_UntrustedManifestPreservesReadOnlyFallback()
+    {
+        IReadOnlySet<AdapterPowerState> states =
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+                ExactRz090581Identity("4.00"),
+                static () => throw new UnvalidatedCommandException("invalid manifest"));
+
+        Assert.Equal(
+            [AdapterPowerState.UsbCPower100W, AdapterPowerState.FullPower280W],
+            states.Order().ToArray());
+    }
+
     private static HostIdentityReadResult ExactRz090581Identity(
         string biosVersion,
         HostFirmwareCompatibility compatibility = HostFirmwareCompatibility.Tested) => new(

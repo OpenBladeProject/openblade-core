@@ -6040,6 +6040,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return classified switch
             {
                 AdapterPowerState.FullPower280W => PowerSource.PluggedIn,
+                AdapterPowerState.FullPower330W => PowerSource.PluggedIn,
                 AdapterPowerState.UsbCPower100W => PowerSource.UsbC,
                 _ => PowerSource.ExternalUnknown,
             };
