@@ -35,6 +35,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Disabled the fan-mode dropdown when Automatic is the only available option,
+  including on battery and USB-C power, while keeping mismatched selections
+  recoverable.
 - Restored the last confirmed charge limit when a debounced tray edit cannot be
   applied, while preserving a newer edit made during an in-flight request.
 - Preserved configured special-key bindings through transient preference-file

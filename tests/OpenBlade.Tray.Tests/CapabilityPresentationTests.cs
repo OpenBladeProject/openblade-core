@@ -542,7 +542,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{Binding SelectedFanModeOption, Mode=OneWay}",
             Attribute(fans, "SelectedItem"));
-        Assert.Equal("{Binding CanEditFanControl}", Attribute(fans, "IsEnabled"));
+        Assert.Equal("{Binding CanChangeFanMode}", Attribute(fans, "IsEnabled"));
         Assert.Equal(
             "{Binding IsFanControlVisible}",
             Attribute(
