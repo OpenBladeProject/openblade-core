@@ -2584,6 +2584,55 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task FanModeSelector_IsDisabledWhenAutomaticIsTheOnlyOption()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities automaticOnly = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanModes = new HashSet<FanMode> { FanMode.Automatic },
+        };
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: automaticOnly);
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.CanEditFanControl
+            && viewModel.AvailableActiveFanModeOptions.Count == 1);
+
+        Assert.Equal(
+            FanMode.Automatic,
+            Assert.Single(viewModel.AvailableActiveFanModeOptions).Value);
+        Assert.False(viewModel.CanChangeFanMode);
+
+        int changeNotifications = 0;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.CanChangeFanMode))
+            {
+                Interlocked.Increment(ref changeNotifications);
+            }
+        };
+        client.Publish(status with
+        {
+            Revision = status.Revision + 1,
+            Capabilities = automaticOnly with
+            {
+                FanModes = new HashSet<FanMode>
+                {
+                    FanMode.Automatic,
+                    FanMode.Fixed,
+                },
+            },
+        });
+        await WaitUntilAsync(() => viewModel.CanChangeFanMode);
+
+        Assert.True(Volatile.Read(ref changeNotifications) > 0);
+    }
+
+    [Fact]
     public async Task PerformanceOptionsAndCommands_FollowActivePowerSource()
     {
         var client = new FakeServiceClient();
