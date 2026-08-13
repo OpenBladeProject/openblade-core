@@ -14,9 +14,15 @@ public sealed class TrayDashboardPreferenceTests
                 TrayDashboardControlKind.Performance,
                 TrayDashboardControlKind.Fans,
                 TrayDashboardControlKind.Lighting,
+                TrayDashboardControlKind.BatteryProtection,
+                TrayDashboardControlKind.FunctionRow,
+                TrayDashboardControlKind.GamingMode,
+                TrayDashboardControlKind.GpuTuning,
             ],
             preference.Controls!.Select(control => control.Kind));
-        Assert.All(preference.Controls!, control => Assert.True(control.IsVisible));
+        Assert.Equal(
+            [true, true, true, true, true, true, false],
+            preference.Controls!.Select(control => control.IsVisible));
         Assert.Equal(
             TrayDashboardPreferenceDefaults.CurrentSchemaVersion,
             preference.SchemaVersion);
@@ -61,10 +67,14 @@ public sealed class TrayDashboardPreferenceTests
                 TrayDashboardControlKind.Lighting,
                 TrayDashboardControlKind.Performance,
                 TrayDashboardControlKind.Fans,
+                TrayDashboardControlKind.BatteryProtection,
+                TrayDashboardControlKind.FunctionRow,
+                TrayDashboardControlKind.GamingMode,
+                TrayDashboardControlKind.GpuTuning,
             ],
             normalized.Controls!.Select(control => control.Kind));
         Assert.Equal(
-            [true, false, false],
+            [true, false, false, false, false, false, false],
             normalized.Controls!.Select(control => control.IsVisible));
         Assert.Equal(
             TrayDashboardPreferenceDefaults.CurrentSchemaVersion,

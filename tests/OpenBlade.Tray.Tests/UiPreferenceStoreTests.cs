@@ -404,10 +404,14 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 TrayDashboardControlKind.Lighting,
                 TrayDashboardControlKind.Performance,
                 TrayDashboardControlKind.Fans,
+                TrayDashboardControlKind.BatteryProtection,
+                TrayDashboardControlKind.FunctionRow,
+                TrayDashboardControlKind.GamingMode,
+                TrayDashboardControlKind.GpuTuning,
             ],
             migrated.Controls!.Select(control => control.Kind));
         Assert.Equal(
-            [true, false, false],
+            [true, false, false, false, false, false, false],
             migrated.Controls!.Select(control => control.IsVisible));
         Assert.True(migrated.Sliders!
             .Single(slider => slider.Kind == TrayDashboardSliderKind.LightingBrightness)

@@ -109,6 +109,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         mainWindow = CreateMainWindow(startupRegistration);
         trayDashboardWindow = new TrayDashboardWindow(
             mainWindow.ViewModel,
+            WindowNative.GetWindowHandle(mainWindow),
             visible => mainWindow.SetTrayDashboardVisible(visible));
         trayDashboardWindow.ApplyPreferences(mainWindow.TrayDashboardPreference);
         mainWindow.TrayDashboardPreferenceChanged += OnTrayDashboardPreferenceChanged;

@@ -854,6 +854,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SelectedPerformanceOption));
             Notify(nameof(IsCustomPerformanceVisible));
             Notify(nameof(IsGpuClockTuningVisible));
+            Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
@@ -1682,6 +1683,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsPerformanceSelected));
             Notify(nameof(IsCustomPerformanceVisible));
             Notify(nameof(IsGpuClockTuningVisible));
+            Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
@@ -1723,8 +1725,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             SetField(ref gpuClockTuningEnabled, value);
             Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(TrayDashboardGpuTuningLabel));
         }
     }
+
+    public string TrayDashboardGpuTuningLabel => !IsGpuClockTuningVisible
+        ? UnavailableLabel
+        : IsGpuClockTuningEnabled
+            ? "On"
+            : "Off";
 
     public bool IsSpecialKeyBindingsEditable =>
         Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
@@ -2224,6 +2233,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SupportsFunctionKeyPrimary));
             Notify(nameof(SupportsGamingMode));
             Notify(nameof(IsGpuClockTuningVisible));
+            Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
@@ -2308,12 +2318,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             gamingModeEnabled = value;
             Notify(nameof(GamingModeEnabled));
             Notify(nameof(GamingModeToggleIsOn));
+            Notify(nameof(TrayDashboardGamingModeLabel));
             Notify(nameof(IsGamingModeFieldLoading));
             NotifyLaptopBehaviorProfilePresentations();
         }
     }
 
     public bool GamingModeToggleIsOn => GamingModeEnabled is true;
+
+    public string TrayDashboardGamingModeLabel => GamingModeEnabled switch
+    {
+        true => "On",
+        false => "Off",
+        null => "Checking",
+    };
 
     public bool BlockWindowsKeyInGamingMode =>
         CurrentGamingModeKeyPolicy.BlockWindowsKey;
@@ -4406,6 +4424,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SelectedPerformance));
             Notify(nameof(IsCustomPerformanceVisible));
             Notify(nameof(IsGpuClockTuningVisible));
+            Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));

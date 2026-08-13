@@ -31,6 +31,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private readonly Action<bool> visibilityChanged;
     private readonly DispatcherQueue dispatcherQueue;
     private readonly DispatcherQueueTimer foregroundTimer;
+    private readonly nint editOwnerWindowHandle;
     private DispatcherQueueTimer? gpuClockOffsetCommitTimer;
     private readonly CoalescingCommitState<GpuClockOffsetSettings>
         gpuClockOffsetCommits = new();
@@ -43,6 +44,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private bool changingFans;
     private bool changingBatteryProtection;
     private bool changingGpuClockTuning;
+    private bool changingGamingModePolicy;
     private bool chargeLimitPointerInteraction;
     private TrayDashboardControlKind? detailControl;
     private bool pinnedForEditing;
@@ -71,9 +73,13 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     public TrayDashboardWindow(
         MainViewModel viewModel,
+        nint editOwnerWindowHandle,
         Action<bool> visibilityChanged)
     {
         ViewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
+        this.editOwnerWindowHandle = editOwnerWindowHandle != 0
+            ? editOwnerWindowHandle
+            : throw new ArgumentOutOfRangeException(nameof(editOwnerWindowHandle));
         this.visibilityChanged = visibilityChanged
             ?? throw new ArgumentNullException(nameof(visibilityChanged));
         InitializeComponent();
@@ -200,6 +206,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     public void BeginEditSession()
     {
+        TrySetEditOwner(editOwnerWindowHandle);
         DisplayArea displayArea = DisplayArea.Primary;
         RectInt32 workArea = displayArea.WorkArea;
         ShowAt(
@@ -213,7 +220,14 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     public void EndEditSession()
     {
         pinnedForEditing = false;
-        Hide();
+        try
+        {
+            Hide();
+        }
+        finally
+        {
+            TrySetEditOwner(0);
+        }
     }
 
     public void DismissForMainWindow()
@@ -244,12 +258,27 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         CancelRevealAnimation();
         DetachRevealSubclass();
+        TrySetEditOwner(0);
         if (visible)
         {
             visible = false;
             visibilityChanged(false);
         }
         Close();
+    }
+
+    private void TrySetEditOwner(nint owner)
+    {
+        try
+        {
+            WindowsPopupPositioner.SetOwner(hostWindowHandle, owner);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard edit owner change failed: {0}",
+                exception.Message);
+        }
     }
 
     private void ShowAt(
@@ -816,6 +845,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             [TrayDashboardControlKind.Performance] = PerformanceTile,
             [TrayDashboardControlKind.Fans] = FansTile,
             [TrayDashboardControlKind.Lighting] = LightingTile,
+            [TrayDashboardControlKind.BatteryProtection] = BatteryProtectionTile,
+            [TrayDashboardControlKind.FunctionRow] = FunctionRowTile,
+            [TrayDashboardControlKind.GamingMode] = GamingModeTile,
+            [TrayDashboardControlKind.GpuTuning] = GpuTuningTile,
         };
 
     private IReadOnlyDictionary<TrayDashboardSliderKind, FrameworkElement>
@@ -841,12 +874,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         int row = 0;
         foreach (TrayDashboardSliderPreference slider in preference.Sliders!)
         {
-            bool available = slider.Kind is not (
-                    TrayDashboardSliderKind.GpuCoreClock
-                    or TrayDashboardSliderKind.GpuMemoryClock)
-                || ViewModel.IsGpuClockTuningVisible;
             FrameworkElement element = sliders[slider.Kind];
-            if (!slider.IsVisible || !available)
+            if (!slider.IsVisible)
             {
                 continue;
             }
@@ -991,10 +1020,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         else if (args.PropertyName == nameof(MainViewModel.AvailableActiveFanModeOptions))
         {
             UpdateFansDetailsAvailability();
-        }
-        else if (args.PropertyName == nameof(MainViewModel.IsGpuClockTuningVisible))
-        {
-            UpdateSliderRows();
         }
     }
 
@@ -1143,6 +1168,52 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
     }
 
+    private async void OnFunctionRowCycleClick(object sender, RoutedEventArgs args)
+    {
+        ApplyOneShotLaptopControl? action = ViewModel.FunctionKeyPrimary switch
+        {
+            FunctionKeyPrimaryMode.FunctionKeys => ViewModel.MultimediaKeysPrimaryAction,
+            FunctionKeyPrimaryMode.MultimediaKeys => ViewModel.FunctionKeysPrimaryAction,
+            _ => null,
+        };
+        if (action is not null)
+        {
+            await ApplyOneShotControlAsync(action);
+        }
+    }
+
+    private async void OnGamingModeCycleClick(object sender, RoutedEventArgs args)
+    {
+        ApplyOneShotLaptopControl? action = ViewModel.GamingModeEnabled switch
+        {
+            true => ViewModel.GamingModeOffAction,
+            false => ViewModel.GamingModeOnAction,
+            null => null,
+        };
+        if (action is not null)
+        {
+            await ApplyOneShotControlAsync(action);
+        }
+    }
+
+    private async Task ApplyOneShotControlAsync(ApplyOneShotLaptopControl action)
+    {
+        try
+        {
+            if (ViewModel.ApplyOneShotLaptopControlCommand is AsyncRelayCommand command
+                && command.CanExecute(action))
+            {
+                await command.ExecuteAsync(action);
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade tray dashboard laptop-control change failed: {0}",
+                exception);
+        }
+    }
+
     private void OnPerformanceDetailsClick(object sender, RoutedEventArgs args) =>
         ShowDetail(TrayDashboardControlKind.Performance, "Performance");
 
@@ -1151,6 +1222,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     private void OnLightingDetailsClick(object sender, RoutedEventArgs args) =>
         ShowDetail(TrayDashboardControlKind.Lighting, "Lighting");
+
+    private void OnGamingModeDetailsClick(object sender, RoutedEventArgs args) =>
+        ShowDetail(TrayDashboardControlKind.GamingMode, "Gaming mode");
 
     private void OnDetailBackClick(object sender, RoutedEventArgs args) =>
         ShowDashboardPage();
@@ -1168,8 +1242,58 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         LightingDetail.Visibility = kind == TrayDashboardControlKind.Lighting
             ? Visibility.Visible
             : Visibility.Collapsed;
+        GamingModeDetail.Visibility = kind == TrayDashboardControlKind.GamingMode
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        if (kind == TrayDashboardControlKind.GamingMode)
+        {
+            SynchronizeGamingModePolicyToggles();
+        }
         DashboardPage.Visibility = Visibility.Collapsed;
         DetailPage.Visibility = Visibility.Visible;
+    }
+
+    private void SynchronizeGamingModePolicyToggles()
+    {
+        changingGamingModePolicy = true;
+        try
+        {
+            GamingModeWindowsKeyToggle.IsOn = ViewModel.BlockWindowsKeyInGamingMode;
+            GamingModeAltTabToggle.IsOn = ViewModel.BlockAltTabInGamingMode;
+        }
+        finally
+        {
+            changingGamingModePolicy = false;
+        }
+    }
+
+    private async void OnGamingModeKeyPolicyToggled(object sender, RoutedEventArgs args)
+    {
+        if (changingGamingModePolicy || Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
+        changingGamingModePolicy = true;
+        try
+        {
+            _ = await ViewModel.SetGamingModeKeyPolicyAsync(
+                GamingModeWindowsKeyToggle.IsOn,
+                GamingModeAltTabToggle.IsOn,
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade tray dashboard gaming-mode policy change failed: {0}",
+                exception);
+        }
+        finally
+        {
+            GamingModeWindowsKeyToggle.IsOn = ViewModel.BlockWindowsKeyInGamingMode;
+            GamingModeAltTabToggle.IsOn = ViewModel.BlockAltTabInGamingMode;
+            changingGamingModePolicy = false;
+        }
     }
 
     private void ShowDashboardPage()

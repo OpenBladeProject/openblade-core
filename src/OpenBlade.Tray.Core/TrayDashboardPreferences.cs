@@ -8,6 +8,10 @@ public enum TrayDashboardControlKind
     Fans,
     Battery,
     Lighting,
+    BatteryProtection,
+    FunctionRow,
+    GamingMode,
+    GpuTuning,
 }
 
 public enum TrayDashboardStatusItemKind
@@ -184,6 +188,26 @@ public static class TrayDashboardPreferenceDefaults
             "Lighting",
             "Choose the keyboard effect and brightness.",
             true),
+        new(
+            TrayDashboardControlKind.BatteryProtection,
+            "Battery protection",
+            "Turn the configured battery charge limit on or off.",
+            true),
+        new(
+            TrayDashboardControlKind.FunctionRow,
+            "Function row",
+            "Choose function keys or media keys as the primary action.",
+            true),
+        new(
+            TrayDashboardControlKind.GamingMode,
+            "Gaming mode",
+            "Turn the laptop gaming mode on or off.",
+            true),
+        new(
+            TrayDashboardControlKind.GpuTuning,
+            "GPU tuning",
+            "Turn GPU clock tuning on or off.",
+            false),
     ];
 
     private static readonly TrayDashboardStatusItemKind[] StatusDefinitions =

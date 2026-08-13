@@ -219,6 +219,115 @@
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
                     </Grid>
+
+                    <Grid x:Name="BatteryProtectionTile" MinWidth="0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource QuickTileSurfaceStyle}">
+                            <Button Style="{StaticResource QuickTileActionStyle}"
+                                    CornerRadius="5"
+                                    IsEnabled="{Binding CanChangeBatteryProtection, Mode=OneWay}"
+                                    Click="OnBatteryProtectionClick"
+                                    AutomationProperties.Name="Toggle battery protection">
+                                <FontIcon Glyph="&#xE83F;"
+                                          Style="{StaticResource QuickTileIconStyle}" />
+                            </Button>
+                        </Border>
+                        <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
+                            <TextBlock Text="Battery protection"
+                                       Style="{StaticResource QuickTileTitleStyle}" />
+                            <TextBlock Text="{Binding TrayDashboardChargeLimitLabel, Mode=OneWay}"
+                                       Style="{StaticResource QuickTileValueStyle}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid x:Name="FunctionRowTile" MinWidth="0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource QuickTileSurfaceStyle}">
+                            <Button Style="{StaticResource QuickTileActionStyle}"
+                                    CornerRadius="5"
+                                    IsEnabled="{Binding CanEditFunctionKeyPrimary, Mode=OneWay}"
+                                    Click="OnFunctionRowCycleClick"
+                                    AutomationProperties.Name="Cycle function row mode">
+                                <FontIcon Glyph="&#xE765;"
+                                          Style="{StaticResource QuickTileIconStyle}" />
+                            </Button>
+                        </Border>
+                        <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
+                            <TextBlock Text="Function row"
+                                       Style="{StaticResource QuickTileTitleStyle}" />
+                            <TextBlock Text="{Binding FunctionKeyPrimaryStateLabel, Mode=OneWay}"
+                                       Style="{StaticResource QuickTileValueStyle}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid x:Name="GamingModeTile" MinWidth="0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource QuickTileSurfaceStyle}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="36" />
+                                </Grid.ColumnDefinitions>
+                                <Button Style="{StaticResource QuickTileActionStyle}"
+                                        CornerRadius="5,0,0,5"
+                                        IsEnabled="{Binding CanEditGamingMode, Mode=OneWay}"
+                                        Click="OnGamingModeCycleClick"
+                                        AutomationProperties.Name="Toggle gaming mode">
+                                    <FontIcon Glyph="&#xE7FC;"
+                                              Style="{StaticResource QuickTileIconStyle}" />
+                                </Button>
+                                <Border Grid.Column="1"
+                                        BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                        BorderThickness="1,0,0,0">
+                                    <Button Style="{StaticResource QuickTileActionStyle}"
+                                            CornerRadius="0,5,5,0"
+                                            IsEnabled="{Binding CanEditGamingModeKeyPolicy, Mode=OneWay}"
+                                            Click="OnGamingModeDetailsClick"
+                                            AutomationProperties.Name="Configure gaming mode keys">
+                                        <FontIcon Glyph="&#xE76C;" FontSize="12" />
+                                    </Button>
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
+                            <TextBlock Text="Gaming mode"
+                                       Style="{StaticResource QuickTileTitleStyle}" />
+                            <TextBlock Text="{Binding TrayDashboardGamingModeLabel, Mode=OneWay}"
+                                       Style="{StaticResource QuickTileValueStyle}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid x:Name="GpuTuningTile" MinWidth="0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource QuickTileSurfaceStyle}">
+                            <Button Style="{StaticResource QuickTileActionStyle}"
+                                    CornerRadius="5"
+                                    IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
+                                    Click="OnGpuClockTuningClick"
+                                    AutomationProperties.Name="Toggle GPU tuning">
+                                <FontIcon Glyph="&#xE950;"
+                                          Style="{StaticResource QuickTileIconStyle}" />
+                            </Button>
+                        </Border>
+                        <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
+                            <TextBlock Text="GPU tuning"
+                                       Style="{StaticResource QuickTileTitleStyle}" />
+                            <TextBlock Text="{Binding TrayDashboardGpuTuningLabel, Mode=OneWay}"
+                                       Style="{StaticResource QuickTileValueStyle}" />
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </ScrollViewer>
 
@@ -405,6 +514,45 @@
                           SelectedItem="{Binding SelectedLightingEffectOption, Mode=TwoWay}"
                           SelectionMode="Single"
                           AutomationProperties.Name="Lighting effect choices" />
+                <StackPanel x:Name="GamingModeDetail"
+                            Margin="18,8,18,12"
+                            Spacing="14"
+                            Visibility="Collapsed">
+                    <TextBlock Text="Choose which keys Windows blocks while gaming mode is on."
+                               Style="{StaticResource QuickTileValueStyle}"
+                               TextWrapping="Wrap"
+                               MaxLines="3" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Block Windows key"
+                                   VerticalAlignment="Center" />
+                        <ToggleSwitch x:Name="GamingModeWindowsKeyToggle"
+                                      Grid.Column="1"
+                                      MinWidth="0"
+                                      OffContent=""
+                                      OnContent=""
+                                      IsEnabled="{Binding CanEditGamingModeKeyPolicy, Mode=OneWay}"
+                                      Toggled="OnGamingModeKeyPolicyToggled" />
+                    </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Block Alt+Tab"
+                                   VerticalAlignment="Center" />
+                        <ToggleSwitch x:Name="GamingModeAltTabToggle"
+                                      Grid.Column="1"
+                                      MinWidth="0"
+                                      OffContent=""
+                                      OnContent=""
+                                      IsEnabled="{Binding CanEditGamingModeKeyPolicy, Mode=OneWay}"
+                                      Toggled="OnGamingModeKeyPolicyToggled" />
+                    </Grid>
+                </StackPanel>
             </Grid>
         </Grid>
 

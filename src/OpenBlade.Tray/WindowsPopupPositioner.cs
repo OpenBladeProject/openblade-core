@@ -5,6 +5,7 @@ namespace OpenBlade.Tray;
 
 internal static class WindowsPopupPositioner
 {
+    private const int WindowOwnerIndex = -8;
     private const int VirtualScreenLeftMetric = 76;
     private const int VirtualScreenTopMetric = 77;
     private const uint SetWindowNoActivate = 0x0010;
@@ -53,6 +54,19 @@ internal static class WindowsPopupPositioner
     }
 
     public static nint GetForegroundWindowHandle() => GetForegroundWindow();
+
+    public static void SetOwner(nint window, nint owner)
+    {
+        Marshal.SetLastPInvokeError(0);
+        nint previous = SetWindowLongPtr(window, WindowOwnerIndex, owner);
+        int error = Marshal.GetLastPInvokeError();
+        if (previous == 0 && error != 0)
+        {
+            throw new Win32Exception(
+                error,
+                "The popup window owner could not be changed.");
+        }
+    }
 
     public static bool TryActivate(nint window) =>
         window != 0
@@ -115,6 +129,15 @@ internal static class WindowsPopupPositioner
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(nint window);
+
+    [DllImport(
+        "user32.dll",
+        EntryPoint = "SetWindowLongPtrW",
+        SetLastError = true)]
+    private static extern nint SetWindowLongPtr(
+        nint window,
+        int index,
+        nint value);
 
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);

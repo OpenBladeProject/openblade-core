@@ -11,9 +11,17 @@ All notable changes to OpenBlade are documented in this file. The project follow
   page that shows only active controls and adjustments, keeps inactive choices
   in **Add** menus, exposes the two-adjustment limit, and updates the pinned tray
   popup live while items are reordered, added, removed, or reset.
+- Expanded tray-dashboard quick controls with battery protection, function-row
+  mode, gaming mode and its key-blocking options, plus an optional GPU-tuning
+  toggle.
 
 ### Fixed
 
+- Kept selected GPU clock adjustments visible in the tray dashboard when GPU
+  tuning is temporarily unavailable, showing their disabled state instead of
+  silently removing them.
+- Kept the pinned tray-dashboard preview above a maximized OpenBlade window
+  during Settings customization without making it system-wide always-on-top.
 - Replaced `Not set` laptop-behavior profile cells with the currently confirmed
   firmware value while leaving unconfigured profiles non-destructive.
 - Repeated the global charge limit across the AC, USB-C, and Battery profile

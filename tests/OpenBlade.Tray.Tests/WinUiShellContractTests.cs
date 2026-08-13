@@ -1928,6 +1928,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("new ToolStripMenuItem(\"Exit\")", trayHost, StringComparison.Ordinal);
         Assert.Contains("new TrayDashboardWindow(", app, StringComparison.Ordinal);
+        Assert.Contains("WindowNative.GetWindowHandle(mainWindow)", app, StringComparison.Ordinal);
         Assert.Contains("mainWindow.SetTrayDashboardVisible(visible)", app, StringComparison.Ordinal);
         Assert.Contains("OpenMainWindowFromTrayIcon", app, StringComparison.Ordinal);
         Assert.Contains("DismissForMainWindow()", app, StringComparison.Ordinal);
@@ -1960,6 +1961,9 @@ public sealed class WinUiShellContractTests
             beginEdit,
             StringComparison.Ordinal);
         string beginEditBody = dashboardWindow[beginEdit..endEdit];
+        Assert.True(
+            beginEditBody.IndexOf("TrySetEditOwner(editOwnerWindowHandle)", StringComparison.Ordinal)
+            < beginEditBody.IndexOf("ShowAt(", StringComparison.Ordinal));
         Assert.Contains(
             "checked(workArea.X + workArea.Width - 1)",
             beginEditBody,
@@ -1967,6 +1971,14 @@ public sealed class WinUiShellContractTests
         Assert.Contains(
             "checked(workArea.Y + workArea.Height - 1)",
             beginEditBody,
+            StringComparison.Ordinal);
+        int dismissForMainWindow = dashboardWindow.IndexOf(
+            "public void DismissForMainWindow()",
+            endEdit,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "TrySetEditOwner(0)",
+            dashboardWindow[endEdit..dismissForMainWindow],
             StringComparison.Ordinal);
         int showAt = dashboardWindow.IndexOf(
             "private void ShowAt(",
@@ -1988,6 +2000,18 @@ public sealed class WinUiShellContractTests
             dashboardWindow[tryPosition..position],
             StringComparison.Ordinal);
         Assert.Contains("TrayDashboardInteractionPolicy.ShouldSuppressReopen", dashboardWindow, StringComparison.Ordinal);
+        int updateSliderRows = dashboardWindow.IndexOf(
+            "private void UpdateSliderRows()",
+            StringComparison.Ordinal);
+        int updateFansDetails = dashboardWindow.IndexOf(
+            "private void UpdateFansDetailsAvailability()",
+            updateSliderRows,
+            StringComparison.Ordinal);
+        string updateSliderRowsBody = dashboardWindow[updateSliderRows..updateFansDetails];
+        Assert.Contains("if (!slider.IsVisible)", updateSliderRowsBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsGpuClockTuningVisible", updateSliderRowsBody, StringComparison.Ordinal);
+        Assert.Contains("WindowOwnerIndex = -8", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains("SetWindowLongPtr", popupPositioner, StringComparison.Ordinal);
         Assert.Contains("DwmFlush()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("PostMessage(hostWindowHandle", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("SetWindowSubclass(", dashboardWindow, StringComparison.Ordinal);
@@ -2144,6 +2168,8 @@ public sealed class WinUiShellContractTests
             sliderSection,
             StringComparison.Ordinal);
         string sliderSectionXaml = dashboardXaml[sliderSection..detailPage];
+        Assert.Contains("CanToggleGpuClockTuning", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.Contains("CanEditGpuClockTuning", sliderSectionXaml, StringComparison.Ordinal);
         Assert.Equal(8, CountOccurrences(sliderSectionXaml, "<ColumnDefinition"));
         Assert.Equal(
             4,
@@ -2154,7 +2180,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("<ColumnDefinition Width=\"28\" />", sliderSectionXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Grid.Column=\"2\"", sliderSectionXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("QuickSliderValueStyle", dashboardXaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("TrayDashboardChargeLimitLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("TrayDashboardChargeLimitLabel", sliderSectionXaml, StringComparison.Ordinal);
         Assert.DoesNotContain(" MHz", sliderSectionXaml, StringComparison.Ordinal);
         Assert.DoesNotContain(" %", sliderSectionXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ChargeLimitSliderRow\"", dashboardXaml, StringComparison.Ordinal);
@@ -2163,6 +2189,13 @@ public sealed class WinUiShellContractTests
         Assert.Contains("x:Name=\"GpuMemoryClockSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"BatteryTile\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"BatteryDetail\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"BatteryProtectionTile\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"FunctionRowTile\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GamingModeTile\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GpuTuningTile\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnFunctionRowCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnGamingModeCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnGamingModeDetailsClick\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnBatteryProtectionClick\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("IsChecked=\"{Binding BatteryProtectionEnabled, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("IsEnabled=\"{Binding CanChangeBatteryProtection, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
