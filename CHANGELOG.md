@@ -16,8 +16,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
   toggle.
 - Renamed the tray-dashboard lighting adjustment to **Keyboard brightness** so
   its target is explicit in Settings and accessibility presentation.
+- Matched the tray dashboard to the Windows Quick Settings 360 by 388 DIP
+  footprint, added configurable power-source and fan-speed status items, and
+  standardized its primary icon scale.
 
 ### Fixed
+
+- Replaced the keyboard-brightness adjustment's generic sun icon with the
+  Windows keyboard-brightness glyph.
 
 - Kept selected GPU clock adjustments visible in the tray dashboard when GPU
   tuning is temporarily unavailable, showing their disabled state instead of

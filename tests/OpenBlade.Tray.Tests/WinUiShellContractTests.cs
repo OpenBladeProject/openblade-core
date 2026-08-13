@@ -2121,7 +2121,18 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<Setter Property=\"Height\" Value=\"48\" />", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"CornerRadius\" Value=\"6\" />", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"CornerRadius\" Value=\"8\" />", dashboardXaml, StringComparison.Ordinal);
-        Assert.Contains("<Setter Property=\"FontSize\" Value=\"16\" />", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "<x:Double x:Key=\"QuickTileIconSize\">16</x:Double>",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<x:Double x:Key=\"DashboardPrimaryIconSize\">20</x:Double>",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<Setter Property=\"FontSize\" Value=\"{StaticResource DashboardPrimaryIconSize}\" />",
+            dashboardXaml,
+            StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"FontSize\" Value=\"12\" />", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"FontSize\" Value=\"11\" />", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains(
@@ -2141,7 +2152,7 @@ public sealed class WinUiShellContractTests
             quickSliderIconStyle,
             StringComparison.Ordinal);
         Assert.Contains(
-            "<Setter Property=\"FontSize\" Value=\"20\" />",
+            "<Setter Property=\"FontSize\" Value=\"{StaticResource DashboardPrimaryIconSize}\" />",
             dashboardXaml[quickSliderIconStyle..quickSliderButtonStyle],
             StringComparison.Ordinal);
         Assert.Contains("Padding=\"20,14,20,10\"", dashboardXaml, StringComparison.Ordinal);
@@ -2189,6 +2200,21 @@ public sealed class WinUiShellContractTests
             "AutomationProperties.Name=\"Keyboard brightness\"",
             dashboardXaml,
             StringComparison.Ordinal);
+        int lightingBrightnessRow = dashboardXaml.IndexOf(
+            "x:Name=\"LightingBrightnessSliderRow\"",
+            StringComparison.Ordinal);
+        int gpuCoreClockRow = dashboardXaml.IndexOf(
+            "x:Name=\"GpuCoreClockSliderRow\"",
+            lightingBrightnessRow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Glyph=\"&#xED39;\"",
+            dashboardXaml[lightingBrightnessRow..gpuCoreClockRow],
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Glyph=\"&#xE706;\"",
+            dashboardXaml[lightingBrightnessRow..gpuCoreClockRow],
+            StringComparison.Ordinal);
         Assert.Contains("x:Name=\"GpuCoreClockSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"GpuMemoryClockSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"BatteryTile\"", dashboardXaml, StringComparison.Ordinal);
@@ -2204,9 +2230,14 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("IsChecked=\"{Binding BatteryProtectionEnabled, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("IsEnabled=\"{Binding CanChangeBatteryProtection, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"BatteryPowerStatus\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PowerSourceStatus\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"FanSpeedStatus\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"FansStatus\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Equal(
-            3,
-            CountOccurrences(dashboardXaml, "HorizontalAlignment=\"Center\">\r\n                        <Grid.ColumnDefinitions>\r\n                            <ColumnDefinition Width=\"16\" />\r\n                            <ColumnDefinition Width=\"Auto\" />"));
+            4,
+            CountOccurrences(
+                dashboardXaml,
+                "<ColumnDefinition Width=\"{StaticResource DashboardPrimaryIconSize}\" />"));
         Assert.DoesNotContain("Glyph=\"&#xE713;\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("AutomationProperties.Name=\"Open OpenBlade\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Click=\"OnSettingsClick\"", dashboardXaml, StringComparison.Ordinal);
@@ -2252,7 +2283,9 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Glyph=\"&#xE9D0;\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardBatteryPowerFlowLabel", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardTemperatureLabel", dashboardXaml, StringComparison.Ordinal);
-        Assert.Contains("TrayDashboardFanModeLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardPowerSourceLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardFanSpeedLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("TrayDashboardFanModeLabel", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Customize", dashboardXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Preview", dashboardXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("ControlGrid.Children.Remove", dashboardWindow, StringComparison.Ordinal);
@@ -2264,7 +2297,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("GetEffectiveExpandedControl", mainWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("TrayDashboardControlSize", dashboardPreferences, StringComparison.Ordinal);
         Assert.DoesNotContain("ExpandedControl", dashboardPreferences, StringComparison.Ordinal);
-        Assert.Contains("CurrentSchemaVersion = 1", dashboardPreferences, StringComparison.Ordinal);
+        Assert.Contains("CurrentSchemaVersion = 2", dashboardPreferences, StringComparison.Ordinal);
         Assert.Contains("The first six controls remain visible.", mainXaml, StringComparison.Ordinal);
     }
 

@@ -907,7 +907,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         {
             [TrayDashboardStatusItemKind.BatteryPower] = BatteryPowerStatus,
             [TrayDashboardStatusItemKind.Temperatures] = TemperatureStatus,
-            [TrayDashboardStatusItemKind.Fans] = FansStatus,
+            [TrayDashboardStatusItemKind.PowerSource] = PowerSourceStatus,
+            [TrayDashboardStatusItemKind.FanSpeed] = FanSpeedStatus,
         };
 
     private void Hide(bool suppressNextTrayToggle = false)

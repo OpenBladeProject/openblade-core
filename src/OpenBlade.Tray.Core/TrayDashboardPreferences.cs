@@ -18,7 +18,10 @@ public enum TrayDashboardStatusItemKind
 {
     BatteryPower,
     Temperatures,
+    // Retained only so schema-1 JSON can migrate without resetting preferences.
     Fans,
+    PowerSource,
+    FanSpeed,
 }
 
 public enum TrayDashboardSliderKind
@@ -162,7 +165,7 @@ public sealed class TrayDashboardSliderOption : INotifyPropertyChanged
 
 public static class TrayDashboardPreferenceDefaults
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
     public const int MaximumVisibleSliders = 2;
 
     private sealed record ControlDefinition(
@@ -211,7 +214,12 @@ public static class TrayDashboardPreferenceDefaults
     ];
 
     private static readonly TrayDashboardStatusItemKind[] StatusDefinitions =
-        Enum.GetValues<TrayDashboardStatusItemKind>();
+    [
+        TrayDashboardStatusItemKind.BatteryPower,
+        TrayDashboardStatusItemKind.Temperatures,
+        TrayDashboardStatusItemKind.PowerSource,
+        TrayDashboardStatusItemKind.FanSpeed,
+    ];
 
     private static readonly (TrayDashboardSliderKind Kind, string Label, bool IsVisible)[]
         SliderDefinitions =
@@ -281,12 +289,17 @@ public static class TrayDashboardPreferenceDefaults
             StatusDefinitions.Length);
         foreach (TrayDashboardStatusItemPreference status in preference.StatusItems ?? [])
         {
-            if (!Enum.IsDefined(status.Kind) || !seenStatusItems.Add(status.Kind))
+            TrayDashboardStatusItemKind kind =
+                preference.SchemaVersion <= 1
+                    && status.Kind == TrayDashboardStatusItemKind.Fans
+                        ? TrayDashboardStatusItemKind.FanSpeed
+                        : status.Kind;
+            if (!StatusDefinitions.Contains(kind) || !seenStatusItems.Add(kind))
             {
                 continue;
             }
 
-            statusItems.Add(status);
+            statusItems.Add(status with { Kind = kind });
         }
 
         foreach (TrayDashboardStatusItemKind kind in StatusDefinitions)
@@ -433,7 +446,8 @@ public static class TrayDashboardPreferenceDefaults
     {
         TrayDashboardStatusItemKind.BatteryPower => "Battery power",
         TrayDashboardStatusItemKind.Temperatures => "Temperatures",
-        TrayDashboardStatusItemKind.Fans => "Fans",
+        TrayDashboardStatusItemKind.PowerSource => "Power source",
+        TrayDashboardStatusItemKind.FanSpeed => "Fan speed",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 }

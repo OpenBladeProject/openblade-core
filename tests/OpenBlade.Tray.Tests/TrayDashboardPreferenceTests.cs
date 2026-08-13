@@ -26,6 +26,14 @@ public sealed class TrayDashboardPreferenceTests
         Assert.Equal(
             TrayDashboardPreferenceDefaults.CurrentSchemaVersion,
             preference.SchemaVersion);
+        Assert.Equal(
+            [
+                TrayDashboardStatusItemKind.BatteryPower,
+                TrayDashboardStatusItemKind.Temperatures,
+                TrayDashboardStatusItemKind.PowerSource,
+                TrayDashboardStatusItemKind.FanSpeed,
+            ],
+            preference.StatusItems!.Select(status => status.Kind));
         Assert.All(preference.StatusItems!, status => Assert.True(status.IsVisible));
         Assert.Equal(
             [
@@ -87,13 +95,14 @@ public sealed class TrayDashboardPreferenceTests
             normalized.SchemaVersion);
         Assert.Equal(
             [
-                TrayDashboardStatusItemKind.Fans,
+                TrayDashboardStatusItemKind.FanSpeed,
                 TrayDashboardStatusItemKind.BatteryPower,
                 TrayDashboardStatusItemKind.Temperatures,
+                TrayDashboardStatusItemKind.PowerSource,
             ],
             normalized.StatusItems!.Select(status => status.Kind));
         Assert.Equal(
-            [true, false, false],
+            [true, false, false, false],
             normalized.StatusItems!.Select(status => status.IsVisible));
         Assert.Equal(
             [true, false, false, false],
@@ -315,18 +324,48 @@ public sealed class TrayDashboardPreferenceTests
     }
 
     [Fact]
-    public void StatusFanTextDropsTheRedundantNoun()
+    public void StatusPowerSourceTextIsCompact()
     {
         Assert.Equal(
-            "Automatic",
-            TrayDashboardStatusPresentation.Fans(
+            "AC",
+            TrayDashboardStatusPresentation.PowerSourceText(
                 connected: true,
-                FanMode.Automatic));
+                PowerSource.PluggedIn));
+        Assert.Equal(
+            "USB-C",
+            TrayDashboardStatusPresentation.PowerSourceText(
+                connected: true,
+                PowerSource.UsbC));
+        Assert.Equal(
+            "Battery",
+            TrayDashboardStatusPresentation.PowerSourceText(
+                connected: true,
+                PowerSource.Battery));
         Assert.Equal(
             "—",
-            TrayDashboardStatusPresentation.Fans(
+            TrayDashboardStatusPresentation.PowerSourceText(
                 connected: false,
-                FanMode.Automatic));
+                PowerSource.PluggedIn));
+    }
+
+    [Theory]
+    [InlineData(true, 3210, 2875, "3.2K / 2.9K")]
+    [InlineData(true, 900, null, "900")]
+    [InlineData(true, null, 2875, "2.9K")]
+    [InlineData(true, null, null, "—")]
+    [InlineData(false, 3210, 2875, "—")]
+    public void StatusFanSpeedTextFitsThePopupFooter(
+        bool connected,
+        int? fan1Rpm,
+        int? fan2Rpm,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            TrayDashboardStatusPresentation.FanSpeed(
+                connected,
+                fan1Rpm,
+                fan2Rpm));
     }
 
     [Fact]
@@ -371,7 +410,7 @@ public sealed class TrayDashboardPreferenceTests
     [InlineData(96, 360, 388, 8)]
     [InlineData(144, 540, 582, 12)]
     [InlineData(192, 720, 776, 16)]
-    public void PlacementScalesRedesignedPopupAtCommonMonitorDpis(
+    public void PlacementMatchesWindowsQuickSettingsFootprintAtCommonMonitorDpis(
         int dpi,
         int expectedWidth,
         int expectedHeight,

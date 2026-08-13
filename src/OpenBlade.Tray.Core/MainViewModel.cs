@@ -691,6 +691,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             LiveReadings?.CpuTemperatureCelsius,
             LiveReadings?.GpuTemperatureCelsius);
 
+    public string TrayDashboardPowerSourceLabel =>
+        TrayDashboardStatusPresentation.PowerSourceText(IsConnected, ActivePowerSource);
+
+    public string TrayDashboardFanSpeedLabel =>
+        TrayDashboardStatusPresentation.FanSpeed(
+            IsConnected,
+            LiveReadings?.Fan1Rpm,
+            LiveReadings?.Fan2Rpm);
+
+    public string TrayDashboardFanSpeedToolTip =>
+        IsConnected ? $"{Fan1RpmLabel}; {Fan2RpmLabel}" : UnavailableLabel;
+
     public ObservableCollection<LiveReadingVisibilityOption> DashboardTelemetryItems
     {
         get;
@@ -864,6 +876,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyActiveFanSelectionBinding();
             Notify(nameof(BatteryPowerFlowLabel));
             Notify(nameof(TrayDashboardBatteryPowerFlowLabel));
+            Notify(nameof(TrayDashboardPowerSourceLabel));
             NotifyTrayHoverLabel();
             NotifyCommands();
         }
@@ -911,9 +924,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string ActiveFanModeLabel => IsConnected
         ? $"{FanModePresentation.Label(SelectedFanMode)} fans"
         : UnavailableLabel;
-
-    public string TrayDashboardFanModeLabel =>
-        TrayDashboardStatusPresentation.Fans(IsConnected, SelectedFanMode);
 
     public string ProfileStateLabel => !IsConnected
         ? "Service unavailable"
@@ -1854,7 +1864,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
             SetField(ref selectedFanMode, value);
             Notify(nameof(ActiveFanModeLabel));
-            Notify(nameof(TrayDashboardFanModeLabel));
             Notify(nameof(SelectedFanModeOption));
             Notify(nameof(CanChangeFanMode));
             Notify(nameof(IsFixedFanSpeedVisible));
@@ -8458,7 +8467,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(LiveReadingsRefreshToolTip));
         Notify(nameof(ActivePerformanceLabel));
         Notify(nameof(ActiveFanModeLabel));
-        Notify(nameof(TrayDashboardFanModeLabel));
+        Notify(nameof(TrayDashboardPowerSourceLabel));
         Notify(nameof(ProfileStateLabel));
         Notify(nameof(IsReadinessReady));
         Notify(nameof(IsReadinessChecking));

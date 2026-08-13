@@ -10,6 +10,8 @@
           SizeChanged="OnRootSizeChanged">
         <Grid.Resources>
             <local:Int32DoubleConverter x:Key="Int32Double" />
+            <x:Double x:Key="QuickTileIconSize">16</x:Double>
+            <x:Double x:Key="DashboardPrimaryIconSize">20</x:Double>
             <x:Double x:Key="SliderHorizontalThumbWidth">16</x:Double>
             <x:Double x:Key="SliderHorizontalThumbHeight">16</x:Double>
             <Style x:Key="QuickTileSurfaceStyle" TargetType="Border">
@@ -31,10 +33,16 @@
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
             <Style x:Key="QuickTileIconStyle" TargetType="FontIcon">
-                <Setter Property="FontSize" Value="16" />
+                <Setter Property="FontSize" Value="{StaticResource QuickTileIconSize}" />
+            </Style>
+            <Style x:Key="QuickTileBatteryIconStyle" TargetType="FontIcon">
+                <Setter Property="FontSize" Value="{StaticResource DashboardPrimaryIconSize}" />
             </Style>
             <Style x:Key="QuickSliderIconStyle" TargetType="FontIcon">
-                <Setter Property="FontSize" Value="20" />
+                <Setter Property="FontSize" Value="{StaticResource DashboardPrimaryIconSize}" />
+            </Style>
+            <Style x:Key="StatusIconStyle" TargetType="FontIcon">
+                <Setter Property="FontSize" Value="{StaticResource DashboardPrimaryIconSize}" />
             </Style>
             <Style x:Key="QuickSliderIconButtonStyle" TargetType="Button">
                 <Setter Property="Width" Value="36" />
@@ -156,8 +164,8 @@
                                         IsEnabled="{Binding CanEditFanControl, Mode=OneWay}"
                                         Click="OnFansCycleClick"
                                         AutomationProperties.Name="Cycle fan mode">
-                                    <PathIcon Width="16"
-                                              Height="16"
+                                    <PathIcon Width="{StaticResource QuickTileIconSize}"
+                                              Height="{StaticResource QuickTileIconSize}"
                                               Data="M8,6.5 C6.5,5.2 6.2,2.4 7.4,0.8 C8.5,0 10.2,0.3 10.8,1.8 C11.2,3.6 9.6,5.7 8,6.5 Z M9.5,8 C10.8,6.5 13.6,6.2 15.2,7.4 C16,8.5 15.7,10.2 14.2,10.8 C12.4,11.2 10.3,9.6 9.5,8 Z M8,9.5 C9.5,10.8 9.8,13.6 8.6,15.2 C7.5,16 5.8,15.7 5.2,14.2 C4.8,12.4 6.4,10.3 8,9.5 Z M6.5,8 C5.2,9.5 2.4,9.8 0.8,8.6 C0,7.5 0.3,5.8 1.8,5.2 C3.6,4.8 5.7,6.4 6.5,8 Z M8,6.75 A1.25,1.25 0 1 1 7.99,9.25 A1.25,1.25 0 1 1 8,6.75 Z" />
                                 </Button>
                                 <Border x:Name="FansDetailsHost"
@@ -232,7 +240,7 @@
                                     Click="OnBatteryProtectionClick"
                                     AutomationProperties.Name="Toggle battery protection">
                                 <FontIcon Glyph="&#xE83F;"
-                                          Style="{StaticResource QuickTileIconStyle}" />
+                                          Style="{StaticResource QuickTileBatteryIconStyle}" />
                             </Button>
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
@@ -382,7 +390,7 @@
                                 <ColumnDefinition Width="36" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <FontIcon Glyph="&#xE706;"
+                            <FontIcon Glyph="&#xED39;"
                                       Style="{StaticResource QuickSliderIconStyle}"
                                       HorizontalAlignment="Center"
                                       VerticalAlignment="Center" />
@@ -569,10 +577,10 @@
                           ColumnSpacing="6"
                           HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="{StaticResource DashboardPrimaryIconSize}" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE83F;" FontSize="16" />
+                        <FontIcon Glyph="&#xE83F;" Style="{StaticResource StatusIconStyle}" />
                         <TextBlock Grid.Column="1"
                                    Text="{Binding TrayDashboardBatteryPowerFlowLabel, Mode=OneWay}"
                                    ToolTipService.ToolTip="{Binding BatteryPowerFlowLabel, Mode=OneWay}"
@@ -582,27 +590,40 @@
                           ColumnSpacing="6"
                           HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="{StaticResource DashboardPrimaryIconSize}" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE9CA;" FontSize="16" />
+                        <FontIcon Glyph="&#xE9CA;" Style="{StaticResource StatusIconStyle}" />
                         <TextBlock Grid.Column="1"
                                    Text="{Binding TrayDashboardTemperatureLabel, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
-                    <Grid x:Name="FansStatus"
+                    <Grid x:Name="PowerSourceStatus"
                           ColumnSpacing="6"
                           HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="{StaticResource DashboardPrimaryIconSize}" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <PathIcon Width="16"
-                                  Height="16"
+                        <FontIcon Glyph="&#xE945;" Style="{StaticResource StatusIconStyle}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding TrayDashboardPowerSourceLabel, Mode=OneWay}"
+                                   ToolTipService.ToolTip="{Binding TroubleshootingPowerSourceStatus, Mode=OneWay}"
+                                   Style="{StaticResource StatusTextStyle}" />
+                    </Grid>
+                    <Grid x:Name="FanSpeedStatus"
+                          ColumnSpacing="6"
+                          HorizontalAlignment="Center">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="{StaticResource DashboardPrimaryIconSize}" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <PathIcon Width="{StaticResource DashboardPrimaryIconSize}"
+                                  Height="{StaticResource DashboardPrimaryIconSize}"
                                   Data="M8,6.5 C6.5,5.2 6.2,2.4 7.4,0.8 C8.5,0 10.2,0.3 10.8,1.8 C11.2,3.6 9.6,5.7 8,6.5 Z M9.5,8 C10.8,6.5 13.6,6.2 15.2,7.4 C16,8.5 15.7,10.2 14.2,10.8 C12.4,11.2 10.3,9.6 9.5,8 Z M8,9.5 C9.5,10.8 9.8,13.6 8.6,15.2 C7.5,16 5.8,15.7 5.2,14.2 C4.8,12.4 6.4,10.3 8,9.5 Z M6.5,8 C5.2,9.5 2.4,9.8 0.8,8.6 C0,7.5 0.3,5.8 1.8,5.2 C3.6,4.8 5.7,6.4 6.5,8 Z M8,6.75 A1.25,1.25 0 1 1 7.99,9.25 A1.25,1.25 0 1 1 8,6.75 Z" />
                         <TextBlock Grid.Column="1"
-                                   Text="{Binding TrayDashboardFanModeLabel, Mode=OneWay}"
-                                   ToolTipService.ToolTip="{Binding ActiveFanModeLabel, Mode=OneWay}"
+                                   Text="{Binding TrayDashboardFanSpeedLabel, Mode=OneWay}"
+                                   ToolTipService.ToolTip="{Binding TrayDashboardFanSpeedToolTip, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
                 </Grid>

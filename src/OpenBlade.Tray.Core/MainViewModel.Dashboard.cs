@@ -22,6 +22,8 @@ public sealed partial class MainViewModel
     {
         Notify(nameof(TrayDashboardBatteryPowerFlowLabel));
         Notify(nameof(TrayDashboardTemperatureLabel));
+        Notify(nameof(TrayDashboardFanSpeedLabel));
+        Notify(nameof(TrayDashboardFanSpeedToolTip));
         if (!dashboardTelemetryPresentationActive)
         {
             return;

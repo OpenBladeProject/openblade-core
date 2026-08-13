@@ -46,6 +46,34 @@ public static class TrayDashboardStatusPresentation
         };
     }
 
-    public static string Fans(bool connected, FanMode fanMode) =>
-        connected ? FanModePresentation.Label(fanMode) : "—";
+    public static string PowerSourceText(bool connected, PowerSource powerSource) =>
+        !connected
+            ? "—"
+            : powerSource switch
+            {
+                OpenBlade.Contracts.PowerSource.PluggedIn => "AC",
+                OpenBlade.Contracts.PowerSource.UsbC => "USB-C",
+                OpenBlade.Contracts.PowerSource.Battery => "Battery",
+                _ => "—",
+            };
+
+    public static string FanSpeed(bool connected, int? fan1Rpm, int? fan2Rpm)
+    {
+        if (!connected)
+        {
+            return "—";
+        }
+
+        return (fan1Rpm, fan2Rpm) switch
+        {
+            (int fan1, int fan2) => $"{FormatFanSpeed(fan1)} / {FormatFanSpeed(fan2)}",
+            (int fan1, null) => FormatFanSpeed(fan1),
+            (null, int fan2) => FormatFanSpeed(fan2),
+            _ => "—",
+        };
+    }
+
+    private static string FormatFanSpeed(int rpm) => rpm < 1000
+        ? rpm.ToString(CultureInfo.InvariantCulture)
+        : $"{(rpm / 1000d).ToString("0.#", CultureInfo.InvariantCulture)}K";
 }

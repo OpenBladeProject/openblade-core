@@ -180,7 +180,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 StatusItems:
                 [
                     new(TrayDashboardStatusItemKind.BatteryPower, true),
-                    new(TrayDashboardStatusItemKind.Fans, false),
+                    new(TrayDashboardStatusItemKind.FanSpeed, false),
                 ],
                 Sliders:
                 [
@@ -416,6 +416,14 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.True(migrated.Sliders!
             .Single(slider => slider.Kind == TrayDashboardSliderKind.LightingBrightness)
             .IsVisible);
+        Assert.Equal(
+            [
+                (TrayDashboardStatusItemKind.FanSpeed, true),
+                (TrayDashboardStatusItemKind.BatteryPower, false),
+                (TrayDashboardStatusItemKind.Temperatures, false),
+                (TrayDashboardStatusItemKind.PowerSource, false),
+            ],
+            migrated.StatusItems!.Select(status => (status.Kind, status.IsVisible)));
 
         await store.SaveAsync(loaded with { TrayDashboard = migrated });
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -427,6 +435,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.All(
             dashboard.GetProperty("controls").EnumerateArray(),
             control => Assert.False(control.TryGetProperty("size", out _)));
+        string savedStatusItems = dashboard.GetProperty("statusItems").GetRawText();
+        Assert.Contains("FanSpeed", savedStatusItems, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Fans\"", savedStatusItems, StringComparison.Ordinal);
     }
 
     [Fact]
