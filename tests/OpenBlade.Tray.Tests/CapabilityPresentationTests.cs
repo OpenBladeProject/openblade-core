@@ -542,7 +542,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{Binding SelectedFanModeOption, Mode=OneWay}",
             Attribute(fans, "SelectedItem"));
-        Assert.Equal("{Binding CanEditFanControl}", Attribute(fans, "IsEnabled"));
+        Assert.Equal("{Binding CanChangeFanMode}", Attribute(fans, "IsEnabled"));
         Assert.Equal(
             "{Binding IsFanControlVisible}",
             Attribute(
@@ -1506,7 +1506,7 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "ContentTemplate")
                     == "{StaticResource CompactProfileValuePresentationTemplate}")
             .ToArray();
-        Assert.Equal(55, comparisonValues.Length);
+        Assert.Equal(57, comparisonValues.Length);
         Assert.Equal(19, compactValues.Length);
         string[] expectedProperties =
         [
@@ -1540,10 +1540,17 @@ public sealed class CapabilityPresentationTests
                     $"ProfilePresentation.{property},",
                     StringComparison.Ordinal) is true);
         }
-        Assert.Single(comparisonValues, value =>
-            Attribute(value, "Content")?.Contains(
+        XElement[] chargeLimitValues = comparisonValues
+            .Where(value => Attribute(value, "Content")?.Contains(
                 "BatteryPolicyPresentation,",
-                StringComparison.Ordinal) is true);
+                StringComparison.Ordinal) is true)
+            .ToArray();
+        Assert.Equal(3, chargeLimitValues.Length);
+        Assert.Equal(
+            ["1", "2", "3"],
+            chargeLimitValues.Select(value => Attribute(value, "Grid.Column")!));
+        Assert.All(chargeLimitValues, value =>
+            Assert.Null(Attribute(value, "Grid.ColumnSpan")));
         Assert.Single(compactValues, value =>
             Attribute(value, "Content")?.Contains(
                 "BatteryPolicyPresentation,",

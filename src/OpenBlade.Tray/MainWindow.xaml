@@ -753,7 +753,7 @@
                                                   MinWidth="150"
                                                   HorizontalAlignment="Right"
                                                   AutomationProperties.Name="Fan mode"
-                                                  IsEnabled="{Binding CanEditFanControl}"
+                                                  IsEnabled="{Binding CanChangeFanMode}"
                                                   ItemsSource="{Binding AvailableActiveFanModeOptions}"
                                                   SelectedItem="{Binding SelectedFanModeOption, Mode=OneWay}"
                                                   local:StableComboBoxSelection.Anchor="{Binding SelectedFanModeOption, Mode=OneWay}"
@@ -2396,7 +2396,9 @@
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
-                                            <ContentControl Grid.Column="1" Grid.ColumnSpan="3" Content="{x:Bind ViewModel.BatteryPolicyPresentation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.BatteryPolicyPresentation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.BatteryPolicyPresentation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryPolicyPresentation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                 </StackPanel>

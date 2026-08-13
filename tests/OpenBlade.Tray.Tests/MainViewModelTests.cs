@@ -984,6 +984,15 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
+        var changedProperties = new ConcurrentQueue<string?>();
+        viewModel.PropertyChanged += (_, args) => changedProperties.Enqueue(args.PropertyName);
+        Assert.Equal(
+            "Not set",
+            viewModel.PluggedInProfilePresentation.FunctionKeyBehavior.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.GamingMode.Text);
+        Assert.Equal(
+            "Not set",
+            viewModel.PluggedInProfilePresentation.StartupAnimation.Text);
         ServiceStatusSnapshot status = CreateStatus(
             verified: true,
             blocked: false,
@@ -1004,9 +1013,25 @@ public sealed class MainViewModelTests
             && viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.FunctionKeys
             && viewModel.GamingModeEnabled is false);
 
+        Assert.Equal("On", viewModel.PluggedInProfilePresentation.StartupAnimation.Text);
         Assert.Equal(
-            "Not set",
-            viewModel.PluggedInProfilePresentation.StartupAnimation.Text);
+            "Function keys",
+            viewModel.PluggedInProfilePresentation.FunctionKeyBehavior.Text);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.GamingMode.Text);
+        Assert.Equal("On", viewModel.UsbCProfilePresentation.StartupAnimation.Text);
+        Assert.Equal(
+            "Function keys",
+            viewModel.UsbCProfilePresentation.FunctionKeyBehavior.Text);
+        Assert.Equal("Off", viewModel.UsbCProfilePresentation.GamingMode.Text);
+        Assert.Equal("On", viewModel.BatteryProfilePresentation.StartupAnimation.Text);
+        Assert.Equal(
+            "Function keys",
+            viewModel.BatteryProfilePresentation.FunctionKeyBehavior.Text);
+        Assert.Equal("Off", viewModel.BatteryProfilePresentation.GamingMode.Text);
+        Assert.Contains(nameof(MainViewModel.PluggedInProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.UsbCProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.BatteryProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.SelectedProfilePresentation), changedProperties);
         Assert.False(viewModel.HasLaptopPageProfileDraft);
         Assert.True(viewModel.HasLaptopPageProfileSaveOpportunity);
         Assert.True(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
@@ -1022,6 +1047,81 @@ public sealed class MainViewModelTests
             client.LastProfiles?.PluggedIn.LaptopBehavior);
         Assert.False(viewModel.HasLaptopPageProfileDraft);
         Assert.False(viewModel.HasLaptopPageProfileSaveOpportunity);
+    }
+
+    [Fact]
+    public async Task UnsetLaptopBehavior_PreservesOriginalFallbackForPendingChange()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                },
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(status with
+        {
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.FunctionKeys);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ApplyOneShotLaptopControlCommand)
+            .ExecuteAsync(viewModel.MultimediaKeysPrimaryAction);
+
+        ProfileValuePresentation presentation =
+            viewModel.PluggedInProfilePresentation.FunctionKeyBehavior;
+        Assert.Equal("Function keys", presentation.Text);
+        Assert.True(presentation.IsPending);
+        Assert.Equal("Pending: Media keys", presentation.PendingDescription);
+    }
+
+    [Fact]
+    public async Task OneShotLaptopControl_ExternalUnknownPublishesProfilePresentations()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                },
+                ChargeLimits = ChargeLimits(),
+            }) with
+        {
+            ActivePowerSource = PowerSource.ExternalUnknown,
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.ActivePowerSource == PowerSource.ExternalUnknown
+            && viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.FunctionKeys);
+        var changedProperties = new ConcurrentQueue<string?>();
+        viewModel.PropertyChanged += (_, args) => changedProperties.Enqueue(args.PropertyName);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ApplyOneShotLaptopControlCommand)
+            .ExecuteAsync(viewModel.MultimediaKeysPrimaryAction);
+
+        Assert.Equal(
+            "Media keys",
+            viewModel.PluggedInProfilePresentation.FunctionKeyBehavior.Text);
+        Assert.Contains(nameof(MainViewModel.PluggedInProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.UsbCProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.BatteryProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.SelectedProfilePresentation), changedProperties);
+        Assert.False(viewModel.HasLaptopProfileDraft);
     }
 
     [Theory]
@@ -2589,6 +2689,136 @@ public sealed class MainViewModelTests
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
         Assert.False(viewModel.IsFunctionKeyFieldLoading);
         Assert.True(viewModel.CanEditFunctionKeyPrimary);
+    }
+
+    [Fact]
+    public async Task FanModeSelector_IsDisabledWhenAutomaticIsTheOnlyOption()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities automaticOnly = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanModes = new HashSet<FanMode> { FanMode.Automatic },
+        };
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: automaticOnly);
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.CanEditFanControl
+            && viewModel.AvailableActiveFanModeOptions.Count == 1);
+
+        Assert.Equal(
+            FanMode.Automatic,
+            Assert.Single(viewModel.AvailableActiveFanModeOptions).Value);
+        Assert.False(viewModel.CanChangeFanMode);
+
+        int changeNotifications = 0;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.CanChangeFanMode))
+            {
+                Interlocked.Increment(ref changeNotifications);
+            }
+        };
+        client.Publish(status with
+        {
+            Revision = status.Revision + 1,
+            Capabilities = automaticOnly with
+            {
+                FanModes = new HashSet<FanMode>
+                {
+                    FanMode.Automatic,
+                    FanMode.Fixed,
+                },
+            },
+        });
+        await WaitUntilAsync(() => viewModel.CanChangeFanMode);
+
+        Assert.True(Volatile.Read(ref changeNotifications) > 0);
+    }
+
+    [Fact]
+    public async Task FanModeSelector_RemainsEnabledForAnUnadmittedSelection()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                FanModes = new HashSet<FanMode> { FanMode.Automatic },
+            });
+        client.Publish(baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Fans = FanMode.Fixed,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                Fans = new ResolvedSetting<FanMode>(
+                    FanMode.Fixed,
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.CanEditFanControl
+            && viewModel.SelectedFanMode == FanMode.Fixed
+            && viewModel.AvailableActiveFanModeOptions.Count == 1);
+
+        Assert.Null(viewModel.SelectedFanModeOption);
+        Assert.True(viewModel.CanChangeFanMode);
+
+        bool? publishedCanChangeFanMode = viewModel.CanChangeFanMode;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.CanChangeFanMode))
+            {
+                publishedCanChangeFanMode = viewModel.CanChangeFanMode;
+            }
+        };
+        client.NextResult = new ControlOperationResult(
+            ControlOperationStatus.Failed,
+            "Fan mode was not applied.");
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanControlCommand)
+            .ExecuteAsync(FanControlSettings.Default);
+
+        Assert.Equal(FanMode.Fixed, viewModel.SelectedFanMode);
+        Assert.Null(viewModel.SelectedFanModeOption);
+        Assert.True(viewModel.CanChangeFanMode);
+        Assert.True(publishedCanChangeFanMode);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task FanModeSelector_IsDisabledWhenPortablePowerPresentsOnlyAutomatic(
+        PowerSource powerSource)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            ActivePowerSource = powerSource,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.CanEditFanControl
+            && viewModel.ActivePowerSource == powerSource
+            && viewModel.AvailableActiveFanModeOptions.Count == 1);
+
+        Assert.True(viewModel.AvailableFanModes.Count > 1);
+        Assert.Equal(
+            FanMode.Automatic,
+            Assert.Single(viewModel.AvailableActiveFanModeOptions).Value);
+        Assert.False(viewModel.CanChangeFanMode);
     }
 
     [Fact]

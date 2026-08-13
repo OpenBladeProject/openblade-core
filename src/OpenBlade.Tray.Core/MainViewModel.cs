@@ -1686,6 +1686,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(CanEditFanControl));
+            Notify(nameof(CanChangeFanMode));
             NotifyTrayHoverLabel();
         }
     }
@@ -1846,6 +1847,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(ActiveFanModeLabel));
             Notify(nameof(TrayDashboardFanModeLabel));
             Notify(nameof(SelectedFanModeOption));
+            Notify(nameof(CanChangeFanMode));
             Notify(nameof(IsFixedFanSpeedVisible));
             Notify(nameof(IsManualFanCurveVisible));
         }
@@ -1916,12 +1918,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             SetField(ref isFanControlOperationInProgress, value);
             NotifyCommands();
             Notify(nameof(CanEditFanControl));
+            Notify(nameof(CanChangeFanMode));
         }
     }
 
     public bool CanEditFanControl =>
         CanRequestHardwareControl
         && !IsFanControlOperationInProgress;
+
+    public bool CanChangeFanMode =>
+        CanEditFanControl
+        && (AvailableActiveFanModeOptions.Count > 1
+            || SelectedFanModeOption is null);
 
     public bool CanEditPerformance =>
         CanRequestHardwareControl && !IsPerformanceOperationInProgress;
@@ -2249,6 +2257,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(StartupAnimationEnabled));
             Notify(nameof(StartupAnimationToggleIsOn));
             Notify(nameof(IsStartupAnimationFieldLoading));
+            NotifyLaptopBehaviorProfilePresentations();
         }
     }
 
@@ -2271,6 +2280,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(FunctionKeyPrimary));
             Notify(nameof(FunctionKeyPrimaryStateLabel));
             Notify(nameof(IsFunctionKeyFieldLoading));
+            NotifyLaptopBehaviorProfilePresentations();
         }
     }
 
@@ -2299,6 +2309,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(GamingModeEnabled));
             Notify(nameof(GamingModeToggleIsOn));
             Notify(nameof(IsGamingModeFieldLoading));
+            NotifyLaptopBehaviorProfilePresentations();
         }
     }
 
@@ -4545,6 +4556,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(AvailableActiveFanModeOptions));
         Notify(nameof(SelectedFanMode));
         Notify(nameof(SelectedFanModeOption));
+        Notify(nameof(CanChangeFanMode));
     }
 
     private void MarkDisconnected() => MarkDisconnected("Service disconnected");
@@ -7116,6 +7128,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(IsSelectedProfileDraft));
     }
 
+    private void NotifyLaptopBehaviorProfilePresentations()
+    {
+        Notify(nameof(PluggedInProfilePresentation));
+        Notify(nameof(UsbCProfilePresentation));
+        Notify(nameof(BatteryProfilePresentation));
+        Notify(nameof(SelectedProfilePresentation));
+    }
+
     private static string FormatThermalProfile(PowerProfile profile) =>
         $"{FormatPerformanceProfile(profile)} | {FanModePresentation.Label(profile.Fans)} fans";
 
@@ -7247,13 +7267,27 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             .First(option => option.Source == source)
             .Label;
         PowerProfile savedProfile = GetProfile(source);
-        ProfilePresentation saved = CreateProfilePresentation(savedProfile, profileName);
+        var confirmedLaptopBehavior = new LaptopBehaviorProfileSettings(
+            StartupAnimationEnabled,
+            FunctionKeyPrimary,
+            GamingModeEnabled);
+        LaptopBehaviorProfileSettings savedLaptopBehaviorFallback =
+            activeProfileDraftSource == source
+                ? activeProfileOriginalLaptopBehavior ?? confirmedLaptopBehavior
+                : confirmedLaptopBehavior;
+        ProfilePresentation saved = CreateProfilePresentation(
+            savedProfile,
+            profileName,
+            savedLaptopBehaviorFallback);
         if (activeProfileDraftSource != source || GetActiveProfileDraft() is not { } draft)
         {
             return saved;
         }
 
-        ProfilePresentation pending = CreateProfilePresentation(draft, profileName);
+        ProfilePresentation pending = CreateProfilePresentation(
+            draft,
+            profileName,
+            confirmedLaptopBehavior);
         return new ProfilePresentation(
             MarkPending(saved.PowerMode, pending.PowerMode),
             MarkPending(saved.GpuTuning, pending.GpuTuning),
@@ -7294,12 +7328,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static ProfilePresentation CreateProfilePresentation(
         PowerProfile profile,
-        string profileName)
+        string profileName,
+        LaptopBehaviorProfileSettings laptopBehaviorFallback)
     {
         ProfileValuePresentation Value(string settingName, string text) =>
             new(text, settingName, profileName);
 
         DisplayProfileSettings display = profile.Display ?? DisplayProfileSettings.Unconfigured();
+        LaptopBehaviorProfileSettings savedLaptopBehavior =
+            profile.EffectiveLaptopBehavior;
+        bool? presentedStartupAnimation = savedLaptopBehavior.StartupAnimationEnabled
+            ?? laptopBehaviorFallback.StartupAnimationEnabled;
+        FunctionKeyPrimaryMode? presentedFunctionKeyPrimary =
+            savedLaptopBehavior.FunctionKeyPrimary
+            ?? laptopBehaviorFallback.FunctionKeyPrimary;
+        bool? presentedGamingMode = savedLaptopBehavior.GamingModeEnabled
+            ?? laptopBehaviorFallback.GamingModeEnabled;
         return new ProfilePresentation(
             Value("Power mode", FormatPerformanceProfile(profile)),
             Value("GPU tuning", FormatGpuClockOffsets(profile)),
@@ -7334,13 +7378,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 null => "Not set",
             }),
             Value("Color profile", FormatDisplayColorProfile(display.ColorProfileKey)),
-            Value("Function keys", profile.EffectiveLaptopBehavior.FunctionKeyPrimary switch
+            Value("Function keys", presentedFunctionKeyPrimary switch
             {
                 FunctionKeyPrimaryMode.FunctionKeys => "Function keys",
                 FunctionKeyPrimaryMode.MultimediaKeys => "Media keys",
                 _ => "Not set",
             }),
-            Value("Gaming mode", FormatOptionalToggle(profile.EffectiveLaptopBehavior.GamingModeEnabled)),
+            Value("Gaming mode", FormatOptionalToggle(presentedGamingMode)),
             Value("Block Windows key", FormatOptionalToggle(
                 profile.EffectiveLaptopBehavior
                     .EffectiveGamingModeKeyPolicy
@@ -7351,7 +7395,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     .BlockAltTab)),
             Value(
                 "Startup animation",
-                FormatOptionalToggle(profile.EffectiveLaptopBehavior.StartupAnimationEnabled)));
+                FormatOptionalToggle(presentedStartupAnimation)));
     }
 
     private static string FormatOptionalToggle(bool? value) => value switch
@@ -8389,6 +8433,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(CanToggleGpuClockTuning));
         Notify(nameof(CanEditGpuClockTuning));
         Notify(nameof(CanEditFanControl));
+        Notify(nameof(CanChangeFanMode));
         NotifyGamingModeKeyPolicy();
         NotifyDashboardTelemetryValuesChanged();
         Notify(nameof(LiveReadingsRefreshToolTip));

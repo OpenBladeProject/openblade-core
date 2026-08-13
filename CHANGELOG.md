@@ -5,6 +5,18 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Replaced `Not set` laptop-behavior profile cells with the currently confirmed
+  firmware value while leaving unconfigured profiles non-destructive.
+- Repeated the global charge limit across the AC, USB-C, and Battery profile
+  columns so the latter two cells no longer appear empty.
+- Disabled the fan-mode dropdown when Automatic is the only available option,
+  including on battery and USB-C power, while keeping mismatched selections
+  recoverable.
+
+## [0.5.1-nightly.16] - 2026-08-13
+
 ### Added
 
 - Added a compact quick-controls dashboard that opens with one click on the
@@ -1205,7 +1217,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.11...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.5.1-nightly.16...HEAD
+[0.5.1-nightly.16]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.11...v0.5.1-nightly.16
 [0.1.0-nightly.11]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.10...v0.1.0-nightly.11
 [0.1.0-nightly.10]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.9...v0.1.0-nightly.10
 [0.1.0-nightly.9]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.8...v0.1.0-nightly.9
