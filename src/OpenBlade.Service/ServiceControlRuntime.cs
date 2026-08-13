@@ -2327,7 +2327,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await device.SetPlaybackMuteIndicatorAsync(muted, token).ConfigureAwait(false);
             if (!muted)
             {
-                await ReconcileUnmutedLightingRendererAsync(token).ConfigureAwait(false);
+                try
+                {
+                    await ReconcileUnmutedLightingRendererAsync(token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    history.RecordSummary(
+                        ControlOperationStatus.Failed,
+                        "Playback mute was updated, but keyboard lighting reconciliation could not be completed.");
+                }
             }
             return new ControlOperationResult(
                 ControlOperationStatus.Applied,
@@ -2358,18 +2371,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task ReconcileUnmutedLightingRendererAsync(
         CancellationToken cancellationToken)
     {
-        ServiceStatusSnapshot current = GetStatus();
-        if (lastOwnedLightingSettings is null
-            || !IsExplicitLightingOwnership(current.LightingRendererOwnership))
-        {
-            return;
-        }
-
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (lastOwnedLightingSettings is null
+                && faultedLightingRecoveryCandidate is null)
+            {
+                return;
+            }
+
             await RefreshControllerPresenceAndRelinquishLightingAsync(
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                allowRecentObservation: true).ConfigureAwait(false);
             await RecoverFaultedLightingRendererCoreAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
