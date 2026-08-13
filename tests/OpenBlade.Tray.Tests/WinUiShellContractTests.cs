@@ -2237,7 +2237,11 @@ public sealed class WinUiShellContractTests
             4,
             CountOccurrences(
                 dashboardXaml,
-                "<ColumnDefinition Width=\"{StaticResource DashboardPrimaryIconSize}\" />"));
+                "<ColumnDefinition Width=\"20\" />"));
+        Assert.DoesNotContain(
+            "<ColumnDefinition Width=\"{StaticResource DashboardPrimaryIconSize}\" />",
+            dashboardXaml,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Glyph=\"&#xE713;\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("AutomationProperties.Name=\"Open OpenBlade\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Click=\"OnSettingsClick\"", dashboardXaml, StringComparison.Ordinal);

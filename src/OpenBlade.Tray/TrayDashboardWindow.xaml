@@ -577,7 +577,7 @@
                           ColumnSpacing="6"
                           HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="{StaticResource DashboardPrimaryIconSize}" />
+                            <ColumnDefinition Width="20" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE83F;" Style="{StaticResource StatusIconStyle}" />
@@ -590,7 +590,7 @@
                           ColumnSpacing="6"
                           HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="{StaticResource DashboardPrimaryIconSize}" />
+                            <ColumnDefinition Width="20" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE9CA;" Style="{StaticResource StatusIconStyle}" />
@@ -602,7 +602,7 @@
                           ColumnSpacing="6"
                           HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="{StaticResource DashboardPrimaryIconSize}" />
+                            <ColumnDefinition Width="20" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE945;" Style="{StaticResource StatusIconStyle}" />
@@ -615,7 +615,7 @@
                           ColumnSpacing="6"
                           HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="{StaticResource DashboardPrimaryIconSize}" />
+                            <ColumnDefinition Width="20" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <PathIcon Width="{StaticResource DashboardPrimaryIconSize}"

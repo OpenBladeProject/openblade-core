@@ -22,6 +22,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevented the tray from crashing during startup when loading dashboard status
+  icon columns from a numeric XAML sizing resource.
 - Replaced the keyboard-brightness adjustment's generic sun icon with the
   Windows keyboard-brightness glyph.
 
