@@ -23,6 +23,7 @@ public sealed class FunctionRowActionExecutor
     private readonly ISpecialKeyInputSender input;
     private readonly IDisplayBrightnessController displayBrightness;
     private readonly IDisplayBrightnessOsd displayBrightnessOsd;
+    private readonly Dictionary<uint, DisplayBrightnessRoute> displayBrightnessRoutes = [];
 
     public FunctionRowActionExecutor(
         IServiceClient serviceClient,
@@ -40,17 +41,18 @@ public sealed class FunctionRowActionExecutor
     }
 
     public async Task ExecuteAsync(
-        FunctionRowAction action,
+        FunctionRowInputEvent inputEvent,
         CancellationToken cancellationToken)
     {
-        if (!Enum.IsDefined(action))
+        if (!Enum.IsDefined(inputEvent.Action)
+            || !Enum.IsDefined(inputEvent.Phase))
         {
-            throw new ArgumentOutOfRangeException(nameof(action));
+            throw new ArgumentOutOfRangeException(nameof(inputEvent));
         }
 
         try
         {
-            await ExecuteCoreAsync(action, cancellationToken).ConfigureAwait(false);
+            await ExecuteCoreAsync(inputEvent, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -59,15 +61,49 @@ public sealed class FunctionRowActionExecutor
         catch (Exception exception)
         {
             throw new InvalidOperationException(
-                $"Function-row action {action} failed: {exception.Message}",
+                $"Function-row action {inputEvent.Action} failed: {exception.Message}",
                 exception);
         }
     }
 
+    public async Task ResetAsync(CancellationToken cancellationToken)
+    {
+        bool nativePressed = displayBrightnessRoutes.Values.Any(
+            route => route is DisplayBrightnessRoute.Native
+                or DisplayBrightnessRoute.NativeReleaseRequired);
+        if (!nativePressed)
+        {
+            displayBrightnessRoutes.Clear();
+            return;
+        }
+
+        ControlOperationResult result = await serviceClient
+            .SetDisplayBrightnessHidUsageAsync(
+                DisplayBrightnessHidUsage.Released,
+                cancellationToken)
+            .ConfigureAwait(false);
+        EnsureApplied(result);
+        displayBrightnessRoutes.Clear();
+    }
+
     private async Task ExecuteCoreAsync(
-        FunctionRowAction action,
+        FunctionRowInputEvent inputEvent,
         CancellationToken cancellationToken)
     {
+        FunctionRowAction action = inputEvent.Action;
+        if (action is FunctionRowAction.DisplayBrightnessDown
+            or FunctionRowAction.DisplayBrightnessUp)
+        {
+            await ExecuteDisplayBrightnessAsync(inputEvent, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        if (inputEvent.Phase == FunctionRowInputPhase.Up)
+        {
+            return;
+        }
+
         switch (action)
         {
             case FunctionRowAction.VolumeMute:
@@ -91,16 +127,6 @@ public sealed class FunctionRowActionExecutor
             case FunctionRowAction.NextTrack:
                 input.SendMediaAction(SpecialKeyActionKind.MediaNextTrack);
                 return;
-            case FunctionRowAction.DisplayBrightnessDown:
-                await AdjustDisplayBrightnessAsync(
-                    direction: -1,
-                    cancellationToken).ConfigureAwait(false);
-                return;
-            case FunctionRowAction.DisplayBrightnessUp:
-                await AdjustDisplayBrightnessAsync(
-                    direction: 1,
-                    cancellationToken).ConfigureAwait(false);
-                return;
             case FunctionRowAction.KeyboardBrightnessDown:
                 await AdjustKeyboardBrightnessAsync(
                     direction: -1,
@@ -117,6 +143,139 @@ public sealed class FunctionRowActionExecutor
             default:
                 throw new InvalidOperationException("The function-row action was not recognized.");
         }
+    }
+
+    private async Task ExecuteDisplayBrightnessAsync(
+        FunctionRowInputEvent inputEvent,
+        CancellationToken cancellationToken)
+    {
+        int direction = inputEvent.Action == FunctionRowAction.DisplayBrightnessDown
+            ? -1
+            : 1;
+        if (inputEvent.Phase == FunctionRowInputPhase.Down)
+        {
+            uint? priorNativeScanCode = displayBrightnessRoutes
+                .Where(pair => pair.Value is DisplayBrightnessRoute.Native
+                    or DisplayBrightnessRoute.NativeReleaseRequired)
+                .Select(pair => (uint?)pair.Key)
+                .FirstOrDefault();
+            if (priorNativeScanCode is { } prior
+                && prior != inputEvent.ScanCode)
+            {
+                await ReleaseNativeAsync(prior, cancellationToken).ConfigureAwait(false);
+            }
+
+            DisplayBrightnessHidUsage usage = direction < 0
+                ? DisplayBrightnessHidUsage.Decrement
+                : DisplayBrightnessHidUsage.Increment;
+            displayBrightnessRoutes[inputEvent.ScanCode] =
+                DisplayBrightnessRoute.NativeReleaseRequired;
+            ControlOperationResult result;
+            try
+            {
+                result = await serviceClient
+                    .SetDisplayBrightnessHidUsageAsync(usage, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                await TryNeutralizeIndeterminatePressAsync(
+                        inputEvent.ScanCode,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                throw;
+            }
+            if (result.Status == ControlOperationStatus.Applied)
+            {
+                displayBrightnessRoutes[inputEvent.ScanCode] =
+                    DisplayBrightnessRoute.Native;
+                return;
+            }
+            if (result.Status == ControlOperationStatus.Blocked)
+            {
+                displayBrightnessRoutes.Remove(inputEvent.ScanCode);
+                displayBrightnessRoutes[inputEvent.ScanCode] =
+                    DisplayBrightnessRoute.Fallback;
+                await AdjustDisplayBrightnessAsync(direction, cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            await TryNeutralizeIndeterminatePressAsync(
+                    inputEvent.ScanCode,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            throw new InvalidOperationException(result.Message);
+        }
+
+        if (!displayBrightnessRoutes.TryGetValue(
+                inputEvent.ScanCode,
+                out DisplayBrightnessRoute route))
+        {
+            return;
+        }
+
+        if (inputEvent.Phase == FunctionRowInputPhase.Repeat)
+        {
+            if (route == DisplayBrightnessRoute.Fallback)
+            {
+                await AdjustDisplayBrightnessAsync(direction, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                DisplayBrightnessHidUsage usage = direction < 0
+                    ? DisplayBrightnessHidUsage.Decrement
+                    : DisplayBrightnessHidUsage.Increment;
+                displayBrightnessRoutes[inputEvent.ScanCode] =
+                    DisplayBrightnessRoute.NativeReleaseRequired;
+                ControlOperationResult result = await serviceClient
+                    .SetDisplayBrightnessHidUsageAsync(usage, cancellationToken)
+                    .ConfigureAwait(false);
+                EnsureApplied(result);
+                displayBrightnessRoutes[inputEvent.ScanCode] = DisplayBrightnessRoute.Native;
+            }
+            return;
+        }
+
+        if (route is DisplayBrightnessRoute.Native
+            or DisplayBrightnessRoute.NativeReleaseRequired)
+        {
+            await ReleaseNativeAsync(inputEvent.ScanCode, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            displayBrightnessRoutes.Remove(inputEvent.ScanCode);
+        }
+    }
+
+    private async Task TryNeutralizeIndeterminatePressAsync(
+        uint scanCode,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ReleaseNativeAsync(scanCode, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Keep NativeReleaseRequired latched. The physical key-up and the
+            // pump reset path will retry the neutral report.
+        }
+    }
+
+    private async Task ReleaseNativeAsync(
+        uint scanCode,
+        CancellationToken cancellationToken)
+    {
+        ControlOperationResult result = await serviceClient
+            .SetDisplayBrightnessHidUsageAsync(
+                DisplayBrightnessHidUsage.Released,
+                cancellationToken)
+            .ConfigureAwait(false);
+        EnsureApplied(result);
+        displayBrightnessRoutes.Remove(scanCode);
     }
 
     private async Task AdjustDisplayBrightnessAsync(
@@ -151,5 +310,20 @@ public sealed class FunctionRowActionExecutor
         {
             throw new InvalidOperationException(result.Message);
         }
+    }
+
+    private static void EnsureApplied(ControlOperationResult result)
+    {
+        if (result.Status != ControlOperationStatus.Applied)
+        {
+            throw new InvalidOperationException(result.Message);
+        }
+    }
+
+    private enum DisplayBrightnessRoute
+    {
+        Native,
+        NativeReleaseRequired,
+        Fallback,
     }
 }

@@ -30,6 +30,10 @@ public sealed class ControlRequestHandlerTests
                 Guid.NewGuid(),
                 KeyboardBrightnessDirection.Increase,
                 OverrideLifetime.UntilPowerSourceChange),
+            new SetDisplayBrightnessHidUsageRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                DisplayBrightnessHidUsage.Increment),
             new SetExternalLightingOverridePolicyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -84,7 +88,7 @@ public sealed class ControlRequestHandlerTests
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
-            "StepKeyboardBrightness",
+            "StepKeyboardBrightness", "SetDisplayBrightnessHidUsage",
             "SetExternalLightingOverridePolicy", "SetFirmwareCompatibilityOverride",
             "ReapplyChangedSettings",
             "SetLightingSuppression",
@@ -99,7 +103,12 @@ public sealed class ControlRequestHandlerTests
             var runtime = new RecordingRuntime();
             var archives = new RecordingArchiveProvider();
             var shutdown = new RecordingShutdownSignal();
-            var handler = new ControlRequestHandler(runtime, archives, shutdown);
+            var brightnessHid = new RecordingDisplayBrightnessHidController();
+            var handler = new ControlRequestHandler(
+                runtime,
+                archives,
+                shutdown,
+                brightnessHid);
 
             ServiceResponse response = await handler.HandleAsync(
                 requests[index],
@@ -107,10 +116,15 @@ public sealed class ControlRequestHandlerTests
 
             Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
             Assert.Equal(requests[index].RequestId, response.RequestId);
-            Assert.True(response.Success);
+            Assert.True(
+                response.Success,
+                $"Request {index} ({requests[index].GetType().Name}) failed: {response.Error}");
             Assert.Equal(
                 [expectedCalls[index]],
-                runtime.Calls.Concat(archives.Calls).Concat(shutdown.Calls));
+                runtime.Calls
+                    .Concat(archives.Calls)
+                    .Concat(shutdown.Calls)
+                    .Concat(brightnessHid.Calls));
             if (requests[index] is GetStatusRequest or SubscribeStatusRequest)
             {
                 Assert.NotNull(response.Status);
@@ -548,6 +562,22 @@ public sealed class ControlRequestHandlerTests
         public List<string> Calls { get; } = [];
 
         public void RequestShutdownAfterResponse() => Calls.Add("Shutdown");
+    }
+
+    private sealed class RecordingDisplayBrightnessHidController
+        : IDisplayBrightnessHidController
+    {
+        public List<string> Calls { get; } = [];
+
+        public Task<ControlOperationResult> SetUsageAsync(
+            DisplayBrightnessHidUsage usage,
+            CancellationToken cancellationToken)
+        {
+            Calls.Add("SetDisplayBrightnessHidUsage");
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Applied"));
+        }
     }
 
     private sealed class FixedTelemetry : IPowerStateProvider

@@ -5,6 +5,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Added Windows-native display-brightness handling and flyout presentation for
+  the reconstructed function row, using a narrowly scoped UMDF 2 Consumer
+  Control device. The existing WMI brightness path and OpenBlade flyout remain
+  available when the driver is unavailable.
+
 ### Fixed
 
 - Kept profile pending-change dots immediately beside their value text instead

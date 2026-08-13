@@ -117,6 +117,10 @@ public sealed class IpcMessageCodecTests
             Guid.NewGuid(),
             KeyboardBrightnessDirection.Decrease,
             OverrideLifetime.UntilPowerSourceChange),
+        new SetDisplayBrightnessHidUsageRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            DisplayBrightnessHidUsage.Increment),
         new SetExternalLightingOverridePolicyRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -226,6 +230,20 @@ public sealed class IpcMessageCodecTests
             Guid.NewGuid(),
             (LightingSuppressionReason)999,
             Suppressed: true);
+        using MemoryStream stream = new();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
+        Assert.Equal(0, stream.Length);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessHidUsageRequest_RejectsUnknownUsage()
+    {
+        var request = new SetDisplayBrightnessHidUsageRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            (DisplayBrightnessHidUsage)0x0071);
         using MemoryStream stream = new();
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
@@ -414,7 +432,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(41, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(42, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -678,7 +696,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(41, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(42, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

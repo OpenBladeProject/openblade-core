@@ -1,0 +1,50 @@
+#pragma once
+
+#include <windows.h>
+#include <wdf.h>
+#include <hidport.h>
+
+#define OPENBLADE_INPUT_REPORT_ID 0x01
+#define OPENBLADE_CONTROL_REPORT_ID 0x02
+#define OPENBLADE_BRIGHTNESS_INCREMENT 0x006F
+#define OPENBLADE_BRIGHTNESS_DECREMENT 0x0070
+#define OPENBLADE_PENDING_REPORT_CAPACITY 4
+
+#pragma pack(push, 1)
+
+typedef struct _OPENBLADE_INPUT_REPORT
+{
+    UCHAR ReportId;
+    USHORT Usage;
+} OPENBLADE_INPUT_REPORT, *POPENBLADE_INPUT_REPORT;
+
+typedef struct _OPENBLADE_FEATURE_REPORT
+{
+    UCHAR ReportId;
+    USHORT Usage;
+} OPENBLADE_FEATURE_REPORT, *POPENBLADE_FEATURE_REPORT;
+
+#pragma pack(pop)
+
+C_ASSERT(sizeof(OPENBLADE_INPUT_REPORT) == 3);
+C_ASSERT(sizeof(OPENBLADE_FEATURE_REPORT) == 3);
+
+typedef struct _OPENBLADE_DEVICE_CONTEXT
+{
+    WDFQUEUE PendingReads;
+    WDFWAITLOCK StateLock;
+    WDFTIMER ReleaseWatchdog;
+    USHORT CurrentUsage;
+    USHORT PendingReports[OPENBLADE_PENDING_REPORT_CAPACITY];
+    UCHAR PendingHead;
+    UCHAR PendingCount;
+} OPENBLADE_DEVICE_CONTEXT, *POPENBLADE_DEVICE_CONTEXT;
+
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
+    OPENBLADE_DEVICE_CONTEXT,
+    OpenBladeGetDeviceContext);
+
+DRIVER_INITIALIZE DriverEntry;
+EVT_WDF_DRIVER_DEVICE_ADD OpenBladeEvtDeviceAdd;
+EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL OpenBladeEvtIoDeviceControl;
+EVT_WDF_TIMER OpenBladeEvtReleaseWatchdog;

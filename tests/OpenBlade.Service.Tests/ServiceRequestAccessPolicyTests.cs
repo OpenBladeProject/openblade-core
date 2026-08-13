@@ -134,6 +134,31 @@ public sealed class ServiceRequestAccessPolicyTests
     }
 
     [Fact]
+    public void DisplayBrightnessHidUsage_AllowsOnlyActiveLocalInteractiveSession()
+    {
+        var request = new SetDisplayBrightnessHidUsageRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            DisplayBrightnessHidUsage.Decrement);
+
+        Assert.Null(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 4),
+            new FixedSessionAuthority(4)));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 3),
+            new FixedSessionAuthority(4)));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 4) with
+            {
+                LogonKind = ServiceClientLogonKind.RemoteInteractive,
+            },
+            new FixedSessionAuthority(4)));
+    }
+
+    [Fact]
     public void NonInteractiveToken_IsRejected()
     {
         ServiceClientContext client = Client(sessionId: 4) with

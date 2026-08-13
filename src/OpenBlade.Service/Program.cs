@@ -37,6 +37,7 @@ builder.Services.AddSingleton<LowPowerGate>();
 builder.Services.AddSingleton<IServiceLifecycleEventSource, WindowsServiceLifecycleEventSource>();
 builder.Services.AddSingleton<IServiceControlRuntime, ServiceControlRuntime>();
 builder.Services.AddSingleton<IServiceShutdownSignal, HostServiceShutdownSignal>();
+builder.Services.AddSingleton<IDisplayBrightnessHidController, DisplayBrightnessHidController>();
 builder.Services.AddSingleton<ControlRequestHandler>();
 builder.Services.AddHostedService<Worker>();
 

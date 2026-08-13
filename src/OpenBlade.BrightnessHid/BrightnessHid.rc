@@ -1,0 +1,28 @@
+#include <windows.h>
+
+1 VERSIONINFO
+ FILEVERSION 0,6,0,0
+ PRODUCTVERSION 0,6,0,0
+ FILEFLAGSMASK 0x3fL
+ FILEOS 0x40004L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "OSSBlade\0"
+            VALUE "FileDescription", "OpenBlade Display Brightness HID\0"
+            VALUE "FileVersion", "0.6.0.0\0"
+            VALUE "InternalName", "OpenBlade.BrightnessHid.dll\0"
+            VALUE "OriginalFilename", "OpenBlade.BrightnessHid.dll\0"
+            VALUE "ProductName", "OpenBlade\0"
+            VALUE "ProductVersion", "0.6.0.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

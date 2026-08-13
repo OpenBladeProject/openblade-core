@@ -11,6 +11,7 @@ public sealed class ControlRequestHandler
     private readonly IDiagnosticArchiveProvider diagnosticArchiveProvider;
     private readonly IServiceShutdownSignal shutdownSignal;
     private readonly IInteractiveSessionAuthority sessionAuthority;
+    private readonly IDisplayBrightnessHidController displayBrightnessHidController;
 
     internal ControlRequestHandler(
         IServiceControlRuntime runtime,
@@ -19,7 +20,8 @@ public sealed class ControlRequestHandler
             runtime,
             diagnosticArchiveProvider,
             NullServiceShutdownSignal.Instance,
-            new AllowAllInteractiveSessionAuthority())
+            new AllowAllInteractiveSessionAuthority(),
+            UnavailableDisplayBrightnessHidController.Instance)
     {
     }
 
@@ -31,7 +33,8 @@ public sealed class ControlRequestHandler
             runtime,
             diagnosticArchiveProvider,
             shutdownSignal,
-            new AllowAllInteractiveSessionAuthority())
+            new AllowAllInteractiveSessionAuthority(),
+            UnavailableDisplayBrightnessHidController.Instance)
     {
     }
 
@@ -40,6 +43,35 @@ public sealed class ControlRequestHandler
         IDiagnosticArchiveProvider diagnosticArchiveProvider,
         IServiceShutdownSignal shutdownSignal,
         IInteractiveSessionAuthority sessionAuthority)
+        : this(
+            runtime,
+            diagnosticArchiveProvider,
+            shutdownSignal,
+            sessionAuthority,
+            UnavailableDisplayBrightnessHidController.Instance)
+    {
+    }
+
+    internal ControlRequestHandler(
+        IServiceControlRuntime runtime,
+        IDiagnosticArchiveProvider diagnosticArchiveProvider,
+        IServiceShutdownSignal shutdownSignal,
+        IDisplayBrightnessHidController displayBrightnessHidController)
+        : this(
+            runtime,
+            diagnosticArchiveProvider,
+            shutdownSignal,
+            new AllowAllInteractiveSessionAuthority(),
+            displayBrightnessHidController)
+    {
+    }
+
+    public ControlRequestHandler(
+        IServiceControlRuntime runtime,
+        IDiagnosticArchiveProvider diagnosticArchiveProvider,
+        IServiceShutdownSignal shutdownSignal,
+        IInteractiveSessionAuthority sessionAuthority,
+        IDisplayBrightnessHidController displayBrightnessHidController)
     {
         this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         this.diagnosticArchiveProvider = diagnosticArchiveProvider
@@ -48,6 +80,8 @@ public sealed class ControlRequestHandler
             ?? throw new ArgumentNullException(nameof(shutdownSignal));
         this.sessionAuthority = sessionAuthority
             ?? throw new ArgumentNullException(nameof(sessionAuthority));
+        this.displayBrightnessHidController = displayBrightnessHidController
+            ?? throw new ArgumentNullException(nameof(displayBrightnessHidController));
     }
 
     internal async Task<ServiceResponse> HandleAsync(
@@ -156,6 +190,11 @@ public sealed class ControlRequestHandler
                 await runtime.StepKeyboardBrightnessAsync(
                     step.Direction,
                     step.Lifetime,
+                    cancellationToken)),
+            SetDisplayBrightnessHidUsageRequest set => Result(
+                request.RequestId,
+                await displayBrightnessHidController.SetUsageAsync(
+                    set.Usage,
                     cancellationToken)),
             SetKeyboardLightingControlModeRequest set => Result(
                 request.RequestId,

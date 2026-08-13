@@ -21,12 +21,39 @@ public sealed record SetupStartupInstallState(
     bool UninstallShortcutExisted = false,
     bool UninstallRegistrationExisted = false);
 
+public sealed record BrightnessHidDriverInstallState(
+    bool DevicePresent,
+    string? DeviceInstanceId = null,
+    string? PublishedInfPath = null,
+    Version? DriverVersion = null,
+    string? DriverProvider = null,
+    bool DeviceStarted = false)
+{
+    public bool IsBound => PublishedInfPath is not null;
+
+    public bool IsWellFormed => DevicePresent
+        ? !string.IsNullOrWhiteSpace(DeviceInstanceId)
+            && ((PublishedInfPath is null
+                    && DriverVersion is null
+                    && DriverProvider is null
+                    && !DeviceStarted)
+                || (!string.IsNullOrWhiteSpace(PublishedInfPath)
+                    && DriverVersion is not null
+                    && !string.IsNullOrWhiteSpace(DriverProvider)))
+        : DeviceInstanceId is null
+            && PublishedInfPath is null
+            && DriverVersion is null
+            && DriverProvider is null
+            && !DeviceStarted;
+}
+
 public sealed record SetupInstallLifecycleState(
     SetupServiceInstallState Service,
     SetupStartupInstallState Startup,
     bool BundleOwnershipExisted = false,
     bool DynamicLightingIdentityRegistered = false,
-    bool BundleOwnershipMatchesCurrentBuild = true)
+    bool BundleOwnershipMatchesCurrentBuild = true,
+    BrightnessHidDriverInstallState? BrightnessHidDriver = null)
 {
     public BundleOwnershipIdentity? BundleOwnership { get; init; }
 }
@@ -61,6 +88,18 @@ public interface ISetupPlatform
     Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken);
     Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken);
     Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken);
+    Task InstallBrightnessHidDriverAsync(CancellationToken cancellationToken);
+    Task VerifyBrightnessHidDriverAsync(CancellationToken cancellationToken);
+    Task RestoreBrightnessHidDriverAsync(
+        BrightnessHidDriverInstallState priorState,
+        CancellationToken cancellationToken);
+    Task<string?> CommitBrightnessHidDriverAsync(
+        BrightnessHidDriverInstallState priorState,
+        CancellationToken cancellationToken);
+    Task RemoveBrightnessHidDriverAsync(CancellationToken cancellationToken);
+    Task<string?> CommitBrightnessHidDriverRemovalAsync(
+        BrightnessHidDriverInstallState priorState,
+        CancellationToken cancellationToken);
     Task RemoveServiceAsync(CancellationToken cancellationToken);
     Task StopTrayAsync(CancellationToken cancellationToken);
     Task StopSessionAgentAsync(CancellationToken cancellationToken);
@@ -128,6 +167,10 @@ public sealed class SetupCommandRunner(
                     "Removing Dynamic Lighting package OSSBlade.OpenBlade.DynamicLighting");
                 await platform.RemoveDynamicLightingIdentityAsync(cancellationToken);
                 await transaction.ActivateAsync(cancellationToken);
+                progress.Report("Installing the OpenBlade brightness HID driver");
+                await platform.InstallBrightnessHidDriverAsync(cancellationToken);
+                progress.Report("Verifying the OpenBlade brightness HID driver");
+                await platform.VerifyBrightnessHidDriverAsync(cancellationToken);
                 progress.Report(
                     "Registering Dynamic Lighting package OSSBlade.OpenBlade.DynamicLighting");
                 await platform.InstallDynamicLightingIdentityAsync(cancellationToken);
@@ -158,6 +201,10 @@ public sealed class SetupCommandRunner(
                 }
                 await transaction.CommitAsync(cancellationToken);
                 WriteCommitWarningNoThrow(transaction.CommitWarning);
+                string? driverCommitWarning = await platform.CommitBrightnessHidDriverAsync(
+                    priorLifecycle.BrightnessHidDriver!,
+                    CancellationToken.None);
+                WriteCommitWarningNoThrow(driverCommitWarning);
                 return 0;
             }
             catch (Exception failure)
@@ -203,6 +250,12 @@ public sealed class SetupCommandRunner(
 
                     await RecoverAsync(() => platform.StopTrayAsync(recoveryToken), recoveryFailures);
                     await RecoverAsync(() => platform.StopSessionAgentAsync(recoveryToken), recoveryFailures);
+                    if (priorLifecycle?.BrightnessHidDriver is { } priorDriver)
+                    {
+                        await RecoverAsync(
+                            () => platform.RestoreBrightnessHidDriverAsync(priorDriver, recoveryToken),
+                            recoveryFailures);
+                    }
                 }
 
                 await RecoverAsync(() => transaction.RollbackAsync(recoveryToken), recoveryFailures);
@@ -327,6 +380,8 @@ public sealed class SetupCommandRunner(
         await platform.StopSessionAgentAsync(cancellationToken);
         try
         {
+            progress.Report("Removing the OpenBlade brightness HID driver");
+            await platform.RemoveBrightnessHidDriverAsync(cancellationToken);
             progress.Report(
                 @"Removing Dynamic Lighting package OSSBlade.OpenBlade.DynamicLighting and HKLM\SOFTWARE\OSSBlade\OpenBlade\Installer");
             await platform.RemoveDynamicLightingIdentityAsync(cancellationToken);
@@ -338,6 +393,11 @@ public sealed class SetupCommandRunner(
             }
             progress.Report(@"Removing Program Files\OpenBlade");
             await platform.RemoveBinariesAsync(cancellationToken);
+            string? driverRemovalWarning =
+                await platform.CommitBrightnessHidDriverRemovalAsync(
+                    uninstallLifecycle.BrightnessHidDriver!,
+                    CancellationToken.None);
+            WriteCommitWarningNoThrow(driverRemovalWarning);
         }
         catch (Exception failure)
         {
@@ -348,6 +408,15 @@ public sealed class SetupCommandRunner(
             {
                 await RecoverAsync(
                     () => platform.InstallDynamicLightingIdentityAsync(recoveryTimeout.Token),
+                    recoveryFailures);
+            }
+
+            if (uninstallLifecycle.BrightnessHidDriver is { DevicePresent: true } priorDriver)
+            {
+                await RecoverAsync(
+                    () => platform.RestoreBrightnessHidDriverAsync(
+                        priorDriver,
+                        recoveryTimeout.Token),
                     recoveryFailures);
             }
 
@@ -414,6 +483,12 @@ public sealed class SetupCommandRunner(
         {
             throw new InvalidOperationException(
                 "The graphical-installer ownership marker could not be captured safely.");
+        }
+
+        if (lifecycle.BrightnessHidDriver is not { IsWellFormed: true })
+        {
+            throw new InvalidOperationException(
+                "The brightness HID driver state could not be captured safely.");
         }
     }
 

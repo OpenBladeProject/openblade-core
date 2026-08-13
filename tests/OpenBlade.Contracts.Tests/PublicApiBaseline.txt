@@ -551,6 +551,11 @@ type sealed class OpenBlade.Contracts.DiagnosticArchive
   method virtual System.Boolean Equals(OpenBlade.Contracts.DiagnosticArchive other)
   property System.Byte[] ZipBytes { get; init; }
   property System.String SuggestedFileName { get; init; }
+type enum OpenBlade.Contracts.DisplayBrightnessHidUsage
+  field System.UInt16 value__
+  field const OpenBlade.Contracts.DisplayBrightnessHidUsage Decrement = 112
+  field const OpenBlade.Contracts.DisplayBrightnessHidUsage Increment = 111
+  field const OpenBlade.Contracts.DisplayBrightnessHidUsage Released = 0
 type sealed class OpenBlade.Contracts.DisplayProfileSettings
   interface System.IEquatable<OpenBlade.Contracts.DisplayProfileSettings>
   ctor (System.String RefreshRateKey, System.Nullable<System.Boolean> HdrEnabled, System.String ColorProfileKey)
@@ -1132,7 +1137,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 41
+  field const System.Int32 ProtocolVersion = 42
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1728,6 +1733,22 @@ type sealed class OpenBlade.Contracts.SetBatteryProtectionRequest
   method virtual OpenBlade.Contracts.SetBatteryProtectionRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetBatteryProtectionRequest other)
   property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.DisplayBrightnessHidUsage Usage)
+  method OpenBlade.Contracts.DisplayBrightnessHidUsage get_Usage()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.DisplayBrightnessHidUsage Usage)
+  method System.Void set_Usage(OpenBlade.Contracts.DisplayBrightnessHidUsage value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest left, OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest left, OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest right)
+  method virtual OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest other)
+  property OpenBlade.Contracts.DisplayBrightnessHidUsage Usage { get; init; }
 type sealed class OpenBlade.Contracts.SetExternalLightingOverridePolicyRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.SetExternalLightingOverridePolicyRequest>

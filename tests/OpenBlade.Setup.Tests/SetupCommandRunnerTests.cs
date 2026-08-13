@@ -34,7 +34,8 @@ public sealed class SetupCommandRunnerTests
                 "payload-stage", "lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
                 "uninstall-shortcut-remove", "uninstall-registration-remove",
                 "service-prepare", "tray-stop", "session-agent-stop",
-                "dynamic-lighting-remove", "payload-activate", "dynamic-lighting-install",
+                "dynamic-lighting-remove", "payload-activate", "brightness-driver-install",
+                "brightness-driver-verify", "dynamic-lighting-install",
                 "uninstaller-install", "service-install",
                 "service-health", "agent-shortcut-install", "start-menu-install",
                 "uninstall-shortcut-install", "uninstall-registration-install", "shortcut-install", "payload-commit",
@@ -271,7 +272,7 @@ public sealed class SetupCommandRunnerTests
                 "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
                 "uninstall-shortcut-remove", "uninstall-registration-remove",
                 "dynamic-lighting-remove", "service-prepare", "tray-stop",
-                "session-agent-stop", "payload-rollback", "service-restore",
+                "session-agent-stop", "brightness-driver-restore", "payload-rollback", "service-restore",
                 "agent-shortcut-install", "shortcut-install", "start-menu-install",
             ]);
         Assert.All(platform.CleanupTokens, token => Assert.False(token.IsCancellationRequested));
@@ -334,7 +335,7 @@ public sealed class SetupCommandRunnerTests
                 "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
                 "uninstall-shortcut-remove", "uninstall-registration-remove",
                 "dynamic-lighting-remove", "service-remove", "tray-stop",
-                "session-agent-stop", "payload-rollback",
+                "session-agent-stop", "brightness-driver-restore", "payload-rollback",
             ]);
         Assert.DoesNotContain("shortcut-install", platform.Operations);
         Assert.DoesNotContain("data-remove", platform.Operations);
@@ -608,7 +609,7 @@ public sealed class SetupCommandRunnerTests
 
         Assert.Equal(0, exitCode);
         Assert.Equal(
-            ["lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "dynamic-lighting-remove", "uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove"],
+            ["lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "brightness-driver-remove", "dynamic-lighting-remove", "uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove", "brightness-driver-removal-commit"],
             platform.Operations);
         Assert.DoesNotContain("data-remove", platform.Operations);
     }
@@ -622,7 +623,7 @@ public sealed class SetupCommandRunnerTests
 
         Assert.Equal(0, exitCode);
         Assert.Equal(
-            ["lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "dynamic-lighting-remove", "uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove", "data-remove"],
+            ["lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "brightness-driver-remove", "dynamic-lighting-remove", "uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove", "brightness-driver-removal-commit", "data-remove"],
             platform.Operations);
     }
 
@@ -664,6 +665,26 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
+    public async Task Uninstall_BinaryRemovalFailure_RestoresPriorBrightnessDriver()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            BrightnessDriverExisted = true,
+            FailurePoint = "binaries-remove",
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform).RunAsync(
+                ["uninstall"],
+                CancellationToken.None));
+
+        int binaryFailureIndex = platform.Operations.IndexOf("binaries-remove");
+        int driverRecoveryIndex = platform.Operations.LastIndexOf("brightness-driver-restore");
+        Assert.True(driverRecoveryIndex > binaryFailureIndex);
+        Assert.DoesNotContain("brightness-driver-removal-commit", platform.Operations);
+    }
+
+    [Fact]
     public async Task Uninstall_BundleManaged_RemovesOwnershipBeforeBinaries()
     {
         RecordingSetupPlatform platform = new() { BundleOwnershipExisted = true };
@@ -677,6 +698,7 @@ public sealed class SetupCommandRunnerTests
             [
                 "uninstall-shortcut-remove", "uninstall-registration-remove",
                 "bundle-ownership-remove", "binaries-remove",
+                "brightness-driver-removal-commit",
             ]);
     }
 
@@ -729,6 +751,7 @@ public sealed class SetupCommandRunnerTests
             [
                 "uninstall-shortcut-remove", "uninstall-registration-remove",
                 "bundle-ownership-remove", "binaries-remove",
+                "brightness-driver-removal-commit",
             ]);
     }
 
@@ -843,6 +866,7 @@ public sealed class SetupCommandRunnerTests
         public BundleOwnershipIdentity? InitialBundleOwnership { get; init; }
         public bool OmitBundleOwnershipSnapshot { get; init; }
         public bool DynamicLightingIdentityRegistered { get; init; }
+        public bool BrightnessDriverExisted { get; init; }
         public string CurrentBuildIdentity { get; set; } = "0.1.0+current";
         public string? FailurePoint { get; set; }
         public CancellationTokenSource? Cancellation { get; init; }
@@ -920,7 +944,16 @@ public sealed class SetupCommandRunnerTests
                     || string.Equals(
                         bundleOwnership.InstalledBuild,
                         CurrentBuildIdentity,
-                        StringComparison.Ordinal))
+                        StringComparison.Ordinal),
+                BrightnessDriverExisted
+                    ? new(
+                        true,
+                        WindowsBrightnessHidDriverManager.DeviceInstanceId,
+                        @"C:\Windows\INF\oem42.inf",
+                        new Version(0, 5, 5, 0),
+                        WindowsBrightnessHidDriverManager.DriverProvider,
+                        true)
+                    : new(false))
             {
                 BundleOwnership = capturedOwnership,
             });
@@ -1034,6 +1067,29 @@ public sealed class SetupCommandRunnerTests
             AddAsync("dynamic-lighting-install", cancellationToken);
         public Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
             AddAsync("dynamic-lighting-remove", cancellationToken);
+        public Task InstallBrightnessHidDriverAsync(CancellationToken cancellationToken) =>
+            AddAsync("brightness-driver-install", cancellationToken);
+        public Task VerifyBrightnessHidDriverAsync(CancellationToken cancellationToken) =>
+            AddAsync("brightness-driver-verify", cancellationToken);
+        public Task RestoreBrightnessHidDriverAsync(
+            BrightnessHidDriverInstallState priorState,
+            CancellationToken cancellationToken) =>
+            AddAsync("brightness-driver-restore", cancellationToken);
+        public Task<string?> CommitBrightnessHidDriverAsync(
+            BrightnessHidDriverInstallState priorState,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<string?>(null);
+        }
+        public Task RemoveBrightnessHidDriverAsync(CancellationToken cancellationToken) =>
+            AddAsync("brightness-driver-remove", cancellationToken);
+        public async Task<string?> CommitBrightnessHidDriverRemovalAsync(
+            BrightnessHidDriverInstallState priorState,
+            CancellationToken cancellationToken)
+        {
+            await AddAsync("brightness-driver-removal-commit", cancellationToken);
+            return null;
+        }
         public Task RemoveServiceAsync(CancellationToken cancellationToken)
         {
             serviceRegistered = false;

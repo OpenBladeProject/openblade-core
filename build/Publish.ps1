@@ -13,7 +13,8 @@ param(
     [ValidateRange(0, 65535)]
     [int]$BuildRevision = 0,
     [string]$SourceRevision,
-    [string]$WorkflowRunId
+    [string]$WorkflowRunId,
+    [string]$BrightnessHidDriverPackage
 )
 
 Set-StrictMode -Version 3.0
@@ -58,6 +59,7 @@ $stagingStoreReadiness = Join-Path $stagingRoot 'OpenBlade-Store-Readiness.json'
 $stagingNightlyMetadata = Join-Path $stagingRoot 'OpenBlade-Nightly.json'
 $stagingNightlyChecksum = Join-Path $stagingRoot 'OpenBlade-Setup.exe.sha256'
 $payload = Join-Path $stagingBundle 'payload'
+$brightnessHidPayload = Join-Path $payload 'Drivers\BrightnessHid'
 
 function Assert-SafeArtifactPath {
     param([Parameter(Mandatory)][string]$Path)
@@ -171,6 +173,17 @@ try {
         $payload $productionPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `
         $payload $productionPublishArguments
+    & (Join-Path $repository 'build\Build-BrightnessHidDriver.ps1') `
+        -Repository $repository `
+        -Output $brightnessHidPayload `
+        -Configuration $Configuration `
+        -PreSignedPackage $BrightnessHidDriverPackage `
+        -SigningThumbprint $SigningThumbprint `
+        -SignTool $SignTool `
+        -TimestampUrl $TimestampUrl
+    if ($LASTEXITCODE -ne 0) {
+        throw "OpenBlade brightness HID driver packaging failed with exit code $LASTEXITCODE"
+    }
     $trayAssets = Join-Path $repository (
         'src\OpenBlade.Tray\obj\project.assets.json')
     Add-WindowsAppRuntimeNotificationResource `
@@ -228,7 +241,10 @@ try {
         foreach ($file in Get-ChildItem -LiteralPath $stagingBundle -Recurse -File |
             Where-Object {
                 ($_.Extension -in @('.exe', '.dll')) -and
-                $_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal)
+                $_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal) -and
+                -not $_.FullName.StartsWith(
+                    $brightnessHidPayload + [IO.Path]::DirectorySeparatorChar,
+                    [StringComparison]::OrdinalIgnoreCase)
             }) {
             Invoke-OpenBladeSigning -Path $file.FullName -ResolvedSignTool $resolvedSignTool
         }

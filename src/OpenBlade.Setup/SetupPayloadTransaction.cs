@@ -78,6 +78,9 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         "Microsoft.UI.Xaml.Controls.dll",
         "Microsoft.UI.Xaml.Controls.pri",
         @"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png",
+        @"Drivers\BrightnessHid\OpenBlade.BrightnessHid.inf",
+        @"Drivers\BrightnessHid\OpenBlade.BrightnessHid.cat",
+        @"Drivers\BrightnessHid\OpenBlade.BrightnessHid.dll",
     ];
 
     private readonly SetupPaths paths;
