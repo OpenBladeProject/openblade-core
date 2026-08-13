@@ -135,7 +135,7 @@ internal static class WindowsCoreAudioMuteStateSource
             rebindCancellation.Cancel();
             CoreAudioSubscriptionShutdown.CompleteOrDefer(
                 rebindTask,
-                Task.Delay(ShutdownTimeout),
+                ShutdownTimeout,
                 ReleaseNativeResources);
         }
 
@@ -565,6 +565,36 @@ internal static class WindowsCoreAudioMuteStateSource
 
 internal static class CoreAudioSubscriptionShutdown
 {
+    public static void CompleteOrDefer(
+        Task worker,
+        TimeSpan timeout,
+        Action releaseResources) => CompleteOrDefer(
+            worker,
+            timeout,
+            TimeProvider.System,
+            releaseResources);
+
+    internal static void CompleteOrDefer(
+        Task worker,
+        TimeSpan timeout,
+        TimeProvider timeProvider,
+        Action releaseResources)
+    {
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        using var timeoutCancellation = new CancellationTokenSource();
+        try
+        {
+            CompleteOrDefer(
+                worker,
+                Task.Delay(timeout, timeProvider, timeoutCancellation.Token),
+                releaseResources);
+        }
+        finally
+        {
+            timeoutCancellation.Cancel();
+        }
+    }
+
     public static void CompleteOrDefer(
         Task worker,
         Task timeout,

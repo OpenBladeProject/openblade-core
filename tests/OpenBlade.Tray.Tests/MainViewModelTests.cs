@@ -4042,6 +4042,31 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AppliedOlderChargeLimitRemainsDraftWhileNewerEditRemainsInEditor()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        viewModel.ChargeLimitPercent = 75;
+        long appliedRevision = viewModel.ChargeLimitEditorRevision;
+        Task commit = Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(new ChargeLimitCommitRequest(75, appliedRevision));
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        viewModel.ChargeLimitPercent = 70;
+        client.CompleteMutation();
+        await commit;
+
+        Assert.Equal(70, viewModel.ChargeLimitPercent);
+        Assert.Equal(BatteryPolicy.Create(75), client.BatteryPolicy);
+        Assert.True(viewModel.HasGlobalBatteryPolicyDraft);
+        Assert.True(viewModel.BatteryPolicyPresentation.IsPending);
+        Assert.Equal("75%", viewModel.BatteryPolicyPresentation.PendingText);
+    }
+
+    [Fact]
     public async Task AppliedBatteryProtectionToggle_MarksAndSavesOnlyActiveProfile()
     {
         var client = new FakeServiceClient();

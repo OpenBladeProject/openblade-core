@@ -8,8 +8,8 @@ namespace OpenBlade.Service;
 
 public sealed class NamedPipeControlServer
 {
-    internal const int MaximumServerInstances = 12;
-    internal const int ReservedOrdinaryServerInstances = 2;
+    internal const int MaximumServerInstances = 14;
+    internal const int ReservedOrdinaryServerInstances = 4;
     internal const int MaximumLightingStreamConnections = 2;
     internal const int MaximumPersistentConnections =
         MaximumServerInstances - ReservedOrdinaryServerInstances;
@@ -230,6 +230,9 @@ public sealed class NamedPipeControlServer
                         return;
                     }
                     ownsLightingStreamSlot = lightingStream;
+                    // This aggregate reservation also bounds subscriptions
+                    // that are still completing initial admission and have not
+                    // yet acquired one of the hub's subscriber leases.
                     if (!TryReserveSlot(
                         ref persistentConnectionCount,
                         MaximumPersistentConnections))

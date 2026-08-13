@@ -417,6 +417,111 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
+    public async Task ReactivePulse_CapacityRejectionBacksOffAndRecovers()
+    {
+        string pipeName = NewPipeName();
+        var time = new FakeTimeProvider();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task rejectedServer = RunServerAsync(
+            pipeName,
+            request => CapacityUnavailable(request.RequestId),
+            timeout.Token);
+        var client = new ServiceClient(pipeName, time);
+
+        Task<ControlOperationResult> send = client.PulseReactiveKeyAsync(
+            new ReactiveKeyPulse(19),
+            timeout.Token);
+        await rejectedServer;
+        await WaitUntilAsync(() => time.Delays.Count == 1);
+
+        Task acceptedServer = RunServerAsync(
+            pipeName,
+            request => Applied(request.RequestId),
+            timeout.Token);
+        Assert.Equal(TimeSpan.FromMilliseconds(250), time.Delays[0]);
+        time.Advance(TimeSpan.FromMilliseconds(250));
+
+        Assert.Equal(ControlOperationStatus.Applied, (await send).Status);
+        await acceptedServer;
+    }
+
+    [Fact]
+    public async Task AmbientFrame_CapacityRejectionBacksOffAndRecovers()
+    {
+        string pipeName = NewPipeName();
+        var time = new FakeTimeProvider();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task rejectedServer = RunServerAsync(
+            pipeName,
+            request => CapacityUnavailable(request.RequestId),
+            timeout.Token);
+        var client = new ServiceClient(pipeName, time);
+        var slots = new RgbColor[AmbientLightingFrame.SlotCount];
+
+        Task<ControlOperationResult> send = client.PushAmbientLightingFrameAsync(
+            new AmbientLightingFrame(slots),
+            timeout.Token);
+        await rejectedServer;
+        await WaitUntilAsync(() => time.Delays.Count == 1);
+
+        Task acceptedServer = RunServerAsync(
+            pipeName,
+            request => Applied(request.RequestId),
+            timeout.Token);
+        Assert.Equal(TimeSpan.FromMilliseconds(250), time.Delays[0]);
+        time.Advance(TimeSpan.FromMilliseconds(250));
+
+        Assert.Equal(ControlOperationStatus.Applied, (await send).Status);
+        await acceptedServer;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LightingStream_NonCapacityRejectionDoesNotRetry(bool ambient)
+    {
+        string pipeName = NewPipeName();
+        var time = new FakeTimeProvider();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task server = RunServerAsync(
+            pipeName,
+            request => new ServiceResponse(
+                OpenBladeIpc.ProtocolVersion,
+                request.RequestId,
+                Success: false,
+                Error: "Rejected",
+                Status: null,
+                Result: null),
+            timeout.Token);
+        int connectionAttempts = 0;
+        var client = new ServiceClient(
+            async token =>
+            {
+                connectionAttempts++;
+                var pipe = new NamedPipeClientStream(
+                    ".",
+                    pipeName,
+                    PipeDirection.InOut,
+                    PipeOptions.Asynchronous);
+                await pipe.ConnectAsync(token);
+                return pipe;
+            },
+            time);
+        var slots = new RgbColor[AmbientLightingFrame.SlotCount];
+
+        Task<ControlOperationResult> send = ambient
+            ? client.PushAmbientLightingFrameAsync(
+                new AmbientLightingFrame(slots),
+                timeout.Token)
+            : client.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), timeout.Token);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => send);
+        await server;
+        Assert.Equal(1, connectionAttempts);
+        Assert.Empty(time.Delays);
+    }
+
+    [Fact]
     public async Task DisposeAsync_ClosesPersistentStreamingConnections()
     {
         string reactivePipeName = NewPipeName();
@@ -1024,6 +1129,25 @@ public sealed class ServiceClientTests
         ServiceRequest request = await IpcMessageCodec.ReadRequestAsync(server, token);
         await IpcMessageCodec.WriteServerFrameAsync(server, response(request), token);
     }
+
+    private static ServiceResponse CapacityUnavailable(Guid requestId) => new(
+        OpenBladeIpc.ProtocolVersion,
+        requestId,
+        Success: false,
+        Error: "Busy",
+        Status: null,
+        Result: null)
+    {
+        ErrorCode = ServiceResponseErrorCode.CapacityUnavailable,
+    };
+
+    private static ServiceResponse Applied(Guid requestId) => new(
+        OpenBladeIpc.ProtocolVersion,
+        requestId,
+        Success: true,
+        Error: null,
+        Status: null,
+        Result: new ControlOperationResult(ControlOperationStatus.Applied, "Applied"));
 
     private static async Task RunRawServerAsync(
         string pipeName,

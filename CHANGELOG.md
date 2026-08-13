@@ -39,9 +39,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   applied, while preserving a newer edit made during an in-flight request.
 - Preserved configured special-key bindings through transient preference-file
   locks and retried the unchanged file after access recovered.
-- Reconnected status watchers after temporary subscriber-capacity rejection and
-  reserved named-pipe listeners for ordinary control requests even when all
-  supported status and lighting streams are connected.
+- Reconnected status and lighting streams after temporary capacity rejection,
+  kept Ambient Awareness and Audio Meter on one shared frame connection, and
+  reserved four named-pipe listeners for ordinary control requests even when
+  all supported persistent streams are connected.
 - Bounded Core Audio shutdown waits without releasing COM resources still in use,
   and prevented cleared or trimmed input queues from accumulating empty worker
   wakeups.

@@ -3,6 +3,22 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class CoreAudioSubscriptionShutdownTests
 {
     [Fact]
+    public void CompleteOrDefer_CompletedWorkerCancelsUnusedTimeout()
+    {
+        var time = new TrackingTimeProvider();
+        int releases = 0;
+
+        CoreAudioSubscriptionShutdown.CompleteOrDefer(
+            Task.CompletedTask,
+            TimeSpan.FromSeconds(5),
+            time,
+            () => releases++);
+
+        Assert.Equal(1, releases);
+        Assert.True(time.TimerDisposed);
+    }
+
+    [Fact]
     public void CompleteOrDefer_TimeoutDefersResourcesUntilWorkerCompletes()
     {
         var worker = new TaskCompletionSource();
@@ -65,5 +81,29 @@ public sealed class CoreAudioSubscriptionShutdownTests
 
         Assert.Same(failure, thrown);
         Assert.Equal(1, releases);
+    }
+
+    private sealed class TrackingTimeProvider : TimeProvider
+    {
+        public bool TimerDisposed { get; private set; }
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period) => new TrackingTimer(this);
+
+        private sealed class TrackingTimer(TrackingTimeProvider owner) : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+
+            public void Dispose() => owner.TimerDisposed = true;
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 }

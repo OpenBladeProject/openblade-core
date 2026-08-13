@@ -122,6 +122,7 @@ public sealed class StatusSubscriptionHubTests
     [Fact]
     public void Capacity_ReservesOrdinaryConnectionsAndBothLightingStreams()
     {
+        Assert.Equal(4, NamedPipeControlServer.ReservedOrdinaryServerInstances);
         Assert.Equal(
             NamedPipeControlServer.ReservedOrdinaryServerInstances,
             NamedPipeControlServer.MaximumServerInstances

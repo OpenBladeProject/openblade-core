@@ -243,10 +243,9 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                     && !token.IsCancellationRequested
                     && IsRetryableTransportFailure(exception))
                 {
-                    // The service intentionally expires an idle pulse burst.
-                    // Discard that stale pipe and retry this pulse once on a new
-                    // exact ACL-protected connection instead of dropping it.
                     await ResetReactivePulseConnectionCoreAsync().ConfigureAwait(false);
+                    await DelayAfterCapacityRejectionAsync(exception, token)
+                        .ConfigureAwait(false);
                 }
                 catch
                 {
@@ -299,6 +298,8 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                     && IsRetryableTransportFailure(exception))
                 {
                     await ResetAmbientFrameConnectionCoreAsync().ConfigureAwait(false);
+                    await DelayAfterCapacityRejectionAsync(exception, token)
+                        .ConfigureAwait(false);
                 }
                 catch
                 {
@@ -542,6 +543,11 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ServiceResponse response = ValidateResponseEnvelope(frame, request);
         if (!response.Success)
         {
+            if (response.ErrorCode == ServiceResponseErrorCode.CapacityUnavailable)
+            {
+                throw new ServiceCapacityUnavailableException(
+                    response.Error ?? "Service capacity is temporarily unavailable.");
+            }
             throw new InvalidDataException(response.Error ?? "Service rejected the request.");
         }
         return response;
@@ -588,16 +594,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                     connection,
                     token)
                 .ConfigureAwait(false);
-            ServiceResponse response = ValidateResponseEnvelope(frame, request);
-            if (!response.Success)
-            {
-                if (response.ErrorCode == ServiceResponseErrorCode.CapacityUnavailable)
-                {
-                    await connection.DisposeAsync().ConfigureAwait(false);
-                    return new SubscriptionOpenResult(null, null, true);
-                }
-                throw new InvalidDataException(response.Error ?? "Service rejected the request.");
-            }
+            ServiceResponse response = ValidateResponse(frame, request);
             ServiceStatusSnapshot initial = response.Status
                 ?? throw new InvalidDataException(
                     "Service subscription response is missing its status body.");
@@ -643,6 +640,22 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
 
     private static bool IsRetryableTransportFailure(Exception exception) =>
         exception is IOException or TimeoutException;
+
+    private async Task DelayAfterCapacityRejectionAsync(
+        Exception exception,
+        CancellationToken token)
+    {
+        if (exception is ServiceCapacityUnavailableException)
+        {
+            // The peer can reject a reconnect before its deadline-free read
+            // observes EOF from the disposed stream and releases the slot.
+            await Task.Delay(InitialReconnectDelay, timeProvider, token)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private sealed class ServiceCapacityUnavailableException(string message)
+        : IOException(message);
 
     private sealed record SubscriptionOpenResult(
         Stream? Connection,
