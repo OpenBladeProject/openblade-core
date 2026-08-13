@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept profile pending-change dots immediately beside their value text instead
+  of stretching them to the far edge of the table cell.
 - Cleared the red playback-mute key after a rejected unmute frame by restoring
   OpenBlade's owned lighting renderer as soon as the unmuted state is retried.
 - Replaced `Not set` laptop-behavior profile cells with the currently confirmed
