@@ -1462,6 +1462,11 @@ public sealed class CapabilityPresentationTests
         XElement compactProfileValueTemplate = Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == "DataTemplate"
             && Attribute(element, "Key") == "CompactProfileValuePresentationTemplate");
+        const string inlineValueIndicatorStart =
+            "<Run Text=\"{x:Bind Text, Mode=OneTime}\" /><InlineUIContainer>";
+        Assert.Equal(
+            2,
+            xaml.Split(inlineValueIndicatorStart, StringSplitOptions.None).Length - 1);
         foreach (XElement template in new[]
                  {
                      profileValueTemplate,
@@ -1484,6 +1489,8 @@ public sealed class CapabilityPresentationTests
                 Attribute(presenter, "AutomationProperties.HelpText"));
             XElement valueText = Assert.Single(template.Descendants(), element =>
                 element.Name.LocalName == "RichTextBlock");
+            Assert.Equal("Wrap", Attribute(valueText, "TextWrapping"));
+            Assert.Equal("False", Attribute(valueText, "IsTextSelectionEnabled"));
             Assert.Equal(
                 "Raw",
                 Attribute(valueText, "AutomationProperties.AccessibilityView"));
@@ -1501,12 +1508,19 @@ public sealed class CapabilityPresentationTests
             Assert.Same(inlineIndicator, indicator.Parent);
             Assert.Equal("6,0,0,0", Attribute(indicator, "Margin"));
             Assert.Equal(
+                "{StaticResource UnsavedNavigationBadgeStyle}",
+                Attribute(indicator, "Style"));
+            Assert.Equal(
                 "{x:Bind IsPending, Mode=OneTime}",
                 Attribute(indicator, "Visibility"));
             Assert.Equal(
                 "Raw",
                 Attribute(indicator, "AutomationProperties.AccessibilityView"));
         }
+        XElement compactValueText = Assert.Single(
+            compactProfileValueTemplate.Descendants(),
+            element => element.Name.LocalName == "RichTextBlock");
+        Assert.Equal("Right", Attribute(compactValueText, "TextAlignment"));
         XElement[] comparisonValues = comparisonProfiles.Descendants()
             .Where(element => element.Name.LocalName == "ContentControl"
                 && Attribute(element, "ContentTemplate")

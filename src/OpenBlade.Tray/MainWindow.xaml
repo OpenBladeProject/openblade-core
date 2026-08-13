@@ -317,11 +317,7 @@
                 <Setter Property="MinWidth" Value="8" />
                 <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
             </Style>
-            <Style x:Key="PendingProfileValueBadgeStyle"
-                   TargetType="InfoBadge"
-                   BasedOn="{StaticResource UnsavedNavigationBadgeStyle}">
-                <Setter Property="VerticalAlignment" Value="Center" />
-            </Style>
+            <!-- Keep Run and InlineUIContainer adjacent in both templates; whitespace between them renders as an extra gap. -->
             <DataTemplate x:Key="ProfileValuePresentationTemplate"
                           x:DataType="local:ProfileValuePresentation">
                 <ContentControl HorizontalContentAlignment="Stretch"
@@ -334,7 +330,7 @@
                                    AutomationProperties.AccessibilityView="Raw">
                         <Paragraph><Run Text="{x:Bind Text, Mode=OneTime}" /><InlineUIContainer>
                             <InfoBadge Margin="6,0,0,0"
-                                       Style="{StaticResource PendingProfileValueBadgeStyle}"
+                                       Style="{StaticResource UnsavedNavigationBadgeStyle}"
                                        Visibility="{x:Bind IsPending, Mode=OneTime}"
                                        AutomationProperties.AccessibilityView="Raw" />
                         </InlineUIContainer></Paragraph>
@@ -354,7 +350,7 @@
                                    AutomationProperties.AccessibilityView="Raw">
                         <Paragraph><Run Text="{x:Bind Text, Mode=OneTime}" /><InlineUIContainer>
                             <InfoBadge Margin="6,0,0,0"
-                                       Style="{StaticResource PendingProfileValueBadgeStyle}"
+                                       Style="{StaticResource UnsavedNavigationBadgeStyle}"
                                        Visibility="{x:Bind IsPending, Mode=OneTime}"
                                        AutomationProperties.AccessibilityView="Raw" />
                         </InlineUIContainer></Paragraph>
