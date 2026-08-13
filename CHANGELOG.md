@@ -35,6 +35,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Repeated the global charge limit across the AC, USB-C, and Battery profile
+  columns so the latter two cells no longer appear empty.
 - Disabled the fan-mode dropdown when Automatic is the only available option,
   including on battery and USB-C power, while keeping mismatched selections
   recoverable.
