@@ -1483,12 +1483,23 @@ public sealed class CapabilityPresentationTests
                 "{x:Bind PendingDescription, Mode=OneTime}",
                 Attribute(presenter, "AutomationProperties.HelpText"));
             XElement valueText = Assert.Single(template.Descendants(), element =>
-                element.Name.LocalName == "TextBlock");
+                element.Name.LocalName == "RichTextBlock");
             Assert.Equal(
                 "Raw",
                 Attribute(valueText, "AutomationProperties.AccessibilityView"));
+            XElement paragraph = Assert.Single(valueText.Elements(), element =>
+                element.Name.LocalName == "Paragraph");
+            XElement valueRun = Assert.Single(paragraph.Elements(), element =>
+                element.Name.LocalName == "Run");
+            Assert.Equal(
+                "{x:Bind Text, Mode=OneTime}",
+                Attribute(valueRun, "Text"));
+            XElement inlineIndicator = Assert.Single(paragraph.Elements(), element =>
+                element.Name.LocalName == "InlineUIContainer");
             XElement indicator = Assert.Single(template.Descendants(), element =>
                 element.Name.LocalName == "InfoBadge");
+            Assert.Same(inlineIndicator, indicator.Parent);
+            Assert.Equal("6,0,0,0", Attribute(indicator, "Margin"));
             Assert.Equal(
                 "{x:Bind IsPending, Mode=OneTime}",
                 Attribute(indicator, "Visibility"));

@@ -329,19 +329,16 @@
                                 ToolTipService.ToolTip="{x:Bind PendingDescription, Mode=OneTime}"
                                 AutomationProperties.Name="{x:Bind AccessibilityDescription, Mode=OneTime}"
                                 AutomationProperties.HelpText="{x:Bind PendingDescription, Mode=OneTime}">
-                    <Grid ColumnSpacing="6">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="{x:Bind Text, Mode=OneTime}"
-                                   TextWrapping="Wrap"
-                                   AutomationProperties.AccessibilityView="Raw" />
-                        <InfoBadge Grid.Column="1"
-                                   Style="{StaticResource PendingProfileValueBadgeStyle}"
-                                   Visibility="{x:Bind IsPending, Mode=OneTime}"
-                                   AutomationProperties.AccessibilityView="Raw" />
-                    </Grid>
+                    <RichTextBlock TextWrapping="Wrap"
+                                   IsTextSelectionEnabled="False"
+                                   AutomationProperties.AccessibilityView="Raw">
+                        <Paragraph><Run Text="{x:Bind Text, Mode=OneTime}" /><InlineUIContainer>
+                            <InfoBadge Margin="6,0,0,0"
+                                       Style="{StaticResource PendingProfileValueBadgeStyle}"
+                                       Visibility="{x:Bind IsPending, Mode=OneTime}"
+                                       AutomationProperties.AccessibilityView="Raw" />
+                        </InlineUIContainer></Paragraph>
+                    </RichTextBlock>
                 </ContentControl>
             </DataTemplate>
             <DataTemplate x:Key="CompactProfileValuePresentationTemplate"
@@ -351,20 +348,17 @@
                                 ToolTipService.ToolTip="{x:Bind PendingDescription, Mode=OneTime}"
                                 AutomationProperties.Name="{x:Bind AccessibilityDescription, Mode=OneTime}"
                                 AutomationProperties.HelpText="{x:Bind PendingDescription, Mode=OneTime}">
-                    <Grid ColumnSpacing="6">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="{x:Bind Text, Mode=OneTime}"
-                                   TextWrapping="Wrap"
+                    <RichTextBlock TextWrapping="Wrap"
                                    TextAlignment="Right"
-                                   AutomationProperties.AccessibilityView="Raw" />
-                        <InfoBadge Grid.Column="1"
-                                   Style="{StaticResource PendingProfileValueBadgeStyle}"
-                                   Visibility="{x:Bind IsPending, Mode=OneTime}"
-                                   AutomationProperties.AccessibilityView="Raw" />
-                    </Grid>
+                                   IsTextSelectionEnabled="False"
+                                   AutomationProperties.AccessibilityView="Raw">
+                        <Paragraph><Run Text="{x:Bind Text, Mode=OneTime}" /><InlineUIContainer>
+                            <InfoBadge Margin="6,0,0,0"
+                                       Style="{StaticResource PendingProfileValueBadgeStyle}"
+                                       Visibility="{x:Bind IsPending, Mode=OneTime}"
+                                       AutomationProperties.AccessibilityView="Raw" />
+                        </InlineUIContainer></Paragraph>
+                    </RichTextBlock>
                 </ContentControl>
             </DataTemplate>
             <Style x:Key="FirmwareProgressRingStyle" TargetType="ProgressRing">
