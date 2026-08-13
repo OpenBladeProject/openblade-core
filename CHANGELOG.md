@@ -5,6 +5,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced the tray-dashboard customization dialog with a dedicated Settings
+  page that shows only active controls and adjustments, keeps inactive choices
+  in **Add** menus, exposes the two-adjustment limit, and updates the pinned tray
+  popup live while items are reordered, added, removed, or reset.
+
 ### Fixed
 
 - Replaced `Not set` laptop-behavior profile cells with the currently confirmed

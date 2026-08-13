@@ -1933,9 +1933,17 @@ public sealed class WinUiShellContractTests
         Assert.Contains("DismissForMainWindow()", app, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardEditSessionChanged +=", app, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnCustomizeTrayDashboard\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"TrayDashboardCustomizationPage\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("ItemsSource=\"{x:Bind TrayDashboardEditorControls, Mode=OneWay}\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("ItemsSource=\"{x:Bind TrayDashboardEditorSliders, Mode=OneWay}\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnAddTrayDashboardControl\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnAddTrayDashboardSlider\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnResetTrayDashboard\"", mainXaml, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(true)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(false)", mainWindow, StringComparison.Ordinal);
-        Assert.Contains("The actual tray popup stays open and updates while you edit.", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("EndTrayDashboardCustomization(showSettingsOverview: false)", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("HandleCustomizeTrayDashboardAsync", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Tray dashboard controls", mainWindow, StringComparison.Ordinal);
         Assert.Contains("AppWindow.Show(activateWindow: !editing)", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("private const int PopupWidth = 360", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("presenter.IsAlwaysOnTop = false", dashboardWindow, StringComparison.Ordinal);
@@ -2190,7 +2198,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("UpdateSliderRows();", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("SliderSection.Visibility = row == 0", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("MaximumVisibleSliders", mainWindow, StringComparison.Ordinal);
-        Assert.Contains("Choose up to two controls", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("Choose up to two sliders", mainXaml, StringComparison.Ordinal);
         Assert.Contains("gpuClockOffsetCommits.Schedule(requested)", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("CreateSliderOptions", mainWindow, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardSliderOptionTemplate", mainXaml, StringComparison.Ordinal);
@@ -2220,7 +2228,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("TrayDashboardControlSize", dashboardPreferences, StringComparison.Ordinal);
         Assert.DoesNotContain("ExpandedControl", dashboardPreferences, StringComparison.Ordinal);
         Assert.Contains("CurrentSchemaVersion = 1", dashboardPreferences, StringComparison.Ordinal);
-        Assert.Contains("The first six controls stay visible.", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("The first six controls remain visible.", mainXaml, StringComparison.Ordinal);
     }
 
     [Fact]

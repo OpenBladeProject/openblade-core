@@ -105,6 +105,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private NotificationPreferences notificationPreferences = NotificationPreferences.Default;
     private TrayDashboardPreference trayDashboardPreference =
         TrayDashboardPreferenceDefaults.Preference;
+    private IReadOnlyList<TrayDashboardControlOption> trayDashboardAllControlOptions = [];
+    private IReadOnlyList<TrayDashboardSliderOption> trayDashboardAllSliderOptions = [];
+    private bool changingTrayDashboardEditor;
     private string? lastNotifiedReleaseTag;
     private string? lastNotifiedFirmwareSignature;
     private PowerSource lastObservedPowerSource = PowerSource.ExternalUnknown;
@@ -183,6 +186,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
         DashboardCards.CollectionChanged += OnDashboardCardsCollectionChanged;
+        TrayDashboardEditorControls.CollectionChanged +=
+            OnTrayDashboardEditorOrderChanged;
+        TrayDashboardEditorSliders.CollectionChanged +=
+            OnTrayDashboardEditorOrderChanged;
         PrimaryNavigationItems.CollectionChanged += OnPrimaryNavigationItemsCollectionChanged;
         accentColorManager = new AccentColorManager(Root, dispatcherQueue);
         accentColorManager.ColorChanged += OnAccentColorChanged;
@@ -278,6 +285,15 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public ObservableCollection<DashboardCardOption> DashboardCards { get; } = [];
 
     public TrayDashboardPreference TrayDashboardPreference => trayDashboardPreference;
+
+    public ObservableCollection<TrayDashboardControlOption> TrayDashboardEditorControls
+    { get; } = [];
+
+    public ObservableCollection<TrayDashboardSliderOption> TrayDashboardEditorSliders
+    { get; } = [];
+
+    public ObservableCollection<TrayDashboardStatusItemOption> TrayDashboardEditorStatusItems
+    { get; } = [];
 
     public event Action<TrayDashboardPreference>? TrayDashboardPreferenceChanged;
 
@@ -453,6 +469,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             OnFirmwareUpdatePreferencesChanged;
         FirmwareUpdateViewModel.UpdateAvailable -= OnFirmwareUpdateAvailable;
         DashboardCards.CollectionChanged -= OnDashboardCardsCollectionChanged;
+        TrayDashboardEditorControls.CollectionChanged -=
+            OnTrayDashboardEditorOrderChanged;
+        TrayDashboardEditorSliders.CollectionChanged -=
+            OnTrayDashboardEditorOrderChanged;
+        foreach (TrayDashboardStatusItemOption option in TrayDashboardEditorStatusItems)
+        {
+            option.PropertyChanged -= OnTrayDashboardEditorStatusChanged;
+        }
         PrimaryNavigationItems.CollectionChanged -= OnPrimaryNavigationItemsCollectionChanged;
         foreach (DashboardCardOption option in DashboardCards)
         {
@@ -1034,6 +1058,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         bool exitRequested = Microsoft.UI.Xaml.Application.Current is App app && app.ExitRequested;
         if (WindowLifecyclePolicy.Decide(exitRequested) == WindowCloseDecision.Hide)
         {
+            EndTrayDashboardCustomization(showSettingsOverview: true);
             args.Cancel = true;
             StartHiddenObservation();
             AppWindow.Hide();
@@ -2388,6 +2413,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void ApplyNavigationDestination(string destination)
     {
+        if (trayDashboardCustomizationActive && destination != "settings")
+        {
+            EndTrayDashboardCustomization(showSettingsOverview: false);
+        }
+
         HomePage.Visibility = destination == "home"
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -2404,6 +2434,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ? Visibility.Visible
             : Visibility.Collapsed;
         SettingsPage.Visibility = destination == "settings"
+            && !trayDashboardCustomizationActive
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        TrayDashboardCustomizationPage.Visibility = destination == "settings"
+            && trayDashboardCustomizationActive
             ? Visibility.Visible
             : Visibility.Collapsed;
         AboutPage.Visibility = destination == "about"
@@ -3059,12 +3094,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private void ApplyDashboardCustomizerChanges() =>
         dashboardCustomizerApply?.Invoke();
 
-    private async void OnCustomizeTrayDashboard(object sender, RoutedEventArgs args) =>
-        await RunHandlerAsync(
-            HandleCustomizeTrayDashboardAsync,
-            nameof(OnCustomizeTrayDashboard));
-
-    private async Task HandleCustomizeTrayDashboardAsync()
+    private void OnCustomizeTrayDashboard(object sender, RoutedEventArgs args)
     {
         if (trayDashboardCustomizationActive)
         {
@@ -3072,177 +3102,267 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         trayDashboardCustomizationActive = true;
-        var controls = new ObservableCollection<TrayDashboardControlOption>(
-            TrayDashboardPreferenceDefaults.CreateControlOptions(trayDashboardPreference));
-        var statusItems = new ObservableCollection<TrayDashboardStatusItemOption>(
-            TrayDashboardPreferenceDefaults.CreateStatusOptions(trayDashboardPreference));
-        var sliders = new ObservableCollection<TrayDashboardSliderOption>(
-            TrayDashboardPreferenceDefaults.CreateSliderOptions(trayDashboardPreference));
-
-        var sliderList = new Microsoft.UI.Xaml.Controls.ListView
-        {
-            ItemsSource = sliders,
-            SelectionMode = ListViewSelectionMode.None,
-            CanDragItems = true,
-            CanReorderItems = true,
-            ReorderMode = ListViewReorderMode.Enabled,
-            AllowDrop = true,
-            MaxHeight = 240,
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
-            ItemTemplate = (DataTemplate)Root.Resources[
-                "TrayDashboardSliderOptionTemplate"],
-            ItemContainerStyle = (Style)Root.Resources[
-                "DashboardReorderListItemStyle"],
-        };
-        AutomationProperties.SetName(sliderList, "Tray dashboard slider controls");
-
-        var statusList = new ItemsControl
-        {
-            ItemsSource = statusItems,
-            ItemTemplate = (DataTemplate)Root.Resources["TrayDashboardStatusItemOptionTemplate"],
-        };
-        AutomationProperties.SetName(statusList, "Tray dashboard status row");
-
-        var additionalContent = new StackPanel { Spacing = 10 };
-        additionalContent.Children.Add(new TextBlock
-        {
-            Text = "The first six controls stay visible. Additional controls scroll "
-                + "within the top of the popup.",
-            Style = (Style)Root.Resources["SecondaryTextStyle"],
-            TextWrapping = TextWrapping.Wrap,
-        });
-        additionalContent.Children.Add(new TextBlock
-        {
-            Text = "Slider controls",
-            Style = (Style)Root.Resources["CardTitleStyle"],
-            Margin = new Thickness(0, 4, 0, 0),
-        });
-        additionalContent.Children.Add(new TextBlock
-        {
-            Text = "Choose up to two controls for the fixed middle section. Drag them "
-                + "into the order you want.",
-            Style = (Style)Root.Resources["SecondaryTextStyle"],
-            TextWrapping = TextWrapping.Wrap,
-        });
-        additionalContent.Children.Add(sliderList);
-        additionalContent.Children.Add(new TextBlock
-        {
-            Text = "Status row",
-            Style = (Style)Root.Resources["CardTitleStyle"],
-            Margin = new Thickness(0, 4, 0, 0),
-        });
-        additionalContent.Children.Add(statusList);
-
-        ContentDialog dialog = CreateCustomizationDialog(
-            "Customize tray dashboard",
-            "Tray dashboard controls",
-            "Check controls to show and drag them into order. "
-                + "The actual tray popup stays open and updates while you edit.",
-            controls,
-            "TrayDashboardControlOptionTemplate",
-            additionalContent,
-            maxListHeight: 350);
-
-        void ApplyEditor()
-        {
-            ApplyTrayDashboardPreference(new TrayDashboardPreference(
-                Controls: controls
-                    .Select(option => new TrayDashboardControlPreference(
-                        option.Kind,
-                        option.IsVisible))
-                    .ToArray(),
-                StatusItems: statusItems
-                    .Select(option => new TrayDashboardStatusItemPreference(
-                        option.Kind,
-                        option.IsVisible))
-                    .ToArray(),
-                Sliders: sliders
-                    .Select(option => new TrayDashboardSliderPreference(
-                        option.Kind,
-                        option.IsVisible))
-                    .ToArray(),
-                SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion),
-                queueSave: true);
-        }
-
-        bool changingSliderOptions = false;
-        PropertyChangedEventHandler optionChanged = (_, _) => ApplyEditor();
-        PropertyChangedEventHandler sliderChanged = (sender, args) =>
-        {
-            if (changingSliderOptions)
-            {
-                return;
-            }
-
-            changingSliderOptions = true;
-            try
-            {
-                if (args.PropertyName == nameof(TrayDashboardSliderOption.IsVisible)
-                    && sender is TrayDashboardSliderOption selected
-                    && selected.IsVisible)
-                {
-                    int excess = sliders.Count(option => option.IsVisible)
-                        - TrayDashboardPreferenceDefaults.MaximumVisibleSliders;
-                    foreach (TrayDashboardSliderOption option in sliders.Where(option =>
-                                 option != selected && option.IsVisible))
-                    {
-                        if (excess-- <= 0)
-                        {
-                            break;
-                        }
-
-                        option.IsVisible = false;
-                    }
-                }
-
-                ApplyEditor();
-            }
-            finally
-            {
-                changingSliderOptions = false;
-            }
-        };
-        NotifyCollectionChangedEventHandler orderChanged = (_, _) => ApplyEditor();
-        foreach (TrayDashboardControlOption option in controls)
-        {
-            option.PropertyChanged += optionChanged;
-        }
-        foreach (TrayDashboardStatusItemOption option in statusItems)
-        {
-            option.PropertyChanged += optionChanged;
-        }
-        foreach (TrayDashboardSliderOption option in sliders)
-        {
-            option.PropertyChanged += sliderChanged;
-        }
-        controls.CollectionChanged += orderChanged;
-        sliders.CollectionChanged += orderChanged;
-
+        LoadTrayDashboardEditor(trayDashboardPreference);
+        SettingsPage.Visibility = Visibility.Collapsed;
+        TrayDashboardCustomizationPage.Visibility = Visibility.Visible;
+        TrayDashboardCustomizationPage.ChangeView(null, 0, null, disableAnimation: true);
         TrayDashboardEditSessionChanged?.Invoke(true);
+    }
+
+    private void OnExitTrayDashboardCustomization(object sender, RoutedEventArgs args) =>
+        EndTrayDashboardCustomization(showSettingsOverview: true);
+
+    private void EndTrayDashboardCustomization(bool showSettingsOverview)
+    {
+        if (!trayDashboardCustomizationActive)
+        {
+            return;
+        }
+
+        trayDashboardCustomizationActive = false;
+        TrayDashboardCustomizationPage.Visibility = Visibility.Collapsed;
+        if (showSettingsOverview)
+        {
+            SettingsPage.Visibility = Visibility.Visible;
+        }
+
+        TrayDashboardEditSessionChanged?.Invoke(false);
+    }
+
+    private void LoadTrayDashboardEditor(TrayDashboardPreference preference)
+    {
+        changingTrayDashboardEditor = true;
         try
         {
-            await dialog.ShowAsync();
+            foreach (TrayDashboardStatusItemOption option in TrayDashboardEditorStatusItems)
+            {
+                option.PropertyChanged -= OnTrayDashboardEditorStatusChanged;
+            }
+
+            trayDashboardAllControlOptions =
+                TrayDashboardPreferenceDefaults.CreateControlOptions(preference);
+            trayDashboardAllSliderOptions =
+                TrayDashboardPreferenceDefaults.CreateSliderOptions(preference);
+
+            TrayDashboardEditorControls.Clear();
+            foreach (TrayDashboardControlOption option in
+                     trayDashboardAllControlOptions.Where(option => option.IsVisible))
+            {
+                TrayDashboardEditorControls.Add(option);
+            }
+
+            TrayDashboardEditorSliders.Clear();
+            foreach (TrayDashboardSliderOption option in
+                     trayDashboardAllSliderOptions.Where(option => option.IsVisible))
+            {
+                TrayDashboardEditorSliders.Add(option);
+            }
+
+            TrayDashboardEditorStatusItems.Clear();
+            foreach (TrayDashboardStatusItemOption option in
+                     TrayDashboardPreferenceDefaults.CreateStatusOptions(preference))
+            {
+                option.PropertyChanged += OnTrayDashboardEditorStatusChanged;
+                TrayDashboardEditorStatusItems.Add(option);
+            }
         }
         finally
         {
-            controls.CollectionChanged -= orderChanged;
-            sliders.CollectionChanged -= orderChanged;
-            foreach (TrayDashboardControlOption option in controls)
-            {
-                option.PropertyChanged -= optionChanged;
-            }
-            foreach (TrayDashboardStatusItemOption option in statusItems)
-            {
-                option.PropertyChanged -= optionChanged;
-            }
-            foreach (TrayDashboardSliderOption option in sliders)
-            {
-                option.PropertyChanged -= sliderChanged;
-            }
-            TrayDashboardEditSessionChanged?.Invoke(false);
-            trayDashboardCustomizationActive = false;
+            changingTrayDashboardEditor = false;
         }
+
+        UpdateTrayDashboardEditorAvailability();
+    }
+
+    private void OnAddTrayDashboardControl(object sender, RoutedEventArgs args)
+    {
+        var flyout = new MenuFlyout();
+        foreach (TrayDashboardControlOption option in
+                 trayDashboardAllControlOptions.Where(option => !option.IsVisible))
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = option.Label,
+                Tag = option,
+            };
+            item.Click += OnTrayDashboardControlAddItemClicked;
+            flyout.Items.Add(item);
+        }
+
+        flyout.ShowAt((FrameworkElement)sender);
+    }
+
+    private void OnTrayDashboardControlAddItemClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (sender is not FrameworkElement
+            {
+                Tag: TrayDashboardControlOption option,
+            }
+            || option.IsVisible)
+        {
+            return;
+        }
+
+        option.IsVisible = true;
+        TrayDashboardEditorControls.Add(option);
+    }
+
+    private void OnRemoveTrayDashboardControl(object sender, RoutedEventArgs args)
+    {
+        if (sender is FrameworkElement
+            {
+                DataContext: TrayDashboardControlOption option,
+            }
+            && TrayDashboardEditorControls.Contains(option))
+        {
+            changingTrayDashboardEditor = true;
+            try
+            {
+                TrayDashboardEditorControls.Remove(option);
+                option.IsVisible = false;
+            }
+            finally
+            {
+                changingTrayDashboardEditor = false;
+            }
+
+            ApplyTrayDashboardEditor();
+        }
+    }
+
+    private void OnAddTrayDashboardSlider(object sender, RoutedEventArgs args)
+    {
+        var flyout = new MenuFlyout();
+        foreach (TrayDashboardSliderOption option in
+                 trayDashboardAllSliderOptions.Where(option => !option.IsVisible))
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = option.Label,
+                Tag = option,
+            };
+            item.Click += OnTrayDashboardSliderAddItemClicked;
+            flyout.Items.Add(item);
+        }
+
+        flyout.ShowAt((FrameworkElement)sender);
+    }
+
+    private void OnTrayDashboardSliderAddItemClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (TrayDashboardEditorSliders.Count
+                >= TrayDashboardPreferenceDefaults.MaximumVisibleSliders
+            || sender is not FrameworkElement
+            {
+                Tag: TrayDashboardSliderOption option,
+            }
+            || option.IsVisible)
+        {
+            return;
+        }
+
+        option.IsVisible = true;
+        TrayDashboardEditorSliders.Add(option);
+    }
+
+    private void OnRemoveTrayDashboardSlider(object sender, RoutedEventArgs args)
+    {
+        if (sender is FrameworkElement
+            {
+                DataContext: TrayDashboardSliderOption option,
+            }
+            && TrayDashboardEditorSliders.Contains(option))
+        {
+            changingTrayDashboardEditor = true;
+            try
+            {
+                TrayDashboardEditorSliders.Remove(option);
+                option.IsVisible = false;
+            }
+            finally
+            {
+                changingTrayDashboardEditor = false;
+            }
+
+            ApplyTrayDashboardEditor();
+        }
+    }
+
+    private void OnTrayDashboardEditorStatusChanged(
+        object? sender,
+        PropertyChangedEventArgs args)
+    {
+        if (!changingTrayDashboardEditor
+            && args.PropertyName == nameof(TrayDashboardStatusItemOption.IsVisible))
+        {
+            ApplyTrayDashboardEditor();
+        }
+    }
+
+    private void OnTrayDashboardEditorOrderChanged(
+        object? sender,
+        NotifyCollectionChangedEventArgs args)
+    {
+        if (!changingTrayDashboardEditor)
+        {
+            ApplyTrayDashboardEditor();
+        }
+    }
+
+    private void OnResetTrayDashboard(object sender, RoutedEventArgs args)
+    {
+        LoadTrayDashboardEditor(TrayDashboardPreferenceDefaults.Preference);
+        ApplyTrayDashboardEditor();
+    }
+
+    private void ApplyTrayDashboardEditor()
+    {
+        HashSet<TrayDashboardControlKind> activeControls =
+            TrayDashboardEditorControls.Select(option => option.Kind).ToHashSet();
+        HashSet<TrayDashboardSliderKind> activeSliders =
+            TrayDashboardEditorSliders.Select(option => option.Kind).ToHashSet();
+        ApplyTrayDashboardPreference(new TrayDashboardPreference(
+            Controls: TrayDashboardEditorControls
+                .Select(option => new TrayDashboardControlPreference(option.Kind, true))
+                .Concat(trayDashboardAllControlOptions
+                    .Where(option => !activeControls.Contains(option.Kind))
+                    .Select(option => new TrayDashboardControlPreference(
+                        option.Kind,
+                        false)))
+                .ToArray(),
+            StatusItems: TrayDashboardEditorStatusItems
+                .Select(option => new TrayDashboardStatusItemPreference(
+                    option.Kind,
+                    option.IsVisible))
+                .ToArray(),
+            Sliders: TrayDashboardEditorSliders
+                .Select(option => new TrayDashboardSliderPreference(option.Kind, true))
+                .Concat(trayDashboardAllSliderOptions
+                    .Where(option => !activeSliders.Contains(option.Kind))
+                    .Select(option => new TrayDashboardSliderPreference(
+                        option.Kind,
+                        false)))
+                .ToArray(),
+            SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion),
+            queueSave: true);
+        UpdateTrayDashboardEditorAvailability();
+    }
+
+    private void UpdateTrayDashboardEditorAvailability()
+    {
+        AddTrayDashboardControlButton.IsEnabled =
+            trayDashboardAllControlOptions.Any(option => !option.IsVisible);
+        AddTrayDashboardSliderButton.IsEnabled =
+            TrayDashboardEditorSliders.Count
+                < TrayDashboardPreferenceDefaults.MaximumVisibleSliders
+            && trayDashboardAllSliderOptions.Any(option => !option.IsVisible);
+        TrayDashboardSliderCountText.Text =
+            $"{TrayDashboardEditorSliders.Count} of "
+            + TrayDashboardPreferenceDefaults.MaximumVisibleSliders;
     }
 
     private void ApplyTrayDashboardPreference(
