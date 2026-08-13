@@ -14,6 +14,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Expanded tray-dashboard quick controls with battery protection, function-row
   mode, gaming mode and its key-blocking options, plus an optional GPU-tuning
   toggle.
+- Renamed the tray-dashboard lighting adjustment to **Keyboard brightness** so
+  its target is explicit in Settings and accessibility presentation.
 
 ### Fixed
 

@@ -2185,6 +2185,10 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain(" %", sliderSectionXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ChargeLimitSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LightingBrightnessSliderRow\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"Keyboard brightness\"",
+            dashboardXaml,
+            StringComparison.Ordinal);
         Assert.Contains("x:Name=\"GpuCoreClockSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"GpuMemoryClockSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"BatteryTile\"", dashboardXaml, StringComparison.Ordinal);

@@ -38,6 +38,12 @@ public sealed class TrayDashboardPreferenceTests
         Assert.Equal(
             [true, true, false, false],
             preference.Sliders!.Select(slider => slider.IsVisible));
+        Assert.Equal(
+            "Keyboard brightness",
+            TrayDashboardPreferenceDefaults.CreateSliderOptions(preference)
+                .Single(option =>
+                    option.Kind == TrayDashboardSliderKind.LightingBrightness)
+                .Label);
     }
 
     [Fact]

@@ -216,7 +216,7 @@ public static class TrayDashboardPreferenceDefaults
     private static readonly (TrayDashboardSliderKind Kind, string Label, bool IsVisible)[]
         SliderDefinitions =
         [
-            (TrayDashboardSliderKind.LightingBrightness, "Lighting brightness", true),
+            (TrayDashboardSliderKind.LightingBrightness, "Keyboard brightness", true),
             (TrayDashboardSliderKind.ChargeLimit, "Charge limit", true),
             (TrayDashboardSliderKind.GpuCoreClock, "GPU core clock", false),
             (TrayDashboardSliderKind.GpuMemoryClock, "GPU memory clock", false),

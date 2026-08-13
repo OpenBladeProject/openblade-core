@@ -393,7 +393,7 @@
                                     Maximum="100"
                                     StepFrequency="5"
                                     IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
-                                    AutomationProperties.Name="Lighting brightness"
+                                    AutomationProperties.Name="Keyboard brightness"
                                     Value="{Binding LightingBrightnessEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
                         </Grid>
 
