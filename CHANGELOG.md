@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Cleared the red playback-mute key after a rejected unmute frame by restoring
+  OpenBlade's owned lighting renderer as soon as the unmuted state is retried.
 - Replaced `Not set` laptop-behavior profile cells with the currently confirmed
   firmware value while leaving unconfigured profiles non-destructive.
 - Repeated the global charge limit across the AC, USB-C, and Battery profile

@@ -2325,6 +2325,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             await device.SetPlaybackMuteIndicatorAsync(muted, token).ConfigureAwait(false);
+            if (!muted)
+            {
+                await ReconcileUnmutedLightingRendererAsync(token).ConfigureAwait(false);
+            }
             return new ControlOperationResult(
                 ControlOperationStatus.Applied,
                 muted
@@ -2348,6 +2352,30 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return new ControlOperationResult(
                 ControlOperationStatus.Failed,
                 "The playback mute indicator could not be updated.");
+        }
+    }
+
+    private async Task ReconcileUnmutedLightingRendererAsync(
+        CancellationToken cancellationToken)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (lastOwnedLightingSettings is null
+            || !IsExplicitLightingOwnership(current.LightingRendererOwnership))
+        {
+            return;
+        }
+
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
+                cancellationToken).ConfigureAwait(false);
+            await RecoverFaultedLightingRendererCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
         }
     }
 
