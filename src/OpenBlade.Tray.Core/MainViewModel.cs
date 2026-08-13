@@ -1670,6 +1670,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(CanEditFanControl));
+            Notify(nameof(CanChangeFanMode));
             NotifyTrayHoverLabel();
         }
     }
@@ -1829,6 +1830,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             SetField(ref selectedFanMode, value);
             Notify(nameof(ActiveFanModeLabel));
             Notify(nameof(SelectedFanModeOption));
+            Notify(nameof(CanChangeFanMode));
             Notify(nameof(IsFixedFanSpeedVisible));
             Notify(nameof(IsManualFanCurveVisible));
         }
@@ -1899,12 +1901,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             SetField(ref isFanControlOperationInProgress, value);
             NotifyCommands();
             Notify(nameof(CanEditFanControl));
+            Notify(nameof(CanChangeFanMode));
         }
     }
 
     public bool CanEditFanControl =>
         CanRequestHardwareControl
         && !IsFanControlOperationInProgress;
+
+    public bool CanChangeFanMode =>
+        CanEditFanControl
+        && (AvailableActiveFanModeOptions.Count > 1
+            || SelectedFanModeOption is null);
 
     public bool CanEditPerformance =>
         CanRequestHardwareControl && !IsPerformanceOperationInProgress;
@@ -4505,6 +4513,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(AvailableActiveFanModeOptions));
         Notify(nameof(SelectedFanMode));
         Notify(nameof(SelectedFanModeOption));
+        Notify(nameof(CanChangeFanMode));
     }
 
     private void MarkDisconnected() => MarkDisconnected("Service disconnected");
@@ -8349,6 +8358,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(CanToggleGpuClockTuning));
         Notify(nameof(CanEditGpuClockTuning));
         Notify(nameof(CanEditFanControl));
+        Notify(nameof(CanChangeFanMode));
         NotifyGamingModeKeyPolicy();
         NotifyDashboardTelemetryValuesChanged();
         Notify(nameof(LiveReadingsRefreshToolTip));

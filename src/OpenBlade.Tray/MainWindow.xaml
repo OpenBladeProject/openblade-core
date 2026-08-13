@@ -691,7 +691,7 @@
                                                   MinWidth="150"
                                                   HorizontalAlignment="Right"
                                                   AutomationProperties.Name="Fan mode"
-                                                  IsEnabled="{Binding CanEditFanControl}"
+                                                  IsEnabled="{Binding CanChangeFanMode}"
                                                   ItemsSource="{Binding AvailableActiveFanModeOptions}"
                                                   SelectedItem="{Binding SelectedFanModeOption, Mode=OneWay}"
                                                   local:StableComboBoxSelection.Anchor="{Binding SelectedFanModeOption, Mode=OneWay}"
