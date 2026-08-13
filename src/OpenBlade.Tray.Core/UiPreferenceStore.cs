@@ -191,10 +191,6 @@ public sealed class UiPreferenceStore
         {
             return UiPreferences.Default;
         }
-        catch (IOException)
-        {
-            return UiPreferences.Default;
-        }
     }
 
     public async Task SaveAsync(

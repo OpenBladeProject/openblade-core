@@ -13,7 +13,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
 {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(1);
     private readonly string preferencesPath;
-    private readonly UiPreferenceStore store;
+    private readonly Func<CancellationToken, Task<UiPreferences>> loadPreferences;
     private readonly Action<Exception>? errorHandler;
     private FileSignature observedSignature;
     private bool signatureInitialized;
@@ -23,9 +23,21 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
     public SpecialKeyBindingSource(
         string preferencesPath,
         Action<Exception>? errorHandler = null)
+        : this(
+            preferencesPath,
+            new UiPreferenceStore(Path.GetFullPath(preferencesPath)).LoadAsync,
+            errorHandler)
+    {
+    }
+
+    internal SpecialKeyBindingSource(
+        string preferencesPath,
+        Func<CancellationToken, Task<UiPreferences>> loadPreferences,
+        Action<Exception>? errorHandler = null)
     {
         this.preferencesPath = Path.GetFullPath(preferencesPath);
-        store = new UiPreferenceStore(this.preferencesPath);
+        this.loadPreferences = loadPreferences
+            ?? throw new ArgumentNullException(nameof(loadPreferences));
         this.errorHandler = errorHandler;
     }
 
@@ -63,7 +75,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
         }
     }
 
-    private async Task ReloadIfChangedAsync(
+    internal async Task ReloadIfChangedAsync(
         bool force,
         CancellationToken cancellationToken)
     {
@@ -79,7 +91,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
                 return;
             }
 
-            UiPreferences preferences = await store.LoadAsync(cancellationToken)
+            UiPreferences preferences = await loadPreferences(cancellationToken)
                 .ConfigureAwait(false);
             Volatile.Write(
                 ref current,

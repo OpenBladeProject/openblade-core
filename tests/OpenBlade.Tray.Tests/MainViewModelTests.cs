@@ -3880,6 +3880,200 @@ public sealed class MainViewModelTests
         Assert.Equal(65, viewModel.ChargeLimitPercent);
     }
 
+    [Theory]
+    [InlineData(ControlOperationStatus.Failed)]
+    [InlineData(ControlOperationStatus.Stored)]
+    [InlineData(ControlOperationStatus.Blocked)]
+    public async Task UnappliedChargeLimitResultRestoresAuthoritativeEditor(
+        ControlOperationStatus resultStatus)
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(resultStatus, "Not applied"),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        ConfirmedDeviceState initialConfirmed = initial.ConfirmedState!;
+        ConfirmedBatteryState initialBattery = initialConfirmed.Battery!;
+        int authoritativeLimit = initialBattery.ChargeLimitPercent!.Value;
+        viewModel.ChargeLimitPercent = 75;
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(75);
+
+        Assert.Equal(authoritativeLimit, viewModel.ChargeLimitPercent);
+        Assert.False(viewModel.HasGlobalBatteryPolicyDraft);
+
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            ConfirmedState = initialConfirmed with
+            {
+                Battery = new ConfirmedBatteryState(
+                    initialBattery.ProtectionEnabled,
+                    70,
+                    initialBattery.TemporaryFullCharge),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.ChargeLimitPercent == 70);
+    }
+
+    [Fact]
+    public async Task ChargeLimitTransportFailureRestoresAuthoritativeEditor()
+    {
+        var client = new FakeServiceClient
+        {
+            MutationFailure = new IOException("pipe closed"),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        int authoritativeLimit = initial.ConfirmedState!.Battery!.ChargeLimitPercent!.Value;
+        viewModel.ChargeLimitPercent = 75;
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(75);
+
+        Assert.Equal(authoritativeLimit, viewModel.ChargeLimitPercent);
+        Assert.False(viewModel.HasGlobalBatteryPolicyDraft);
+        Assert.Contains("pipe closed", viewModel.OperationStatusMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RevertUnappliedChargeLimitEditRestoresAndReleasesStatusGuard()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+        ConfirmedDeviceState initialConfirmed = initial.ConfirmedState!;
+        ConfirmedBatteryState initialBattery = initialConfirmed.Battery!;
+        int authoritativeLimit = initialBattery.ChargeLimitPercent!.Value;
+
+        viewModel.ChargeLimitPercent = 75;
+        long editorRevision = viewModel.ChargeLimitEditorRevision;
+        viewModel.RevertUnappliedChargeLimitEdit(75, editorRevision);
+
+        Assert.Equal(authoritativeLimit, viewModel.ChargeLimitPercent);
+
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            ConfirmedState = initialConfirmed with
+            {
+                Battery = new ConfirmedBatteryState(
+                    initialBattery.ProtectionEnabled,
+                    70,
+                    initialBattery.TemporaryFullCharge),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.ChargeLimitPercent == 70);
+    }
+
+    [Fact]
+    public async Task RejectedChargeLimitCommitDoesNotOverwriteNewerEdit()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        viewModel.ChargeLimitPercent = 75;
+        Task commit = Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(75);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        viewModel.ChargeLimitPercent = 70;
+        client.NextResult = new ControlOperationResult(
+            ControlOperationStatus.Failed,
+            "Not applied");
+        client.CompleteMutation();
+        await commit;
+
+        Assert.Equal(70, viewModel.ChargeLimitPercent);
+    }
+
+    [Fact]
+    public async Task RejectedChargeLimitCommitDoesNotOverwriteAbaEdit()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        viewModel.ChargeLimitPercent = 75;
+        Task commit = Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(75);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        viewModel.ChargeLimitPercent = 70;
+        viewModel.ChargeLimitPercent = 75;
+        client.NextResult = new ControlOperationResult(
+            ControlOperationStatus.Failed,
+            "Not applied");
+        client.CompleteMutation();
+        await commit;
+
+        Assert.Equal(75, viewModel.ChargeLimitPercent);
+    }
+
+    [Fact]
+    public async Task ScheduledChargeLimitRevisionSurvivesPreExecutionAbaEdit()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Not applied"),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        viewModel.ChargeLimitPercent = 75;
+        long scheduledRevision = viewModel.ChargeLimitEditorRevision;
+        viewModel.ChargeLimitPercent = 70;
+        viewModel.ChargeLimitPercent = 75;
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(new ChargeLimitCommitRequest(75, scheduledRevision));
+
+        Assert.Equal(75, viewModel.ChargeLimitPercent);
+    }
+
+    [Fact]
+    public async Task AppliedOlderChargeLimitRemainsDraftWhileNewerEditRemainsInEditor()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.CanAdjustChargeLimit);
+
+        viewModel.ChargeLimitPercent = 75;
+        long appliedRevision = viewModel.ChargeLimitEditorRevision;
+        Task commit = Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(new ChargeLimitCommitRequest(75, appliedRevision));
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        viewModel.ChargeLimitPercent = 70;
+        client.CompleteMutation();
+        await commit;
+
+        Assert.Equal(70, viewModel.ChargeLimitPercent);
+        Assert.Equal(BatteryPolicy.Create(75), client.BatteryPolicy);
+        Assert.True(viewModel.HasGlobalBatteryPolicyDraft);
+        Assert.True(viewModel.BatteryPolicyPresentation.IsPending);
+        Assert.Equal("75%", viewModel.BatteryPolicyPresentation.PendingText);
+    }
+
     [Fact]
     public async Task AppliedBatteryProtectionToggle_MarksAndSavesOnlyActiveProfile()
     {
@@ -7027,6 +7221,7 @@ public sealed class MainViewModelTests
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public ControlOperationResult NextResult { get; set; } = new(ControlOperationStatus.Applied, "Applied");
+        public Exception? MutationFailure { get; init; }
         public Queue<ControlOperationResult> MutationResults { get; } = [];
         public ServiceStatusSnapshot? CurrentStatus { get; private set; }
         public ServiceStatusSnapshot? GetStatusResponse { get; set; }
@@ -7289,6 +7484,10 @@ public sealed class MainViewModelTests
                     MutationCanceled = true;
                     throw;
                 }
+            }
+            if (MutationFailure is not null)
+            {
+                throw MutationFailure;
             }
             return MutationResults.Count > 0 ? MutationResults.Dequeue() : NextResult;
         }

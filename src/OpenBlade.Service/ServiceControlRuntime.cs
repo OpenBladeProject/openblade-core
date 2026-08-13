@@ -7879,7 +7879,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    private static bool Equivalent(ServiceStatusSnapshot left, ServiceStatusSnapshot right) =>
+    internal static bool Equivalent(ServiceStatusSnapshot left, ServiceStatusSnapshot right) =>
         left.DeviceVerified == right.DeviceVerified
         && left.WritesBlocked == right.WritesBlocked
         && left.PotentialControllers.SequenceEqual(
@@ -7903,6 +7903,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.FanOverride == right.FanOverride
         && left.FanControlOverride == right.FanControlOverride
         && left.LightingOverride == right.LightingOverride
+        && left.BatteryPolicyOverride == right.BatteryPolicyOverride
+        && left.BatteryProtectionOverride == right.BatteryProtectionOverride
         && left.FullChargeOverride == right.FullChargeOverride
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled
         && left.FunctionKeyPrimary == right.FunctionKeyPrimary

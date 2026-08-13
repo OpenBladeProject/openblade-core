@@ -9,6 +9,8 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
+public readonly record struct ChargeLimitCommitRequest(int Value, long EditorRevision);
+
 public enum ThemePreference
 {
     FollowWindows,
@@ -231,6 +233,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ManualFanCurve.Default.Gpu.Select(point => new FanCurveEditorPoint(point)).ToArray();
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
     private int chargeLimitPercent = 80;
+    private long chargeLimitEditorRevision;
     private string currentBatterySettingLabel = UnavailableLabel;
     private bool chargeLimitEditorDirty;
     private IReadOnlyList<int> chargeLimitOptions = [];
@@ -419,7 +422,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 && LightingSupported(value, CommandCapabilities));
         SetChargeLimitCommand = CreateCommand(
             SetChargeLimitAsync,
-            parameter => parameter is int value && CanSetChargeLimit(value));
+            parameter => parameter switch
+            {
+                int value => CanSetChargeLimit(value),
+                ChargeLimitCommitRequest request => CanSetChargeLimit(request.Value),
+                _ => false,
+            });
         ToggleBatteryProtectionCommand = CreateCommand(
             ToggleBatteryProtectionAsync,
             CanToggleBatteryProtection);
@@ -2087,6 +2095,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             chargeLimitEditorDirty = true;
+            chargeLimitEditorRevision++;
             SetField(ref chargeLimitPercent, value);
             Notify(nameof(TrayDashboardChargeLimitLabel));
             NotifyCommands();
@@ -2094,6 +2103,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool CanAdjustChargeLimit => CanSetChargeLimit(ChargeLimitPercent);
+
+    public long ChargeLimitEditorRevision => chargeLimitEditorRevision;
+
+    public void RevertUnappliedChargeLimitEdit(
+        int requestedLimit,
+        long editorRevision)
+    {
+        if (chargeLimitPercent != requestedLimit
+            || chargeLimitEditorRevision != editorRevision)
+        {
+            return;
+        }
+
+        chargeLimitEditorDirty = false;
+        if (latestStatus is not null)
+        {
+            LoadChargeLimitEditor(latestStatus);
+        }
+        NotifyCommands();
+    }
 
     public bool CanChangeBatteryProtection => CanToggleBatteryProtection(null);
 
@@ -5151,7 +5180,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private async Task SetChargeLimitAsync(object? parameter, CancellationToken token)
     {
-        int requestedLimit = (int)parameter!;
+        ChargeLimitCommitRequest request = parameter switch
+        {
+            ChargeLimitCommitRequest commit => commit,
+            int value => new(value, chargeLimitEditorRevision),
+            _ => throw new ArgumentException("A charge-limit request is required.", nameof(parameter)),
+        };
+        int requestedLimit = request.Value;
+        long editorRevisionAtStart = request.EditorRevision;
         BatteryPolicy requestedPolicy = BatteryPolicy.Create(requestedLimit);
         long revisionAtStart = latestAcceptedRevision;
         ControlOperationStatus? resultStatus = null;
@@ -5170,24 +5206,35 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             IsChargeLimitOperationInProgress = false;
         }
 
-        if (resultStatus == ControlOperationStatus.Applied)
-        {
-            await dispatcher.InvokeAsync(
-                () =>
+        await dispatcher.InvokeAsync(
+            () =>
+            {
+                if (resultStatus != ControlOperationStatus.Applied)
+                {
+                    RevertUnappliedChargeLimitEdit(
+                        requestedLimit,
+                        editorRevisionAtStart);
+                    return;
+                }
+
+                bool editorStillShowsRequest = chargeLimitPercent == requestedLimit
+                    && chargeLimitEditorRevision == editorRevisionAtStart;
+                if (editorStillShowsRequest)
                 {
                     chargeLimitEditorDirty = false;
-                    pendingBatteryPolicy = requestedPolicy == Profiles.BatteryPolicy
-                        ? null
-                        : requestedPolicy;
-                    if (latestStatus is not null
-                        && latestAcceptedRevision > revisionAtStart)
-                    {
-                        LoadChargeLimitEditor(latestStatus);
-                    }
-                    NotifyBatteryProfileDraft();
-                },
-                token);
-        }
+                }
+                pendingBatteryPolicy = requestedPolicy == Profiles.BatteryPolicy
+                    ? null
+                    : requestedPolicy;
+                if (editorStillShowsRequest
+                    && latestStatus is not null
+                    && latestAcceptedRevision > revisionAtStart)
+                {
+                    LoadChargeLimitEditor(latestStatus);
+                }
+                NotifyBatteryProfileDraft();
+            },
+            token);
     }
 
     private async Task ToggleBatteryProtectionAsync(object? parameter, CancellationToken token)

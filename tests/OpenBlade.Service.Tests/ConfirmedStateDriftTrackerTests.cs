@@ -151,14 +151,18 @@ public sealed class ConfirmedStateDriftTrackerTests
         var tracker = new ConfirmedStateDriftTracker();
         tracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
         IReadOnlyList<DeviceSubsystem> first = tracker.ExternalChanges;
+        IReadOnlyList<DeviceSubsystem> repeated = tracker.ExternalChanges;
 
         tracker.ConfirmIntentional(DeviceSubsystem.Battery, matched: false);
+        IReadOnlyList<DeviceSubsystem> updated = tracker.ExternalChanges;
 
+        Assert.Same(first, repeated);
+        Assert.NotSame(first, updated);
         Assert.Equal([DeviceSubsystem.Fans], first);
         Assert.IsNotType<List<DeviceSubsystem>>(first);
         Assert.Equal(
             [DeviceSubsystem.Fans, DeviceSubsystem.Battery],
-            tracker.ExternalChanges);
+            updated);
     }
 
     private static ConfirmedDeviceState State(

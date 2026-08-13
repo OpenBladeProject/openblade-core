@@ -188,17 +188,20 @@ internal static class Program
                         specialKeyExecutor.ExecuteAsync,
                         specialKeyExecutor.ExecuteDefaultAsync,
                         functionRowActions.ExecuteAsync));
-                await using var ambientServiceClient = new ServiceClient();
+                // Ambient Awareness and Audio Meter are mutually exclusive
+                // renderers for the same service request type. Share their
+                // persistent frame pipe so switching modes cannot strand a
+                // connection owned by the inactive renderer.
+                await using var hostRenderedLightingServiceClient = new ServiceClient();
                 await using var ambient = new ServiceAmbientLightingLoop(
-                    ambientServiceClient,
+                    hostRenderedLightingServiceClient,
                     WindowsAmbientScreenSamplerFactory.Instance,
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade Ambient Awareness failed: {0}",
                         exception.Message),
                     statusWatcher: statusFeed);
-                await using var audioMeterServiceClient = new ServiceClient();
                 await using var audioMeter = new ServiceAudioMeterLightingLoop(
-                    audioMeterServiceClient,
+                    hostRenderedLightingServiceClient,
                     WindowsAudioMeterLightingSamplerFactory.Instance,
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade Audio Meter failed: {0}",

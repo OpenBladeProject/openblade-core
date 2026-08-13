@@ -51,7 +51,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly DispatcherQueueTimer lightingCommitTimer;
     private readonly DispatcherQueueTimer gpuClockOffsetCommitTimer;
     private readonly DispatcherQueueTimer displayRefreshTimer;
-    private readonly CoalescingCommitState<int> chargeLimitCommits = new();
+    private readonly CoalescingCommitState<ChargeLimitCommitRequest> chargeLimitCommits = new();
     private readonly CoalescingCommitState<LightingCommitRequest> lightingCommits = new();
     private readonly CoalescingCommitState<GpuClockOffsetSettings> gpuClockOffsetCommits = new();
     private readonly object initializationSync = new();
@@ -2132,7 +2132,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         ViewModel.ChargeLimitPercent = value;
-        chargeLimitCommits.Schedule(value);
+        chargeLimitCommits.Schedule(new ChargeLimitCommitRequest(
+            value,
+            ViewModel.ChargeLimitEditorRevision));
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Start();
     }
@@ -2147,7 +2149,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
         CoalescingCommitBeginStatus status =
-            chargeLimitCommits.TryBegin(out int value);
+            chargeLimitCommits.TryBegin(out ChargeLimitCommitRequest commit);
         if (status == CoalescingCommitBeginStatus.InProgress)
         {
             sender.Start();
@@ -2161,14 +2163,23 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         try
         {
             if (ViewModel.SetChargeLimitCommand is AsyncRelayCommand command
-                && command.CanExecute(value))
+                && command.CanExecute(commit.Value))
             {
-                await command.ExecuteAsync(value);
+                await command.ExecuteAsync(commit);
+            }
+            else
+            {
+                ViewModel.RevertUnappliedChargeLimitEdit(
+                    commit.Value,
+                    commit.EditorRevision);
             }
         }
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade charge-limit change failed: {0}", exception);
+            ViewModel.RevertUnappliedChargeLimitEdit(
+                commit.Value,
+                commit.EditorRevision);
         }
         finally
         {
@@ -2180,6 +2191,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             }
         }
     }
+
 
     private async void OnBatteryProtectionToggled(object sender, RoutedEventArgs args)
     {

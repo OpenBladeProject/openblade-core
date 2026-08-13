@@ -8,7 +8,11 @@ namespace OpenBlade.Service;
 
 public sealed class NamedPipeControlServer
 {
-    internal const int MaximumServerInstances = 12;
+    internal const int MaximumServerInstances = 14;
+    internal const int ReservedOrdinaryServerInstances = 4;
+    internal const int MaximumLightingStreamConnections = 2;
+    internal const int MaximumPersistentConnections =
+        MaximumServerInstances - ReservedOrdinaryServerInstances;
     private static readonly TimeSpan FrameReadTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan FrameWriteTimeout = TimeSpan.FromSeconds(2);
     private readonly string pipeName;
@@ -19,6 +23,8 @@ public sealed class NamedPipeControlServer
     private readonly TimeProvider timeProvider;
     private readonly SemaphoreSlim firstListenerGate = new(1, 1);
     private int firstListenerEstablished;
+    private int persistentConnectionCount;
+    private int lightingStreamConnectionCount;
 
     internal NamedPipeControlServer(
         string pipeName,
@@ -174,6 +180,8 @@ public sealed class NamedPipeControlServer
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        bool ownsPersistentSlot = false;
+        bool ownsLightingStreamSlot = false;
         try
         {
             Type? streamingRequestType = null;
@@ -202,6 +210,48 @@ public sealed class NamedPipeControlServer
                             cancellationToken);
                         return;
                     }
+                }
+
+                if (!ownsPersistentSlot && IsPersistentRequest(request))
+                {
+                    bool lightingStream = IsLightingStreamRequest(request);
+                    if (lightingStream
+                        && !TryReserveSlot(
+                            ref lightingStreamConnectionCount,
+                            MaximumLightingStreamConnections))
+                    {
+                        await WriteFrameAsync(
+                            connection,
+                            Failure(
+                                request.RequestId,
+                                "The service has reached its lighting stream capacity.",
+                                ServiceResponseErrorCode.CapacityUnavailable),
+                            cancellationToken);
+                        return;
+                    }
+                    ownsLightingStreamSlot = lightingStream;
+                    // This aggregate reservation also bounds subscriptions
+                    // that are still completing initial admission and have not
+                    // yet acquired one of the hub's subscriber leases.
+                    if (!TryReserveSlot(
+                        ref persistentConnectionCount,
+                        MaximumPersistentConnections))
+                    {
+                        if (ownsLightingStreamSlot)
+                        {
+                            Interlocked.Decrement(ref lightingStreamConnectionCount);
+                            ownsLightingStreamSlot = false;
+                        }
+                        await WriteFrameAsync(
+                            connection,
+                            Failure(
+                                request.RequestId,
+                                "The service has reached its persistent connection capacity.",
+                                ServiceResponseErrorCode.CapacityUnavailable),
+                            cancellationToken);
+                        return;
+                    }
+                    ownsPersistentSlot = true;
                 }
 
                 if (request is SubscribeStatusRequest)
@@ -255,6 +305,43 @@ public sealed class NamedPipeControlServer
         {
             // A disconnect or stalled writer affects only this connection.
         }
+        finally
+        {
+            if (ownsPersistentSlot)
+            {
+                Interlocked.Decrement(ref persistentConnectionCount);
+            }
+            if (ownsLightingStreamSlot)
+            {
+                Interlocked.Decrement(ref lightingStreamConnectionCount);
+            }
+        }
+    }
+
+    private static bool IsPersistentRequest(ServiceRequest request) =>
+        request is SubscribeStatusRequest
+            or PulseReactiveKeyRequest
+            or PushAmbientLightingFrameRequest;
+
+    private static bool IsLightingStreamRequest(ServiceRequest request) =>
+        request is PulseReactiveKeyRequest or PushAmbientLightingFrameRequest;
+
+    private static bool TryReserveSlot(ref int count, int maximum)
+    {
+        int observed = Volatile.Read(ref count);
+        while (observed < maximum)
+        {
+            int prior = Interlocked.CompareExchange(
+                ref count,
+                observed + 1,
+                observed);
+            if (prior == observed)
+            {
+                return true;
+            }
+            observed = prior;
+        }
+        return false;
     }
 
     private async Task ServeSubscriptionAsync(
@@ -282,7 +369,10 @@ public sealed class NamedPipeControlServer
         {
             await WriteFrameAsync(
                 connection,
-                Failure(request.RequestId, exception.Message),
+                Failure(
+                    request.RequestId,
+                    exception.Message,
+                    ServiceResponseErrorCode.CapacityUnavailable),
                 cancellationToken);
             return;
         }
@@ -411,13 +501,19 @@ public sealed class NamedPipeControlServer
         }
     }
 
-    private static ServiceResponse Failure(Guid requestId, string error) => new(
+    private static ServiceResponse Failure(
+        Guid requestId,
+        string error,
+        ServiceResponseErrorCode? errorCode = null) => new(
         OpenBladeIpc.ProtocolVersion,
         requestId == Guid.Empty ? Guid.NewGuid() : requestId,
         Success: false,
         Error: error,
         Status: null,
-        Result: null);
+        Result: null)
+        {
+            ErrorCode = errorCode,
+        };
 
     private sealed class FixedServiceClientContextResolver(ServiceClientContext context)
         : IServiceClientContextResolver

@@ -269,6 +269,11 @@ public abstract record ServiceServerFrame(int Version);
 
 public sealed record DiagnosticArchive(string SuggestedFileName, byte[] ZipBytes);
 
+public enum ServiceResponseErrorCode
+{
+    CapacityUnavailable,
+}
+
 public sealed record ServiceResponse(
     int Version,
     Guid RequestId,
@@ -277,7 +282,12 @@ public sealed record ServiceResponse(
     ServiceStatusSnapshot? Status,
     ControlOperationResult? Result,
     DiagnosticArchive? Archive = null)
-    : ServiceServerFrame(Version);
+    : ServiceServerFrame(Version)
+{
+    // Optional because most failures have no machine-actionable category.
+    // Adding this member advanced the closed IPC protocol to version 41.
+    public ServiceResponseErrorCode? ErrorCode { get; init; }
+}
 
 public sealed record ServiceStatusEvent(int Version, ServiceStatusSnapshot Status)
     : ServiceServerFrame(Version);

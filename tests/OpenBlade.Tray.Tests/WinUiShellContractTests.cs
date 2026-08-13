@@ -1792,9 +1792,14 @@ public sealed class WinUiShellContractTests
         Assert.Contains("TimeSpan.FromMilliseconds(400)", source, StringComparison.Ordinal);
         Assert.Contains("dispatcherQueue.CreateTimer()", source, StringComparison.Ordinal);
         Assert.Contains("chargeLimitCommitTimer.IsRepeating = false", source, StringComparison.Ordinal);
-        Assert.Contains("chargeLimitCommits.Schedule(value)", source, StringComparison.Ordinal);
+        Assert.Contains("chargeLimitCommits.Schedule(new ChargeLimitCommitRequest(", source, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ChargeLimitEditorRevision", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.RevertUnappliedChargeLimitEdit(",
+            source,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("pendingChargeLimitPercent", source, StringComparison.Ordinal);
-        Assert.Contains("command.ExecuteAsync(value)", source, StringComparison.Ordinal);
+        Assert.Contains("command.ExecuteAsync(commit)", source, StringComparison.Ordinal);
         Assert.Contains("SynchronizeBatteryProtectionToggle(toggle)", source, StringComparison.Ordinal);
     }
 

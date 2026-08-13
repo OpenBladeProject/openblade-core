@@ -243,10 +243,9 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                     && !token.IsCancellationRequested
                     && IsRetryableTransportFailure(exception))
                 {
-                    // The service intentionally expires an idle pulse burst.
-                    // Discard that stale pipe and retry this pulse once on a new
-                    // exact ACL-protected connection instead of dropping it.
                     await ResetReactivePulseConnectionCoreAsync().ConfigureAwait(false);
+                    await DelayAfterCapacityRejectionAsync(exception, token)
+                        .ConfigureAwait(false);
                 }
                 catch
                 {
@@ -299,6 +298,8 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                     && IsRetryableTransportFailure(exception))
                 {
                     await ResetAmbientFrameConnectionCoreAsync().ConfigureAwait(false);
+                    await DelayAfterCapacityRejectionAsync(exception, token)
+                        .ConfigureAwait(false);
                 }
                 catch
                 {
@@ -371,7 +372,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
             token.ThrowIfCancellationRequested();
             SubscriptionOpenResult openResult = await OpenSubscriptionAsync(token)
                 .ConfigureAwait(false);
-            if (openResult.TransportFailed)
+            if (openResult.RetryableFailure)
             {
                 yield return new ServiceWatchUpdate.Reconnecting();
                 await Task.Delay(reconnectDelay, timeProvider, token).ConfigureAwait(false);
@@ -539,6 +540,23 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ServiceServerFrame frame,
         ServiceRequest request)
     {
+        ServiceResponse response = ValidateResponseEnvelope(frame, request);
+        if (!response.Success)
+        {
+            if (response.ErrorCode == ServiceResponseErrorCode.CapacityUnavailable)
+            {
+                throw new ServiceCapacityUnavailableException(
+                    response.Error ?? "Service capacity is temporarily unavailable.");
+            }
+            throw new InvalidDataException(response.Error ?? "Service rejected the request.");
+        }
+        return response;
+    }
+
+    private static ServiceResponse ValidateResponseEnvelope(
+        ServiceServerFrame frame,
+        ServiceRequest request)
+    {
         if (frame is not ServiceResponse response)
         {
             throw new InvalidDataException("Service returned an unexpected server frame.");
@@ -552,11 +570,6 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         if (response.RequestId != request.RequestId)
         {
             throw new InvalidDataException("Service response request ID does not match the request.");
-        }
-
-        if (!response.Success)
-        {
-            throw new InvalidDataException(response.Error ?? "Service rejected the request.");
         }
 
         return response;
@@ -628,10 +641,26 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
     private static bool IsRetryableTransportFailure(Exception exception) =>
         exception is IOException or TimeoutException;
 
+    private async Task DelayAfterCapacityRejectionAsync(
+        Exception exception,
+        CancellationToken token)
+    {
+        if (exception is ServiceCapacityUnavailableException)
+        {
+            // The peer can reject a reconnect before its deadline-free read
+            // observes EOF from the disposed stream and releases the slot.
+            await Task.Delay(InitialReconnectDelay, timeProvider, token)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private sealed class ServiceCapacityUnavailableException(string message)
+        : IOException(message);
+
     private sealed record SubscriptionOpenResult(
         Stream? Connection,
         ServiceStatusSnapshot? InitialStatus,
-        bool TransportFailed);
+        bool RetryableFailure);
 
     private sealed record SubscriptionReadResult(
         ServiceServerFrame? Frame,

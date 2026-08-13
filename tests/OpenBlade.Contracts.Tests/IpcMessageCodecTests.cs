@@ -414,7 +414,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(40, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(41, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -678,7 +678,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(40, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(41, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1009,6 +1009,45 @@ public sealed class IpcMessageCodecTests
                     Assert.IsType<ServiceStatusEvent>(actual).Status);
             }
         }
+    }
+
+    [Fact]
+    public async Task ServerFrameHelpers_RoundTripTypedFailureCode()
+    {
+        Guid requestId = Guid.NewGuid();
+        ServiceServerFrame expected = new ServiceResponse(
+            OpenBladeIpc.ProtocolVersion,
+            requestId,
+            Success: false,
+            Error: "Busy",
+            Status: null,
+            Result: null)
+        {
+            ErrorCode = ServiceResponseErrorCode.CapacityUnavailable,
+        };
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteServerFrameAsync(stream, expected, CancellationToken.None);
+        stream.Position = 0;
+        ServiceResponse actual = Assert.IsType<ServiceResponse>(
+            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+
+        Assert.False(actual.Success);
+        Assert.Equal(requestId, actual.RequestId);
+        Assert.Equal(ServiceResponseErrorCode.CapacityUnavailable, actual.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsUnknownTypedFailureCode()
+    {
+        Guid requestId = Guid.NewGuid();
+        using MemoryStream stream = FrameJson(
+            $"{{\"frame\":\"response\",\"version\":{OpenBladeIpc.ProtocolVersion},"
+            + $"\"requestId\":\"{requestId}\",\"success\":false,\"error\":\"Busy\","
+            + "\"status\":null,\"result\":null,\"errorCode\":99}}");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
     }
 
     [Fact]

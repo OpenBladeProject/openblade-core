@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionFortyAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionFortyOneAndRetainExactSizeLimit()
     {
-        Assert.Equal(40, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(41, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -103,7 +103,10 @@ public sealed class ServiceMessageContractTests
     public void ServiceResponse_ExposesExactlyThreeTypedBodiesAndStatusEventHasNoRequestId()
     {
         Assert.Equal(
-            new[] { "Archive", "Error", "RequestId", "Result", "Status", "Success", "Version" },
+            new[]
+            {
+                "Archive", "Error", "ErrorCode", "RequestId", "Result", "Status", "Success", "Version",
+            },
             typeof(ServiceResponse).GetProperties().Select(property => property.Name).Order());
         Assert.DoesNotContain(
             typeof(ServiceStatusEvent).GetProperties(),
@@ -114,6 +117,9 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(
             typeof(DiagnosticArchive),
             typeof(ServiceResponse).GetProperty("Archive")!.PropertyType);
+        Assert.Equal(
+            typeof(ServiceResponseErrorCode?),
+            typeof(ServiceResponse).GetProperty("ErrorCode")!.PropertyType);
     }
 
     [Fact]

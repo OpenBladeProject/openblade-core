@@ -14,7 +14,7 @@ public sealed class BoundedEnumActionPump<T> : IAsyncDisposable
     private readonly Action<Exception>? errorHandler;
     private readonly int capacity;
     private readonly Queue<T> pending = [];
-    private readonly SemaphoreSlim signal = new(0);
+    private readonly SemaphoreSlim signal = new(0, 1);
     private readonly CancellationTokenSource lifetime = new();
     private readonly object sync = new();
     private readonly Task worker;
@@ -52,8 +52,12 @@ public sealed class BoundedEnumActionPump<T> : IAsyncDisposable
                 return false;
             }
 
+            bool wakeWorker = pending.Count == 0;
             pending.Enqueue(value);
-            signal.Release();
+            if (wakeWorker)
+            {
+                SignalWorker();
+            }
             return true;
         }
     }
@@ -63,6 +67,10 @@ public sealed class BoundedEnumActionPump<T> : IAsyncDisposable
         lock (sync)
         {
             pending.Clear();
+            if (Volatile.Read(ref disposed) == 0)
+            {
+                _ = signal.Wait(0);
+            }
         }
     }
 
@@ -80,7 +88,7 @@ public sealed class BoundedEnumActionPump<T> : IAsyncDisposable
         }
 
         lifetime.Cancel();
-        signal.Release();
+        SignalWorker();
         try
         {
             await worker.ConfigureAwait(false);
@@ -98,36 +106,51 @@ public sealed class BoundedEnumActionPump<T> : IAsyncDisposable
         while (true)
         {
             await signal.WaitAsync(cancellationToken).ConfigureAwait(false);
-            T value;
-            lock (sync)
+            while (true)
             {
-                if (pending.Count == 0)
+                T value;
+                lock (sync)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    continue;
+                    if (pending.Count == 0)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        break;
+                    }
+
+                    value = pending.Dequeue();
                 }
 
-                value = pending.Dequeue();
-            }
-
-            try
-            {
-                await executeAsync(value, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
                 try
                 {
-                    errorHandler?.Invoke(exception);
+                    await executeAsync(value, cancellationToken).ConfigureAwait(false);
                 }
-                catch
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    try
+                    {
+                        errorHandler?.Invoke(exception);
+                    }
+                    catch
+                    {
+                    }
                 }
             }
+        }
+    }
+
+    private void SignalWorker()
+    {
+        try
+        {
+            signal.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // A wake is already pending. The worker drains the queue after it wakes.
         }
     }
 }

@@ -537,6 +537,22 @@ public sealed class UiPreferenceStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_SharingViolationPropagatesIOException()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, "{\"theme\":\"Dark\"}");
+        await using var exclusive = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.None);
+
+        await Assert.ThrowsAsync<IOException>(
+            () => new UiPreferenceStore(path).LoadAsync());
+    }
+
+    [Fact]
     public async Task LoadAsync_ObsoleteManualPreferenceIsIgnored()
     {
         Directory.CreateDirectory(directory);
