@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Reduced repeated status-publication allocations by reusing immutable drift
+  snapshots and validating small sorted IPC collections without LINQ buffers.
 - Battery protection and charge-limit changes now remain temporary until saved
   to a profile. Battery protection also follows the destination power profile
   when the power source changes.
@@ -33,6 +35,17 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Restored the last confirmed charge limit when a debounced tray edit cannot be
+  applied, while preserving a newer edit made during an in-flight request.
+- Preserved configured special-key bindings through transient preference-file
+  locks and retried the unchanged file after access recovered.
+- Reconnected status and lighting streams after temporary capacity rejection,
+  kept Ambient Awareness and Audio Meter on one shared frame connection, and
+  reserved four named-pipe listeners for ordinary control requests even when
+  all supported persistent streams are connected.
+- Bounded Core Audio shutdown waits without releasing COM resources still in use,
+  and prevented cleared or trimmed input queues from accumulating empty worker
+  wakeups.
 - Synchronized the microphone-mute key indicator with Windows at Session Agent
   startup and after later mute or default capture-endpoint changes. Playback-mute
   indicator updates now pause while hardware writes are blocked and resume after

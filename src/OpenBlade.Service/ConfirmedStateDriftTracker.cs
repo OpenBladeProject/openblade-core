@@ -6,6 +6,7 @@ namespace OpenBlade.Service;
 public sealed class ConfirmedStateDriftTracker
 {
     private readonly HashSet<DeviceSubsystem> externalChanges = [];
+    private IReadOnlyList<DeviceSubsystem>? externalChangesSnapshot;
     private PerformancePreset? performance;
     private CustomPerformanceSettings? customPerformance;
     private bool customPerformanceObserved;
@@ -16,7 +17,7 @@ public sealed class ConfirmedStateDriftTracker
     private LightingSettings? lighting;
 
     public IReadOnlyList<DeviceSubsystem> ExternalChanges =>
-        new ReadOnlyCollection<DeviceSubsystem>(
+        externalChangesSnapshot ??= new ReadOnlyCollection<DeviceSubsystem>(
             externalChanges.OrderBy(subsystem => subsystem).ToArray());
 
     public void Observe(ConfirmedDeviceState state)
@@ -37,11 +38,11 @@ public sealed class ConfirmedStateDriftTracker
     {
         if (matched)
         {
-            externalChanges.Remove(subsystem);
+            RemoveExternalChange(subsystem);
         }
         else
         {
-            externalChanges.Add(subsystem);
+            AddExternalChange(subsystem);
         }
     }
 
@@ -51,7 +52,7 @@ public sealed class ConfirmedStateDriftTracker
         // independently verify transport/brightness but have no firmware GET for
         // their semantic value. A successful explicit reclaim clears an old
         // warning without inventing a new confirmed baseline.
-        externalChanges.Remove(subsystem);
+        RemoveExternalChange(subsystem);
     }
 
     private void ObserveValue<T>(
@@ -69,7 +70,7 @@ public sealed class ConfirmedStateDriftTracker
                 baseline.Value,
                 observed.Value))
         {
-            externalChanges.Add(subsystem);
+            AddExternalChange(subsystem);
         }
 
         baseline = observed;
@@ -88,7 +89,7 @@ public sealed class ConfirmedStateDriftTracker
 
         if (baseline is not null && !EqualityComparer<T>.Default.Equals(baseline, observed))
         {
-            externalChanges.Add(subsystem);
+            AddExternalChange(subsystem);
         }
 
         baseline = observed;
@@ -100,7 +101,7 @@ public sealed class ConfirmedStateDriftTracker
                 battery,
                 observed))
         {
-            externalChanges.Add(DeviceSubsystem.Battery);
+            AddExternalChange(DeviceSubsystem.Battery);
         }
 
         battery = observed;
@@ -119,10 +120,26 @@ public sealed class ConfirmedStateDriftTracker
         if (customPerformanceObserved
             && customPerformance != state.CustomPerformance)
         {
-            externalChanges.Add(DeviceSubsystem.Performance);
+            AddExternalChange(DeviceSubsystem.Performance);
         }
 
         customPerformance = state.CustomPerformance;
         customPerformanceObserved = true;
+    }
+
+    private void AddExternalChange(DeviceSubsystem subsystem)
+    {
+        if (externalChanges.Add(subsystem))
+        {
+            externalChangesSnapshot = null;
+        }
+    }
+
+    private void RemoveExternalChange(DeviceSubsystem subsystem)
+    {
+        if (externalChanges.Remove(subsystem))
+        {
+            externalChangesSnapshot = null;
+        }
     }
 }

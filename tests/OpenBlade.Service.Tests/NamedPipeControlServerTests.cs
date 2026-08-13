@@ -156,6 +156,111 @@ public sealed class NamedPipeControlServerTests
     }
 
     [Fact]
+    public async Task PersistentConnectionCapacity_RejectsOverflowAndPreservesOrdinaryRequests()
+    {
+        TestServer context = CreateServer();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        var persistentConnections = new List<Stream>();
+        var persistentTasks = new List<Task>();
+        try
+        {
+            for (int index = 0; index < StatusSubscriptionHub.MaximumSubscribers; index++)
+            {
+                (Stream serverConnection, Stream client) = CreateDuplexPair();
+                persistentConnections.Add(serverConnection);
+                persistentConnections.Add(client);
+                persistentTasks.Add(context.Server.ServeConnectionAsync(
+                    serverConnection,
+                    timeout.Token));
+                var request = new SubscribeStatusRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid());
+                await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
+                ServiceResponse admitted = Assert.IsType<ServiceResponse>(
+                    await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+                Assert.True(admitted.Success);
+            }
+
+            foreach (ServiceRequest request in new ServiceRequest[]
+            {
+                new PulseReactiveKeyRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid(),
+                    new ReactiveKeyPulse(19)),
+                new PushAmbientLightingFrameRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid(),
+                    new AmbientLightingFrame(new RgbColor[AmbientLightingFrame.SlotCount])
+                        .ToRgbBytes()),
+            })
+            {
+                (Stream serverConnection, Stream client) = CreateDuplexPair();
+                persistentConnections.Add(serverConnection);
+                persistentConnections.Add(client);
+                persistentTasks.Add(context.Server.ServeConnectionAsync(
+                    serverConnection,
+                    timeout.Token));
+                await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
+                ServiceResponse admitted = Assert.IsType<ServiceResponse>(
+                    await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+                Assert.True(admitted.Success);
+            }
+
+            (Stream overflowServer, Stream overflowClient) = CreateDuplexPair();
+            await using (overflowServer)
+            await using (overflowClient)
+            {
+                Task overflowTask = context.Server.ServeConnectionAsync(
+                    overflowServer,
+                    timeout.Token);
+                var overflow = new PulseReactiveKeyRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid(),
+                    new ReactiveKeyPulse(53));
+                await IpcMessageCodec.WriteRequestAsync(
+                    overflowClient,
+                    overflow,
+                    timeout.Token);
+                ServiceResponse rejected = Assert.IsType<ServiceResponse>(
+                    await IpcMessageCodec.ReadServerFrameAsync(overflowClient, timeout.Token));
+                await overflowTask;
+
+                Assert.False(rejected.Success);
+                Assert.Equal(ServiceResponseErrorCode.CapacityUnavailable, rejected.ErrorCode);
+            }
+
+            (Stream ordinaryServer, Stream ordinaryClient) = CreateDuplexPair();
+            await using (ordinaryServer)
+            await using (ordinaryClient)
+            {
+                Task ordinaryTask = context.Server.ServeConnectionAsync(
+                    ordinaryServer,
+                    timeout.Token);
+                var request = new GetStatusRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid());
+                await IpcMessageCodec.WriteRequestAsync(
+                    ordinaryClient,
+                    request,
+                    timeout.Token);
+                ServiceResponse response = Assert.IsType<ServiceResponse>(
+                    await IpcMessageCodec.ReadServerFrameAsync(ordinaryClient, timeout.Token));
+                await ordinaryTask;
+
+                Assert.True(response.Success);
+            }
+        }
+        finally
+        {
+            foreach (Stream connection in persistentConnections)
+            {
+                await connection.DisposeAsync();
+            }
+            await Task.WhenAll(persistentTasks);
+        }
+    }
+
+    [Fact]
     public async Task ServeOnceAsync_ClaimsFirstPipeInstanceBeforeAcceptingClients()
     {
         TestServer context = CreateServer();
@@ -378,6 +483,7 @@ public sealed class NamedPipeControlServerTests
 
             Assert.False(response.Success);
             Assert.Contains("maximum", response.Error!, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(ServiceResponseErrorCode.CapacityUnavailable, response.ErrorCode);
         }
         finally
         {

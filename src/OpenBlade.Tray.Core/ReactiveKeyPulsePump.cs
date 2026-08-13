@@ -20,7 +20,7 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
     private readonly int maxDeliveryAttempts;
     private readonly TimeSpan retryDelay;
     private readonly Queue<ReactiveKeyPulse> pending = [];
-    private readonly SemaphoreSlim signal = new(0);
+    private readonly SemaphoreSlim signal = new(0, 1);
     private readonly CancellationTokenSource lifetime = new();
     private readonly object sync = new();
     private readonly Task worker;
@@ -74,8 +74,12 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
                 }
             }
 
+            bool wakeWorker = pending.Count == 0;
             pending.Enqueue(pulse);
-            signal.Release();
+            if (wakeWorker)
+            {
+                SignalWorker();
+            }
             return true;
         }
     }
@@ -89,6 +93,10 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
         lock (sync)
         {
             pending.Clear();
+            if (Volatile.Read(ref disposed) == 0)
+            {
+                _ = signal.Wait(0);
+            }
         }
     }
 
@@ -106,7 +114,7 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
         }
 
         lifetime.Cancel();
-        signal.Release();
+        SignalWorker();
         try
         {
             await worker.ConfigureAwait(false);
@@ -124,20 +132,35 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
         while (true)
         {
             await signal.WaitAsync(cancellationToken).ConfigureAwait(false);
-            ReactiveKeyPulse queued;
-            lock (sync)
+            while (true)
             {
-                if (pending.Count == 0)
+                ReactiveKeyPulse queued;
+                lock (sync)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    continue;
+                    if (pending.Count == 0)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        break;
+                    }
+
+                    queued = pending.Dequeue();
                 }
 
-                queued = pending.Dequeue();
+                await SendWithBoundedRetryAsync(queued, cancellationToken)
+                    .ConfigureAwait(false);
             }
+        }
+    }
 
-            await SendWithBoundedRetryAsync(queued, cancellationToken)
-                .ConfigureAwait(false);
+    private void SignalWorker()
+    {
+        try
+        {
+            signal.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // A wake is already pending. The worker drains the queue after it wakes.
         }
     }
 
