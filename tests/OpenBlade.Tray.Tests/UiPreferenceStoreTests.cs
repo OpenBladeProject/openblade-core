@@ -11,6 +11,31 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task SaveAsync_PreservesAFileWithAFutureDashboardSchema()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        string original = $$"""
+            {
+              "theme": "Dark",
+              "trayDashboard": {
+                "schemaVersion": {{TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1}},
+                "futureOnly": "keep-me"
+              }
+            }
+            """;
+        await File.WriteAllTextAsync(path, original);
+        var store = new UiPreferenceStore(path);
+
+        UiPreferenceSaveException exception = await Assert.ThrowsAsync<UiPreferenceSaveException>(
+            () => store.SaveAsync(UiPreferences.Default));
+
+        Assert.Contains("will not overwrite", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(original, await File.ReadAllTextAsync(path));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
+    }
+
+    [Fact]
     public async Task LoadAsync_MissingFile_ReturnsFollowWindows()
     {
         UiPreferenceStore store = new(Path.Combine(directory, "preferences.json"));

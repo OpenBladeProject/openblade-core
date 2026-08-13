@@ -6,8 +6,7 @@
     Title="OpenBlade quick controls">
     <Grid x:Name="Root"
           Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
-          KeyDown="OnRootKeyDown"
-          SizeChanged="OnRootSizeChanged">
+          KeyDown="OnRootKeyDown">
         <Grid.Resources>
             <local:Int32DoubleConverter x:Key="Int32Double" />
             <x:Double x:Key="QuickTileIconSize">16</x:Double>
@@ -43,6 +42,8 @@
             </Style>
             <Style x:Key="StatusIconStyle" TargetType="FontIcon">
                 <Setter Property="FontSize" Value="{StaticResource DashboardPrimaryIconSize}" />
+                <Setter Property="Width" Value="{StaticResource DashboardPrimaryIconSize}" />
+                <Setter Property="Height" Value="{StaticResource DashboardPrimaryIconSize}" />
             </Style>
             <Style x:Key="QuickSliderIconButtonStyle" TargetType="Button">
                 <Setter Property="Width" Value="36" />
@@ -577,7 +578,7 @@
                           ColumnSpacing="6"
                           HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE83F;" Style="{StaticResource StatusIconStyle}" />
@@ -590,7 +591,7 @@
                           ColumnSpacing="6"
                           HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE9CA;" Style="{StaticResource StatusIconStyle}" />
@@ -602,7 +603,7 @@
                           ColumnSpacing="6"
                           HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE945;" Style="{StaticResource StatusIconStyle}" />
@@ -615,7 +616,7 @@
                           ColumnSpacing="6"
                           HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <PathIcon Width="{StaticResource DashboardPrimaryIconSize}"

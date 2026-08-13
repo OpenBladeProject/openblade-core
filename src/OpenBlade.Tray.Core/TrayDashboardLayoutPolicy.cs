@@ -57,6 +57,9 @@ public static class TrayDashboardInteractionPolicy
         elapsedSinceDeactivation >= TimeSpan.Zero
         && elapsedSinceDeactivation <= DeactivationReopenSuppression;
 
+    public static bool IsShellTrayWindowClass(string? className) =>
+        className is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd";
+
     public static int ResolveNextIndex(int optionCount, int currentIndex)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(optionCount);

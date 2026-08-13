@@ -18,6 +18,7 @@ internal enum StartOpenBladeResult
 
 public partial class App : Microsoft.UI.Xaml.Application
 {
+    private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
     private const string PerformanceNotificationReplacementTag = "performance";
 
     private CrashReportWriter? crashReportWriter;
@@ -44,6 +45,19 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         base.OnLaunched(args);
         string[] commandLineArguments = Environment.GetCommandLineArgs();
+        if (commandLineArguments is [_, XamlStartupSmokeArgument, string smokeReportPath])
+        {
+            try
+            {
+                RunXamlStartupSmoke(smokeReportPath);
+            }
+            catch (Exception exception)
+            {
+                File.WriteAllText(smokeReportPath, exception.ToString());
+                Environment.Exit(1);
+            }
+            return;
+        }
         ElevatedServiceHelperParseResult helperParseResult =
             ElevatedServiceControlLauncher.ParseHelperAction(
             commandLineArguments,
@@ -211,6 +225,39 @@ public partial class App : Microsoft.UI.Xaml.Application
         CreateTrayIconHost();
         StartSessionAgent();
         ShowMainWindow(initialLaunch: true);
+    }
+
+    private void RunXamlStartupSmoke(string smokeReportPath)
+    {
+        File.WriteAllText(smokeReportPath, "enable visual styles");
+        System.Windows.Forms.Application.EnableVisualStyles();
+        File.WriteAllText(smokeReportPath, "construct main window");
+        var smokeMainWindow = new MainWindow();
+        File.WriteAllText(smokeReportPath, "construct dashboard window");
+        var smokeDashboardWindow = new TrayDashboardWindow(
+            smokeMainWindow.ViewModel,
+            WindowNative.GetWindowHandle(smokeMainWindow),
+            _ => { });
+        File.WriteAllText(smokeReportPath, "apply all-visible preferences");
+        TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
+        smokeDashboardWindow.ApplyPreferences(defaults with
+        {
+            Controls = defaults.Controls!
+                .Select(control => control with { IsVisible = true })
+                .ToArray(),
+            StatusItems = defaults.StatusItems!
+                .Select(status => status with { IsVisible = true })
+                .ToArray(),
+            Sliders = defaults.Sliders!
+                .Select(slider => slider with { IsVisible = true })
+                .ToArray(),
+        });
+        File.WriteAllText(smokeReportPath, "dispose dashboard window");
+        smokeDashboardWindow.Dispose();
+        File.WriteAllText(smokeReportPath, "close main window");
+        smokeMainWindow.Close();
+        File.WriteAllText(smokeReportPath, "completed");
+        Environment.Exit(0);
     }
 
     private MainWindow CreateMainWindow(IStartupRegistration startupRegistration)

@@ -112,14 +112,15 @@ public sealed class TrayDashboardPreferenceTests
     [Fact]
     public void NormalizeRejectsFutureDashboardSchemas()
     {
-        TrayDashboardPreference normalized = TrayDashboardPreferenceDefaults.Normalize(new(
-            Controls:
-            [
-                new(TrayDashboardControlKind.Fans, false),
-            ],
-            SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1));
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            TrayDashboardPreferenceDefaults.Normalize(new(
+                Controls:
+                [
+                    new(TrayDashboardControlKind.Fans, false),
+                ],
+                SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1)));
 
-        Assert.Equal(TrayDashboardPreferenceDefaults.Preference, normalized);
+        Assert.Contains("newer than supported", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -573,5 +574,20 @@ public sealed class TrayDashboardPreferenceTests
             expected,
             TrayDashboardInteractionPolicy.ShouldSuppressReopen(
                 TimeSpan.FromMilliseconds(elapsedMilliseconds)));
+    }
+
+    [Theory]
+    [InlineData("Shell_TrayWnd", true)]
+    [InlineData("Shell_SecondaryTrayWnd", true)]
+    [InlineData("ApplicationFrameWindow", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void ReopenSuppressionOnlyRecognizesShellTrayWindows(
+        string? className,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            TrayDashboardInteractionPolicy.IsShellTrayWindowClass(className));
     }
 }

@@ -66,7 +66,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private bool surfaceShown;
     private nint previousForegroundWindow;
     private bool foregroundEstablished;
-    private CancellationTokenSource? revealFrameClockCancellation;
+    private int revealFrameClockGeneration;
     private int revealFramePending;
     private bool revealSubclassAttached;
     private int disposed;
@@ -626,13 +626,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private void CancelRevealAnimation()
     {
         revealAnimationActive = false;
-        CancellationTokenSource? cancellation = revealFrameClockCancellation;
-        revealFrameClockCancellation = null;
-        if (cancellation is not null)
-        {
-            cancellation.Cancel();
-            cancellation.Dispose();
-        }
+        Interlocked.Increment(ref revealFrameClockGeneration);
         Interlocked.Exchange(ref revealFramePending, 0);
         revealHiding = false;
         awaitingRevealActivation = false;
@@ -643,24 +637,30 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     private void StartRevealFrameClock()
     {
-        var cancellation = new CancellationTokenSource();
-        revealFrameClockCancellation = cancellation;
+        int generation = Interlocked.Increment(ref revealFrameClockGeneration);
         revealAnimationActive = true;
-        _ = Task.Run(() => RunRevealFrameClock(cancellation.Token));
+        var thread = new Thread(() => RunRevealFrameClock(generation))
+        {
+            IsBackground = true,
+            Name = "OpenBlade tray dashboard reveal",
+        };
+        thread.Start();
     }
 
-    private void RunRevealFrameClock(CancellationToken cancellationToken)
+    private void RunRevealFrameClock(int generation)
     {
         try
         {
-            while (true)
+            while (Volatile.Read(ref revealFrameClockGeneration) == generation)
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 if (DwmFlush() < 0)
                 {
-                    Thread.Sleep(1);
+                    Thread.Sleep(16);
                 }
-                cancellationToken.ThrowIfCancellationRequested();
+                if (Volatile.Read(ref revealFrameClockGeneration) != generation)
+                {
+                    return;
+                }
                 if (Interlocked.Exchange(ref revealFramePending, 1) == 0
                     && !TryPostRevealFrame())
                 {
@@ -668,9 +668,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                     return;
                 }
             }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
         }
         catch (Exception exception)
         {
@@ -831,14 +828,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
     }
 
-    private void OnRootSizeChanged(object sender, SizeChangedEventArgs args)
-    {
-        Thickness padding = ControlScroller.Padding;
-        ControlGrid.Width = Math.Max(
-            0,
-            args.NewSize.Width - padding.Left - padding.Right);
-    }
-
     private IReadOnlyDictionary<TrayDashboardControlKind, FrameworkElement> TilesByKind() =>
         new Dictionary<TrayDashboardControlKind, FrameworkElement>
         {
@@ -937,19 +926,13 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
-        if (args.WindowActivationState != WindowActivationState.Deactivated)
+        if (args.WindowActivationState == WindowActivationState.Deactivated)
         {
-            foregroundEstablished = true;
-            MoveFocusOffInitialTile();
             return;
         }
 
-        if (args.WindowActivationState == WindowActivationState.Deactivated
-            && !pinnedForEditing
-            && !awaitingRevealActivation)
-        {
-            Hide(suppressNextTrayToggle: true);
-        }
+        foregroundEstablished = true;
+        MoveFocusOffInitialTile();
     }
 
     private void MoveFocusOffInitialTile()
@@ -1000,7 +983,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             return;
         }
 
-        Hide(suppressNextTrayToggle: true);
+        Hide(
+            suppressNextTrayToggle:
+                WindowsPopupPositioner.IsShellTrayWindow(foreground));
     }
 
     private void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
@@ -1021,6 +1006,12 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         else if (args.PropertyName == nameof(MainViewModel.AvailableActiveFanModeOptions))
         {
             UpdateFansDetailsAvailability();
+        }
+        else if (args.PropertyName == nameof(MainViewModel.CanEditGpuClockTuning)
+            && !ViewModel.CanEditGpuClockTuning)
+        {
+            gpuClockOffsetCommits.ClearPending();
+            gpuClockOffsetCommitTimer?.Stop();
         }
     }
 
@@ -1471,15 +1462,19 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         int memoryMegahertz)
     {
         if (gpuClockOffsetCommitTimer is not { } timer
-            || Volatile.Read(ref disposed) != 0
-            || !ViewModel.CanEditGpuClockTuning)
+            || Volatile.Read(ref disposed) != 0)
         {
             return;
         }
 
         var requested = new GpuClockOffsetSettings(coreMegahertz, memoryMegahertz);
-        if (ViewModel.GpuClockOffsetCapabilities?.Supports(requested) != true)
+        if (!GpuClockOffsetCommitPolicy.CanCommit(
+                ViewModel.CanEditGpuClockTuning,
+                ViewModel.GpuClockOffsetCapabilities,
+                requested))
         {
+            gpuClockOffsetCommits.ClearPending();
+            timer.Stop();
             return;
         }
 
@@ -1514,7 +1509,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
         try
         {
-            if (ViewModel.CanEditGpuClockTuning)
+            if (GpuClockOffsetCommitPolicy.CanCommit(
+                    ViewModel.CanEditGpuClockTuning,
+                    ViewModel.GpuClockOffsetCapabilities,
+                    requested))
             {
                 await ViewModel.SetGpuClockOffsetsAsync(
                     requested,

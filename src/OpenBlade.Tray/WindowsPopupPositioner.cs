@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace OpenBlade.Tray;
 
@@ -54,6 +55,19 @@ internal static class WindowsPopupPositioner
     }
 
     public static nint GetForegroundWindowHandle() => GetForegroundWindow();
+
+    public static bool IsShellTrayWindow(nint window)
+    {
+        if (window == 0)
+        {
+            return false;
+        }
+
+        var className = new StringBuilder(64);
+        return GetClassName(window, className, className.Capacity) > 0
+            && TrayDashboardInteractionPolicy.IsShellTrayWindowClass(
+                className.ToString());
+    }
 
     public static void SetOwner(nint window, nint owner)
     {
@@ -125,6 +139,12 @@ internal static class WindowsPopupPositioner
 
     [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(
+        nint window,
+        StringBuilder className,
+        int maximumCount);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

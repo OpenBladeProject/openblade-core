@@ -22,6 +22,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Added a real compiled-XAML startup check for the main window and every tray
+  dashboard control, protected newer dashboard preference schemas from being
+  overwritten by older builds, and kept GPU slider commits from applying after
+  their capabilities or editability change.
+- Moved tray-dashboard animation pacing off the shared thread pool, bounded its
+  compositor-failure fallback to one frame, and limited tray-click reopen
+  suppression to dismissals caused by an actual Windows taskbar.
 - Prevented the tray from crashing during startup when loading dashboard status
   icon columns from a numeric XAML sizing resource.
 - Replaced the keyboard-brightness adjustment's generic sun icon with the

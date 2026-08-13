@@ -615,7 +615,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             primaryNavigationItems = preferences.EffectivePrimaryNavigationItems;
             specialKeyBindings = preferences.EffectiveSpecialKeyBindings;
             pageLayouts = preferences.EffectivePageLayouts;
-            initialTrayDashboard = preferences.EffectiveTrayDashboard;
+            try
+            {
+                initialTrayDashboard = preferences.EffectiveTrayDashboard;
+            }
+            catch (InvalidDataException exception)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade tray dashboard preferences require a newer version; using dashboard defaults without overwriting the stored preference: {0}",
+                    exception.Message);
+            }
             initialAccentColorMode = preferences.EffectiveAccentColorMode;
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
@@ -813,6 +822,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             {
                 dispatcherQueue.TryEnqueue(RefreshSpecialKeyBindingAccess);
             }
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.CanEditGpuClockTuning)
+            && !ViewModel.CanEditGpuClockTuning)
+        {
+            gpuClockOffsetCommits.ClearPending();
+            gpuClockOffsetCommitTimer.Stop();
         }
 
         if (args.PropertyName == nameof(MainViewModel.HasAttention)
@@ -1775,8 +1791,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         int coreMegahertz,
         int memoryMegahertz)
     {
-        if (Volatile.Read(ref disposed) != 0
-            || !ViewModel.CanEditGpuClockTuning)
+        if (Volatile.Read(ref disposed) != 0)
         {
             return;
         }
@@ -1784,8 +1799,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         var requested = new GpuClockOffsetSettings(
             coreMegahertz,
             memoryMegahertz);
-        if (ViewModel.GpuClockOffsetCapabilities?.Supports(requested) != true)
+        if (!GpuClockOffsetCommitPolicy.CanCommit(
+                ViewModel.CanEditGpuClockTuning,
+                ViewModel.GpuClockOffsetCapabilities,
+                requested))
         {
+            gpuClockOffsetCommits.ClearPending();
+            gpuClockOffsetCommitTimer.Stop();
             return;
         }
 
@@ -1821,7 +1841,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
-            if (ViewModel.CanEditGpuClockTuning)
+            if (GpuClockOffsetCommitPolicy.CanCommit(
+                    ViewModel.CanEditGpuClockTuning,
+                    ViewModel.GpuClockOffsetCapabilities,
+                    requested))
             {
                 await ViewModel.SetGpuClockOffsetsAsync(
                     requested,

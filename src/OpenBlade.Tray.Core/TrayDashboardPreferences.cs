@@ -6,6 +6,8 @@ public enum TrayDashboardControlKind
 {
     Performance,
     Fans,
+    // Retained only so legacy JSON can migrate Battery tile visibility
+    // to the ChargeLimit slider.
     Battery,
     Lighting,
     BatteryProtection,
@@ -252,10 +254,14 @@ public static class TrayDashboardPreferenceDefaults
         {
             return Preference;
         }
-        if (preference.SchemaVersion < 0
-            || preference.SchemaVersion > CurrentSchemaVersion)
+        if (preference.SchemaVersion < 0)
         {
             return Preference;
+        }
+        if (preference.SchemaVersion > CurrentSchemaVersion)
+        {
+            throw new InvalidDataException(
+                $"Tray dashboard schema {preference.SchemaVersion} is newer than supported schema {CurrentSchemaVersion}.");
         }
 
         IReadOnlyDictionary<TrayDashboardControlKind, ControlDefinition> definitions =

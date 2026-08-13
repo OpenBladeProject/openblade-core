@@ -198,6 +198,8 @@ public sealed class UiPreferenceStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(preferences);
+        await ThrowIfFutureDashboardSchemaExistsAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         string directory = Path.GetDirectoryName(path)!;
         string temporaryPath = Path.Combine(
@@ -238,6 +240,42 @@ public sealed class UiPreferenceStore
             throw new UiPreferenceSaveException(
                 $"Preferences could not be written to '{path}'.",
                 exception);
+        }
+    }
+
+    private async Task ThrowIfFutureDashboardSchemaExistsAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            await using FileStream stream = new(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            using JsonDocument document = await JsonDocument.ParseAsync(
+                stream,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (document.RootElement.TryGetProperty("trayDashboard", out JsonElement dashboard)
+                && dashboard.ValueKind == JsonValueKind.Object
+                && dashboard.TryGetProperty("schemaVersion", out JsonElement schema)
+                && schema.TryGetInt32(out int schemaVersion)
+                && schemaVersion > TrayDashboardPreferenceDefaults.CurrentSchemaVersion)
+            {
+                throw new UiPreferenceSaveException(
+                    $"OpenBlade will not overwrite tray dashboard schema {schemaVersion} with older schema {TrayDashboardPreferenceDefaults.CurrentSchemaVersion}.");
+            }
+        }
+        catch (JsonException)
+        {
+            // LoadAsync already treats malformed JSON as defaults.
         }
     }
 
