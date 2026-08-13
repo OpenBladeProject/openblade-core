@@ -35,6 +35,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Replaced `Not set` laptop-behavior profile cells with the confirmed firmware
+  value that an unconfigured profile will preserve on its next activation.
 - Repeated the global charge limit across the AC, USB-C, and Battery profile
   columns so the latter two cells no longer appear empty.
 - Disabled the fan-mode dropdown when Automatic is the only available option,

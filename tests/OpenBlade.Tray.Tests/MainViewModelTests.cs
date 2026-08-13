@@ -984,6 +984,15 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
+        var changedProperties = new ConcurrentQueue<string?>();
+        viewModel.PropertyChanged += (_, args) => changedProperties.Enqueue(args.PropertyName);
+        Assert.Equal(
+            "Not set",
+            viewModel.PluggedInProfilePresentation.FunctionKeyBehavior.Text);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.GamingMode.Text);
+        Assert.Equal(
+            "Not set",
+            viewModel.PluggedInProfilePresentation.StartupAnimation.Text);
         ServiceStatusSnapshot status = CreateStatus(
             verified: true,
             blocked: false,
@@ -1004,9 +1013,25 @@ public sealed class MainViewModelTests
             && viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.FunctionKeys
             && viewModel.GamingModeEnabled is false);
 
+        Assert.Equal("On", viewModel.PluggedInProfilePresentation.StartupAnimation.Text);
         Assert.Equal(
-            "Not set",
-            viewModel.PluggedInProfilePresentation.StartupAnimation.Text);
+            "Function keys",
+            viewModel.PluggedInProfilePresentation.FunctionKeyBehavior.Text);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.GamingMode.Text);
+        Assert.Equal("On", viewModel.UsbCProfilePresentation.StartupAnimation.Text);
+        Assert.Equal(
+            "Function keys",
+            viewModel.UsbCProfilePresentation.FunctionKeyBehavior.Text);
+        Assert.Equal("Off", viewModel.UsbCProfilePresentation.GamingMode.Text);
+        Assert.Equal("On", viewModel.BatteryProfilePresentation.StartupAnimation.Text);
+        Assert.Equal(
+            "Function keys",
+            viewModel.BatteryProfilePresentation.FunctionKeyBehavior.Text);
+        Assert.Equal("Off", viewModel.BatteryProfilePresentation.GamingMode.Text);
+        Assert.Contains(nameof(MainViewModel.PluggedInProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.UsbCProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.BatteryProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.SelectedProfilePresentation), changedProperties);
         Assert.False(viewModel.HasLaptopPageProfileDraft);
         Assert.True(viewModel.HasLaptopPageProfileSaveOpportunity);
         Assert.True(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
@@ -1022,6 +1047,40 @@ public sealed class MainViewModelTests
             client.LastProfiles?.PluggedIn.LaptopBehavior);
         Assert.False(viewModel.HasLaptopPageProfileDraft);
         Assert.False(viewModel.HasLaptopPageProfileSaveOpportunity);
+    }
+
+    [Fact]
+    public async Task UnsetLaptopBehavior_PreservesOriginalFallbackForPendingChange()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                },
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(status with
+        {
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.FunctionKeys);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ApplyOneShotLaptopControlCommand)
+            .ExecuteAsync(viewModel.MultimediaKeysPrimaryAction);
+
+        ProfileValuePresentation presentation =
+            viewModel.PluggedInProfilePresentation.FunctionKeyBehavior;
+        Assert.Equal("Function keys", presentation.Text);
+        Assert.True(presentation.IsPending);
+        Assert.Equal("Pending: Media keys", presentation.PendingDescription);
     }
 
     [Theory]

@@ -7216,13 +7216,27 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             .First(option => option.Source == source)
             .Label;
         PowerProfile savedProfile = GetProfile(source);
-        ProfilePresentation saved = CreateProfilePresentation(savedProfile, profileName);
+        var confirmedLaptopBehavior = new LaptopBehaviorProfileSettings(
+            StartupAnimationEnabled,
+            FunctionKeyPrimary,
+            GamingModeEnabled);
+        LaptopBehaviorProfileSettings savedLaptopBehaviorFallback =
+            activeProfileDraftSource == source
+                ? activeProfileOriginalLaptopBehavior ?? confirmedLaptopBehavior
+                : confirmedLaptopBehavior;
+        ProfilePresentation saved = CreateProfilePresentation(
+            savedProfile,
+            profileName,
+            savedLaptopBehaviorFallback);
         if (activeProfileDraftSource != source || GetActiveProfileDraft() is not { } draft)
         {
             return saved;
         }
 
-        ProfilePresentation pending = CreateProfilePresentation(draft, profileName);
+        ProfilePresentation pending = CreateProfilePresentation(
+            draft,
+            profileName,
+            confirmedLaptopBehavior);
         return new ProfilePresentation(
             MarkPending(saved.PowerMode, pending.PowerMode),
             MarkPending(saved.GpuTuning, pending.GpuTuning),
@@ -7263,12 +7277,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static ProfilePresentation CreateProfilePresentation(
         PowerProfile profile,
-        string profileName)
+        string profileName,
+        LaptopBehaviorProfileSettings laptopBehaviorFallback)
     {
         ProfileValuePresentation Value(string settingName, string text) =>
             new(text, settingName, profileName);
 
         DisplayProfileSettings display = profile.Display ?? DisplayProfileSettings.Unconfigured();
+        LaptopBehaviorProfileSettings savedLaptopBehavior =
+            profile.EffectiveLaptopBehavior;
+        var presentedLaptopBehavior = new LaptopBehaviorProfileSettings(
+            savedLaptopBehavior.StartupAnimationEnabled
+                ?? laptopBehaviorFallback.StartupAnimationEnabled,
+            savedLaptopBehavior.FunctionKeyPrimary
+                ?? laptopBehaviorFallback.FunctionKeyPrimary,
+            savedLaptopBehavior.GamingModeEnabled
+                ?? laptopBehaviorFallback.GamingModeEnabled)
+        {
+            GamingModeKeyPolicy = savedLaptopBehavior.GamingModeKeyPolicy,
+        };
         return new ProfilePresentation(
             Value("Power mode", FormatPerformanceProfile(profile)),
             Value("GPU tuning", FormatGpuClockOffsets(profile)),
@@ -7303,13 +7330,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 null => "Not set",
             }),
             Value("Color profile", FormatDisplayColorProfile(display.ColorProfileKey)),
-            Value("Function keys", profile.EffectiveLaptopBehavior.FunctionKeyPrimary switch
+            Value("Function keys", presentedLaptopBehavior.FunctionKeyPrimary switch
             {
                 FunctionKeyPrimaryMode.FunctionKeys => "Function keys",
                 FunctionKeyPrimaryMode.MultimediaKeys => "Media keys",
                 _ => "Not set",
             }),
-            Value("Gaming mode", FormatOptionalToggle(profile.EffectiveLaptopBehavior.GamingModeEnabled)),
+            Value("Gaming mode", FormatOptionalToggle(
+                presentedLaptopBehavior.GamingModeEnabled)),
             Value("Block Windows key", FormatOptionalToggle(
                 profile.EffectiveLaptopBehavior
                     .EffectiveGamingModeKeyPolicy
@@ -7320,7 +7348,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     .BlockAltTab)),
             Value(
                 "Startup animation",
-                FormatOptionalToggle(profile.EffectiveLaptopBehavior.StartupAnimationEnabled)));
+                FormatOptionalToggle(presentedLaptopBehavior.StartupAnimationEnabled)));
     }
 
     private static string FormatOptionalToggle(bool? value) => value switch
@@ -8289,6 +8317,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void UpdateOneShotReadbacks(ServiceStatusSnapshot status)
     {
+        bool? previousStartupAnimation = StartupAnimationEnabled;
+        FunctionKeyPrimaryMode? previousFunctionKeyPrimary = FunctionKeyPrimary;
+        bool? previousGamingMode = GamingModeEnabled;
         bool startupPending = SupportsStartupAnimation && status.StartupAnimationEnabled is null;
         bool functionKeyPending = SupportsFunctionKeyPrimary && status.FunctionKeyPrimary is null;
         bool gamingPending = SupportsGamingMode && status.GamingModeEnabled is null;
@@ -8317,6 +8348,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || GamingModeEnabled is null)
         {
             GamingModeEnabled = status.GamingModeEnabled;
+        }
+
+        if (previousStartupAnimation != StartupAnimationEnabled
+            || previousFunctionKeyPrimary != FunctionKeyPrimary
+            || previousGamingMode != GamingModeEnabled)
+        {
+            Notify(nameof(PluggedInProfilePresentation));
+            Notify(nameof(UsbCProfilePresentation));
+            Notify(nameof(BatteryProfilePresentation));
+            NotifySelectedProfilePresentation();
         }
 
         if (pendingChanged)
