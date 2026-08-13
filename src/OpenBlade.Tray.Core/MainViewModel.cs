@@ -1830,6 +1830,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             SetField(ref selectedFanMode, value);
             Notify(nameof(ActiveFanModeLabel));
             Notify(nameof(SelectedFanModeOption));
+            Notify(nameof(CanChangeFanMode));
             Notify(nameof(IsFixedFanSpeedVisible));
             Notify(nameof(IsManualFanCurveVisible));
         }

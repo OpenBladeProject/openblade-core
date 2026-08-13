@@ -2665,6 +2665,26 @@ public sealed class MainViewModelTests
 
         Assert.Null(viewModel.SelectedFanModeOption);
         Assert.True(viewModel.CanChangeFanMode);
+
+        bool? publishedCanChangeFanMode = viewModel.CanChangeFanMode;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.CanChangeFanMode))
+            {
+                publishedCanChangeFanMode = viewModel.CanChangeFanMode;
+            }
+        };
+        client.NextResult = new ControlOperationResult(
+            ControlOperationStatus.Failed,
+            "Fan mode was not applied.");
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanControlCommand)
+            .ExecuteAsync(FanControlSettings.Default);
+
+        Assert.Equal(FanMode.Fixed, viewModel.SelectedFanMode);
+        Assert.Null(viewModel.SelectedFanModeOption);
+        Assert.True(viewModel.CanChangeFanMode);
+        Assert.True(publishedCanChangeFanMode);
     }
 
     [Theory]
