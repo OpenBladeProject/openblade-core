@@ -2325,6 +2325,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             await device.SetPlaybackMuteIndicatorAsync(muted, token).ConfigureAwait(false);
+            if (!muted)
+            {
+                try
+                {
+                    await ReconcileUnmutedLightingRendererAsync(token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    history.RecordSummary(
+                        ControlOperationStatus.Failed,
+                        "Playback mute was updated, but keyboard lighting reconciliation could not be completed.");
+                }
+            }
             return new ControlOperationResult(
                 ControlOperationStatus.Applied,
                 muted
@@ -2348,6 +2365,30 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return new ControlOperationResult(
                 ControlOperationStatus.Failed,
                 "The playback mute indicator could not be updated.");
+        }
+    }
+
+    private async Task ReconcileUnmutedLightingRendererAsync(
+        CancellationToken cancellationToken)
+    {
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (lastOwnedLightingSettings is null
+                && faultedLightingRecoveryCandidate is null)
+            {
+                return;
+            }
+
+            await RefreshControllerPresenceAndRelinquishLightingAsync(
+                cancellationToken,
+                allowRecentObservation: true).ConfigureAwait(false);
+            await RecoverFaultedLightingRendererCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
         }
     }
 

@@ -39,6 +39,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   silently removing them.
 - Kept the pinned tray-dashboard preview above a maximized OpenBlade window
   during Settings customization without making it system-wide always-on-top.
+- Kept profile pending-change dots immediately beside their value text instead
+  of stretching them to the far edge of the table cell.
+- Cleared the red playback-mute key after a rejected unmute frame by restoring
+  OpenBlade's owned lighting renderer as soon as the unmuted state is retried.
 - Replaced `Not set` laptop-behavior profile cells with the currently confirmed
   firmware value while leaving unconfigured profiles non-destructive.
 - Repeated the global charge limit across the AC, USB-C, and Battery profile

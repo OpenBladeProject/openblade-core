@@ -1607,7 +1607,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task PlaybackMuteIndicator_UsesVerifiedTypedLightingPath()
+    public async Task PlaybackMuteIndicator_NoOwnedRendererUsesOnlyMutePath()
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
         {
@@ -1629,6 +1629,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             await context.Runtime.SetPlaybackMuteIndicatorAsync(
                 true,
                 CancellationToken.None);
+        int lightingWritesBeforeUnmute = context.Device.LightingSetCalls;
+        int controllerScansBeforeUnmute = context.Monitor.ObserveCount;
         ControlOperationResult unmuted =
             await context.Runtime.SetPlaybackMuteIndicatorAsync(
                 false,
@@ -1637,6 +1639,209 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Applied, muted.Status);
         Assert.Equal(ControlOperationStatus.Applied, unmuted.Status);
         Assert.Equal([true, false], context.Device.PlaybackMuteIndicatorStates);
+        Assert.Equal(lightingWritesBeforeUnmute, context.Device.LightingSetCalls);
+        Assert.Equal(controllerScansBeforeUnmute, context.Monitor.ObserveCount);
+    }
+
+    [Fact]
+    public async Task PlaybackMuteIndicator_HealthyOwnedUnmuteDoesNotRewriteLighting()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            SupportsPlaybackMuteIndicator = true,
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(
+                    new RgbColor(0x12, 0x34, 0x56),
+                    100),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        await context.Runtime.SetPlaybackMuteIndicatorAsync(
+            true,
+            CancellationToken.None);
+        int lightingWritesBeforeUnmute = context.Device.LightingSetCalls;
+        int controllerScansBeforeUnmute = context.Monitor.ObserveCount;
+
+        ControlOperationResult result =
+            await context.Runtime.SetPlaybackMuteIndicatorAsync(
+                false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(lightingWritesBeforeUnmute, context.Device.LightingSetCalls);
+        Assert.Equal(controllerScansBeforeUnmute, context.Monitor.ObserveCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Device.LightingRendererOwnership);
+    }
+
+    [Fact]
+    public async Task PlaybackMuteIndicator_ReconcileFailureKeepsSuccessfulUnmuteApplied()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            SupportsPlaybackMuteIndicator = true,
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(
+                    new RgbColor(0x12, 0x34, 0x56),
+                    100),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        await context.Runtime.SetPlaybackMuteIndicatorAsync(
+            true,
+            CancellationToken.None);
+        typeof(ServiceControlRuntime)
+            .GetField(
+                "controllerPresenceObserved",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(context.Runtime, false);
+        context.Monitor.Failure = new IOException("controller scan failed");
+
+        ControlOperationResult result =
+            await context.Runtime.SetPlaybackMuteIndicatorAsync(
+                false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal([true, false], context.Device.PlaybackMuteIndicatorStates);
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            summary => summary.Status == "Failed"
+                && summary.Detail?.Contains(
+                    "keyboard lighting reconciliation",
+                    StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task PlaybackMuteIndicator_UnmuteRestoresOwnedRendererFromPublishedNone()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            SupportsPlaybackMuteIndicator = true,
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(
+                    new RgbColor(0x12, 0x34, 0x56),
+                    100),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        await context.Runtime.SetPlaybackMuteIndicatorAsync(
+            true,
+            CancellationToken.None);
+        int lightingWritesBeforeUnmute = context.Device.LightingSetCalls;
+        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.None;
+        typeof(ServiceControlRuntime)
+            .GetField(
+                "status",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(
+                context.Runtime,
+                context.Runtime.GetStatus() with
+                {
+                    LightingRendererOwnership = LightingRendererOwnershipState.None,
+                });
+
+        ControlOperationResult result =
+            await context.Runtime.SetPlaybackMuteIndicatorAsync(
+                false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(lightingWritesBeforeUnmute + 1, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Device.LightingRendererOwnership);
+    }
+
+    [Fact]
+    public async Task PlaybackMuteIndicator_UnmuteRetryRestoresLostOwnedRenderer()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            SupportsPlaybackMuteIndicator = true,
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        LightingSettings lighting = LightingSettingsFactory.Static(
+            new RgbColor(0x12, 0x34, 0x56),
+            100);
+        await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                lighting,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        int lightingWritesBeforeUnmute = context.Device.LightingSetCalls;
+        await context.Runtime.SetPlaybackMuteIndicatorAsync(
+            true,
+            CancellationToken.None);
+        context.Device.PlaybackMuteFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "The unmute frame was rejected."));
+
+        ControlOperationResult failed =
+            await context.Runtime.SetPlaybackMuteIndicatorAsync(
+                false,
+                CancellationToken.None);
+        ControlOperationResult recovered =
+            await context.Runtime.SetPlaybackMuteIndicatorAsync(
+                false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(ControlOperationStatus.Applied, recovered.Status);
+        Assert.Equal([true, false, false], context.Device.PlaybackMuteIndicatorStates);
+        Assert.Equal(lightingWritesBeforeUnmute + 1, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Device.LightingRendererOwnership);
     }
 
     [Fact]
@@ -9712,11 +9917,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         public ControllerPresenceObservation Current { get; set; } = current;
 
+        public Exception? Failure { get; set; }
+
         public int ObserveCount { get; private set; }
 
         public ControllerPresenceObservation Observe()
         {
             ObserveCount++;
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
             return Current;
         }
     }
@@ -10031,6 +10242,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public int AmbientFrameCalls { get; private set; }
 
         public List<bool> PlaybackMuteIndicatorStates { get; } = [];
+
+        public Queue<Exception> PlaybackMuteFailures { get; } = new();
 
         public LightingRendererOwnershipState LightingRendererOwnership { get; set; }
         public LightingRendererOwnershipState? LightingOwnershipAfterSet { get; set; }
@@ -10636,6 +10849,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             TotalCalls++;
             PlaybackMuteIndicatorStates.Add(muted);
+            if (PlaybackMuteFailures.TryDequeue(out Exception? failure))
+            {
+                LightingRendererOwnership = LightingRendererOwnershipState.None;
+                return Task.FromException(failure);
+            }
             return Task.CompletedTask;
         }
     }
