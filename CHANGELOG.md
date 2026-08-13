@@ -35,6 +35,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Repeated the global charge limit across the AC, USB-C, and Battery profile
+  columns so the latter two cells no longer appear empty.
 - Restored the last confirmed charge limit when a debounced tray edit cannot be
   applied, while preserving a newer edit made during an in-flight request.
 - Preserved configured special-key bindings through transient preference-file
