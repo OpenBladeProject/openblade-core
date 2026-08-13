@@ -2633,6 +2633,67 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task FanModeSelector_RemainsEnabledForAnUnadmittedSelection()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                FanModes = new HashSet<FanMode> { FanMode.Automatic },
+            });
+        client.Publish(baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Fans = FanMode.Fixed,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                Fans = new ResolvedSetting<FanMode>(
+                    FanMode.Fixed,
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.CanEditFanControl
+            && viewModel.SelectedFanMode == FanMode.Fixed
+            && viewModel.AvailableActiveFanModeOptions.Count == 1);
+
+        Assert.Null(viewModel.SelectedFanModeOption);
+        Assert.True(viewModel.CanChangeFanMode);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task FanModeSelector_IsDisabledWhenPortablePowerPresentsOnlyAutomatic(
+        PowerSource powerSource)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            ActivePowerSource = powerSource,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.CanEditFanControl
+            && viewModel.ActivePowerSource == powerSource
+            && viewModel.AvailableActiveFanModeOptions.Count == 1);
+
+        Assert.True(viewModel.AvailableFanModes.Count > 1);
+        Assert.Equal(
+            FanMode.Automatic,
+            Assert.Single(viewModel.AvailableActiveFanModeOptions).Value);
+        Assert.False(viewModel.CanChangeFanMode);
+    }
+
+    [Fact]
     public async Task PerformanceOptionsAndCommands_FollowActivePowerSource()
     {
         var client = new FakeServiceClient();

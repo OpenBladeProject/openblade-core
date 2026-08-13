@@ -1910,7 +1910,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool CanChangeFanMode =>
         CanEditFanControl
-        && AvailableActiveFanModeOptions.Count > 1;
+        && (AvailableActiveFanModeOptions.Count > 1
+            || SelectedFanModeOption is null);
 
     public bool CanEditPerformance =>
         CanRequestHardwareControl && !IsPerformanceOperationInProgress;
