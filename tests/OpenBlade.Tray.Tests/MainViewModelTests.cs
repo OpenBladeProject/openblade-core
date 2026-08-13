@@ -1083,6 +1083,47 @@ public sealed class MainViewModelTests
         Assert.Equal("Pending: Media keys", presentation.PendingDescription);
     }
 
+    [Fact]
+    public async Task OneShotLaptopControl_ExternalUnknownPublishesProfilePresentations()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                },
+                ChargeLimits = ChargeLimits(),
+            }) with
+        {
+            ActivePowerSource = PowerSource.ExternalUnknown,
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.ActivePowerSource == PowerSource.ExternalUnknown
+            && viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.FunctionKeys);
+        var changedProperties = new ConcurrentQueue<string?>();
+        viewModel.PropertyChanged += (_, args) => changedProperties.Enqueue(args.PropertyName);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ApplyOneShotLaptopControlCommand)
+            .ExecuteAsync(viewModel.MultimediaKeysPrimaryAction);
+
+        Assert.Equal(
+            "Media keys",
+            viewModel.PluggedInProfilePresentation.FunctionKeyBehavior.Text);
+        Assert.Contains(nameof(MainViewModel.PluggedInProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.UsbCProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.BatteryProfilePresentation), changedProperties);
+        Assert.Contains(nameof(MainViewModel.SelectedProfilePresentation), changedProperties);
+        Assert.False(viewModel.HasLaptopProfileDraft);
+    }
+
     [Theory]
     [InlineData(false, false, false, "Off", "Off")]
     [InlineData(true, true, false, "On", "Off")]
