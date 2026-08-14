@@ -35,6 +35,11 @@ public sealed record WindowsPowerModeOption(
     string Label,
     string Description);
 
+public sealed record FunctionKeyPrimaryOption(
+    FunctionKeyPrimaryMode Value,
+    string Label,
+    ApplyOneShotLaptopControl Action);
+
 public sealed record LightingDirectionOption(
     LightingDirection Value,
     string Label);
@@ -127,6 +132,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             "Best performance",
             "Favors responsiveness over energy use."),
     ];
+
+    private static readonly IReadOnlyList<FunctionKeyPrimaryOption>
+        FunctionKeyPrimaryOptions =
+        [
+            new(
+                FunctionKeyPrimaryMode.FunctionKeys,
+                "Function keys",
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: FunctionKeyPrimaryMode.FunctionKeys)),
+            new(
+                FunctionKeyPrimaryMode.MultimediaKeys,
+                "Media keys",
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys)),
+        ];
 
     private static readonly IReadOnlyList<LightingEffect> KnownLightingEffects =
         Enum.GetValues<LightingEffect>()
@@ -2360,6 +2382,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             functionKeyPrimary = value;
             Notify(nameof(FunctionKeyPrimary));
             Notify(nameof(FunctionKeyPrimaryStateLabel));
+            Notify(nameof(SelectedFunctionKeyPrimaryOption));
             Notify(nameof(IsFunctionKeyFieldLoading));
             NotifyLaptopBehaviorProfilePresentations();
         }
@@ -2372,6 +2395,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         null => "Checking",
         _ => "Checking",
     };
+
+    public IReadOnlyList<FunctionKeyPrimaryOption> AvailableFunctionKeyPrimaryOptions =>
+        FunctionKeyPrimaryOptions;
+
+    public FunctionKeyPrimaryOption? SelectedFunctionKeyPrimaryOption =>
+        FunctionKeyPrimaryOptions.FirstOrDefault(option => option.Value == FunctionKeyPrimary);
 
     public bool SupportsGamingMode => Capabilities.OneShotLaptopControls.Contains(
         OneShotLaptopControl.GamingMode);
@@ -3790,13 +3819,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         OneShotLaptopControl.StartupAnimation,
         Enabled: false);
 
-    public ApplyOneShotLaptopControl FunctionKeysPrimaryAction { get; } = new(
-        OneShotLaptopControl.FunctionKeyPrimary,
-        FunctionKeyMode: FunctionKeyPrimaryMode.FunctionKeys);
+    public ApplyOneShotLaptopControl FunctionKeysPrimaryAction { get; } =
+        FunctionKeyPrimaryOptions[0].Action;
 
-    public ApplyOneShotLaptopControl MultimediaKeysPrimaryAction { get; } = new(
-        OneShotLaptopControl.FunctionKeyPrimary,
-        FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys);
+    public ApplyOneShotLaptopControl MultimediaKeysPrimaryAction { get; } =
+        FunctionKeyPrimaryOptions[1].Action;
 
     public ApplyOneShotLaptopControl GamingModeOnAction { get; } = new(
         OneShotLaptopControl.GamingMode,

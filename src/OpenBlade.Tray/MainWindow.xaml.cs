@@ -70,6 +70,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingGamingMode;
     private bool changingGamingModeKeyPolicy;
     private bool changingStartupAnimation;
+    private bool changingFunctionKeySelection;
     private bool changingExternalLightingPolicy;
     private bool changingFirmwareCompatibilityOverride;
     private bool changingWindowsDynamicLighting;
@@ -1610,12 +1611,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDashboardPerformanceChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingPerformanceSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not PerformancePresetOption selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not PerformancePresetOption selected
             || selected.Value == ViewModel.SelectedPerformance)
         {
             return;
@@ -1645,12 +1646,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private void OnWindowsPowerModeChanged(object sender, SelectionChangedEventArgs args)
+    private void OnWindowsPowerModeChanged(
+        object sender,
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingWindowsPowerModeSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not WindowsPowerModeOption selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not WindowsPowerModeOption selected
             || selected == ViewModel.SelectedWindowsPowerModeOption)
         {
             return;
@@ -1665,6 +1668,45 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         finally
         {
             changingWindowsPowerModeSelection = false;
+        }
+    }
+
+    private async void OnFunctionKeyPrimaryChanged(
+        object sender,
+        ResponsiveChoiceSelectionChangedEventArgs args)
+    {
+        if (changingFunctionKeySelection
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not FunctionKeyPrimaryOption selected
+            || selected.Value == ViewModel.FunctionKeyPrimary)
+        {
+            return;
+        }
+
+        changingFunctionKeySelection = true;
+        if (ViewModel.ApplyOneShotLaptopControlCommand is not AsyncRelayCommand command
+            || !command.CanExecute(selected.Action))
+        {
+            selector.SelectedItem = ViewModel.SelectedFunctionKeyPrimaryOption;
+            changingFunctionKeySelection = false;
+            return;
+        }
+
+        try
+        {
+            await command.ExecuteAsync(selected.Action);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade function key behavior selection failed: {0}",
+                exception);
+        }
+        finally
+        {
+            selector.SelectedItem = ViewModel.SelectedFunctionKeyPrimaryOption;
+            changingFunctionKeySelection = false;
         }
     }
 
@@ -2872,10 +2914,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDisplayRefreshRateChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
-        if (sender is not Microsoft.UI.Xaml.Controls.ComboBox
-            { SelectedItem: DisplayRefreshRateOption option }
+        if (sender is not ResponsiveChoiceSelector
+            || args.SelectedItem is not DisplayRefreshRateOption option
             || changingDisplaySettings
             || string.Equals(
                 option.Key,

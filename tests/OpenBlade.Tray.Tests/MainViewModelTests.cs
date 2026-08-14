@@ -2590,6 +2590,10 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.SupportsFunctionKeyPrimary);
 
         Assert.Equal("Checking", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Null(viewModel.SelectedFunctionKeyPrimaryOption);
+        Assert.Equal(
+            ["Function keys", "Media keys"],
+            viewModel.AvailableFunctionKeyPrimaryOptions.Select(option => option.Label));
         Assert.DoesNotContain("â", viewModel.FunctionKeyPrimaryStateLabel, StringComparison.Ordinal);
         Assert.True(viewModel.IsFunctionKeyFieldLoading);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
@@ -2629,6 +2633,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.StartupAnimationEnabled);
         Assert.True(viewModel.StartupAnimationToggleIsOn);
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.FunctionKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.IsFunctionKeyFieldLoading);
         Assert.True(viewModel.CanEditFunctionKeyPrimary);
         Assert.False(viewModel.GamingModeToggleIsOn);
@@ -2670,6 +2677,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsGamingModeFieldLoading);
         Assert.False(viewModel.StartupAnimationToggleIsOn);
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.FunctionKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.GamingModeToggleIsOn);
         Assert.False(viewModel.CanEditStartupAnimation);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
@@ -2713,6 +2723,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsFunctionKeyFieldLoading);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
         Assert.Equal("Media keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.ApplyOneShotLaptopControlCommand.CanExecute(
             viewModel.FunctionKeysPrimaryAction));
 
@@ -2824,6 +2837,9 @@ public sealed class MainViewModelTests
             .ExecuteAsync(viewModel.MultimediaKeysPrimaryAction);
 
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.FunctionKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.IsFunctionKeyFieldLoading);
         Assert.True(viewModel.CanEditFunctionKeyPrimary);
     }

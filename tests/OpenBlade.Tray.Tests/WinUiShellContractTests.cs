@@ -290,11 +290,19 @@ public sealed class WinUiShellContractTests
 
         Assert.Contains("Text=\"Laptop logo\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Laptop behavior\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Set function key behavior\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AccessibleName=\"Set function key behavior\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"GamingModeToggle\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"StartupAnimationToggle\"", xaml, StringComparison.Ordinal);
         Assert.Contains(
-            "Content=\"{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}\"",
+            "ItemsSource=\"{x:Bind AvailableFunctionKeyPrimaryOptions, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectedItem=\"{x:Bind SelectedFunctionKeyPrimaryOption, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectionChanged=\"OnFunctionKeyPrimaryChanged\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -335,7 +343,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal(3, CountOccurrences(xaml, "FirmwareLoadingSlot\""));
         Assert.True(
             xaml.IndexOf("FunctionKeyFirmwareLoadingSlot", StringComparison.Ordinal)
-            < xaml.IndexOf("AutomationProperties.Name=\"Set function key behavior\"", StringComparison.Ordinal));
+            < xaml.IndexOf("AccessibleName=\"Set function key behavior\"", StringComparison.Ordinal));
         Assert.True(
             xaml.IndexOf("GamingModeFirmwareLoadingSlot", StringComparison.Ordinal)
             < xaml.IndexOf("x:Name=\"GamingModeToggle\"", StringComparison.Ordinal));
@@ -367,11 +375,15 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("toggle.IsEnabled = false;", firmwareToggleHelper, StringComparison.Ordinal);
         Assert.DoesNotContain("toggle.IsEnabled = true;", firmwareToggleHelper, StringComparison.Ordinal);
 
-        int functionKeys = xaml.IndexOf("AutomationProperties.Name=\"Set function key behavior\"", StringComparison.Ordinal);
+        int functionKeys = xaml.IndexOf("AccessibleName=\"Set function key behavior\"", StringComparison.Ordinal);
         int gamingMode = xaml.IndexOf("x:Name=\"GamingModeToggle\"", StringComparison.Ordinal);
         int startupAnimation = xaml.IndexOf("x:Name=\"StartupAnimationToggle\"", StringComparison.Ordinal);
         Assert.True(functionKeys < gamingMode);
         Assert.True(gamingMode < startupAnimation);
+
+        Assert.Contains("selected.Action", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SelectedFunctionKeyPrimaryOption", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ApplyOneShotLaptopControlCommand", window, StringComparison.Ordinal);
     }
 
     [Fact]

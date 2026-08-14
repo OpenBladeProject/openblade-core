@@ -473,8 +473,14 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "NavigationViewItem"
             && Attribute(element, "Content") == "Home");
 
-        XElement performance = NamedElement(document, "ComboBox", "DashboardPerformanceSelector");
-        XElement windowsPowerMode = NamedElement(document, "ComboBox", "WindowsPowerModeSelector");
+        XElement performance = NamedElement(
+            document,
+            "ResponsiveChoiceSelector",
+            "DashboardPerformanceSelector");
+        XElement windowsPowerMode = NamedElement(
+            document,
+            "ResponsiveChoiceSelector",
+            "WindowsPowerModeSelector");
         XElement fans = NamedElement(document, "ComboBox", "DashboardFanModeSelector");
         XElement chargeLimit = NamedElement(document, "Slider", "DashboardChargeLimitSlider");
         XElement batteryProtection = NamedElement(document, "ToggleSwitch", "BatteryProtectionToggle");
@@ -482,7 +488,7 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "Button"
             && Attribute(element, "Content") == "{Binding FullChargeActionLabel}");
         Assert.Equal("OnDashboardPerformanceChanged", Attribute(performance, "SelectionChanged"));
-        Assert.Equal("Laptop performance", Attribute(performance, "AutomationProperties.Name"));
+        Assert.Equal("Laptop performance", Attribute(performance, "AccessibleName"));
         Assert.Equal("OnWindowsPowerModeChanged", Attribute(windowsPowerMode, "SelectionChanged"));
         Assert.Equal(
             "{Binding AvailableWindowsPowerModeOptions}",
@@ -675,6 +681,70 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void ResponsiveChoiceSelector_UsesNativeWideAndCompactPresentations()
+    {
+        XDocument mainWindow = XDocument.Parse(ReadMainWindowXaml());
+        XDocument selectorDocument = XDocument.Parse(
+            ReadTraySource("ResponsiveChoiceSelector.xaml"));
+        XElement expanded = NamedElement(
+            selectorDocument,
+            "SelectorBar",
+            "ExpandedSelector");
+        XElement compact = NamedElement(
+            selectorDocument,
+            "ComboBox",
+            "CompactSelector");
+
+        Assert.Equal("Collapsed", Attribute(expanded, "Visibility"));
+        Assert.Equal(
+            "OnExpandedSelectionChanged",
+            Attribute(expanded, "SelectionChanged"));
+        Assert.Equal(
+            "OnCompactSelectionChanged",
+            Attribute(compact, "SelectionChanged"));
+        Assert.Equal("OnCompactDropDownOpened", Attribute(compact, "DropDownOpened"));
+        Assert.Equal("OnCompactDropDownClosed", Attribute(compact, "DropDownClosed"));
+        Assert.Null(Attribute(expanded, "Style"));
+        Assert.Null(Attribute(compact, "Style"));
+        Assert.DoesNotContain(
+            selectorDocument.Descendants(),
+            element => element.Name.LocalName is "ControlTemplate" or "ToggleButton");
+
+        foreach (string name in new[]
+                 {
+                     "DashboardPerformanceSelector",
+                     "WindowsPowerModeSelector",
+                     "FunctionKeyPrimarySelector",
+                     "LightingEffectPicker",
+                     "DisplayRefreshRatePicker",
+                 })
+        {
+            XElement usage = NamedElement(
+                mainWindow,
+                "ResponsiveChoiceSelector",
+                name);
+            Assert.Equal("Label", Attribute(usage, "DisplayMemberPath"));
+            Assert.NotNull(Attribute(usage, "ItemsSource"));
+            Assert.NotNull(Attribute(usage, "SelectedItem"));
+            if (name != "LightingEffectPicker")
+            {
+                Assert.NotNull(Attribute(usage, "IsEnabled"));
+            }
+            Assert.NotNull(Attribute(usage, "AccessibleName"));
+            Assert.NotNull(Attribute(usage, "ExpandedMinWindowWidth"));
+            Assert.Null(Attribute(usage, "SelectedIndex"));
+        }
+
+        string source = ReadTraySource("ResponsiveChoiceSelector.xaml.cs");
+        Assert.Contains("observedXamlRoot.Changed += OnXamlRootChanged", source, StringComparison.Ordinal);
+        Assert.Contains("EstimateRequiredWindowWidth()", source, StringComparison.Ordinal);
+        Assert.Contains("projectedOptions.Count <= maximumItems", source, StringComparison.Ordinal);
+        Assert.Contains("SelectedItem is not null", source, StringComparison.Ordinal);
+        Assert.Contains("StableComboBoxSelection.SetAnchor", source, StringComparison.Ordinal);
+        Assert.Contains("Visibility.Collapsed", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MainWindow_UsesAutoHidingScrollViewersWithEdgeAlignedPadding()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
@@ -724,13 +794,17 @@ public sealed class CapabilityPresentationTests
         Assert.Single(displayTemplate.Descendants(), element =>
             Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}");
 
-        XElement refresh = NamedElement(document, "ComboBox", "DisplayRefreshRatePicker");
+        XElement refresh = NamedElement(
+            document,
+            "ResponsiveChoiceSelector",
+            "DisplayRefreshRatePicker");
         Assert.Equal(
             "{x:Bind RefreshRateOptions, Mode=OneWay}",
             Attribute(refresh, "ItemsSource"));
         Assert.Equal(
             "{x:Bind CanChangeRefreshRate, Mode=OneWay}",
             Attribute(refresh, "IsEnabled"));
+        Assert.Equal("4", Attribute(refresh, "MaxExpandedItems"));
         Assert.Equal("OnDisplayRefreshRateChanged", Attribute(refresh, "SelectionChanged"));
 
         XElement hdr = NamedElement(document, "ToggleSwitch", "DisplayHdrToggle");
@@ -2384,7 +2458,10 @@ public sealed class CapabilityPresentationTests
             "LightingNavigationItem");
         XElement page = NamedElement(document, "ScrollViewer", "LightingPage");
         XElement lightingTemplate = NamedTemplate(document, "DashboardLightingCardTemplate");
-        XElement effectPicker = NamedElement(document, "ComboBox", "LightingEffectPicker");
+        XElement effectPicker = NamedElement(
+            document,
+            "ResponsiveChoiceSelector",
+            "LightingEffectPicker");
         XElement controls = NamedElement(document, "ContentControl", "LightingControls");
         XElement keyboardSection = NamedElement(
             document,
@@ -2414,6 +2491,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind CanRequestHardwareControl, Mode=OneWay}",
             Attribute(controls, "IsEnabled"));
+        Assert.Contains(controls, effectPicker.Ancestors());
         Assert.Equal(
             "{x:Bind IsLightingControlUnavailableNoticeVisible, Mode=OneWay}",
             Attribute(infoBar, "IsOpen"));
@@ -2423,6 +2501,10 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind AvailableLightingEffectOptions, Mode=OneWay}",
             Attribute(effectPicker, "ItemsSource"));
+        Assert.Equal(
+            "{x:Bind SelectedLightingEffectOption, Mode=TwoWay}",
+            Attribute(effectPicker, "SelectedItem"));
+        Assert.Equal("13", Attribute(effectPicker, "MaxExpandedItems"));
         Assert.All([keyboardSection, powerSavingSection], section =>
         {
             Assert.Null(Attribute(section, "IsEnabled"));

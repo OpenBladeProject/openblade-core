@@ -21,6 +21,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Replaced common dropdown-only settings with responsive Windows selectors.
+  Laptop performance, Windows power mode, function-row behavior, display
+  refresh rate, and keyboard lighting use horizontal choices when they fit on
+  one line and retain a compact dropdown at narrower window widths.
 - Replaced the tray-dashboard customization dialog with a dedicated Settings
   page that shows only active controls and adjustments, keeps inactive choices
   in **Add** menus, exposes the two-adjustment limit, and updates the pinned tray

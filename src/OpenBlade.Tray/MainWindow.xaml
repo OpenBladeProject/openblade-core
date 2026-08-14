@@ -558,15 +558,15 @@
                                         <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
                                                       IsActive="{Binding IsPerformanceOperationInProgress}"
                                                       AutomationProperties.Name="Applying power mode" />
-                                        <ComboBox x:Name="DashboardPerformanceSelector"
-                                                  MinWidth="150"
-                                                  HorizontalAlignment="Right"
-                                                  AutomationProperties.Name="Laptop performance"
-                                                  IsEnabled="{Binding CanEditPerformance}"
-                                                  ItemsSource="{Binding AvailableActivePerformanceOptions}"
-                                                  SelectedItem="{Binding SelectedPerformanceOption, Mode=OneWay}"
-                                                  local:StableComboBoxSelection.Anchor="{Binding SelectedPerformanceOption, Mode=OneWay}"
-                                                  SelectionChanged="OnDashboardPerformanceChanged" />
+                                        <local:ResponsiveChoiceSelector x:Name="DashboardPerformanceSelector"
+                                                                        CompactMinWidth="150"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        AccessibleName="Laptop performance"
+                                                                        IsEnabled="{Binding CanEditPerformance}"
+                                                                        ItemsSource="{Binding AvailableActivePerformanceOptions}"
+                                                                        DisplayMemberPath="Label"
+                                                                        SelectedItem="{Binding SelectedPerformanceOption, Mode=OneWay}"
+                                                                        SelectionChanged="OnDashboardPerformanceChanged" />
                                     </StackPanel>
                                 </Grid>
                             </Border>
@@ -585,18 +585,16 @@
                                                    TextWrapping="Wrap"
                                                    MaxWidth="520" />
                                     </StackPanel>
-                                    <ComboBox x:Name="WindowsPowerModeSelector"
-                                              Grid.Column="1"
-                                              MinWidth="210"
-                                              HorizontalAlignment="Right"
-                                              VerticalAlignment="Center"
-                                              AutomationProperties.Name="Windows power mode"
-                                              IsEnabled="{Binding CanEditWindowsPowerMode}"
-                                              ItemsSource="{Binding AvailableWindowsPowerModeOptions}"
-                                              DisplayMemberPath="Label"
-                                              SelectedItem="{Binding SelectedWindowsPowerModeOption, Mode=OneWay}"
-                                              local:StableComboBoxSelection.Anchor="{Binding SelectedWindowsPowerModeOption, Mode=OneWay}"
-                                              SelectionChanged="OnWindowsPowerModeChanged" />
+                                    <local:ResponsiveChoiceSelector x:Name="WindowsPowerModeSelector"
+                                                                    Grid.Column="1"
+                                                                    CompactMinWidth="210"
+                                                                    ExpandedMinWindowWidth="1000"
+                                                                    AccessibleName="Windows power mode"
+                                                                    IsEnabled="{Binding CanEditWindowsPowerMode}"
+                                                                    ItemsSource="{Binding AvailableWindowsPowerModeOptions}"
+                                                                    DisplayMemberPath="Label"
+                                                                    SelectedItem="{Binding SelectedWindowsPowerModeOption, Mode=OneWay}"
+                                                                    SelectionChanged="OnWindowsPowerModeChanged" />
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
@@ -1102,22 +1100,15 @@
                                                               Visibility="{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}"
                                                               AutomationProperties.Name="Reading or applying function key behavior" />
                                             </Border>
-                                            <DropDownButton Content="{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}"
-                                                            HorizontalAlignment="Right"
-                                                            VerticalAlignment="Center"
-                                                            IsEnabled="{x:Bind CanEditFunctionKeyPrimary, Mode=OneWay}"
-                                                            AutomationProperties.Name="Set function key behavior">
-                                                <DropDownButton.Flyout>
-                                                    <MenuFlyout>
-                                                        <MenuFlyoutItem Text="Function keys"
-                                                                        Command="{x:Bind ApplyOneShotLaptopControlCommand}"
-                                                                        CommandParameter="{x:Bind FunctionKeysPrimaryAction}" />
-                                                        <MenuFlyoutItem Text="Media keys"
-                                                                        Command="{x:Bind ApplyOneShotLaptopControlCommand}"
-                                                                        CommandParameter="{x:Bind MultimediaKeysPrimaryAction}" />
-                                                    </MenuFlyout>
-                                                </DropDownButton.Flyout>
-                                            </DropDownButton>
+                                            <local:ResponsiveChoiceSelector x:Name="FunctionKeyPrimarySelector"
+                                                                            CompactMinWidth="150"
+                                                                            ExpandedMinWindowWidth="800"
+                                                                            AccessibleName="Set function key behavior"
+                                                                            IsEnabled="{x:Bind CanEditFunctionKeyPrimary, Mode=OneWay}"
+                                                                            ItemsSource="{x:Bind AvailableFunctionKeyPrimaryOptions, Mode=OneWay}"
+                                                                            DisplayMemberPath="Label"
+                                                                            SelectedItem="{x:Bind SelectedFunctionKeyPrimaryOption, Mode=OneWay}"
+                                                                            SelectionChanged="OnFunctionKeyPrimaryChanged" />
                                         </StackPanel>
                                     </Grid>
                                 </Border>
@@ -1308,16 +1299,17 @@
                                             <TextBlock Text="{x:Bind KeyboardEffectDescription, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ComboBox x:Name="LightingEffectPicker"
-                                                  Grid.Column="1"
-                                                  MinWidth="190"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Keyboard lighting effect"
-                                                  ItemsSource="{x:Bind AvailableLightingEffectOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  PlaceholderText="Current effect unavailable"
-                                                  SelectedItem="{x:Bind SelectedLightingEffectOption, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedLightingEffectOption, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector x:Name="LightingEffectPicker"
+                                                                        Grid.Column="1"
+                                                                        CompactMinWidth="190"
+                                                                        ExpandedMinWindowWidth="900"
+                                                                        ExpandedWidthAllowance="380"
+                                                                        MaxExpandedItems="13"
+                                                                        AccessibleName="Keyboard lighting effect"
+                                                                        ItemsSource="{x:Bind AvailableLightingEffectOptions, Mode=OneWay}"
+                                                                        DisplayMemberPath="Label"
+                                                                        PlaceholderText="Current effect unavailable"
+                                                                        SelectedItem="{x:Bind SelectedLightingEffectOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1855,19 +1847,19 @@
                                             <TextBlock Text="Choose a refresh rate reported by Windows or use dynamic refresh rate."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ComboBox x:Name="DisplayRefreshRatePicker"
-                                                  Grid.Column="1"
-                                                  MinWidth="180"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Display refresh rate"
-                                                  ItemsSource="{x:Bind RefreshRateOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind SelectedRefreshRate, Mode=OneWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedRefreshRate, Mode=OneWay}"
-                                                  IsEnabled="{x:Bind CanChangeRefreshRate, Mode=OneWay}"
-                                                  DropDownOpened="OnDisplayPickerOpened"
-                                                  DropDownClosed="OnDisplayPickerClosed"
-                                                  SelectionChanged="OnDisplayRefreshRateChanged" />
+                                        <local:ResponsiveChoiceSelector x:Name="DisplayRefreshRatePicker"
+                                                                        Grid.Column="1"
+                                                                        CompactMinWidth="180"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="4"
+                                                                        AccessibleName="Display refresh rate"
+                                                                        ItemsSource="{x:Bind RefreshRateOptions, Mode=OneWay}"
+                                                                        DisplayMemberPath="Label"
+                                                                        SelectedItem="{x:Bind SelectedRefreshRate, Mode=OneWay}"
+                                                                        IsEnabled="{x:Bind CanChangeRefreshRate, Mode=OneWay}"
+                                                                        DropDownOpened="OnDisplayPickerOpened"
+                                                                        DropDownClosed="OnDisplayPickerClosed"
+                                                                        SelectionChanged="OnDisplayRefreshRateChanged" />
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}">
