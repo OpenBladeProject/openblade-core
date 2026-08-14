@@ -112,6 +112,11 @@ public sealed class FunctionRowInputPump : IAsyncDisposable
     {
         lock (sync)
         {
+            if (!accepting)
+            {
+                return;
+            }
+
             pending.Clear();
             bool wakeWorker = !resetPending;
             resetPending = true;

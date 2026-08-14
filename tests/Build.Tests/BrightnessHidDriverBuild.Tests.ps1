@@ -47,4 +47,32 @@ foreach ($contract in @(
     }
 }
 
+if ($source.IndexOf(
+        '.SignerCertificate.Subject.Contains(',
+        [StringComparison]::Ordinal) -ge 0 -or
+    $source.IndexOf(
+        '.SignerCertificate.Subject.IndexOf(',
+        [StringComparison]::Ordinal) -lt 0) {
+    throw 'The Hardware Dev Center signer check must remain compatible with Windows PowerShell 5.1.'
+}
+
+$driverInvocationEnd = $publishSource.IndexOf(
+    '-TimestampUrl $TimestampUrl',
+    [StringComparison]::Ordinal)
+if ($driverInvocationEnd -lt 0) {
+    throw 'Publish.ps1 no longer invokes the brightness HID driver build.'
+}
+$trayAssetsStart = $publishSource.IndexOf(
+    '$trayAssets = Join-Path',
+    $driverInvocationEnd,
+    [StringComparison]::Ordinal)
+if ($trayAssetsStart -lt 0 -or
+    $publishSource.Substring(
+        $driverInvocationEnd,
+        $trayAssetsStart - $driverInvocationEnd).IndexOf(
+            '$LASTEXITCODE',
+            [StringComparison]::Ordinal) -ge 0) {
+    throw 'Publish.ps1 must rely on terminating driver-build errors instead of stale LASTEXITCODE state.'
+}
+
 Write-Host 'Brightness HID driver build contract tests passed.'

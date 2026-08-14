@@ -76,7 +76,7 @@ public sealed class FunctionRowActionExecutorTests
     [Theory]
     [InlineData(FunctionRowAction.DisplayBrightnessDown, DisplayBrightnessHidUsage.Decrement)]
     [InlineData(FunctionRowAction.DisplayBrightnessUp, DisplayBrightnessHidUsage.Increment)]
-    public async Task DisplayBrightnessNative_PropagatesDownAndUpWithoutFallback(
+    public async Task DisplayBrightnessNative_RefreshesWatchdogAndReliesOnWindowsRepeat(
         FunctionRowAction action,
         DisplayBrightnessHidUsage expectedUsage)
     {

@@ -70,9 +70,9 @@ if (-not [string]::IsNullOrWhiteSpace($PreSignedPackage)) {
         Join-Path $Output 'OpenBlade.BrightnessHid.cat')
     if ($catalogSignature.Status -ne [Management.Automation.SignatureStatus]::Valid -or
         $null -eq $catalogSignature.SignerCertificate -or
-        -not $catalogSignature.SignerCertificate.Subject.Contains(
+        $catalogSignature.SignerCertificate.Subject.IndexOf(
             'Microsoft Windows Hardware Compatibility Publisher',
-            [StringComparison]::OrdinalIgnoreCase)) {
+            [StringComparison]::OrdinalIgnoreCase) -lt 0) {
         throw 'The brightness HID catalog must carry a valid Microsoft Hardware Dev Center signature.'
     }
     $catalogVerifier = Resolve-SignToolPath -RequestedPath $SignTool

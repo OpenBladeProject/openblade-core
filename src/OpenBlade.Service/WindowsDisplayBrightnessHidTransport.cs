@@ -29,6 +29,23 @@ internal sealed class WindowsDisplayBrightnessHidTransport
     private const int CrSuccess = 0;
     private static readonly IntPtr InvalidHandleValue = new(-1);
     private readonly object sync = new();
+    private readonly Func<(string? Path, DisplayBrightnessHidWriteResult Result)> pathResolver;
+    private readonly Func<string, DisplayBrightnessHidUsage, DisplayBrightnessHidWriteResult>
+        usageWriter;
+    private string? cachedDevicePath;
+
+    public WindowsDisplayBrightnessHidTransport()
+        : this(ResolveDevicePath, WriteUsageToPath)
+    {
+    }
+
+    internal WindowsDisplayBrightnessHidTransport(
+        Func<(string? Path, DisplayBrightnessHidWriteResult Result)> pathResolver,
+        Func<string, DisplayBrightnessHidUsage, DisplayBrightnessHidWriteResult> usageWriter)
+    {
+        this.pathResolver = pathResolver ?? throw new ArgumentNullException(nameof(pathResolver));
+        this.usageWriter = usageWriter ?? throw new ArgumentNullException(nameof(usageWriter));
+    }
 
     public DisplayBrightnessHidWriteResult SetUsage(DisplayBrightnessHidUsage usage)
     {
@@ -48,8 +65,36 @@ internal sealed class WindowsDisplayBrightnessHidTransport
         }
     }
 
-    private static DisplayBrightnessHidWriteResult SetUsageCore(
+    private DisplayBrightnessHidWriteResult SetUsageCore(
         DisplayBrightnessHidUsage usage)
+    {
+        if (cachedDevicePath is not null)
+        {
+            DisplayBrightnessHidWriteResult cachedWrite = usageWriter(cachedDevicePath, usage);
+            if (cachedWrite.Status != DisplayBrightnessHidWriteStatus.Unavailable)
+            {
+                return cachedWrite;
+            }
+
+            cachedDevicePath = null;
+        }
+
+        (string? path, DisplayBrightnessHidWriteResult resolution) = pathResolver();
+        if (path is null)
+        {
+            return resolution;
+        }
+
+        DisplayBrightnessHidWriteResult write = usageWriter(path, usage);
+        if (write.Status == DisplayBrightnessHidWriteStatus.Applied)
+        {
+            cachedDevicePath = path;
+        }
+
+        return write;
+    }
+
+    private static (string? Path, DisplayBrightnessHidWriteResult Result) ResolveDevicePath()
     {
         HidD_GetHidGuid(out Guid hidGuid);
         IntPtr deviceSet = SetupDiGetClassDevs(
@@ -97,7 +142,18 @@ internal sealed class WindowsDisplayBrightnessHidTransport
                     continue;
                 }
 
-                if (!HasExactRootAncestor(deviceInfo.DeviceInstance))
+                bool hasExactRootAncestor;
+                try
+                {
+                    hasExactRootAncestor = HasExactRootAncestor(deviceInfo.DeviceInstance);
+                }
+                catch (InvalidOperationException exception)
+                {
+                    lastFailure = exception.Message;
+                    continue;
+                }
+
+                if (!hasExactRootAncestor)
                 {
                     continue;
                 }
@@ -122,43 +178,10 @@ internal sealed class WindowsDisplayBrightnessHidTransport
                     continue;
                 }
 
-                byte[] feature = CreateFeatureReport(usage);
-                if (!DeviceIoControlSetFeature(
-                        handle,
-                        IoctlHidSetFeature,
-                        feature,
-                        checked((uint)feature.Length),
-                        IntPtr.Zero,
-                        0,
-                        out _,
-                        IntPtr.Zero))
-                {
-                    return FailedLastError();
-                }
-
-                byte[] readback = [FeatureReportId, 0, 0];
-                if (!DeviceIoControlGetFeature(
-                        handle,
-                        IoctlHidGetFeature,
-                        IntPtr.Zero,
-                        0,
-                        readback,
-                        checked((uint)readback.Length),
-                        out _,
-                        IntPtr.Zero))
-                {
-                    return FailedLastError();
-                }
-
-                if (!readback.AsSpan().SequenceEqual(feature))
-                {
-                    return new DisplayBrightnessHidWriteResult(
-                        DisplayBrightnessHidWriteStatus.Failed,
-                        "The virtual HID feature-report readback did not match the requested state.");
-                }
-
-                return new DisplayBrightnessHidWriteResult(
-                    DisplayBrightnessHidWriteStatus.Applied);
+                return (
+                    path,
+                    new DisplayBrightnessHidWriteResult(
+                        DisplayBrightnessHidWriteStatus.Applied));
             }
         }
         finally
@@ -167,11 +190,159 @@ internal sealed class WindowsDisplayBrightnessHidTransport
         }
 
         return exactDeviceObserved
-            ? new DisplayBrightnessHidWriteResult(
+            ? (
+                null,
+                new DisplayBrightnessHidWriteResult(
+                    DisplayBrightnessHidWriteStatus.Failed,
+                    lastFailure
+                        ?? "The exact virtual HID device exposed no valid control collection."))
+            : (
+                null,
+                new DisplayBrightnessHidWriteResult(
+                    DisplayBrightnessHidWriteStatus.Unavailable,
+                    lastFailure));
+    }
+
+    private static DisplayBrightnessHidWriteResult WriteUsageToPath(
+        string path,
+        DisplayBrightnessHidUsage usage)
+    {
+        using SafeFileHandle handle = CreateFile(
+            path,
+            GenericRead | GenericWrite,
+            FileShareRead | FileShareWrite,
+            IntPtr.Zero,
+            OpenExisting,
+            0,
+            IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            return new DisplayBrightnessHidWriteResult(
+                DisplayBrightnessHidWriteStatus.Unavailable,
+                new Win32Exception(Marshal.GetLastWin32Error()).Message);
+        }
+
+        if (!HasExactRootAncestorForPath(path, out string? identityFailure))
+        {
+            return new DisplayBrightnessHidWriteResult(
+                DisplayBrightnessHidWriteStatus.Unavailable,
+                identityFailure
+                    ?? "The cached HID path no longer belongs to the exact OpenBlade root device.");
+        }
+
+        if (!IsVendorControlCollection(handle, out string? failure))
+        {
+            return new DisplayBrightnessHidWriteResult(
+                DisplayBrightnessHidWriteStatus.Unavailable,
+                failure ?? "The cached HID path no longer identifies the vendor control collection.");
+        }
+
+        byte[] feature = CreateFeatureReport(usage);
+        if (!DeviceIoControlSetFeature(
+                handle,
+                IoctlHidSetFeature,
+                feature,
+                checked((uint)feature.Length),
+                IntPtr.Zero,
+                0,
+                out _,
+                IntPtr.Zero))
+        {
+            return FailedLastError();
+        }
+
+        byte[] readback = [FeatureReportId, 0, 0];
+        if (!DeviceIoControlGetFeature(
+                handle,
+                IoctlHidGetFeature,
+                IntPtr.Zero,
+                0,
+                readback,
+                checked((uint)readback.Length),
+                out _,
+                IntPtr.Zero))
+        {
+            return FailedLastError();
+        }
+
+        if (!readback.AsSpan().SequenceEqual(feature))
+        {
+            return new DisplayBrightnessHidWriteResult(
                 DisplayBrightnessHidWriteStatus.Failed,
-                lastFailure ?? "The exact virtual HID device exposed no valid control collection.")
-            : new DisplayBrightnessHidWriteResult(
-                DisplayBrightnessHidWriteStatus.Unavailable);
+                "The virtual HID feature-report readback did not match the requested state.");
+        }
+
+        return new DisplayBrightnessHidWriteResult(DisplayBrightnessHidWriteStatus.Applied);
+    }
+
+    private static bool HasExactRootAncestorForPath(string path, out string? failure)
+    {
+        failure = null;
+        IntPtr deviceSet = SetupDiCreateDeviceInfoList(IntPtr.Zero, IntPtr.Zero);
+        if (deviceSet == InvalidHandleValue)
+        {
+            failure = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+            return false;
+        }
+
+        var interfaceData = DeviceInterfaceData.Create();
+        bool interfaceOpened = false;
+        try
+        {
+            if (!SetupDiOpenDeviceInterface(
+                    deviceSet,
+                    path,
+                    0,
+                    ref interfaceData))
+            {
+                failure = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+                return false;
+            }
+
+            interfaceOpened = true;
+            var deviceInfo = DeviceInfoData.Create();
+            string currentPath;
+            try
+            {
+                currentPath = GetDevicePath(deviceSet, ref interfaceData, ref deviceInfo);
+            }
+            catch (Win32Exception exception)
+            {
+                failure = exception.Message;
+                return false;
+            }
+
+            if (!string.Equals(path, currentPath, StringComparison.OrdinalIgnoreCase))
+            {
+                failure = "The cached HID path resolved to a different device interface.";
+                return false;
+            }
+
+            try
+            {
+                if (HasExactRootAncestor(deviceInfo.DeviceInstance))
+                {
+                    return true;
+                }
+
+                failure = "The cached HID path no longer belongs to the exact OpenBlade root device.";
+                return false;
+            }
+            catch (InvalidOperationException exception)
+            {
+                failure = exception.Message;
+                return false;
+            }
+        }
+        finally
+        {
+            if (interfaceOpened)
+            {
+                _ = SetupDiDeleteDeviceInterfaceData(deviceSet, ref interfaceData);
+            }
+
+            _ = SetupDiDestroyDeviceInfoList(deviceSet);
+        }
     }
 
     internal static byte[] CreateFeatureReport(DisplayBrightnessHidUsage usage)
@@ -449,6 +620,26 @@ internal sealed class WindowsDisplayBrightnessHidTransport
     [DllImport("setupapi.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetupDiDestroyDeviceInfoList(IntPtr deviceInfoSet);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    private static extern IntPtr SetupDiCreateDeviceInfoList(
+        IntPtr classGuid,
+        IntPtr parentWindow);
+
+    [DllImport("setupapi.dll", EntryPoint = "SetupDiOpenDeviceInterfaceW",
+        CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetupDiOpenDeviceInterface(
+        IntPtr deviceInfoSet,
+        string devicePath,
+        uint openFlags,
+        ref DeviceInterfaceData deviceInterfaceData);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetupDiDeleteDeviceInterfaceData(
+        IntPtr deviceInfoSet,
+        ref DeviceInterfaceData deviceInterfaceData);
 
     [DllImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true,
         CharSet = CharSet.Unicode)]

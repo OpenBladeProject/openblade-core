@@ -72,6 +72,42 @@ public sealed class FunctionRowInputPumpTests
         Assert.Equal(["Down", "Reset"], operations);
     }
 
+    [Fact]
+    public async Task ResetAfterDispose_IsNoOp()
+    {
+        var pump = new FunctionRowInputPump(
+            (_, _) => Task.CompletedTask,
+            _ => Task.CompletedTask);
+
+        await pump.DisposeAsync();
+
+        pump.Reset();
+        Assert.False(pump.TryEnqueue(Input(FunctionRowInputPhase.Down)));
+    }
+
+    [Fact]
+    public async Task ResetWhileDisposeIsDraining_IsNoOp()
+    {
+        var resetStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var continueReset = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var pump = new FunctionRowInputPump(
+            (_, _) => Task.CompletedTask,
+            async _ =>
+            {
+                resetStarted.TrySetResult();
+                await continueReset.Task;
+            });
+
+        Task dispose = pump.DisposeAsync().AsTask();
+        await resetStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        pump.Reset();
+        continueReset.TrySetResult();
+        await dispose;
+    }
+
     private static FunctionRowInputEvent Input(FunctionRowInputPhase phase) => new(
         0x43,
         FunctionRowAction.DisplayBrightnessUp,

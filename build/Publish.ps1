@@ -181,9 +181,6 @@ try {
         -SigningThumbprint $SigningThumbprint `
         -SignTool $SignTool `
         -TimestampUrl $TimestampUrl
-    if ($LASTEXITCODE -ne 0) {
-        throw "OpenBlade brightness HID driver packaging failed with exit code $LASTEXITCODE"
-    }
     $trayAssets = Join-Path $repository (
         'src\OpenBlade.Tray\obj\project.assets.json')
     Add-WindowsAppRuntimeNotificationResource `

@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.InteropServices;
 using OpenBlade.Setup;
 
 namespace OpenBlade.Setup.Tests;
@@ -90,6 +92,12 @@ public sealed class BrightnessHidDriverManagerTests
     public void DeviceInstanceContract_RejectsAdditionalRootInstances()
     {
         Assert.Equal(
+            "OSSBLADE_OPENBLADE_BRIGHTNESS_HID",
+            WindowsBrightnessHidDriverManager.RootEnumeratedDeviceId);
+        Assert.Equal(
+            @"ROOT\" + WindowsBrightnessHidDriverManager.RootEnumeratedDeviceId,
+            WindowsBrightnessHidDriverManager.HardwareId);
+        Assert.Equal(
             @"ROOT\OSSBLADE_OPENBLADE_BRIGHTNESS_HID\0000",
             WindowsBrightnessHidDriverManager.DeviceInstanceId);
         Assert.False(string.Equals(
@@ -100,6 +108,19 @@ public sealed class BrightnessHidDriverManagerTests
             @"root\ossblade_openblade_brightness_hid\0000"));
         Assert.False(WindowsBrightnessHidDriverManager.IsExpectedDeviceInstanceId(
             @"ROOT\OSSBLADE_OPENBLADE_BRIGHTNESS_HID\0001"));
+    }
+
+    [Theory]
+    [InlineData(nameof(NativeMethods.SetupDiGetDeviceRegistryProperty))]
+    [InlineData(nameof(NativeMethods.SetupDiSetDeviceRegistryProperty))]
+    public void DeviceRegistryPropertyInterop_UsesUnicodeSetupApiExport(string methodName)
+    {
+        MethodInfo method = typeof(NativeMethods).GetMethod(methodName)
+            ?? throw new InvalidOperationException($"Missing SetupAPI method {methodName}.");
+        DllImportAttribute import = method.GetCustomAttribute<DllImportAttribute>()
+            ?? throw new InvalidOperationException($"Missing DllImport on {methodName}.");
+
+        Assert.Equal(CharSet.Unicode, import.CharSet);
     }
 
     [Fact]

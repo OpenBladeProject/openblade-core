@@ -36,6 +36,32 @@ public sealed partial class BrightnessHidDriverSourceContractTests
     }
 
     [Fact]
+    public void SetFeature_SameUsageOnlyRenewsReleaseWatchdog()
+    {
+        string source = File.ReadAllText(DriverFile("BrightnessHid.c"));
+        int changedUsage = source.IndexOf(
+            "if (report->Usage != context->CurrentUsage)",
+            StringComparison.Ordinal);
+        int deliverReport = source.IndexOf(
+            "OpenBladeDeliverOrQueueReport(context, report->Usage);",
+            changedUsage,
+            StringComparison.Ordinal);
+        int changedUsageEnd = source.IndexOf(
+            "if (report->Usage == 0)",
+            deliverReport,
+            StringComparison.Ordinal);
+        int restartWatchdog = source.IndexOf(
+            "WdfTimerStart(",
+            changedUsageEnd,
+            StringComparison.Ordinal);
+
+        Assert.True(changedUsage >= 0);
+        Assert.True(deliverReport > changedUsage);
+        Assert.True(changedUsageEnd > deliverReport);
+        Assert.True(restartWatchdog > changedUsageEnd);
+    }
+
+    [Fact]
     public void Package_UsesExactIdentityNamesAndSystemAdminDriverAcl()
     {
         string inf = File.ReadAllText(DriverFile("OpenBlade.BrightnessHid.inx"));

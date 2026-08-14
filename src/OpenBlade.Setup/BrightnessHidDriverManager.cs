@@ -24,8 +24,9 @@ public interface IBrightnessHidDriverManager
 
 public sealed class WindowsBrightnessHidDriverManager : IBrightnessHidDriverManager
 {
-    public const string HardwareId = @"ROOT\OSSBLADE_OPENBLADE_BRIGHTNESS_HID";
-    public const string DeviceInstanceId = @"ROOT\OSSBLADE_OPENBLADE_BRIGHTNESS_HID\0000";
+    internal const string RootEnumeratedDeviceId = "OSSBLADE_OPENBLADE_BRIGHTNESS_HID";
+    public const string HardwareId = @"ROOT\" + RootEnumeratedDeviceId;
+    public const string DeviceInstanceId = HardwareId + @"\0000";
     public const string InfFileName = "OpenBlade.BrightnessHid.inf";
     public const string DriverProvider = "OSSBlade";
 
@@ -294,7 +295,7 @@ public sealed class WindowsBrightnessHidDriverManager : IBrightnessHidDriverMana
         Guid hidClass = NativeMethods.HidClassGuid;
         using DeviceInfoSet devices = DeviceInfoSet.Create(hidClass);
         SP_DEVINFO_DATA device = devices.CreateDevice(
-            "OpenBlade Brightness HID",
+            RootEnumeratedDeviceId,
             hidClass,
             NativeMethods.DICD_GENERATE_ID);
         devices.SetMultiStringProperty(device, NativeMethods.SPDRP_HARDWAREID, [HardwareId]);
@@ -505,12 +506,12 @@ internal sealed class DeviceInfoSet : SafeHandle
         }
     }
 
-    public SP_DEVINFO_DATA CreateDevice(string description, Guid classGuid, uint flags)
+    public SP_DEVINFO_DATA CreateDevice(string deviceName, Guid classGuid, uint flags)
     {
         SP_DEVINFO_DATA device = SP_DEVINFO_DATA.Create();
         if (!NativeMethods.SetupDiCreateDeviceInfo(
             handle,
-            description,
+            deviceName,
             ref classGuid,
             null,
             IntPtr.Zero,
@@ -736,7 +737,7 @@ internal static class NativeMethods
         uint memberIndex,
         ref SP_DEVINFO_DATA deviceInfoData);
 
-    [DllImport("setupapi.dll", SetLastError = true)]
+    [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetupDiGetDeviceRegistryProperty(
         IntPtr deviceInfoSet,
@@ -747,7 +748,7 @@ internal static class NativeMethods
         uint propertyBufferSize,
         out uint requiredSize);
 
-    [DllImport("setupapi.dll", SetLastError = true)]
+    [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetupDiSetDeviceRegistryProperty(
         IntPtr deviceInfoSet,

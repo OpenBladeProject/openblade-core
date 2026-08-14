@@ -252,6 +252,11 @@ OpenBladeSetFeature(
 
     POPENBLADE_DEVICE_CONTEXT context = OpenBladeGetDeviceContext(Device);
     WdfWaitLockAcquire(context->StateLock, NULL);
+    /*
+     * Brightness usages are retrigger controls whose repeat rate Windows owns.
+     * A matching nonzero feature report only renews the lost-release watchdog;
+     * it must not produce another input report while the key remains held.
+     */
     if (report->Usage != context->CurrentUsage)
     {
         context->CurrentUsage = report->Usage;

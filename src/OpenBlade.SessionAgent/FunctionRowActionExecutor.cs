@@ -224,6 +224,9 @@ public sealed class FunctionRowActionExecutor
             }
             else
             {
+                // Windows owns the repeat rate for the brightness retrigger
+                // usages. Refresh the driver's lost-release watchdog without
+                // asking the HID collection to emit another input report.
                 DisplayBrightnessHidUsage usage = direction < 0
                     ? DisplayBrightnessHidUsage.Decrement
                     : DisplayBrightnessHidUsage.Increment;

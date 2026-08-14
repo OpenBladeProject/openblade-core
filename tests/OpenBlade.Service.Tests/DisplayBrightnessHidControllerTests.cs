@@ -80,6 +80,106 @@ public sealed class DisplayBrightnessHidControllerTests
         Assert.Equal(64, WindowsDisplayBrightnessHidTransport.HidCapabilitiesSize);
     }
 
+    [Fact]
+    public void Transport_CachesResolvedControlCollectionPath()
+    {
+        int resolutionCount = 0;
+        var writtenPaths = new List<string>();
+        var transport = new WindowsDisplayBrightnessHidTransport(
+            () =>
+            {
+                resolutionCount++;
+                return (
+                    "cached-path",
+                    new DisplayBrightnessHidWriteResult(
+                        DisplayBrightnessHidWriteStatus.Applied));
+            },
+            (path, _) =>
+            {
+                writtenPaths.Add(path);
+                return new DisplayBrightnessHidWriteResult(
+                    DisplayBrightnessHidWriteStatus.Applied);
+            });
+
+        DisplayBrightnessHidWriteResult first = transport.SetUsage(
+            DisplayBrightnessHidUsage.Increment);
+        DisplayBrightnessHidWriteResult second = transport.SetUsage(
+            DisplayBrightnessHidUsage.Released);
+
+        Assert.Equal(DisplayBrightnessHidWriteStatus.Applied, first.Status);
+        Assert.Equal(DisplayBrightnessHidWriteStatus.Applied, second.Status);
+        Assert.Equal(1, resolutionCount);
+        Assert.Equal(["cached-path", "cached-path"], writtenPaths);
+    }
+
+    [Fact]
+    public void Transport_RediscoversPathWhenCachedCollectionDisappears()
+    {
+        int resolutionCount = 0;
+        int firstPathWrites = 0;
+        var transport = new WindowsDisplayBrightnessHidTransport(
+            () =>
+            {
+                resolutionCount++;
+                return (
+                    $"path-{resolutionCount}",
+                    new DisplayBrightnessHidWriteResult(
+                        DisplayBrightnessHidWriteStatus.Applied));
+            },
+            (path, _) =>
+            {
+                if (path == "path-1" && ++firstPathWrites == 2)
+                {
+                    return new DisplayBrightnessHidWriteResult(
+                        DisplayBrightnessHidWriteStatus.Unavailable);
+                }
+
+                return new DisplayBrightnessHidWriteResult(
+                    DisplayBrightnessHidWriteStatus.Applied);
+            });
+
+        _ = transport.SetUsage(DisplayBrightnessHidUsage.Increment);
+        DisplayBrightnessHidWriteResult result = transport.SetUsage(
+            DisplayBrightnessHidUsage.Decrement);
+
+        Assert.Equal(DisplayBrightnessHidWriteStatus.Applied, result.Status);
+        Assert.Equal(2, resolutionCount);
+    }
+
+    [Fact]
+    public void Transport_DoesNotRetryIndeterminateCachedWrite()
+    {
+        int resolutionCount = 0;
+        int writeCount = 0;
+        var transport = new WindowsDisplayBrightnessHidTransport(
+            () =>
+            {
+                resolutionCount++;
+                return (
+                    "cached-path",
+                    new DisplayBrightnessHidWriteResult(
+                        DisplayBrightnessHidWriteStatus.Applied));
+            },
+            (_, _) =>
+            {
+                writeCount++;
+                return new DisplayBrightnessHidWriteResult(
+                    writeCount == 1
+                        ? DisplayBrightnessHidWriteStatus.Applied
+                        : DisplayBrightnessHidWriteStatus.Failed,
+                    writeCount == 1 ? null : "indeterminate write");
+            });
+
+        _ = transport.SetUsage(DisplayBrightnessHidUsage.Increment);
+        DisplayBrightnessHidWriteResult result = transport.SetUsage(
+            DisplayBrightnessHidUsage.Increment);
+
+        Assert.Equal(DisplayBrightnessHidWriteStatus.Failed, result.Status);
+        Assert.Equal("indeterminate write", result.Error);
+        Assert.Equal(1, resolutionCount);
+        Assert.Equal(2, writeCount);
+    }
+
     private sealed class StubTransport(DisplayBrightnessHidWriteResult result)
         : IDisplayBrightnessHidTransport
     {
