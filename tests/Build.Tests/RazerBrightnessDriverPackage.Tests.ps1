@@ -8,6 +8,7 @@ $exporterPath = Join-Path $repository 'build\Export-RazerBrightnessDriverPackage
 $transportPath = Join-Path $repository (
     'src\OpenBlade.Service\WindowsRazerDisplayBrightnessHidTransport.cs')
 $documentationPath = Join-Path $repository 'docs\razer-brightness-driver-package.md'
+$attributesPath = Join-Path $repository '.gitattributes'
 
 function Assert-True {
     param(
@@ -52,6 +53,11 @@ Assert-True ($parseErrors.Count -eq 0) `
 $source = Get-Content -Raw -LiteralPath $exporterPath
 $transport = Get-Content -Raw -LiteralPath $transportPath
 $documentation = Get-Content -Raw -LiteralPath $documentationPath
+$attributeLines = @(Get-Content -LiteralPath $attributesPath)
+
+Assert-True ($attributeLines -contains
+        'build/Export-RazerBrightnessDriverPackage.ps1 text eol=lf') `
+    'The exact package exporter must have canonical LF Git blob content.'
 
 Assert-True ($documentation.IndexOf(
         'https://github.com/OSSBlade/blade-driver-catalog',
