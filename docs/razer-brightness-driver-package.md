@@ -22,10 +22,14 @@ to exact PID `02E0` interfaces:
 | `rzcommonu.inf` | `RAZER\DeviceContol` | Shared Razer control child |
 
 The last identifier is spelled `DeviceContol` in the signed Razer INF. The
-generic RzCommon component does not make the full stack generic. The other
-four packages, the `RzDev_02e0` service and binary name, and their catalogs are
-specific to PID `02E0`. Editing an INF for a different PID would invalidate its
-signed catalog and would not prove that the binary supports that hardware.
+admitted `rzcommonu.inf`, SHA-256
+`DD3C8D65C7C3CCF2093FE70FB21FB8DC724E837880566BAE629B3104A5B1B37B`,
+contains `%RzCommon.DeviceDesc% = RzCommon_Device,RAZER\DeviceContol`
+verbatim. The generic RzCommon component does not make the full stack generic.
+The other four packages, the `RzDev_02e0` service and binary name, and their
+catalogs are specific to PID `02E0`. Editing an INF for a different PID would
+invalidate its signed catalog and would not prove that the binary supports
+that hardware.
 
 Razer identifies RZ09-0581 as the Blade 16 (2026), while RZ09-0528 is a
 different Blade 16 generation. OpenBlade's evidence for RZ09-0528 identifies
@@ -53,6 +57,15 @@ rather than its machine-local `oem###` name, calls Windows
 `pnputil /export-driver`, and then verifies the complete three-file package,
 SHA-256 hashes, and Microsoft hardware signatures. The output must be outside
 the repository.
+
+The archive's `manifest.json` uses manifest type
+`OpenBlade.RazerDriverPackageArchive`. Its `catalogReference` names
+`OSSBlade/blade-driver-catalog` and
+`devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json`. It deliberately
+does not embed the catalog manifest hash because the catalog records the outer
+package archive hash. The checked release attestation binds the catalog
+manifest path and SHA-256 to the archive asset name and SHA-256 without making
+the two files hash each other.
 
 ```powershell
 .\build\Export-RazerBrightnessDriverPackage.ps1 `
@@ -89,8 +102,9 @@ PowerShell window:
 2. Windows must report one connected `USB\VID_1532&PID_02E0&MI_01` device and
    one connected `USB\VID_1532&PID_02E0&MI_02` device. Stop on missing,
    duplicate, or different identities.
-3. The ZIP SHA-256 must be
-   `2286405641678B664BE537B666673613043A19A9A78127E8880F349A2691A5A8`.
+3. The ZIP name and SHA-256 must match the checked release attestation. The
+   same attestation must identify the catalog manifest by repository path and
+   SHA-256.
    After extraction, every file must match `SHA256SUMS.txt`, and every INF,
    CAT, and SYS signature must be valid and issued by Microsoft Windows
    Hardware Compatibility Publisher. On a validation host with SignTool, use

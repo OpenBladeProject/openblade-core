@@ -9,6 +9,9 @@ Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
 $script:PackageName = 'Razer-02E0-Driver-Stack-1.0.0.78-1.0.0.76'
+$script:CatalogRepository = 'OSSBlade/blade-driver-catalog'
+$script:CatalogManifestPath =
+    'devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json'
 $script:ExpectedSignerSubjectPrefix =
     'CN=Microsoft Windows Hardware Compatibility Publisher,'
 $script:Packages = @(
@@ -21,6 +24,7 @@ $script:Packages = @(
         Binary = 'RzDev_02e0.sys'
         BinarySha256 = 'BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787'
         SignerThumbprint = '32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21'
+        HardwareMatches = @('USB\VID_1532&PID_02E0&MI_01')
         Role = 'Physical USB lower filter and virtual-device enumerator'
     },
     [ordered]@{
@@ -32,6 +36,7 @@ $script:Packages = @(
         Binary = 'RzDev_02e0.sys'
         BinarySha256 = 'BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787'
         SignerThumbprint = '32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21'
+        HardwareMatches = @('RZVIRTUAL\VID_1532&PID_02E0&MI_00&COL03')
         Role = 'Virtual Consumer Control device function driver'
     },
     [ordered]@{
@@ -43,6 +48,7 @@ $script:Packages = @(
         Binary = 'RzCommon.sys'
         BinarySha256 = '64B72EF9CE409BB17D31096C119B68C4A6A02AB35B7535D763157A4E1A587E59'
         SignerThumbprint = 'FAC666005546D6BE881A31C1267717879401A950'
+        HardwareMatches = @('RAZER\DeviceContol')
         Role = 'Razer control child and typed control interface'
     },
     [ordered]@{
@@ -54,6 +60,7 @@ $script:Packages = @(
         Binary = 'RzDev_02e0.sys'
         BinarySha256 = 'BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787'
         SignerThumbprint = '32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21'
+        HardwareMatches = @('HID\VID_1532&PID_02E0&MI_01&COL01')
         Role = 'Physical keyboard collection upper filter'
     },
     [ordered]@{
@@ -65,6 +72,7 @@ $script:Packages = @(
         Binary = 'RzDev_02e0.sys'
         BinarySha256 = 'BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787'
         SignerThumbprint = '32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21'
+        HardwareMatches = @('HID\VID_1532&PID_02E0&MI_02')
         Role = 'Physical mouse collection upper filter and control-device enumerator'
     }
 )
@@ -119,7 +127,7 @@ function Assert-ExactMicrosoftSignature {
 function Find-ExactPublishedInf {
     param([Parameter(Mandatory)][Collections.IDictionary]$Package)
 
-    $matches = @(
+    $publishedInfMatches = @(
         Get-ChildItem -LiteralPath (Join-Path $env:WINDIR 'INF') -Filter 'oem*.inf' -File |
             Where-Object {
                 [string]::Equals(
@@ -127,11 +135,32 @@ function Find-ExactPublishedInf {
                     $Package.InfSha256,
                     [StringComparison]::Ordinal)
             })
-    if ($matches.Count -ne 1) {
-        throw "Expected one installed published INF matching '$($Package.Inf)', found $($matches.Count)."
+    if ($publishedInfMatches.Count -ne 1) {
+        throw "Expected one installed published INF matching '$($Package.Inf)', found $($publishedInfMatches.Count)."
     }
 
-    return $matches[0]
+    return $publishedInfMatches[0]
+}
+
+function New-RazerPackageArchiveManifest {
+    param([Parameter(Mandatory)][object[]]$ManifestPackages)
+
+    return [ordered]@{
+        manifestType = 'OpenBlade.RazerDriverPackageArchive'
+        schemaVersion = 1
+        catalogReference = [ordered]@{
+            repository = $script:CatalogRepository
+            path = $script:CatalogManifestPath
+        }
+        package = $script:PackageName
+        provider = 'Razer Inc'
+        supportedModel = 'Razer Blade 16 RZ09-0581'
+        usbIdentity = '1532:02E0'
+        architecture = 'amd64'
+        rzDevFileVersion = '1.0.0.78'
+        rzCommonFileVersion = '1.0.0.76'
+        packages = $ManifestPackages
+    }
 }
 
 function Assert-ExactPackageFileSet {
@@ -264,6 +293,7 @@ function Write-RazerPackageContents {
                 catalog = $package.Catalog
                 binary = $package.Binary
                 signerThumbprint = $package.SignerThumbprint
+                hardwareMatches = $package.HardwareMatches
                 files = @(
                     [ordered]@{
                         path = "$($package.Directory)/$($package.Inf)"
@@ -280,17 +310,7 @@ function Write-RazerPackageContents {
                 )
             }
         })
-    $manifest = [ordered]@{
-        schemaVersion = 1
-        package = $script:PackageName
-        provider = 'Razer Inc'
-        supportedModel = 'Razer Blade 16 RZ09-0581'
-        usbIdentity = '1532:02E0'
-        architecture = 'amd64'
-        rzDevFileVersion = '1.0.0.78'
-        rzCommonFileVersion = '1.0.0.76'
-        packages = $manifestPackages
-    }
+    $manifest = New-RazerPackageArchiveManifest -ManifestPackages $manifestPackages
     Write-Utf8NoBom `
         -Path (Join-Path $PackageRoot 'manifest.json') `
         -Content (($manifest | ConvertTo-Json -Depth 8) + "`n")

@@ -78,6 +78,10 @@ foreach ($machineLocalInf in @(
 
 foreach ($contract in @(
         '/export-driver',
+        'OpenBlade.RazerDriverPackageArchive',
+        'OSSBlade/blade-driver-catalog',
+        'devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json',
+        'RAZER\DeviceContol',
         'Get-AuthenticodeSignature',
         '[Management.Automation.SignatureStatus]::Valid',
         'Microsoft Windows Hardware Compatibility Publisher',
@@ -102,6 +106,43 @@ foreach ($runtimeHash in @(
 }
 
 . $exporterPath
+
+Assert-True ($source.IndexOf('$matches', [StringComparison]::OrdinalIgnoreCase) -lt 0) `
+    'The exporter must not overwrite PowerShell''s automatic Matches variable.'
+$rzCommonPackage = @($script:Packages | Where-Object { $_.Inf -eq 'rzcommonu.inf' })
+Assert-True ($rzCommonPackage.Count -eq 1) `
+    'The exporter must contain exactly one admitted RzCommon package.'
+Assert-True (($rzCommonPackage[0].HardwareMatches -join '|') -ceq
+        'RAZER\DeviceContol') `
+    'The exporter must preserve the signed RzCommon hardware ID verbatim.'
+
+$archiveManifest = New-RazerPackageArchiveManifest -ManifestPackages @(
+    [pscustomobject]@{ originalInf = 'fixture.inf' })
+Assert-True ($archiveManifest.manifestType -eq
+        'OpenBlade.RazerDriverPackageArchive') `
+    'The package archive manifest must have an unambiguous manifest type.'
+Assert-True ($archiveManifest.schemaVersion -eq 1) `
+    'The package archive manifest schema version changed unexpectedly.'
+Assert-True ($archiveManifest.catalogReference.repository -eq
+        'OSSBlade/blade-driver-catalog') `
+    'The package archive manifest must identify the catalog repository.'
+Assert-True ($archiveManifest.catalogReference.path -eq
+        'devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json') `
+    'The package archive manifest must identify the exact catalog manifest path.'
+Assert-True ($archiveManifest.catalogReference.PSObject.Properties.Name -notcontains
+        'sha256') `
+    'The archive manifest must not create a circular catalog hash reference.'
+Assert-True ($archiveManifest.packages[0].originalInf -eq 'fixture.inf') `
+    'The private archive manifest did not retain its package entries.'
+
+Assert-True ($documentation.IndexOf(
+        'checked release attestation',
+        [StringComparison]::Ordinal) -ge 0) `
+    'The documentation must describe the non-circular release hash binding.'
+Assert-True ($documentation.IndexOf(
+        '%RzCommon.DeviceDesc% = RzCommon_Device,RAZER\DeviceContol',
+        [StringComparison]::Ordinal) -ge 0) `
+    'The documentation must preserve the signed INF hardware ID verbatim.'
 
 $fixtureRoot = Join-Path (
     [IO.Path]::GetTempPath()) ('openblade-driver-package-fixture-' + [Guid]::NewGuid().ToString('N'))
