@@ -32,12 +32,12 @@ public sealed class DisplayBrightnessHidController : IDisplayBrightnessHidContro
     private readonly ILogger<DisplayBrightnessHidController>? logger;
 
     public DisplayBrightnessHidController()
-        : this(new WindowsDisplayBrightnessHidTransport(), null)
+        : this(new WindowsRazerDisplayBrightnessHidTransport(), null)
     {
     }
 
     public DisplayBrightnessHidController(ILogger<DisplayBrightnessHidController> logger)
-        : this(new WindowsDisplayBrightnessHidTransport(), logger)
+        : this(new WindowsRazerDisplayBrightnessHidTransport(), logger)
     {
     }
 
@@ -65,7 +65,6 @@ public sealed class DisplayBrightnessHidController : IDisplayBrightnessHidContro
 
         cancellationToken.ThrowIfCancellationRequested();
         DisplayBrightnessHidWriteResult write = transport.SetUsage(usage);
-        cancellationToken.ThrowIfCancellationRequested();
         if (write.Status == DisplayBrightnessHidWriteStatus.Unavailable
             && !string.IsNullOrWhiteSpace(write.Error))
         {
@@ -78,10 +77,10 @@ public sealed class DisplayBrightnessHidController : IDisplayBrightnessHidContro
         {
             DisplayBrightnessHidWriteStatus.Applied => new ControlOperationResult(
                 ControlOperationStatus.Applied,
-                "Windows received the display-brightness HID state."),
+                "The native display-brightness input state was submitted."),
             DisplayBrightnessHidWriteStatus.Unavailable => new ControlOperationResult(
                 ControlOperationStatus.Blocked,
-                "The OpenBlade display-brightness HID device is unavailable."),
+                "The native display-brightness input path is unavailable."),
             _ => new ControlOperationResult(
                 ControlOperationStatus.Failed,
                 string.IsNullOrWhiteSpace(write.Error)
@@ -107,6 +106,6 @@ internal sealed class UnavailableDisplayBrightnessHidController
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new ControlOperationResult(
             ControlOperationStatus.Blocked,
-            "The OpenBlade display-brightness HID device is unavailable."));
+            "The native display-brightness input path is unavailable."));
     }
 }

@@ -94,6 +94,13 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "Keyboard brightness stepping is unavailable."));
 
+    Task<ControlOperationResult> SetDisplayBrightnessHidUsageAsync(
+        DisplayBrightnessHidUsage usage,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Native display-brightness input is unavailable."));
+
     Task<ControlOperationResult> SetKeyboardLightingControlModeAsync(
         KeyboardLightingControlMode mode,
         CancellationToken token) => Task.FromResult(
@@ -265,6 +272,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly DiagnosticHistory history;
     private readonly LowPowerGate lowPowerGate;
     private readonly IFirmwareVersionSource firmwareVersionSource;
+    private readonly IDisplayBrightnessHidController displayBrightnessHidController;
     private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
     private readonly TimeProvider timeProvider;
     private readonly SemaphoreSlim operationGate = new(1, 1);
@@ -315,6 +323,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool suppressInitialKnownPowerSourceApplyAfterUnexpectedExit;
     private string? activeUserSid;
     private ResumeStateBaseline? pendingResumeStateBaseline;
+    private DisplayBrightnessHidUsage assertedDisplayBrightnessUsage;
+    private bool displayBrightnessReleaseRequired;
+    private bool displayBrightnessNeutralizationPending = true;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -418,6 +429,37 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
     }
 
+    public ServiceControlRuntime(
+        BatteryConfigurationStore store,
+        PersistentOverrideStore overrideStore,
+        IPowerStateProvider powerStateProvider,
+        IStatusSubscriptionHub subscriptionHub,
+        IVerifiedBladeDeviceProvider deviceProvider,
+        DiagnosticHistory history,
+        LowPowerGate lowPowerGate,
+        IControllerPresenceMonitor controllerPresenceMonitor,
+        IFirmwareVersionSource firmwareVersionSource,
+        ProfileSetValidator validator,
+        IUserConfigurationRepository userConfigurationRepository,
+        IDisplayBrightnessHidController displayBrightnessHidController)
+        : this(
+            store,
+            overrideStore,
+            powerStateProvider,
+            subscriptionHub,
+            deviceProvider,
+            history,
+            lowPowerGate,
+            controllerPresenceMonitor,
+            firmwareVersionSource,
+            static (delay, token) => Task.Delay(delay, token),
+            validator,
+            fanTemperatureSource: null,
+            userConfigurationRepository: userConfigurationRepository,
+            displayBrightnessHidController: displayBrightnessHidController)
+    {
+    }
+
     internal ServiceControlRuntime(
         BatteryConfigurationStore store,
         PersistentOverrideStore overrideStore,
@@ -483,7 +525,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ProfileSetValidator validator,
         IFanTemperatureSource? fanTemperatureSource = null,
         TimeProvider? timeProvider = null,
-        IUserConfigurationRepository? userConfigurationRepository = null)
+        IUserConfigurationRepository? userConfigurationRepository = null,
+        IDisplayBrightnessHidController? displayBrightnessHidController = null)
     {
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
@@ -508,6 +551,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
             ?? new SafeWindowsFanTemperatureSource();
+        this.displayBrightnessHidController = displayBrightnessHidController
+            ?? UnavailableDisplayBrightnessHidController.Instance;
     }
 
     public void Initialize(BatteryConfiguration configuration, PowerSource powerSource) =>
@@ -1316,6 +1361,99 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             operationGate.Release();
         }
+    }
+
+    public async Task<ControlOperationResult> SetDisplayBrightnessHidUsageAsync(
+        DisplayBrightnessHidUsage usage,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        if (!Enum.IsDefined(usage))
+        {
+            return RecordRejectedIntent(new ArgumentOutOfRangeException(nameof(usage)));
+        }
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (usage == DisplayBrightnessHidUsage.Released)
+            {
+                return await ReleaseDisplayBrightnessUsageCoreAsync(token)
+                    .ConfigureAwait(false);
+            }
+
+            if (displayBrightnessReleaseRequired
+                && assertedDisplayBrightnessUsage == usage)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    "The native display-brightness input remains asserted.");
+            }
+
+            if (displayBrightnessReleaseRequired)
+            {
+                ControlOperationResult release =
+                    await ReleaseDisplayBrightnessUsageCoreAsync(token)
+                        .ConfigureAwait(false);
+                if (release.Status != ControlOperationStatus.Applied)
+                {
+                    return release;
+                }
+            }
+
+            ServiceStatusSnapshot current = GetStatus();
+            if (!current.DeviceVerified
+                || current.WritesBlocked
+                || !deviceProvider.TryGetVerifiedDevice(out _))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Native display-brightness input requires the verified admitted laptop device.");
+            }
+
+            if (displayBrightnessNeutralizationPending)
+            {
+                ControlOperationResult neutralization =
+                    await ReleaseDisplayBrightnessUsageCoreAsync(token)
+                        .ConfigureAwait(false);
+                if (neutralization.Status != ControlOperationStatus.Applied)
+                {
+                    return neutralization;
+                }
+            }
+
+            ControlOperationResult result =
+                await displayBrightnessHidController.SetUsageAsync(usage, token)
+                    .ConfigureAwait(false);
+            if (result.Status != ControlOperationStatus.Blocked)
+            {
+                assertedDisplayBrightnessUsage = usage;
+                displayBrightnessReleaseRequired = true;
+            }
+
+            return result;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private async Task<ControlOperationResult> ReleaseDisplayBrightnessUsageCoreAsync(
+        CancellationToken token)
+    {
+        ControlOperationResult release =
+            await displayBrightnessHidController.SetUsageAsync(
+                DisplayBrightnessHidUsage.Released,
+                token).ConfigureAwait(false);
+        if (release.Status == ControlOperationStatus.Applied)
+        {
+            assertedDisplayBrightnessUsage = DisplayBrightnessHidUsage.Released;
+            displayBrightnessReleaseRequired = false;
+            displayBrightnessNeutralizationPending = false;
+        }
+
+        return release;
     }
 
     private async Task<ControlOperationResult> StepKeyboardBrightnessFromOffAsync(
@@ -3868,6 +4006,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return;
             }
 
+            if (displayBrightnessNeutralizationPending)
+            {
+                ControlOperationResult neutralization =
+                    await ReleaseDisplayBrightnessUsageCoreAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                if (neutralization.Status == ControlOperationStatus.Failed)
+                {
+                    history.RecordSummary(
+                        ControlOperationStatus.Failed,
+                        $"Stale native display-brightness input could not be released: {neutralization.Message}");
+                }
+            }
+
             try
             {
                 bool? active = await device.MaintainDriverModeAsync(cancellationToken)
@@ -4016,6 +4167,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ControlOperationResult? brightnessResult = displayBrightnessReleaseRequired
+                ? await ReleaseDisplayBrightnessUsageCoreAsync(cancellationToken)
+                    .ConfigureAwait(false)
+                : null;
             ControlOperationResult driverModeResult = await ReleaseDriverModeCoreAsync(
                 "shutdown",
                 cancellationToken).ConfigureAwait(false);
@@ -4039,7 +4194,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     failure);
             }
 
-            return CombineShutdownCleanupResults(fanResult, driverModeResult);
+            ControlOperationResult cleanup = CombineShutdownCleanupResults(
+                fanResult,
+                driverModeResult);
+            return CombineDisplayBrightnessCleanup(brightnessResult, cleanup);
         }
         finally
         {
@@ -4143,8 +4301,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         try
         {
-            return await ReleaseDriverModeCoreAsync(reasonLabel, cancellationToken)
-                .ConfigureAwait(false);
+            ControlOperationResult? brightnessResult = displayBrightnessReleaseRequired
+                ? await ReleaseDisplayBrightnessUsageCoreAsync(cancellationToken)
+                    .ConfigureAwait(false)
+                : null;
+            ControlOperationResult driverModeResult = await ReleaseDriverModeCoreAsync(
+                reasonLabel,
+                cancellationToken).ConfigureAwait(false);
+            return CombineDisplayBrightnessCleanup(brightnessResult, driverModeResult);
         }
         finally
         {
@@ -4364,6 +4528,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return new ControlOperationResult(
             status,
             $"Fan cleanup: {fanResult.Message} Keyboard cleanup: {driverModeResult.Message}");
+    }
+
+    private static ControlOperationResult CombineDisplayBrightnessCleanup(
+        ControlOperationResult? brightnessResult,
+        ControlOperationResult otherResult)
+    {
+        if (brightnessResult is null
+            || brightnessResult.Status == ControlOperationStatus.Applied)
+        {
+            return otherResult;
+        }
+
+        ControlOperationStatus status = brightnessResult.Status == ControlOperationStatus.Failed
+            || otherResult.Status == ControlOperationStatus.Failed
+                ? ControlOperationStatus.Failed
+                : ControlOperationStatus.Blocked;
+        return new ControlOperationResult(
+            status,
+            $"Display-brightness input cleanup: {brightnessResult.Message} {otherResult.Message}");
     }
 
     public async Task InvalidateLightingRendererAsync(

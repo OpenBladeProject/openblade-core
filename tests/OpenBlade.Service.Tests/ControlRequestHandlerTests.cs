@@ -103,12 +103,10 @@ public sealed class ControlRequestHandlerTests
             var runtime = new RecordingRuntime();
             var archives = new RecordingArchiveProvider();
             var shutdown = new RecordingShutdownSignal();
-            var brightnessHid = new RecordingDisplayBrightnessHidController();
             var handler = new ControlRequestHandler(
                 runtime,
                 archives,
-                shutdown,
-                brightnessHid);
+                shutdown);
 
             ServiceResponse response = await handler.HandleAsync(
                 requests[index],
@@ -123,8 +121,7 @@ public sealed class ControlRequestHandlerTests
                 [expectedCalls[index]],
                 runtime.Calls
                     .Concat(archives.Calls)
-                    .Concat(shutdown.Calls)
-                    .Concat(brightnessHid.Calls));
+                    .Concat(shutdown.Calls));
             if (requests[index] is GetStatusRequest or SubscribeStatusRequest)
             {
                 Assert.NotNull(response.Status);
@@ -434,6 +431,14 @@ public sealed class ControlRequestHandlerTests
             return Record("StepKeyboardBrightness");
         }
 
+        public Task<ControlOperationResult> SetDisplayBrightnessHidUsageAsync(
+            DisplayBrightnessHidUsage usage,
+            CancellationToken token)
+        {
+            Assert.Equal(DisplayBrightnessHidUsage.Increment, usage);
+            return Record("SetDisplayBrightnessHidUsage");
+        }
+
         public Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
             bool enabled,
             CancellationToken token)
@@ -562,22 +567,6 @@ public sealed class ControlRequestHandlerTests
         public List<string> Calls { get; } = [];
 
         public void RequestShutdownAfterResponse() => Calls.Add("Shutdown");
-    }
-
-    private sealed class RecordingDisplayBrightnessHidController
-        : IDisplayBrightnessHidController
-    {
-        public List<string> Calls { get; } = [];
-
-        public Task<ControlOperationResult> SetUsageAsync(
-            DisplayBrightnessHidUsage usage,
-            CancellationToken cancellationToken)
-        {
-            Calls.Add("SetDisplayBrightnessHidUsage");
-            return Task.FromResult(new ControlOperationResult(
-                ControlOperationStatus.Applied,
-                "Applied"));
-        }
     }
 
     private sealed class FixedTelemetry : IPowerStateProvider

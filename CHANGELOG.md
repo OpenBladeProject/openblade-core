@@ -8,9 +8,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Added Windows-native display-brightness handling and flyout presentation for
-  the reconstructed function row, using a narrowly scoped UMDF 2 Consumer
-  Control device. The existing WMI brightness path and OpenBlade flyout remain
-  available when the driver is unavailable.
+  the reconstructed function row, using the exact admitted Razer virtual
+  Consumer Control path already present on the RZ09-0581. The existing WMI
+  brightness path and OpenBlade flyout remain available when that path is
+  unavailable.
 
 ### Fixed
 
