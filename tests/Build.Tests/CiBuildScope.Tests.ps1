@@ -108,8 +108,30 @@ if (-not $qualityJob.Contains(
         'OPENBLADE_SKIP_INTERACTIVE_DESKTOP_TESTS: 0')) {
     throw 'Hosted CI must run interactive-desktop tests by default.'
 }
-if ($qualityJob -notmatch '(?s)dotnet test OpenBlade\.slnx.*?-m:1') {
-    throw 'Hosted CI must serialize solution test projects while the executable smoke runs.'
+$testStepStart = $qualityJob.IndexOf(
+    '      - name: Test',
+    [StringComparison]::Ordinal)
+if ($testStepStart -lt 0) {
+    throw 'Hosted CI quality job is missing the Test step.'
+}
+
+$nextStepStart = $qualityJob.IndexOf(
+    '      - name:',
+    $testStepStart + 1,
+    [StringComparison]::Ordinal)
+$testStep = if ($nextStepStart -ge 0) {
+    $qualityJob.Substring($testStepStart, $nextStepStart - $testStepStart)
+}
+else {
+    $qualityJob.Substring($testStepStart)
+}
+
+foreach ($requiredTestContract in @(
+        'dotnet test OpenBlade.slnx',
+        '-m:1')) {
+    if (-not $testStep.Contains($requiredTestContract)) {
+        throw "Hosted CI Test step is missing '$requiredTestContract'."
+    }
 }
 
 Write-Host 'CI build scope tests passed.'
