@@ -34,7 +34,10 @@ public sealed class TrayDashboardPreferenceTests
                 TrayDashboardStatusItemKind.FanSpeed,
             ],
             preference.StatusItems!.Select(status => status.Kind));
-        Assert.All(preference.StatusItems!, status => Assert.True(status.IsVisible));
+        Assert.Equal(
+            [true, true, true, false],
+            preference.StatusItems!.Select(status => status.IsVisible));
+        Assert.Equal(3, TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems);
         Assert.Equal(
             [
                 TrayDashboardSliderKind.LightingBrightness,
@@ -170,6 +173,31 @@ public sealed class TrayDashboardPreferenceTests
                 SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1)));
 
         Assert.Contains("newer than supported", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NormalizePreservesStatusOrderAndCapsVisibleItemsAtThree()
+    {
+        TrayDashboardPreference normalized = TrayDashboardPreferenceDefaults.Normalize(new(
+            StatusItems:
+            [
+                new(TrayDashboardStatusItemKind.FanSpeed, true),
+                new(TrayDashboardStatusItemKind.PowerSource, true),
+                new(TrayDashboardStatusItemKind.Temperatures, true),
+                new(TrayDashboardStatusItemKind.BatteryPower, true),
+            ],
+            SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion));
+
+        Assert.Equal(
+            [
+                TrayDashboardStatusItemKind.FanSpeed,
+                TrayDashboardStatusItemKind.PowerSource,
+                TrayDashboardStatusItemKind.Temperatures,
+            ],
+            normalized.StatusItems!
+                .Where(status => status.IsVisible)
+                .Select(status => status.Kind));
+        Assert.False(normalized.StatusItems![3].IsVisible);
     }
 
     [Fact]

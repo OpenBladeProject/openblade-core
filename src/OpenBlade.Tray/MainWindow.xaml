@@ -450,6 +450,7 @@
                                    VerticalAlignment="Center" />
                         <ToggleSwitch Grid.Column="1"
                                       IsOn="{x:Bind IsVisible, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind IsEnabled, Mode=OneWay}"
                                       MinWidth="0"
                                       OffContent=""
                                       OnContent=""
@@ -3749,9 +3750,19 @@
                         </StackPanel>
 
                         <StackPanel Spacing="8">
-                            <TextBlock Text="Status row"
-                                       Style="{StaticResource SectionHeaderStyle}" />
-                            <TextBlock Text="Choose the live readings shown along the bottom of the popup."
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Status row"
+                                           Style="{StaticResource SectionHeaderStyle}" />
+                                <TextBlock x:Name="TrayDashboardStatusCountText"
+                                           Grid.Column="1"
+                                           Style="{StaticResource SecondaryTextStyle}"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                            <TextBlock Text="Choose up to three live readings shown along the bottom of the popup."
                                        Style="{StaticResource SecondaryTextStyle}"
                                        TextWrapping="Wrap" />
                             <Border Style="{StaticResource SettingsGroupStyle}">

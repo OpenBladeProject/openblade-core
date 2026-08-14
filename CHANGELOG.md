@@ -28,6 +28,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Limited the tray-dashboard status row to three configurable readings so its
+  icons and labels remain distinct instead of clipping in the fixed-width popup.
 - Reduced tray-dashboard background work by sharing one visible-surface
   telemetry loop, reading only the sensors selected for the popup, replacing
   steady foreground polling with bounded deactivation checks, suppressing

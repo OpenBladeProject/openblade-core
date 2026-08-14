@@ -3560,11 +3560,31 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         object? sender,
         PropertyChangedEventArgs args)
     {
-        if (!changingTrayDashboardEditor
-            && args.PropertyName == nameof(TrayDashboardStatusItemOption.IsVisible))
+        if (changingTrayDashboardEditor
+            || args.PropertyName != nameof(TrayDashboardStatusItemOption.IsVisible))
         {
-            ApplyTrayDashboardEditor();
+            return;
         }
+
+        if (sender is TrayDashboardStatusItemOption { IsVisible: true } option
+            && TrayDashboardEditorStatusItems.Count(status => status.IsVisible)
+                > TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems)
+        {
+            changingTrayDashboardEditor = true;
+            try
+            {
+                option.IsVisible = false;
+            }
+            finally
+            {
+                changingTrayDashboardEditor = false;
+            }
+
+            UpdateTrayDashboardEditorAvailability();
+            return;
+        }
+
+        ApplyTrayDashboardEditor();
     }
 
     private void OnTrayDashboardEditorOrderChanged(
@@ -3627,6 +3647,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         TrayDashboardSliderCountText.Text =
             $"{TrayDashboardEditorSliders.Count} of "
             + TrayDashboardPreferenceDefaults.MaximumVisibleSliders;
+        int visibleStatusItemCount =
+            TrayDashboardEditorStatusItems.Count(option => option.IsVisible);
+        foreach (TrayDashboardStatusItemOption option in TrayDashboardEditorStatusItems)
+        {
+            option.IsEnabled = option.IsVisible
+                || visibleStatusItemCount
+                    < TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems;
+        }
+        TrayDashboardStatusCountText.Text =
+            $"{visibleStatusItemCount} of "
+            + TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems;
     }
 
     private void ApplyTrayDashboardPreference(

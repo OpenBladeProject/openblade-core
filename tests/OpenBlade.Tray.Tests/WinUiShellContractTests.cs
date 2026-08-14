@@ -2508,6 +2508,9 @@ public sealed class WinUiShellContractTests
         Assert.Contains("SliderSection.Visibility = row == 0", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("MaximumVisibleSliders", mainWindow, StringComparison.Ordinal);
         Assert.Contains("Choose up to two sliders", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("MaximumVisibleStatusItems", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("Choose up to three live readings", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{x:Bind IsEnabled, Mode=OneWay}\"", mainXaml, StringComparison.Ordinal);
         Assert.Contains("gpuClockOffsetCommits.Schedule(requested)", dashboardWindow, StringComparison.Ordinal);
         Assert.Equal(
             2,

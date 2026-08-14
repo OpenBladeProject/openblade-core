@@ -96,6 +96,7 @@ public sealed class TrayDashboardControlOption : INotifyPropertyChanged
 
 public sealed class TrayDashboardStatusItemOption : INotifyPropertyChanged
 {
+    private bool isEnabled = true;
     private bool isVisible;
 
     public TrayDashboardStatusItemOption(
@@ -113,6 +114,21 @@ public sealed class TrayDashboardStatusItemOption : INotifyPropertyChanged
     public TrayDashboardStatusItemKind Kind { get; }
 
     public string Label { get; }
+
+    public bool IsEnabled
+    {
+        get => isEnabled;
+        set
+        {
+            if (isEnabled == value)
+            {
+                return;
+            }
+
+            isEnabled = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsEnabled)));
+        }
+    }
 
     public bool IsVisible
     {
@@ -169,6 +185,7 @@ public sealed class TrayDashboardSliderOption : INotifyPropertyChanged
 public static class TrayDashboardPreferenceDefaults
 {
     public const int CurrentSchemaVersion = 2;
+    public const int MaximumVisibleStatusItems = 3;
     public const int MaximumVisibleSliders = 2;
 
     private sealed record ControlDefinition(
@@ -240,7 +257,9 @@ public static class TrayDashboardPreferenceDefaults
                 definition.IsVisible))
             .ToArray(),
         StatusItems: StatusDefinitions
-            .Select(kind => new TrayDashboardStatusItemPreference(kind, true))
+            .Select((kind, index) => new TrayDashboardStatusItemPreference(
+                kind,
+                index < MaximumVisibleStatusItems))
             .ToArray(),
         Sliders: SliderDefinitions
             .Select(definition => new TrayDashboardSliderPreference(
@@ -314,6 +333,22 @@ public static class TrayDashboardPreferenceDefaults
             if (seenStatusItems.Add(kind))
             {
                 statusItems.Add(new TrayDashboardStatusItemPreference(kind, false));
+            }
+        }
+
+        int visibleStatusItemCount = 0;
+        for (int index = 0; index < statusItems.Count; index++)
+        {
+            TrayDashboardStatusItemPreference status = statusItems[index];
+            if (!status.IsVisible)
+            {
+                continue;
+            }
+
+            visibleStatusItemCount++;
+            if (visibleStatusItemCount > MaximumVisibleStatusItems)
+            {
+                statusItems[index] = status with { IsVisible = false };
             }
         }
 
