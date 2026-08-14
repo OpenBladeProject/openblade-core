@@ -28,6 +28,8 @@
              Link="WindowsStartupRegistration.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\ElevatedServiceControlLauncher.cs"
              Link="ElevatedServiceControlLauncher.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\RazerServiceStopOperation.cs"
+             Link="RazerServiceStopOperation.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\ServiceStateConfirmation.cs"
              Link="ServiceStateConfirmation.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\WindowsServiceStateConfirmation.cs"

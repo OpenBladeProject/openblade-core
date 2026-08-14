@@ -3493,8 +3493,46 @@
                         </StackPanel>
 
                         <StackPanel x:Name="SettingsShutdownSection">
-                        <TextBlock Text="Shutdown" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock Text="Services" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Stop Razer services"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Stop known Synapse and Chroma controller services. OpenBlade stays running; Razer software may start them again."
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Button x:Name="StopRazerServicesButton"
+                                            Grid.Column="1"
+                                            Style="{StaticResource DestructiveButtonStyle}"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            Click="OnStopRazerServices"
+                                            AutomationProperties.Name="Stop Razer services"
+                                            AutomationProperties.LiveSetting="Polite">
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <ProgressRing x:Name="StopRazerServicesProgressRing"
+                                                          Width="14"
+                                                          Height="14"
+                                                          IsIndeterminate="True"
+                                                          IsActive="False"
+                                                          Visibility="Collapsed" />
+                                            <FontIcon x:Name="StopRazerServicesIcon"
+                                                      Glyph="&#xE71A;"
+                                                      FontSize="14" />
+                                            <TextBlock x:Name="StopRazerServicesButtonLabel"
+                                                       Text="Stop services" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                            </Border>
                             <Border Style="{StaticResource SettingsLastRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -3521,6 +3559,7 @@
                                     </Button>
                                 </Grid>
                             </Border>
+                            </StackPanel>
                         </Border>
                         </StackPanel>
                         </StackPanel>

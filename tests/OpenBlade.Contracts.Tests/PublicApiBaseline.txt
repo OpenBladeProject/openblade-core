@@ -1385,6 +1385,8 @@ type sealed class OpenBlade.Contracts.RazerBladeModelInfo
   property System.String ProductName { get; init; }
   property System.String UsbProductId { get; init; }
   property System.String UsbVendorId { get; init; }
+type static class OpenBlade.Contracts.RazerControllerServiceAliases
+  method static System.Boolean Contains(System.String alias)
 type struct OpenBlade.Contracts.ReactiveKeyPulse
   interface System.IEquatable<OpenBlade.Contracts.ReactiveKeyPulse>
   ctor (System.Byte matrixSlot, System.Nullable<System.Int64> observedTimestamp = null)

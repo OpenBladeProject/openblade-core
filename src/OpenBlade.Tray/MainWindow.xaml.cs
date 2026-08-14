@@ -2744,6 +2744,169 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             });
     }
 
+    private async void OnStopRazerServices(object sender, RoutedEventArgs args)
+    {
+        if (!StopRazerServicesButton.IsEnabled)
+        {
+            return;
+        }
+
+        SetStopRazerServicesProgress(isBusy: true, busyLabel: "Checking…");
+        try
+        {
+            RazerServiceInventory before = await RazerServiceStopOperation.ObserveAsync(
+                CancellationToken.None);
+            if (!before.Complete)
+            {
+                throw new InvalidOperationException(before.Error);
+            }
+
+            IReadOnlyList<RazerServiceSnapshot> candidates =
+                RazerServiceStopOperation.ActiveServices(before);
+            if (candidates.Count == 0)
+            {
+                await ShowMessageDialogAsync(
+                    "No known Razer controller services are running",
+                    "OpenBlade found no active Synapse or Chroma controller services in its reviewed allowlist.");
+                return;
+            }
+
+            string serviceList = string.Join(
+                Environment.NewLine,
+                candidates.Select(service => $"• {service.DisplayName}"));
+            var confirmation = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Stop Razer services?",
+                Content = "These known controller services are currently active:\n\n"
+                    + serviceList
+                    + "\n\nAfter approval, OpenBlade will freshly check the same reviewed allowlist "
+                    + "and stop any active matches. This does not uninstall Razer software or disable service startup. "
+                    + "Razer software may start the services again, and features that depend on them may stop working until then.",
+                PrimaryButtonText = "Stop services",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                PrimaryButtonStyle = (Style)Root.Resources["DestructiveButtonStyle"],
+            };
+            if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            SetStopRazerServicesProgress(isBusy: true, busyLabel: "Stopping…");
+
+            if (Microsoft.UI.Xaml.Application.Current is not App app)
+            {
+                throw new InvalidOperationException("The OpenBlade application is unavailable.");
+            }
+
+            ElevatedServiceControlOutcome outcome = await app.StopRazerServicesAsync();
+            if (outcome == ElevatedServiceControlOutcome.Canceled)
+            {
+                await ShowMessageDialogAsync(
+                    "Razer service stop canceled",
+                    "Windows did not grant administrator permission. OpenBlade did not retry the request.");
+                return;
+            }
+
+            RazerServiceInventory after = await RazerServiceStopOperation.ObserveAsync(
+                CancellationToken.None);
+            await ShowRazerServiceStopResultAsync(candidates, after, outcome);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("Razer service stop failed: {0}", exception);
+            await ShowMessageDialogAsync(
+                "OpenBlade could not stop Razer services",
+                exception.Message);
+        }
+        finally
+        {
+            if (Volatile.Read(ref disposed) == 0)
+            {
+                SetStopRazerServicesProgress(isBusy: false, busyLabel: null);
+            }
+        }
+    }
+
+    private async Task ShowRazerServiceStopResultAsync(
+        IReadOnlyList<RazerServiceSnapshot> candidates,
+        RazerServiceInventory after,
+        ElevatedServiceControlOutcome helperOutcome)
+    {
+        if (!after.Complete)
+        {
+            await ShowMessageDialogAsync(
+                "Razer service status is unconfirmed",
+                "The elevated request finished, but OpenBlade could not read the final service state. "
+                    + after.Error);
+            return;
+        }
+
+        RazerServiceStopReadback readback = RazerServiceStopOperation.EvaluateReadback(
+            candidates,
+            after);
+        IReadOnlyList<RazerServiceSnapshot> remaining = readback.RemainingActive;
+        IReadOnlyList<string> stopped = readback.StoppedOrRemoved;
+
+        if (remaining.Count == 0)
+        {
+            string note = helperOutcome == ElevatedServiceControlOutcome.Indeterminate
+                ? "\n\nThe helper result was indeterminate, but fresh readback confirms the services are stopped or no longer installed."
+                : string.Empty;
+            await ShowMessageDialogAsync(
+                "Razer services stopped",
+                string.Join(Environment.NewLine, stopped.Select(service => $"• {service}"))
+                    + note);
+            return;
+        }
+
+        string content = stopped.Count == 0
+            ? string.Empty
+            : "Stopped or no longer installed:\n"
+                + string.Join(Environment.NewLine, stopped.Select(service => $"• {service}"))
+                + "\n\n";
+        content += "Still active or pending:\n"
+            + string.Join(
+                Environment.NewLine,
+                remaining.Select(service => $"• {service.DisplayName}"))
+            + "\n\nOpenBlade did not retry any stop request.";
+        await ShowMessageDialogAsync(
+            "Some Razer services could not be confirmed stopped",
+            content);
+    }
+
+    private async Task ShowMessageDialogAsync(string title, string content)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = title,
+            Content = content,
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        await dialog.ShowAsync();
+    }
+
+    private void SetStopRazerServicesProgress(bool isBusy, string? busyLabel)
+    {
+        StopRazerServicesButton.IsEnabled = !isBusy;
+        StopRazerServicesProgressRing.IsActive = isBusy;
+        StopRazerServicesProgressRing.Visibility = isBusy
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        StopRazerServicesIcon.Visibility = isBusy
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        StopRazerServicesButtonLabel.Text = isBusy
+            ? busyLabel ?? "Working…"
+            : "Stop services";
+        AutomationProperties.SetName(
+            StopRazerServicesButton,
+            isBusy ? busyLabel ?? "Working with Razer services" : "Stop Razer services");
+    }
+
     private async void OnShutdownOpenBlade(object sender, RoutedEventArgs args)
     {
         var confirmation = new ContentDialog

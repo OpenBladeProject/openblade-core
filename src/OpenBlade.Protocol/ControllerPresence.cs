@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Protocol;
 
 public sealed record ControllerPresenceObservation(
@@ -19,17 +21,11 @@ public sealed class WindowsControllerPresenceMonitor(
     IRunningProcessSource processSource,
     IWindowsServiceSource serviceSource) : IControllerPresenceMonitor
 {
-    private static readonly HashSet<string> KnownControllers = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> KnownControllerProcesses = new(
+        StringComparer.OrdinalIgnoreCase)
     {
         "RazerAppEngine",
         "razerwdl",
-        "Razer Chroma SDK Diagnostic Service",
-        "Razer Chroma SDK Server",
-        "Razer Chroma SDK Service",
-        "Razer Chroma Stream Server",
-        "RGS",
-        "Razer Gaming Services Updater",
-        "Razer Synapse Service",
     };
 
     public ControllerPresenceObservation Observe()
@@ -42,7 +38,9 @@ public sealed class WindowsControllerPresenceMonitor(
         {
             potentialControllers.AddRange(processSource
                 .GetProcessNames()
-                .Where(KnownControllers.Contains));
+                .Where(process =>
+                    KnownControllerProcesses.Contains(process)
+                    || RazerControllerServiceAliases.Contains(process)));
         }
         catch (Exception)
         {
@@ -55,9 +53,9 @@ public sealed class WindowsControllerPresenceMonitor(
                 .GetServices()
                 .Where(service => IsActive(service.State))
                 .Where(service =>
-                    KnownControllers.Contains(service.ServiceName)
-                    || KnownControllers.Contains(service.DisplayName))
-                .Select(service => KnownControllers.Contains(service.DisplayName)
+                    RazerControllerServiceAliases.Contains(service.ServiceName)
+                    || RazerControllerServiceAliases.Contains(service.DisplayName))
+                .Select(service => RazerControllerServiceAliases.Contains(service.DisplayName)
                     ? service.DisplayName
                     : service.ServiceName));
         }

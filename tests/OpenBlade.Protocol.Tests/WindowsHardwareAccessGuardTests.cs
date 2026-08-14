@@ -125,6 +125,21 @@ public sealed class WindowsHardwareAccessGuardTests
     }
 
     [Fact]
+    public void Check_MatchesSynapseInternalServiceNameWhenDisplayNameIsUnknown()
+    {
+        WindowsHardwareAccessGuard guard = CreateGuard(
+            [],
+            [new WindowsServiceSnapshot(
+                "RazerSynapseService",
+                "Unknown display name",
+                WindowsServiceState.Running)]);
+
+        HardwareAccessDecision result = guard.Check();
+
+        Assert.Equal(["RazerSynapseService"], result.Conflicts);
+    }
+
+    [Fact]
     public void Check_UsesExactAliasesAndRejectsPrefixesAndSuffixes()
     {
         WindowsHardwareAccessGuard guard = CreateGuard(
