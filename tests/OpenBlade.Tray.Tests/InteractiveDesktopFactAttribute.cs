@@ -1,5 +1,11 @@
 namespace OpenBlade.Tray.Tests;
 
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class InteractiveDesktopTestCollection
+{
+    public const string Name = "Interactive desktop";
+}
+
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
 internal sealed class InteractiveDesktopFactAttribute : FactAttribute
 {

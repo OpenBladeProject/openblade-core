@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 
 namespace OpenBlade.Tray.Tests;
 
+[Collection(InteractiveDesktopTestCollection.Name)]
 public sealed class TrayXamlStartupSmokeTests
 {
     [InteractiveDesktopFact]
@@ -57,6 +58,20 @@ public sealed class TrayXamlStartupSmokeTests
         bool expected)
     {
         Assert.Equal(expected, InteractiveDesktopTestPolicy.ShouldSkip(value));
+    }
+
+    [Fact]
+    public void ExecutableSmokeDisablesInAssemblyParallelization()
+    {
+        Assert.IsType<CollectionAttribute>(
+            typeof(TrayXamlStartupSmokeTests)
+                .GetCustomAttribute<CollectionAttribute>());
+
+        CollectionDefinitionAttribute definition =
+            Assert.IsType<CollectionDefinitionAttribute>(
+                typeof(InteractiveDesktopTestCollection)
+                    .GetCustomAttribute<CollectionDefinitionAttribute>());
+        Assert.True(definition.DisableParallelization);
     }
 
     private static string GetTrayExecutablePath([CallerFilePath] string testPath = "")
