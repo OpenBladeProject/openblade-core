@@ -134,7 +134,11 @@ public static class ProfileExportSerializer
 
     private static ProfileSet DeserializeVersion7(string json)
     {
-        return NormalizeLegacyProfile(DeserializeDocument(json).Profiles);
+        ProfileSet profiles = ClearLegacyWindowsPowerModes(
+            NormalizeLegacyGpuClockTuning(
+                NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles)));
+        ValidateBatteryProtection(profiles);
+        return profiles;
     }
 
     private static ProfileSet DeserializeVersion8(string json)

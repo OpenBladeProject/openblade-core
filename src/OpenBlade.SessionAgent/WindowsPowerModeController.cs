@@ -58,6 +58,8 @@ public sealed class WindowsPowerModeController : IWindowsPowerModeController
                 return Task.FromResult(Failure(writeResult, "set"));
             }
 
+            // This confirms only the current user's configured AC/DC mode. Windows can
+            // still select a different effective mode while another system signal is active.
             uint confirmResult = dc
                 ? NativeMethods.PowerGetUserConfiguredDCPowerMode(out Guid confirmed)
                 : NativeMethods.PowerGetUserConfiguredACPowerMode(out confirmed);

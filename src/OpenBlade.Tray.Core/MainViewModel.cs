@@ -1568,9 +1568,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SelectedWindowsPowerModeOption.Description;
 
     public bool CanEditWindowsPowerMode =>
-        IsConnected
-        && HasConfirmedPowerSource
-        && latestStatus?.ControlAccess == SessionControlAccess.Active;
+        CanMutate && HasConfirmedPowerSource;
 
     public IReadOnlyList<FanMode> AvailableFanModes
     {
@@ -2573,6 +2571,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             SetField(ref profiles, value);
             NotifyProfileSummaries();
+            Notify(nameof(SelectedWindowsPowerModeOption));
+            Notify(nameof(SelectedWindowsPowerModeDescription));
             NotifyGamingModeKeyPolicy();
         }
     }

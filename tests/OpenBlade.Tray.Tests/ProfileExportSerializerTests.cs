@@ -96,14 +96,23 @@ public sealed class ProfileExportSerializerTests
     }
 
     [Fact]
-    public void Deserialize_VersionSevenLeavesWindowsPowerModeUnmanaged()
+    public void Deserialize_VersionSevenPreservesBatteryProtectionAndLeavesPowerModeUnmanaged()
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         profiles = profiles with
         {
+            PluggedIn = profiles.PluggedIn with
+            {
+                BatteryProtectionEnabled = false,
+            },
             Battery = profiles.Battery with
             {
+                BatteryProtectionEnabled = true,
                 WindowsPowerMode = WindowsPowerMode.BestPowerEfficiency,
+            },
+            UsbC = profiles.UsbC with
+            {
+                BatteryProtectionEnabled = false,
             },
         };
         string legacyJson = ProfileExportSerializer.Serialize(
@@ -116,6 +125,9 @@ public sealed class ProfileExportSerializerTests
 
         ProfileSet imported = ProfileExportSerializer.Deserialize(legacyJson);
 
+        Assert.False(imported.PluggedIn.BatteryProtectionEnabled);
+        Assert.True(imported.Battery.BatteryProtectionEnabled);
+        Assert.False(imported.UsbC.BatteryProtectionEnabled);
         Assert.Null(imported.Battery.WindowsPowerMode);
     }
 

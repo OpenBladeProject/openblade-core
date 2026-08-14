@@ -9,6 +9,65 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class MainViewModelTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task WindowsPowerMode_CannotStageWhenProfileCannotBeSaved(
+        bool deviceVerified,
+        bool writesBlocked)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot ready = CreateStatus(verified: true, blocked: false);
+        client.Publish(ready);
+        await WaitUntilAsync(() => viewModel.CanEditWindowsPowerMode);
+
+        client.Publish(ready with
+        {
+            Revision = 2,
+            DeviceVerified = deviceVerified,
+            WritesBlocked = writesBlocked,
+            Message = "Controls unavailable",
+        });
+        await WaitUntilAsync(() => !viewModel.CanControlHardware);
+
+        Assert.False(viewModel.CanEditWindowsPowerMode);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+        Assert.False(viewModel.HasThermalProfileDraft);
+    }
+
+    [Fact]
+    public async Task WindowsPowerMode_ServiceProfileUpdateNotifiesDashboardSelection()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        var changedProperties = new ConcurrentQueue<string?>();
+        viewModel.PropertyChanged += (_, args) => changedProperties.Enqueue(args.PropertyName);
+
+        client.Publish(initial with
+        {
+            Revision = 2,
+            Profiles = initial.Profiles with
+            {
+                PluggedIn = initial.Profiles.PluggedIn with
+                {
+                    WindowsPowerMode = WindowsPowerMode.Balanced,
+                },
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.PluggedInProfilePresentation.WindowsPowerMode.Text == "Balanced");
+
+        Assert.Equal(WindowsPowerMode.Balanced, viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.Contains(nameof(MainViewModel.SelectedWindowsPowerModeOption), changedProperties);
+        Assert.Contains(nameof(MainViewModel.SelectedWindowsPowerModeDescription), changedProperties);
+    }
+
     [Fact]
     public async Task WindowsPowerMode_StagesWithProfileAndSavesThroughLaptopActions()
     {
