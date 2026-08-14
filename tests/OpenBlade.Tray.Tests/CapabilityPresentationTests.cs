@@ -1027,10 +1027,15 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Style") == "{StaticResource TroubleshootingSectionStyle}");
         Assert.Contains(razerServicesRow.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "Razer background services");
+            && Attribute(element, "Text") == "Other Razer software running");
+        Assert.Contains(razerServicesRow.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text")?.Contains(
+                "ViewModel.TroubleshootingOtherRazerSoftwareStatus",
+                StringComparison.Ordinal) is true);
         Assert.DoesNotContain(razerServicesRow.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "Other Razer software running");
+            && Attribute(element, "Text") == "Razer background services");
         foreach (string label in new[]
                  {
                      "OpenBlade service",
@@ -1038,7 +1043,6 @@ public sealed class CapabilityPresentationTests
                      "Keyboard driver mode",
                      "Power source",
                      "Other Razer software running",
-                     "Razer background services",
                  })
         {
             Assert.Contains(troubleshooting.Descendants(), element =>
