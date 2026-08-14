@@ -1961,7 +1961,10 @@ public sealed class MainViewModelTests
 
         viewModel.LiveReadingsEnabled = false;
         await viewModel.ObserveStateAsync(CancellationToken.None);
-        await viewModel.ObserveTrayDashboardStateAsync(CancellationToken.None);
+        await viewModel.ObserveTrayDashboardStateAsync(
+            includeMainDashboardReadings: false,
+            LiveReadingSensors.All,
+            CancellationToken.None);
 
         Assert.Equal([true], client.IncludeLiveReadingsRequests);
         Assert.Null(viewModel.LiveReadings);
@@ -1994,9 +1997,21 @@ public sealed class MainViewModelTests
 
         client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        Task dashboard = viewModel.ObserveTrayDashboardStateAsync(CancellationToken.None);
+        Task dashboard = viewModel.ObserveTrayDashboardStateAsync(
+            includeMainDashboardReadings: false,
+            LiveReadingSensors.FanSpeeds,
+            CancellationToken.None);
         client.PendingObservation.SetResult(CreateStatus(true, false));
         await dashboard;
+
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task combined = viewModel.ObserveTrayDashboardStateAsync(
+            includeMainDashboardReadings: true,
+            LiveReadingSensors.FanSpeeds,
+            CancellationToken.None);
+        client.PendingObservation.SetResult(CreateStatus(true, false));
+        await combined;
 
         Assert.Equal(
             [
@@ -2004,6 +2019,7 @@ public sealed class MainViewModelTests
                     | LiveReadingSensors.CpuTemperature
                     | LiveReadingSensors.GpuTemperature,
                 LiveReadingSensors.BatteryPower,
+                LiveReadingSensors.BatteryPower | LiveReadingSensors.FanSpeeds,
                 LiveReadingSensors.All,
             ],
             client.RequestedLiveReadings);

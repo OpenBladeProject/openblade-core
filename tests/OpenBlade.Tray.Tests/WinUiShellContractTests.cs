@@ -1576,7 +1576,7 @@ public sealed class WinUiShellContractTests
             "src", "OpenBlade.Tray", "WinFormsTrayIconHost.cs");
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
-        Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveStateAsync", window, StringComparison.Ordinal);
+        Assert.Contains("new VisibleObservationLoop(ObserveVisibleSurfacesAsync", window, StringComparison.Ordinal);
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync", window, StringComparison.Ordinal);
         Assert.Contains("observationIntervalProvider: () => Timeout.InfiniteTimeSpan", window, StringComparison.Ordinal);
         Assert.Contains("trayIcon.MouseMove += OnTrayIconMouseMove", trayHost, StringComparison.Ordinal);
@@ -1640,7 +1640,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("AppWindow.Show(true)", app, StringComparison.Ordinal);
         int showMethod = window.IndexOf("public void ShowAndActivate()", StringComparison.Ordinal);
-        int start = window.IndexOf("visibleObservationLoop.StartOrWake()", showMethod, StringComparison.Ordinal);
+        int start = window.IndexOf("UpdateActiveObservationLoop()", showMethod, StringComparison.Ordinal);
         int show = window.IndexOf("AppWindow.Show(true)", showMethod, StringComparison.Ordinal);
         Assert.True(showMethod >= 0 && start > showMethod && show > start);
 
@@ -1657,8 +1657,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         string hiddenBody = window[hiddenMethod..hiddenMethodEnd];
         Assert.DoesNotContain("trayObservationLoop.StartOrWake()", hiddenBody, StringComparison.Ordinal);
-        Assert.Contains("TryPreferEfficientProcessorsForCurrentThread()", hiddenBody, StringComparison.Ordinal);
-        Assert.Contains("TrySetProcessEcoQos(enabled: true)", hiddenBody, StringComparison.Ordinal);
+        Assert.Contains("ApplyProcessorVisibilityPolicy()", hiddenBody, StringComparison.Ordinal);
         Assert.Contains(
             "!window.UpdateViewModel.NeedsConsentPrompt",
             app,
@@ -1675,7 +1674,18 @@ public sealed class WinUiShellContractTests
             "\"main view model\"",
             StringComparison.Ordinal);
         Assert.True(disposeLoop >= 0 && disposeTrayLoop > disposeLoop && disposeViewModel > disposeTrayLoop);
+        Assert.DoesNotContain("trayDashboardObservationLoop", window, StringComparison.Ordinal);
         Assert.Contains("DisposeComponentSafelyAsync", window, StringComparison.Ordinal);
+        int processorPolicy = window.IndexOf(
+            "private void ApplyProcessorVisibilityPolicy()",
+            StringComparison.Ordinal);
+        int dashboardVisibility = window.IndexOf(
+            "public void SetTrayDashboardVisible(bool visible)",
+            StringComparison.Ordinal);
+        string processorPolicyBody = window[processorPolicy..dashboardVisibility];
+        Assert.Contains("windowVisible || trayDashboardVisible", processorPolicyBody, StringComparison.Ordinal);
+        Assert.Contains("TrySetProcessEcoQos(enabled: false)", processorPolicyBody, StringComparison.Ordinal);
+        Assert.Contains("TrySetProcessEcoQos(enabled: true)", processorPolicyBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1905,6 +1915,17 @@ public sealed class WinUiShellContractTests
             "src",
             "OpenBlade.Tray.Core",
             "TrayDashboardPreferences.cs");
+        int dashboardDispose = dashboardWindow.IndexOf(
+            "public void Dispose()",
+            StringComparison.Ordinal);
+        int dashboardTrySetOwner = dashboardWindow.IndexOf(
+            "private void TrySetEditOwner(",
+            dashboardDispose,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "gpuClockOffsetCommits.Dispose();",
+            dashboardWindow[dashboardDispose..dashboardTrySetOwner],
+            StringComparison.Ordinal);
         Assert.Contains("trayIcon.MouseClick += OnTrayIconMouseClick", trayHost, StringComparison.Ordinal);
         Assert.Contains(
             "trayIcon.MouseDoubleClick += OnTrayIconMouseDoubleClick",
@@ -1989,8 +2010,16 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         string showAtBody = dashboardWindow[showAt..tryPosition];
         Assert.Contains("if (!editing)", showAtBody, StringComparison.Ordinal);
-        Assert.Contains("Activate();", showAtBody, StringComparison.Ordinal);
+        Assert.Contains("TryEstablishForeground()", showAtBody, StringComparison.Ordinal);
         Assert.Contains("TryStartReveal(placement, displayArea, editing)", showAtBody, StringComparison.Ordinal);
+        int establishForeground = dashboardWindow.IndexOf(
+            "private bool TryEstablishForeground()",
+            tryPosition,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Activate();",
+            dashboardWindow[establishForeground..],
+            StringComparison.Ordinal);
         int position = dashboardWindow.IndexOf(
             "private void PositionAt(",
             tryPosition,
@@ -2017,7 +2046,9 @@ public sealed class WinUiShellContractTests
         Assert.Contains("SetWindowSubclass(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("DispatcherQueuePriority.High", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("StartRevealFrameClock()", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("new Thread(() => RunRevealFrameClock(generation))", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("Thread? revealFrameClockThread", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("new Thread(RunRevealFrameClock)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("revealFrameClockThread is { IsAlive: true }", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("IsBackground = true", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("Thread.Sleep(16)", dashboardWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.Run(() => RunRevealFrameClock", dashboardWindow, StringComparison.Ordinal);
@@ -2070,7 +2101,9 @@ public sealed class WinUiShellContractTests
             "WindowsPopupPositioner.PositionOffscreen(",
             dashboardWindow[parkSurface..toRect],
             StringComparison.Ordinal);
-        Assert.Contains("foregroundTimer.Start()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("foregroundTimer.IsRepeating = false", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("ScheduleForegroundCheckOrDismiss()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("ShouldRetryForegroundActivation(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupPositioner.TryActivate(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("SetForegroundWindow", popupPositioner, StringComparison.Ordinal);
         int onActivated = dashboardWindow.IndexOf(
@@ -2082,7 +2115,11 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.DoesNotContain(
             "Hide(",
-            dashboardWindow[onActivated..moveFocus],
+            dashboardWindow[onActivated..establishForeground],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "foregroundTimer.Start();",
+            dashboardWindow[onActivated..establishForeground],
             StringComparison.Ordinal);
         int foregroundTimerTick = dashboardWindow.IndexOf(
             "private void OnForegroundTimerTick(",
@@ -2101,9 +2138,44 @@ public sealed class WinUiShellContractTests
             "TrayDashboardInteractionPolicy.IsShellTrayWindowClass",
             popupPositioner,
             StringComparison.Ordinal);
-        Assert.Contains("trayDashboardObservationLoop.StartOrWake()", mainWindow, StringComparison.Ordinal);
-        Assert.Contains("trayDashboardObservationLoop.Stop()", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("trayDashboardObservationLoop", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("private Task ObserveVisibleSurfacesAsync(", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("windowVisible || trayDashboardVisible", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("UpdateActiveObservationLoop();", mainWindow, StringComparison.Ordinal);
         Assert.Contains("ViewModel.ObserveTrayDashboardStateAsync", mainWindow, StringComparison.Ordinal);
+        int telemetryPresentation = mainWindow.IndexOf(
+            "private void UpdateDashboardTelemetryPresentationState()",
+            StringComparison.Ordinal);
+        int requestTrayRefresh = mainWindow.IndexOf(
+            "public void RequestTrayTelemetryRefresh()",
+            telemetryPresentation,
+            StringComparison.Ordinal);
+        string telemetryPresentationBody =
+            mainWindow[telemetryPresentation..requestTrayRefresh];
+        Assert.Contains(
+            "windowVisible && HomePage.Visibility == Visibility.Visible",
+            telemetryPresentationBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "trayDashboardVisible",
+            telemetryPresentationBody,
+            StringComparison.Ordinal);
+        int hideDashboard = dashboardWindow.IndexOf(
+            "private void Hide(bool suppressNextTrayToggle = false)",
+            StringComparison.Ordinal);
+        int activatedDashboard = dashboardWindow.IndexOf(
+            "private void OnActivated(",
+            hideDashboard,
+            StringComparison.Ordinal);
+        string hideDashboardBody =
+            dashboardWindow[hideDashboard..activatedDashboard];
+        int startDismiss = hideDashboardBody.IndexOf(
+            "TryStartDismissAnimation()",
+            StringComparison.Ordinal);
+        int reportWithoutAnimation = hideDashboardBody.IndexOf(
+            "ReportVisibility(false)",
+            StringComparison.Ordinal);
+        Assert.True(startDismiss >= 0 && reportWithoutAnimation > startDismiss);
         int revealRendering = dashboardWindow.IndexOf(
             "private void AdvanceRevealAnimation()",
             StringComparison.Ordinal);
@@ -2112,6 +2184,14 @@ public sealed class WinUiShellContractTests
             revealRendering,
             StringComparison.Ordinal);
         string revealRenderingBody = dashboardWindow[revealRendering..cancelReveal];
+        int parkedDismiss = revealRenderingBody.IndexOf(
+            "ParkSurface();",
+            StringComparison.Ordinal);
+        int reportedDismissed = revealRenderingBody.IndexOf(
+            "ReportVisibility(false);",
+            parkedDismiss,
+            StringComparison.Ordinal);
+        Assert.True(parkedDismiss >= 0 && reportedDismissed > parkedDismiss);
         int primeFrame = revealRenderingBody.IndexOf(
             "if (!revealHiding && revealPrimingFrames < 2)",
             StringComparison.Ordinal);
@@ -2128,7 +2208,7 @@ public sealed class WinUiShellContractTests
             revealRenderingBody[primeFrame..elapsedFrame],
             StringComparison.Ordinal);
         Assert.Contains(
-            "AppWindow.Show(activateWindow: true);",
+            "TryEstablishForeground();",
             revealRenderingBody,
             StringComparison.Ordinal);
         Assert.DoesNotContain(

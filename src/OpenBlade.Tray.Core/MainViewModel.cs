@@ -3964,25 +3964,32 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public Task ObserveStateAsync(CancellationToken cancellationToken) =>
         ObserveStateAsync(
-            includeDashboardReadings: true,
+            includeMainDashboardReadings: true,
             additionalLiveReadings: LiveReadingSensors.None,
+            trayOnly: false,
             cancellationToken);
 
     public Task ObserveTrayStateAsync(CancellationToken cancellationToken) =>
         ObserveStateAsync(
-            includeDashboardReadings: false,
+            includeMainDashboardReadings: false,
             additionalLiveReadings: LiveReadingSensors.None,
+            trayOnly: true,
             cancellationToken);
 
-    public Task ObserveTrayDashboardStateAsync(CancellationToken cancellationToken) =>
+    public Task ObserveTrayDashboardStateAsync(
+        bool includeMainDashboardReadings,
+        LiveReadingSensors dashboardLiveReadings,
+        CancellationToken cancellationToken) =>
         ObserveStateAsync(
-            includeDashboardReadings: true,
-            additionalLiveReadings: LiveReadingSensors.All,
+            includeMainDashboardReadings,
+            additionalLiveReadings: dashboardLiveReadings,
+            trayOnly: false,
             cancellationToken);
 
     private async Task ObserveStateAsync(
-        bool includeDashboardReadings,
+        bool includeMainDashboardReadings,
         LiveReadingSensors additionalLiveReadings,
+        bool trayOnly,
         CancellationToken cancellationToken)
     {
         ObservationRequestStamp stamp = default;
@@ -3995,7 +4002,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     connectionGeneration,
                     subscriptionConnected);
                 requestedLiveReadings = ResolveRequestedLiveReadings(
-                    includeDashboardReadings);
+                    includeMainDashboardReadings);
                 if (LiveReadingsEnabled)
                 {
                     requestedLiveReadings |= additionalLiveReadings;
@@ -4012,7 +4019,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 () => ApplyObservedStatus(
                     status,
                     stamp,
-                    trayOnly: !includeDashboardReadings),
+                    trayOnly),
                 cancellationToken);
             return;
         }
@@ -4032,14 +4039,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     bool accepted = ApplyObservedStatus(
                         status,
                         stamp,
-                        trayOnly: !includeDashboardReadings);
+                        trayOnly);
                     if (accepted
                         && requestedLiveReadings != LiveReadingSensors.None
                         && LiveReadingsEnabled
                         && status.LiveReadings is not null)
                     {
                         MarkLiveReadingsRefreshed(
-                            publishPresentation: includeDashboardReadings);
+                            publishPresentation: !trayOnly);
                     }
                 },
                 cancellationToken);

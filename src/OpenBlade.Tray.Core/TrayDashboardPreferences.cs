@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -414,6 +415,33 @@ public static class TrayDashboardPreferenceDefaults
                 StatusLabel(status.Kind),
                 status.IsVisible))
             .ToArray();
+    }
+
+    public static LiveReadingSensors ResolveLiveReadingSensors(
+        TrayDashboardPreference? preference)
+    {
+        LiveReadingSensors sensors = LiveReadingSensors.None;
+        foreach (TrayDashboardStatusItemPreference status in
+                 Normalize(preference).StatusItems!)
+        {
+            if (!status.IsVisible)
+            {
+                continue;
+            }
+
+            sensors |= status.Kind switch
+            {
+                TrayDashboardStatusItemKind.BatteryPower =>
+                    LiveReadingSensors.BatteryPower,
+                TrayDashboardStatusItemKind.Temperatures =>
+                    LiveReadingSensors.CpuTemperature
+                    | LiveReadingSensors.GpuTemperature,
+                TrayDashboardStatusItemKind.FanSpeed =>
+                    LiveReadingSensors.FanSpeeds,
+                _ => LiveReadingSensors.None,
+            };
+        }
+        return sensors;
     }
 
     public static IReadOnlyList<TrayDashboardSliderOption> CreateSliderOptions(

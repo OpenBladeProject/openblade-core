@@ -22,6 +22,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Reduced tray-dashboard background work by sharing one visible-surface
+  telemetry loop, reading only the sensors selected for the popup, replacing
+  steady foreground polling with bounded deactivation checks, keeping popup
+  animations out of EcoQoS, and preventing overlapping animation workers or
+  deferred GPU commits during teardown.
 - Added a real compiled-XAML startup check for the main window and every tray
   dashboard control, protected newer dashboard preference schemas from being
   overwritten by older builds, and kept GPU slider commits from applying after

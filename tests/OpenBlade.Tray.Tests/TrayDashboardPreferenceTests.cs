@@ -54,6 +54,55 @@ public sealed class TrayDashboardPreferenceTests
                 .Label);
     }
 
+    [Theory]
+    [InlineData(
+        TrayDashboardStatusItemKind.BatteryPower,
+        LiveReadingSensors.BatteryPower)]
+    [InlineData(
+        TrayDashboardStatusItemKind.Temperatures,
+        LiveReadingSensors.CpuTemperature | LiveReadingSensors.GpuTemperature)]
+    [InlineData(
+        TrayDashboardStatusItemKind.PowerSource,
+        LiveReadingSensors.None)]
+    [InlineData(
+        TrayDashboardStatusItemKind.FanSpeed,
+        LiveReadingSensors.FanSpeeds)]
+    public void VisibleStatusItemsSelectOnlyTheirRequiredLiveSensors(
+        TrayDashboardStatusItemKind visibleKind,
+        LiveReadingSensors expected)
+    {
+        TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
+        var preference = defaults with
+        {
+            StatusItems = defaults.StatusItems!
+                .Select(status => status with
+                {
+                    IsVisible = status.Kind == visibleKind,
+                })
+                .ToArray(),
+        };
+
+        Assert.Equal(
+            expected,
+            TrayDashboardPreferenceDefaults.ResolveLiveReadingSensors(preference));
+    }
+
+    [Fact]
+    public void HiddenStatusItemsDoNotRequestLiveSensors()
+    {
+        TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
+        var preference = defaults with
+        {
+            StatusItems = defaults.StatusItems!
+                .Select(status => status with { IsVisible = false })
+                .ToArray(),
+        };
+
+        Assert.Equal(
+            LiveReadingSensors.None,
+            TrayDashboardPreferenceDefaults.ResolveLiveReadingSensors(preference));
+    }
+
     [Fact]
     public void NormalizePreservesControlOrderAndMigratesLegacySchema()
     {
@@ -573,6 +622,21 @@ public sealed class TrayDashboardPreferenceTests
         Assert.Equal(
             expected,
             TrayDashboardInteractionPolicy.ShouldSuppressReopen(
+                TimeSpan.FromMilliseconds(elapsedMilliseconds)));
+    }
+
+    [Theory]
+    [InlineData(-1, false)]
+    [InlineData(0, true)]
+    [InlineData(250, true)]
+    [InlineData(251, false)]
+    public void ForegroundActivationRecoveryIsBounded(
+        int elapsedMilliseconds,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            TrayDashboardInteractionPolicy.ShouldRetryForegroundActivation(
                 TimeSpan.FromMilliseconds(elapsedMilliseconds)));
     }
 

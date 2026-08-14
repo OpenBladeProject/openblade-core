@@ -53,9 +53,16 @@ public static class TrayDashboardInteractionPolicy
     public static readonly TimeSpan DeactivationReopenSuppression =
         TimeSpan.FromMilliseconds(250);
 
+    public static readonly TimeSpan ForegroundActivationRetryWindow =
+        TimeSpan.FromMilliseconds(250);
+
     public static bool ShouldSuppressReopen(TimeSpan elapsedSinceDeactivation) =>
         elapsedSinceDeactivation >= TimeSpan.Zero
         && elapsedSinceDeactivation <= DeactivationReopenSuppression;
+
+    public static bool ShouldRetryForegroundActivation(TimeSpan elapsed) =>
+        elapsed >= TimeSpan.Zero
+        && elapsed <= ForegroundActivationRetryWindow;
 
     public static bool IsShellTrayWindowClass(string? className) =>
         className is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd";

@@ -43,7 +43,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
     private readonly VisibleObservationLoop trayObservationLoop;
-    private readonly VisibleObservationLoop trayDashboardObservationLoop;
     private readonly WindowsProcessorEfficiencyPolicy processorPolicy;
     private readonly Func<TrayNotification, bool> showNotification;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
@@ -88,6 +87,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool enforcingMinimumWindowSize;
     private bool windowVisible;
     private bool trayDashboardVisible;
+    private int trayDashboardLiveReadingSensors =
+        (int)TrayDashboardPreferenceDefaults.ResolveLiveReadingSensors(
+            TrayDashboardPreferenceDefaults.Preference);
     private int openDisplayPickerCount;
     private int updateCheckingStarted;
     private int disposed;
@@ -162,7 +164,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested += OnSavedDisplayProfileRestoreRequested;
-        visibleObservationLoop = new VisibleObservationLoop(ViewModel.ObserveStateAsync,
+        visibleObservationLoop = new VisibleObservationLoop(ObserveVisibleSurfacesAsync,
             errorHandler: exception => Trace.TraceError(
                 "OpenBlade visible observation failed: {0}",
                 exception),
@@ -173,13 +175,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "OpenBlade on-demand tray telemetry refresh failed: {0}",
                 exception),
             observationIntervalProvider: () => Timeout.InfiniteTimeSpan);
-        trayDashboardObservationLoop = new VisibleObservationLoop(
-            ViewModel.ObserveTrayDashboardStateAsync,
-            errorHandler: exception => Trace.TraceError(
-                "OpenBlade tray dashboard observation failed: {0}",
-                exception),
-            observationIntervalProvider: () =>
-                ViewModel.LiveReadingsObservationInterval);
         displayRefreshTimer = dispatcherQueue.CreateTimer();
         displayRefreshTimer.Interval = DisplayRefreshInterval;
         displayRefreshTimer.IsRepeating = true;
@@ -362,25 +357,23 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public void ShowAndActivate()
     {
-        _ = processorPolicy.TryAllowAllProcessorsForCurrentThread();
-        _ = processorPolicy.TrySetProcessEcoQos(enabled: false);
-        windowVisible = true;
+        Volatile.Write(ref windowVisible, true);
+        ApplyProcessorVisibilityPolicy();
         UpdateDashboardTelemetryPresentationState();
         trayObservationLoop.Stop();
-        visibleObservationLoop.StartOrWake();
+        UpdateActiveObservationLoop();
         UpdateDisplayRefreshState();
         AppWindow.Show(true);
     }
 
     public void StartHiddenObservation()
     {
-        windowVisible = false;
+        Volatile.Write(ref windowVisible, false);
+        ApplyProcessorVisibilityPolicy();
         UpdateDashboardTelemetryPresentationState();
-        visibleObservationLoop.Stop();
+        UpdateActiveObservationLoop();
         trayObservationLoop.Stop();
         displayRefreshTimer.Stop();
-        _ = processorPolicy.TryPreferEfficientProcessorsForCurrentThread();
-        _ = processorPolicy.TrySetProcessEcoQos(enabled: true);
     }
 
     public void NavigateToNotificationDestination(
@@ -520,9 +513,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await DisposeComponentSafelyAsync(
             "on-demand tray observation loop",
             trayObservationLoop.DisposeAsync);
-        await DisposeComponentSafelyAsync(
-            "tray dashboard observation loop",
-            trayDashboardObservationLoop.DisposeAsync);
         await DisposeComponentSafelyAsync(
             "update checker",
             UpdateViewModel.DisposeAsync);
@@ -2540,9 +2530,47 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void WakeActiveObservationLoop()
     {
-        if (windowVisible)
+        if (windowVisible || trayDashboardVisible)
         {
             visibleObservationLoop.StartOrWake();
+        }
+    }
+
+    private Task ObserveVisibleSurfacesAsync(CancellationToken cancellationToken)
+    {
+        bool dashboardVisible = Volatile.Read(ref trayDashboardVisible);
+        return dashboardVisible
+            ? ViewModel.ObserveTrayDashboardStateAsync(
+                includeMainDashboardReadings: Volatile.Read(ref windowVisible),
+                dashboardLiveReadings: (LiveReadingSensors)Volatile.Read(
+                    ref trayDashboardLiveReadingSensors),
+                cancellationToken)
+            : ViewModel.ObserveStateAsync(cancellationToken);
+    }
+
+    private void UpdateActiveObservationLoop()
+    {
+        if (windowVisible || trayDashboardVisible)
+        {
+            visibleObservationLoop.StartOrWake();
+        }
+        else
+        {
+            visibleObservationLoop.Stop();
+        }
+    }
+
+    private void ApplyProcessorVisibilityPolicy()
+    {
+        if (windowVisible || trayDashboardVisible)
+        {
+            _ = processorPolicy.TryAllowAllProcessorsForCurrentThread();
+            _ = processorPolicy.TrySetProcessEcoQos(enabled: false);
+        }
+        else
+        {
+            _ = processorPolicy.TryPreferEfficientProcessorsForCurrentThread();
+            _ = processorPolicy.TrySetProcessEcoQos(enabled: true);
         }
     }
 
@@ -2553,22 +2581,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        trayDashboardVisible = visible;
+        Volatile.Write(ref trayDashboardVisible, visible);
+        ApplyProcessorVisibilityPolicy();
         UpdateDashboardTelemetryPresentationState();
         if (visible)
         {
-            trayDashboardObservationLoop.StartOrWake();
+            trayObservationLoop.Stop();
         }
-        else
-        {
-            trayDashboardObservationLoop.Stop();
-        }
+        UpdateActiveObservationLoop();
     }
 
     private void UpdateDashboardTelemetryPresentationState() =>
         ViewModel.SetDashboardTelemetryPresentationActive(
-            trayDashboardVisible
-            || (windowVisible && HomePage.Visibility == Visibility.Visible));
+            windowVisible && HomePage.Visibility == Visibility.Visible);
 
     public void RequestTrayTelemetryRefresh()
     {
@@ -3393,7 +3418,15 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         bool queueSave)
     {
         trayDashboardPreference = TrayDashboardPreferenceDefaults.Normalize(preference);
+        int previousSensors = Volatile.Read(ref trayDashboardLiveReadingSensors);
+        int sensors = (int)TrayDashboardPreferenceDefaults.ResolveLiveReadingSensors(
+            trayDashboardPreference);
+        Volatile.Write(ref trayDashboardLiveReadingSensors, sensors);
         TrayDashboardPreferenceChanged?.Invoke(trayDashboardPreference);
+        if (trayDashboardVisible && sensors != previousSensors)
+        {
+            visibleObservationLoop.StartOrWake();
+        }
         if (queueSave)
         {
             QueuePreferenceSave();

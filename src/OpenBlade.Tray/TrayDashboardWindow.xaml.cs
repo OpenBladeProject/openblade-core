@@ -49,6 +49,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private TrayDashboardControlKind? detailControl;
     private bool pinnedForEditing;
     private bool visible;
+    private bool visibilityReported;
     private TrayDashboardPoint visibleAnchor;
     private DisplayArea? visibleDisplayArea;
     private long lastDeactivationHideTimestamp;
@@ -63,11 +64,15 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private bool revealAnimationActive;
     private bool revealHiding;
     private bool awaitingRevealActivation;
+    private bool revealActivationAttempted;
     private bool surfaceShown;
     private nint previousForegroundWindow;
     private bool foregroundEstablished;
+    private long foregroundActivationStartedTimestamp;
     private int revealFrameClockGeneration;
     private int revealFramePending;
+    private readonly object revealFrameClockSync = new();
+    private Thread? revealFrameClockThread;
     private bool revealSubclassAttached;
     private int disposed;
 
@@ -87,7 +92,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         dispatcherQueue = Root.DispatcherQueue;
         foregroundTimer = dispatcherQueue.CreateTimer();
         foregroundTimer.Interval = TimeSpan.FromMilliseconds(50);
-        foregroundTimer.IsRepeating = true;
+        foregroundTimer.IsRepeating = false;
         foregroundTimer.Tick += OnForegroundTimerTick;
         gpuClockOffsetCommitTimer = dispatcherQueue.CreateTimer();
         gpuClockOffsetCommitTimer.Interval = GpuClockOffsetCommitDelay;
@@ -250,6 +255,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         AppWindow.Closing -= OnClosing;
         foregroundTimer.Stop();
         foregroundTimer.Tick -= OnForegroundTimerTick;
+        gpuClockOffsetCommits.Dispose();
         if (gpuClockOffsetCommitTimer is { } gpuTimer)
         {
             gpuTimer.Stop();
@@ -259,11 +265,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         CancelRevealAnimation();
         DetachRevealSubclass();
         TrySetEditOwner(0);
-        if (visible)
-        {
-            visible = false;
-            visibilityChanged(false);
-        }
+        visible = false;
+        ReportVisibility(false);
         Close();
     }
 
@@ -300,12 +303,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         visibleDisplayArea = displayArea;
         previousForegroundWindow = WindowsPopupPositioner.GetForegroundWindowHandle();
         foregroundEstablished = false;
+        foregroundActivationStartedTimestamp = Stopwatch.GetTimestamp();
+        foregroundTimer.Stop();
         visible = true;
-        visibilityChanged(true);
-        if (!editing)
-        {
-            foregroundTimer.Start();
-        }
+        ReportVisibility(true);
         if (TryResolvePlacement(anchor, displayArea, out ResolvedPlacement placement)
             && TryStartReveal(placement, displayArea, editing))
         {
@@ -322,9 +323,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         surfaceShown = true;
         if (!editing)
         {
-            Activate();
-            _ = WindowsPopupPositioner.TryActivate(
-                WindowNative.GetWindowHandle(this));
+            if (!TryEstablishForeground())
+            {
+                ScheduleForegroundCheckOrDismiss();
+            }
         }
     }
 
@@ -478,6 +480,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             revealAnimationsEnabled = WindowsMotionSettings.AreAnimationsEnabled();
             revealHiding = false;
             awaitingRevealActivation = !editing;
+            revealActivationAttempted = false;
             WindowsPopupPositioner.DisableTransitions(revealWindowHandle);
 
             var staged = new TrayDashboardRect(
@@ -559,12 +562,12 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             y = revealPlacement.Y;
         }
 
-        if (!revealHiding && awaitingRevealActivation)
+        if (!revealHiding
+            && awaitingRevealActivation
+            && !revealActivationAttempted)
         {
-            AppWindow.Show(activateWindow: true);
-            Activate();
-            awaitingRevealActivation =
-                !WindowsPopupPositioner.TryActivate(revealWindowHandle);
+            revealActivationAttempted = true;
+            awaitingRevealActivation = !TryEstablishForeground();
             foregroundEstablished = !awaitingRevealActivation;
             try
             {
@@ -590,6 +593,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             if (revealHiding)
             {
                 ParkSurface();
+                ReportVisibility(false);
                 WindowsPopupPositioner.TryRestoreForeground(
                     revealWindowHandle,
                     previousForegroundWindow);
@@ -607,10 +611,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                     revealPlacement.Height);
                 if (awaitingRevealActivation)
                 {
-                    AppWindow.Show(activateWindow: true);
-                    Activate();
-                    foregroundEstablished =
-                        WindowsPopupPositioner.TryActivate(revealWindowHandle);
+                    foregroundEstablished = TryEstablishForeground();
+                    awaitingRevealActivation = false;
                 }
             }
             catch (Exception exception)
@@ -620,16 +622,21 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                     exception.Message);
             }
             CancelRevealAnimation();
+            if (!foregroundEstablished && visible && !pinnedForEditing)
+            {
+                ScheduleForegroundCheckOrDismiss();
+            }
         }
     }
 
     private void CancelRevealAnimation()
     {
-        revealAnimationActive = false;
+        Volatile.Write(ref revealAnimationActive, false);
         Interlocked.Increment(ref revealFrameClockGeneration);
         Interlocked.Exchange(ref revealFramePending, 0);
         revealHiding = false;
         awaitingRevealActivation = false;
+        revealActivationAttempted = false;
         revealStartedTimestamp = 0;
         revealPrimingFrames = 0;
         revealAnimationsEnabled = false;
@@ -637,43 +644,77 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     private void StartRevealFrameClock()
     {
-        int generation = Interlocked.Increment(ref revealFrameClockGeneration);
-        revealAnimationActive = true;
-        var thread = new Thread(() => RunRevealFrameClock(generation))
-        {
-            IsBackground = true,
-            Name = "OpenBlade tray dashboard reveal",
-        };
-        thread.Start();
+        Interlocked.Increment(ref revealFrameClockGeneration);
+        Volatile.Write(ref revealAnimationActive, true);
+        EnsureRevealFrameClock();
     }
 
-    private void RunRevealFrameClock(int generation)
+    private void EnsureRevealFrameClock()
+    {
+        lock (revealFrameClockSync)
+        {
+            if (revealFrameClockThread is { IsAlive: true })
+            {
+                return;
+            }
+
+            revealFrameClockThread = new Thread(RunRevealFrameClock)
+            {
+                IsBackground = true,
+                Name = "OpenBlade tray dashboard reveal",
+            };
+            revealFrameClockThread.Start();
+        }
+    }
+
+    private void RunRevealFrameClock()
     {
         try
         {
-            while (Volatile.Read(ref revealFrameClockGeneration) == generation)
+            while (Volatile.Read(ref revealAnimationActive))
             {
+                int generation = Volatile.Read(ref revealFrameClockGeneration);
                 if (DwmFlush() < 0)
                 {
                     Thread.Sleep(16);
                 }
-                if (Volatile.Read(ref revealFrameClockGeneration) != generation)
+                if (!Volatile.Read(ref revealAnimationActive))
                 {
                     return;
+                }
+                if (Volatile.Read(ref revealFrameClockGeneration) != generation)
+                {
+                    continue;
                 }
                 if (Interlocked.Exchange(ref revealFramePending, 1) == 0
                     && !TryPostRevealFrame())
                 {
                     Interlocked.Exchange(ref revealFramePending, 0);
+                    Volatile.Write(ref revealAnimationActive, false);
                     return;
                 }
             }
         }
         catch (Exception exception)
         {
+            Volatile.Write(ref revealAnimationActive, false);
             Trace.TraceWarning(
                 "OpenBlade tray dashboard frame clock failed: {0}",
                 exception.Message);
+        }
+        finally
+        {
+            bool restart;
+            lock (revealFrameClockSync)
+            {
+                revealFrameClockThread = null;
+                restart = Volatile.Read(ref revealAnimationActive)
+                    && Volatile.Read(ref disposed) == 0;
+            }
+            if (restart)
+            {
+                EnsureRevealFrameClock();
+            }
         }
     }
 
@@ -909,7 +950,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
         visible = false;
         foregroundTimer.Stop();
-        visibilityChanged(false);
         if (suppressNextTrayToggle)
         {
             lastDeactivationHideTimestamp = Stopwatch.GetTimestamp();
@@ -918,6 +958,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         if (!TryStartDismissAnimation())
         {
             ParkSurface();
+            ReportVisibility(false);
             WindowsPopupPositioner.TryRestoreForeground(
                 revealWindowHandle,
                 previousForegroundWindow);
@@ -928,11 +969,49 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     {
         if (args.WindowActivationState == WindowActivationState.Deactivated)
         {
+            if (visible
+                && !pinnedForEditing
+                && !awaitingRevealActivation
+                && foregroundEstablished)
+            {
+                foregroundTimer.Stop();
+                foregroundTimer.Start();
+            }
             return;
         }
 
         foregroundEstablished = true;
+        awaitingRevealActivation = false;
+        foregroundTimer.Stop();
         MoveFocusOffInitialTile();
+    }
+
+    private bool TryEstablishForeground()
+    {
+        AppWindow.Show(activateWindow: true);
+        Activate();
+        bool activated = WindowsPopupPositioner.TryActivate(revealWindowHandle)
+            || WindowsPopupPositioner.GetForegroundWindowHandle() == revealWindowHandle;
+        foregroundEstablished = activated;
+        if (activated)
+        {
+            foregroundTimer.Stop();
+        }
+        return activated;
+    }
+
+    private void ScheduleForegroundCheckOrDismiss()
+    {
+        if (TrayDashboardInteractionPolicy.ShouldRetryForegroundActivation(
+                Stopwatch.GetElapsedTime(foregroundActivationStartedTimestamp)))
+        {
+            foregroundTimer.Stop();
+            foregroundTimer.Start();
+        }
+        else
+        {
+            Hide();
+        }
     }
 
     private void MoveFocusOffInitialTile()
@@ -956,14 +1035,15 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
     private void OnForegroundTimerTick(DispatcherQueueTimer sender, object args)
     {
+        sender.Stop();
         if (!visible || pinnedForEditing)
         {
-            sender.Stop();
             return;
         }
 
         if (awaitingRevealActivation)
         {
+            ScheduleForegroundCheckOrDismiss();
             return;
         }
 
@@ -976,16 +1056,27 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
         if (!foregroundEstablished)
         {
-            AppWindow.Show(activateWindow: true);
-            Activate();
-            foregroundEstablished =
-                WindowsPopupPositioner.TryActivate(revealWindowHandle);
+            if (!TryEstablishForeground())
+            {
+                ScheduleForegroundCheckOrDismiss();
+            }
             return;
         }
 
         Hide(
             suppressNextTrayToggle:
                 WindowsPopupPositioner.IsShellTrayWindow(foreground));
+    }
+
+    private void ReportVisibility(bool isVisible)
+    {
+        if (visibilityReported == isVisible)
+        {
+            return;
+        }
+
+        visibilityReported = isVisible;
+        visibilityChanged(isVisible);
     }
 
     private void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
