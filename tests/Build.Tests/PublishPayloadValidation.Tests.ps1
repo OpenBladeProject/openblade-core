@@ -159,18 +159,6 @@ function Write-ValidServicePayload {
     foreach ($assembly in $AssemblySources.GetEnumerator()) {
         Copy-Item -LiteralPath $assembly.Value -Destination (Join-Path $Payload $assembly.Key)
     }
-    $driver = Join-Path $Payload 'Drivers\BrightnessHid'
-    New-Item -ItemType Directory -Path $driver -Force | Out-Null
-    Set-Content -LiteralPath (Join-Path $driver 'OpenBlade.BrightnessHid.inf') `
-        -Value @'
-CatalogFile=OpenBlade.BrightnessHid.cat
-ROOT\OSSBLADE_OPENBLADE_BRIGHTNESS_HID
-OpenBlade.BrightnessHid.dll
-'@ -NoNewline
-    Set-Content -LiteralPath (Join-Path $driver 'OpenBlade.BrightnessHid.cat') `
-        -Value 'catalog' -NoNewline
-    Set-Content -LiteralPath (Join-Path $driver 'OpenBlade.BrightnessHid.dll') `
-        -Value 'driver' -NoNewline
 }
 
 function Assert-RejectedAndPreserved {
@@ -477,34 +465,6 @@ try {
         -ExistingBundle $missingTrayUi.ExistingBundle `
         -ExpectedError 'missing required tray UI file' `
         -CaseName 'A missing required compiled XAML file'
-
-    $missingDriver = New-TestBundlePair `
-        -PermittedRoot $permittedRoot `
-        -CaseName 'missing-brightness-driver' `
-        -AssemblySources $assemblySources
-    Remove-Item -LiteralPath (
-        Join-Path $missingDriver.Payload 'Drivers\BrightnessHid\OpenBlade.BrightnessHid.cat')
-    Assert-RejectedAndPreserved `
-        -PermittedRoot $permittedRoot `
-        -StagingBundle $missingDriver.StagingBundle `
-        -ExistingBundle $missingDriver.ExistingBundle `
-        -ExpectedError 'missing required brightness HID driver file' `
-        -CaseName 'A missing brightness HID catalog'
-
-    $wrongHardwareId = New-TestBundlePair `
-        -PermittedRoot $permittedRoot `
-        -CaseName 'wrong-brightness-driver-hardware-id' `
-        -AssemblySources $assemblySources
-    Set-Content -LiteralPath (
-        Join-Path $wrongHardwareId.Payload 'Drivers\BrightnessHid\OpenBlade.BrightnessHid.inf') `
-        -Value 'CatalogFile=OpenBlade.BrightnessHid.cat OpenBlade.BrightnessHid.dll' `
-        -NoNewline
-    Assert-RejectedAndPreserved `
-        -PermittedRoot $permittedRoot `
-        -StagingBundle $wrongHardwareId.StagingBundle `
-        -ExistingBundle $wrongHardwareId.ExistingBundle `
-        -ExpectedError 'missing required contract' `
-        -CaseName 'A brightness HID INF with the wrong hardware ID'
 
     $captureTool = New-TestBundlePair -PermittedRoot $permittedRoot -CaseName 'capture-tool' -AssemblySources $assemblySources
     $captureToolDirectory = Join-Path $captureTool.Payload 'tools'

@@ -23,23 +23,6 @@ supply the certificate thumbprint to `Publish.ps1`. The script signs first-party
 payload files before WiX embeds them, then signs the detached Burn engine and
 the final installer.
 
-The Windows-native brightness flyout also requires the UMDF 2 brightness HID
-package. Building it from source requires Visual Studio C++ driver targets; the
-project restores its pinned WDK package and the publish script creates the
-catalog only after the driver DLL has reached its final signed bytes. For a
-public package, submit the INF, catalog, and DLL through Microsoft Hardware Dev
-Center, then pass the returned directory to publishing:
-
-```powershell
-.\build\Publish.ps1 `
-    -BrightnessHidDriverPackage C:\signed\OpenBlade.BrightnessHid
-```
-
-Publishing verifies the Microsoft catalog signer and confirms that the exact
-INF and DLL are catalog members. An unsigned developer publish can exercise the
-packaging path, but ordinary Windows installations will reject an untrusted
-driver package and setup will roll back to the previous installation.
-
 ## Interactive installation
 
 - Double-click `OpenBlade-Setup.exe` and choose Install. Windows requests

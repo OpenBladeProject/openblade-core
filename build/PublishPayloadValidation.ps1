@@ -164,28 +164,6 @@ function Assert-ServicePublishPayload {
 
     Assert-DynamicLightingIdentityPayload -Payload $Payload
 
-    $driverDirectory = Join-Path $Payload 'Drivers\BrightnessHid'
-    foreach ($driverFile in @(
-            'OpenBlade.BrightnessHid.inf',
-            'OpenBlade.BrightnessHid.cat',
-            'OpenBlade.BrightnessHid.dll')) {
-        $driverPath = Join-Path $driverDirectory $driverFile
-        if (-not (Test-Path -LiteralPath $driverPath -PathType Leaf) -or
-            (Get-Item -LiteralPath $driverPath).Length -eq 0) {
-            throw "OpenBlade production payload is missing required brightness HID driver file: $driverPath"
-        }
-    }
-    $driverInf = Get-Content -Raw -LiteralPath (
-        Join-Path $driverDirectory 'OpenBlade.BrightnessHid.inf')
-    foreach ($driverContract in @(
-            'ROOT\OSSBLADE_OPENBLADE_BRIGHTNESS_HID',
-            'CatalogFile=OpenBlade.BrightnessHid.cat',
-            'OpenBlade.BrightnessHid.dll')) {
-        if ($driverInf.IndexOf($driverContract, [StringComparison]::Ordinal) -lt 0) {
-            throw "OpenBlade brightness HID INF is missing required contract '$driverContract'."
-        }
-    }
-
     $requiredSessionAgentFiles = @(
         'OpenBlade.Platform.dll',
         'OpenBlade.SessionAgent.exe',

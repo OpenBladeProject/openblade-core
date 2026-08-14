@@ -31,7 +31,6 @@ public sealed record WindowsSetupPlatformOptions(
     IBundleOwnershipRegistration? BundleOwnershipRegistration = null,
     IInstalledUninstallerWriter? InstalledUninstallerWriter = null,
     IDynamicLightingIdentityRegistration? DynamicLightingIdentityRegistration = null,
-    IBrightnessHidDriverManager? BrightnessHidDriverManager = null,
     string? SetupExecutablePath = null,
     ISetupProgressReporter? ProgressReporter = null);
 
@@ -54,7 +53,6 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly IBundleOwnershipRegistration bundleOwnershipRegistration;
     private readonly IInstalledUninstallerWriter installedUninstallerWriter;
     private readonly IDynamicLightingIdentityRegistration dynamicLightingIdentityRegistration;
-    private readonly IBrightnessHidDriverManager brightnessHidDriverManager;
     private readonly ISetupProgressReporter progressReporter;
     private readonly string setupExecutablePath;
 
@@ -79,8 +77,6 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             ?? new VerifiedInstalledUninstallerWriter();
         dynamicLightingIdentityRegistration = options.DynamicLightingIdentityRegistration
             ?? new DynamicLightingIdentityRegistration();
-        brightnessHidDriverManager = options.BrightnessHidDriverManager
-            ?? new WindowsBrightnessHidDriverManager();
         progressReporter = options.ProgressReporter ?? NullSetupProgressReporter.Instance;
         setupExecutablePath = options.SetupExecutablePath
             ?? Environment.ProcessPath
@@ -109,8 +105,6 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 paths.InstallDirectory,
                 CurrentUserSid,
                 cancellationToken);
-        BrightnessHidDriverInstallState brightnessHidDriver =
-            await brightnessHidDriverManager.CaptureAsync(cancellationToken);
         return new(
             new(state is not null, state == SetupServiceState.Running),
             new(
@@ -122,8 +116,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             bundleOwnership is not null,
             dynamicLightingIdentityRegistered,
             bundleOwnership is null
-                || bundleOwnershipRegistration.IsOwnedByCurrentBuild(bundleOwnership),
-            brightnessHidDriver)
+                || bundleOwnershipRegistration.IsOwnedByCurrentBuild(bundleOwnership))
         {
             BundleOwnership = bundleOwnership,
         };
@@ -453,33 +446,6 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             CurrentUserSid,
             cancellationToken);
 
-    public Task InstallBrightnessHidDriverAsync(CancellationToken cancellationToken) =>
-        brightnessHidDriverManager.InstallAsync(GetBrightnessHidInfPath(), cancellationToken);
-
-    public Task VerifyBrightnessHidDriverAsync(CancellationToken cancellationToken) =>
-        brightnessHidDriverManager.VerifyAsync(cancellationToken);
-
-    public Task RestoreBrightnessHidDriverAsync(
-        BrightnessHidDriverInstallState priorState,
-        CancellationToken cancellationToken) =>
-        brightnessHidDriverManager.RestoreAsync(
-            priorState,
-            GetBrightnessHidInfPath(),
-            cancellationToken);
-
-    public Task<string?> CommitBrightnessHidDriverAsync(
-        BrightnessHidDriverInstallState priorState,
-        CancellationToken cancellationToken) =>
-        brightnessHidDriverManager.CommitAsync(priorState, cancellationToken);
-
-    public Task RemoveBrightnessHidDriverAsync(CancellationToken cancellationToken) =>
-        brightnessHidDriverManager.RemoveAsync(cancellationToken);
-
-    public Task<string?> CommitBrightnessHidDriverRemovalAsync(
-        BrightnessHidDriverInstallState priorState,
-        CancellationToken cancellationToken) =>
-        brightnessHidDriverManager.CommitRemovalAsync(priorState, cancellationToken);
-
     public async Task RemoveServiceAsync(CancellationToken cancellationToken)
     {
         if (!await serviceControl.ExistsAsync(ServiceName, cancellationToken))
@@ -607,11 +573,5 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             Directory.Delete(directory, recursive: true);
         }
     }
-
-    private string GetBrightnessHidInfPath() => Path.Combine(
-        paths.InstallDirectory,
-        "Drivers",
-        "BrightnessHid",
-        WindowsBrightnessHidDriverManager.InfFileName);
 
 }

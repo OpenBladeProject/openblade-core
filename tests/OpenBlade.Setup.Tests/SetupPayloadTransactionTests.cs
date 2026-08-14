@@ -885,9 +885,6 @@ public sealed class SetupPayloadTransactionTests
             "Microsoft.UI.Xaml.Controls.dll",
             "Microsoft.UI.Xaml.Controls.pri",
             @"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png",
-            @"Drivers\BrightnessHid\OpenBlade.BrightnessHid.inf",
-            @"Drivers\BrightnessHid\OpenBlade.BrightnessHid.cat",
-            @"Drivers\BrightnessHid\OpenBlade.BrightnessHid.dll",
         ];
 
         public TestTree()
@@ -1044,18 +1041,6 @@ public sealed class SetupPayloadTransactionTests
         public Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task InstallBrightnessHidDriverAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task VerifyBrightnessHidDriverAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task RestoreBrightnessHidDriverAsync(
-            BrightnessHidDriverInstallState priorState,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<string?> CommitBrightnessHidDriverAsync(
-            BrightnessHidDriverInstallState priorState,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task RemoveBrightnessHidDriverAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<string?> CommitBrightnessHidDriverRemovalAsync(
-            BrightnessHidDriverInstallState priorState,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveServiceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task StopTrayAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task StopSessionAgentAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
