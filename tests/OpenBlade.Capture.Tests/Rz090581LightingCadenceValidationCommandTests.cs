@@ -1,0 +1,591 @@
+using System.Text.Json;
+using OpenBlade.Contracts;
+using OpenBlade.Protocol;
+
+namespace OpenBlade.Capture.Tests;
+
+public sealed class Rz090581LightingCadenceValidationCommandTests
+{
+    private static readonly ProductionLightingBuildIdentity BuildIdentity = new(
+        "0.1.0+403aa01b11e969a6351595154569ef56f8878efa",
+        "403aa01b11e969a6351595154569ef56f8878efa",
+        "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF");
+
+    [Fact]
+    public async Task RunAsync_QualifiesAllStagesAndWritesSanitizedArtifacts()
+    {
+        var port = new FakePort();
+        var artifacts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        Rz090581LightingCadenceValidationCommand command = Create(
+            port,
+            "YES\r\nYES\r\nYES\r\nYES\r\nYES\r\nYES\r\n",
+            async (rate, _, _, pushFrame, cancellationToken) =>
+            {
+                await pushFrame(
+                    LightingCadenceProbeRunner.CreateFrame(0, TimeSpan.Zero),
+                    cancellationToken);
+                return QualifiedStage(rate);
+            },
+            (path, content, _) =>
+            {
+                artifacts[path] = content;
+                return Task.CompletedTask;
+            });
+
+        int exitCode = await command.RunAsync(
+            ValidArguments(),
+            CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(2, artifacts.Count);
+        Assert.Equal(
+            [
+                LightingEffect.Static,
+                LightingEffect.AmbientAwareness,
+                LightingEffect.Static,
+                LightingEffect.AmbientAwareness,
+                LightingEffect.Static,
+                LightingEffect.AmbientAwareness,
+                LightingEffect.Static,
+                LightingEffect.Static,
+            ],
+            port.Settings.Select(settings => settings.Effect));
+        string json = artifacts.Single(pair => pair.Key.EndsWith(".json")).Value;
+        using JsonDocument document = JsonDocument.Parse(json);
+        JsonElement root = document.RootElement;
+        Assert.True(root.GetProperty("transportQualified").GetBoolean());
+        Assert.True(root.GetProperty("opticalValidationRequired").GetBoolean());
+        Assert.False(root.GetProperty("manualRecoveryRequired").GetBoolean());
+        Assert.True(root.GetProperty("cleanupCompleted").GetBoolean());
+        Assert.Equal(
+            "knownStaticGreenBaseline",
+            root.GetProperty("restoredStateKind").GetString());
+        Assert.False(root.GetProperty("unknownPreTestStateRestored").GetBoolean());
+        Assert.Equal(3, root.GetProperty("stages").GetArrayLength());
+        Assert.DoesNotContain("serial", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(3, port.PushedFrames);
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotRestoreLightingAfterIndeterminateWrite()
+    {
+        var port = new FakePort
+        {
+            PushFailure = new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate write."),
+        };
+        string? json = null;
+        Rz090581LightingCadenceValidationCommand command = Create(
+            port,
+            "YES\r\nYES\r\n",
+            async (rate, _, _, pushFrame, cancellationToken) =>
+            {
+                try
+                {
+                    await pushFrame(
+                        LightingCadenceProbeRunner.CreateFrame(0, TimeSpan.Zero),
+                        cancellationToken);
+                }
+                catch (BladeWriteException exception)
+                {
+                    return FailedStage(rate, exception.SubmissionState);
+                }
+                throw new InvalidOperationException("The injected write should fail.");
+            },
+            (path, content, _) =>
+            {
+                if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                {
+                    json = content;
+                }
+                return Task.CompletedTask;
+            });
+
+        int exitCode = await command.RunAsync(
+            ValidArguments(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            Rz090581LightingCadenceValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        Assert.Equal(
+            [LightingEffect.Static, LightingEffect.AmbientAwareness],
+            port.Settings.Select(settings => settings.Effect));
+        Assert.NotNull(json);
+        using JsonDocument document = JsonDocument.Parse(json);
+        Assert.True(document.RootElement
+            .GetProperty("manualRecoveryRequired").GetBoolean());
+        Assert.False(document.RootElement
+            .GetProperty("restorationAttempted").GetBoolean());
+        Assert.Equal(1, port.PushedFrames);
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectsMismatchedBiosBeforeOpeningHardware()
+    {
+        bool opened = false;
+        var command = new Rz090581LightingCadenceValidationCommand(
+            _ =>
+            {
+                opened = true;
+                return Task.FromResult(
+                    new HidSessionResult<IProductionLightingPort>(new FakePort(), null));
+            },
+            _ => Task.FromResult(
+                new HidSessionResult<LightingBrightnessReading>(
+                    new LightingBrightnessReading(64),
+                    null)),
+            ExactIdentity,
+            (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
+            new StringReader(string.Empty),
+            new StringWriter(),
+            BuildIdentity,
+            writeArtifact: (_, _, _) => Task.CompletedTask,
+            registerCancellation: _ => NoopDisposable.Instance,
+            checkEnvironment: () => null);
+        string[] arguments = ValidArguments();
+        arguments[1] =
+            Rz090581LightingCadenceValidationCommand.ExactTargetConfirmation("4.00");
+
+        int exitCode = await command.RunAsync(arguments, CancellationToken.None);
+
+        Assert.Equal(
+            Rz090581LightingCadenceValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        Assert.False(opened);
+    }
+
+    [Fact]
+    public async Task RunAsync_HandlesIdentityReadFailureBeforeOpeningHardware()
+    {
+        bool opened = false;
+        var command = new Rz090581LightingCadenceValidationCommand(
+            _ =>
+            {
+                opened = true;
+                return Task.FromResult(
+                    new HidSessionResult<IProductionLightingPort>(new FakePort(), null));
+            },
+            _ => Task.FromResult(
+                new HidSessionResult<LightingBrightnessReading>(
+                    new LightingBrightnessReading(64),
+                    null)),
+            () => throw new IOException("Injected identity read failure."),
+            (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
+            new StringReader(string.Empty),
+            new StringWriter(),
+            BuildIdentity,
+            writeArtifact: (_, _, _) => Task.CompletedTask,
+            registerCancellation: _ => NoopDisposable.Instance,
+            checkEnvironment: () => null);
+
+        int exitCode = await command.RunAsync(
+            ValidArguments(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            Rz090581LightingCadenceValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        Assert.False(opened);
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectsUnsafeEnvironmentBeforeOpeningHardware()
+    {
+        bool opened = false;
+        var command = new Rz090581LightingCadenceValidationCommand(
+            _ =>
+            {
+                opened = true;
+                return Task.FromResult(
+                    new HidSessionResult<IProductionLightingPort>(new FakePort(), null));
+            },
+            _ => Task.FromResult(
+                new HidSessionResult<LightingBrightnessReading>(
+                    new LightingBrightnessReading(64),
+                    null)),
+            ExactIdentity,
+            (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
+            new StringReader(string.Empty),
+            new StringWriter(),
+            BuildIdentity,
+            writeArtifact: (_, _, _) => Task.CompletedTask,
+            registerCancellation: _ => NoopDisposable.Instance,
+            checkEnvironment: () => "Service is running.");
+
+        int exitCode = await command.RunAsync(
+            ValidArguments(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            Rz090581LightingCadenceValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        Assert.False(opened);
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectsWrongSkuBeforeOpeningHardware()
+    {
+        bool opened = false;
+        var command = new Rz090581LightingCadenceValidationCommand(
+            _ =>
+            {
+                opened = true;
+                return Task.FromResult(
+                    new HidSessionResult<IProductionLightingPort>(new FakePort(), null));
+            },
+            _ => Task.FromResult(
+                new HidSessionResult<LightingBrightnessReading>(
+                    new LightingBrightnessReading(64),
+                    null)),
+            () => new HostIdentityReadResult(
+                new HostIdentityEvidence(
+                    "Razer",
+                    "Blade 16 - RZ09-0581",
+                    "different-sku",
+                    "3.01"),
+                null,
+                HostFirmwareCompatibility.Tested),
+            (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
+            new StringReader(string.Empty),
+            new StringWriter(),
+            BuildIdentity,
+            writeArtifact: (_, _, _) => Task.CompletedTask,
+            registerCancellation: _ => NoopDisposable.Instance,
+            checkEnvironment: () => null);
+
+        int exitCode = await command.RunAsync(
+            ValidArguments(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            Rz090581LightingCadenceValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        Assert.False(opened);
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectsInvalidBuildIdentityBeforeOpeningHardware()
+    {
+        bool opened = false;
+        var command = new Rz090581LightingCadenceValidationCommand(
+            _ =>
+            {
+                opened = true;
+                return Task.FromResult(
+                    new HidSessionResult<IProductionLightingPort>(new FakePort(), null));
+            },
+            _ => Task.FromResult(
+                new HidSessionResult<LightingBrightnessReading>(
+                    new LightingBrightnessReading(64),
+                    null)),
+            ExactIdentity,
+            (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
+            new StringReader(string.Empty),
+            new StringWriter(),
+            BuildIdentity with { CommitHash = "invalid" },
+            writeArtifact: (_, _, _) => Task.CompletedTask,
+            registerCancellation: _ => NoopDisposable.Instance,
+            checkEnvironment: () => null);
+
+        int exitCode = await command.RunAsync(
+            ValidArguments(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            Rz090581LightingCadenceValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        Assert.False(opened);
+    }
+
+    [Fact]
+    public async Task RunAsync_RestoresBaselineAfterNonWriteFailure()
+    {
+        var port = new FakePort();
+        string? json = null;
+        Rz090581LightingCadenceValidationCommand command = Create(
+            port,
+            "YES\r\nYES\r\nYES\r\nYES\r\n",
+            (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
+            (path, content, _) =>
+            {
+                if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                {
+                    json = content;
+                }
+                return Task.CompletedTask;
+            },
+            (_, _) => throw new IOException("Injected cooldown failure."));
+
+        int exitCode = await command.RunAsync(
+            ValidArguments(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            Rz090581LightingCadenceValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        Assert.Equal(LightingEffect.Static, port.Settings[^1].Effect);
+        Assert.NotNull(json);
+        using JsonDocument document = JsonDocument.Parse(json);
+        Assert.True(document.RootElement
+            .GetProperty("restorationAttempted").GetBoolean());
+        Assert.False(document.RootElement
+            .GetProperty("manualRecoveryRequired").GetBoolean());
+    }
+
+    [Fact]
+    public async Task RunAsync_ReportsPendingBoundedCleanup()
+    {
+        var port = new FakePort { CleanupCompletes = false };
+        string? json = null;
+        Rz090581LightingCadenceValidationCommand command = Create(
+            port,
+            "YES\r\nYES\r\nYES\r\nYES\r\nYES\r\nYES\r\n",
+            (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
+            (path, content, _) =>
+            {
+                if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                {
+                    json = content;
+                }
+                return Task.CompletedTask;
+            });
+
+        int exitCode = await command.RunAsync(
+            ValidArguments(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            Rz090581LightingCadenceValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        Assert.NotNull(json);
+        using JsonDocument document = JsonDocument.Parse(json);
+        Assert.False(document.RootElement.GetProperty("cleanupCompleted").GetBoolean());
+        Assert.True(document.RootElement
+            .GetProperty("manualRecoveryRequired").GetBoolean());
+        Assert.Contains(
+            "cleanupPending",
+            document.RootElement.GetProperty("failure").GetString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_RequiresEffectReplacementApprovalBeforeOpeningHardware()
+    {
+        bool opened = false;
+        var artifacts = new Dictionary<string, string>();
+        var command = new Rz090581LightingCadenceValidationCommand(
+            _ =>
+            {
+                opened = true;
+                return Task.FromResult(
+                    new HidSessionResult<IProductionLightingPort>(new FakePort(), null));
+            },
+            _ => Task.FromResult(
+                new HidSessionResult<LightingBrightnessReading>(
+                    new LightingBrightnessReading(64),
+                    null)),
+            ExactIdentity,
+            (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
+            new StringReader("NO\r\n"),
+            new StringWriter(),
+            BuildIdentity,
+            () => DateTimeOffset.Parse("2026-08-15T12:00:00Z"),
+            (path, content, _) =>
+            {
+                artifacts[path] = content;
+                return Task.CompletedTask;
+            },
+            (_, _) => Task.CompletedTask,
+            _ => NoopDisposable.Instance,
+            () => null);
+
+        int exitCode = await command.RunAsync(
+            ValidArguments(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            Rz090581LightingCadenceValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        Assert.False(opened);
+        string json = artifacts.Single(pair => pair.Key.EndsWith(".json")).Value;
+        using JsonDocument document = JsonDocument.Parse(json);
+        Assert.Equal(
+            "effectReplacementDeclined",
+            document.RootElement.GetProperty("failure").GetString());
+    }
+
+    private static Rz090581LightingCadenceValidationCommand Create(
+        FakePort port,
+        string answers,
+        Func<int, TimeSpan, TimeSpan,
+            Func<AmbientLightingFrame, CancellationToken, Task>, CancellationToken,
+            Task<LightingCadenceStageResult>> runStage,
+        Func<string, string, CancellationToken, Task> writeArtifact,
+        Func<TimeSpan, CancellationToken, Task>? delay = null) =>
+        new(
+            _ => Task.FromResult(
+                new HidSessionResult<IProductionLightingPort>(port, null)),
+            _ => Task.FromResult(
+                new HidSessionResult<LightingBrightnessReading>(
+                    new LightingBrightnessReading(
+                        LightingBrightnessProtocol.PercentToRaw(25)),
+                    null)),
+            ExactIdentity,
+            runStage,
+            new StringReader(answers),
+            new StringWriter(),
+            BuildIdentity,
+            () => DateTimeOffset.Parse("2026-08-15T12:00:00Z"),
+            writeArtifact,
+            delay ?? ((_, _) => Task.CompletedTask),
+            _ => NoopDisposable.Instance,
+            () => null);
+
+    private static HostIdentityReadResult ExactIdentity() => new(
+        new HostIdentityEvidence(
+            "Razer",
+            "Blade 16 - RZ09-0581",
+            "RZ09-05819EN4",
+            "3.01"),
+        null,
+        HostFirmwareCompatibility.Tested);
+
+    private static string[] ValidArguments() =>
+    [
+        "--confirm-target",
+        Rz090581LightingCadenceValidationCommand.ExactTargetConfirmation("3.01"),
+        "--rates",
+        "30,45,60",
+        "--brightness",
+        "25",
+        "--seconds",
+        "5",
+        "--output",
+        @"C:\validation",
+    ];
+
+    private static LightingCadenceStageResult QualifiedStage(int rate = 30) => new(
+        rate,
+        1000.0 / rate,
+        100,
+        100,
+        100,
+        0,
+        rate,
+        new(1, 1, 1, 1, 1),
+        new(1000.0 / rate, 1000.0 / rate, 1000.0 / rate, 1000.0 / rate, 1000.0 / rate),
+        1000.0 / rate,
+        true,
+        null,
+        null,
+        []);
+
+    private static LightingCadenceStageResult FailedStage(
+        int rate,
+        WriteSubmissionState submissionState) => new(
+        rate,
+        1000.0 / rate,
+        100,
+        1,
+        0,
+        0,
+        0,
+        new(null, null, null, null, null),
+        new(null, null, null, null, null),
+        0,
+        false,
+        submissionState,
+        "matrixWriteFailed",
+        []);
+
+    private sealed class FakePort : IProductionLightingPort
+    {
+        public DeviceCapabilities Capabilities { get; } = new(
+            new HashSet<PerformancePreset>(),
+            new HashSet<FanMode>(),
+            new HashSet<LightingEffect>
+            {
+                LightingEffect.Static,
+                LightingEffect.AmbientAwareness,
+            },
+            new HashSet<int>(),
+            false,
+            false);
+
+        public LightingRendererOwnershipState OwnershipState { get; private set; }
+
+        internal List<LightingSettings> Settings { get; } = [];
+
+        internal int PushedFrames { get; private set; }
+
+        internal BladeWriteException? PushFailure { get; init; }
+
+        internal bool CleanupCompletes { get; init; } = true;
+
+        public Task<LightingSettings?> ReadStateAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromResult<LightingSettings?>(null);
+
+        public Task SetLightingAsync(
+            LightingSettings settings,
+            CancellationToken cancellationToken)
+        {
+            Settings.Add(settings);
+            OwnershipState = settings.Effect switch
+            {
+                LightingEffect.Static => LightingRendererOwnershipState.Static,
+                LightingEffect.AmbientAwareness =>
+                    LightingRendererOwnershipState.AmbientAwareness,
+                _ => LightingRendererOwnershipState.None,
+            };
+            return Task.CompletedTask;
+        }
+
+        public Task<byte> StepBrightnessAsync(
+            KeyboardBrightnessDirection direction,
+            CancellationToken cancellationToken) =>
+            Task.FromException<byte>(new NotSupportedException());
+
+        public Task PulseReactiveKeyAsync(
+            ReactiveKeyPulse pulse,
+            CancellationToken cancellationToken) =>
+            Task.FromException(new NotSupportedException());
+
+        public Task PushAmbientLightingFrameAsync(
+            AmbientLightingFrame frame,
+            CancellationToken cancellationToken)
+        {
+            PushedFrames++;
+            return PushFailure is null
+                ? Task.CompletedTask
+                : Task.FromException(PushFailure);
+        }
+
+        public Task SetPlaybackMuteIndicatorAsync(
+            bool muted,
+            CancellationToken cancellationToken) =>
+            Task.FromException(new NotSupportedException());
+
+        public Task<LightingRendererOwnershipState> RelinquishRendererAsync(
+            CancellationToken cancellationToken) => Task.FromResult(OwnershipState);
+
+        public Task<LightingRendererOwnershipState> InvalidateAsync() =>
+            Task.FromResult(OwnershipState);
+
+        public Task<bool> DisposeWithinCleanupDeadlineAsync() =>
+            Task.FromResult(CleanupCompletes);
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class NoopDisposable : IDisposable
+    {
+        internal static NoopDisposable Instance { get; } = new();
+
+        public void Dispose()
+        {
+        }
+    }
+}

@@ -171,6 +171,28 @@ dotnet run --project src\OpenBlade.Capture -- query-fan-rpm
 dotnet run --project src\OpenBlade.Capture -- validate path\to\fixtures.json
 ```
 
+The RZ09-0581 cadence validator measures whether the admitted `1532:02E0`
+matrix transport can sustain progressive 30, 45, and 60 Hz writes. Stop the
+OpenBlade service first, substitute the laptop's admitted BIOS version, and
+choose a directory for the sanitized timestamped JSON and Markdown results:
+
+```powershell
+dotnet run --project src\OpenBlade.Capture -- `
+  validate-rz09-0581-lighting-cadence `
+  --confirm-target RZ09-0581:1532:02E0:4.00:000C:0001:375 `
+  --rates 30,45,60 --brightness 25 --seconds 15 `
+  --output .\lighting-cadence-results
+```
+
+The run replaces the current keyboard effect. That unknown pre-test effect
+cannot be read or restored; a healthy run finishes at the explicitly confirmed
+Static green baseline.
+
+This validates host-to-keyboard transport completion, not the LEDs' optical
+refresh rate; optical proof still needs high-speed video. If a write outcome is
+indeterminate, the validator stops without retrying or restoring lighting and
+reports that manual recovery is required.
+
 The installed-product firmware workflow starts with a read-only baseline:
 
 ```powershell

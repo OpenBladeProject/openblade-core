@@ -1,0 +1,721 @@
+using System.ComponentModel;
+using System.Globalization;
+using System.ServiceProcess;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using OpenBlade.Contracts;
+using OpenBlade.Protocol;
+
+namespace OpenBlade.Capture;
+
+internal sealed record LightingCadenceMatrixInterfaceEvidence(
+    string UsagePage,
+    string Usage,
+    int FeatureReportLength);
+
+internal sealed record LightingCadenceStageEvidence(
+    LightingCadenceStageResult Transport,
+    bool VisuallyStable);
+
+internal sealed record Rz090581LightingCadenceEvidence(
+    int SchemaVersion,
+    string EvidenceKind,
+    DeviceIdentity Device,
+    LightingCadenceMatrixInterfaceEvidence MatrixInterface,
+    string InformationalVersion,
+    string CommitHash,
+    string ProtocolAssemblySha256,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset CompletedAtUtc,
+    int BrightnessPercent,
+    int MeasurementSeconds,
+    IReadOnlyList<int> RequestedRates,
+    bool BaselineBrightnessMatched,
+    bool BaselineVisuallyConfirmed,
+    IReadOnlyList<LightingCadenceStageEvidence> Stages,
+    bool RestorationAttempted,
+    bool RestoredBrightnessMatched,
+    bool RestoredOwnershipMatched,
+    bool RestoredVisuallyConfirmed,
+    string RestoredStateKind,
+    bool UnknownPreTestStateRestored,
+    bool CleanupCompleted,
+    bool ManualRecoveryRequired,
+    bool TransportQualified,
+    bool OpticalValidationRequired,
+    string? Failure);
+
+internal sealed class Rz090581LightingCadenceValidationCommand
+{
+    internal const int UsageExitCode = 1;
+    internal const int ValidationFailureExitCode = 2;
+    internal const int CanceledExitCode = 4;
+    internal const int MinimumMeasurementSeconds = 5;
+    internal const int MaximumMeasurementSeconds = 60;
+    internal static IReadOnlyList<int> RequiredRates { get; } =
+        Array.AsReadOnly(new[] { 30, 45, 60 });
+
+    private const string TargetPrefix = "RZ09-0581:1532:02E0:";
+    private const string TargetSuffix = ":000C:0001:375";
+    private const string ExactManufacturer = "Razer";
+    private const string ExactProductName = "Blade 16 - RZ09-0581";
+    private const string ExactSku = "RZ09-05819EN4";
+    private static readonly TimeSpan WarmupDuration = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan CooldownDuration = TimeSpan.FromSeconds(2);
+    private static readonly RgbColor BaselineGreen = new(0, byte.MaxValue, 0);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
+
+    private readonly Func<CancellationToken,
+        Task<HidSessionResult<IProductionLightingPort>>> openPort;
+    private readonly Func<CancellationToken,
+        Task<HidSessionResult<LightingBrightnessReading>>> queryBrightness;
+    private readonly Func<HostIdentityReadResult> readIdentity;
+    private readonly Func<int, TimeSpan, TimeSpan,
+        Func<AmbientLightingFrame, CancellationToken, Task>, CancellationToken,
+        Task<LightingCadenceStageResult>> runStage;
+    private readonly TextReader input;
+    private readonly TextWriter output;
+    private readonly ProductionLightingBuildIdentity buildIdentity;
+    private readonly Func<DateTimeOffset> utcNow;
+    private readonly Func<string, string, CancellationToken, Task> writeArtifact;
+    private readonly Func<TimeSpan, CancellationToken, Task> delay;
+    private readonly Func<Action, IDisposable> registerCancellation;
+    private readonly Func<string?> checkEnvironment;
+
+    internal Rz090581LightingCadenceValidationCommand(
+        Func<CancellationToken, Task<HidSessionResult<IProductionLightingPort>>> openPort,
+        Func<CancellationToken,
+            Task<HidSessionResult<LightingBrightnessReading>>> queryBrightness,
+        Func<HostIdentityReadResult> readIdentity,
+        Func<int, TimeSpan, TimeSpan,
+            Func<AmbientLightingFrame, CancellationToken, Task>, CancellationToken,
+            Task<LightingCadenceStageResult>> runStage,
+        TextReader input,
+        TextWriter output,
+        ProductionLightingBuildIdentity buildIdentity,
+        Func<DateTimeOffset>? utcNow = null,
+        Func<string, string, CancellationToken, Task>? writeArtifact = null,
+        Func<TimeSpan, CancellationToken, Task>? delay = null,
+        Func<Action, IDisposable>? registerCancellation = null,
+        Func<string?>? checkEnvironment = null)
+    {
+        this.openPort = openPort ?? throw new ArgumentNullException(nameof(openPort));
+        this.queryBrightness = queryBrightness
+            ?? throw new ArgumentNullException(nameof(queryBrightness));
+        this.readIdentity = readIdentity
+            ?? throw new ArgumentNullException(nameof(readIdentity));
+        this.runStage = runStage ?? throw new ArgumentNullException(nameof(runStage));
+        this.input = input ?? throw new ArgumentNullException(nameof(input));
+        this.output = output ?? throw new ArgumentNullException(nameof(output));
+        this.buildIdentity = buildIdentity
+            ?? throw new ArgumentNullException(nameof(buildIdentity));
+        this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+        this.writeArtifact = writeArtifact ?? WriteAtomicallyAsync;
+        this.delay = delay ?? Task.Delay;
+        this.registerCancellation = registerCancellation ?? ConsoleCancellation.Register;
+        this.checkEnvironment = checkEnvironment ?? CheckWindowsEnvironment;
+    }
+
+    internal static Rz090581LightingCadenceValidationCommand CreateWindows(
+        TextReader input,
+        TextWriter output)
+    {
+        IProductionLightingPortFactory factory =
+            ProductionLightingFactory.CreateWindowsForExactBuildValidation();
+        var registry = new WindowsRegistryValueSource();
+        var identity = new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry));
+        var runner = new LightingCadenceProbeRunner(TimeProvider.System);
+        return new(
+            factory.OpenAsync,
+            cancellationToken => BatteryValidationFactory
+                .CreateWindowsLightingBrightnessQuery()
+                .RunAsync(cancellationToken),
+            identity.ReadExactIdentity,
+            runner.RunAsync,
+            input,
+            output,
+            ProductionLightingEvidenceSource.ReadCurrentBuildIdentity());
+    }
+
+    internal static string ExactTargetConfirmation(string biosVersion) =>
+        $"{TargetPrefix}{biosVersion}{TargetSuffix}";
+
+    internal async Task<int> RunAsync(
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!TryParse(arguments, out CadenceOptions options))
+        {
+            await WriteUsageAsync().ConfigureAwait(false);
+            return UsageExitCode;
+        }
+
+        HostIdentityReadResult identityResult;
+        try
+        {
+            identityResult = readIdentity();
+        }
+        catch
+        {
+            await output.WriteLineAsync(
+                "The exact host identity could not be read. No hardware was changed.")
+                .ConfigureAwait(false);
+            return ValidationFailureExitCode;
+        }
+        HostIdentityEvidence? host = identityResult.Evidence;
+        if (host is null
+            || identityResult.Failure is not null
+            || !IsExactHost(host.Value)
+            || !TargetBladeDevice.IsSupportedBiosVersion(host.Value.BiosVersion)
+            || !options.Confirmation.Equals(
+                ExactTargetConfirmation(host.Value.BiosVersion),
+                StringComparison.Ordinal))
+        {
+            await output.WriteLineAsync(
+                "The confirmation does not match this exact admitted RZ09-0581 host. " +
+                "No hardware was changed.").ConfigureAwait(false);
+            return ValidationFailureExitCode;
+        }
+
+        if (checkEnvironment() is { } environmentFailure)
+        {
+            await output.WriteLineAsync(environmentFailure).ConfigureAwait(false);
+            return ValidationFailureExitCode;
+        }
+        if (!ValidBuildIdentity(buildIdentity))
+        {
+            await output.WriteLineAsync(
+                "The exact-build identity is incomplete. No hardware was changed.")
+                .ConfigureAwait(false);
+            return ValidationFailureExitCode;
+        }
+
+        using CancellationTokenSource commandCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using IDisposable registration = registerCancellation(
+            () => ConsoleCancellation.Cancel(commandCancellation));
+        DateTimeOffset startedAtUtc = utcNow();
+        IProductionLightingPort? port = null;
+        var stages = new List<LightingCadenceStageEvidence>();
+        bool hardwareTouched = false;
+        bool baselineBrightnessMatched = false;
+        bool baselineVisuallyConfirmed = false;
+        bool restorationAttempted = false;
+        bool restoredBrightnessMatched = false;
+        bool restoredOwnershipMatched = false;
+        bool restoredVisuallyConfirmed = false;
+        bool cleanupCompleted = false;
+        bool manualRecoveryRequired = false;
+        bool canceled = false;
+        string? failure = null;
+        LightingSettings baseline = LightingSettingsFactory.Static(
+            BaselineGreen,
+            options.Brightness);
+
+        try
+        {
+            await output.WriteLineAsync(
+                "Transport timing is measured here. Optical refresh still requires " +
+                "a high-speed camera validation.").ConfigureAwait(false);
+            await output.WriteLineAsync(
+                "This replaces the current keyboard effect. OpenBlade cannot read or " +
+                "restore an unknown pre-test effect. A healthy or known-not-applied " +
+                $"outcome will finish at a known Static green {options.Brightness}% baseline.")
+                .ConfigureAwait(false);
+            bool overwriteAuthorized = await PromptYesAsync(
+                "Proceed with replacing the current effect?",
+                commandCancellation.Token).ConfigureAwait(false);
+            if (!overwriteAuthorized)
+            {
+                failure = "effectReplacementDeclined";
+            }
+            else
+            {
+                HidSessionResult<IProductionLightingPort> opened =
+                    await openPort(commandCancellation.Token).ConfigureAwait(false);
+                port = opened.Value;
+                if (port is null || opened.Failure is not null)
+                {
+                    failure = $"controlsUnavailable:{opened.Failure?.ToString() ?? "unknown"}";
+                }
+                else if (!port.Capabilities.LightingEffects.Contains(LightingEffect.Static)
+                    || !port.Capabilities.LightingEffects.Contains(
+                        LightingEffect.AmbientAwareness))
+                {
+                    failure = "exactEffectsNotAdmitted";
+                }
+                else
+                {
+                    await port.EnsureDriverModeAsync(commandCancellation.Token)
+                        .ConfigureAwait(false);
+                    hardwareTouched = true;
+                    await port.SetLightingAsync(baseline, commandCancellation.Token)
+                        .ConfigureAwait(false);
+                    baselineBrightnessMatched = await BrightnessMatchesAsync(
+                        options.Brightness,
+                        commandCancellation.Token).ConfigureAwait(false);
+                    baselineVisuallyConfirmed = baselineBrightnessMatched
+                        && await PromptYesAsync(
+                            $"Is the entire keyboard Static green at {options.Brightness}%?",
+                            commandCancellation.Token).ConfigureAwait(false);
+                    if (!baselineBrightnessMatched)
+                    {
+                        failure = "baselineBrightnessReadbackMismatch";
+                    }
+                    else if (!baselineVisuallyConfirmed)
+                    {
+                        failure = "baselineVisualConfirmationRejected";
+                    }
+
+                    foreach (int rate in options.Rates)
+                    {
+                        if (failure is not null)
+                        {
+                            break;
+                        }
+
+                        await output.WriteLineAsync(
+                            $"Running {rate} Hz: 2 s warmup, {options.Seconds} s measured...")
+                            .ConfigureAwait(false);
+                        await port.SetLightingAsync(
+                            LightingSettingsFactory.AmbientAwareness(
+                                AmbientAwarenessRegion.Full,
+                                options.Brightness),
+                            commandCancellation.Token).ConfigureAwait(false);
+                        LightingCadenceStageResult transport = await runStage(
+                            rate,
+                            WarmupDuration,
+                            TimeSpan.FromSeconds(options.Seconds),
+                            port.PushAmbientLightingFrameAsync,
+                            commandCancellation.Token).ConfigureAwait(false);
+                        bool visuallyStable = transport.Failure is null
+                            && await PromptYesAsync(
+                                $"Did the {rate} Hz effect remain stable, without freezing or corruption?",
+                                commandCancellation.Token).ConfigureAwait(false);
+                        stages.Add(new(transport, visuallyStable));
+
+                        if (transport.FailureSubmissionState ==
+                            WriteSubmissionState.Indeterminate)
+                        {
+                            manualRecoveryRequired = true;
+                            failure = "indeterminateMatrixWrite";
+                            break;
+                        }
+                        if (transport.Failure is not null)
+                        {
+                            failure = transport.Failure;
+                            break;
+                        }
+                        if (!transport.TransportQualified)
+                        {
+                            failure = $"transportQualificationFailed:{rate}";
+                            break;
+                        }
+                        if (!visuallyStable)
+                        {
+                            failure = $"visualStabilityRejected:{rate}";
+                            break;
+                        }
+
+                        await port.SetLightingAsync(baseline, commandCancellation.Token)
+                            .ConfigureAwait(false);
+                        await delay(CooldownDuration, commandCancellation.Token)
+                            .ConfigureAwait(false);
+                    }
+                }
+            }
+        }
+        catch (BladeWriteException exception)
+        {
+            manualRecoveryRequired =
+                exception.SubmissionState == WriteSubmissionState.Indeterminate;
+            failure = $"matrixWrite:{exception.SubmissionState}";
+        }
+        catch (OperationCanceledException) when (commandCancellation.IsCancellationRequested)
+        {
+            canceled = true;
+            failure = "canceled";
+        }
+        catch (Exception exception)
+        {
+            failure = $"validationFailed:{ExceptionKind(exception)}";
+        }
+        finally
+        {
+            if (port is not null && hardwareTouched && !manualRecoveryRequired)
+            {
+                restorationAttempted = true;
+                try
+                {
+                    await port.SetLightingAsync(baseline, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    restoredBrightnessMatched = await BrightnessMatchesAsync(
+                        options.Brightness,
+                        CancellationToken.None).ConfigureAwait(false);
+                    restoredOwnershipMatched =
+                        port.OwnershipState == LightingRendererOwnershipState.Static;
+                    restoredVisuallyConfirmed = !canceled
+                        && await PromptYesAsync(
+                            $"Was Static green at {options.Brightness}% restored across the keyboard?",
+                            CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (BladeWriteException exception)
+                {
+                    manualRecoveryRequired =
+                        exception.SubmissionState == WriteSubmissionState.Indeterminate;
+                    failure = AppendFailure(
+                        failure,
+                        $"restoreWrite:{exception.SubmissionState}");
+                }
+                catch (Exception exception)
+                {
+                    manualRecoveryRequired = true;
+                    failure = AppendFailure(
+                        failure,
+                        $"restoreFailed:{ExceptionKind(exception)}");
+                }
+            }
+
+            if (port is not null)
+            {
+                try
+                {
+                    cleanupCompleted = await port.DisposeWithinCleanupDeadlineAsync()
+                        .ConfigureAwait(false);
+                    if (!cleanupCompleted)
+                    {
+                        manualRecoveryRequired = true;
+                        failure = AppendFailure(failure, "cleanupPending");
+                    }
+                }
+                catch
+                {
+                    manualRecoveryRequired = true;
+                    failure = AppendFailure(failure, "disposeFailed");
+                }
+            }
+        }
+
+        bool restored = restorationAttempted
+            && restoredBrightnessMatched
+            && restoredOwnershipMatched
+            && restoredVisuallyConfirmed;
+        bool transportQualified = stages.Count == options.Rates.Count
+            && stages.All(stage => stage.Transport.TransportQualified);
+        bool passed = failure is null
+            && baselineBrightnessMatched
+            && baselineVisuallyConfirmed
+            && transportQualified
+            && stages.All(stage => stage.VisuallyStable)
+            && restored;
+        failure ??= passed ? null : "hardwareGatesIncomplete";
+        DateTimeOffset completedAtUtc = utcNow();
+        var evidence = new Rz090581LightingCadenceEvidence(
+            SchemaVersion: 1,
+            EvidenceKind: "rz090581LightingCadenceValidation",
+            new DeviceIdentity(
+                TargetBladeDevice.Model,
+                TargetBladeDevice.VendorId,
+                TargetBladeDevice.ProductId,
+                host.Value.BiosVersion),
+            new("000C", "0001", TargetBladeDevice.MatrixFeatureReportByteLength),
+            buildIdentity.InformationalVersion,
+            buildIdentity.CommitHash,
+            buildIdentity.ProtocolAssemblySha256,
+            startedAtUtc,
+            completedAtUtc,
+            options.Brightness,
+            options.Seconds,
+            options.Rates,
+            baselineBrightnessMatched,
+            baselineVisuallyConfirmed,
+            stages,
+            restorationAttempted,
+            restoredBrightnessMatched,
+            restoredOwnershipMatched,
+            restoredVisuallyConfirmed,
+            RestoredStateKind: "knownStaticGreenBaseline",
+            UnknownPreTestStateRestored: false,
+            cleanupCompleted,
+            manualRecoveryRequired,
+            transportQualified,
+            OpticalValidationRequired: true,
+            failure);
+
+        string stem =
+            $"rz09-0581-lighting-cadence-{completedAtUtc:yyyyMMddTHHmmssfffZ}";
+        string jsonPath = Path.Combine(options.OutputDirectory, $"{stem}.json");
+        string markdownPath = Path.Combine(options.OutputDirectory, $"{stem}.md");
+        try
+        {
+            await writeArtifact(
+                jsonPath,
+                JsonSerializer.Serialize(evidence, JsonOptions),
+                CancellationToken.None).ConfigureAwait(false);
+            await writeArtifact(
+                markdownPath,
+                CreateMarkdown(evidence),
+                CancellationToken.None).ConfigureAwait(false);
+            await output.WriteLineAsync($"Validation result: {jsonPath}")
+                .ConfigureAwait(false);
+            await output.WriteLineAsync($"Summary: {markdownPath}")
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            await output.WriteLineAsync("Validation artifacts could not be written.")
+                .ConfigureAwait(false);
+            return ValidationFailureExitCode;
+        }
+
+        if (manualRecoveryRequired)
+        {
+            await output.WriteLineAsync(
+                "The last lighting state could not be proven safe. Lighting was not " +
+                "retried; manual recovery is required.").ConfigureAwait(false);
+        }
+
+        return passed
+            ? 0
+            : canceled
+                ? CanceledExitCode
+                : ValidationFailureExitCode;
+    }
+
+    private async Task<bool> BrightnessMatchesAsync(
+        byte brightness,
+        CancellationToken cancellationToken)
+    {
+        HidSessionResult<LightingBrightnessReading> result =
+            await queryBrightness(cancellationToken).ConfigureAwait(false);
+        return result.Failure is null
+            && result.Value?.RawValue == LightingBrightnessProtocol.PercentToRaw(brightness);
+    }
+
+    private async Task<bool> PromptYesAsync(
+        string prompt,
+        CancellationToken cancellationToken)
+    {
+        await output.WriteLineAsync($"{prompt} Type YES or NO:").ConfigureAwait(false);
+        string? response = await input.ReadLineAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return string.Equals(response?.Trim(), "YES", StringComparison.Ordinal);
+    }
+
+    private async Task WriteUsageAsync()
+    {
+        await output.WriteLineAsync(
+            "Usage: OpenBlade.Capture validate-rz09-0581-lighting-cadence " +
+            "--confirm-target RZ09-0581:1532:02E0:<BIOS>:000C:0001:375 " +
+            "--rates 30,45,60 --brightness <1-100> --seconds <5-60> " +
+            "--output <directory>").ConfigureAwait(false);
+    }
+
+    private static bool TryParse(
+        IReadOnlyList<string> arguments,
+        out CadenceOptions options)
+    {
+        options = null!;
+        if (arguments.Count != 10
+            || !arguments[0].Equals("--confirm-target", StringComparison.Ordinal)
+            || !arguments[2].Equals("--rates", StringComparison.Ordinal)
+            || !arguments[4].Equals("--brightness", StringComparison.Ordinal)
+            || !arguments[6].Equals("--seconds", StringComparison.Ordinal)
+            || !arguments[8].Equals("--output", StringComparison.Ordinal)
+            || !arguments[1].StartsWith(TargetPrefix, StringComparison.Ordinal)
+            || !arguments[1].EndsWith(TargetSuffix, StringComparison.Ordinal)
+            || !TryParseRates(arguments[3], out int[] rates)
+            || !byte.TryParse(
+                arguments[5],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out byte brightness)
+            || brightness is 0 or > 100
+            || !int.TryParse(
+                arguments[7],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out int seconds)
+            || seconds is < MinimumMeasurementSeconds or > MaximumMeasurementSeconds
+            || string.IsNullOrWhiteSpace(arguments[9]))
+        {
+            return false;
+        }
+
+        try
+        {
+            options = new(
+                arguments[1],
+                rates,
+                brightness,
+                seconds,
+                Path.GetFullPath(arguments[9]));
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException
+            or NotSupportedException
+            or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryParseRates(string value, out int[] rates)
+    {
+        rates = [];
+        string[] parts = value.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length != RequiredRates.Count)
+        {
+            return false;
+        }
+
+        rates = new int[parts.Length];
+        for (int index = 0; index < parts.Length; index++)
+        {
+            if (!int.TryParse(
+                    parts[index],
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out rates[index])
+                || rates[index] != RequiredRates[index])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string CreateMarkdown(Rz090581LightingCadenceEvidence evidence)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("# RZ09-0581 lighting cadence validation");
+        builder.AppendLine();
+        builder.AppendLine($"- Completed: {evidence.CompletedAtUtc:O}");
+        builder.AppendLine($"- Result: {(evidence.Failure is null ? "passed" : "failed")}");
+        builder.AppendLine($"- Failure: {evidence.Failure ?? "none"}");
+        builder.AppendLine($"- Restored state: {evidence.RestoredStateKind}");
+        builder.AppendLine(
+            $"- Unknown pre-test state restored: {evidence.UnknownPreTestStateRestored}");
+        builder.AppendLine($"- Cleanup completed: {evidence.CleanupCompleted}");
+        builder.AppendLine($"- Manual recovery required: {evidence.ManualRecoveryRequired}");
+        builder.AppendLine("- Optical validation: required; transport completion is not LED refresh proof");
+        builder.AppendLine();
+        builder.AppendLine("| Target | Completed | Skipped | Achieved | p99 write | Max gap | Transport | Visual |");
+        builder.AppendLine("| ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: |");
+        foreach (LightingCadenceStageEvidence stage in evidence.Stages)
+        {
+            LightingCadenceStageResult value = stage.Transport;
+            builder.AppendLine(
+                $"| {value.TargetFramesPerSecond} Hz | {value.CompletedFrames}/{value.ScheduledFrames} | " +
+                $"{value.SkippedFrames} | {value.AchievedFramesPerSecond:F2} Hz | " +
+                $"{Format(value.WriteDuration.P99Milliseconds)} | " +
+                $"{value.MaximumCompletionGapMilliseconds:F2} ms | " +
+                $"{(value.TransportQualified ? "pass" : "fail")} | " +
+                $"{(stage.VisuallyStable ? "pass" : "fail")} |");
+        }
+        return builder.ToString();
+    }
+
+    private static string Format(double? milliseconds) =>
+        milliseconds is null ? "n/a" : $"{milliseconds.Value:F2} ms";
+
+    private static bool ValidBuildIdentity(ProductionLightingBuildIdentity identity) =>
+        identity.CommitHash.Length == 40
+        && identity.CommitHash.All(Uri.IsHexDigit)
+        && identity.InformationalVersion.EndsWith(
+            $"+{identity.CommitHash}",
+            StringComparison.OrdinalIgnoreCase)
+        && identity.ProtocolAssemblySha256.Length == 64
+        && identity.ProtocolAssemblySha256.All(Uri.IsHexDigit);
+
+    private static bool IsExactHost(HostIdentityEvidence host) =>
+        host.Manufacturer.Equals(ExactManufacturer, StringComparison.Ordinal)
+        && host.ProductName.Equals(ExactProductName, StringComparison.Ordinal)
+        && host.Sku.Equals(ExactSku, StringComparison.Ordinal);
+
+    private static string? CheckWindowsEnvironment()
+    {
+        try
+        {
+            using var service = new ServiceController("OpenBlade");
+            return service.Status == ServiceControllerStatus.Stopped
+                ? null
+                : "Stop the OpenBlade service before validating lighting. No hardware was changed.";
+        }
+        catch (InvalidOperationException exception)
+            when (exception.InnerException is Win32Exception { NativeErrorCode: 1060 })
+        {
+            return null;
+        }
+        catch (Win32Exception exception) when (exception.NativeErrorCode == 1060)
+        {
+            return null;
+        }
+        catch
+        {
+            return "OpenBlade could not verify that its service is stopped. No hardware was changed.";
+        }
+    }
+
+    private static async Task WriteAtomicallyAsync(
+        string path,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        string? directory = Path.GetDirectoryName(path);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            throw new IOException("The validation artifact requires a parent directory.");
+        }
+
+        Directory.CreateDirectory(directory);
+        string temporaryPath = Path.Combine(
+            directory,
+            $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await File.WriteAllTextAsync(temporaryPath, content, cancellationToken)
+                .ConfigureAwait(false);
+            File.Move(temporaryPath, path, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(temporaryPath);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static string ExceptionKind(Exception exception) => exception switch
+    {
+        System.TimeoutException => "timeout",
+        UnauthorizedAccessException => "accessDenied",
+        IOException => "io",
+        ObjectDisposedException => "disposed",
+        InvalidOperationException => "invalidOperation",
+        _ => "unexpected",
+    };
+
+    private static string AppendFailure(string? current, string additional) =>
+        current is null ? additional : $"{current}|{additional}";
+
+    private sealed record CadenceOptions(
+        string Confirmation,
+        IReadOnlyList<int> Rates,
+        byte Brightness,
+        int Seconds,
+        string OutputDirectory);
+}
