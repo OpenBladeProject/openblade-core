@@ -10,7 +10,10 @@ public sealed class ElevatedServiceControlLauncherTests
     [InlineData("--START-SERVICE", true, (int)ElevatedServiceControlAction.Start)]
     [InlineData("--shutdown-service", true, (int)ElevatedServiceControlAction.Shutdown)]
     [InlineData("--SHUTDOWN-SERVICE", true, (int)ElevatedServiceControlAction.Shutdown)]
+    [InlineData("--stop-razer-services", true, (int)ElevatedServiceControlAction.StopRazerServices)]
+    [InlineData("--STOP-RAZER-SERVICES", true, (int)ElevatedServiceControlAction.StopRazerServices)]
     [InlineData("--start-service=1", false, 0)]
+    [InlineData("--stop-razer-services=RGS", false, 0)]
     public void HelperLaunchRequiresOneExactPrivateArgument(
         string argument,
         bool expected,
@@ -43,6 +46,9 @@ public sealed class ElevatedServiceControlLauncherTests
         Assert.Equal(ElevatedServiceHelperParseResult.Invalid, ElevatedServiceControlLauncher.ParseHelperAction(
             ["OpenBlade.Tray.exe", "--start-service", "--shutdown-service"],
             out _));
+        Assert.Equal(ElevatedServiceHelperParseResult.Invalid, ElevatedServiceControlLauncher.ParseHelperAction(
+            ["OpenBlade.Tray.exe", "--stop-razer-services", "RGS"],
+            out _));
     }
 
     [Fact]
@@ -69,6 +75,7 @@ public sealed class ElevatedServiceControlLauncherTests
     [Theory]
     [InlineData((int)ElevatedServiceControlAction.Start, "--start-service")]
     [InlineData((int)ElevatedServiceControlAction.Shutdown, "--shutdown-service")]
+    [InlineData((int)ElevatedServiceControlAction.StopRazerServices, "--stop-razer-services")]
     public void CreateStartInfoElevatesOnlyTheExactTrayExecutable(
         int actionValue,
         string expectedArgument)
@@ -90,6 +97,7 @@ public sealed class ElevatedServiceControlLauncherTests
     [Theory]
     [InlineData((int)ElevatedServiceControlAction.Start)]
     [InlineData((int)ElevatedServiceControlAction.Shutdown)]
+    [InlineData((int)ElevatedServiceControlAction.StopRazerServices)]
     public async Task RequestAsyncSuccessfulHelperReturnsCompletedOutcome(int actionValue)
     {
         ProcessStartInfo? observed = null;
@@ -156,5 +164,23 @@ public sealed class ElevatedServiceControlLauncherTests
 
         Assert.Equal(ElevatedServiceControlOutcome.Indeterminate, outcome);
         Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task RequestAsyncBoundsRunnerThatDoesNotObserveCancellation()
+    {
+        var launcher = new ElevatedServiceControlLauncher(async (_, _) =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+            return 0;
+        });
+        using var cancellation = new CancellationTokenSource(
+            TimeSpan.FromMilliseconds(10));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            launcher.RequestAsync(
+                @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe",
+                ElevatedServiceControlAction.StopRazerServices,
+                cancellation.Token));
     }
 }
