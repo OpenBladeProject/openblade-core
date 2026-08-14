@@ -70,8 +70,10 @@ public static class WindowPlacementPolicy
             height));
     }
 
-    private static int ScaleToPixels(double dips, int dpi)
+    public static int ScaleToPixels(double dips, int dpi)
     {
+        ValidateDip(dips, nameof(dips));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dpi);
         double scaled = dips * dpi / 96d;
         if (!double.IsFinite(scaled))
         {

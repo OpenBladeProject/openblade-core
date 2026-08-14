@@ -11,8 +11,49 @@ All notable changes to OpenBlade are documented in this file. The project follow
   Synapse and Chroma controller-service allowlist, then reports fresh Windows
   service readback without disabling startup or retrying uncertain requests.
 
+### Changed
+
+- Replaced the tray-dashboard customization dialog with a dedicated Settings
+  page that shows only active controls and adjustments, keeps inactive choices
+  in **Add** menus, exposes the two-adjustment limit, and updates the pinned tray
+  popup live while items are reordered, added, removed, or reset.
+- Expanded tray-dashboard quick controls with battery protection, function-row
+  mode, gaming mode and its key-blocking options, plus an optional GPU-tuning
+  toggle.
+- Renamed the tray-dashboard lighting adjustment to **Keyboard brightness** so
+  its target is explicit in Settings and accessibility presentation.
+- Matched the tray dashboard to the Windows Quick Settings 360 by 388 DIP
+  footprint, added configurable power-source and fan-speed status items, and
+  standardized its primary icon scale.
+
 ### Fixed
 
+- Limited the tray-dashboard status row to three configurable readings so its
+  icons and labels remain distinct instead of clipping in the fixed-width popup.
+- Reduced tray-dashboard background work by sharing one visible-surface
+  telemetry loop, reading only the sensors selected for the popup, replacing
+  steady foreground polling with bounded deactivation checks, suppressing
+  telemetry binding updates for the parked popup, keeping popup animations out
+  of EcoQoS, and preventing overlapping animation workers or deferred GPU
+  commits during teardown. A bounded UI fallback now also completes dismissals
+  if native animation-frame delivery stops early.
+- Added a real compiled-XAML startup check for the main window and every tray
+  dashboard control, protected newer dashboard preference schemas from being
+  overwritten by older builds, and kept GPU slider commits from applying after
+  their capabilities or editability change.
+- Moved tray-dashboard animation pacing off the shared thread pool, bounded its
+  compositor-failure fallback to one frame, and limited tray-click reopen
+  suppression to dismissals caused by an actual Windows taskbar.
+- Prevented the tray from crashing during startup when loading dashboard status
+  icon columns from a numeric XAML sizing resource.
+- Replaced the keyboard-brightness adjustment's generic sun icon with the
+  Windows keyboard-brightness glyph.
+
+- Kept selected GPU clock adjustments visible in the tray dashboard when GPU
+  tuning is temporarily unavailable, showing their disabled state instead of
+  silently removing them.
+- Kept the pinned tray-dashboard preview above a maximized OpenBlade window
+  during Settings customization without making it system-wide always-on-top.
 - Kept profile pending-change dots immediately beside their value text instead
   of stretching them to the far edge of the table cell.
 - Cleared the red playback-mute key after a rejected unmute frame by restoring
@@ -29,6 +70,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a compact quick-controls dashboard that opens with one click on the
+  tray icon. Its tile controls, slider controls, order, visibility, and status
+  row can be customized from Settings while the actual popup updates live.
+  Open the main window with a tray-icon double-click or the tray icon's
+  right-click **Open** command.
 - Added production recognition for the SlimQ 330 W adapter on the exact
   Razer Blade 16 RZ09-0581 with BIOS 3.01 or 4.00. The admission is bound to
   ten identical typed adapter reads and four matching Windows online-power
@@ -43,6 +89,20 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Refined the dashboard into a Windows Quick Settings-style panel with a
+  uniform three-column tile grid, quick actions that cycle through available
+  options, chevrons that open focused choice screens, scrolling beyond six
+  controls, and a fixed quick-adjustment section for up to two charge-limit,
+  lighting-brightness, or GPU-clock sliders. Unused slider space expands the
+  tile viewport without changing the popup's overall height. The popup now
+  matches Windows' tile, corner, type, and panel proportions; single-choice
+  fan controls omit the details chevron, and quick-adjustment rows use larger,
+  consistently aligned icons, Windows-sized thumbs and tracks, and no trailing
+  labels. Performance and fan controls now use purpose-specific symbols, the
+  telemetry footer distributes visible items evenly, and opening the popup no
+  longer leaves a focus border on its first tile. Legacy wide-tile and
+  expanded-control preferences now migrate to the fixed grid instead of being
+  retained as inactive settings.
 - Reduced repeated status-publication allocations by reusing immutable drift
   snapshots and validating small sorted IPC collections without LINQ buffers.
 - Battery protection and charge-limit changes now remain temporary until saved
@@ -57,6 +117,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed the quick-controls popup's blank black opening frame, raw lighting
+  option text, missing fan icon, clipped controls, and truncated status labels.
+  The popup now keeps its composed surface prewarmed outside the virtual
+  desktop and uses
+  matching 200 ms reveal and dismissal motion paced by the desktop compositor
+  with the brightness overlay's easing, stays outside the taskbar's topmost
+  band, reliably dismisses after an outside click, refreshes its telemetry
+  while open, and constrains its tiles to the live viewport at every display
+  scale.
 - Restored the last confirmed charge limit when a debounced tray edit cannot be
   applied, while preserving a newer edit made during an in-flight request.
 - Preserved configured special-key bindings through transient preference-file

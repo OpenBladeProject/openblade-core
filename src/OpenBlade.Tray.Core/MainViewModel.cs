@@ -244,6 +244,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private PowerSource activePowerSource = PowerSource.PluggedIn;
     private LiveReadings? liveReadings;
     private bool dashboardTelemetryPresentationActive = true;
+    private bool trayDashboardTelemetryPresentationActive;
     private DateTimeOffset? lastLiveReadingsRefreshAt;
     private PerformanceOverride? performanceOverride;
     private ManualOverride<FanMode>? fanOverride;
@@ -679,6 +680,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string GpuTemperatureValue =>
         FormatTemperatureValue(LiveReadings?.GpuTemperatureCelsius);
 
+    public string TrayDashboardBatteryPowerFlowLabel =>
+        TrayDashboardStatusPresentation.BatteryPower(
+            IsConnected,
+            LiveReadings?.BatteryPowerFlowMilliwatts,
+            ActivePowerSource);
+
+    public string TrayDashboardTemperatureLabel =>
+        TrayDashboardStatusPresentation.Temperatures(
+            IsConnected,
+            LiveReadings?.CpuTemperatureCelsius,
+            LiveReadings?.GpuTemperatureCelsius);
+
+    public string TrayDashboardPowerSourceLabel =>
+        TrayDashboardStatusPresentation.PowerSourceText(IsConnected, ActivePowerSource);
+
+    public string TrayDashboardFanSpeedLabel =>
+        TrayDashboardStatusPresentation.FanSpeed(
+            IsConnected,
+            LiveReadings?.Fan1Rpm,
+            LiveReadings?.Fan2Rpm);
+
+    public string TrayDashboardFanSpeedToolTip =>
+        IsConnected ? $"{Fan1RpmLabel}; {Fan2RpmLabel}" : UnavailableLabel;
+
     public ObservableCollection<LiveReadingVisibilityOption> DashboardTelemetryItems
     {
         get;
@@ -842,6 +867,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SelectedPerformanceOption));
             Notify(nameof(IsCustomPerformanceVisible));
             Notify(nameof(IsGpuClockTuningVisible));
+            Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
@@ -850,6 +876,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyGamingModeKeyPolicy();
             NotifyActiveFanSelectionBinding();
             Notify(nameof(BatteryPowerFlowLabel));
+            Notify(nameof(TrayDashboardBatteryPowerFlowLabel));
+            Notify(nameof(TrayDashboardPowerSourceLabel));
             NotifyTrayHoverLabel();
             NotifyCommands();
         }
@@ -1666,6 +1694,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsPerformanceSelected));
             Notify(nameof(IsCustomPerformanceVisible));
             Notify(nameof(IsGpuClockTuningVisible));
+            Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
@@ -1707,8 +1736,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             SetField(ref gpuClockTuningEnabled, value);
             Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(TrayDashboardGpuTuningLabel));
         }
     }
+
+    public string TrayDashboardGpuTuningLabel => !IsGpuClockTuningVisible
+        ? UnavailableLabel
+        : IsGpuClockTuningEnabled
+            ? "On"
+            : "Off";
 
     public bool IsSpecialKeyBindingsEditable =>
         Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
@@ -2088,6 +2124,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             chargeLimitEditorDirty = true;
             chargeLimitEditorRevision++;
             SetField(ref chargeLimitPercent, value);
+            Notify(nameof(TrayDashboardChargeLimitLabel));
             NotifyCommands();
         }
     }
@@ -2140,12 +2177,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             SetField(ref batteryProtectionEnabled, value);
             Notify(nameof(BatteryProtectionActionLabel));
+            Notify(nameof(TrayDashboardChargeLimitLabel));
         }
     }
 
     public string BatteryProtectionActionLabel => BatteryProtectionEnabled
         ? "Turn off battery protection"
         : "Restore charge limit";
+
+    public string TrayDashboardChargeLimitLabel => BatteryProtectionEnabled
+        ? $"{ChargeLimitPercent} %"
+        : "Off";
 
     public bool FullChargeOverride
     {
@@ -2201,6 +2243,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SupportsFunctionKeyPrimary));
             Notify(nameof(SupportsGamingMode));
             Notify(nameof(IsGpuClockTuningVisible));
+            Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
@@ -2285,12 +2328,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             gamingModeEnabled = value;
             Notify(nameof(GamingModeEnabled));
             Notify(nameof(GamingModeToggleIsOn));
+            Notify(nameof(TrayDashboardGamingModeLabel));
             Notify(nameof(IsGamingModeFieldLoading));
             NotifyLaptopBehaviorProfilePresentations();
         }
     }
 
     public bool GamingModeToggleIsOn => GamingModeEnabled is true;
+
+    public string TrayDashboardGamingModeLabel => GamingModeEnabled switch
+    {
+        true => "On",
+        false => "Off",
+        null => "Checking",
+    };
 
     public bool BlockWindowsKeyInGamingMode =>
         CurrentGamingModeKeyPolicy.BlockWindowsKey;
@@ -2387,7 +2438,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         // Hidden tray refreshes may update this backing value without notifying XAML.
         // MainWindow.xaml binds only to derived telemetry properties, which are replayed
-        // when SetDashboardTelemetryPresentationActive reactivates the dashboard.
+        // when each dashboard surface reactivates its presentation.
         if (EqualityComparer<LiveReadings?>.Default.Equals(liveReadings, value))
         {
             return;
@@ -2412,9 +2463,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         dashboardTelemetryPresentationActive = active;
         if (active)
         {
-            NotifyDashboardTelemetryValuesChanged();
+            NotifyMainDashboardTelemetryValuesChanged();
             Notify(nameof(ShowDashboardLiveReadings));
             Notify(nameof(LiveReadingsRefreshToolTip));
+        }
+    }
+
+    public void SetTrayDashboardTelemetryPresentationActive(bool active)
+    {
+        if (trayDashboardTelemetryPresentationActive == active)
+        {
+            return;
+        }
+
+        trayDashboardTelemetryPresentationActive = active;
+        if (active)
+        {
+            NotifyTrayDashboardTelemetryValuesChanged();
         }
     }
 
@@ -3913,13 +3978,33 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public Task ObserveStateAsync(CancellationToken cancellationToken) =>
-        ObserveStateAsync(includeDashboardReadings: true, cancellationToken);
+        ObserveStateAsync(
+            includeMainDashboardReadings: true,
+            additionalLiveReadings: LiveReadingSensors.None,
+            trayOnly: false,
+            cancellationToken);
 
     public Task ObserveTrayStateAsync(CancellationToken cancellationToken) =>
-        ObserveStateAsync(includeDashboardReadings: false, cancellationToken);
+        ObserveStateAsync(
+            includeMainDashboardReadings: false,
+            additionalLiveReadings: LiveReadingSensors.None,
+            trayOnly: true,
+            cancellationToken);
+
+    public Task ObserveTrayDashboardStateAsync(
+        bool includeMainDashboardReadings,
+        LiveReadingSensors dashboardLiveReadings,
+        CancellationToken cancellationToken) =>
+        ObserveStateAsync(
+            includeMainDashboardReadings,
+            additionalLiveReadings: dashboardLiveReadings,
+            trayOnly: false,
+            cancellationToken);
 
     private async Task ObserveStateAsync(
-        bool includeDashboardReadings,
+        bool includeMainDashboardReadings,
+        LiveReadingSensors additionalLiveReadings,
+        bool trayOnly,
         CancellationToken cancellationToken)
     {
         ObservationRequestStamp stamp = default;
@@ -3932,7 +4017,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     connectionGeneration,
                     subscriptionConnected);
                 requestedLiveReadings = ResolveRequestedLiveReadings(
-                    includeDashboardReadings);
+                    includeMainDashboardReadings);
+                if (LiveReadingsEnabled)
+                {
+                    requestedLiveReadings |= additionalLiveReadings;
+                }
                 refreshControlAccess = IsConnected
                     && latestStatus?.ControlAccess != SessionControlAccess.Active;
             },
@@ -3945,7 +4034,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 () => ApplyObservedStatus(
                     status,
                     stamp,
-                    trayOnly: !includeDashboardReadings),
+                    trayOnly),
                 cancellationToken);
             return;
         }
@@ -3965,14 +4054,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     bool accepted = ApplyObservedStatus(
                         status,
                         stamp,
-                        trayOnly: !includeDashboardReadings);
+                        trayOnly);
                     if (accepted
                         && requestedLiveReadings != LiveReadingSensors.None
                         && LiveReadingsEnabled
                         && status.LiveReadings is not null)
                     {
                         MarkLiveReadingsRefreshed(
-                            publishPresentation: includeDashboardReadings);
+                            publishPresentation: !trayOnly);
                     }
                 },
                 cancellationToken);
@@ -4366,6 +4455,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SelectedPerformance));
             Notify(nameof(IsCustomPerformanceVisible));
             Notify(nameof(IsGpuClockTuningVisible));
+            Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
@@ -8399,6 +8489,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(LiveReadingsRefreshToolTip));
         Notify(nameof(ActivePerformanceLabel));
         Notify(nameof(ActiveFanModeLabel));
+        Notify(nameof(TrayDashboardPowerSourceLabel));
         Notify(nameof(ProfileStateLabel));
         Notify(nameof(IsReadinessReady));
         Notify(nameof(IsReadinessChecking));

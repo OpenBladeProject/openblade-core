@@ -70,6 +70,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingWindowsDynamicLighting;
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
+    private bool trayDashboardCustomizationActive;
     private bool changingPageSections;
     private bool changingPrimaryNavigationItems;
     private bool changingPrimaryNavigationOrder;
@@ -86,6 +87,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool? profilesUseCompactLayout;
     private bool enforcingMinimumWindowSize;
     private bool windowVisible;
+    private bool trayDashboardVisible;
+    private int trayDashboardLiveReadingSensors =
+        (int)TrayDashboardPreferenceDefaults.ResolveLiveReadingSensors(
+            TrayDashboardPreferenceDefaults.Preference);
     private int openDisplayPickerCount;
     private int updateCheckingStarted;
     private int disposed;
@@ -101,6 +106,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private AppAccentColorMode accentColorMode = AppAccentColorMode.RazerGreen;
     private string customAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
     private NotificationPreferences notificationPreferences = NotificationPreferences.Default;
+    private TrayDashboardPreference trayDashboardPreference =
+        TrayDashboardPreferenceDefaults.Preference;
+    private IReadOnlyList<TrayDashboardControlOption> trayDashboardAllControlOptions = [];
+    private IReadOnlyList<TrayDashboardSliderOption> trayDashboardAllSliderOptions = [];
+    private bool changingTrayDashboardEditor;
     private string? lastNotifiedReleaseTag;
     private string? lastNotifiedFirmwareSignature;
     private PowerSource lastObservedPowerSource = PowerSource.ExternalUnknown;
@@ -155,7 +165,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested += OnSavedDisplayProfileRestoreRequested;
-        visibleObservationLoop = new VisibleObservationLoop(ViewModel.ObserveStateAsync,
+        visibleObservationLoop = new VisibleObservationLoop(ObserveVisibleSurfacesAsync,
             errorHandler: exception => Trace.TraceError(
                 "OpenBlade visible observation failed: {0}",
                 exception),
@@ -172,6 +182,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
         DashboardCards.CollectionChanged += OnDashboardCardsCollectionChanged;
+        TrayDashboardEditorControls.CollectionChanged +=
+            OnTrayDashboardEditorOrderChanged;
+        TrayDashboardEditorSliders.CollectionChanged +=
+            OnTrayDashboardEditorOrderChanged;
         PrimaryNavigationItems.CollectionChanged += OnPrimaryNavigationItemsCollectionChanged;
         accentColorManager = new AccentColorManager(Root, dispatcherQueue);
         accentColorManager.ColorChanged += OnAccentColorChanged;
@@ -266,6 +280,21 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public ObservableCollection<DashboardCardOption> DashboardCards { get; } = [];
 
+    public TrayDashboardPreference TrayDashboardPreference => trayDashboardPreference;
+
+    public ObservableCollection<TrayDashboardControlOption> TrayDashboardEditorControls
+    { get; } = [];
+
+    public ObservableCollection<TrayDashboardSliderOption> TrayDashboardEditorSliders
+    { get; } = [];
+
+    public ObservableCollection<TrayDashboardStatusItemOption> TrayDashboardEditorStatusItems
+    { get; } = [];
+
+    public event Action<TrayDashboardPreference>? TrayDashboardPreferenceChanged;
+
+    public event Action<bool>? TrayDashboardEditSessionChanged;
+
     public ObservableCollection<PrimaryNavigationItemOption> PrimaryNavigationItems { get; } = [];
 
     public ObservableCollection<SpecialKeyBindingViewModel> SpecialKeyBindings { get; } = [];
@@ -329,26 +358,23 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public void ShowAndActivate()
     {
-        _ = processorPolicy.TryAllowAllProcessorsForCurrentThread();
-        _ = processorPolicy.TrySetProcessEcoQos(enabled: false);
-        windowVisible = true;
-        ViewModel.SetDashboardTelemetryPresentationActive(
-            HomePage.Visibility == Visibility.Visible);
+        Volatile.Write(ref windowVisible, true);
+        ApplyProcessorVisibilityPolicy();
+        UpdateDashboardTelemetryPresentationState();
         trayObservationLoop.Stop();
-        visibleObservationLoop.StartOrWake();
+        UpdateActiveObservationLoop();
         UpdateDisplayRefreshState();
         AppWindow.Show(true);
     }
 
     public void StartHiddenObservation()
     {
-        windowVisible = false;
-        ViewModel.SetDashboardTelemetryPresentationActive(false);
-        visibleObservationLoop.Stop();
+        Volatile.Write(ref windowVisible, false);
+        ApplyProcessorVisibilityPolicy();
+        UpdateDashboardTelemetryPresentationState();
+        UpdateActiveObservationLoop();
         trayObservationLoop.Stop();
         displayRefreshTimer.Stop();
-        _ = processorPolicy.TryPreferEfficientProcessorsForCurrentThread();
-        _ = processorPolicy.TrySetProcessEcoQos(enabled: true);
     }
 
     public void NavigateToNotificationDestination(
@@ -437,6 +463,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             OnFirmwareUpdatePreferencesChanged;
         FirmwareUpdateViewModel.UpdateAvailable -= OnFirmwareUpdateAvailable;
         DashboardCards.CollectionChanged -= OnDashboardCardsCollectionChanged;
+        TrayDashboardEditorControls.CollectionChanged -=
+            OnTrayDashboardEditorOrderChanged;
+        TrayDashboardEditorSliders.CollectionChanged -=
+            OnTrayDashboardEditorOrderChanged;
+        foreach (TrayDashboardStatusItemOption option in TrayDashboardEditorStatusItems)
+        {
+            option.PropertyChanged -= OnTrayDashboardEditorStatusChanged;
+        }
         PrimaryNavigationItems.CollectionChanged -= OnPrimaryNavigationItemsCollectionChanged;
         foreach (DashboardCardOption option in DashboardCards)
         {
@@ -533,6 +567,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             SpecialKeyBindingDefaults.Bindings;
         IReadOnlyList<PageLayoutPreference> pageLayouts =
             PageLayoutPreferenceDefaults.Layouts;
+        TrayDashboardPreference initialTrayDashboard =
+            TrayDashboardPreferenceDefaults.Preference;
         AppAccentColorMode initialAccentColorMode = AppAccentColorMode.RazerGreen;
         string initialCustomAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
         UpdateChannel initialUpdateChannel = UpdateChannel.Stable;
@@ -570,6 +606,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             primaryNavigationItems = preferences.EffectivePrimaryNavigationItems;
             specialKeyBindings = preferences.EffectiveSpecialKeyBindings;
             pageLayouts = preferences.EffectivePageLayouts;
+            try
+            {
+                initialTrayDashboard = preferences.EffectiveTrayDashboard;
+            }
+            catch (InvalidDataException exception)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade tray dashboard preferences require a newer version; using dashboard defaults without overwriting the stored preference: {0}",
+                    exception.Message);
+            }
             initialAccentColorMode = preferences.EffectiveAccentColorMode;
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
@@ -624,6 +670,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         ViewModel.ApplyTelemetryPreferences(dashboardTelemetryItems, trayHoverLabelItems);
         ApplyDashboardPreferences(dashboardCards);
+        ApplyTrayDashboardPreference(initialTrayDashboard, queueSave: false);
         ApplyPageLayoutPreferences(pageLayouts);
         ApplyPrimaryNavigationPreferences(primaryNavigationItems);
         ApplySpecialKeyBindingPreferences(specialKeyBindings);
@@ -766,6 +813,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             {
                 dispatcherQueue.TryEnqueue(RefreshSpecialKeyBindingAccess);
             }
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.CanEditGpuClockTuning)
+            && !ViewModel.CanEditGpuClockTuning)
+        {
+            gpuClockOffsetCommits.ClearPending();
+            gpuClockOffsetCommitTimer.Stop();
         }
 
         if (args.PropertyName == nameof(MainViewModel.HasAttention)
@@ -945,7 +999,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastKnownPublishedMcuStatus: FirmwareUpdateViewModel.CachedMcuStatus,
                 Notifications: notificationPreferences,
                 LastNotifiedReleaseTag: lastNotifiedReleaseTag,
-                LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature));
+                LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature,
+                TrayDashboard: trayDashboardPreference));
         }
         catch (ObjectDisposedException)
         {
@@ -1010,6 +1065,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         bool exitRequested = Microsoft.UI.Xaml.Application.Current is App app && app.ExitRequested;
         if (WindowLifecyclePolicy.Decide(exitRequested) == WindowCloseDecision.Hide)
         {
+            EndTrayDashboardCustomization(showSettingsOverview: true);
             args.Cancel = true;
             StartHiddenObservation();
             AppWindow.Hide();
@@ -1731,8 +1787,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         int coreMegahertz,
         int memoryMegahertz)
     {
-        if (Volatile.Read(ref disposed) != 0
-            || !ViewModel.CanEditGpuClockTuning)
+        if (Volatile.Read(ref disposed) != 0)
         {
             return;
         }
@@ -1740,8 +1795,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         var requested = new GpuClockOffsetSettings(
             coreMegahertz,
             memoryMegahertz);
-        if (ViewModel.GpuClockOffsetCapabilities?.Supports(requested) != true)
+        if (!GpuClockOffsetCommitPolicy.CanCommit(
+                ViewModel.CanEditGpuClockTuning,
+                ViewModel.GpuClockOffsetCapabilities,
+                requested))
         {
+            gpuClockOffsetCommits.ClearPending();
+            gpuClockOffsetCommitTimer.Stop();
             return;
         }
 
@@ -1777,7 +1837,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
-            if (ViewModel.CanEditGpuClockTuning)
+            if (GpuClockOffsetCommitPolicy.CanCommit(
+                    ViewModel.CanEditGpuClockTuning,
+                    ViewModel.GpuClockOffsetCapabilities,
+                    requested))
             {
                 await ViewModel.SetGpuClockOffsetsAsync(
                     requested,
@@ -2369,6 +2432,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void ApplyNavigationDestination(string destination)
     {
+        if (trayDashboardCustomizationActive && destination != "settings")
+        {
+            EndTrayDashboardCustomization(showSettingsOverview: false);
+        }
+
         HomePage.Visibility = destination == "home"
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -2385,13 +2453,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ? Visibility.Visible
             : Visibility.Collapsed;
         SettingsPage.Visibility = destination == "settings"
+            && !trayDashboardCustomizationActive
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        TrayDashboardCustomizationPage.Visibility = destination == "settings"
+            && trayDashboardCustomizationActive
             ? Visibility.Visible
             : Visibility.Collapsed;
         AboutPage.Visibility = destination == "about"
             ? Visibility.Visible
             : Visibility.Collapsed;
-        ViewModel.SetDashboardTelemetryPresentationActive(
-            windowVisible && destination == "home");
+        UpdateDashboardTelemetryPresentationState();
         if (destination == "profiles")
         {
             dispatcherQueue.TryEnqueue(
@@ -2464,11 +2536,71 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void WakeActiveObservationLoop()
     {
-        if (windowVisible)
+        if (windowVisible || trayDashboardVisible)
         {
             visibleObservationLoop.StartOrWake();
         }
     }
+
+    private Task ObserveVisibleSurfacesAsync(CancellationToken cancellationToken)
+    {
+        bool dashboardVisible = Volatile.Read(ref trayDashboardVisible);
+        return dashboardVisible
+            ? ViewModel.ObserveTrayDashboardStateAsync(
+                includeMainDashboardReadings: Volatile.Read(ref windowVisible),
+                dashboardLiveReadings: (LiveReadingSensors)Volatile.Read(
+                    ref trayDashboardLiveReadingSensors),
+                cancellationToken)
+            : ViewModel.ObserveStateAsync(cancellationToken);
+    }
+
+    private void UpdateActiveObservationLoop()
+    {
+        if (windowVisible || trayDashboardVisible)
+        {
+            visibleObservationLoop.StartOrWake();
+        }
+        else
+        {
+            visibleObservationLoop.Stop();
+        }
+    }
+
+    private void ApplyProcessorVisibilityPolicy()
+    {
+        if (windowVisible || trayDashboardVisible)
+        {
+            _ = processorPolicy.TryAllowAllProcessorsForCurrentThread();
+            _ = processorPolicy.TrySetProcessEcoQos(enabled: false);
+        }
+        else
+        {
+            _ = processorPolicy.TryPreferEfficientProcessorsForCurrentThread();
+            _ = processorPolicy.TrySetProcessEcoQos(enabled: true);
+        }
+    }
+
+    public void SetTrayDashboardVisible(bool visible)
+    {
+        if (trayDashboardVisible == visible)
+        {
+            return;
+        }
+
+        Volatile.Write(ref trayDashboardVisible, visible);
+        ViewModel.SetTrayDashboardTelemetryPresentationActive(visible);
+        ApplyProcessorVisibilityPolicy();
+        UpdateDashboardTelemetryPresentationState();
+        if (visible)
+        {
+            trayObservationLoop.Stop();
+        }
+        UpdateActiveObservationLoop();
+    }
+
+    private void UpdateDashboardTelemetryPresentationState() =>
+        ViewModel.SetDashboardTelemetryPresentationActive(
+            windowVisible && HomePage.Visibility == Visibility.Visible);
 
     public void RequestTrayTelemetryRefresh()
     {
@@ -3226,6 +3358,328 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private void ApplyDashboardCustomizerChanges() =>
         dashboardCustomizerApply?.Invoke();
 
+    private void OnCustomizeTrayDashboard(object sender, RoutedEventArgs args)
+    {
+        if (trayDashboardCustomizationActive)
+        {
+            return;
+        }
+
+        trayDashboardCustomizationActive = true;
+        LoadTrayDashboardEditor(trayDashboardPreference);
+        SettingsPage.Visibility = Visibility.Collapsed;
+        TrayDashboardCustomizationPage.Visibility = Visibility.Visible;
+        TrayDashboardCustomizationPage.ChangeView(null, 0, null, disableAnimation: true);
+        TrayDashboardEditSessionChanged?.Invoke(true);
+    }
+
+    private void OnExitTrayDashboardCustomization(object sender, RoutedEventArgs args) =>
+        EndTrayDashboardCustomization(showSettingsOverview: true);
+
+    private void EndTrayDashboardCustomization(bool showSettingsOverview)
+    {
+        if (!trayDashboardCustomizationActive)
+        {
+            return;
+        }
+
+        trayDashboardCustomizationActive = false;
+        TrayDashboardCustomizationPage.Visibility = Visibility.Collapsed;
+        if (showSettingsOverview)
+        {
+            SettingsPage.Visibility = Visibility.Visible;
+        }
+
+        TrayDashboardEditSessionChanged?.Invoke(false);
+    }
+
+    private void LoadTrayDashboardEditor(TrayDashboardPreference preference)
+    {
+        changingTrayDashboardEditor = true;
+        try
+        {
+            foreach (TrayDashboardStatusItemOption option in TrayDashboardEditorStatusItems)
+            {
+                option.PropertyChanged -= OnTrayDashboardEditorStatusChanged;
+            }
+
+            trayDashboardAllControlOptions =
+                TrayDashboardPreferenceDefaults.CreateControlOptions(preference);
+            trayDashboardAllSliderOptions =
+                TrayDashboardPreferenceDefaults.CreateSliderOptions(preference);
+
+            TrayDashboardEditorControls.Clear();
+            foreach (TrayDashboardControlOption option in
+                     trayDashboardAllControlOptions.Where(option => option.IsVisible))
+            {
+                TrayDashboardEditorControls.Add(option);
+            }
+
+            TrayDashboardEditorSliders.Clear();
+            foreach (TrayDashboardSliderOption option in
+                     trayDashboardAllSliderOptions.Where(option => option.IsVisible))
+            {
+                TrayDashboardEditorSliders.Add(option);
+            }
+
+            TrayDashboardEditorStatusItems.Clear();
+            foreach (TrayDashboardStatusItemOption option in
+                     TrayDashboardPreferenceDefaults.CreateStatusOptions(preference))
+            {
+                option.PropertyChanged += OnTrayDashboardEditorStatusChanged;
+                TrayDashboardEditorStatusItems.Add(option);
+            }
+        }
+        finally
+        {
+            changingTrayDashboardEditor = false;
+        }
+
+        UpdateTrayDashboardEditorAvailability();
+    }
+
+    private void OnAddTrayDashboardControl(object sender, RoutedEventArgs args)
+    {
+        var flyout = new MenuFlyout();
+        foreach (TrayDashboardControlOption option in
+                 trayDashboardAllControlOptions.Where(option => !option.IsVisible))
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = option.Label,
+                Tag = option,
+            };
+            item.Click += OnTrayDashboardControlAddItemClicked;
+            flyout.Items.Add(item);
+        }
+
+        flyout.ShowAt((FrameworkElement)sender);
+    }
+
+    private void OnTrayDashboardControlAddItemClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (sender is not FrameworkElement
+            {
+                Tag: TrayDashboardControlOption option,
+            }
+            || option.IsVisible)
+        {
+            return;
+        }
+
+        option.IsVisible = true;
+        TrayDashboardEditorControls.Add(option);
+    }
+
+    private void OnRemoveTrayDashboardControl(object sender, RoutedEventArgs args)
+    {
+        if (sender is FrameworkElement
+            {
+                DataContext: TrayDashboardControlOption option,
+            }
+            && TrayDashboardEditorControls.Contains(option))
+        {
+            changingTrayDashboardEditor = true;
+            try
+            {
+                TrayDashboardEditorControls.Remove(option);
+                option.IsVisible = false;
+            }
+            finally
+            {
+                changingTrayDashboardEditor = false;
+            }
+
+            ApplyTrayDashboardEditor();
+        }
+    }
+
+    private void OnAddTrayDashboardSlider(object sender, RoutedEventArgs args)
+    {
+        var flyout = new MenuFlyout();
+        foreach (TrayDashboardSliderOption option in
+                 trayDashboardAllSliderOptions.Where(option => !option.IsVisible))
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = option.Label,
+                Tag = option,
+            };
+            item.Click += OnTrayDashboardSliderAddItemClicked;
+            flyout.Items.Add(item);
+        }
+
+        flyout.ShowAt((FrameworkElement)sender);
+    }
+
+    private void OnTrayDashboardSliderAddItemClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (TrayDashboardEditorSliders.Count
+                >= TrayDashboardPreferenceDefaults.MaximumVisibleSliders
+            || sender is not FrameworkElement
+            {
+                Tag: TrayDashboardSliderOption option,
+            }
+            || option.IsVisible)
+        {
+            return;
+        }
+
+        option.IsVisible = true;
+        TrayDashboardEditorSliders.Add(option);
+    }
+
+    private void OnRemoveTrayDashboardSlider(object sender, RoutedEventArgs args)
+    {
+        if (sender is FrameworkElement
+            {
+                DataContext: TrayDashboardSliderOption option,
+            }
+            && TrayDashboardEditorSliders.Contains(option))
+        {
+            changingTrayDashboardEditor = true;
+            try
+            {
+                TrayDashboardEditorSliders.Remove(option);
+                option.IsVisible = false;
+            }
+            finally
+            {
+                changingTrayDashboardEditor = false;
+            }
+
+            ApplyTrayDashboardEditor();
+        }
+    }
+
+    private void OnTrayDashboardEditorStatusChanged(
+        object? sender,
+        PropertyChangedEventArgs args)
+    {
+        if (changingTrayDashboardEditor
+            || args.PropertyName != nameof(TrayDashboardStatusItemOption.IsVisible))
+        {
+            return;
+        }
+
+        if (sender is TrayDashboardStatusItemOption { IsVisible: true } option
+            && TrayDashboardEditorStatusItems.Count(status => status.IsVisible)
+                > TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems)
+        {
+            changingTrayDashboardEditor = true;
+            try
+            {
+                option.IsVisible = false;
+            }
+            finally
+            {
+                changingTrayDashboardEditor = false;
+            }
+
+            UpdateTrayDashboardEditorAvailability();
+            return;
+        }
+
+        ApplyTrayDashboardEditor();
+    }
+
+    private void OnTrayDashboardEditorOrderChanged(
+        object? sender,
+        NotifyCollectionChangedEventArgs args)
+    {
+        if (!changingTrayDashboardEditor)
+        {
+            ApplyTrayDashboardEditor();
+        }
+    }
+
+    private void OnResetTrayDashboard(object sender, RoutedEventArgs args)
+    {
+        LoadTrayDashboardEditor(TrayDashboardPreferenceDefaults.Preference);
+        ApplyTrayDashboardEditor();
+    }
+
+    private void ApplyTrayDashboardEditor()
+    {
+        HashSet<TrayDashboardControlKind> activeControls =
+            TrayDashboardEditorControls.Select(option => option.Kind).ToHashSet();
+        HashSet<TrayDashboardSliderKind> activeSliders =
+            TrayDashboardEditorSliders.Select(option => option.Kind).ToHashSet();
+        ApplyTrayDashboardPreference(new TrayDashboardPreference(
+            Controls: TrayDashboardEditorControls
+                .Select(option => new TrayDashboardControlPreference(option.Kind, true))
+                .Concat(trayDashboardAllControlOptions
+                    .Where(option => !activeControls.Contains(option.Kind))
+                    .Select(option => new TrayDashboardControlPreference(
+                        option.Kind,
+                        false)))
+                .ToArray(),
+            StatusItems: TrayDashboardEditorStatusItems
+                .Select(option => new TrayDashboardStatusItemPreference(
+                    option.Kind,
+                    option.IsVisible))
+                .ToArray(),
+            Sliders: TrayDashboardEditorSliders
+                .Select(option => new TrayDashboardSliderPreference(option.Kind, true))
+                .Concat(trayDashboardAllSliderOptions
+                    .Where(option => !activeSliders.Contains(option.Kind))
+                    .Select(option => new TrayDashboardSliderPreference(
+                        option.Kind,
+                        false)))
+                .ToArray(),
+            SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion),
+            queueSave: true);
+        UpdateTrayDashboardEditorAvailability();
+    }
+
+    private void UpdateTrayDashboardEditorAvailability()
+    {
+        AddTrayDashboardControlButton.IsEnabled =
+            trayDashboardAllControlOptions.Any(option => !option.IsVisible);
+        AddTrayDashboardSliderButton.IsEnabled =
+            TrayDashboardEditorSliders.Count
+                < TrayDashboardPreferenceDefaults.MaximumVisibleSliders
+            && trayDashboardAllSliderOptions.Any(option => !option.IsVisible);
+        TrayDashboardSliderCountText.Text =
+            $"{TrayDashboardEditorSliders.Count} of "
+            + TrayDashboardPreferenceDefaults.MaximumVisibleSliders;
+        int visibleStatusItemCount =
+            TrayDashboardEditorStatusItems.Count(option => option.IsVisible);
+        foreach (TrayDashboardStatusItemOption option in TrayDashboardEditorStatusItems)
+        {
+            option.IsEnabled = option.IsVisible
+                || visibleStatusItemCount
+                    < TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems;
+        }
+        TrayDashboardStatusCountText.Text =
+            $"{visibleStatusItemCount} of "
+            + TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems;
+    }
+
+    private void ApplyTrayDashboardPreference(
+        TrayDashboardPreference preference,
+        bool queueSave)
+    {
+        trayDashboardPreference = TrayDashboardPreferenceDefaults.Normalize(preference);
+        int previousSensors = Volatile.Read(ref trayDashboardLiveReadingSensors);
+        int sensors = (int)TrayDashboardPreferenceDefaults.ResolveLiveReadingSensors(
+            trayDashboardPreference);
+        Volatile.Write(ref trayDashboardLiveReadingSensors, sensors);
+        TrayDashboardPreferenceChanged?.Invoke(trayDashboardPreference);
+        if (trayDashboardVisible && sensors != previousSensors)
+        {
+            visibleObservationLoop.StartOrWake();
+        }
+        if (queueSave)
+        {
+            QueuePreferenceSave();
+        }
+    }
+
     private void ApplyPageLayoutPreferences(
         IReadOnlyList<PageLayoutPreference> preferences)
     {
@@ -3360,7 +3814,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         string automationName,
         string instructions,
         ObservableCollection<T> items,
-        string itemTemplateKey)
+        string itemTemplateKey,
+        FrameworkElement? additionalContent = null,
+        double maxListHeight = 480)
     {
         var reorderList = new Microsoft.UI.Xaml.Controls.ListView
         {
@@ -3370,7 +3826,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             CanReorderItems = true,
             ReorderMode = ListViewReorderMode.Enabled,
             AllowDrop = true,
-            MaxHeight = 480,
+            MaxHeight = maxListHeight,
             HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
             HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
             ItemTemplate = (DataTemplate)Root.Resources[itemTemplateKey],
@@ -3386,6 +3842,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             TextWrapping = TextWrapping.Wrap,
         });
         content.Children.Add(reorderList);
+        if (additionalContent is not null)
+        {
+            content.Children.Add(additionalContent);
+        }
 
         return new ContentDialog
         {

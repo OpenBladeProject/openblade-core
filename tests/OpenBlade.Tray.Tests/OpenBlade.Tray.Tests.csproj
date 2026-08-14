@@ -46,4 +46,11 @@
     <ProjectReference Include="..\..\src\OpenBlade.Tray.Core\OpenBlade.Tray.Core.csproj" />
   </ItemGroup>
 
+  <Target Name="BuildTrayForXamlStartupSmoke" BeforeTargets="Build">
+    <MSBuild Projects="..\..\src\OpenBlade.Tray\OpenBlade.Tray.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration)"
+             BuildInParallel="false" />
+  </Target>
+
 </Project>
