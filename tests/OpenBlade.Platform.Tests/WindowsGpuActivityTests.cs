@@ -178,6 +178,29 @@ public sealed class WindowsGpuActivityTests
     }
 
     [Fact]
+    public void ActivitySampling_RetriesTransientStartupFailureAndPrimesRateCounter()
+    {
+        var expected = new WindowsGpuActivitySnapshot(
+            true,
+            [new WindowsGpuProcessActivity(42, 3.5)]);
+        Queue<WindowsGpuActivitySnapshot> snapshots = new(
+        [
+            new WindowsGpuActivitySnapshot(false, []),
+            new WindowsGpuActivitySnapshot(true, []),
+            expected,
+        ]);
+        List<int> delays = [];
+
+        WindowsGpuActivitySnapshot actual = WindowsGpuAppManager.ReadActivitySample(
+            snapshots.Dequeue,
+            delays.Add,
+            CancellationToken.None);
+
+        Assert.Same(expected, actual);
+        Assert.Equal([150, 150], delays);
+    }
+
+    [Fact]
     public void ProcessFailurePolicy_ContainsTreeKillAggregateWithoutHidingCodeBugs()
     {
         Assert.True(WindowsGpuAppManager.IsRecoverableProcessActionException(

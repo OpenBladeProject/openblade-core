@@ -50,6 +50,8 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const uint TokenQuery = 0x0008;
     private const int MaximumPathCharacters = 32768;
+    private const int ActivitySampleAttempts = 20;
+    private const int ActivitySampleIntervalMilliseconds = 150;
     private static readonly HashSet<string> ProtectedProcessNames = new(
         StringComparer.OrdinalIgnoreCase)
     {
@@ -102,25 +104,15 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
 
     public WindowsGpuAppScan Scan(CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        WindowsGpuActivitySnapshot first = reader.Read();
-        if (!first.IsAvailable)
-        {
-            return new WindowsGpuAppScan(
-                false,
-                "Windows GPU activity counters are unavailable.",
-                []);
-        }
-
-        // Rate counters need a prior sample before their utilization is useful.
-        Thread.Sleep(150);
-        cancellationToken.ThrowIfCancellationRequested();
-        WindowsGpuActivitySnapshot sample = reader.Read();
+        WindowsGpuActivitySnapshot sample = ReadActivitySample(
+            reader.Read,
+            Thread.Sleep,
+            cancellationToken);
         if (!sample.IsAvailable)
         {
             return new WindowsGpuAppScan(
                 false,
-                "Windows GPU activity counters could not be sampled.",
+                "Windows GPU activity counters are unavailable.",
                 []);
         }
 
@@ -154,6 +146,40 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
     internal static bool IsProtectedProcessName(string name) =>
         name.StartsWith("OpenBlade", StringComparison.OrdinalIgnoreCase)
         || ProtectedProcessNames.Contains(name);
+
+    internal static WindowsGpuActivitySnapshot ReadActivitySample(
+        Func<WindowsGpuActivitySnapshot> read,
+        Action<int> sleep,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(read);
+        ArgumentNullException.ThrowIfNull(sleep);
+        bool hasPrime = false;
+        for (int attempt = 0; attempt < ActivitySampleAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            WindowsGpuActivitySnapshot snapshot = read();
+            if (snapshot.IsAvailable)
+            {
+                if (hasPrime)
+                {
+                    return snapshot;
+                }
+                hasPrime = true;
+            }
+            else
+            {
+                hasPrime = false;
+            }
+
+            if (attempt + 1 < ActivitySampleAttempts)
+            {
+                sleep(ActivitySampleIntervalMilliseconds);
+            }
+        }
+
+        return new WindowsGpuActivitySnapshot(false, []);
+    }
 
     internal static WindowsGpuProcessActivity[] SelectActiveProcesses(
         IReadOnlyList<WindowsGpuProcessActivity> processes)
