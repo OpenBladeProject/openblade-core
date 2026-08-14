@@ -2053,6 +2053,24 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Thread.Sleep(16)", dashboardWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.Run(() => RunRevealFrameClock", dashboardWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("revealFrameClockCancellation", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains(
+            "WindowsPopupSlidePolicy.DurationMilliseconds + 100",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "revealCompletionTimer.IsRepeating = false",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            CountOccurrences(
+                dashboardWindow,
+                "revealCompletionPending = false;"));
+        Assert.Equal(
+            1,
+            CountOccurrences(
+                dashboardWindow,
+                "revealCompletionPending = true;"));
         Assert.Contains("WindowsPopupSlidePolicy.ResolvePosition(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardResolvedPlacement resolvedPlacement", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("resolvedPlacement.RevealGeometry", dashboardWindow, StringComparison.Ordinal);
@@ -2192,6 +2210,41 @@ public sealed class WinUiShellContractTests
             parkedDismiss,
             StringComparison.Ordinal);
         Assert.True(parkedDismiss >= 0 && reportedDismissed > parkedDismiss);
+        int completionTimerTick = revealRenderingBody.IndexOf(
+            "private void OnRevealCompletionTimerTick(",
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "if (!revealCompletionPending)",
+            revealRenderingBody[completionTimerTick..],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "CompleteRevealAnimation();",
+            revealRenderingBody[completionTimerTick..],
+            StringComparison.Ordinal);
+        int startRevealClock = dashboardWindow.IndexOf(
+            "private void StartRevealFrameClock()",
+            cancelReveal,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "revealCompletionPending = false;",
+            dashboardWindow[cancelReveal..startRevealClock],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "revealCompletionTimer.Stop();",
+            dashboardWindow[cancelReveal..startRevealClock],
+            StringComparison.Ordinal);
+        int ensureRevealClock = dashboardWindow.IndexOf(
+            "private void EnsureRevealFrameClock()",
+            startRevealClock,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "revealCompletionPending = true;",
+            dashboardWindow[startRevealClock..ensureRevealClock],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "revealCompletionTimer.Start();",
+            dashboardWindow[startRevealClock..ensureRevealClock],
+            StringComparison.Ordinal);
         int primeFrame = revealRenderingBody.IndexOf(
             "if (!revealHiding && revealPrimingFrames < 2)",
             StringComparison.Ordinal);

@@ -17,6 +17,9 @@ namespace OpenBlade.Tray;
 public sealed partial class TrayDashboardWindow : Window, IDisposable
 {
     private const int PopupWidth = 360;
+    private static readonly TimeSpan RevealCompletionDeadline =
+        TimeSpan.FromMilliseconds(
+            WindowsPopupSlidePolicy.DurationMilliseconds + 100);
     private static readonly TimeSpan GpuClockOffsetCommitDelay =
         TimeSpan.FromMilliseconds(500);
     private const uint MonitorDefaultToNearest = 2;
@@ -31,6 +34,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private readonly Action<bool> visibilityChanged;
     private readonly DispatcherQueue dispatcherQueue;
     private readonly DispatcherQueueTimer foregroundTimer;
+    private readonly DispatcherQueueTimer revealCompletionTimer;
     private readonly nint editOwnerWindowHandle;
     private DispatcherQueueTimer? gpuClockOffsetCommitTimer;
     private readonly CoalescingCommitState<GpuClockOffsetSettings>
@@ -62,6 +66,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private int revealPrimingFrames;
     private bool revealAnimationsEnabled;
     private bool revealAnimationActive;
+    private bool revealCompletionPending;
     private bool revealHiding;
     private bool awaitingRevealActivation;
     private bool revealActivationAttempted;
@@ -94,6 +99,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         foregroundTimer.Interval = TimeSpan.FromMilliseconds(50);
         foregroundTimer.IsRepeating = false;
         foregroundTimer.Tick += OnForegroundTimerTick;
+        revealCompletionTimer = dispatcherQueue.CreateTimer();
+        revealCompletionTimer.Interval = RevealCompletionDeadline;
+        revealCompletionTimer.IsRepeating = false;
+        revealCompletionTimer.Tick += OnRevealCompletionTimerTick;
         gpuClockOffsetCommitTimer = dispatcherQueue.CreateTimer();
         gpuClockOffsetCommitTimer.Interval = GpuClockOffsetCommitDelay;
         gpuClockOffsetCommitTimer.Tick += OnGpuClockOffsetCommitTimerTick;
@@ -255,6 +264,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         AppWindow.Closing -= OnClosing;
         foregroundTimer.Stop();
         foregroundTimer.Tick -= OnForegroundTimerTick;
+        revealCompletionTimer.Stop();
+        revealCompletionTimer.Tick -= OnRevealCompletionTimerTick;
         gpuClockOffsetCommits.Dispose();
         if (gpuClockOffsetCommitTimer is { } gpuTimer)
         {
@@ -590,47 +601,67 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             || y == endY
             || WindowsPopupSlidePolicy.IsComplete(elapsed))
         {
-            if (revealHiding)
-            {
-                ParkSurface();
-                ReportVisibility(false);
-                WindowsPopupPositioner.TryRestoreForeground(
-                    revealWindowHandle,
-                    previousForegroundWindow);
-                CancelRevealAnimation();
-                return;
-            }
+            CompleteRevealAnimation();
+        }
+    }
 
-            try
-            {
-                WindowsPopupPositioner.PositionInFront(
-                    revealWindowHandle,
-                    revealPlacement.X,
-                    revealPlacement.Y,
-                    revealPlacement.Width,
-                    revealPlacement.Height);
-                if (awaitingRevealActivation)
-                {
-                    foregroundEstablished = TryEstablishForeground();
-                    awaitingRevealActivation = false;
-                }
-            }
-            catch (Exception exception)
-            {
-                Trace.TraceWarning(
-                    "OpenBlade tray dashboard final positioning failed: {0}",
-                    exception.Message);
-            }
+    private void CompleteRevealAnimation()
+    {
+        if (revealHiding)
+        {
+            ParkSurface();
+            ReportVisibility(false);
+            WindowsPopupPositioner.TryRestoreForeground(
+                revealWindowHandle,
+                previousForegroundWindow);
             CancelRevealAnimation();
-            if (!foregroundEstablished && visible && !pinnedForEditing)
+            return;
+        }
+
+        try
+        {
+            WindowsPopupPositioner.PositionInFront(
+                revealWindowHandle,
+                revealPlacement.X,
+                revealPlacement.Y,
+                revealPlacement.Width,
+                revealPlacement.Height);
+            if (awaitingRevealActivation)
             {
-                ScheduleForegroundCheckOrDismiss();
+                foregroundEstablished = TryEstablishForeground();
+                awaitingRevealActivation = false;
             }
         }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade tray dashboard final positioning failed: {0}",
+                exception.Message);
+        }
+        CancelRevealAnimation();
+        if (!foregroundEstablished && visible && !pinnedForEditing)
+        {
+            ScheduleForegroundCheckOrDismiss();
+        }
+    }
+
+    private void OnRevealCompletionTimerTick(
+        DispatcherQueueTimer sender,
+        object args)
+    {
+        sender.Stop();
+        if (!revealCompletionPending)
+        {
+            return;
+        }
+
+        CompleteRevealAnimation();
     }
 
     private void CancelRevealAnimation()
     {
+        revealCompletionPending = false;
+        revealCompletionTimer.Stop();
         Volatile.Write(ref revealAnimationActive, false);
         Interlocked.Increment(ref revealFrameClockGeneration);
         Interlocked.Exchange(ref revealFramePending, 0);
@@ -646,6 +677,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     {
         Interlocked.Increment(ref revealFrameClockGeneration);
         Volatile.Write(ref revealAnimationActive, true);
+        revealCompletionPending = true;
+        revealCompletionTimer.Stop();
+        revealCompletionTimer.Start();
         EnsureRevealFrameClock();
     }
 
