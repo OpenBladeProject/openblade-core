@@ -623,10 +623,10 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
     public static TheoryData<int, string> InvalidPreferenceDocuments() => new()
     {
         {
-            ProfileStore.PreviousSchemaVersion,
+            ProfileStore.OlderSchemaVersion,
             $$"""
             {
-              "schemaVersion": {{ProfileStore.PreviousSchemaVersion}},
+              "schemaVersion": {{ProfileStore.OlderSchemaVersion}},
               "preferences": {}
             }
             """

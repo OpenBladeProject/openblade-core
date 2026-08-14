@@ -185,6 +185,21 @@ internal static class Program
                 var automation = new ServiceDisplayAutomationLoop(
                     statusFeed,
                     coordinator);
+                await using var powerModeCoordinator =
+                    new WindowsPowerModeAutomationCoordinator(
+                        new WindowsPowerModeController(),
+                        resultObserver: result =>
+                        {
+                            if (!result.Result.Succeeded)
+                            {
+                                System.Diagnostics.Trace.TraceWarning(
+                                    "OpenBlade Windows power mode failed: {0}",
+                                    result.Result.Error);
+                            }
+                        });
+                var powerModeAutomation = new ServicePowerModeAutomationLoop(
+                    statusFeed,
+                    powerModeCoordinator);
                 using IPerformanceShortcutNotificationSink shortcutNotifications =
                     WindowsTrayPerformanceShortcutNotificationSink.CreateBestEffort(
                         eventEndpoint,
@@ -266,6 +281,7 @@ internal static class Program
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task gpuServerTask = gpuServer.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
+                Task powerModeAutomationTask = powerModeAutomation.RunAsync(lifetime.Token);
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
                 Task ambientTask = ambient.RunAsync(lifetime.Token);
                 Task audioMeterTask = audioMeter.RunAsync(lifetime.Token);
@@ -284,6 +300,7 @@ internal static class Program
                     statusFeedTask,
                     specialKeyBindingsTask,
                     automationTask,
+                    powerModeAutomationTask,
                     reactiveTask,
                     ambientTask,
                     audioMeterTask,
@@ -310,6 +327,7 @@ internal static class Program
                             statusFeedTask,
                             specialKeyBindingsTask,
                             automationTask,
+                            powerModeAutomationTask,
                             reactiveTask,
                             ambientTask,
                             audioMeterTask,

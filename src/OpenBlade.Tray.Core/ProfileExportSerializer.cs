@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 7;
+    public const int CurrentSchemaVersion = 8;
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -68,6 +68,7 @@ public static class ProfileExportSerializer
             5 => DeserializeVersion5(json),
             6 => DeserializeVersion6(json),
             7 => DeserializeVersion7(json),
+            8 => DeserializeVersion8(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
@@ -133,6 +134,15 @@ public static class ProfileExportSerializer
 
     private static ProfileSet DeserializeVersion7(string json)
     {
+        ProfileSet profiles = ClearLegacyWindowsPowerModes(
+            NormalizeLegacyGpuClockTuning(
+                NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles)));
+        ValidateBatteryProtection(profiles);
+        return profiles;
+    }
+
+    private static ProfileSet DeserializeVersion8(string json)
+    {
         ProfileSet profiles = NormalizeLegacyGpuClockTuning(
             NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
         ValidateBatteryProtection(profiles);
@@ -140,8 +150,16 @@ public static class ProfileExportSerializer
     }
 
     private static ProfileSet NormalizeLegacyProfile(ProfileSet profiles) =>
-        NormalizeLegacyBatteryProtection(
-            NormalizeLegacyGpuClockTuning(NormalizeAudioMeterDecay(profiles)));
+        ClearLegacyWindowsPowerModes(
+            NormalizeLegacyBatteryProtection(
+                NormalizeLegacyGpuClockTuning(NormalizeAudioMeterDecay(profiles))));
+
+    private static ProfileSet ClearLegacyWindowsPowerModes(ProfileSet profiles) => profiles with
+    {
+        PluggedIn = profiles.PluggedIn with { WindowsPowerMode = null },
+        Battery = profiles.Battery with { WindowsPowerMode = null },
+        UsbC = profiles.UsbC with { WindowsPowerMode = null },
+    };
 
     private static ProfileSet NormalizeLegacyBatteryProtection(ProfileSet profiles) =>
         profiles with

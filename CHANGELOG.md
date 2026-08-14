@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added an optional Windows power mode to each AC, USB-C, and battery profile.
+  The current-user Session Agent applies Best power efficiency, Balanced, or
+  Best performance when the active power profile changes.
 - Added a **Close GPU apps** action to Power mode. It finds current-user apps
   actively using NVIDIA WDDM engines without waking an idle GPU, shows the exact
   targets, asks them to close, and offers an explicit force-close step for

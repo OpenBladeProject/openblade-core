@@ -10,6 +10,18 @@ public enum PerformancePreset
     Custom,
 }
 
+/// <summary>
+/// The Windows 11 user-configured power mode requested by an OpenBlade profile.
+/// This is separate from both the laptop performance preset and legacy Windows
+/// power schemes.
+/// </summary>
+public enum WindowsPowerMode
+{
+    BestPowerEfficiency,
+    Balanced,
+    BestPerformance,
+}
+
 public enum CustomPerformanceLevel
 {
     Low,
@@ -447,6 +459,11 @@ public sealed record PowerProfile(
     // battery protection was introduced. Persisted current-schema profiles are
     // normalized and validated with an explicit value.
     public bool? BatteryProtectionEnabled { get; init; }
+
+    // Null leaves the current user's Windows 11 power-mode preference unchanged.
+    // The Session Agent applies a configured value because the preference is
+    // scoped to the interactive user rather than LocalSystem.
+    public WindowsPowerMode? WindowsPowerMode { get; init; }
 
     [System.Text.Json.Serialization.JsonIgnore]
     public LightingPowerPolicy EffectiveLightingPowerPolicy =>

@@ -62,6 +62,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private Task? initializationTask;
     private bool initialPlacementAttempted;
     private bool changingPerformanceSelection;
+    private bool changingWindowsPowerModeSelection;
     private bool changingCustomPerformanceSelection;
     private bool changingGpuClockTuning;
     private bool changingFanSelection;
@@ -1641,6 +1642,29 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             selector.SelectedItem = ViewModel.SelectedPerformanceOption;
             changingPerformanceSelection = false;
+        }
+    }
+
+    private void OnWindowsPowerModeChanged(object sender, SelectionChangedEventArgs args)
+    {
+        if (changingWindowsPowerModeSelection
+            || Volatile.Read(ref disposed) != 0
+            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
+            || selector.SelectedItem is not WindowsPowerModeOption selected
+            || selected == ViewModel.SelectedWindowsPowerModeOption)
+        {
+            return;
+        }
+
+        changingWindowsPowerModeSelection = true;
+        try
+        {
+            ViewModel.StageWindowsPowerMode(selected.Value);
+            selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;
+        }
+        finally
+        {
+            changingWindowsPowerModeSelection = false;
         }
     }
 

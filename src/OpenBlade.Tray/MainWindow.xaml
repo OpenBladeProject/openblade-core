@@ -535,12 +535,12 @@
             </DataTemplate>
             <DataTemplate x:Key="DashboardPowerModeCardTemplate" x:DataType="local:MainViewModel">
                         <StackPanel>
-                        <TextBlock Text="Power mode"
+                        <TextBlock Text="Performance"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
-                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                            <Border Style="{StaticResource SettingsRowStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
@@ -549,7 +549,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Laptop performance" Style="{StaticResource CardTitleStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal"
@@ -561,13 +561,42 @@
                                         <ComboBox x:Name="DashboardPerformanceSelector"
                                                   MinWidth="150"
                                                   HorizontalAlignment="Right"
-                                                  AutomationProperties.Name="Power mode"
+                                                  AutomationProperties.Name="Laptop performance"
                                                   IsEnabled="{Binding CanEditPerformance}"
                                                   ItemsSource="{Binding AvailableActivePerformanceOptions}"
                                                   SelectedItem="{Binding SelectedPerformanceOption, Mode=OneWay}"
                                                   local:StableComboBoxSelection.Anchor="{Binding SelectedPerformanceOption, Mode=OneWay}"
                                                   SelectionChanged="OnDashboardPerformanceChanged" />
                                     </StackPanel>
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Windows power mode"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{Binding SelectedWindowsPowerModeDescription}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   HorizontalAlignment="Left"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="520" />
+                                    </StackPanel>
+                                    <ComboBox x:Name="WindowsPowerModeSelector"
+                                              Grid.Column="1"
+                                              MinWidth="210"
+                                              HorizontalAlignment="Right"
+                                              VerticalAlignment="Center"
+                                              AutomationProperties.Name="Windows power mode"
+                                              IsEnabled="{Binding CanEditWindowsPowerMode}"
+                                              ItemsSource="{Binding AvailableWindowsPowerModeOptions}"
+                                              DisplayMemberPath="Label"
+                                              SelectedItem="{Binding SelectedWindowsPowerModeOption, Mode=OneWay}"
+                                              local:StableComboBoxSelection.Anchor="{Binding SelectedWindowsPowerModeOption, Mode=OneWay}"
+                                              SelectionChanged="OnWindowsPowerModeChanged" />
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
@@ -2374,10 +2403,24 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Laptop performance" Style="{StaticResource CardTitleStyle}" />
                                             <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                             <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                             <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Windows power mode" Style="{StaticResource CardTitleStyle}" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.WindowsPowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.WindowsPowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.WindowsPowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
@@ -2601,7 +2644,10 @@
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Laptop performance" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Windows power mode" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.WindowsPowerMode, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="GPU tuning" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GpuTuning, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
