@@ -1630,22 +1630,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         button.SetValue(Microsoft.UI.Xaml.Controls.Control.IsEnabledProperty, false);
         try
         {
-            SessionGpuResponse scan;
-            try
-            {
-                scan = await gpuAppAdapter.QueryAsync(CancellationToken.None);
-            }
-            catch (Exception exception) when (
-                exception is IOException
-                    or InvalidDataException
-                    or UnauthorizedAccessException
-                    or OperationCanceledException)
-            {
-                await ShowGpuAppsMessageAsync(
-                    "GPU activity unavailable",
-                    $"The Session Agent could not read GPU activity: {exception.Message}");
-                return;
-            }
+            SessionGpuResponse scan = await gpuAppAdapter.QueryAsync(CancellationToken.None);
 
             if (scan.Status == SessionGpuOperationStatus.Failed)
             {
@@ -1694,6 +1679,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             await Task.Delay(TimeSpan.FromSeconds(2));
             SessionGpuResponse afterClose = await gpuAppAdapter.QueryAsync(
                 CancellationToken.None);
+            if (afterClose.Status == SessionGpuOperationStatus.Failed)
+            {
+                await ShowGpuAppsMessageAsync(
+                    "GPU activity unavailable",
+                    afterClose.Error ?? "GPU activity could not be checked after closing apps.");
+                return;
+            }
             SessionGpuApp[] remaining = MatchTargets(afterClose.Apps, eligible);
             if (remaining.Length == 0)
             {
@@ -1725,6 +1717,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 CancellationToken.None);
             await Task.Delay(TimeSpan.FromMilliseconds(750));
             SessionGpuResponse finalScan = await gpuAppAdapter.QueryAsync(CancellationToken.None);
+            if (finalScan.Status == SessionGpuOperationStatus.Failed)
+            {
+                await ShowGpuAppsMessageAsync(
+                    "GPU activity unavailable",
+                    finalScan.Error ?? "GPU activity could not be checked after force closing apps.");
+                return;
+            }
             SessionGpuApp[] survivors = MatchTargets(finalScan.Apps, remaining);
             string finalMessage = survivors.Length == 0
                 ? "The selected apps were force closed. The GPU may take a moment to return to sleep."
@@ -1742,6 +1741,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             await ShowGpuAppsMessageAsync(
                 survivors.Length == 0 ? "GPU apps force closed" : "GPU apps still running",
                 finalMessage);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or InvalidDataException
+                or UnauthorizedAccessException
+                or OperationCanceledException)
+        {
+            await ShowGpuAppsMessageAsync(
+                "GPU activity unavailable",
+                $"The Session Agent could not complete the GPU app operation: {exception.Message}");
         }
         finally
         {

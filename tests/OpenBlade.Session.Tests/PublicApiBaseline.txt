@@ -357,6 +357,7 @@ type sealed class OpenBlade.Session.SessionGpuAppIdentity
   property System.Int64 StartTimeUtcTicks { get; init; }
   property System.String Name { get; init; }
 type static class OpenBlade.Session.SessionGpuIpc
+  field const System.Int32 MaximumApps = 128
   field const System.Int32 MaximumMessageBytes = 65536
   field const System.Int32 ProtocolVersion = 1
   field const System.String PipeNamePrefix = "OpenBlade.Session.Gpu.v1"

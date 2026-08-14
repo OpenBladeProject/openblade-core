@@ -106,6 +106,72 @@ public sealed class WindowsGpuActivityTests
             WindowsGpuAppManager.SelectOwningApplication(helper, table));
     }
 
+    [Fact]
+    public void OwningApplication_DoesNotAttributeDifferentExecutableToWindowedParent()
+    {
+        WindowsGpuAppManager.ProcessEntry terminal = Entry(
+            20,
+            10,
+            5,
+            "terminal",
+            hasWindow: true);
+        WindowsGpuAppManager.ProcessEntry compute = Entry(
+            30,
+            20,
+            5,
+            "python",
+            hasWindow: false);
+        Dictionary<int, WindowsGpuAppManager.ProcessEntry> table = new()
+        {
+            [20] = terminal,
+            [30] = compute,
+        };
+
+        Assert.Equal(
+            compute,
+            WindowsGpuAppManager.SelectOwningApplication(compute, table));
+    }
+
+    [Fact]
+    public void AppProjection_UsesPopulatedParentChainForGpuHelper()
+    {
+        WindowsGpuAppManager.ProcessEntry browser = Entry(
+            20,
+            10,
+            5,
+            "browser",
+            hasWindow: true);
+        WindowsGpuAppManager.ProcessEntry helper = Entry(
+            30,
+            20,
+            5,
+            "browser",
+            hasWindow: false);
+        Dictionary<int, WindowsGpuAppManager.ProcessEntry> table = new()
+        {
+            [20] = browser,
+            [30] = helper,
+        };
+
+        WindowsGpuApp app = Assert.Single(WindowsGpuAppManager.CreateApps(
+            [new WindowsGpuProcessActivity(30, 4.5)],
+            table,
+            currentSessionId: 5));
+
+        Assert.Equal(browser.ProcessId, app.ProcessId);
+        Assert.Equal(browser.Name, app.Name);
+        Assert.Equal(4.5, app.UtilizationPercent);
+    }
+
+    [Fact]
+    public void ProcessFailurePolicy_ContainsTreeKillAggregateWithoutHidingCodeBugs()
+    {
+        Assert.True(WindowsGpuAppManager.IsRecoverableProcessActionException(
+            new AggregateException(new InvalidOperationException("partial tree failure"))));
+        Assert.False(WindowsGpuAppManager.IsRecoverableProcessActionException(
+            new NullReferenceException("programming defect")));
+    }
+
     private static WindowsGpuAppManager.ProcessEntry Entry(
         int processId,
         int parentProcessId,

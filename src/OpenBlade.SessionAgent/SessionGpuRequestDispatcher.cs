@@ -25,13 +25,23 @@ public sealed class SessionGpuRequestDispatcher
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        WindowsGpuAppScan scan = manager.Scan();
+        WindowsGpuAppScan scan = manager.Scan(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         if (!scan.IsAvailable)
         {
             return Response(
                 request.RequestId,
                 SessionGpuOperationStatus.Failed,
                 scan.Error ?? "GPU activity is unavailable.",
+                [],
+                []);
+        }
+        if (scan.Apps.Count > SessionGpuIpc.MaximumApps)
+        {
+            return Response(
+                request.RequestId,
+                SessionGpuOperationStatus.Failed,
+                "Too many GPU applications were detected to return safely.",
                 [],
                 []);
         }
@@ -72,8 +82,9 @@ public sealed class SessionGpuRequestDispatcher
         IReadOnlyList<WindowsGpuAppActionResult> action = matched.Count == 0
             ? []
             : close.Force
-                ? manager.ForceClose(matched)
-                : manager.CloseGracefully(matched);
+                ? manager.ForceClose(matched, cancellationToken)
+                : manager.CloseGracefully(matched, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         SessionGpuActionResult[] results = stale
             .Concat(action.Select(Map))
             .ToArray();
@@ -103,8 +114,8 @@ public sealed class SessionGpuRequestDispatcher
             requestId,
             status,
             error,
-            apps.Select(Map).ToArray(),
-            results);
+            apps.Take(SessionGpuIpc.MaximumApps).Select(Map).ToArray(),
+            results.Take(SessionGpuIpc.MaximumApps).ToArray());
 
     private static SessionGpuApp Map(WindowsGpuApp app) => new(
         app.ProcessId,

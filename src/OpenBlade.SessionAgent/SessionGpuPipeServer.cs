@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Pipes;
 using OpenBlade.Session;
 
@@ -85,6 +86,17 @@ public sealed class SessionGpuPipeServer : IAsyncDisposable
             {
                 return;
             }
+            catch (Exception exception)
+            {
+                Trace.TraceError($"Session GPU dispatch failed: {exception}");
+                response = new SessionGpuResponse(
+                    SessionGpuIpc.ProtocolVersion,
+                    request.RequestId,
+                    SessionGpuOperationStatus.Failed,
+                    "The Session Agent could not complete the GPU app operation.",
+                    [],
+                    []);
+            }
         }
 
         using var writeDeadline = new CancellationTokenSource(FrameTimeout, timeProvider);
@@ -98,7 +110,8 @@ public sealed class SessionGpuPipeServer : IAsyncDisposable
                 response,
                 writeToken.Token).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is IOException or OperationCanceledException)
+        catch (Exception exception) when (
+            exception is InvalidDataException or IOException or OperationCanceledException)
         {
         }
     }

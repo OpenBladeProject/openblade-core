@@ -57,6 +57,21 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Click=\"OnCloseGpuAppsClick\"", powerModeCard, StringComparison.Ordinal);
         Assert.Contains("Close apps using the NVIDIA GPU?", codeBehind, StringComparison.Ordinal);
         Assert.Contains("Force close remaining apps?", codeBehind, StringComparison.Ordinal);
+        string handler = SliceMethod(
+            codeBehind,
+            "private async Task HandleCloseGpuAppsAsync",
+            "private async Task ShowGpuAppsMessageAsync");
+        Assert.Contains(
+            "afterClose.Status == SessionGpuOperationStatus.Failed",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "finalScan.Status == SessionGpuOperationStatus.Failed",
+            handler,
+            StringComparison.Ordinal);
+        Assert.True(
+            handler.IndexOf("catch (Exception exception)", StringComparison.Ordinal)
+                > handler.IndexOf("SessionGpuResponse finalScan", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1704,20 +1719,29 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void EfficientProcessorPolicyIsLimitedToTheTray()
     {
-        string serviceProgram = ReadRepositoryFile("src", "OpenBlade.Service", "Program.cs");
-        string sessionAgentProgram = ReadRepositoryFile(
-            "src", "OpenBlade.SessionAgent", "Program.cs");
         string policy = ReadRepositoryFile(
             "src", "OpenBlade.Platform", "WindowsProcessorEfficiencyPolicy.cs");
 
-        Assert.DoesNotContain(
-            "WindowsProcessorEfficiencyPolicy",
-            serviceProgram,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "WindowsProcessorEfficiencyPolicy",
-            sessionAgentProgram,
-            StringComparison.Ordinal);
+        foreach (string project in new[] { "OpenBlade.Service", "OpenBlade.SessionAgent" })
+        {
+            string projectDirectory = RepositoryPath("src", project);
+            foreach (string sourcePath in Directory.EnumerateFiles(
+                projectDirectory,
+                "*.cs",
+                SearchOption.AllDirectories).Where(path =>
+                    !path.Contains(
+                        $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
+                        StringComparison.OrdinalIgnoreCase)
+                    && !path.Contains(
+                        $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                Assert.DoesNotContain(
+                    "WindowsProcessorEfficiencyPolicy",
+                    File.ReadAllText(sourcePath),
+                    StringComparison.Ordinal);
+            }
+        }
         Assert.DoesNotContain("SetProcessDefaultCpuSets", policy, StringComparison.Ordinal);
     }
 

@@ -100,8 +100,9 @@ internal static class Program
                 userSid,
                 out SessionAgentPipeOwner? gpuOwner))
         {
-            throw new InvalidOperationException(
+            Trace.TraceInformation(
                 "The current user's GPU session-agent pipe is already owned.");
+            return 0;
         }
         await using SessionAgentPipeOwner acquiredGpuOwner = gpuOwner!;
         using (var lifetime = new CancellationTokenSource())

@@ -79,6 +79,46 @@ public sealed class SessionGpuRequestDispatcherTests
         Assert.Equal(target, Assert.Single(manager.LastTargets));
     }
 
+    [Fact]
+    public async Task Query_RejectsMoreAppsThanTheProtocolCanRepresent()
+    {
+        WindowsGpuApp[] apps = Enumerable.Range(1, SessionGpuIpc.MaximumApps + 1)
+            .Select(processId => App(processId, processId, $"app{processId}", canClose: true))
+            .ToArray();
+        var manager = new FakeGpuAppManager
+        {
+            ScanResult = new WindowsGpuAppScan(true, null, apps),
+        };
+        var dispatcher = new SessionGpuRequestDispatcher(manager);
+
+        SessionGpuResponse response = await dispatcher.DispatchAsync(
+            new QueryGpuAppsRequest(SessionGpuIpc.ProtocolVersion, Guid.NewGuid()),
+            CancellationToken.None);
+
+        Assert.Equal(SessionGpuOperationStatus.Failed, response.Status);
+        Assert.Contains("Too many", response.Error, StringComparison.Ordinal);
+        Assert.Empty(response.Apps);
+        Assert.Empty(response.Results);
+        await SessionGpuIpcCodec.WriteResponseAsync(new MemoryStream(), response);
+    }
+
+    [Fact]
+    public async Task Query_ObservesDeadlineThatExpiresDuringScan()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var manager = new FakeGpuAppManager
+        {
+            ScanResult = Scan(),
+            ScanAction = cancellation.Cancel,
+        };
+        var dispatcher = new SessionGpuRequestDispatcher(manager);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            dispatcher.DispatchAsync(
+                new QueryGpuAppsRequest(SessionGpuIpc.ProtocolVersion, Guid.NewGuid()),
+                cancellation.Token));
+    }
+
     private static WindowsGpuAppScan Scan(params WindowsGpuApp[] apps) =>
         new(true, null, apps);
 
@@ -99,16 +139,23 @@ public sealed class SessionGpuRequestDispatcherTests
     {
         public required WindowsGpuAppScan ScanResult { get; init; }
 
+        public Action? ScanAction { get; init; }
+
         public int CloseCount { get; private set; }
 
         public int ForceCount { get; private set; }
 
         public IReadOnlyList<WindowsGpuApp> LastTargets { get; private set; } = [];
 
-        public WindowsGpuAppScan Scan() => ScanResult;
+        public WindowsGpuAppScan Scan(CancellationToken cancellationToken = default)
+        {
+            ScanAction?.Invoke();
+            return ScanResult;
+        }
 
         public IReadOnlyList<WindowsGpuAppActionResult> CloseGracefully(
-            IReadOnlyList<WindowsGpuApp> apps)
+            IReadOnlyList<WindowsGpuApp> apps,
+            CancellationToken cancellationToken = default)
         {
             CloseCount++;
             LastTargets = apps;
@@ -116,7 +163,8 @@ public sealed class SessionGpuRequestDispatcherTests
         }
 
         public IReadOnlyList<WindowsGpuAppActionResult> ForceClose(
-            IReadOnlyList<WindowsGpuApp> apps)
+            IReadOnlyList<WindowsGpuApp> apps,
+            CancellationToken cancellationToken = default)
         {
             ForceCount++;
             LastTargets = apps;

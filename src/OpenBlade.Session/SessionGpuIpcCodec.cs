@@ -6,7 +6,6 @@ namespace OpenBlade.Session;
 
 public static class SessionGpuIpcCodec
 {
-    private const int MaximumApps = 128;
     private const int MaximumTextLength = 4096;
     private static readonly JsonSerializerOptions SerializerOptions = new(
         JsonSerializerDefaults.Web)
@@ -125,7 +124,7 @@ public static class SessionGpuIpcCodec
         {
             QueryGpuAppsRequest => true,
             CloseGpuAppsRequest value => value.Targets is not null
-                && value.Targets.Count is > 0 and <= MaximumApps
+                && value.Targets.Count is > 0 and <= SessionGpuIpc.MaximumApps
                 && value.Targets.All(ValidIdentity)
                 && value.Targets.Select(target => target.ProcessId).Distinct().Count()
                     == value.Targets.Count,
@@ -151,8 +150,8 @@ public static class SessionGpuIpcCodec
             && validError
             && response.Apps is not null
             && response.Results is not null
-            && response.Apps.Count <= MaximumApps
-            && response.Results.Count <= MaximumApps
+            && response.Apps.Count <= SessionGpuIpc.MaximumApps
+            && response.Results.Count <= SessionGpuIpc.MaximumApps
             && response.Apps.All(ValidApp)
             && response.Results.All(ValidResult);
         if (!valid)

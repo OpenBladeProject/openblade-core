@@ -5,6 +5,7 @@ namespace OpenBlade.Session;
 public static class SessionGpuIpc
 {
     public const int ProtocolVersion = 1;
+    public const int MaximumApps = 128;
     public const int MaximumMessageBytes = 64 * 1024;
     public const string PipeNamePrefix = "OpenBlade.Session.Gpu.v1";
 }
