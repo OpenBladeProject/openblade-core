@@ -220,7 +220,10 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         List<WindowsGpuAppActionResult> results = [];
         foreach (WindowsGpuApp app in apps.DistinctBy(value => value.ProcessId))
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return results;
+            }
             if (!app.CanClose)
             {
                 results.Add(Failed(app, app.BlockReason ?? "This process is protected."));
@@ -267,11 +270,14 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
                     : Failed(
                         app,
                         "The application has no window that can be closed gracefully."));
-                cancellationToken.ThrowIfCancellationRequested();
             }
             catch (Exception exception) when (IsRecoverableProcessActionException(exception))
             {
                 results.Add(Failed(app, exception.Message));
+            }
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return results;
             }
         }
         return results;

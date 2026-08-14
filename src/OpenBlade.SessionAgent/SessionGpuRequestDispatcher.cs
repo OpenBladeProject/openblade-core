@@ -84,9 +84,23 @@ public sealed class SessionGpuRequestDispatcher
             : close.Force
                 ? manager.ForceClose(matched, cancellationToken)
                 : manager.CloseGracefully(matched, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
+        HashSet<(int ProcessId, long StartTimeUtcTicks)> attempted = action
+            .Select(result => (result.ProcessId, result.StartTimeUtcTicks))
+            .ToHashSet();
+        SessionGpuActionResult[] unattempted = cancellationToken.IsCancellationRequested
+            ? matched
+                .Where(app => !attempted.Contains((app.ProcessId, app.StartTimeUtcTicks)))
+                .Select(app => new SessionGpuActionResult(
+                    app.ProcessId,
+                    app.StartTimeUtcTicks,
+                    false,
+                    "This process was not attempted because the GPU app operation stopped."))
+                .ToArray()
+            : [];
+        bool interrupted = unattempted.Length > 0;
         SessionGpuActionResult[] results = stale
             .Concat(action.Select(Map))
+            .Concat(unattempted)
             .ToArray();
         int succeeded = results.Count(result => result.Succeeded);
         SessionGpuOperationStatus status = succeeded == results.Length
@@ -94,13 +108,15 @@ public sealed class SessionGpuRequestDispatcher
             : succeeded == 0
                 ? SessionGpuOperationStatus.Failed
                 : SessionGpuOperationStatus.PartiallySucceeded;
-        string? error = status switch
-        {
-            SessionGpuOperationStatus.Succeeded => null,
-            SessionGpuOperationStatus.PartiallySucceeded =>
-                "Some applications could not be closed.",
-            _ => "The selected applications could not be closed.",
-        };
+        string? error = interrupted
+            ? "The GPU app operation stopped before all selected applications were processed."
+            : status switch
+            {
+                SessionGpuOperationStatus.Succeeded => null,
+                SessionGpuOperationStatus.PartiallySucceeded =>
+                    "Some applications could not be closed.",
+                _ => "The selected applications could not be closed.",
+            };
         return Response(request.RequestId, status, error, scan.Apps, results);
     }
 

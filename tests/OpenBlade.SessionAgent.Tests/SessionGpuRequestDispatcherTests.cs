@@ -119,6 +119,57 @@ public sealed class SessionGpuRequestDispatcherTests
                 cancellation.Token));
     }
 
+    [Fact]
+    public async Task ForceClose_ReturnsCompletedAndUnattemptedResultsWhenDeadlineExpires()
+    {
+        WindowsGpuApp first = App(42, 123, "first", canClose: true);
+        WindowsGpuApp second = App(43, 456, "second", canClose: true);
+        using var cancellation = new CancellationTokenSource();
+        var manager = new FakeGpuAppManager
+        {
+            ScanResult = Scan(first, second),
+            ForceAction = cancellation.Cancel,
+            ForceResult =
+            [
+                new WindowsGpuAppActionResult(
+                    first.ProcessId,
+                    first.StartTimeUtcTicks,
+                    true,
+                    null),
+            ],
+        };
+        var dispatcher = new SessionGpuRequestDispatcher(manager);
+
+        SessionGpuResponse response = await dispatcher.DispatchAsync(
+            new CloseGpuAppsRequest(
+                SessionGpuIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Force: true,
+                [
+                    new SessionGpuAppIdentity(
+                        first.ProcessId,
+                        first.StartTimeUtcTicks,
+                        first.Name),
+                    new SessionGpuAppIdentity(
+                        second.ProcessId,
+                        second.StartTimeUtcTicks,
+                        second.Name),
+                ]),
+            cancellation.Token);
+
+        Assert.Equal(SessionGpuOperationStatus.PartiallySucceeded, response.Status);
+        Assert.Contains("stopped", response.Error, StringComparison.Ordinal);
+        Assert.Collection(
+            response.Results,
+            result => Assert.True(result.Succeeded),
+            result =>
+            {
+                Assert.False(result.Succeeded);
+                Assert.Equal(second.ProcessId, result.ProcessId);
+                Assert.Contains("not attempted", result.Error, StringComparison.Ordinal);
+            });
+    }
+
     private static WindowsGpuAppScan Scan(params WindowsGpuApp[] apps) =>
         new(true, null, apps);
 
@@ -140,6 +191,10 @@ public sealed class SessionGpuRequestDispatcherTests
         public required WindowsGpuAppScan ScanResult { get; init; }
 
         public Action? ScanAction { get; init; }
+
+        public Action? ForceAction { get; init; }
+
+        public IReadOnlyList<WindowsGpuAppActionResult>? ForceResult { get; init; }
 
         public int CloseCount { get; private set; }
 
@@ -168,7 +223,8 @@ public sealed class SessionGpuRequestDispatcherTests
         {
             ForceCount++;
             LastTargets = apps;
-            return Success(apps);
+            ForceAction?.Invoke();
+            return ForceResult ?? Success(apps);
         }
 
         private static IReadOnlyList<WindowsGpuAppActionResult> Success(

@@ -170,6 +170,8 @@ public sealed class WindowsGpuActivityTests
             new AggregateException(new InvalidOperationException("partial tree failure"))));
         Assert.False(WindowsGpuAppManager.IsRecoverableProcessActionException(
             new NullReferenceException("programming defect")));
+        Assert.False(WindowsGpuAppManager.IsRecoverableProcessActionException(
+            new OperationCanceledException("cancellation remains control flow")));
     }
 
     private static WindowsGpuAppManager.ProcessEntry Entry(
