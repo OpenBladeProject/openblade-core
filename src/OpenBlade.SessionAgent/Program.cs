@@ -3,6 +3,7 @@ using System.Runtime.ExceptionServices;
 using System.Security.Principal;
 using OpenBlade.Contracts;
 using OpenBlade.Display;
+using OpenBlade.Platform;
 using OpenBlade.Session;
 using OpenBlade.Tray;
 
@@ -75,6 +76,9 @@ internal static class Program
         using Process currentProcess = Process.GetCurrentProcess();
         int sessionId = currentProcess.SessionId;
         SessionAgentPipeEndpoint endpoint = SessionAgentPipeEndpoint.Create(userSid, sessionId);
+        SessionAgentPipeEndpoint gpuEndpoint = SessionAgentPipeEndpoint.CreateGpu(
+            userSid,
+            sessionId);
         SessionAgentEventEndpoint eventEndpoint =
             SessionAgentEventEndpoint.Create(userSid, sessionId);
         if (!TryAcquireStartupOwnership(
@@ -91,6 +95,16 @@ internal static class Program
 
         await using SessionAgentPipeOwner acquiredOwner = owner!;
         using IDisposable acquiredTraceLogRegistration = traceLogRegistration!;
+        if (!SessionAgentPipeOwner.TryAcquire(
+                gpuEndpoint,
+                userSid,
+                out SessionAgentPipeOwner? gpuOwner))
+        {
+            Trace.TraceInformation(
+                "The current user's GPU session-agent pipe is already owned.");
+            return 0;
+        }
+        await using SessionAgentPipeOwner acquiredGpuOwner = gpuOwner!;
         using (var lifetime = new CancellationTokenSource())
         using (EventWaitHandle shutdownEvent = CreateShutdownEvent())
         using (var controller = new WindowsDisplaySettingsController())
@@ -133,6 +147,11 @@ internal static class Program
                     });
                 var dispatcher = new SessionDisplayRequestDispatcher(applier);
                 await using var server = new SessionDisplayPipeServer(acquiredOwner, dispatcher);
+                using var gpuAppManager = new WindowsGpuAppManager();
+                var gpuDispatcher = new SessionGpuRequestDispatcher(gpuAppManager);
+                await using var gpuServer = new SessionGpuPipeServer(
+                    acquiredGpuOwner,
+                    gpuDispatcher);
                 string preferencesPath = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "OpenBlade",
@@ -245,6 +264,7 @@ internal static class Program
                 Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
                 Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);
                 Task serverTask = server.RunAsync(lifetime.Token);
+                Task gpuServerTask = gpuServer.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
                 Task ambientTask = ambient.RunAsync(lifetime.Token);
@@ -260,6 +280,7 @@ internal static class Program
                         lifetime.Token);
                 Task completed = await Task.WhenAny(
                     serverTask,
+                    gpuServerTask,
                     statusFeedTask,
                     specialKeyBindingsTask,
                     automationTask,
@@ -285,6 +306,7 @@ internal static class Program
                 {
                     await Task.WhenAll(
                             serverTask,
+                            gpuServerTask,
                             statusFeedTask,
                             specialKeyBindingsTask,
                             automationTask,

@@ -14,7 +14,7 @@ public sealed class WinUiShellContractTests
             "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
 
         Assert.Equal(
-            5,
+            6,
             CountOccurrences(
                 powerModeCard,
                 "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
@@ -38,6 +38,65 @@ public sealed class WinUiShellContractTests
             gpuTuningCard,
             StringComparison.Ordinal);
         Assert.DoesNotContain("CardDescriptionStyle", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PowerModeCardOffersConfirmedGpuAppCleanup()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string codeBehind = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "MainWindow.xaml.cs");
+        string powerModeCard = SliceMethod(
+            xaml,
+            "<DataTemplate x:Key=\"DashboardPowerModeCardTemplate\"",
+            "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
+
+        Assert.Contains("Content=\"Close GPU apps\"", powerModeCard, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnCloseGpuAppsClick\"", powerModeCard, StringComparison.Ordinal);
+        int gpuAppsLabel = powerModeCard.IndexOf(
+            "Text=\"Apps using the NVIDIA GPU\"",
+            StringComparison.Ordinal);
+        int gpuAppsRowStart = powerModeCard.LastIndexOf(
+            "<Border",
+            gpuAppsLabel,
+            StringComparison.Ordinal);
+        int gpuAppsRowEnd = powerModeCard.IndexOf(
+            "Click=\"OnCloseGpuAppsClick\"",
+            gpuAppsLabel,
+            StringComparison.Ordinal);
+        Assert.True(gpuAppsRowStart >= 0 && gpuAppsRowEnd > gpuAppsRowStart);
+        string gpuAppsRow = powerModeCard[gpuAppsRowStart..gpuAppsRowEnd];
+        Assert.Contains(
+            "SettingsNeutralSubcardStyle",
+            gpuAppsRow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "local:AnimatedVisibility.IsVisible=\"{Binding IsGpuAppCleanupVisible}\"",
+            gpuAppsRow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "SettingsLastSubcardStyle",
+            gpuAppsRow,
+            StringComparison.Ordinal);
+        Assert.Contains("Close apps using the NVIDIA GPU?", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("Force close remaining apps?", codeBehind, StringComparison.Ordinal);
+        string handler = SliceMethod(
+            codeBehind,
+            "private async Task HandleCloseGpuAppsAsync",
+            "private async Task ShowGpuAppsMessageAsync");
+        Assert.Contains(
+            "afterClose.Status == SessionGpuOperationStatus.Failed",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "finalScan.Status == SessionGpuOperationStatus.Failed",
+            handler,
+            StringComparison.Ordinal);
+        Assert.True(
+            handler.IndexOf("catch (Exception exception)", StringComparison.Ordinal)
+                > handler.IndexOf("SessionGpuResponse finalScan", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -559,7 +618,11 @@ public sealed class WinUiShellContractTests
             "Volatile.Read(ref disposed) == 0 && Root.XamlRoot is not null",
             window,
             StringComparison.Ordinal);
-        Assert.Equal(1, CountOccurrences(window, "await dialog.ShowAsync()"));
+        string contentDialog = SliceMethod(
+            window,
+            "private async Task<ContentDialogResult?> ShowContentDialogAsync",
+            "private async Task ShowMessageDialogAsync");
+        Assert.Equal(1, CountOccurrences(contentDialog, "await dialog.ShowAsync()"));
         Assert.Contains("#47E10C", app, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("x:Name=\"SettingsPageHeader\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Update channel\"", xaml, StringComparison.Ordinal);
@@ -955,7 +1018,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
-        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(6, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
@@ -1630,6 +1693,10 @@ public sealed class WinUiShellContractTests
 
         Assert.Contains("new VisibleObservationLoop(ObserveVisibleSurfacesAsync", window, StringComparison.Ordinal);
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync", window, StringComparison.Ordinal);
+        Assert.Contains("ObserveGpuAppActivityAsync", window, StringComparison.Ordinal);
+        Assert.Contains("gpuAppObservationLoop.StartOrWake()", window, StringComparison.Ordinal);
+        Assert.Contains("gpuAppObservationLoop.Stop()", window, StringComparison.Ordinal);
+        Assert.Contains("gpuAppObservationLoop.DisposeAsync", window, StringComparison.Ordinal);
         Assert.Contains("observationIntervalProvider: () => Timeout.InfiniteTimeSpan", window, StringComparison.Ordinal);
         Assert.Contains("trayIcon.MouseMove += OnTrayIconMouseMove", trayHost, StringComparison.Ordinal);
         int mouseMoveHandler = trayHost.IndexOf(
@@ -1743,20 +1810,29 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void EfficientProcessorPolicyIsLimitedToTheTray()
     {
-        string serviceProgram = ReadRepositoryFile("src", "OpenBlade.Service", "Program.cs");
-        string serviceProject = ReadRepositoryFile(
-            "src", "OpenBlade.Service", "OpenBlade.Service.csproj");
-        string sessionAgentProgram = ReadRepositoryFile(
-            "src", "OpenBlade.SessionAgent", "Program.cs");
-        string sessionAgentProject = ReadRepositoryFile(
-            "src", "OpenBlade.SessionAgent", "OpenBlade.SessionAgent.csproj");
         string policy = ReadRepositoryFile(
             "src", "OpenBlade.Platform", "WindowsProcessorEfficiencyPolicy.cs");
 
-        Assert.DoesNotContain("OpenBlade.Platform", serviceProgram, StringComparison.Ordinal);
-        Assert.DoesNotContain("OpenBlade.Platform", serviceProject, StringComparison.Ordinal);
-        Assert.DoesNotContain("OpenBlade.Platform", sessionAgentProgram, StringComparison.Ordinal);
-        Assert.DoesNotContain("OpenBlade.Platform", sessionAgentProject, StringComparison.Ordinal);
+        foreach (string project in new[] { "OpenBlade.Service", "OpenBlade.SessionAgent" })
+        {
+            string projectDirectory = RepositoryPath("src", project);
+            foreach (string sourcePath in Directory.EnumerateFiles(
+                projectDirectory,
+                "*.cs",
+                SearchOption.AllDirectories).Where(path =>
+                    !path.Contains(
+                        $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
+                        StringComparison.OrdinalIgnoreCase)
+                    && !path.Contains(
+                        $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                Assert.DoesNotContain(
+                    "WindowsProcessorEfficiencyPolicy",
+                    File.ReadAllText(sourcePath),
+                    StringComparison.Ordinal);
+            }
+        }
         Assert.DoesNotContain("SetProcessDefaultCpuSets", policy, StringComparison.Ordinal);
     }
 
