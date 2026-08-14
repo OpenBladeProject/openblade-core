@@ -20,19 +20,62 @@ public sealed class UiPreferenceStoreTests : IDisposable
               "theme": "Dark",
               "trayDashboard": {
                 "schemaVersion": {{TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1}},
-                "futureOnly": "keep-me"
+                "futureOnly": "keep-me",
+                "controls": [
+                  { "kind": "FutureControl", "isVisible": true }
+                ],
+                "nested": { "mode": "FutureMode", "value": 17 }
               }
             }
             """;
         await File.WriteAllTextAsync(path, original);
         var store = new UiPreferenceStore(path);
+        using JsonDocument originalDocument = JsonDocument.Parse(original);
+        string originalDashboard = originalDocument.RootElement
+            .GetProperty("trayDashboard")
+            .GetRawText();
 
-        UiPreferenceSaveException exception = await Assert.ThrowsAsync<UiPreferenceSaveException>(
-            () => store.SaveAsync(UiPreferences.Default));
+        await store.SaveAsync(UiPreferences.Default with
+        {
+            Theme = ThemePreference.Light,
+            StartMinimized = true,
+        });
 
-        Assert.Contains("will not overwrite", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(original, await File.ReadAllTextAsync(path));
+        using JsonDocument saved = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+        Assert.Equal("Light", saved.RootElement.GetProperty("theme").GetString());
+        Assert.True(saved.RootElement.GetProperty("startMinimized").GetBoolean());
+        Assert.Equal(
+            originalDashboard,
+            saved.RootElement.GetProperty("trayDashboard").GetRawText());
         Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task LoadAsync_FutureDashboardWithUnknownKind_LoadsOtherPreferences()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, $$"""
+            {
+              "theme": "Dark",
+              "startMinimized": true,
+              "trayDashboard": {
+                "schemaVersion": {{TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1}},
+                "controls": [
+                  { "kind": "FutureControl", "isVisible": true }
+                ]
+              }
+            }
+            """);
+
+        UiPreferences loaded = await new UiPreferenceStore(path).LoadAsync();
+
+        Assert.Equal(ThemePreference.Dark, loaded.Theme);
+        Assert.True(loaded.StartMinimized);
+        Assert.Equal(
+            TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1,
+            loaded.TrayDashboard?.SchemaVersion);
+        Assert.Throws<InvalidDataException>(() => loaded.EffectiveTrayDashboard);
     }
 
     [Fact]

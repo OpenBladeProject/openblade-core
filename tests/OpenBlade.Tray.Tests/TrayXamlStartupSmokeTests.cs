@@ -6,7 +6,8 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class TrayXamlStartupSmokeTests
 {
-    [Fact]
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
     public async Task DashboardCompiledXamlLoadsWithEveryDefinitionVisible()
     {
         string executable = GetTrayExecutablePath();
@@ -43,6 +44,19 @@ public sealed class TrayXamlStartupSmokeTests
         Assert.True(
             process.ExitCode == 0,
             $"Tray XAML startup smoke exited with {process.ExitCode}: {diagnostic}");
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("0", false)]
+    [InlineData("1", true)]
+    [InlineData("true", false)]
+    public void InteractiveDesktopSkipRequiresExplicitOptOut(
+        string? value,
+        bool expected)
+    {
+        Assert.Equal(expected, InteractiveDesktopTestPolicy.ShouldSkip(value));
     }
 
     private static string GetTrayExecutablePath([CallerFilePath] string testPath = "")

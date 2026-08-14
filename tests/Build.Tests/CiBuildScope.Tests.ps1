@@ -96,4 +96,17 @@ if ($ci.Contains('- edited')) {
     throw 'PR description edits must not rerun the full CI workflow.'
 }
 
+$build = Get-Content -LiteralPath (
+    Join-Path $repository '.github\workflows\build.yml') -Raw
+$qualityStart = $build.IndexOf('  quality-and-tests:', [StringComparison]::Ordinal)
+$contractsStart = $build.IndexOf('  build-contracts:', [StringComparison]::Ordinal)
+if ($qualityStart -lt 0 -or $contractsStart -le $qualityStart) {
+    throw 'The shared build workflow quality job could not be isolated.'
+}
+$qualityJob = $build.Substring($qualityStart, $contractsStart - $qualityStart)
+if (-not $qualityJob.Contains(
+        'OPENBLADE_SKIP_INTERACTIVE_DESKTOP_TESTS: 0')) {
+    throw 'Hosted CI must run interactive-desktop tests by default.'
+}
+
 Write-Host 'CI build scope tests passed.'

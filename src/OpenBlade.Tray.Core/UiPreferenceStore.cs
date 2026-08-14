@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO;
 using System.Security;
 using System.Text.Json;
@@ -181,10 +182,17 @@ public sealed class UiPreferenceStore
                 FileShare.ReadWrite | FileShare.Delete,
                 bufferSize: 4096,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
-            UiPreferences? preferences = await JsonSerializer.DeserializeAsync<UiPreferences>(
+            using JsonDocument document = await JsonDocument.ParseAsync(
                 stream,
-                SerializerOptions,
-                cancellationToken);
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            UiPreferences? preferences = TryGetFutureDashboard(
+                    document.RootElement,
+                    out _,
+                    out int schemaVersion)
+                ? DeserializeWithFutureDashboardPlaceholder(
+                    document.RootElement,
+                    schemaVersion)
+                : document.RootElement.Deserialize<UiPreferences>(SerializerOptions);
             return preferences ?? UiPreferences.Default;
         }
         catch (JsonException)
@@ -198,8 +206,6 @@ public sealed class UiPreferenceStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(preferences);
-        await ThrowIfFutureDashboardSchemaExistsAsync(cancellationToken)
-            .ConfigureAwait(false);
 
         string directory = Path.GetDirectoryName(path)!;
         string temporaryPath = Path.Combine(
@@ -208,6 +214,9 @@ public sealed class UiPreferenceStore
 
         try
         {
+            string? futureDashboardJson =
+                await ReadFutureDashboardJsonAsync(cancellationToken)
+                    .ConfigureAwait(false);
             Directory.CreateDirectory(directory);
             try
             {
@@ -219,11 +228,22 @@ public sealed class UiPreferenceStore
                     bufferSize: 4096,
                     FileOptions.Asynchronous | FileOptions.WriteThrough))
                 {
-                    await JsonSerializer.SerializeAsync(
-                        stream,
-                        preferences,
-                        SerializerOptions,
-                        cancellationToken);
+                    if (futureDashboardJson is null)
+                    {
+                        await JsonSerializer.SerializeAsync(
+                            stream,
+                            preferences,
+                            SerializerOptions,
+                            cancellationToken);
+                    }
+                    else
+                    {
+                        await WritePreferencesWithPreservedDashboardAsync(
+                            stream,
+                            preferences,
+                            futureDashboardJson,
+                            cancellationToken).ConfigureAwait(false);
+                    }
                     await stream.FlushAsync(cancellationToken);
                 }
 
@@ -243,12 +263,12 @@ public sealed class UiPreferenceStore
         }
     }
 
-    private async Task ThrowIfFutureDashboardSchemaExistsAsync(
+    private async Task<string?> ReadFutureDashboardJsonAsync(
         CancellationToken cancellationToken)
     {
         if (!File.Exists(path))
         {
-            return;
+            return null;
         }
 
         try
@@ -263,20 +283,130 @@ public sealed class UiPreferenceStore
             using JsonDocument document = await JsonDocument.ParseAsync(
                 stream,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (document.RootElement.TryGetProperty("trayDashboard", out JsonElement dashboard)
-                && dashboard.ValueKind == JsonValueKind.Object
-                && dashboard.TryGetProperty("schemaVersion", out JsonElement schema)
-                && schema.TryGetInt32(out int schemaVersion)
-                && schemaVersion > TrayDashboardPreferenceDefaults.CurrentSchemaVersion)
-            {
-                throw new UiPreferenceSaveException(
-                    $"OpenBlade will not overwrite tray dashboard schema {schemaVersion} with older schema {TrayDashboardPreferenceDefaults.CurrentSchemaVersion}.");
-            }
+            return TryGetFutureDashboard(
+                    document.RootElement,
+                    out JsonElement dashboard,
+                    out _)
+                ? dashboard.GetRawText()
+                : null;
         }
         catch (JsonException)
         {
             // LoadAsync already treats malformed JSON as defaults.
+            return null;
         }
+    }
+
+    private static UiPreferences? DeserializeWithFutureDashboardPlaceholder(
+        JsonElement root,
+        int schemaVersion)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            WriteRootWithDashboard(
+                writer,
+                root,
+                dashboardWriter =>
+                {
+                    dashboardWriter.WriteStartObject();
+                    dashboardWriter.WriteNumber("schemaVersion", schemaVersion);
+                    dashboardWriter.WriteEndObject();
+                });
+        }
+
+        return JsonSerializer.Deserialize<UiPreferences>(
+            buffer.WrittenSpan,
+            SerializerOptions);
+    }
+
+    private static async Task WritePreferencesWithPreservedDashboardAsync(
+        Stream stream,
+        UiPreferences preferences,
+        string futureDashboardJson,
+        CancellationToken cancellationToken)
+    {
+        JsonElement serialized = JsonSerializer.SerializeToElement(
+            preferences,
+            SerializerOptions);
+        using var writer = new Utf8JsonWriter(
+            stream,
+            new JsonWriterOptions { Indented = true });
+        WriteRootWithDashboard(
+            writer,
+            serialized,
+            dashboardWriter => dashboardWriter.WriteRawValue(futureDashboardJson));
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void WriteRootWithDashboard(
+        Utf8JsonWriter writer,
+        JsonElement root,
+        Action<Utf8JsonWriter> writeDashboard)
+    {
+        writer.WriteStartObject();
+        bool dashboardWritten = false;
+        foreach (JsonProperty property in root.EnumerateObject())
+        {
+            if (property.Name.Equals(
+                    "trayDashboard",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                writer.WritePropertyName(property.Name);
+                writeDashboard(writer);
+                dashboardWritten = true;
+            }
+            else
+            {
+                property.WriteTo(writer);
+            }
+        }
+
+        if (!dashboardWritten)
+        {
+            writer.WritePropertyName("trayDashboard");
+            writeDashboard(writer);
+        }
+        writer.WriteEndObject();
+    }
+
+    private static bool TryGetFutureDashboard(
+        JsonElement root,
+        out JsonElement dashboard,
+        out int schemaVersion)
+    {
+        dashboard = default;
+        schemaVersion = default;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        foreach (JsonProperty property in root.EnumerateObject())
+        {
+            if (!property.Name.Equals(
+                    "trayDashboard",
+                    StringComparison.OrdinalIgnoreCase)
+                || property.Value.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            foreach (JsonProperty dashboardProperty in property.Value.EnumerateObject())
+            {
+                if (dashboardProperty.Name.Equals(
+                        "schemaVersion",
+                        StringComparison.OrdinalIgnoreCase)
+                    && dashboardProperty.Value.TryGetInt32(out schemaVersion)
+                    && schemaVersion > TrayDashboardPreferenceDefaults.CurrentSchemaVersion)
+                {
+                    dashboard = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static void TryDeleteTemporary(string temporaryPath)
