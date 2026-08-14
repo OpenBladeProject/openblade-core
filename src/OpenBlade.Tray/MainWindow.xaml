@@ -644,6 +644,26 @@
                                               SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
+                            <Border Style="{StaticResource SettingsLastSubcardStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Apps using the NVIDIA GPU"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Close current-user apps so the discrete GPU can return to sleep."
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Content="Close GPU apps"
+                                            VerticalAlignment="Center"
+                                            AutomationProperties.Name="Close apps using the NVIDIA GPU"
+                                            Click="OnCloseGpuAppsClick" />
+                                </Grid>
+                            </Border>
                             </StackPanel>
                         </Border>
                         </StackPanel>

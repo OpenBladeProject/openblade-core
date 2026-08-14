@@ -1,0 +1,123 @@
+using OpenBlade.Platform;
+using OpenBlade.Session;
+
+namespace OpenBlade.SessionAgent;
+
+public sealed class SessionGpuRequestDispatcher
+{
+    private readonly IWindowsGpuAppManager manager;
+
+    public SessionGpuRequestDispatcher(IWindowsGpuAppManager manager)
+    {
+        this.manager = manager ?? throw new ArgumentNullException(nameof(manager));
+    }
+
+    public Task<SessionGpuResponse> DispatchAsync(
+        SessionGpuRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Task.Run(() => Dispatch(request, cancellationToken), cancellationToken);
+    }
+
+    private SessionGpuResponse Dispatch(
+        SessionGpuRequest request,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        WindowsGpuAppScan scan = manager.Scan();
+        if (!scan.IsAvailable)
+        {
+            return Response(
+                request.RequestId,
+                SessionGpuOperationStatus.Failed,
+                scan.Error ?? "GPU activity is unavailable.",
+                [],
+                []);
+        }
+
+        if (request is QueryGpuAppsRequest)
+        {
+            return Response(
+                request.RequestId,
+                SessionGpuOperationStatus.Succeeded,
+                null,
+                scan.Apps,
+                []);
+        }
+
+        var close = (CloseGpuAppsRequest)request;
+        Dictionary<int, WindowsGpuApp> currentById = scan.Apps.ToDictionary(app => app.ProcessId);
+        List<WindowsGpuApp> matched = [];
+        List<SessionGpuActionResult> stale = [];
+        foreach (SessionGpuAppIdentity target in close.Targets)
+        {
+            if (currentById.TryGetValue(target.ProcessId, out WindowsGpuApp? current)
+                && current.StartTimeUtcTicks == target.StartTimeUtcTicks
+                && string.Equals(current.Name, target.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                matched.Add(current);
+            }
+            else
+            {
+                stale.Add(new SessionGpuActionResult(
+                    target.ProcessId,
+                    target.StartTimeUtcTicks,
+                    false,
+                    "The process exited or its identity changed after confirmation."));
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        IReadOnlyList<WindowsGpuAppActionResult> action = matched.Count == 0
+            ? []
+            : close.Force
+                ? manager.ForceClose(matched)
+                : manager.CloseGracefully(matched);
+        SessionGpuActionResult[] results = stale
+            .Concat(action.Select(Map))
+            .ToArray();
+        int succeeded = results.Count(result => result.Succeeded);
+        SessionGpuOperationStatus status = succeeded == results.Length
+            ? SessionGpuOperationStatus.Succeeded
+            : succeeded == 0
+                ? SessionGpuOperationStatus.Failed
+                : SessionGpuOperationStatus.PartiallySucceeded;
+        string? error = status switch
+        {
+            SessionGpuOperationStatus.Succeeded => null,
+            SessionGpuOperationStatus.PartiallySucceeded =>
+                "Some applications could not be closed.",
+            _ => "The selected applications could not be closed.",
+        };
+        return Response(request.RequestId, status, error, scan.Apps, results);
+    }
+
+    private static SessionGpuResponse Response(
+        Guid requestId,
+        SessionGpuOperationStatus status,
+        string? error,
+        IReadOnlyList<WindowsGpuApp> apps,
+        IReadOnlyList<SessionGpuActionResult> results) => new(
+            SessionGpuIpc.ProtocolVersion,
+            requestId,
+            status,
+            error,
+            apps.Select(Map).ToArray(),
+            results);
+
+    private static SessionGpuApp Map(WindowsGpuApp app) => new(
+        app.ProcessId,
+        app.StartTimeUtcTicks,
+        app.Name,
+        app.ExecutablePath,
+        app.UtilizationPercent,
+        app.CanClose,
+        app.BlockReason);
+
+    private static SessionGpuActionResult Map(WindowsGpuAppActionResult result) => new(
+        result.ProcessId,
+        result.StartTimeUtcTicks,
+        result.Succeeded,
+        result.Error);
+}

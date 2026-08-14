@@ -41,6 +41,25 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void PowerModeCardOffersConfirmedGpuAppCleanup()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string codeBehind = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "MainWindow.xaml.cs");
+        string powerModeCard = SliceMethod(
+            xaml,
+            "<DataTemplate x:Key=\"DashboardPowerModeCardTemplate\"",
+            "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
+
+        Assert.Contains("Content=\"Close GPU apps\"", powerModeCard, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnCloseGpuAppsClick\"", powerModeCard, StringComparison.Ordinal);
+        Assert.Contains("Close apps using the NVIDIA GPU?", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("Force close remaining apps?", codeBehind, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ExecutableProjectsInheritTheSharedOpenBladeIcon()
     {
         string targets = ReadRepositoryFile("src", "Directory.Build.targets");
@@ -908,7 +927,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
         Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
-        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
+        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"On battery\"", xaml, StringComparison.Ordinal);
@@ -1686,19 +1705,19 @@ public sealed class WinUiShellContractTests
     public void EfficientProcessorPolicyIsLimitedToTheTray()
     {
         string serviceProgram = ReadRepositoryFile("src", "OpenBlade.Service", "Program.cs");
-        string serviceProject = ReadRepositoryFile(
-            "src", "OpenBlade.Service", "OpenBlade.Service.csproj");
         string sessionAgentProgram = ReadRepositoryFile(
             "src", "OpenBlade.SessionAgent", "Program.cs");
-        string sessionAgentProject = ReadRepositoryFile(
-            "src", "OpenBlade.SessionAgent", "OpenBlade.SessionAgent.csproj");
         string policy = ReadRepositoryFile(
             "src", "OpenBlade.Platform", "WindowsProcessorEfficiencyPolicy.cs");
 
-        Assert.DoesNotContain("OpenBlade.Platform", serviceProgram, StringComparison.Ordinal);
-        Assert.DoesNotContain("OpenBlade.Platform", serviceProject, StringComparison.Ordinal);
-        Assert.DoesNotContain("OpenBlade.Platform", sessionAgentProgram, StringComparison.Ordinal);
-        Assert.DoesNotContain("OpenBlade.Platform", sessionAgentProject, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "WindowsProcessorEfficiencyPolicy",
+            serviceProgram,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "WindowsProcessorEfficiencyPolicy",
+            sessionAgentProgram,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("SetProcessDefaultCpuSets", policy, StringComparison.Ordinal);
     }
 

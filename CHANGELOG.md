@@ -5,6 +5,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Added a **Close GPU apps** action to Power mode. It finds current-user apps
+  holding NVIDIA WDDM engines without waking an idle GPU, shows the exact
+  targets, asks them to close, and offers an explicit force-close step for
+  survivors while protecting Windows, OpenBlade, and other sessions.
+
 ### Fixed
 
 - Kept profile pending-change dots immediately beside their value text instead

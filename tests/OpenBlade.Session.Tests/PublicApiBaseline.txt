@@ -18,6 +18,25 @@ type sealed class OpenBlade.Session.ApplyDisplayProfileRequest
   method virtual System.Boolean Equals(OpenBlade.Session.ApplyDisplayProfileRequest other)
   property OpenBlade.Contracts.DisplayProfileSettings Settings { get; init; }
   property OpenBlade.Contracts.PowerSource ExpectedPowerSource { get; init; }
+type sealed class OpenBlade.Session.CloseGpuAppsRequest
+  base OpenBlade.Session.SessionGpuRequest
+  interface System.IEquatable<OpenBlade.Session.CloseGpuAppsRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Boolean Force, System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuAppIdentity> Targets)
+  method System.Boolean get_Force()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuAppIdentity> get_Targets()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Boolean Force, out System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuAppIdentity> Targets)
+  method System.Void set_Force(System.Boolean value)
+  method System.Void set_Targets(System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuAppIdentity> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionGpuRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.CloseGpuAppsRequest left, OpenBlade.Session.CloseGpuAppsRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.CloseGpuAppsRequest left, OpenBlade.Session.CloseGpuAppsRequest right)
+  method virtual OpenBlade.Session.CloseGpuAppsRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.CloseGpuAppsRequest other)
+  property System.Boolean Force { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuAppIdentity> Targets { get; init; }
 type sealed class OpenBlade.Session.DisplayAutomationCheckpointStore
   ctor (System.String path)
   method System.Boolean Save(OpenBlade.Contracts.PowerSource source)
@@ -137,6 +156,19 @@ type sealed class OpenBlade.Session.QueryDisplayRequest
   method static System.Boolean op_Inequality(OpenBlade.Session.QueryDisplayRequest left, OpenBlade.Session.QueryDisplayRequest right)
   method virtual OpenBlade.Session.QueryDisplayRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Session.QueryDisplayRequest other)
+type sealed class OpenBlade.Session.QueryGpuAppsRequest
+  base OpenBlade.Session.SessionGpuRequest
+  interface System.IEquatable<OpenBlade.Session.QueryGpuAppsRequest>
+  ctor (System.Int32 Version, System.Guid RequestId)
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionGpuRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.QueryGpuAppsRequest left, OpenBlade.Session.QueryGpuAppsRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.QueryGpuAppsRequest left, OpenBlade.Session.QueryGpuAppsRequest right)
+  method virtual OpenBlade.Session.QueryGpuAppsRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.QueryGpuAppsRequest other)
 type sealed class OpenBlade.Session.SessionAgentEventEndpoint
   interface System.IEquatable<OpenBlade.Session.SessionAgentEventEndpoint>
   ctor (System.String DisplayBrightnessChangedMessageName, System.String PerformanceShortcutNotificationMessageName)
@@ -166,6 +198,7 @@ type sealed class OpenBlade.Session.SessionAgentPipeEndpoint
   method override System.Int32 GetHashCode()
   method override System.String ToString()
   method static OpenBlade.Session.SessionAgentPipeEndpoint Create(System.Security.Principal.SecurityIdentifier userSid, System.Int32 sessionId)
+  method static OpenBlade.Session.SessionAgentPipeEndpoint CreateGpu(System.Security.Principal.SecurityIdentifier userSid, System.Int32 sessionId)
   method static System.Boolean op_Equality(OpenBlade.Session.SessionAgentPipeEndpoint left, OpenBlade.Session.SessionAgentPipeEndpoint right)
   method static System.Boolean op_Inequality(OpenBlade.Session.SessionAgentPipeEndpoint left, OpenBlade.Session.SessionAgentPipeEndpoint right)
   method virtual System.Boolean Equals(OpenBlade.Session.SessionAgentPipeEndpoint other)
@@ -245,6 +278,140 @@ type sealed class OpenBlade.Session.SessionDisplayResponse
   method virtual System.Boolean Equals(OpenBlade.Session.SessionDisplayResponse other)
   property OpenBlade.Display.DisplaySettingsSnapshot State { get; init; }
   property OpenBlade.Session.SessionDisplayOperationStatus Status { get; init; }
+  property System.Guid RequestId { get; init; }
+  property System.Int32 Version { get; init; }
+  property System.String Error { get; init; }
+type sealed class OpenBlade.Session.SessionGpuActionResult
+  interface System.IEquatable<OpenBlade.Session.SessionGpuActionResult>
+  ctor (System.Int32 ProcessId, System.Int64 StartTimeUtcTicks, System.Boolean Succeeded, System.String Error)
+  method OpenBlade.Session.SessionGpuActionResult <Clone>$()
+  method System.Boolean get_Succeeded()
+  method System.Int32 get_ProcessId()
+  method System.Int64 get_StartTimeUtcTicks()
+  method System.String get_Error()
+  method System.Void Deconstruct(out System.Int32 ProcessId, out System.Int64 StartTimeUtcTicks, out System.Boolean Succeeded, out System.String Error)
+  method System.Void set_Error(System.String value)
+  method System.Void set_ProcessId(System.Int32 value)
+  method System.Void set_StartTimeUtcTicks(System.Int64 value)
+  method System.Void set_Succeeded(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionGpuActionResult left, OpenBlade.Session.SessionGpuActionResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionGpuActionResult left, OpenBlade.Session.SessionGpuActionResult right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionGpuActionResult other)
+  property System.Boolean Succeeded { get; init; }
+  property System.Int32 ProcessId { get; init; }
+  property System.Int64 StartTimeUtcTicks { get; init; }
+  property System.String Error { get; init; }
+type sealed class OpenBlade.Session.SessionGpuApp
+  interface System.IEquatable<OpenBlade.Session.SessionGpuApp>
+  ctor (System.Int32 ProcessId, System.Int64 StartTimeUtcTicks, System.String Name, System.String ExecutablePath, System.Double UtilizationPercent, System.Boolean CanClose, System.String BlockReason)
+  method OpenBlade.Session.SessionGpuApp <Clone>$()
+  method System.Boolean get_CanClose()
+  method System.Double get_UtilizationPercent()
+  method System.Int32 get_ProcessId()
+  method System.Int64 get_StartTimeUtcTicks()
+  method System.String get_BlockReason()
+  method System.String get_ExecutablePath()
+  method System.String get_Name()
+  method System.Void Deconstruct(out System.Int32 ProcessId, out System.Int64 StartTimeUtcTicks, out System.String Name, out System.String ExecutablePath, out System.Double UtilizationPercent, out System.Boolean CanClose, out System.String BlockReason)
+  method System.Void set_BlockReason(System.String value)
+  method System.Void set_CanClose(System.Boolean value)
+  method System.Void set_ExecutablePath(System.String value)
+  method System.Void set_Name(System.String value)
+  method System.Void set_ProcessId(System.Int32 value)
+  method System.Void set_StartTimeUtcTicks(System.Int64 value)
+  method System.Void set_UtilizationPercent(System.Double value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionGpuApp left, OpenBlade.Session.SessionGpuApp right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionGpuApp left, OpenBlade.Session.SessionGpuApp right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionGpuApp other)
+  property System.Boolean CanClose { get; init; }
+  property System.Double UtilizationPercent { get; init; }
+  property System.Int32 ProcessId { get; init; }
+  property System.Int64 StartTimeUtcTicks { get; init; }
+  property System.String BlockReason { get; init; }
+  property System.String ExecutablePath { get; init; }
+  property System.String Name { get; init; }
+type sealed class OpenBlade.Session.SessionGpuAppIdentity
+  interface System.IEquatable<OpenBlade.Session.SessionGpuAppIdentity>
+  ctor (System.Int32 ProcessId, System.Int64 StartTimeUtcTicks, System.String Name)
+  method OpenBlade.Session.SessionGpuAppIdentity <Clone>$()
+  method System.Int32 get_ProcessId()
+  method System.Int64 get_StartTimeUtcTicks()
+  method System.String get_Name()
+  method System.Void Deconstruct(out System.Int32 ProcessId, out System.Int64 StartTimeUtcTicks, out System.String Name)
+  method System.Void set_Name(System.String value)
+  method System.Void set_ProcessId(System.Int32 value)
+  method System.Void set_StartTimeUtcTicks(System.Int64 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionGpuAppIdentity left, OpenBlade.Session.SessionGpuAppIdentity right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionGpuAppIdentity left, OpenBlade.Session.SessionGpuAppIdentity right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionGpuAppIdentity other)
+  property System.Int32 ProcessId { get; init; }
+  property System.Int64 StartTimeUtcTicks { get; init; }
+  property System.String Name { get; init; }
+type static class OpenBlade.Session.SessionGpuIpc
+  field const System.Int32 MaximumMessageBytes = 65536
+  field const System.Int32 ProtocolVersion = 1
+  field const System.String PipeNamePrefix = "OpenBlade.Session.Gpu.v1"
+type static class OpenBlade.Session.SessionGpuIpcCodec
+  method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Session.SessionGpuRequest request, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task WriteResponseAsync(System.IO.Stream stream, OpenBlade.Session.SessionGpuResponse response, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task<OpenBlade.Session.SessionGpuRequest> ReadRequestAsync(System.IO.Stream stream, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task<OpenBlade.Session.SessionGpuResponse> ReadResponseAsync(System.IO.Stream stream, System.Threading.CancellationToken cancellationToken = null)
+type enum OpenBlade.Session.SessionGpuOperationStatus
+  field System.Int32 value__
+  field const OpenBlade.Session.SessionGpuOperationStatus Failed = 2
+  field const OpenBlade.Session.SessionGpuOperationStatus PartiallySucceeded = 1
+  field const OpenBlade.Session.SessionGpuOperationStatus Succeeded = 0
+type abstract class OpenBlade.Session.SessionGpuRequest
+  interface System.IEquatable<OpenBlade.Session.SessionGpuRequest>
+  method System.Guid get_RequestId()
+  method System.Int32 get_Version()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method System.Void set_RequestId(System.Guid value)
+  method System.Void set_Version(System.Int32 value)
+  method abstract OpenBlade.Session.SessionGpuRequest <Clone>$()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionGpuRequest left, OpenBlade.Session.SessionGpuRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionGpuRequest left, OpenBlade.Session.SessionGpuRequest right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionGpuRequest other)
+  property System.Guid RequestId { get; init; }
+  property System.Int32 Version { get; init; }
+type sealed class OpenBlade.Session.SessionGpuResponse
+  interface System.IEquatable<OpenBlade.Session.SessionGpuResponse>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Session.SessionGpuOperationStatus Status, System.String Error, System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuApp> Apps, System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuActionResult> Results)
+  method OpenBlade.Session.SessionGpuOperationStatus get_Status()
+  method OpenBlade.Session.SessionGpuResponse <Clone>$()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuActionResult> get_Results()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuApp> get_Apps()
+  method System.Guid get_RequestId()
+  method System.Int32 get_Version()
+  method System.String get_Error()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.SessionGpuOperationStatus Status, out System.String Error, out System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuApp> Apps, out System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuActionResult> Results)
+  method System.Void set_Apps(System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuApp> value)
+  method System.Void set_Error(System.String value)
+  method System.Void set_RequestId(System.Guid value)
+  method System.Void set_Results(System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuActionResult> value)
+  method System.Void set_Status(OpenBlade.Session.SessionGpuOperationStatus value)
+  method System.Void set_Version(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionGpuResponse left, OpenBlade.Session.SessionGpuResponse right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionGpuResponse left, OpenBlade.Session.SessionGpuResponse right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionGpuResponse other)
+  property OpenBlade.Session.SessionGpuOperationStatus Status { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuActionResult> Results { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuApp> Apps { get; init; }
   property System.Guid RequestId { get; init; }
   property System.Int32 Version { get; init; }
   property System.String Error { get; init; }
