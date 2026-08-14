@@ -7,6 +7,7 @@ $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $exporterPath = Join-Path $repository 'build\Export-RazerBrightnessDriverPackage.ps1'
 $transportPath = Join-Path $repository (
     'src\OpenBlade.Service\WindowsRazerDisplayBrightnessHidTransport.cs')
+$documentationPath = Join-Path $repository 'docs\razer-brightness-driver-package.md'
 
 function Assert-True {
     param(
@@ -50,6 +51,12 @@ Assert-True ($parseErrors.Count -eq 0) `
 
 $source = Get-Content -Raw -LiteralPath $exporterPath
 $transport = Get-Content -Raw -LiteralPath $transportPath
+$documentation = Get-Content -Raw -LiteralPath $documentationPath
+
+Assert-True ($documentation.IndexOf(
+        'https://github.com/OSSBlade/blade-driver-catalog',
+        [StringComparison]::Ordinal) -ge 0) `
+    'The model-specific exporter documentation must link to the shared catalog.'
 
 foreach ($originalInf in @(
         'rzdevu_02e0_dkm.inf',
