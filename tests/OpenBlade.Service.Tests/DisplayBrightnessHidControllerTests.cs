@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
 using OpenBlade.Service;
 
@@ -30,6 +31,30 @@ public sealed class DisplayBrightnessHidControllerTests
         {
             Assert.Contains("readback failed", result.Message, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public async Task SetUsageAsync_UnavailableErrorIsLoggedButNotShownToUser()
+    {
+        using var history = new DiagnosticHistory();
+        using ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
+            builder.AddProvider(history));
+        var transport = new StubTransport(new DisplayBrightnessHidWriteResult(
+            DisplayBrightnessHidWriteStatus.Unavailable,
+            "Access is denied."));
+        var controller = new DisplayBrightnessHidController(
+            transport,
+            loggerFactory.CreateLogger<DisplayBrightnessHidController>());
+
+        ControlOperationResult result = await controller.SetUsageAsync(
+            DisplayBrightnessHidUsage.Increment,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.DoesNotContain("Access is denied", result.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            history.Snapshot().LogLines,
+            line => line.Contains("Access is denied", StringComparison.Ordinal));
     }
 
     [Fact]

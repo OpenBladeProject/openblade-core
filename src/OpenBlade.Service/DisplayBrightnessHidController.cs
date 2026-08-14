@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
@@ -28,15 +29,29 @@ internal interface IDisplayBrightnessHidTransport
 public sealed class DisplayBrightnessHidController : IDisplayBrightnessHidController
 {
     private readonly IDisplayBrightnessHidTransport transport;
+    private readonly ILogger<DisplayBrightnessHidController>? logger;
 
     public DisplayBrightnessHidController()
-        : this(new WindowsDisplayBrightnessHidTransport())
+        : this(new WindowsDisplayBrightnessHidTransport(), null)
+    {
+    }
+
+    public DisplayBrightnessHidController(ILogger<DisplayBrightnessHidController> logger)
+        : this(new WindowsDisplayBrightnessHidTransport(), logger)
     {
     }
 
     internal DisplayBrightnessHidController(IDisplayBrightnessHidTransport transport)
+        : this(transport, null)
+    {
+    }
+
+    internal DisplayBrightnessHidController(
+        IDisplayBrightnessHidTransport transport,
+        ILogger<DisplayBrightnessHidController>? logger)
     {
         this.transport = transport ?? throw new ArgumentNullException(nameof(transport));
+        this.logger = logger;
     }
 
     public Task<ControlOperationResult> SetUsageAsync(
@@ -51,6 +66,14 @@ public sealed class DisplayBrightnessHidController : IDisplayBrightnessHidContro
         cancellationToken.ThrowIfCancellationRequested();
         DisplayBrightnessHidWriteResult write = transport.SetUsage(usage);
         cancellationToken.ThrowIfCancellationRequested();
+        if (write.Status == DisplayBrightnessHidWriteStatus.Unavailable
+            && !string.IsNullOrWhiteSpace(write.Error))
+        {
+            logger?.LogWarning(
+                "Display-brightness HID access is unavailable: {BrightnessHidError}",
+                write.Error);
+        }
+
         return Task.FromResult(write.Status switch
         {
             DisplayBrightnessHidWriteStatus.Applied => new ControlOperationResult(
