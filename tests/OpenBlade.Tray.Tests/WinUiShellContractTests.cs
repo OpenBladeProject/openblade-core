@@ -1672,21 +1672,6 @@ public sealed class WinUiShellContractTests
         int watch = source.IndexOf("await ViewModel.StartAsync()", StringComparison.Ordinal);
         Assert.True(load >= 0 && load < apply && apply < subscribe && subscribe < watch);
 
-        int initializeCore = source.IndexOf(
-            "private async Task InitializeCoreAsync()",
-            StringComparison.Ordinal);
-        int propertyChanged = source.IndexOf(
-            "private void OnViewModelPropertyChanged",
-            initializeCore,
-            StringComparison.Ordinal);
-        Assert.True(initializeCore >= 0 && initializeCore < propertyChanged);
-        string readinessPath = source[initializeCore..propertyChanged];
-        Assert.Contains("_ = RefreshDisplaySettingsAsync();", readinessPath, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "await RefreshDisplaySettingsAsync();",
-            readinessPath,
-            StringComparison.Ordinal);
-
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         Assert.Contains(
             "windowInitializationTask = mainWindow.InitializeAsync()",
@@ -1696,6 +1681,59 @@ public sealed class WinUiShellContractTests
         Assert.True(
             app.IndexOf("await windowInitializationTask", StringComparison.Ordinal)
             < app.LastIndexOf("exitLifecycle.TryRunWhileActive", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MainWindowStartsInitialDisplayRefreshWithoutBlockingReadiness()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int initializeCore = source.IndexOf(
+            "private async Task InitializeCoreAsync()",
+            StringComparison.Ordinal);
+        int propertyChanged = source.IndexOf(
+            "private void OnViewModelPropertyChanged",
+            initializeCore,
+            StringComparison.Ordinal);
+        Assert.True(initializeCore >= 0 && initializeCore < propertyChanged);
+
+        string readinessPath = source[initializeCore..propertyChanged];
+        Assert.Contains(
+            "_ = RefreshDisplaySettingsAsync();",
+            readinessPath,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "await RefreshDisplaySettingsAsync();",
+            readinessPath,
+            StringComparison.Ordinal);
+
+        int refreshMethod = source.IndexOf(
+            "private Task RefreshDisplaySettingsAsync()",
+            StringComparison.Ordinal);
+        int displaySettingsChanged = source.IndexOf(
+            "private void OnDisplayUserSettingsChanged",
+            refreshMethod,
+            StringComparison.Ordinal);
+        Assert.True(refreshMethod >= 0 && refreshMethod < displaySettingsChanged);
+        string refreshPath = source[refreshMethod..displaySettingsChanged];
+        Assert.Contains(
+            "displayRefreshTask is { IsCompleted: false } activeRefresh",
+            refreshPath,
+            StringComparison.Ordinal);
+        Assert.Contains("return activeRefresh;", refreshPath, StringComparison.Ordinal);
+
+        int timerTick = source.IndexOf(
+            "private async void OnDisplayRefreshTimerTick",
+            StringComparison.Ordinal);
+        int pinnedCheck = source.IndexOf(
+            "private bool IsDashboardCardPinned",
+            timerTick,
+            StringComparison.Ordinal);
+        Assert.True(timerTick >= 0 && timerTick < pinnedCheck);
+        string timerPath = source[timerTick..pinnedCheck];
+        Assert.Contains(
+            "|| IsDisplayRefreshInProgress",
+            timerPath,
+            StringComparison.Ordinal);
     }
 
     [Fact]

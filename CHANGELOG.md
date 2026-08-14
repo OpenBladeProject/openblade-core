@@ -21,9 +21,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Made the main window and tray dashboard available before the initial display
-  query finishes, so profile controls appear while slower service and firmware
-  checks continue in the background.
 - Replaced the tray-dashboard customization dialog with a dedicated Settings
   page that shows only active controls and adjustments, keeps inactive choices
   in **Add** menus, exposes the two-adjustment limit, and updates the pinned tray
@@ -39,6 +36,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Made the main window and tray dashboard available before the initial display
+  query finishes, while coalescing display refreshes so a slow Session Agent
+  response cannot queue redundant follow-up queries.
 - Limited the tray-dashboard status row to three configurable readings so its
   icons and labels remain distinct instead of clipping in the fixed-width popup.
 - Reduced tray-dashboard background work by sharing one visible-surface
