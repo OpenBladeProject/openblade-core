@@ -770,7 +770,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
         DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
         DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
-        await RefreshDisplaySettingsAsync();
+        _ = RefreshDisplaySettingsAsync();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
