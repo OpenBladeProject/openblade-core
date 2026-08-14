@@ -10,7 +10,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Added a **Close GPU apps** action to Power mode. It finds current-user apps
   actively using NVIDIA WDDM engines without waking an idle GPU, shows the exact
   targets, asks them to close, and offers an explicit force-close step for
-  survivors while protecting Windows, OpenBlade, and other sessions.
+  survivors while protecting Windows, OpenBlade, and other sessions. The action
+  stays hidden when no active NVIDIA GPU users are detected.
 
 ### Fixed
 

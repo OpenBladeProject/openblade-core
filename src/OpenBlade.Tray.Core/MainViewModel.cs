@@ -196,6 +196,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private IReadOnlyList<LightingSettings> availableLightingSettings = [];
     private bool isPerformanceVisible;
     private bool isFanControlVisible;
+    private bool isGpuAppCleanupVisible;
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
@@ -1584,6 +1585,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         get => isFanControlVisible;
         private set => SetField(ref isFanControlVisible, value);
+    }
+
+    public bool IsGpuAppCleanupVisible
+    {
+        get => isGpuAppCleanupVisible;
+        private set => SetField(ref isGpuAppCleanupVisible, value);
     }
 
     public bool IsLightingVisible => true;
@@ -3917,6 +3924,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public Task ObserveTrayStateAsync(CancellationToken cancellationToken) =>
         ObserveStateAsync(includeDashboardReadings: false, cancellationToken);
+
+    public Task SetGpuAppCleanupVisibleAsync(
+        bool visible,
+        CancellationToken cancellationToken) =>
+        dispatcher.InvokeAsync(
+            () => IsGpuAppCleanupVisible = visible,
+            cancellationToken);
 
     private async Task ObserveStateAsync(
         bool includeDashboardReadings,

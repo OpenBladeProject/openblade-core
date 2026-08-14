@@ -10,6 +10,25 @@ namespace OpenBlade.Tray.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public async Task GpuAppCleanupVisibilityPublishesConfirmedChanges()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+        List<string?> changed = [];
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        await viewModel.SetGpuAppCleanupVisibleAsync(true, CancellationToken.None);
+        await viewModel.SetGpuAppCleanupVisibleAsync(true, CancellationToken.None);
+        await viewModel.SetGpuAppCleanupVisibleAsync(false, CancellationToken.None);
+
+        Assert.False(viewModel.IsGpuAppCleanupVisible);
+        Assert.Equal(
+            2,
+            changed.Count(name => name == nameof(MainViewModel.IsGpuAppCleanupVisible)));
+    }
+
+    [Fact]
     public async Task FirmwareCards_PresentInstalledMcuVersionConsistently()
     {
         var firmware = new FirmwareVersions(

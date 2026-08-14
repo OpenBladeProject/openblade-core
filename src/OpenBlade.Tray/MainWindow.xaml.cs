@@ -36,6 +36,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private static readonly TimeSpan LightingCommitDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan GpuClockOffsetCommitDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan DisplayRefreshInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan GpuAppObservationInterval = TimeSpan.FromSeconds(2);
 
     private readonly DispatcherQueue dispatcherQueue;
     private readonly MicaBackdropHost micaBackdropHost;
@@ -44,6 +45,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
     private readonly VisibleObservationLoop trayObservationLoop;
+    private readonly VisibleObservationLoop gpuAppObservationLoop;
     private readonly WindowsProcessorEfficiencyPolicy processorPolicy;
     private readonly Func<TrayNotification, bool> showNotification;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
@@ -168,6 +170,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "OpenBlade on-demand tray telemetry refresh failed: {0}",
                 exception),
             observationIntervalProvider: () => Timeout.InfiniteTimeSpan);
+        gpuAppObservationLoop = new VisibleObservationLoop(
+            ObserveGpuAppActivityAsync,
+            errorHandler: exception => Trace.TraceWarning(
+                "OpenBlade GPU app visibility refresh failed: {0}",
+                exception),
+            observationIntervalProvider: () => GpuAppObservationInterval);
         displayRefreshTimer = dispatcherQueue.CreateTimer();
         displayRefreshTimer.Interval = DisplayRefreshInterval;
         displayRefreshTimer.IsRepeating = true;
@@ -338,6 +346,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             HomePage.Visibility == Visibility.Visible);
         trayObservationLoop.Stop();
         visibleObservationLoop.StartOrWake();
+        UpdateGpuAppObservationState();
         UpdateDisplayRefreshState();
         AppWindow.Show(true);
     }
@@ -348,6 +357,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ViewModel.SetDashboardTelemetryPresentationActive(false);
         visibleObservationLoop.Stop();
         trayObservationLoop.Stop();
+        gpuAppObservationLoop.Stop();
         displayRefreshTimer.Stop();
         _ = processorPolicy.TryPreferEfficientProcessorsForCurrentThread();
         _ = processorPolicy.TrySetProcessEcoQos(enabled: true);
@@ -482,6 +492,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await DisposeComponentSafelyAsync(
             "on-demand tray observation loop",
             trayObservationLoop.DisposeAsync);
+        await DisposeComponentSafelyAsync(
+            "GPU app observation loop",
+            gpuAppObservationLoop.DisposeAsync);
         await DisposeComponentSafelyAsync(
             "update checker",
             UpdateViewModel.DisposeAsync);
@@ -1631,6 +1644,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         try
         {
             SessionGpuResponse scan = await gpuAppAdapter.QueryAsync(CancellationToken.None);
+            await ApplyGpuAppVisibilityAsync(scan, CancellationToken.None);
 
             if (scan.Status == SessionGpuOperationStatus.Failed)
             {
@@ -1679,6 +1693,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             await Task.Delay(TimeSpan.FromSeconds(2));
             SessionGpuResponse afterClose = await gpuAppAdapter.QueryAsync(
                 CancellationToken.None);
+            await ApplyGpuAppVisibilityAsync(afterClose, CancellationToken.None);
             if (afterClose.Status == SessionGpuOperationStatus.Failed)
             {
                 await ShowGpuAppsMessageAsync(
@@ -1717,6 +1732,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 CancellationToken.None);
             await Task.Delay(TimeSpan.FromMilliseconds(750));
             SessionGpuResponse finalScan = await gpuAppAdapter.QueryAsync(CancellationToken.None);
+            await ApplyGpuAppVisibilityAsync(finalScan, CancellationToken.None);
             if (finalScan.Status == SessionGpuOperationStatus.Failed)
             {
                 await ShowGpuAppsMessageAsync(
@@ -1757,6 +1773,22 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             button.SetValue(Microsoft.UI.Xaml.Controls.Control.IsEnabledProperty, true);
         }
     }
+
+    private async Task ObserveGpuAppActivityAsync(CancellationToken cancellationToken)
+    {
+        SessionGpuResponse scan = await gpuAppAdapter.QueryAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await ApplyGpuAppVisibilityAsync(scan, cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task ApplyGpuAppVisibilityAsync(
+        SessionGpuResponse scan,
+        CancellationToken cancellationToken) =>
+        scan.Status == SessionGpuOperationStatus.Failed
+            ? Task.CompletedTask
+            : ViewModel.SetGpuAppCleanupVisibleAsync(
+                scan.Apps.Count > 0,
+                cancellationToken);
 
     private async Task ShowGpuAppsMessageAsync(string title, string message)
     {
@@ -2574,6 +2606,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             : Visibility.Collapsed;
         ViewModel.SetDashboardTelemetryPresentationActive(
             windowVisible && destination == "home");
+        UpdateGpuAppObservationState();
         if (destination == "profiles")
         {
             dispatcherQueue.TryEnqueue(
@@ -2606,6 +2639,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         UpdateDisplayRefreshState();
+    }
+
+    private void UpdateGpuAppObservationState()
+    {
+        if (windowVisible && HomePage.Visibility == Visibility.Visible)
+        {
+            gpuAppObservationLoop.StartOrWake();
+        }
+        else
+        {
+            gpuAppObservationLoop.Stop();
+        }
     }
 
     private async void OnDisplayRefreshTimerTick(

@@ -72,6 +72,10 @@ public sealed class WinUiShellContractTests
             "SettingsNeutralSubcardStyle",
             gpuAppsRow,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "local:AnimatedVisibility.IsVisible=\"{Binding IsGpuAppCleanupVisible}\"",
+            gpuAppsRow,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(
             "SettingsLastSubcardStyle",
             gpuAppsRow,
@@ -1637,6 +1641,10 @@ public sealed class WinUiShellContractTests
 
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveStateAsync", window, StringComparison.Ordinal);
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync", window, StringComparison.Ordinal);
+        Assert.Contains("ObserveGpuAppActivityAsync", window, StringComparison.Ordinal);
+        Assert.Contains("gpuAppObservationLoop.StartOrWake()", window, StringComparison.Ordinal);
+        Assert.Contains("gpuAppObservationLoop.Stop()", window, StringComparison.Ordinal);
+        Assert.Contains("gpuAppObservationLoop.DisposeAsync", window, StringComparison.Ordinal);
         Assert.Contains("observationIntervalProvider: () => Timeout.InfiniteTimeSpan", window, StringComparison.Ordinal);
         Assert.Contains("trayIcon.MouseMove += OnTrayIconMouseMove", trayHost, StringComparison.Ordinal);
         int mouseMoveHandler = trayHost.IndexOf(

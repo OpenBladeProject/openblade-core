@@ -645,7 +645,9 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
-                                    CornerRadius="0,0,8,8">
+                                    CornerRadius="0,0,8,8"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsGpuAppCleanupVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
