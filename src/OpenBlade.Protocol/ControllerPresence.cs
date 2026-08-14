@@ -52,9 +52,9 @@ public sealed class WindowsControllerPresenceMonitor(
             potentialControllers.AddRange(serviceSource
                 .GetServices()
                 .Where(service => IsActive(service.State))
-                .Where(service =>
-                    RazerControllerServiceAliases.Contains(service.ServiceName)
-                    || RazerControllerServiceAliases.Contains(service.DisplayName))
+                .Where(service => RazerControllerServiceAliases.MatchesService(
+                    service.ServiceName,
+                    service.DisplayName))
                 .Select(service => RazerControllerServiceAliases.Contains(service.DisplayName)
                     ? service.DisplayName
                     : service.ServiceName));

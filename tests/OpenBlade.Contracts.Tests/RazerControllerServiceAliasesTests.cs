@@ -29,4 +29,18 @@ public sealed class RazerControllerServiceAliasesTests
     {
         Assert.False(RazerControllerServiceAliases.Contains(alias));
     }
+
+    [Theory]
+    [InlineData("RGS", "Unknown display name", true)]
+    [InlineData("unexpected", "RGS", false)]
+    [InlineData("unexpected", "Razer Synapse Service", true)]
+    public void MatchesServiceDistinguishesInternalAndDisplayNameAliases(
+        string serviceName,
+        string displayName,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            RazerControllerServiceAliases.MatchesService(serviceName, displayName));
+    }
 }

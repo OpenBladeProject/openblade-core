@@ -18,6 +18,7 @@ public sealed class RazerServiceStopOperationTests
         [
             Snapshot("RGS", "Unknown display name"),
             Snapshot("unexpected", "Razer Synapse Service"),
+            Snapshot("unrelated", "RGS"),
             Snapshot("Razer Elevation Service", "Razer Elevation Service"),
             Snapshot("Razer Game Manager Service 3", "Razer Game Manager Service 3"),
             Snapshot("RazerSynapseServiceHelper", "Razer Synapse Service Helper"),
@@ -96,7 +97,7 @@ public sealed class RazerServiceStopOperationTests
             (_, _) =>
             {
                 stopCalls++;
-                return Task.FromResult(true);
+                return Task.FromResult(RazerServiceStopResult.Stopped);
             },
             CancellationToken.None);
 
@@ -126,8 +127,8 @@ public sealed class RazerServiceStopOperationTests
                 return serviceName switch
                 {
                     "RGS" => throw new InvalidOperationException("access denied"),
-                    "RazerSynapseService" => Task.FromResult(false),
-                    _ => Task.FromResult(true),
+                    "RazerSynapseService" => Task.FromResult(RazerServiceStopResult.TimedOut),
+                    _ => Task.FromResult(RazerServiceStopResult.Stopped),
                 };
             },
             CancellationToken.None);
@@ -144,12 +145,32 @@ public sealed class RazerServiceStopOperationTests
     }
 
     [Fact]
+    public async Task ExecuteReportsNonStoppableServiceWithoutCallingItATimeout()
+    {
+        RazerServiceInventory inventory = RazerServiceStopOperation.CreateInventory(
+        [
+            Snapshot("RazerSynapseService", "Razer Synapse Service"),
+        ]);
+
+        RazerServiceStopExecutionResult result = await RazerServiceStopOperation.ExecuteAsync(
+            () => inventory,
+            (_, _) => Task.FromResult(RazerServiceStopResult.NotStoppable),
+            CancellationToken.None);
+
+        RazerServiceStopFailure failure = Assert.Single(result.Failures);
+        Assert.Equal(
+            "The service does not currently accept stop control.",
+            failure.Message);
+        Assert.DoesNotContain("bounded wait", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task StopOneAlreadyStoppedDoesNotRequestStopOrDelay()
     {
         int stopCalls = 0;
         int delayCalls = 0;
 
-        bool result = await RazerServiceStopOperation.StopOneAsync(
+        RazerServiceStopResult result = await RazerServiceStopOperation.StopOneAsync(
             () => ServiceControllerStatus.Stopped,
             () => true,
             () => stopCalls++,
@@ -162,7 +183,7 @@ public sealed class RazerServiceStopOperationTests
             TimeSpan.FromMilliseconds(1),
             CancellationToken.None);
 
-        Assert.True(result);
+        Assert.Equal(RazerServiceStopResult.Stopped, result);
         Assert.Equal(0, stopCalls);
         Assert.Equal(0, delayCalls);
     }
@@ -179,7 +200,7 @@ public sealed class RazerServiceStopOperationTests
         ]);
         int stopCalls = 0;
 
-        bool result = await RazerServiceStopOperation.StopOneAsync(
+        RazerServiceStopResult result = await RazerServiceStopOperation.StopOneAsync(
             () => states.Dequeue(),
             () => true,
             () => stopCalls++,
@@ -188,7 +209,7 @@ public sealed class RazerServiceStopOperationTests
             TimeSpan.FromMilliseconds(1),
             CancellationToken.None);
 
-        Assert.True(result);
+        Assert.Equal(RazerServiceStopResult.Stopped, result);
         Assert.Equal(1, stopCalls);
         Assert.Empty(states);
     }
@@ -203,7 +224,7 @@ public sealed class RazerServiceStopOperationTests
         ]);
         int stopCalls = 0;
 
-        bool result = await RazerServiceStopOperation.StopOneAsync(
+        RazerServiceStopResult result = await RazerServiceStopOperation.StopOneAsync(
             () => states.Dequeue(),
             () => true,
             () => stopCalls++,
@@ -212,7 +233,7 @@ public sealed class RazerServiceStopOperationTests
             TimeSpan.FromMilliseconds(1),
             CancellationToken.None);
 
-        Assert.True(result);
+        Assert.Equal(RazerServiceStopResult.Stopped, result);
         Assert.Equal(0, stopCalls);
     }
 
@@ -221,7 +242,7 @@ public sealed class RazerServiceStopOperationTests
     {
         int stopCalls = 0;
 
-        bool result = await RazerServiceStopOperation.StopOneAsync(
+        RazerServiceStopResult result = await RazerServiceStopOperation.StopOneAsync(
             () => ServiceControllerStatus.Running,
             () => true,
             () => stopCalls++,
@@ -230,7 +251,7 @@ public sealed class RazerServiceStopOperationTests
             TimeSpan.FromMilliseconds(1),
             CancellationToken.None);
 
-        Assert.False(result);
+        Assert.Equal(RazerServiceStopResult.TimedOut, result);
         Assert.Equal(1, stopCalls);
     }
 
@@ -239,7 +260,7 @@ public sealed class RazerServiceStopOperationTests
     {
         int stopCalls = 0;
 
-        bool result = await RazerServiceStopOperation.StopOneAsync(
+        RazerServiceStopResult result = await RazerServiceStopOperation.StopOneAsync(
             () => ServiceControllerStatus.Running,
             () => false,
             () => stopCalls++,
@@ -248,7 +269,7 @@ public sealed class RazerServiceStopOperationTests
             TimeSpan.FromMilliseconds(1),
             CancellationToken.None);
 
-        Assert.False(result);
+        Assert.Equal(RazerServiceStopResult.NotStoppable, result);
         Assert.Equal(0, stopCalls);
     }
 

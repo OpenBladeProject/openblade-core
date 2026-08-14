@@ -21,6 +21,13 @@ internal sealed record RazerServiceStopFailure(
     string DisplayName,
     string Message);
 
+internal enum RazerServiceStopResult
+{
+    Stopped,
+    NotStoppable,
+    TimedOut,
+}
+
 internal sealed record RazerServiceStopExecutionResult(
     IReadOnlyList<RazerServiceSnapshot> Candidates,
     IReadOnlyList<RazerServiceStopFailure> Failures,
@@ -152,7 +159,7 @@ internal static class RazerServiceStopOperation
 
     internal static async Task<RazerServiceStopExecutionResult> ExecuteAsync(
         Func<RazerServiceInventory> readInventory,
-        Func<string, CancellationToken, Task<bool>> stopAsync,
+        Func<string, CancellationToken, Task<RazerServiceStopResult>> stopAsync,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(readInventory);
@@ -172,13 +179,18 @@ internal static class RazerServiceStopOperation
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                if (!await stopAsync(candidate.ServiceName, cancellationToken)
-                    .ConfigureAwait(false))
+                RazerServiceStopResult result = await stopAsync(
+                        candidate.ServiceName,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (result != RazerServiceStopResult.Stopped)
                 {
                     failures.Add(new(
                         candidate.ServiceName,
                         candidate.DisplayName,
-                        "The service did not reach Stopped before the bounded wait ended."));
+                        result == RazerServiceStopResult.NotStoppable
+                            ? "The service does not currently accept stop control."
+                            : "The service did not reach Stopped before the bounded wait ended."));
                 }
             }
             catch (OperationCanceledException)
@@ -198,7 +210,7 @@ internal static class RazerServiceStopOperation
         return new(candidates, failures, null);
     }
 
-    internal static async Task<bool> StopOneAsync(
+    internal static async Task<RazerServiceStopResult> StopOneAsync(
         Func<ServiceControllerStatus> readStatus,
         Func<bool> readCanStop,
         Action stop,
@@ -227,7 +239,7 @@ internal static class RazerServiceStopOperation
             ServiceControllerStatus status = readStatus();
             if (status == ServiceControllerStatus.Stopped)
             {
-                return true;
+                return RazerServiceStopResult.Stopped;
             }
 
             if (!stopRequested
@@ -236,7 +248,7 @@ internal static class RazerServiceStopOperation
             {
                 if (!readCanStop())
                 {
-                    return false;
+                    return RazerServiceStopResult.NotStoppable;
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
@@ -249,7 +261,7 @@ internal static class RazerServiceStopOperation
                     and not ServiceControllerStatus.PausePending
                     and not ServiceControllerStatus.StopPending)
             {
-                return false;
+                return RazerServiceStopResult.NotStoppable;
             }
 
             if (poll + 1 < maximumPolls)
@@ -258,10 +270,10 @@ internal static class RazerServiceStopOperation
             }
         }
 
-        return false;
+        return RazerServiceStopResult.TimedOut;
     }
 
-    private static async Task<bool> StopWindowsServiceAsync(
+    private static async Task<RazerServiceStopResult> StopWindowsServiceAsync(
         string serviceName,
         CancellationToken cancellationToken)
     {
@@ -288,6 +300,5 @@ internal static class RazerServiceStopOperation
     private static bool IsKnownControllerService(
         string serviceName,
         string displayName) =>
-        RazerControllerServiceAliases.Contains(serviceName)
-        || RazerControllerServiceAliases.Contains(displayName);
+        RazerControllerServiceAliases.MatchesService(serviceName, displayName);
 }

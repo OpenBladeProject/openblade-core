@@ -1022,10 +1022,13 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "Stop Razer services",
             Attribute(stopRazerServices, "AutomationProperties.Name"));
-        XElement razerSoftwareRow = stopRazerServices.Ancestors().First(element =>
+        XElement razerServicesRow = stopRazerServices.Ancestors().First(element =>
             element.Name.LocalName == "Border"
             && Attribute(element, "Style") == "{StaticResource TroubleshootingSectionStyle}");
-        Assert.Contains(razerSoftwareRow.Descendants(), element =>
+        Assert.Contains(razerServicesRow.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Razer background services");
+        Assert.DoesNotContain(razerServicesRow.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Other Razer software running");
         foreach (string label in new[]
@@ -1035,6 +1038,7 @@ public sealed class CapabilityPresentationTests
                      "Keyboard driver mode",
                      "Power source",
                      "Other Razer software running",
+                     "Razer background services",
                  })
         {
             Assert.Contains(troubleshooting.Descendants(), element =>

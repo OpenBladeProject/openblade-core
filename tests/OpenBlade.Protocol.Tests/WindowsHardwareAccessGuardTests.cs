@@ -58,7 +58,10 @@ public sealed class WindowsHardwareAccessGuardTests
     {
         WindowsHardwareAccessGuard guard = CreateGuard(
             [],
-            [new WindowsServiceSnapshot("unmatched-internal-name", alias, WindowsServiceState.Running)]);
+            [new WindowsServiceSnapshot(
+                alias == "RGS" ? alias : "unmatched-internal-name",
+                alias,
+                WindowsServiceState.Running)]);
 
         HardwareAccessDecision result = guard.Check();
 

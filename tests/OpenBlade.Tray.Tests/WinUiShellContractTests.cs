@@ -539,6 +539,27 @@ public sealed class WinUiShellContractTests
         Assert.Contains("StopRazerServicesProgressRing.IsActive = isBusy", window, StringComparison.Ordinal);
         Assert.Contains("busyLabel: \"Checking…\"", window, StringComparison.Ordinal);
         Assert.Contains("busyLabel: \"Stopping…\"", window, StringComparison.Ordinal);
+        Assert.Contains("HandleStopRazerServicesAsync", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "await RunHandlerAsync(\r\n            HandleStopRazerServicesAsync",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Volatile.Read(ref disposed) != 0 || Root.XamlRoot is not { } xamlRoot",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "OpenBlade could not show the '{0}' dialog",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains("contentDialogGate.WaitAsync()", window, StringComparison.Ordinal);
+        Assert.Contains("contentDialogGate.Release()", window, StringComparison.Ordinal);
+        Assert.Contains("dialog.XamlRoot = xamlRoot", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "Volatile.Read(ref disposed) == 0 && Root.XamlRoot is not null",
+            window,
+            StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(window, "await dialog.ShowAsync()"));
         Assert.Contains("#47E10C", app, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("x:Name=\"SettingsPageHeader\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Update channel\"", xaml, StringComparison.Ordinal);
