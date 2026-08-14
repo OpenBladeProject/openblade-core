@@ -512,10 +512,11 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void SettingsExposeReorderableTelemetryAndDestructiveShutdown()
+    public void SettingsExposeReorderableTelemetryAndTroubleshootingServiceControl()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
         Assert.Contains("ViewModel.DashboardTelemetryItems", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.TrayHoverLabelItems", xaml, StringComparison.Ordinal);
@@ -525,6 +526,40 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ReorderMode=\"Enabled\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource DestructiveButtonStyle}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Shutdown\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"StopRazerServicesButton\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnStopRazerServices\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Stop Razer services?", window, StringComparison.Ordinal);
+        Assert.Contains("Razer software may start the services again", window, StringComparison.Ordinal);
+        Assert.Contains("PrimaryButtonStyle = (Style)Root.Resources[\"DestructiveButtonStyle\"]", window, StringComparison.Ordinal);
+        Assert.Contains("RazerServiceStopOperation.ActiveServices", window, StringComparison.Ordinal);
+        Assert.Contains("ElevatedServiceControlOutcome.Canceled", window, StringComparison.Ordinal);
+        Assert.Contains("OpenBlade did not retry any stop request", window, StringComparison.Ordinal);
+        Assert.Contains("StopRazerServicesProgressRing.IsActive = isBusy", window, StringComparison.Ordinal);
+        Assert.Contains("busyLabel: \"Checking…\"", window, StringComparison.Ordinal);
+        Assert.Contains("busyLabel: \"Stopping…\"", window, StringComparison.Ordinal);
+        Assert.Contains("HandleStopRazerServicesAsync", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "await RunHandlerAsync(\r\n            HandleStopRazerServicesAsync",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Volatile.Read(ref disposed) != 0 || Root.XamlRoot is not { } xamlRoot",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "OpenBlade could not show the '{0}' dialog",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains("contentDialogGate.WaitAsync()", window, StringComparison.Ordinal);
+        Assert.Contains("contentDialogGate.Release()", window, StringComparison.Ordinal);
+        Assert.Contains("dialog.XamlRoot = xamlRoot", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "Volatile.Read(ref disposed) == 0 && Root.XamlRoot is not null",
+            window,
+            StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(window, "await dialog.ShowAsync()"));
         Assert.Contains("#47E10C", app, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("x:Name=\"SettingsPageHeader\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Update channel\"", xaml, StringComparison.Ordinal);
@@ -545,6 +580,19 @@ public sealed class WinUiShellContractTests
             "Toggled=\"OnExternalLightingOverridePolicyToggled\"",
             xaml,
             StringComparison.Ordinal);
+
+        int settingsShutdown = xaml.IndexOf(
+            "x:Name=\"SettingsShutdownSection\"",
+            StringComparison.Ordinal);
+        int troubleshooting = xaml.IndexOf(
+            "x:Name=\"TroubleshootingExpander\"",
+            StringComparison.Ordinal);
+        int stopRazerServices = xaml.IndexOf(
+            "x:Name=\"StopRazerServicesButton\"",
+            StringComparison.Ordinal);
+        Assert.True(settingsShutdown >= 0);
+        Assert.True(troubleshooting > settingsShutdown);
+        Assert.True(stopRazerServices > troubleshooting);
 
         int dashboardSelector = xaml.IndexOf(
             "Text=\"Shown on Dashboard\"",
@@ -1319,6 +1367,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("new CancellationTokenSource(TimeSpan.FromSeconds(10))", app, StringComparison.Ordinal);
         Assert.Contains("serviceClient.ShutdownOpenBladeAsync", app, StringComparison.Ordinal);
         Assert.Contains("WindowsServiceStartOperation.StartAsync", app, StringComparison.Ordinal);
+        Assert.Contains("RazerServiceStopOperation.StopAllAsync", app, StringComparison.Ordinal);
+        Assert.Contains("OpenBlade.Tray.StopRazerServicesHelper", app, StringComparison.Ordinal);
+        Assert.Contains("RazerServiceStopHardExitTimeout", app, StringComparison.Ordinal);
+        Assert.Contains("_ => Environment.Exit(1)", app, StringComparison.Ordinal);
         Assert.Contains("new CancellationTokenSource(TimeSpan.FromSeconds(65))", app, StringComparison.Ordinal);
         string helper = SliceMethod(
             app,

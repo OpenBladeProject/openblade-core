@@ -1008,6 +1008,34 @@ public sealed class CapabilityPresentationTests
             "ViewModel.IsServiceUnavailable",
             Attribute(startService, "Visibility"),
             StringComparison.Ordinal);
+        XElement stopRazerServices = NamedElement(
+            document,
+            "Button",
+            "StopRazerServicesButton");
+        Assert.Contains(
+            troubleshooting.Descendants(),
+            element => ReferenceEquals(element, stopRazerServices));
+        Assert.Equal("OnStopRazerServices", Attribute(stopRazerServices, "Click"));
+        Assert.Equal(
+            "{StaticResource DestructiveButtonStyle}",
+            Attribute(stopRazerServices, "Style"));
+        Assert.Equal(
+            "Stop Razer services",
+            Attribute(stopRazerServices, "AutomationProperties.Name"));
+        XElement razerServicesRow = stopRazerServices.Ancestors().First(element =>
+            element.Name.LocalName == "Border"
+            && Attribute(element, "Style") == "{StaticResource TroubleshootingSectionStyle}");
+        Assert.Contains(razerServicesRow.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Other Razer software running");
+        Assert.Contains(razerServicesRow.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text")?.Contains(
+                "ViewModel.TroubleshootingOtherRazerSoftwareStatus",
+                StringComparison.Ordinal) is true);
+        Assert.DoesNotContain(razerServicesRow.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Razer background services");
         foreach (string label in new[]
                  {
                      "OpenBlade service",

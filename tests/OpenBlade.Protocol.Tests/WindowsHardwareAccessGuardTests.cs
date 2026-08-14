@@ -58,7 +58,10 @@ public sealed class WindowsHardwareAccessGuardTests
     {
         WindowsHardwareAccessGuard guard = CreateGuard(
             [],
-            [new WindowsServiceSnapshot("unmatched-internal-name", alias, WindowsServiceState.Running)]);
+            [new WindowsServiceSnapshot(
+                alias == "RGS" ? alias : "unmatched-internal-name",
+                alias,
+                WindowsServiceState.Running)]);
 
         HardwareAccessDecision result = guard.Check();
 
@@ -122,6 +125,21 @@ public sealed class WindowsHardwareAccessGuardTests
         HardwareAccessDecision result = guard.Check();
 
         Assert.Equal(["RGS"], result.Conflicts);
+    }
+
+    [Fact]
+    public void Check_MatchesSynapseInternalServiceNameWhenDisplayNameIsUnknown()
+    {
+        WindowsHardwareAccessGuard guard = CreateGuard(
+            [],
+            [new WindowsServiceSnapshot(
+                "RazerSynapseService",
+                "Unknown display name",
+                WindowsServiceState.Running)]);
+
+        HardwareAccessDecision result = guard.Check();
+
+        Assert.Equal(["RazerSynapseService"], result.Conflicts);
     }
 
     [Fact]

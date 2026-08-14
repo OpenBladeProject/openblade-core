@@ -37,6 +37,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private static readonly TimeSpan DisplayRefreshInterval = TimeSpan.FromSeconds(2);
 
     private readonly DispatcherQueue dispatcherQueue;
+    private readonly SemaphoreSlim contentDialogGate = new(1, 1);
     private readonly MicaBackdropHost micaBackdropHost;
     private readonly AccentColorManager accentColorManager;
     private readonly UiPreferenceStore preferenceStore;
@@ -1382,7 +1383,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             DefaultButton = ContentDialogButton.Primary,
         };
 
-        ContentDialogResult result = await dialog.ShowAsync();
+        ContentDialogResult? result = await ShowContentDialogAsync(dialog);
+        if (result is null)
+        {
+            return;
+        }
+
         UpdateViewModel.RecordConsent(result == ContentDialogResult.Primary
             ? UpdateCheckInterval.Daily
             : UpdateCheckInterval.ManualOnly);
@@ -2848,7 +2854,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             CloseButtonText = "Close",
             DefaultButton = ContentDialogButton.Close,
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary
+        if (await ShowContentDialogAsync(dialog) != ContentDialogResult.Primary
             || runAnyway?.IsChecked is not bool enabled
             || enabled == ViewModel.AllowUntestedFirmware)
         {
@@ -2876,6 +2882,231 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             });
     }
 
+    private async void OnStopRazerServices(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            HandleStopRazerServicesAsync,
+            nameof(OnStopRazerServices));
+
+    private async Task HandleStopRazerServicesAsync()
+    {
+        if (!StopRazerServicesButton.IsEnabled)
+        {
+            return;
+        }
+
+        SetStopRazerServicesProgress(isBusy: true, busyLabel: "Checking…");
+        try
+        {
+            RazerServiceInventory before = await RazerServiceStopOperation.ObserveAsync(
+                CancellationToken.None);
+            if (!before.Complete)
+            {
+                throw new InvalidOperationException(before.Error);
+            }
+
+            IReadOnlyList<RazerServiceSnapshot> candidates =
+                RazerServiceStopOperation.ActiveServices(before);
+            if (candidates.Count == 0)
+            {
+                await ShowMessageDialogAsync(
+                    "No known Razer controller services are running",
+                    "OpenBlade found no active Synapse or Chroma controller services in its reviewed allowlist.");
+                return;
+            }
+
+            string serviceList = string.Join(
+                Environment.NewLine,
+                candidates.Select(service => $"• {service.DisplayName}"));
+            if (Volatile.Read(ref disposed) != 0 || Root.XamlRoot is not { } xamlRoot)
+            {
+                return;
+            }
+
+            var confirmation = new ContentDialog
+            {
+                XamlRoot = xamlRoot,
+                Title = "Stop Razer services?",
+                Content = "These known controller services are currently active:\n\n"
+                    + serviceList
+                    + "\n\nAfter approval, OpenBlade will freshly check the same reviewed allowlist "
+                    + "and stop any active matches. This does not uninstall Razer software or disable service startup. "
+                    + "Razer software may start the services again, and features that depend on them may stop working until then.",
+                PrimaryButtonText = "Stop services",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                PrimaryButtonStyle = (Style)Root.Resources["DestructiveButtonStyle"],
+            };
+            if (await ShowContentDialogAsync(confirmation) != ContentDialogResult.Primary
+                || Volatile.Read(ref disposed) != 0)
+            {
+                return;
+            }
+
+            SetStopRazerServicesProgress(isBusy: true, busyLabel: "Stopping…");
+
+            if (Microsoft.UI.Xaml.Application.Current is not App app)
+            {
+                throw new InvalidOperationException("The OpenBlade application is unavailable.");
+            }
+
+            ElevatedServiceControlOutcome outcome = await app.StopRazerServicesAsync();
+            if (outcome == ElevatedServiceControlOutcome.Canceled)
+            {
+                await ShowMessageDialogAsync(
+                    "Razer service stop canceled",
+                    "Windows did not grant administrator permission. OpenBlade did not retry the request.");
+                return;
+            }
+
+            RazerServiceInventory after = await RazerServiceStopOperation.ObserveAsync(
+                CancellationToken.None);
+            await ShowRazerServiceStopResultAsync(candidates, after, outcome);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("Razer service stop failed: {0}", exception);
+            await ShowMessageDialogAsync(
+                "OpenBlade could not stop Razer services",
+                exception.Message);
+        }
+        finally
+        {
+            if (Volatile.Read(ref disposed) == 0)
+            {
+                SetStopRazerServicesProgress(isBusy: false, busyLabel: null);
+            }
+        }
+    }
+
+    private async Task ShowRazerServiceStopResultAsync(
+        IReadOnlyList<RazerServiceSnapshot> candidates,
+        RazerServiceInventory after,
+        ElevatedServiceControlOutcome helperOutcome)
+    {
+        if (!after.Complete)
+        {
+            await ShowMessageDialogAsync(
+                "Razer service status is unconfirmed",
+                "The elevated request finished, but OpenBlade could not read the final service state. "
+                    + after.Error);
+            return;
+        }
+
+        RazerServiceStopReadback readback = RazerServiceStopOperation.EvaluateReadback(
+            candidates,
+            after);
+        IReadOnlyList<RazerServiceSnapshot> remaining = readback.RemainingActive;
+        IReadOnlyList<string> stopped = readback.StoppedOrRemoved;
+
+        if (remaining.Count == 0)
+        {
+            string note = helperOutcome == ElevatedServiceControlOutcome.Indeterminate
+                ? "\n\nThe helper result was indeterminate, but fresh readback confirms the services are stopped or no longer installed."
+                : string.Empty;
+            await ShowMessageDialogAsync(
+                "Razer services stopped",
+                string.Join(Environment.NewLine, stopped.Select(service => $"• {service}"))
+                    + note);
+            return;
+        }
+
+        string content = stopped.Count == 0
+            ? string.Empty
+            : "Stopped or no longer installed:\n"
+                + string.Join(Environment.NewLine, stopped.Select(service => $"• {service}"))
+                + "\n\n";
+        content += "Still active or pending:\n"
+            + string.Join(
+                Environment.NewLine,
+                remaining.Select(service => $"• {service.DisplayName}"))
+            + "\n\nOpenBlade did not retry any stop request.";
+        await ShowMessageDialogAsync(
+            "Some Razer services could not be confirmed stopped",
+            content);
+    }
+
+    private async Task<ContentDialogResult?> ShowContentDialogAsync(ContentDialog dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+        if (Volatile.Read(ref disposed) != 0)
+        {
+            return null;
+        }
+
+        await contentDialogGate.WaitAsync();
+        try
+        {
+            if (Volatile.Read(ref disposed) != 0 || Root.XamlRoot is not { } xamlRoot)
+            {
+                return null;
+            }
+
+            dialog.XamlRoot = xamlRoot;
+            ContentDialogResult result = await dialog.ShowAsync();
+            return Volatile.Read(ref disposed) == 0 && Root.XamlRoot is not null
+                ? result
+                : null;
+        }
+        catch (Exception exception)
+            when (Volatile.Read(ref disposed) != 0 || Root.XamlRoot is null)
+        {
+            Trace.TraceWarning(
+                "OpenBlade dialog closed during window teardown: {0}",
+                exception.Message);
+            return null;
+        }
+        finally
+        {
+            contentDialogGate.Release();
+        }
+    }
+
+    private async Task ShowMessageDialogAsync(string title, string content)
+    {
+        if (Volatile.Read(ref disposed) != 0 || Root.XamlRoot is not { } xamlRoot)
+        {
+            return;
+        }
+
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = xamlRoot,
+                Title = title,
+                Content = content,
+                CloseButtonText = "Close",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            await ShowContentDialogAsync(dialog);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade could not show the '{0}' dialog: {1}",
+                title,
+                exception.Message);
+        }
+    }
+
+    private void SetStopRazerServicesProgress(bool isBusy, string? busyLabel)
+    {
+        StopRazerServicesButton.IsEnabled = !isBusy;
+        StopRazerServicesProgressRing.IsActive = isBusy;
+        StopRazerServicesProgressRing.Visibility = isBusy
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        StopRazerServicesIcon.Visibility = isBusy
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        StopRazerServicesButtonLabel.Text = isBusy
+            ? busyLabel ?? "Working…"
+            : "Stop services";
+        AutomationProperties.SetName(
+            StopRazerServicesButton,
+            isBusy ? busyLabel ?? "Working with Razer services" : "Stop Razer services");
+    }
+
     private async void OnShutdownOpenBlade(object sender, RoutedEventArgs args)
     {
         var confirmation = new ContentDialog
@@ -2889,7 +3120,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             DefaultButton = ContentDialogButton.Close,
             PrimaryButtonStyle = (Style)Root.Resources["DestructiveButtonStyle"],
         };
-        if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+        if (await ShowContentDialogAsync(confirmation) != ContentDialogResult.Primary)
         {
             return;
         }
@@ -2904,15 +3135,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade shutdown failed: {0}", exception);
-            var failure = new ContentDialog
-            {
-                XamlRoot = Root.XamlRoot,
-                Title = "OpenBlade could not shut down",
-                Content = exception.Message,
-                CloseButtonText = "Close",
-                DefaultButton = ContentDialogButton.Close,
-            };
-            await failure.ShowAsync();
+            await ShowMessageDialogAsync(
+                "OpenBlade could not shut down",
+                exception.Message);
         }
     }
 
@@ -2932,30 +3157,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 if (result == StartOpenBladeResult.AlreadyRunning)
                 {
                     SetStartOpenBladeProgress(isStarting: false);
-                    var alreadyRunning = new ContentDialog
-                    {
-                        XamlRoot = Root.XamlRoot,
-                        Title = "OpenBlade service is already running",
-                        Content = "The tray will reconnect automatically. This can take a few seconds.",
-                        CloseButtonText = "Close",
-                        DefaultButton = ContentDialogButton.Close,
-                    };
-                    await alreadyRunning.ShowAsync();
+                    await ShowMessageDialogAsync(
+                        "OpenBlade service is already running",
+                        "The tray will reconnect automatically. This can take a few seconds.");
                 }
             }
         }
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade service start failed: {0}", exception);
-            var failure = new ContentDialog
-            {
-                XamlRoot = Root.XamlRoot,
-                Title = "OpenBlade could not start",
-                Content = exception.Message,
-                CloseButtonText = "Close",
-                DefaultButton = ContentDialogButton.Close,
-            };
-            await failure.ShowAsync();
+            await ShowMessageDialogAsync(
+                "OpenBlade could not start",
+                exception.Message);
         }
         finally
         {
@@ -3006,15 +3219,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade profile export failed: {0}", exception);
-            var failure = new ContentDialog
-            {
-                XamlRoot = Root.XamlRoot,
-                Title = "Profiles could not be exported",
-                Content = "OpenBlade could not save the selected JSON file.",
-                CloseButtonText = "Close",
-                DefaultButton = ContentDialogButton.Close,
-            };
-            await failure.ShowAsync();
+            await ShowMessageDialogAsync(
+                "Profiles could not be exported",
+                "OpenBlade could not save the selected JSON file.");
         }
     }
 
@@ -3084,7 +3291,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (dashboardCustomizerDialog is not null)
         {
             dashboardCustomizerRefresh?.Invoke();
-            await dashboardCustomizerDialog.ShowAsync();
+            if (await ShowContentDialogAsync(dashboardCustomizerDialog) is null)
+            {
+                return;
+            }
+
             ApplyDashboardCustomizerChanges();
             return;
         }
@@ -3136,7 +3347,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             editorCards,
             "DashboardCardOptionTemplate");
         dashboardCustomizerDialog = dialog;
-        await dialog.ShowAsync();
+        if (await ShowContentDialogAsync(dialog) is null)
+        {
+            return;
+        }
+
         ApplyDashboardCustomizerChanges();
     }
 
@@ -3540,7 +3755,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             "Check sections to show. Drag them into the order you want.",
             editorSections,
             "PageSectionOptionTemplate");
-        await dialog.ShowAsync();
+        if (await ShowContentDialogAsync(dialog) is null)
+        {
+            return;
+        }
 
         changingPageSections = true;
         try
@@ -3832,7 +4050,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        if (await ShowContentDialogAsync(dialog) != ContentDialogResult.Primary)
         {
             return;
         }
@@ -4119,7 +4337,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
             };
-            if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+            if (await ShowContentDialogAsync(confirmation) != ContentDialogResult.Primary)
             {
                 return;
             }
@@ -4133,15 +4351,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade profile import failed: {0}", exception);
-            var failure = new ContentDialog
-            {
-                XamlRoot = Root.XamlRoot,
-                Title = "Profiles could not be imported",
-                Content = exception.Message,
-                CloseButtonText = "Close",
-                DefaultButton = ContentDialogButton.Close,
-            };
-            await failure.ShowAsync();
+            await ShowMessageDialogAsync(
+                "Profiles could not be imported",
+                exception.Message);
         }
     }
 
