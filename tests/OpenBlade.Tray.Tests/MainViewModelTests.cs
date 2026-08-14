@@ -5459,7 +5459,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task HiddenDashboard_DoesNotRebuildTelemetryPresentation()
+    public async Task HiddenDashboards_DoNotRebuildTelemetryPresentation()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -5493,6 +5493,12 @@ public sealed class MainViewModelTests
         Assert.DoesNotContain(nameof(viewModel.CpuTemperatureValue), changed);
         Assert.DoesNotContain(nameof(viewModel.GpuTemperatureValue), changed);
         Assert.DoesNotContain(nameof(viewModel.VisibleDashboardTelemetryGroups), changed);
+        Assert.DoesNotContain(
+            nameof(viewModel.TrayDashboardBatteryPowerFlowLabel),
+            changed);
+        Assert.DoesNotContain(nameof(viewModel.TrayDashboardTemperatureLabel), changed);
+        Assert.DoesNotContain(nameof(viewModel.TrayDashboardFanSpeedLabel), changed);
+        Assert.DoesNotContain(nameof(viewModel.TrayDashboardFanSpeedToolTip), changed);
 
         changed.Clear();
         viewModel.SetDashboardTelemetryPresentationActive(true);
@@ -5503,6 +5509,21 @@ public sealed class MainViewModelTests
         Assert.Contains(nameof(viewModel.CpuTemperatureValue), changed);
         Assert.Contains(nameof(viewModel.GpuTemperatureValue), changed);
         Assert.Contains(nameof(viewModel.VisibleDashboardTelemetryGroups), changed);
+        Assert.DoesNotContain(
+            nameof(viewModel.TrayDashboardBatteryPowerFlowLabel),
+            changed);
+
+        changed.Clear();
+        viewModel.SetTrayDashboardTelemetryPresentationActive(true);
+
+        Assert.Contains(
+            nameof(viewModel.TrayDashboardBatteryPowerFlowLabel),
+            changed);
+        Assert.Contains(nameof(viewModel.TrayDashboardTemperatureLabel), changed);
+        Assert.Contains(nameof(viewModel.TrayDashboardFanSpeedLabel), changed);
+        Assert.Contains(nameof(viewModel.TrayDashboardFanSpeedToolTip), changed);
+        Assert.DoesNotContain(nameof(viewModel.BatteryPowerFlowLabel), changed);
+        Assert.DoesNotContain(nameof(viewModel.VisibleDashboardTelemetryGroups), changed);
     }
 
     [Fact]

@@ -244,6 +244,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private PowerSource activePowerSource = PowerSource.PluggedIn;
     private LiveReadings? liveReadings;
     private bool dashboardTelemetryPresentationActive = true;
+    private bool trayDashboardTelemetryPresentationActive;
     private DateTimeOffset? lastLiveReadingsRefreshAt;
     private PerformanceOverride? performanceOverride;
     private ManualOverride<FanMode>? fanOverride;
@@ -2437,7 +2438,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         // Hidden tray refreshes may update this backing value without notifying XAML.
         // MainWindow.xaml binds only to derived telemetry properties, which are replayed
-        // when SetDashboardTelemetryPresentationActive reactivates the dashboard.
+        // when each dashboard surface reactivates its presentation.
         if (EqualityComparer<LiveReadings?>.Default.Equals(liveReadings, value))
         {
             return;
@@ -2462,9 +2463,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         dashboardTelemetryPresentationActive = active;
         if (active)
         {
-            NotifyDashboardTelemetryValuesChanged();
+            NotifyMainDashboardTelemetryValuesChanged();
             Notify(nameof(ShowDashboardLiveReadings));
             Notify(nameof(LiveReadingsRefreshToolTip));
+        }
+    }
+
+    public void SetTrayDashboardTelemetryPresentationActive(bool active)
+    {
+        if (trayDashboardTelemetryPresentationActive == active)
+        {
+            return;
+        }
+
+        trayDashboardTelemetryPresentationActive = active;
+        if (active)
+        {
+            NotifyTrayDashboardTelemetryValuesChanged();
         }
     }
 

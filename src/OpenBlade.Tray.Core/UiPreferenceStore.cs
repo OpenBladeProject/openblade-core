@@ -146,8 +146,15 @@ public sealed record UiPreferences(
     public NotificationPreferences EffectiveNotifications =>
         Notifications ?? NotificationPreferences.Default;
 
-    public TrayDashboardPreference EffectiveTrayDashboard =>
-        TrayDashboardPreferenceDefaults.Normalize(TrayDashboard);
+    public TrayDashboardPreference EffectiveTrayDashboard
+    {
+        get
+        {
+            // Normalization allocates a detached snapshot. Cache the result when a
+            // caller needs it repeatedly instead of treating this as a hot-path getter.
+            return TrayDashboardPreferenceDefaults.Normalize(TrayDashboard);
+        }
+    }
 }
 
 public sealed class UiPreferenceStore

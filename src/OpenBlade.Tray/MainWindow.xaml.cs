@@ -2582,6 +2582,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         Volatile.Write(ref trayDashboardVisible, visible);
+        ViewModel.SetTrayDashboardTelemetryPresentationActive(visible);
         ApplyProcessorVisibilityPolicy();
         UpdateDashboardTelemetryPresentationState();
         if (visible)

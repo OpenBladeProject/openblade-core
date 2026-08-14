@@ -20,15 +20,26 @@ public sealed partial class MainViewModel
 
     private void NotifyDashboardTelemetryValuesChanged()
     {
+        if (trayDashboardTelemetryPresentationActive)
+        {
+            NotifyTrayDashboardTelemetryValuesChanged();
+        }
+        if (dashboardTelemetryPresentationActive)
+        {
+            NotifyMainDashboardTelemetryValuesChanged();
+        }
+    }
+
+    private void NotifyTrayDashboardTelemetryValuesChanged()
+    {
         Notify(nameof(TrayDashboardBatteryPowerFlowLabel));
         Notify(nameof(TrayDashboardTemperatureLabel));
         Notify(nameof(TrayDashboardFanSpeedLabel));
         Notify(nameof(TrayDashboardFanSpeedToolTip));
-        if (!dashboardTelemetryPresentationActive)
-        {
-            return;
-        }
+    }
 
+    private void NotifyMainDashboardTelemetryValuesChanged()
+    {
         Notify(nameof(BatteryPowerFlowLabel));
         Notify(nameof(Fan1RpmLabel));
         Notify(nameof(Fan2RpmLabel));

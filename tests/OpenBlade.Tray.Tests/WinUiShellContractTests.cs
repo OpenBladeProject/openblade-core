@@ -2161,8 +2161,15 @@ public sealed class WinUiShellContractTests
         Assert.Contains("windowVisible || trayDashboardVisible", mainWindow, StringComparison.Ordinal);
         Assert.Contains("UpdateActiveObservationLoop();", mainWindow, StringComparison.Ordinal);
         Assert.Contains("ViewModel.ObserveTrayDashboardStateAsync", mainWindow, StringComparison.Ordinal);
+        int trayDashboardVisibility = mainWindow.IndexOf(
+            "public void SetTrayDashboardVisible(bool visible)",
+            StringComparison.Ordinal);
         int telemetryPresentation = mainWindow.IndexOf(
             "private void UpdateDashboardTelemetryPresentationState()",
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.SetTrayDashboardTelemetryPresentationActive(visible)",
+            mainWindow[trayDashboardVisibility..telemetryPresentation],
             StringComparison.Ordinal);
         int requestTrayRefresh = mainWindow.IndexOf(
             "public void RequestTrayTelemetryRefresh()",
