@@ -182,6 +182,13 @@ time. Do not commit raw PCAP files, serial numbers, user paths, or unsanitized
 payloads. Capture procedures and restoration requirements are documented in
 the separate capture and documentation repositories.
 
+## Keyboard lighting files
+
+Users can write and share data-only `.oblight` presets for effects already
+supported by their laptop. The versioned format, schema, compatibility rules,
+and example are in
+[`docs/keyboard-lighting-file-format.md`](docs/keyboard-lighting-file-format.md).
+
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) before changing hardware, IPC, setup, or process

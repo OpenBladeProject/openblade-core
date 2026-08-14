@@ -4894,6 +4894,75 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ImportKeyboardLighting_LoadsAnAdmittedPresetAsAnActiveDraft()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities));
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        var expected = LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 73);
+        var preset = new KeyboardLightingPreset(
+            "Imported green",
+            "User",
+            null,
+            1,
+            expected);
+
+        bool imported = viewModel.TryImportKeyboardLighting(preset);
+
+        Assert.True(imported);
+        Assert.True(viewModel.IsLightingApplyPending);
+        Assert.Equal(expected, viewModel.LightingDraft with { LogoMode = null });
+        Assert.True(viewModel.HasLightingProfileDifference);
+        Assert.Equal(0, client.MutationCalls);
+    }
+
+    [Fact]
+    public async Task ImportKeyboardLighting_RejectsAnEffectUnavailableOnTheLaptop()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities));
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        var preset = new KeyboardLightingPreset(
+            "Unavailable fire",
+            null,
+            null,
+            1,
+            LightingSettingsFactory.Fire(80));
+
+        bool imported = viewModel.TryImportKeyboardLighting(preset);
+
+        Assert.False(imported);
+        Assert.False(viewModel.IsLightingApplyPending);
+        Assert.NotEqual(LightingEffect.Fire, viewModel.LightingDraft.Effect);
+    }
+
+    [Fact]
     public async Task ImportProfiles_StoresAndLoadsEveryImportedEditor()
     {
         var client = new FakeServiceClient();

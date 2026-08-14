@@ -7,6 +7,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a versioned, data-only `.oblight` keyboard lighting preset format and
+  a Lighting-page importer. Imported effects are strictly validated, confirmed
+  before application, and remain limited to capabilities already admitted for
+  the exact connected Blade.
 - Added an optional Windows power mode to each AC, USB-C, and battery profile.
   The current-user Session Agent applies Best power efficiency, Balanced, or
   Best performance when the active power profile changes.

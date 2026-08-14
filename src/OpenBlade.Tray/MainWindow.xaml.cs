@@ -4645,6 +4645,101 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
+    private async void OnImportKeyboardLighting(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            var picker = new FileOpenPicker(AppWindow.Id)
+            {
+                Title = "Import OpenBlade keyboard lighting",
+            };
+            picker.FileTypeFilter.Add(".oblight");
+            picker.FileTypeFilter.Add(".json");
+
+            PickFileResult? result = await picker.PickSingleFileAsync();
+            if (result is null)
+            {
+                return;
+            }
+
+            KeyboardLightingPreset preset = KeyboardLightingFileSerializer.Deserialize(
+                await ReadBoundedKeyboardLightingFileAsync(result.Path));
+            if (!ViewModel.CanImportKeyboardLighting(preset))
+            {
+                throw new InvalidDataException(
+                    $"The {preset.Lighting.Effect} effect is unavailable on this laptop right now.");
+            }
+
+            string brightness = preset.Lighting.Effect == LightingEffect.Off
+                ? "off"
+                : $"{preset.Lighting.Brightness}% brightness";
+            var confirmation = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Import keyboard lighting?",
+                Content = $"{preset.Name} uses the {preset.Lighting.Effect} effect at "
+                    + $"{brightness}. Importing applies it through OpenBlade and keeps it "
+                    + "as an unsaved change for the active power profile.",
+                PrimaryButtonText = "Import and apply",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            if (await ShowContentDialogAsync(confirmation) != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            if (!ViewModel.TryImportKeyboardLighting(preset))
+            {
+                throw new InvalidDataException(
+                    "Lighting control became unavailable before the preset could be imported.");
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade keyboard lighting import failed: {0}", exception);
+            await ShowMessageDialogAsync(
+                "Keyboard lighting could not be imported",
+                exception.Message);
+        }
+    }
+
+    private static async Task<byte[]> ReadBoundedKeyboardLightingFileAsync(string path)
+    {
+        int maximum = KeyboardLightingFileSerializer.MaximumFileSizeBytes;
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            useAsync: true);
+        if (stream.Length > maximum)
+        {
+            throw new InvalidDataException(
+                $"Keyboard lighting files cannot exceed {maximum / 1024} KiB.");
+        }
+
+        byte[] buffer = new byte[maximum + 1];
+        int length = 0;
+        while (length < buffer.Length)
+        {
+            int read = await stream.ReadAsync(buffer.AsMemory(length));
+            if (read == 0)
+            {
+                break;
+            }
+            length += read;
+        }
+
+        if (length > maximum)
+        {
+            throw new InvalidDataException(
+                $"Keyboard lighting files cannot exceed {maximum / 1024} KiB.");
+        }
+        return buffer.AsSpan(0, length).ToArray();
+    }
+
     private void OnRootSizeChanged(object sender, SizeChangedEventArgs args)
     {
         UpdateDashboardLayout(args.NewSize.Width);

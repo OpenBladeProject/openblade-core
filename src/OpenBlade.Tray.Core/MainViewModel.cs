@@ -4839,6 +4839,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return true;
     }
 
+    public bool CanImportKeyboardLighting(KeyboardLightingPreset preset)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        return CanControlLighting
+            && LightingSettingsValidation.IsWellFormed(preset.Lighting)
+            && preset.Lighting.LogoMode is null
+            && AvailableLightingEffects.Contains(preset.Lighting.Effect);
+    }
+
+    public bool TryImportKeyboardLighting(KeyboardLightingPreset preset)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        if (!CanImportKeyboardLighting(preset))
+        {
+            return false;
+        }
+
+        SetKeyboardEffectUnconfirmed(false);
+        LoadLightingEditor(preset.Lighting with { LogoMode = LogoLightingModeEditor });
+        SetLightingEditorDirty(true);
+        Notify(nameof(LightingDraft));
+        NotifyCommands();
+        return true;
+    }
+
     private void MarkDisconnected(string message)
     {
         connectionGeneration++;

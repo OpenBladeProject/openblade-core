@@ -496,6 +496,37 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void LightingPageOffersCapabilityGatedPresetImportWithConfirmation()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "MainWindow.xaml.cs");
+        string lightingPage = SliceMethod(
+            xaml,
+            "<ScrollViewer x:Name=\"LightingPage\"",
+            "<ScrollViewer x:Name=\"DisplayPage\"");
+
+        Assert.Contains("Content=\"Import preset\"", lightingPage, StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"Import keyboard lighting preset\"",
+            lightingPage,
+            StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnImportKeyboardLighting\"", lightingPage, StringComparison.Ordinal);
+        Assert.Contains(
+            "IsEnabled=\"{x:Bind ViewModel.CanControlLighting, Mode=OneWay}\"",
+            lightingPage,
+            StringComparison.Ordinal);
+        Assert.Contains("FileTypeFilter.Add(\".oblight\")", window, StringComparison.Ordinal);
+        Assert.Contains("FileTypeFilter.Add(\".json\")", window, StringComparison.Ordinal);
+        Assert.Contains("ReadBoundedKeyboardLightingFileAsync", window, StringComparison.Ordinal);
+        Assert.Contains("PrimaryButtonText = \"Import and apply\"", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.CanImportKeyboardLighting", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.TryImportKeyboardLighting", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LightingAutoAppliesWithDebounceAndHasNoSeparateApplyAction()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");

@@ -2956,6 +2956,11 @@
                                         Command="{x:Bind ViewModel.DiscardLightingProfileDraftCommand}" />
                                 </StackPanel>
                             </ContentControl>
+                            <Button Content="Import preset"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
+                                    Click="OnImportKeyboardLighting"
+                                    AutomationProperties.Name="Import keyboard lighting preset" />
                             <Button Content="Customize"
                                     Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="Lighting"
