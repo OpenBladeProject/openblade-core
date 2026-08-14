@@ -11,6 +11,74 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task SaveAsync_PreservesAFileWithAFutureDashboardSchema()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        string original = $$"""
+            {
+              "theme": "Dark",
+              "trayDashboard": {
+                "schemaVersion": {{TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1}},
+                "futureOnly": "keep-me",
+                "controls": [
+                  { "kind": "FutureControl", "isVisible": true }
+                ],
+                "nested": { "mode": "FutureMode", "value": 17 }
+              }
+            }
+            """;
+        await File.WriteAllTextAsync(path, original);
+        var store = new UiPreferenceStore(path);
+        using JsonDocument originalDocument = JsonDocument.Parse(original);
+        string originalDashboard = originalDocument.RootElement
+            .GetProperty("trayDashboard")
+            .GetRawText();
+
+        await store.SaveAsync(UiPreferences.Default with
+        {
+            Theme = ThemePreference.Light,
+            StartMinimized = true,
+        });
+
+        using JsonDocument saved = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+        Assert.Equal("Light", saved.RootElement.GetProperty("theme").GetString());
+        Assert.True(saved.RootElement.GetProperty("startMinimized").GetBoolean());
+        Assert.Equal(
+            originalDashboard,
+            saved.RootElement.GetProperty("trayDashboard").GetRawText());
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task LoadAsync_FutureDashboardWithUnknownKind_LoadsOtherPreferences()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, $$"""
+            {
+              "theme": "Dark",
+              "startMinimized": true,
+              "trayDashboard": {
+                "schemaVersion": {{TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1}},
+                "controls": [
+                  { "kind": "FutureControl", "isVisible": true }
+                ]
+              }
+            }
+            """);
+
+        UiPreferences loaded = await new UiPreferenceStore(path).LoadAsync();
+
+        Assert.Equal(ThemePreference.Dark, loaded.Theme);
+        Assert.True(loaded.StartMinimized);
+        Assert.Equal(
+            TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1,
+            loaded.TrayDashboard?.SchemaVersion);
+        Assert.Throws<InvalidDataException>(() => loaded.EffectiveTrayDashboard);
+    }
+
+    [Fact]
     public async Task LoadAsync_MissingFile_ReturnsFollowWindows()
     {
         UiPreferenceStore store = new(Path.Combine(directory, "preferences.json"));
@@ -47,6 +115,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             DashboardCardPreferenceDefaults.Cards,
             preferences.EffectiveDashboardCards);
+        Assert.Equal(
+            TrayDashboardPreferenceDefaults.Preference.Controls,
+            preferences.EffectiveTrayDashboard.Controls);
         Assert.Equal(
             PrimaryNavigationPreferenceDefaults.Items,
             preferences.EffectivePrimaryNavigationItems);
@@ -163,7 +234,28 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 AppUpdatesEnabled = false,
             },
             LastNotifiedReleaseTag: "v1.2.0",
-            LastNotifiedFirmwareSignature: "RZ09-0581|bios=3.01|ec=1.04|mcu=1.06"));
+            LastNotifiedFirmwareSignature: "RZ09-0581|bios=3.01|ec=1.04|mcu=1.06",
+            TrayDashboard: new TrayDashboardPreference(
+                Controls:
+                [
+                    new(
+                        TrayDashboardControlKind.Battery,
+                        true),
+                    new(
+                        TrayDashboardControlKind.Performance,
+                        false),
+                ],
+                StatusItems:
+                [
+                    new(TrayDashboardStatusItemKind.BatteryPower, true),
+                    new(TrayDashboardStatusItemKind.FanSpeed, false),
+                ],
+                Sliders:
+                [
+                    new(TrayDashboardSliderKind.GpuMemoryClock, true),
+                    new(TrayDashboardSliderKind.ChargeLimit, true),
+                ],
+                SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion)));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -257,6 +349,18 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             "RZ09-0581|bios=3.01|ec=1.04|mcu=1.06",
             reloaded.LastNotifiedFirmwareSignature);
+        Assert.Equal(
+            TrayDashboardControlKind.Performance,
+            reloaded.EffectiveTrayDashboard.Controls![0].Kind);
+        Assert.Equal(
+            TrayDashboardPreferenceDefaults.CurrentSchemaVersion,
+            reloaded.EffectiveTrayDashboard.SchemaVersion);
+        Assert.True(reloaded.EffectiveTrayDashboard.Sliders!
+            .Single(slider => slider.Kind == TrayDashboardSliderKind.ChargeLimit)
+            .IsVisible);
+        Assert.Equal(
+            TrayDashboardSliderKind.GpuMemoryClock,
+            reloaded.EffectiveTrayDashboard.Sliders![0].Kind);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -269,6 +373,13 @@ public sealed class UiPreferenceStoreTests : IDisposable
             "EveryTenSeconds",
             document.RootElement.GetProperty("liveReadingsRefreshCadence").GetString());
         Assert.True(document.RootElement.GetProperty("startMinimized").GetBoolean());
+        Assert.Equal(
+            "GpuMemoryClock",
+            document.RootElement
+                .GetProperty("trayDashboard")
+                .GetProperty("sliders")[0]
+                .GetProperty("kind")
+                .GetString());
         Assert.Equal(
             "GpuTemperature",
             document.RootElement.GetProperty("dashboardTelemetryItems")[0].GetString());
@@ -303,10 +414,98 @@ public sealed class UiPreferenceStoreTests : IDisposable
             "Weekly",
             document.RootElement.GetProperty("firmwareUpdateCheckInterval").GetString());
         Assert.Equal(
+            "Battery",
+            document.RootElement.GetProperty("trayDashboard")
+                .GetProperty("controls")[0]
+                .GetProperty("kind")
+                .GetString());
+        Assert.Equal(
+            TrayDashboardPreferenceDefaults.CurrentSchemaVersion,
+            document.RootElement.GetProperty("trayDashboard")
+                .GetProperty("schemaVersion")
+                .GetInt32());
+        Assert.False(document.RootElement.GetProperty("trayDashboard")
+            .TryGetProperty("expandedControl", out _));
+        Assert.False(document.RootElement.GetProperty("trayDashboard")
+            .GetProperty("controls")[0]
+            .TryGetProperty("size", out _));
+        Assert.Equal(
             "2026-07-27T12:30:00+00:00",
             document.RootElement.GetProperty("lastSuccessfulUpdateCheckAt").GetString());
         Assert.True(
             document.RootElement.GetProperty("updateCheckPromptShown").GetBoolean());
+    }
+
+    [Fact]
+    public async Task LoadAsync_LegacyDashboardLayoutMigratesToCurrentSchema()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "theme": "Dark",
+              "trayDashboard": {
+                "controls": [
+                  { "kind": "Lighting", "isVisible": true, "size": "Wide" },
+                  { "kind": "Performance", "isVisible": false, "size": "Compact" }
+                ],
+                "expandedControl": "Lighting",
+                "statusItems": [
+                  { "kind": "Fans", "isVisible": true }
+                ]
+              }
+            }
+            """);
+        UiPreferenceStore store = new(path);
+
+        UiPreferences loaded = await store.LoadAsync();
+        TrayDashboardPreference migrated = loaded.EffectiveTrayDashboard;
+
+        Assert.Equal(0, loaded.TrayDashboard!.SchemaVersion);
+        Assert.Equal(
+            TrayDashboardPreferenceDefaults.CurrentSchemaVersion,
+            migrated.SchemaVersion);
+        Assert.Equal(
+            [
+                TrayDashboardControlKind.Lighting,
+                TrayDashboardControlKind.Performance,
+                TrayDashboardControlKind.Fans,
+                TrayDashboardControlKind.BatteryProtection,
+                TrayDashboardControlKind.FunctionRow,
+                TrayDashboardControlKind.GamingMode,
+                TrayDashboardControlKind.GpuTuning,
+            ],
+            migrated.Controls!.Select(control => control.Kind));
+        Assert.Equal(
+            [true, false, false, false, false, false, false],
+            migrated.Controls!.Select(control => control.IsVisible));
+        Assert.True(migrated.Sliders!
+            .Single(slider => slider.Kind == TrayDashboardSliderKind.LightingBrightness)
+            .IsVisible);
+        Assert.Equal(
+            [
+                (TrayDashboardStatusItemKind.FanSpeed, true),
+                (TrayDashboardStatusItemKind.BatteryPower, false),
+                (TrayDashboardStatusItemKind.Temperatures, false),
+                (TrayDashboardStatusItemKind.PowerSource, false),
+            ],
+            migrated.StatusItems!.Select(status => (status.Kind, status.IsVisible)));
+
+        await store.SaveAsync(loaded with { TrayDashboard = migrated });
+        using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+        JsonElement dashboard = document.RootElement.GetProperty("trayDashboard");
+        Assert.Equal(
+            TrayDashboardPreferenceDefaults.CurrentSchemaVersion,
+            dashboard.GetProperty("schemaVersion").GetInt32());
+        Assert.False(dashboard.TryGetProperty("expandedControl", out _));
+        Assert.All(
+            dashboard.GetProperty("controls").EnumerateArray(),
+            control => Assert.False(control.TryGetProperty("size", out _)));
+        string savedStatusItems = dashboard.GetProperty("statusItems").GetRawText();
+        Assert.Contains("FanSpeed", savedStatusItems, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Fans\"", savedStatusItems, StringComparison.Ordinal);
     }
 
     [Fact]

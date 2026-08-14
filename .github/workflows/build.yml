@@ -59,6 +59,7 @@ jobs:
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: true
+      OPENBLADE_SKIP_INTERACTIVE_DESKTOP_TESTS: 0
     steps:
       - name: Check out source
         uses: actions/checkout@v7

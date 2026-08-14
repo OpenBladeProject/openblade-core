@@ -45,7 +45,10 @@ public sealed class WindowsControllerPresenceMonitorTests
     {
         WindowsControllerPresenceMonitor monitor = CreateMonitor(
             [],
-            [new WindowsServiceSnapshot("unmatched", alias, WindowsServiceState.Running)]);
+            [new WindowsServiceSnapshot(
+                alias == "RGS" ? alias : "unmatched",
+                alias,
+                WindowsServiceState.Running)]);
 
         ControllerPresenceObservation result = monitor.Observe();
 
@@ -87,6 +90,16 @@ public sealed class WindowsControllerPresenceMonitorTests
                 "RGSHelper",
                 "Razer Synapse Service Helper",
                 WindowsServiceState.Running)]);
+
+        Assert.Empty(monitor.Observe().PotentialControllers);
+    }
+
+    [Fact]
+    public void Observe_DoesNotTreatRgsAsADisplayNameAlias()
+    {
+        WindowsControllerPresenceMonitor monitor = CreateMonitor(
+            [],
+            [new WindowsServiceSnapshot("unexpected", "RGS", WindowsServiceState.Running)]);
 
         Assert.Empty(monitor.Observe().PotentialControllers);
     }

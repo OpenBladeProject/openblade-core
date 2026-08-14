@@ -39,6 +39,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private static readonly TimeSpan GpuAppObservationInterval = TimeSpan.FromSeconds(2);
 
     private readonly DispatcherQueue dispatcherQueue;
+    private readonly SemaphoreSlim contentDialogGate = new(1, 1);
     private readonly MicaBackdropHost micaBackdropHost;
     private readonly AccentColorManager accentColorManager;
     private readonly UiPreferenceStore preferenceStore;
@@ -73,6 +74,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingWindowsDynamicLighting;
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
+    private bool trayDashboardCustomizationActive;
     private bool changingPageSections;
     private bool changingPrimaryNavigationItems;
     private bool changingPrimaryNavigationOrder;
@@ -89,6 +91,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool? profilesUseCompactLayout;
     private bool enforcingMinimumWindowSize;
     private bool windowVisible;
+    private bool trayDashboardVisible;
+    private int trayDashboardLiveReadingSensors =
+        (int)TrayDashboardPreferenceDefaults.ResolveLiveReadingSensors(
+            TrayDashboardPreferenceDefaults.Preference);
     private int openDisplayPickerCount;
     private int updateCheckingStarted;
     private int disposed;
@@ -104,6 +110,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private AppAccentColorMode accentColorMode = AppAccentColorMode.RazerGreen;
     private string customAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
     private NotificationPreferences notificationPreferences = NotificationPreferences.Default;
+    private TrayDashboardPreference trayDashboardPreference =
+        TrayDashboardPreferenceDefaults.Preference;
+    private IReadOnlyList<TrayDashboardControlOption> trayDashboardAllControlOptions = [];
+    private IReadOnlyList<TrayDashboardSliderOption> trayDashboardAllSliderOptions = [];
+    private bool changingTrayDashboardEditor;
     private string? lastNotifiedReleaseTag;
     private string? lastNotifiedFirmwareSignature;
     private PowerSource lastObservedPowerSource = PowerSource.ExternalUnknown;
@@ -159,7 +170,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested += OnSavedDisplayProfileRestoreRequested;
-        visibleObservationLoop = new VisibleObservationLoop(ViewModel.ObserveStateAsync,
+        visibleObservationLoop = new VisibleObservationLoop(ObserveVisibleSurfacesAsync,
             errorHandler: exception => Trace.TraceError(
                 "OpenBlade visible observation failed: {0}",
                 exception),
@@ -182,6 +193,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
         DashboardCards.CollectionChanged += OnDashboardCardsCollectionChanged;
+        TrayDashboardEditorControls.CollectionChanged +=
+            OnTrayDashboardEditorOrderChanged;
+        TrayDashboardEditorSliders.CollectionChanged +=
+            OnTrayDashboardEditorOrderChanged;
         PrimaryNavigationItems.CollectionChanged += OnPrimaryNavigationItemsCollectionChanged;
         accentColorManager = new AccentColorManager(Root, dispatcherQueue);
         accentColorManager.ColorChanged += OnAccentColorChanged;
@@ -276,6 +291,21 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public ObservableCollection<DashboardCardOption> DashboardCards { get; } = [];
 
+    public TrayDashboardPreference TrayDashboardPreference => trayDashboardPreference;
+
+    public ObservableCollection<TrayDashboardControlOption> TrayDashboardEditorControls
+    { get; } = [];
+
+    public ObservableCollection<TrayDashboardSliderOption> TrayDashboardEditorSliders
+    { get; } = [];
+
+    public ObservableCollection<TrayDashboardStatusItemOption> TrayDashboardEditorStatusItems
+    { get; } = [];
+
+    public event Action<TrayDashboardPreference>? TrayDashboardPreferenceChanged;
+
+    public event Action<bool>? TrayDashboardEditSessionChanged;
+
     public ObservableCollection<PrimaryNavigationItemOption> PrimaryNavigationItems { get; } = [];
 
     public ObservableCollection<SpecialKeyBindingViewModel> SpecialKeyBindings { get; } = [];
@@ -339,13 +369,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public void ShowAndActivate()
     {
-        _ = processorPolicy.TryAllowAllProcessorsForCurrentThread();
-        _ = processorPolicy.TrySetProcessEcoQos(enabled: false);
-        windowVisible = true;
-        ViewModel.SetDashboardTelemetryPresentationActive(
-            HomePage.Visibility == Visibility.Visible);
+        Volatile.Write(ref windowVisible, true);
+        ApplyProcessorVisibilityPolicy();
+        UpdateDashboardTelemetryPresentationState();
         trayObservationLoop.Stop();
-        visibleObservationLoop.StartOrWake();
+        UpdateActiveObservationLoop();
         UpdateGpuAppObservationState();
         UpdateDisplayRefreshState();
         AppWindow.Show(true);
@@ -353,14 +381,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public void StartHiddenObservation()
     {
-        windowVisible = false;
-        ViewModel.SetDashboardTelemetryPresentationActive(false);
-        visibleObservationLoop.Stop();
+        Volatile.Write(ref windowVisible, false);
+        ApplyProcessorVisibilityPolicy();
+        UpdateDashboardTelemetryPresentationState();
+        UpdateActiveObservationLoop();
         trayObservationLoop.Stop();
         gpuAppObservationLoop.Stop();
         displayRefreshTimer.Stop();
-        _ = processorPolicy.TryPreferEfficientProcessorsForCurrentThread();
-        _ = processorPolicy.TrySetProcessEcoQos(enabled: true);
     }
 
     public void NavigateToNotificationDestination(
@@ -449,6 +476,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             OnFirmwareUpdatePreferencesChanged;
         FirmwareUpdateViewModel.UpdateAvailable -= OnFirmwareUpdateAvailable;
         DashboardCards.CollectionChanged -= OnDashboardCardsCollectionChanged;
+        TrayDashboardEditorControls.CollectionChanged -=
+            OnTrayDashboardEditorOrderChanged;
+        TrayDashboardEditorSliders.CollectionChanged -=
+            OnTrayDashboardEditorOrderChanged;
+        foreach (TrayDashboardStatusItemOption option in TrayDashboardEditorStatusItems)
+        {
+            option.PropertyChanged -= OnTrayDashboardEditorStatusChanged;
+        }
         PrimaryNavigationItems.CollectionChanged -= OnPrimaryNavigationItemsCollectionChanged;
         foreach (DashboardCardOption option in DashboardCards)
         {
@@ -548,6 +583,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             SpecialKeyBindingDefaults.Bindings;
         IReadOnlyList<PageLayoutPreference> pageLayouts =
             PageLayoutPreferenceDefaults.Layouts;
+        TrayDashboardPreference initialTrayDashboard =
+            TrayDashboardPreferenceDefaults.Preference;
         AppAccentColorMode initialAccentColorMode = AppAccentColorMode.RazerGreen;
         string initialCustomAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
         UpdateChannel initialUpdateChannel = UpdateChannel.Stable;
@@ -585,6 +622,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             primaryNavigationItems = preferences.EffectivePrimaryNavigationItems;
             specialKeyBindings = preferences.EffectiveSpecialKeyBindings;
             pageLayouts = preferences.EffectivePageLayouts;
+            try
+            {
+                initialTrayDashboard = preferences.EffectiveTrayDashboard;
+            }
+            catch (InvalidDataException exception)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade tray dashboard preferences require a newer version; using dashboard defaults without overwriting the stored preference: {0}",
+                    exception.Message);
+            }
             initialAccentColorMode = preferences.EffectiveAccentColorMode;
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
@@ -639,6 +686,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         ViewModel.ApplyTelemetryPreferences(dashboardTelemetryItems, trayHoverLabelItems);
         ApplyDashboardPreferences(dashboardCards);
+        ApplyTrayDashboardPreference(initialTrayDashboard, queueSave: false);
         ApplyPageLayoutPreferences(pageLayouts);
         ApplyPrimaryNavigationPreferences(primaryNavigationItems);
         ApplySpecialKeyBindingPreferences(specialKeyBindings);
@@ -781,6 +829,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             {
                 dispatcherQueue.TryEnqueue(RefreshSpecialKeyBindingAccess);
             }
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.CanEditGpuClockTuning)
+            && !ViewModel.CanEditGpuClockTuning)
+        {
+            gpuClockOffsetCommits.ClearPending();
+            gpuClockOffsetCommitTimer.Stop();
         }
 
         if (args.PropertyName == nameof(MainViewModel.HasAttention)
@@ -960,7 +1015,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastKnownPublishedMcuStatus: FirmwareUpdateViewModel.CachedMcuStatus,
                 Notifications: notificationPreferences,
                 LastNotifiedReleaseTag: lastNotifiedReleaseTag,
-                LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature));
+                LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature,
+                TrayDashboard: trayDashboardPreference));
         }
         catch (ObjectDisposedException)
         {
@@ -1025,6 +1081,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         bool exitRequested = Microsoft.UI.Xaml.Application.Current is App app && app.ExitRequested;
         if (WindowLifecyclePolicy.Decide(exitRequested) == WindowCloseDecision.Hide)
         {
+            EndTrayDashboardCustomization(showSettingsOverview: true);
             args.Cancel = true;
             StartHiddenObservation();
             AppWindow.Hide();
@@ -1342,7 +1399,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             DefaultButton = ContentDialogButton.Primary,
         };
 
-        ContentDialogResult result = await dialog.ShowAsync();
+        ContentDialogResult? result = await ShowContentDialogAsync(dialog);
+        if (result is null)
+        {
+            return;
+        }
+
         UpdateViewModel.RecordConsent(result == ContentDialogResult.Primary
             ? UpdateCheckInterval.Daily
             : UpdateCheckInterval.ManualOnly);
@@ -1945,8 +2007,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         int coreMegahertz,
         int memoryMegahertz)
     {
-        if (Volatile.Read(ref disposed) != 0
-            || !ViewModel.CanEditGpuClockTuning)
+        if (Volatile.Read(ref disposed) != 0)
         {
             return;
         }
@@ -1954,8 +2015,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         var requested = new GpuClockOffsetSettings(
             coreMegahertz,
             memoryMegahertz);
-        if (ViewModel.GpuClockOffsetCapabilities?.Supports(requested) != true)
+        if (!GpuClockOffsetCommitPolicy.CanCommit(
+                ViewModel.CanEditGpuClockTuning,
+                ViewModel.GpuClockOffsetCapabilities,
+                requested))
         {
+            gpuClockOffsetCommits.ClearPending();
+            gpuClockOffsetCommitTimer.Stop();
             return;
         }
 
@@ -1991,7 +2057,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
-            if (ViewModel.CanEditGpuClockTuning)
+            if (GpuClockOffsetCommitPolicy.CanCommit(
+                    ViewModel.CanEditGpuClockTuning,
+                    ViewModel.GpuClockOffsetCapabilities,
+                    requested))
             {
                 await ViewModel.SetGpuClockOffsetsAsync(
                     requested,
@@ -2583,6 +2652,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void ApplyNavigationDestination(string destination)
     {
+        if (trayDashboardCustomizationActive && destination != "settings")
+        {
+            EndTrayDashboardCustomization(showSettingsOverview: false);
+        }
+
         HomePage.Visibility = destination == "home"
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -2599,13 +2673,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ? Visibility.Visible
             : Visibility.Collapsed;
         SettingsPage.Visibility = destination == "settings"
+            && !trayDashboardCustomizationActive
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        TrayDashboardCustomizationPage.Visibility = destination == "settings"
+            && trayDashboardCustomizationActive
             ? Visibility.Visible
             : Visibility.Collapsed;
         AboutPage.Visibility = destination == "about"
             ? Visibility.Visible
             : Visibility.Collapsed;
-        ViewModel.SetDashboardTelemetryPresentationActive(
-            windowVisible && destination == "home");
+        UpdateDashboardTelemetryPresentationState();
         UpdateGpuAppObservationState();
         if (destination == "profiles")
         {
@@ -2691,11 +2769,71 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void WakeActiveObservationLoop()
     {
-        if (windowVisible)
+        if (windowVisible || trayDashboardVisible)
         {
             visibleObservationLoop.StartOrWake();
         }
     }
+
+    private Task ObserveVisibleSurfacesAsync(CancellationToken cancellationToken)
+    {
+        bool dashboardVisible = Volatile.Read(ref trayDashboardVisible);
+        return dashboardVisible
+            ? ViewModel.ObserveTrayDashboardStateAsync(
+                includeMainDashboardReadings: Volatile.Read(ref windowVisible),
+                dashboardLiveReadings: (LiveReadingSensors)Volatile.Read(
+                    ref trayDashboardLiveReadingSensors),
+                cancellationToken)
+            : ViewModel.ObserveStateAsync(cancellationToken);
+    }
+
+    private void UpdateActiveObservationLoop()
+    {
+        if (windowVisible || trayDashboardVisible)
+        {
+            visibleObservationLoop.StartOrWake();
+        }
+        else
+        {
+            visibleObservationLoop.Stop();
+        }
+    }
+
+    private void ApplyProcessorVisibilityPolicy()
+    {
+        if (windowVisible || trayDashboardVisible)
+        {
+            _ = processorPolicy.TryAllowAllProcessorsForCurrentThread();
+            _ = processorPolicy.TrySetProcessEcoQos(enabled: false);
+        }
+        else
+        {
+            _ = processorPolicy.TryPreferEfficientProcessorsForCurrentThread();
+            _ = processorPolicy.TrySetProcessEcoQos(enabled: true);
+        }
+    }
+
+    public void SetTrayDashboardVisible(bool visible)
+    {
+        if (trayDashboardVisible == visible)
+        {
+            return;
+        }
+
+        Volatile.Write(ref trayDashboardVisible, visible);
+        ViewModel.SetTrayDashboardTelemetryPresentationActive(visible);
+        ApplyProcessorVisibilityPolicy();
+        UpdateDashboardTelemetryPresentationState();
+        if (visible)
+        {
+            trayObservationLoop.Stop();
+        }
+        UpdateActiveObservationLoop();
+    }
+
+    private void UpdateDashboardTelemetryPresentationState() =>
+        ViewModel.SetDashboardTelemetryPresentationActive(
+            windowVisible && HomePage.Visibility == Visibility.Visible);
 
     public void RequestTrayTelemetryRefresh()
     {
@@ -2949,7 +3087,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             CloseButtonText = "Close",
             DefaultButton = ContentDialogButton.Close,
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary
+        if (await ShowContentDialogAsync(dialog) != ContentDialogResult.Primary
             || runAnyway?.IsChecked is not bool enabled
             || enabled == ViewModel.AllowUntestedFirmware)
         {
@@ -2977,6 +3115,231 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             });
     }
 
+    private async void OnStopRazerServices(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            HandleStopRazerServicesAsync,
+            nameof(OnStopRazerServices));
+
+    private async Task HandleStopRazerServicesAsync()
+    {
+        if (!StopRazerServicesButton.IsEnabled)
+        {
+            return;
+        }
+
+        SetStopRazerServicesProgress(isBusy: true, busyLabel: "Checking…");
+        try
+        {
+            RazerServiceInventory before = await RazerServiceStopOperation.ObserveAsync(
+                CancellationToken.None);
+            if (!before.Complete)
+            {
+                throw new InvalidOperationException(before.Error);
+            }
+
+            IReadOnlyList<RazerServiceSnapshot> candidates =
+                RazerServiceStopOperation.ActiveServices(before);
+            if (candidates.Count == 0)
+            {
+                await ShowMessageDialogAsync(
+                    "No known Razer controller services are running",
+                    "OpenBlade found no active Synapse or Chroma controller services in its reviewed allowlist.");
+                return;
+            }
+
+            string serviceList = string.Join(
+                Environment.NewLine,
+                candidates.Select(service => $"• {service.DisplayName}"));
+            if (Volatile.Read(ref disposed) != 0 || Root.XamlRoot is not { } xamlRoot)
+            {
+                return;
+            }
+
+            var confirmation = new ContentDialog
+            {
+                XamlRoot = xamlRoot,
+                Title = "Stop Razer services?",
+                Content = "These known controller services are currently active:\n\n"
+                    + serviceList
+                    + "\n\nAfter approval, OpenBlade will freshly check the same reviewed allowlist "
+                    + "and stop any active matches. This does not uninstall Razer software or disable service startup. "
+                    + "Razer software may start the services again, and features that depend on them may stop working until then.",
+                PrimaryButtonText = "Stop services",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                PrimaryButtonStyle = (Style)Root.Resources["DestructiveButtonStyle"],
+            };
+            if (await ShowContentDialogAsync(confirmation) != ContentDialogResult.Primary
+                || Volatile.Read(ref disposed) != 0)
+            {
+                return;
+            }
+
+            SetStopRazerServicesProgress(isBusy: true, busyLabel: "Stopping…");
+
+            if (Microsoft.UI.Xaml.Application.Current is not App app)
+            {
+                throw new InvalidOperationException("The OpenBlade application is unavailable.");
+            }
+
+            ElevatedServiceControlOutcome outcome = await app.StopRazerServicesAsync();
+            if (outcome == ElevatedServiceControlOutcome.Canceled)
+            {
+                await ShowMessageDialogAsync(
+                    "Razer service stop canceled",
+                    "Windows did not grant administrator permission. OpenBlade did not retry the request.");
+                return;
+            }
+
+            RazerServiceInventory after = await RazerServiceStopOperation.ObserveAsync(
+                CancellationToken.None);
+            await ShowRazerServiceStopResultAsync(candidates, after, outcome);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("Razer service stop failed: {0}", exception);
+            await ShowMessageDialogAsync(
+                "OpenBlade could not stop Razer services",
+                exception.Message);
+        }
+        finally
+        {
+            if (Volatile.Read(ref disposed) == 0)
+            {
+                SetStopRazerServicesProgress(isBusy: false, busyLabel: null);
+            }
+        }
+    }
+
+    private async Task ShowRazerServiceStopResultAsync(
+        IReadOnlyList<RazerServiceSnapshot> candidates,
+        RazerServiceInventory after,
+        ElevatedServiceControlOutcome helperOutcome)
+    {
+        if (!after.Complete)
+        {
+            await ShowMessageDialogAsync(
+                "Razer service status is unconfirmed",
+                "The elevated request finished, but OpenBlade could not read the final service state. "
+                    + after.Error);
+            return;
+        }
+
+        RazerServiceStopReadback readback = RazerServiceStopOperation.EvaluateReadback(
+            candidates,
+            after);
+        IReadOnlyList<RazerServiceSnapshot> remaining = readback.RemainingActive;
+        IReadOnlyList<string> stopped = readback.StoppedOrRemoved;
+
+        if (remaining.Count == 0)
+        {
+            string note = helperOutcome == ElevatedServiceControlOutcome.Indeterminate
+                ? "\n\nThe helper result was indeterminate, but fresh readback confirms the services are stopped or no longer installed."
+                : string.Empty;
+            await ShowMessageDialogAsync(
+                "Razer services stopped",
+                string.Join(Environment.NewLine, stopped.Select(service => $"• {service}"))
+                    + note);
+            return;
+        }
+
+        string content = stopped.Count == 0
+            ? string.Empty
+            : "Stopped or no longer installed:\n"
+                + string.Join(Environment.NewLine, stopped.Select(service => $"• {service}"))
+                + "\n\n";
+        content += "Still active or pending:\n"
+            + string.Join(
+                Environment.NewLine,
+                remaining.Select(service => $"• {service.DisplayName}"))
+            + "\n\nOpenBlade did not retry any stop request.";
+        await ShowMessageDialogAsync(
+            "Some Razer services could not be confirmed stopped",
+            content);
+    }
+
+    private async Task<ContentDialogResult?> ShowContentDialogAsync(ContentDialog dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+        if (Volatile.Read(ref disposed) != 0)
+        {
+            return null;
+        }
+
+        await contentDialogGate.WaitAsync();
+        try
+        {
+            if (Volatile.Read(ref disposed) != 0 || Root.XamlRoot is not { } xamlRoot)
+            {
+                return null;
+            }
+
+            dialog.XamlRoot = xamlRoot;
+            ContentDialogResult result = await dialog.ShowAsync();
+            return Volatile.Read(ref disposed) == 0 && Root.XamlRoot is not null
+                ? result
+                : null;
+        }
+        catch (Exception exception)
+            when (Volatile.Read(ref disposed) != 0 || Root.XamlRoot is null)
+        {
+            Trace.TraceWarning(
+                "OpenBlade dialog closed during window teardown: {0}",
+                exception.Message);
+            return null;
+        }
+        finally
+        {
+            contentDialogGate.Release();
+        }
+    }
+
+    private async Task ShowMessageDialogAsync(string title, string content)
+    {
+        if (Volatile.Read(ref disposed) != 0 || Root.XamlRoot is not { } xamlRoot)
+        {
+            return;
+        }
+
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = xamlRoot,
+                Title = title,
+                Content = content,
+                CloseButtonText = "Close",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            await ShowContentDialogAsync(dialog);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade could not show the '{0}' dialog: {1}",
+                title,
+                exception.Message);
+        }
+    }
+
+    private void SetStopRazerServicesProgress(bool isBusy, string? busyLabel)
+    {
+        StopRazerServicesButton.IsEnabled = !isBusy;
+        StopRazerServicesProgressRing.IsActive = isBusy;
+        StopRazerServicesProgressRing.Visibility = isBusy
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        StopRazerServicesIcon.Visibility = isBusy
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        StopRazerServicesButtonLabel.Text = isBusy
+            ? busyLabel ?? "Working…"
+            : "Stop services";
+        AutomationProperties.SetName(
+            StopRazerServicesButton,
+            isBusy ? busyLabel ?? "Working with Razer services" : "Stop Razer services");
+    }
+
     private async void OnShutdownOpenBlade(object sender, RoutedEventArgs args)
     {
         var confirmation = new ContentDialog
@@ -2990,7 +3353,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             DefaultButton = ContentDialogButton.Close,
             PrimaryButtonStyle = (Style)Root.Resources["DestructiveButtonStyle"],
         };
-        if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+        if (await ShowContentDialogAsync(confirmation) != ContentDialogResult.Primary)
         {
             return;
         }
@@ -3005,15 +3368,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade shutdown failed: {0}", exception);
-            var failure = new ContentDialog
-            {
-                XamlRoot = Root.XamlRoot,
-                Title = "OpenBlade could not shut down",
-                Content = exception.Message,
-                CloseButtonText = "Close",
-                DefaultButton = ContentDialogButton.Close,
-            };
-            await failure.ShowAsync();
+            await ShowMessageDialogAsync(
+                "OpenBlade could not shut down",
+                exception.Message);
         }
     }
 
@@ -3033,30 +3390,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 if (result == StartOpenBladeResult.AlreadyRunning)
                 {
                     SetStartOpenBladeProgress(isStarting: false);
-                    var alreadyRunning = new ContentDialog
-                    {
-                        XamlRoot = Root.XamlRoot,
-                        Title = "OpenBlade service is already running",
-                        Content = "The tray will reconnect automatically. This can take a few seconds.",
-                        CloseButtonText = "Close",
-                        DefaultButton = ContentDialogButton.Close,
-                    };
-                    await alreadyRunning.ShowAsync();
+                    await ShowMessageDialogAsync(
+                        "OpenBlade service is already running",
+                        "The tray will reconnect automatically. This can take a few seconds.");
                 }
             }
         }
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade service start failed: {0}", exception);
-            var failure = new ContentDialog
-            {
-                XamlRoot = Root.XamlRoot,
-                Title = "OpenBlade could not start",
-                Content = exception.Message,
-                CloseButtonText = "Close",
-                DefaultButton = ContentDialogButton.Close,
-            };
-            await failure.ShowAsync();
+            await ShowMessageDialogAsync(
+                "OpenBlade could not start",
+                exception.Message);
         }
         finally
         {
@@ -3107,15 +3452,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade profile export failed: {0}", exception);
-            var failure = new ContentDialog
-            {
-                XamlRoot = Root.XamlRoot,
-                Title = "Profiles could not be exported",
-                Content = "OpenBlade could not save the selected JSON file.",
-                CloseButtonText = "Close",
-                DefaultButton = ContentDialogButton.Close,
-            };
-            await failure.ShowAsync();
+            await ShowMessageDialogAsync(
+                "Profiles could not be exported",
+                "OpenBlade could not save the selected JSON file.");
         }
     }
 
@@ -3185,7 +3524,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (dashboardCustomizerDialog is not null)
         {
             dashboardCustomizerRefresh?.Invoke();
-            await dashboardCustomizerDialog.ShowAsync();
+            if (await ShowContentDialogAsync(dashboardCustomizerDialog) is null)
+            {
+                return;
+            }
+
             ApplyDashboardCustomizerChanges();
             return;
         }
@@ -3237,12 +3580,338 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             editorCards,
             "DashboardCardOptionTemplate");
         dashboardCustomizerDialog = dialog;
-        await dialog.ShowAsync();
+        if (await ShowContentDialogAsync(dialog) is null)
+        {
+            return;
+        }
+
         ApplyDashboardCustomizerChanges();
     }
 
     private void ApplyDashboardCustomizerChanges() =>
         dashboardCustomizerApply?.Invoke();
+
+    private void OnCustomizeTrayDashboard(object sender, RoutedEventArgs args)
+    {
+        if (trayDashboardCustomizationActive)
+        {
+            return;
+        }
+
+        trayDashboardCustomizationActive = true;
+        LoadTrayDashboardEditor(trayDashboardPreference);
+        SettingsPage.Visibility = Visibility.Collapsed;
+        TrayDashboardCustomizationPage.Visibility = Visibility.Visible;
+        TrayDashboardCustomizationPage.ChangeView(null, 0, null, disableAnimation: true);
+        TrayDashboardEditSessionChanged?.Invoke(true);
+    }
+
+    private void OnExitTrayDashboardCustomization(object sender, RoutedEventArgs args) =>
+        EndTrayDashboardCustomization(showSettingsOverview: true);
+
+    private void EndTrayDashboardCustomization(bool showSettingsOverview)
+    {
+        if (!trayDashboardCustomizationActive)
+        {
+            return;
+        }
+
+        trayDashboardCustomizationActive = false;
+        TrayDashboardCustomizationPage.Visibility = Visibility.Collapsed;
+        if (showSettingsOverview)
+        {
+            SettingsPage.Visibility = Visibility.Visible;
+        }
+
+        TrayDashboardEditSessionChanged?.Invoke(false);
+    }
+
+    private void LoadTrayDashboardEditor(TrayDashboardPreference preference)
+    {
+        changingTrayDashboardEditor = true;
+        try
+        {
+            foreach (TrayDashboardStatusItemOption option in TrayDashboardEditorStatusItems)
+            {
+                option.PropertyChanged -= OnTrayDashboardEditorStatusChanged;
+            }
+
+            trayDashboardAllControlOptions =
+                TrayDashboardPreferenceDefaults.CreateControlOptions(preference);
+            trayDashboardAllSliderOptions =
+                TrayDashboardPreferenceDefaults.CreateSliderOptions(preference);
+
+            TrayDashboardEditorControls.Clear();
+            foreach (TrayDashboardControlOption option in
+                     trayDashboardAllControlOptions.Where(option => option.IsVisible))
+            {
+                TrayDashboardEditorControls.Add(option);
+            }
+
+            TrayDashboardEditorSliders.Clear();
+            foreach (TrayDashboardSliderOption option in
+                     trayDashboardAllSliderOptions.Where(option => option.IsVisible))
+            {
+                TrayDashboardEditorSliders.Add(option);
+            }
+
+            TrayDashboardEditorStatusItems.Clear();
+            foreach (TrayDashboardStatusItemOption option in
+                     TrayDashboardPreferenceDefaults.CreateStatusOptions(preference))
+            {
+                option.PropertyChanged += OnTrayDashboardEditorStatusChanged;
+                TrayDashboardEditorStatusItems.Add(option);
+            }
+        }
+        finally
+        {
+            changingTrayDashboardEditor = false;
+        }
+
+        UpdateTrayDashboardEditorAvailability();
+    }
+
+    private void OnAddTrayDashboardControl(object sender, RoutedEventArgs args)
+    {
+        var flyout = new MenuFlyout();
+        foreach (TrayDashboardControlOption option in
+                 trayDashboardAllControlOptions.Where(option => !option.IsVisible))
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = option.Label,
+                Tag = option,
+            };
+            item.Click += OnTrayDashboardControlAddItemClicked;
+            flyout.Items.Add(item);
+        }
+
+        flyout.ShowAt((FrameworkElement)sender);
+    }
+
+    private void OnTrayDashboardControlAddItemClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (sender is not FrameworkElement
+            {
+                Tag: TrayDashboardControlOption option,
+            }
+            || option.IsVisible)
+        {
+            return;
+        }
+
+        option.IsVisible = true;
+        TrayDashboardEditorControls.Add(option);
+    }
+
+    private void OnRemoveTrayDashboardControl(object sender, RoutedEventArgs args)
+    {
+        if (sender is FrameworkElement
+            {
+                DataContext: TrayDashboardControlOption option,
+            }
+            && TrayDashboardEditorControls.Contains(option))
+        {
+            changingTrayDashboardEditor = true;
+            try
+            {
+                TrayDashboardEditorControls.Remove(option);
+                option.IsVisible = false;
+            }
+            finally
+            {
+                changingTrayDashboardEditor = false;
+            }
+
+            ApplyTrayDashboardEditor();
+        }
+    }
+
+    private void OnAddTrayDashboardSlider(object sender, RoutedEventArgs args)
+    {
+        var flyout = new MenuFlyout();
+        foreach (TrayDashboardSliderOption option in
+                 trayDashboardAllSliderOptions.Where(option => !option.IsVisible))
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = option.Label,
+                Tag = option,
+            };
+            item.Click += OnTrayDashboardSliderAddItemClicked;
+            flyout.Items.Add(item);
+        }
+
+        flyout.ShowAt((FrameworkElement)sender);
+    }
+
+    private void OnTrayDashboardSliderAddItemClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (TrayDashboardEditorSliders.Count
+                >= TrayDashboardPreferenceDefaults.MaximumVisibleSliders
+            || sender is not FrameworkElement
+            {
+                Tag: TrayDashboardSliderOption option,
+            }
+            || option.IsVisible)
+        {
+            return;
+        }
+
+        option.IsVisible = true;
+        TrayDashboardEditorSliders.Add(option);
+    }
+
+    private void OnRemoveTrayDashboardSlider(object sender, RoutedEventArgs args)
+    {
+        if (sender is FrameworkElement
+            {
+                DataContext: TrayDashboardSliderOption option,
+            }
+            && TrayDashboardEditorSliders.Contains(option))
+        {
+            changingTrayDashboardEditor = true;
+            try
+            {
+                TrayDashboardEditorSliders.Remove(option);
+                option.IsVisible = false;
+            }
+            finally
+            {
+                changingTrayDashboardEditor = false;
+            }
+
+            ApplyTrayDashboardEditor();
+        }
+    }
+
+    private void OnTrayDashboardEditorStatusChanged(
+        object? sender,
+        PropertyChangedEventArgs args)
+    {
+        if (changingTrayDashboardEditor
+            || args.PropertyName != nameof(TrayDashboardStatusItemOption.IsVisible))
+        {
+            return;
+        }
+
+        if (sender is TrayDashboardStatusItemOption { IsVisible: true } option
+            && TrayDashboardEditorStatusItems.Count(status => status.IsVisible)
+                > TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems)
+        {
+            changingTrayDashboardEditor = true;
+            try
+            {
+                option.IsVisible = false;
+            }
+            finally
+            {
+                changingTrayDashboardEditor = false;
+            }
+
+            UpdateTrayDashboardEditorAvailability();
+            return;
+        }
+
+        ApplyTrayDashboardEditor();
+    }
+
+    private void OnTrayDashboardEditorOrderChanged(
+        object? sender,
+        NotifyCollectionChangedEventArgs args)
+    {
+        if (!changingTrayDashboardEditor)
+        {
+            ApplyTrayDashboardEditor();
+        }
+    }
+
+    private void OnResetTrayDashboard(object sender, RoutedEventArgs args)
+    {
+        LoadTrayDashboardEditor(TrayDashboardPreferenceDefaults.Preference);
+        ApplyTrayDashboardEditor();
+    }
+
+    private void ApplyTrayDashboardEditor()
+    {
+        HashSet<TrayDashboardControlKind> activeControls =
+            TrayDashboardEditorControls.Select(option => option.Kind).ToHashSet();
+        HashSet<TrayDashboardSliderKind> activeSliders =
+            TrayDashboardEditorSliders.Select(option => option.Kind).ToHashSet();
+        ApplyTrayDashboardPreference(new TrayDashboardPreference(
+            Controls: TrayDashboardEditorControls
+                .Select(option => new TrayDashboardControlPreference(option.Kind, true))
+                .Concat(trayDashboardAllControlOptions
+                    .Where(option => !activeControls.Contains(option.Kind))
+                    .Select(option => new TrayDashboardControlPreference(
+                        option.Kind,
+                        false)))
+                .ToArray(),
+            StatusItems: TrayDashboardEditorStatusItems
+                .Select(option => new TrayDashboardStatusItemPreference(
+                    option.Kind,
+                    option.IsVisible))
+                .ToArray(),
+            Sliders: TrayDashboardEditorSliders
+                .Select(option => new TrayDashboardSliderPreference(option.Kind, true))
+                .Concat(trayDashboardAllSliderOptions
+                    .Where(option => !activeSliders.Contains(option.Kind))
+                    .Select(option => new TrayDashboardSliderPreference(
+                        option.Kind,
+                        false)))
+                .ToArray(),
+            SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion),
+            queueSave: true);
+        UpdateTrayDashboardEditorAvailability();
+    }
+
+    private void UpdateTrayDashboardEditorAvailability()
+    {
+        AddTrayDashboardControlButton.IsEnabled =
+            trayDashboardAllControlOptions.Any(option => !option.IsVisible);
+        AddTrayDashboardSliderButton.IsEnabled =
+            TrayDashboardEditorSliders.Count
+                < TrayDashboardPreferenceDefaults.MaximumVisibleSliders
+            && trayDashboardAllSliderOptions.Any(option => !option.IsVisible);
+        TrayDashboardSliderCountText.Text =
+            $"{TrayDashboardEditorSliders.Count} of "
+            + TrayDashboardPreferenceDefaults.MaximumVisibleSliders;
+        int visibleStatusItemCount =
+            TrayDashboardEditorStatusItems.Count(option => option.IsVisible);
+        foreach (TrayDashboardStatusItemOption option in TrayDashboardEditorStatusItems)
+        {
+            option.IsEnabled = option.IsVisible
+                || visibleStatusItemCount
+                    < TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems;
+        }
+        TrayDashboardStatusCountText.Text =
+            $"{visibleStatusItemCount} of "
+            + TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems;
+    }
+
+    private void ApplyTrayDashboardPreference(
+        TrayDashboardPreference preference,
+        bool queueSave)
+    {
+        trayDashboardPreference = TrayDashboardPreferenceDefaults.Normalize(preference);
+        int previousSensors = Volatile.Read(ref trayDashboardLiveReadingSensors);
+        int sensors = (int)TrayDashboardPreferenceDefaults.ResolveLiveReadingSensors(
+            trayDashboardPreference);
+        Volatile.Write(ref trayDashboardLiveReadingSensors, sensors);
+        TrayDashboardPreferenceChanged?.Invoke(trayDashboardPreference);
+        if (trayDashboardVisible && sensors != previousSensors)
+        {
+            visibleObservationLoop.StartOrWake();
+        }
+        if (queueSave)
+        {
+            QueuePreferenceSave();
+        }
+    }
 
     private void ApplyPageLayoutPreferences(
         IReadOnlyList<PageLayoutPreference> preferences)
@@ -3350,7 +4019,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             "Check sections to show. Drag them into the order you want.",
             editorSections,
             "PageSectionOptionTemplate");
-        await dialog.ShowAsync();
+        if (await ShowContentDialogAsync(dialog) is null)
+        {
+            return;
+        }
 
         changingPageSections = true;
         try
@@ -3375,7 +4047,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         string automationName,
         string instructions,
         ObservableCollection<T> items,
-        string itemTemplateKey)
+        string itemTemplateKey,
+        FrameworkElement? additionalContent = null,
+        double maxListHeight = 480)
     {
         var reorderList = new Microsoft.UI.Xaml.Controls.ListView
         {
@@ -3385,7 +4059,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             CanReorderItems = true,
             ReorderMode = ListViewReorderMode.Enabled,
             AllowDrop = true,
-            MaxHeight = 480,
+            MaxHeight = maxListHeight,
             HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
             HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
             ItemTemplate = (DataTemplate)Root.Resources[itemTemplateKey],
@@ -3401,6 +4075,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             TextWrapping = TextWrapping.Wrap,
         });
         content.Children.Add(reorderList);
+        if (additionalContent is not null)
+        {
+            content.Children.Add(additionalContent);
+        }
 
         return new ContentDialog
         {
@@ -3636,7 +4314,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        if (await ShowContentDialogAsync(dialog) != ContentDialogResult.Primary)
         {
             return;
         }
@@ -3923,7 +4601,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
             };
-            if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+            if (await ShowContentDialogAsync(confirmation) != ContentDialogResult.Primary)
             {
                 return;
             }
@@ -3937,15 +4615,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade profile import failed: {0}", exception);
-            var failure = new ContentDialog
-            {
-                XamlRoot = Root.XamlRoot,
-                Title = "Profiles could not be imported",
-                Content = exception.Message,
-                CloseButtonText = "Close",
-                DefaultButton = ContentDialogButton.Close,
-            };
-            await failure.ShowAsync();
+            await ShowMessageDialogAsync(
+                "Profiles could not be imported",
+                exception.Message);
         }
     }
 

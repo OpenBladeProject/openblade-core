@@ -405,6 +405,86 @@
                               VerticalAlignment="Center" />
                 </Grid>
             </DataTemplate>
+            <DataTemplate x:Key="TrayDashboardControlOptionTemplate"
+                          x:DataType="local:TrayDashboardControlOption">
+                <Grid ColumnSpacing="10"
+                      Padding="16,10"
+                      HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE76F;"
+                              FontSize="14"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Text="{x:Bind Label, Mode=OneTime}"
+                                   Style="{StaticResource CardTitleStyle}" />
+                        <TextBlock Text="{x:Bind Description, Mode=OneTime}"
+                                   Style="{StaticResource SecondaryTextStyle}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Grid.Column="2"
+                            Padding="8"
+                            MinWidth="0"
+                            Click="OnRemoveTrayDashboardControl"
+                            AutomationProperties.Name="{x:Bind Label, Mode=OneTime}">
+                        <FontIcon Glyph="&#xE74D;" FontSize="12" />
+                    </Button>
+                </Grid>
+            </DataTemplate>
+            <DataTemplate x:Key="TrayDashboardStatusItemOptionTemplate"
+                          x:DataType="local:TrayDashboardStatusItemOption">
+                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="0,0,0,1"
+                        Padding="16,12">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{x:Bind Label, Mode=OneTime}"
+                                   Style="{StaticResource CardTitleStyle}"
+                                   VerticalAlignment="Center" />
+                        <ToggleSwitch Grid.Column="1"
+                                      IsOn="{x:Bind IsVisible, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind IsEnabled, Mode=OneWay}"
+                                      MinWidth="0"
+                                      OffContent=""
+                                      OnContent=""
+                                      AutomationProperties.Name="{x:Bind Label, Mode=OneTime}" />
+                    </Grid>
+                </Border>
+            </DataTemplate>
+            <DataTemplate x:Key="TrayDashboardSliderOptionTemplate"
+                          x:DataType="local:TrayDashboardSliderOption">
+                <Grid ColumnSpacing="10"
+                      Padding="16,10"
+                      HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE76F;"
+                              FontSize="14"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1"
+                               Text="{x:Bind Label, Mode=OneTime}"
+                               Style="{StaticResource CardTitleStyle}"
+                               VerticalAlignment="Center" />
+                    <Button Grid.Column="2"
+                            Padding="8"
+                            MinWidth="0"
+                            Click="OnRemoveTrayDashboardSlider"
+                            AutomationProperties.Name="{x:Bind Label, Mode=OneTime}">
+                        <FontIcon Glyph="&#xE74D;" FontSize="12" />
+                    </Button>
+                </Grid>
+            </DataTemplate>
             <DataTemplate x:Key="PageSectionOptionTemplate"
                           x:DataType="local:PageSectionOption">
                 <Grid ColumnSpacing="10"
@@ -3248,6 +3328,25 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Tray dashboard"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Choose the controls and live details shown when you click the tray icon."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Content="Customize"
+                                            VerticalAlignment="Center"
+                                            Click="OnCustomizeTrayDashboard"
+                                            AutomationProperties.Name="Customize tray dashboard" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="App theme" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="Follow Windows, or always use light or dark mode."
                                                    Style="{StaticResource SecondaryTextStyle}" />
@@ -3548,6 +3647,153 @@
                         </StackPanel>
                         </StackPanel>
 
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="TrayDashboardCustomizationPage"
+                              Visibility="Collapsed"
+                              HorizontalContentAlignment="Stretch"
+                              HorizontalScrollMode="Disabled"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollMode="Enabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="28,20,28,28"
+                                Spacing="20"
+                                Width="{Binding ElementName=TrayDashboardCustomizationPage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Button Padding="8"
+                                    MinWidth="0"
+                                    Click="OnExitTrayDashboardCustomization"
+                                    AutomationProperties.Name="Back to Settings">
+                                <FontIcon Glyph="&#xE72B;" FontSize="16" />
+                            </Button>
+                            <TextBlock Grid.Column="1"
+                                       Text="Customize tray dashboard"
+                                       Style="{StaticResource PageHeaderTitleStyle}"
+                                       VerticalAlignment="Center" />
+                            <Button Grid.Column="2"
+                                    Content="Reset"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    Click="OnResetTrayDashboard"
+                                    AutomationProperties.Name="Reset tray dashboard" />
+                        </Grid>
+
+                        <TextBlock Text="Drag active items to reorder them. Changes appear immediately in the tray popup beside this window."
+                                   Style="{StaticResource SecondaryTextStyle}"
+                                   TextWrapping="Wrap" />
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Quick controls"
+                                       Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="The first six controls remain visible. Any additional controls scroll in the popup."
+                                       Style="{StaticResource SecondaryTextStyle}"
+                                       TextWrapping="Wrap" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <ListView ItemsSource="{x:Bind TrayDashboardEditorControls, Mode=OneWay}"
+                                              ItemTemplate="{StaticResource TrayDashboardControlOptionTemplate}"
+                                              ItemContainerStyle="{StaticResource DashboardReorderListItemStyle}"
+                                              SelectionMode="None"
+                                              CanDragItems="True"
+                                              CanReorderItems="True"
+                                              ReorderMode="Enabled"
+                                              AllowDrop="True"
+                                              HorizontalContentAlignment="Stretch"
+                                              AutomationProperties.Name="Active tray dashboard controls" />
+                                    <Button x:Name="AddTrayDashboardControlButton"
+                                            Style="{StaticResource IconActionButtonStyle}"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="16,12"
+                                            Click="OnAddTrayDashboardControl"
+                                            AutomationProperties.Name="Add tray dashboard control">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE710;" FontSize="12" />
+                                            <TextBlock Text="Add control" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Spacing="8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Adjustments"
+                                           Style="{StaticResource SectionHeaderStyle}" />
+                                <TextBlock x:Name="TrayDashboardSliderCountText"
+                                           Grid.Column="1"
+                                           Style="{StaticResource SecondaryTextStyle}"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                            <TextBlock Text="Choose up to two sliders for the fixed middle section of the popup."
+                                       Style="{StaticResource SecondaryTextStyle}"
+                                       TextWrapping="Wrap" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <ListView ItemsSource="{x:Bind TrayDashboardEditorSliders, Mode=OneWay}"
+                                              ItemTemplate="{StaticResource TrayDashboardSliderOptionTemplate}"
+                                              ItemContainerStyle="{StaticResource DashboardReorderListItemStyle}"
+                                              SelectionMode="None"
+                                              CanDragItems="True"
+                                              CanReorderItems="True"
+                                              ReorderMode="Enabled"
+                                              AllowDrop="True"
+                                              HorizontalContentAlignment="Stretch"
+                                              AutomationProperties.Name="Active tray dashboard adjustments" />
+                                    <Button x:Name="AddTrayDashboardSliderButton"
+                                            Style="{StaticResource IconActionButtonStyle}"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="16,12"
+                                            Click="OnAddTrayDashboardSlider"
+                                            AutomationProperties.Name="Add tray dashboard adjustment">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE710;" FontSize="12" />
+                                            <TextBlock Text="Add adjustment" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Spacing="8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Status row"
+                                           Style="{StaticResource SectionHeaderStyle}" />
+                                <TextBlock x:Name="TrayDashboardStatusCountText"
+                                           Grid.Column="1"
+                                           Style="{StaticResource SecondaryTextStyle}"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                            <TextBlock Text="Choose up to three live readings shown along the bottom of the popup."
+                                       Style="{StaticResource SecondaryTextStyle}"
+                                       TextWrapping="Wrap" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <ItemsControl ItemsSource="{x:Bind TrayDashboardEditorStatusItems, Mode=OneWay}"
+                                              ItemTemplate="{StaticResource TrayDashboardStatusItemOptionTemplate}"
+                                              AutomationProperties.Name="Tray dashboard status items" />
+                            </Border>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -4108,7 +4354,34 @@
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Other Razer software running" Style="{StaticResource TroubleshootingLabelStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TroubleshootingOtherRazerSoftwareStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
+                                            <Grid Grid.Column="1">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <TextBlock Text="{x:Bind ViewModel.TroubleshootingOtherRazerSoftwareStatus, Mode=OneWay}"
+                                                           Style="{StaticResource TroubleshootingValueStyle}"
+                                                           TextWrapping="Wrap" />
+                                                <Button x:Name="StopRazerServicesButton"
+                                                        Grid.Column="1"
+                                                        Margin="12,0,0,0"
+                                                        Style="{StaticResource DestructiveButtonStyle}"
+                                                        VerticalAlignment="Center"
+                                                        Click="OnStopRazerServices"
+                                                        AutomationProperties.Name="Stop Razer services"
+                                                        AutomationProperties.LiveSetting="Polite">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                                        <ProgressRing x:Name="StopRazerServicesProgressRing"
+                                                                      Width="14"
+                                                                      Height="14"
+                                                                      IsIndeterminate="True"
+                                                                      IsActive="False"
+                                                                      Visibility="Collapsed" />
+                                                        <FontIcon x:Name="StopRazerServicesIcon"
+                                                                  Glyph="&#xE71A;"
+                                                                  FontSize="14" />
+                                                        <TextBlock x:Name="StopRazerServicesButtonLabel"
+                                                                   Text="Stop services" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </Grid>
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}" Visibility="{x:Bind ViewModel.HasTroubleshootingRecentError, Mode=OneWay}">
