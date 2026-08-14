@@ -1065,6 +1065,14 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("ViewModel.AboutServiceVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutBatteryHealthStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains(
+            "ViewModel.AboutDisplayBrightnessDriverStatus",
+            aboutPage.ToString(),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.AboutDisplayBrightnessDriverToolTip",
+            aboutPage.ToString(),
+            StringComparison.Ordinal);
+        Assert.Contains(
             "ViewModel.TroubleshootingUsbDeviceStatus",
             aboutPage.ToString(),
             StringComparison.Ordinal);
@@ -1072,6 +1080,9 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(aboutPage.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Battery health");
+        Assert.Contains(aboutPage.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Razer brightness driver");
         Assert.Equal(
             new string?[] { "OpenBlade app", "Session agent", "Service" },
             aboutVersions

@@ -23,9 +23,13 @@ public sealed class RazerDisplayBrightnessHidTransportSourceContractTests
             "ValidateExactPath(path, out string? identityFailure)",
             openHandle,
             StringComparison.Ordinal);
+        int virtualIdentityCheck = source.IndexOf(
+            "ValidateVirtualConsumerDevice()",
+            identityCheck,
+            StringComparison.Ordinal);
         int submission = source.IndexOf(
             "DeviceIoControl(",
-            identityCheck,
+            virtualIdentityCheck,
             StringComparison.Ordinal);
 
         Assert.True(openHandle > writerStart, "The path must be opened before validation.");
@@ -33,11 +37,72 @@ public sealed class RazerDisplayBrightnessHidTransportSourceContractTests
             identityCheck > openHandle,
             "Every Razer write must revalidate the exact device while its handle remains open.");
         Assert.True(
-            submission > identityCheck,
-            "The Razer IOCTL must be submitted only after exact-device validation.");
+            virtualIdentityCheck > identityCheck,
+            "Every Razer write must revalidate the virtual Consumer Control branch.");
+        Assert.True(
+            submission > virtualIdentityCheck,
+            "The Razer IOCTL must be submitted only after both device branches are validated.");
         Assert.Contains("SetupDiEnumDeviceInterfaces(", source, StringComparison.Ordinal);
-        Assert.Contains("HasExactPhysicalAncestor", source, StringComparison.Ordinal);
+        Assert.Contains("HasExactAncestor", source, StringComparison.Ordinal);
         Assert.Contains("ControlServiceName", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RazerResolver_RequiresPresentVirtualConsumerBranch()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "src",
+            "OpenBlade.Service",
+            "WindowsRazerDisplayBrightnessHidTransport.cs"));
+        int resolverStart = source.IndexOf(
+            "private static (string? Path, DisplayBrightnessHidWriteResult Result) ResolveDevicePath()",
+            StringComparison.Ordinal);
+        int controlIdentity = source.IndexOf(
+            "IsExactControlDevice(deviceSet, ref deviceInfo, out string? failure)",
+            resolverStart,
+            StringComparison.Ordinal);
+        int virtualIdentity = source.IndexOf(
+            "ValidateVirtualConsumerDevice()",
+            controlIdentity,
+            StringComparison.Ordinal);
+        int acceptedPath = source.IndexOf(
+            "DisplayBrightnessHidWriteStatus.Applied));",
+            virtualIdentity,
+            StringComparison.Ordinal);
+
+        Assert.True(controlIdentity > resolverStart);
+        Assert.True(virtualIdentity > controlIdentity);
+        Assert.True(acceptedPath > virtualIdentity);
+        Assert.Contains("SetupDiEnumDeviceInfo(", source, StringComparison.Ordinal);
+        Assert.Contains("VirtualConsumerServiceName", source, StringComparison.Ordinal);
+        Assert.Contains("VirtualConsumerAncestorPrefix", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RazerResolver_PreservesDeviceIdentityInspectionFailures()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "src",
+            "OpenBlade.Service",
+            "WindowsRazerDisplayBrightnessHidTransport.cs"));
+        int rejectedIdentity = source.IndexOf(
+            "if (!IsExactControlDevice(deviceSet, ref deviceInfo, out string? failure))",
+            StringComparison.Ordinal);
+        int preserveFailure = source.IndexOf(
+            "inspectionFailure = failure;",
+            rejectedIdentity,
+            StringComparison.Ordinal);
+        int retryIdentity = source.IndexOf(
+            "if (IsExactControlInstance(deviceInfo.DeviceInstance))",
+            rejectedIdentity,
+            StringComparison.Ordinal);
+
+        Assert.True(rejectedIdentity >= 0);
+        Assert.True(
+            preserveFailure > rejectedIdentity && preserveFailure < retryIdentity,
+            "An indeterminate device identity must not be reported as unavailable.");
     }
 
     private static string FindRepositoryRoot()

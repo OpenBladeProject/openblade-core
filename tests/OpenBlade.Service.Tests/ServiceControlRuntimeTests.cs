@@ -163,6 +163,31 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             controller.Usages);
     }
 
+    [Theory]
+    [InlineData(DisplayBrightnessHidAvailability.Unknown)]
+    [InlineData(DisplayBrightnessHidAvailability.Available)]
+    [InlineData(DisplayBrightnessHidAvailability.Unavailable)]
+    public async Task DisplayBrightnessHidAvailability_IsPublishedWithoutUsageWrite(
+        DisplayBrightnessHidAvailability availability)
+    {
+        var controller = new RecordingDisplayBrightnessHidController
+        {
+            Availability = availability,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            displayBrightnessHidController: controller);
+
+        Assert.Equal(
+            availability,
+            context.Runtime.GetStatus().DisplayBrightnessHidAvailability);
+        Assert.Empty(controller.Usages);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            availability,
+            context.Runtime.GetStatus().DisplayBrightnessHidAvailability);
+    }
+
     [Fact]
     public async Task ActivateUserAsync_SwitchesProfilesAndSameUserIsNoOp()
     {
@@ -7205,6 +7230,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(ServiceControlRuntime.Equivalent(
             baseline,
             baseline with { BatteryProtectionOverride = false }));
+        Assert.False(ServiceControlRuntime.Equivalent(
+            baseline,
+            baseline with
+            {
+                DisplayBrightnessHidAvailability =
+                    DisplayBrightnessHidAvailability.Available,
+            }));
     }
 
     [Fact]
@@ -8906,13 +8938,24 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Fact]
     public async Task LiveReadingsFastPath_DeviceMissForcesNextPollThroughFullObservation()
     {
-        TestContext context = CreateContext(providerAvailable: true);
+        var brightnessController = new RecordingDisplayBrightnessHidController
+        {
+            Availability = DisplayBrightnessHidAvailability.Available,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            displayBrightnessHidController: brightnessController);
         await context.Runtime.ObserveAsync(
             includeLiveReadings: true,
             CancellationToken.None);
         int capabilityReads = context.Device.CapabilitiesReadCalls;
+        Assert.Equal(
+            DisplayBrightnessHidAvailability.Available,
+            context.Runtime.GetStatus().DisplayBrightnessHidAvailability);
 
         context.Provider.Available = false;
+        brightnessController.Availability =
+            DisplayBrightnessHidAvailability.Unavailable;
         await context.Runtime.ObserveAsync(
             includeLiveReadings: true,
             CancellationToken.None);
@@ -8937,6 +8980,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.False(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            DisplayBrightnessHidAvailability.Unavailable,
+            context.Runtime.GetStatus().DisplayBrightnessHidAvailability);
         Assert.Equal(capabilityReads, context.Device.CapabilitiesReadCalls);
     }
 
@@ -10035,6 +10081,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         private readonly Queue<ControlOperationResult> results = new(results);
 
         public List<DisplayBrightnessHidUsage> Usages { get; } = [];
+
+        public DisplayBrightnessHidAvailability Availability { get; set; } =
+            DisplayBrightnessHidAvailability.Available;
+
+        public DisplayBrightnessHidAvailability GetAvailability() => Availability;
 
         public Task<ControlOperationResult> SetUsageAsync(
             DisplayBrightnessHidUsage usage,

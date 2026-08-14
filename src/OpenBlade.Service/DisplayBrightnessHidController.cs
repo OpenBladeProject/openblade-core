@@ -5,6 +5,8 @@ namespace OpenBlade.Service;
 
 public interface IDisplayBrightnessHidController
 {
+    DisplayBrightnessHidAvailability GetAvailability();
+
     Task<ControlOperationResult> SetUsageAsync(
         DisplayBrightnessHidUsage usage,
         CancellationToken cancellationToken);
@@ -23,6 +25,8 @@ internal readonly record struct DisplayBrightnessHidWriteResult(
 
 internal interface IDisplayBrightnessHidTransport
 {
+    DisplayBrightnessHidAvailability GetAvailability();
+
     DisplayBrightnessHidWriteResult SetUsage(DisplayBrightnessHidUsage usage);
 }
 
@@ -53,6 +57,9 @@ public sealed class DisplayBrightnessHidController : IDisplayBrightnessHidContro
         this.transport = transport ?? throw new ArgumentNullException(nameof(transport));
         this.logger = logger;
     }
+
+    public DisplayBrightnessHidAvailability GetAvailability() =>
+        transport.GetAvailability();
 
     public Task<ControlOperationResult> SetUsageAsync(
         DisplayBrightnessHidUsage usage,
@@ -98,6 +105,9 @@ internal sealed class UnavailableDisplayBrightnessHidController
     private UnavailableDisplayBrightnessHidController()
     {
     }
+
+    public DisplayBrightnessHidAvailability GetAvailability() =>
+        DisplayBrightnessHidAvailability.Unavailable;
 
     public Task<ControlOperationResult> SetUsageAsync(
         DisplayBrightnessHidUsage usage,

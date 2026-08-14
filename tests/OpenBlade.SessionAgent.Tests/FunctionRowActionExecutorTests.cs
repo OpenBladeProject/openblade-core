@@ -73,6 +73,33 @@ public sealed class FunctionRowActionExecutorTests
         Assert.Empty(osd.Values);
     }
 
+    [Fact]
+    public async Task DisplayBrightnessDisplayedAvailability_DoesNotSkipLiveFallbackDecision()
+    {
+        var client = new RecordingServiceClient(
+            Status(LightingSettingsFactory.Off()) with
+            {
+                DisplayBrightnessHidAvailability =
+                    DisplayBrightnessHidAvailability.Available,
+            })
+        {
+            DisplayBrightnessHidResult = new(
+                ControlOperationStatus.Blocked,
+                "Native brightness input is unavailable."),
+        };
+        var display = new RecordingDisplayBrightnessController();
+        var osd = new RecordingDisplayBrightnessOsd();
+        var executor = CreateExecutor(client, display: display, osd: osd);
+
+        await executor.ExecuteAsync(
+            Input(FunctionRowAction.DisplayBrightnessUp),
+            CancellationToken.None);
+
+        Assert.Equal([1], display.Directions);
+        Assert.Equal([display.NextBrightness!.Value], osd.Values);
+        Assert.Equal(0, client.GetStatusCalls);
+    }
+
     [Theory]
     [InlineData(FunctionRowAction.DisplayBrightnessDown, DisplayBrightnessHidUsage.Decrement)]
     [InlineData(FunctionRowAction.DisplayBrightnessUp, DisplayBrightnessHidUsage.Increment)]

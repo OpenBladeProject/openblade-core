@@ -31,12 +31,24 @@ public sealed class RazerDisplayBrightnessHidTransportTests
             new Guid("e3be005d-d130-4910-88ff-09ae02f680e9"),
             WindowsRazerDisplayBrightnessHidTransport.ControlInterfaceGuid);
         Assert.Equal(
+            new Guid("745a17a0-74d3-11d0-b6fe-00a0c90f57da"),
+            WindowsRazerDisplayBrightnessHidTransport.HidClassGuid);
+        Assert.Equal(
             @"RZCONTROL\VID_1532&PID_02E0&MI_00\",
             WindowsRazerDisplayBrightnessHidTransport.ControlInstanceIdPrefix);
         Assert.Equal(
+            @"RZVIRTUAL\VID_1532&PID_02E0&MI_00&COL03\",
+            WindowsRazerDisplayBrightnessHidTransport.VirtualConsumerInstanceIdPrefix);
+        Assert.Equal(
             @"USB\VID_1532&PID_02E0&MI_02\",
             WindowsRazerDisplayBrightnessHidTransport.PhysicalInterfaceAncestorPrefix);
+        Assert.Equal(
+            @"USB\VID_1532&PID_02E0&MI_01\",
+            WindowsRazerDisplayBrightnessHidTransport.VirtualConsumerAncestorPrefix);
         Assert.Equal("RzCommon", WindowsRazerDisplayBrightnessHidTransport.ControlServiceName);
+        Assert.Equal(
+            "RzDev_02e0",
+            WindowsRazerDisplayBrightnessHidTransport.VirtualConsumerServiceName);
         Assert.Equal(0x88883020u, WindowsRazerDisplayBrightnessHidTransport.SubmitInputIoctl);
         Assert.Equal(10u, WindowsRazerDisplayBrightnessHidTransport.ConsumerControlInputType);
     }
@@ -97,6 +109,58 @@ public sealed class RazerDisplayBrightnessHidTransportTests
         Assert.Equal(DisplayBrightnessHidWriteStatus.Applied, second.Status);
         Assert.Equal(1, resolutionCount);
         Assert.Equal(["cached-razer-path", "cached-razer-path"], writtenPaths);
+    }
+
+    [Theory]
+    [InlineData((int)DisplayBrightnessHidWriteStatus.Applied, DisplayBrightnessHidAvailability.Available)]
+    [InlineData((int)DisplayBrightnessHidWriteStatus.Unavailable, DisplayBrightnessHidAvailability.Unavailable)]
+    [InlineData((int)DisplayBrightnessHidWriteStatus.Failed, DisplayBrightnessHidAvailability.Unknown)]
+    public void Availability_ProbesIdentityWithoutSubmittingUsage(
+        int resolutionStatusValue,
+        DisplayBrightnessHidAvailability expected)
+    {
+        DisplayBrightnessHidWriteStatus resolutionStatus =
+            (DisplayBrightnessHidWriteStatus)resolutionStatusValue;
+        int writes = 0;
+        var transport = new WindowsRazerDisplayBrightnessHidTransport(
+            () => (
+                resolutionStatus == DisplayBrightnessHidWriteStatus.Applied
+                    ? "admitted-razer-path"
+                    : null,
+                new DisplayBrightnessHidWriteResult(resolutionStatus)),
+            (_, _) =>
+            {
+                writes++;
+                return new DisplayBrightnessHidWriteResult(
+                    DisplayBrightnessHidWriteStatus.Applied);
+            });
+
+        Assert.Equal(expected, transport.GetAvailability());
+        Assert.Equal(0, writes);
+    }
+
+    [Fact]
+    public void Availability_DoesNotSeedTheWritePathCache()
+    {
+        int resolutions = 0;
+        var transport = new WindowsRazerDisplayBrightnessHidTransport(
+            () =>
+            {
+                resolutions++;
+                return (
+                    "admitted-razer-path",
+                    new DisplayBrightnessHidWriteResult(
+                        DisplayBrightnessHidWriteStatus.Applied));
+            },
+            (_, _) => new DisplayBrightnessHidWriteResult(
+                DisplayBrightnessHidWriteStatus.Applied));
+
+        Assert.Equal(
+            DisplayBrightnessHidAvailability.Available,
+            transport.GetAvailability());
+        _ = transport.SetUsage(DisplayBrightnessHidUsage.Increment);
+
+        Assert.Equal(2, resolutions);
     }
 
     [Fact]

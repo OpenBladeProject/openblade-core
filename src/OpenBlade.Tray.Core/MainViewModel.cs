@@ -1364,6 +1364,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ? UnavailableLabel
         : FormatBatteryHealth(latestStatus?.BatteryHealth);
 
+    public string AboutDisplayBrightnessDriverStatus => !IsConnected
+        ? UnavailableLabel
+        : latestStatus?.DisplayBrightnessHidAvailability switch
+        {
+            DisplayBrightnessHidAvailability.Available => "Available · Windows OSD",
+            DisplayBrightnessHidAvailability.Unavailable =>
+                "Not available · OpenBlade OSD",
+            _ => "Unknown",
+        };
+
+    public string AboutDisplayBrightnessDriverToolTip =>
+        "The exact admitted Razer driver lets Windows show its native brightness flyout. "
+        + "OpenBlade revalidates the exact device path for every key press. When the native path is "
+        + "unavailable, OpenBlade uses its own flyout.";
+
     public bool HasUntestedPlatformVersion =>
         CurrentTestedPlatformAssessment is
         {
@@ -8433,6 +8448,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(AboutMcuVersionStatus));
         Notify(nameof(AboutVbiosVersionStatus));
         Notify(nameof(AboutBatteryHealthStatus));
+        Notify(nameof(AboutDisplayBrightnessDriverStatus));
+        Notify(nameof(AboutDisplayBrightnessDriverToolTip));
         Notify(nameof(HasUntestedPlatformVersion));
         Notify(nameof(HasIncompatibleFirmware));
         Notify(nameof(PlatformCompatibilityWarningTitle));

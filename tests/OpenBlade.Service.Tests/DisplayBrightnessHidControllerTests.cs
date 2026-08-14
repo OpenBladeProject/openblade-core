@@ -7,6 +7,22 @@ namespace OpenBlade.Service.Tests;
 public sealed class DisplayBrightnessHidControllerTests
 {
     [Theory]
+    [InlineData(DisplayBrightnessHidAvailability.Available)]
+    [InlineData(DisplayBrightnessHidAvailability.Unavailable)]
+    [InlineData(DisplayBrightnessHidAvailability.Unknown)]
+    public void GetAvailability_UsesReadOnlyTransportStatus(
+        DisplayBrightnessHidAvailability availability)
+    {
+        var transport = new StubTransport(
+            new DisplayBrightnessHidWriteResult(DisplayBrightnessHidWriteStatus.Applied),
+            availability);
+        var controller = new DisplayBrightnessHidController(transport);
+
+        Assert.Equal(availability, controller.GetAvailability());
+        Assert.Null(transport.Usage);
+    }
+
+    [Theory]
     [InlineData((int)DisplayBrightnessHidWriteStatus.Applied, ControlOperationStatus.Applied)]
     [InlineData((int)DisplayBrightnessHidWriteStatus.Unavailable, ControlOperationStatus.Blocked)]
     [InlineData((int)DisplayBrightnessHidWriteStatus.Failed, ControlOperationStatus.Failed)]
@@ -85,10 +101,15 @@ public sealed class DisplayBrightnessHidControllerTests
         Assert.Null(transport.Usage);
     }
 
-    private sealed class StubTransport(DisplayBrightnessHidWriteResult result)
+    private sealed class StubTransport(
+        DisplayBrightnessHidWriteResult result,
+        DisplayBrightnessHidAvailability availability =
+            DisplayBrightnessHidAvailability.Available)
         : IDisplayBrightnessHidTransport
     {
         public DisplayBrightnessHidUsage? Usage { get; private set; }
+
+        public DisplayBrightnessHidAvailability GetAvailability() => availability;
 
         public DisplayBrightnessHidWriteResult SetUsage(DisplayBrightnessHidUsage usage)
         {

@@ -13,11 +13,18 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
     // updates or another Blade model must be admitted independently.
     internal static readonly Guid ControlInterfaceGuid = new(
         "e3be005d-d130-4910-88ff-09ae02f680e9");
+    internal static readonly Guid HidClassGuid = new(
+        "745a17a0-74d3-11d0-b6fe-00a0c90f57da");
     internal const string ControlInstanceIdPrefix =
         @"RZCONTROL\VID_1532&PID_02E0&MI_00\";
+    internal const string VirtualConsumerInstanceIdPrefix =
+        @"RZVIRTUAL\VID_1532&PID_02E0&MI_00&COL03\";
     internal const string PhysicalInterfaceAncestorPrefix =
         @"USB\VID_1532&PID_02E0&MI_02\";
+    internal const string VirtualConsumerAncestorPrefix =
+        @"USB\VID_1532&PID_02E0&MI_01\";
     internal const string ControlServiceName = "RzCommon";
+    internal const string VirtualConsumerServiceName = "RzDev_02e0";
     internal const uint SubmitInputIoctl = 0x88883020;
     internal const uint ConsumerControlInputType = 10;
     internal const int ControlBufferLength = 32;
@@ -60,6 +67,31 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
     {
         this.pathResolver = pathResolver ?? throw new ArgumentNullException(nameof(pathResolver));
         this.usageWriter = usageWriter ?? throw new ArgumentNullException(nameof(usageWriter));
+    }
+
+    public DisplayBrightnessHidAvailability GetAvailability()
+    {
+        lock (sync)
+        {
+            try
+            {
+                (string? path, DisplayBrightnessHidWriteResult resolution) = pathResolver();
+                if (path is not null)
+                {
+                    return DisplayBrightnessHidAvailability.Available;
+                }
+
+                return resolution.Status == DisplayBrightnessHidWriteStatus.Unavailable
+                    ? DisplayBrightnessHidAvailability.Unavailable
+                    : DisplayBrightnessHidAvailability.Unknown;
+            }
+            catch (Exception exception) when (exception is
+                Win32Exception or InvalidOperationException or IOException
+                or UnauthorizedAccessException or OverflowException)
+            {
+                return DisplayBrightnessHidAvailability.Unknown;
+            }
+        }
     }
 
     public DisplayBrightnessHidWriteResult SetUsage(DisplayBrightnessHidUsage usage)
@@ -124,12 +156,14 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
 
     private static (string? Path, DisplayBrightnessHidWriteResult Result) ResolveDevicePath()
     {
-        if (!IsDriverBaselineAdmitted(out string? baselineFailure))
+        DisplayBrightnessHidWriteStatus baselineStatus = GetDriverBaselineStatus(
+            out string? baselineFailure);
+        if (baselineStatus != DisplayBrightnessHidWriteStatus.Applied)
         {
             return (
                 null,
                 new DisplayBrightnessHidWriteResult(
-                    DisplayBrightnessHidWriteStatus.Unavailable,
+                    baselineStatus,
                     baselineFailure));
         }
 
@@ -146,6 +180,7 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
 
         bool exactDeviceObserved = false;
         string? exactDeviceFailure = null;
+        string? inspectionFailure = null;
         try
         {
             for (uint index = 0; ; index++)
@@ -173,13 +208,19 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
                 {
                     path = GetDevicePath(deviceSet, ref interfaceData, ref deviceInfo);
                 }
-                catch (Win32Exception)
+                catch (Win32Exception exception)
                 {
+                    inspectionFailure = exception.Message;
                     continue;
                 }
 
                 if (!IsExactControlDevice(deviceSet, ref deviceInfo, out string? failure))
                 {
+                    if (failure is not null)
+                    {
+                        inspectionFailure = failure;
+                    }
+
                     if (IsExactControlInstance(deviceInfo.DeviceInstance))
                     {
                         exactDeviceObserved = true;
@@ -190,6 +231,13 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
                 }
 
                 exactDeviceObserved = true;
+                DisplayBrightnessHidWriteResult virtualConsumer =
+                    ValidateVirtualConsumerDevice();
+                if (virtualConsumer.Status != DisplayBrightnessHidWriteStatus.Applied)
+                {
+                    return (null, virtualConsumer);
+                }
+
                 return (
                     path,
                     new DisplayBrightnessHidWriteResult(
@@ -211,7 +259,102 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
             : (
                 null,
                 new DisplayBrightnessHidWriteResult(
-                    DisplayBrightnessHidWriteStatus.Unavailable));
+                    inspectionFailure is null
+                        ? DisplayBrightnessHidWriteStatus.Unavailable
+                        : DisplayBrightnessHidWriteStatus.Failed,
+                    inspectionFailure));
+    }
+
+    private static DisplayBrightnessHidWriteResult ValidateVirtualConsumerDevice()
+    {
+        Guid hidClassGuid = HidClassGuid;
+        IntPtr deviceSet = SetupDiGetClassDevs(
+            ref hidClassGuid,
+            null,
+            IntPtr.Zero,
+            DigcfPresent);
+        if (deviceSet == InvalidHandleValue)
+        {
+            return new DisplayBrightnessHidWriteResult(
+                DisplayBrightnessHidWriteStatus.Failed,
+                new Win32Exception(Marshal.GetLastWin32Error()).Message);
+        }
+
+        bool exactDeviceObserved = false;
+        string? inspectionFailure = null;
+        try
+        {
+            for (uint index = 0; ; index++)
+            {
+                var deviceInfo = DeviceInfoData.Create();
+                if (!SetupDiEnumDeviceInfo(deviceSet, index, ref deviceInfo))
+                {
+                    int error = Marshal.GetLastWin32Error();
+                    if (error == ErrorNoMoreItems)
+                    {
+                        break;
+                    }
+
+                    return new DisplayBrightnessHidWriteResult(
+                        DisplayBrightnessHidWriteStatus.Failed,
+                        new Win32Exception(error).Message);
+                }
+
+                string instanceId;
+                try
+                {
+                    instanceId = GetDeviceInstanceId(deviceInfo.DeviceInstance);
+                }
+                catch (InvalidOperationException exception)
+                {
+                    inspectionFailure = exception.Message;
+                    continue;
+                }
+
+                if (!instanceId.StartsWith(
+                        VirtualConsumerInstanceIdPrefix,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                exactDeviceObserved = true;
+                try
+                {
+                    if (string.Equals(
+                            GetDeviceRegistryString(
+                                deviceSet,
+                                ref deviceInfo,
+                                SpdrpService),
+                            VirtualConsumerServiceName,
+                            StringComparison.OrdinalIgnoreCase)
+                        && HasExactAncestor(
+                            deviceInfo.DeviceInstance,
+                            VirtualConsumerAncestorPrefix))
+                    {
+                        return new DisplayBrightnessHidWriteResult(
+                            DisplayBrightnessHidWriteStatus.Applied);
+                    }
+                }
+                catch (Exception exception) when (exception is
+                    Win32Exception or InvalidOperationException)
+                {
+                    inspectionFailure = exception.Message;
+                }
+            }
+        }
+        finally
+        {
+            _ = SetupDiDestroyDeviceInfoList(deviceSet);
+        }
+
+        return new DisplayBrightnessHidWriteResult(
+            exactDeviceObserved || inspectionFailure is not null
+                ? DisplayBrightnessHidWriteStatus.Failed
+                : DisplayBrightnessHidWriteStatus.Unavailable,
+            inspectionFailure ?? (exactDeviceObserved
+                ? "The exact Razer virtual Consumer Control device failed identity validation."
+                : null));
     }
 
     private static DisplayBrightnessHidWriteResult WriteUsageToPath(
@@ -242,6 +385,12 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
                 DisplayBrightnessHidWriteStatus.Unavailable,
                 identityFailure
                     ?? "The cached Razer control path no longer belongs to the admitted device.");
+        }
+
+        DisplayBrightnessHidWriteResult virtualConsumer = ValidateVirtualConsumerDevice();
+        if (virtualConsumer.Status != DisplayBrightnessHidWriteStatus.Applied)
+        {
+            return virtualConsumer;
         }
 
         byte[] buffer = CreateControlBuffer(usage);
@@ -369,7 +518,9 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
 
         try
         {
-            if (HasExactPhysicalAncestor(deviceInfo.DeviceInstance))
+            if (HasExactAncestor(
+                    deviceInfo.DeviceInstance,
+                    PhysicalInterfaceAncestorPrefix))
             {
                 return true;
             }
@@ -398,13 +549,15 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
         }
     }
 
-    private static bool HasExactPhysicalAncestor(uint deviceInstance)
+    private static bool HasExactAncestor(
+        uint deviceInstance,
+        string expectedPrefix)
     {
         uint current = deviceInstance;
         for (int depth = 0; depth < 16; depth++)
         {
             if (GetDeviceInstanceId(current).StartsWith(
-                    PhysicalInterfaceAncestorPrefix,
+                    expectedPrefix,
                     StringComparison.OrdinalIgnoreCase))
             {
                 return true;
@@ -421,22 +574,25 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
         return false;
     }
 
-    private static bool IsDriverBaselineAdmitted(out string? failure)
+    private static DisplayBrightnessHidWriteStatus GetDriverBaselineStatus(
+        out string? failure)
     {
         string drivers = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.System),
             "drivers");
-        return HasExpectedHash(
-                Path.Combine(drivers, "RzCommon.sys"),
-                RzCommonSha256,
-                out failure)
-            && HasExpectedHash(
+        DisplayBrightnessHidWriteStatus common = GetExpectedHashStatus(
+            Path.Combine(drivers, "RzCommon.sys"),
+            RzCommonSha256,
+            out failure);
+        return common == DisplayBrightnessHidWriteStatus.Applied
+            ? GetExpectedHashStatus(
                 Path.Combine(drivers, "RzDev_02e0.sys"),
                 RzDeviceSha256,
-                out failure);
+                out failure)
+            : common;
     }
 
-    private static bool HasExpectedHash(
+    private static DisplayBrightnessHidWriteStatus GetExpectedHashStatus(
         string path,
         string expectedHash,
         out string? failure)
@@ -445,7 +601,7 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
         if (!File.Exists(path))
         {
             failure = $"The admitted Razer driver file is missing: {Path.GetFileName(path)}.";
-            return false;
+            return DisplayBrightnessHidWriteStatus.Unavailable;
         }
 
         try
@@ -456,16 +612,16 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
                     actual,
                     Convert.FromHexString(expectedHash)))
             {
-                return true;
+                return DisplayBrightnessHidWriteStatus.Applied;
             }
 
             failure = $"The installed {Path.GetFileName(path)} build is not admitted.";
-            return false;
+            return DisplayBrightnessHidWriteStatus.Unavailable;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             failure = exception.Message;
-            return false;
+            return DisplayBrightnessHidWriteStatus.Failed;
         }
     }
 
@@ -614,6 +770,13 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
         ref Guid interfaceClassGuid,
         uint memberIndex,
         ref DeviceInterfaceData deviceInterfaceData);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetupDiEnumDeviceInfo(
+        IntPtr deviceInfoSet,
+        uint memberIndex,
+        ref DeviceInfoData deviceInfoData);
 
     [DllImport("setupapi.dll", EntryPoint = "SetupDiGetDeviceInterfaceDetailW", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

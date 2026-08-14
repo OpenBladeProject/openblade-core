@@ -229,6 +229,13 @@ public enum FirmwareCompatibilityStatus
     UntestedAllowed,
 }
 
+public enum DisplayBrightnessHidAvailability
+{
+    Unknown,
+    Available,
+    Unavailable,
+}
+
 public sealed record ServiceStatusSnapshot(
     long Revision,
     bool DeviceVerified,
@@ -263,7 +270,9 @@ public sealed record ServiceStatusSnapshot(
     SessionControlAccess ControlAccess = SessionControlAccess.Active,
     bool AllowUntestedFirmware = false,
     FirmwareCompatibilityStatus FirmwareCompatibility =
-        FirmwareCompatibilityStatus.Unknown)
+        FirmwareCompatibilityStatus.Unknown,
+    DisplayBrightnessHidAvailability DisplayBrightnessHidAvailability =
+        DisplayBrightnessHidAvailability.Unknown)
 {
     public IReadOnlyList<DeviceSubsystem> UnconfirmedWrites { get; init; } = [];
 

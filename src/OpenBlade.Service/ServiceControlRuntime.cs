@@ -6819,6 +6819,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             GamingModeEnabled = observation.GamingModeEnabled,
             BatteryHealth = batteryHealth,
             FirmwareCompatibility = deviceProvider.FirmwareCompatibility,
+            DisplayBrightnessHidAvailability =
+                displayBrightnessHidController.GetAvailability(),
         });
     }
 
@@ -7689,6 +7691,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? current.KeyboardDriverModeActive
                 : null,
             FirmwareCompatibility = deviceProvider.FirmwareCompatibility,
+            DisplayBrightnessHidAvailability =
+                displayBrightnessHidController.GetAvailability(),
         });
     }
 
@@ -7754,7 +7758,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             KeyboardLightingControlMode:
                 preferences.KeyboardLightingControlMode,
             AllowUntestedFirmware: preferences.AllowUntestedFirmware,
-            FirmwareCompatibility: deviceProvider.FirmwareCompatibility)
+            FirmwareCompatibility: deviceProvider.FirmwareCompatibility,
+            DisplayBrightnessHidAvailability:
+                displayBrightnessHidController.GetAvailability())
         {
             FanControlOverride = Automation.FanControlOverride,
             BatteryPolicyOverride = Automation.BatteryPolicyOverride,
@@ -8138,6 +8144,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             == right.AlwaysOverrideExternalLightingChanges
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
         && left.FirmwareCompatibility == right.FirmwareCompatibility
+        && left.DisplayBrightnessHidAvailability
+            == right.DisplayBrightnessHidAvailability
         && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
         && left.LightingRendererOwnership == right.LightingRendererOwnership
         && (left.LightingSuppressions ?? []).SequenceEqual(
