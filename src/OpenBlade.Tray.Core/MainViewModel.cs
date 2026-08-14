@@ -113,19 +113,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         new(
             null,
             "Leave unchanged",
-            "OpenBlade will not change the Windows setting when this profile activates."),
+            "Keeps the current Windows setting."),
         new(
             WindowsPowerMode.BestPowerEfficiency,
             "Best power efficiency",
-            "Favors lower energy use and longer battery life."),
+            "Favors lower energy use."),
         new(
             WindowsPowerMode.Balanced,
             "Balanced",
-            "Balances responsiveness with energy use."),
+            "Balances performance and energy use."),
         new(
             WindowsPowerMode.BestPerformance,
             "Best performance",
-            "Favors responsiveness at the cost of higher energy use and heat."),
+            "Favors responsiveness over energy use."),
     ];
 
     private static readonly IReadOnlyList<LightingEffect> KnownLightingEffects =

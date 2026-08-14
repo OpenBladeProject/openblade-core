@@ -484,13 +484,21 @@ public sealed class CapabilityPresentationTests
             "{Binding AvailableWindowsPowerModeOptions}",
             Attribute(windowsPowerMode, "ItemsSource"));
         Assert.Equal("Label", Attribute(windowsPowerMode, "DisplayMemberPath"));
+        XElement windowsPowerModeDescription = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "{Binding SelectedWindowsPowerModeDescription}");
+        Assert.Equal("Left", Attribute(windowsPowerModeDescription, "HorizontalAlignment"));
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Laptop performance");
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Windows power mode");
-        Assert.Contains("Energy Saver is separate", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectedWindowsPowerModeDescription",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Energy Saver is separate", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "CPU power limit");

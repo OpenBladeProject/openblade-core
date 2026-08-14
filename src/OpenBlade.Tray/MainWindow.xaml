@@ -501,10 +501,7 @@
                                                    Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="{Binding SelectedWindowsPowerModeDescription}"
                                                    Style="{StaticResource SecondaryTextStyle}"
-                                                   TextWrapping="Wrap"
-                                                   MaxWidth="520" />
-                                        <TextBlock Text="Energy Saver is separate, and Windows can override the requested mode while it is active."
-                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   HorizontalAlignment="Left"
                                                    TextWrapping="Wrap"
                                                    MaxWidth="520" />
                                     </StackPanel>

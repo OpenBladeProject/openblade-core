@@ -80,6 +80,14 @@ public sealed class MainViewModelTests
         Assert.Equal(
             ["Leave unchanged", "Best power efficiency", "Balanced", "Best performance"],
             viewModel.AvailableWindowsPowerModeOptions.Select(option => option.Label));
+        Assert.Equal(
+            [
+                "Keeps the current Windows setting.",
+                "Favors lower energy use.",
+                "Balances performance and energy use.",
+                "Favors responsiveness over energy use.",
+            ],
+            viewModel.AvailableWindowsPowerModeOptions.Select(option => option.Description));
         Assert.Null(viewModel.SelectedWindowsPowerModeOption.Value);
 
         viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
