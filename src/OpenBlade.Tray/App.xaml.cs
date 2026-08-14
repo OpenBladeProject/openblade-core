@@ -18,7 +18,12 @@ internal enum StartOpenBladeResult
 
 public partial class App : Microsoft.UI.Xaml.Application
 {
+    private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
     private const string PerformanceNotificationReplacementTag = "performance";
+    private static readonly TimeSpan RazerServiceStopCancellationTimeout =
+        TimeSpan.FromSeconds(65);
+    private static readonly TimeSpan RazerServiceStopHardExitTimeout =
+        TimeSpan.FromSeconds(70);
 
     private CrashReportWriter? crashReportWriter;
     private IDisposable? traceLogRegistration;
@@ -26,6 +31,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private RegisteredWaitHandle? shutdownRegistration;
     private TrayInstanceCoordinator? instanceCoordinator;
     private MainWindow? mainWindow;
+    private TrayDashboardWindow? trayDashboardWindow;
     private WindowsTrayBrightnessOsdHost? brightnessOsdHost;
     private WindowsTrayPerformanceNotificationHost? performanceNotificationHost;
     private WindowsShellThemeSource? trayIconThemeSource;
@@ -43,15 +49,33 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         base.OnLaunched(args);
         string[] commandLineArguments = Environment.GetCommandLineArgs();
+        if (commandLineArguments is [_, XamlStartupSmokeArgument, string smokeReportPath])
+        {
+            try
+            {
+                RunXamlStartupSmoke(smokeReportPath);
+            }
+            catch (Exception exception)
+            {
+                File.WriteAllText(smokeReportPath, exception.ToString());
+                Environment.Exit(1);
+            }
+            return;
+        }
         ElevatedServiceHelperParseResult helperParseResult =
             ElevatedServiceControlLauncher.ParseHelperAction(
             commandLineArguments,
             out ElevatedServiceControlAction helperAction);
         bool elevatedServiceHelper = helperParseResult == ElevatedServiceHelperParseResult.Valid;
         string componentName = elevatedServiceHelper
-            ? helperAction == ElevatedServiceControlAction.Start
-                ? "OpenBlade.Tray.StartHelper"
-                : "OpenBlade.Tray.ShutdownHelper"
+            ? helperAction switch
+            {
+                ElevatedServiceControlAction.Start => "OpenBlade.Tray.StartHelper",
+                ElevatedServiceControlAction.Shutdown => "OpenBlade.Tray.ShutdownHelper",
+                ElevatedServiceControlAction.StopRazerServices =>
+                    "OpenBlade.Tray.StopRazerServicesHelper",
+                _ => throw new ArgumentOutOfRangeException(nameof(helperAction)),
+            }
             : "OpenBlade.Tray";
         RegisterCrashReporting(componentName);
         traceLogRegistration ??= PersistentTraceLog.RegisterDefault(
@@ -106,6 +130,13 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         mainWindow = CreateMainWindow(startupRegistration);
+        trayDashboardWindow = new TrayDashboardWindow(
+            mainWindow.ViewModel,
+            WindowNative.GetWindowHandle(mainWindow),
+            visible => mainWindow.SetTrayDashboardVisible(visible));
+        trayDashboardWindow.ApplyPreferences(mainWindow.TrayDashboardPreference);
+        mainWindow.TrayDashboardPreferenceChanged += OnTrayDashboardPreferenceChanged;
+        mainWindow.TrayDashboardEditSessionChanged += OnTrayDashboardEditSessionChanged;
         SessionAgentEventEndpoint sessionEventEndpoint =
             SessionAgentEventEndpoint.Create(
                 new SecurityIdentifier(userSid),
@@ -153,6 +184,15 @@ public partial class App : Microsoft.UI.Xaml.Application
                     brightnessOsdHost = null;
                     if (mainWindow is not null)
                     {
+                        mainWindow.TrayDashboardPreferenceChanged -=
+                            OnTrayDashboardPreferenceChanged;
+                        mainWindow.TrayDashboardEditSessionChanged -=
+                            OnTrayDashboardEditSessionChanged;
+                    }
+                    trayDashboardWindow?.Dispose();
+                    trayDashboardWindow = null;
+                    if (mainWindow is not null)
+                    {
                         await mainWindow.DisposeAsync();
                     }
                 },
@@ -196,6 +236,39 @@ public partial class App : Microsoft.UI.Xaml.Application
         ShowMainWindow(initialLaunch: true);
     }
 
+    private void RunXamlStartupSmoke(string smokeReportPath)
+    {
+        File.WriteAllText(smokeReportPath, "enable visual styles");
+        System.Windows.Forms.Application.EnableVisualStyles();
+        File.WriteAllText(smokeReportPath, "construct main window");
+        var smokeMainWindow = new MainWindow();
+        File.WriteAllText(smokeReportPath, "construct dashboard window");
+        var smokeDashboardWindow = new TrayDashboardWindow(
+            smokeMainWindow.ViewModel,
+            WindowNative.GetWindowHandle(smokeMainWindow),
+            _ => { });
+        File.WriteAllText(smokeReportPath, "apply all-visible preferences");
+        TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
+        smokeDashboardWindow.ApplyPreferences(defaults with
+        {
+            Controls = defaults.Controls!
+                .Select(control => control with { IsVisible = true })
+                .ToArray(),
+            StatusItems = defaults.StatusItems!
+                .Select(status => status with { IsVisible = true })
+                .ToArray(),
+            Sliders = defaults.Sliders!
+                .Select(slider => slider with { IsVisible = true })
+                .ToArray(),
+        });
+        File.WriteAllText(smokeReportPath, "dispose dashboard window");
+        smokeDashboardWindow.Dispose();
+        File.WriteAllText(smokeReportPath, "close main window");
+        smokeMainWindow.Close();
+        File.WriteAllText(smokeReportPath, "completed");
+        Environment.Exit(0);
+    }
+
     private MainWindow CreateMainWindow(IStartupRegistration startupRegistration)
     {
         return new MainWindow(
@@ -228,7 +301,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             ExitTrayAsync,
             ShutdownOpenBladeAsync);
         trayIconHost = new WinFormsTrayIconHost(
-            () => Enqueue(ShowMainWindow),
+            point => Enqueue(() => _ = ToggleTrayDashboardWhenReadyAsync(point)),
+            () => Enqueue(OpenMainWindowFromTrayIcon),
             () => Enqueue(() => _ = RequestTrayExitAsync()),
             mainWindow.ViewModel,
             trayIconThemeSource,
@@ -380,6 +454,20 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 
+    internal async Task<ElevatedServiceControlOutcome> StopRazerServicesAsync()
+    {
+        string executablePath = Environment.ProcessPath
+            ?? throw new InvalidOperationException("Tray executable path is unavailable.");
+        var launcher = new ElevatedServiceControlLauncher();
+        // The helper owns the post-consent deadline. A parent deadline would
+        // start before UAC and could publish readback while an approved child
+        // was still running.
+        return await launcher.RequestAsync(
+            executablePath,
+            ElevatedServiceControlAction.StopRazerServices,
+            CancellationToken.None);
+    }
+
     private async Task RunElevatedServiceControlHelperAsync(
         ElevatedServiceControlAction action)
     {
@@ -393,7 +481,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                     () => WindowsServiceStartOperation.StartAsync(timeout.Token),
                     timeout.Token);
             }
-            else
+            else if (action == ElevatedServiceControlAction.Shutdown)
             {
                 await using var serviceClient = new ServiceClient();
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -403,6 +491,32 @@ public partial class App : Microsoft.UI.Xaml.Application
                 {
                     throw new InvalidOperationException(result.Message);
                 }
+            }
+            else if (action == ElevatedServiceControlAction.StopRazerServices)
+            {
+                using var hardExit = new System.Threading.Timer(
+                    _ => Environment.Exit(1),
+                    null,
+                    RazerServiceStopHardExitTimeout,
+                    Timeout.InfiniteTimeSpan);
+                using var timeout = new CancellationTokenSource(
+                    RazerServiceStopCancellationTimeout);
+                RazerServiceStopExecutionResult result = await Task.Run(
+                    () => RazerServiceStopOperation.StopAllAsync(timeout.Token),
+                    timeout.Token);
+                if (!result.Succeeded)
+                {
+                    string failure = result.InventoryError
+                        ?? string.Join(
+                            "; ",
+                            result.Failures.Select(entry =>
+                                $"{entry.DisplayName}: {entry.Message}"));
+                    throw new InvalidOperationException(failure);
+                }
+            }
+            else
+            {
+                throw new ArgumentOutOfRangeException(nameof(action));
             }
 
             exitCode = 0;
@@ -508,6 +622,48 @@ public partial class App : Microsoft.UI.Xaml.Application
     }
 
     private void ShowMainWindow() => _ = ShowMainWindowWhenReadyAsync(initialLaunch: false);
+
+    private void OpenMainWindowFromTrayIcon()
+    {
+        trayDashboardWindow?.DismissForMainWindow();
+        ShowMainWindow();
+    }
+
+    private async Task ToggleTrayDashboardWhenReadyAsync(TrayDashboardPoint point)
+    {
+        try
+        {
+            await windowInitializationTask;
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade tray dashboard initialization failed: {0}",
+                exception);
+        }
+
+        if (exitLifecycle is null)
+        {
+            return;
+        }
+
+        exitLifecycle.TryRunWhileActive(() => trayDashboardWindow?.ToggleAt(point));
+    }
+
+    private void OnTrayDashboardPreferenceChanged(TrayDashboardPreference preference) =>
+        trayDashboardWindow?.ApplyPreferences(preference);
+
+    private void OnTrayDashboardEditSessionChanged(bool editing)
+    {
+        if (editing)
+        {
+            trayDashboardWindow?.BeginEditSession();
+        }
+        else
+        {
+            trayDashboardWindow?.EndEditSession();
+        }
+    }
 
     private async Task ShowNotificationDestinationAsync(
         TrayNotificationDestination destination)

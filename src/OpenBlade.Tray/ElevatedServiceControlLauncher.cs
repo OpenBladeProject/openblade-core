@@ -7,6 +7,7 @@ internal enum ElevatedServiceControlAction
 {
     Start,
     Shutdown,
+    StopRazerServices,
 }
 
 internal enum ElevatedServiceControlOutcome
@@ -27,6 +28,7 @@ internal sealed class ElevatedServiceControlLauncher
 {
     public const string StartHelperArgument = "--start-service";
     public const string ShutdownHelperArgument = "--shutdown-service";
+    public const string StopRazerServicesHelperArgument = "--stop-razer-services";
 
     private const int OperationCanceledError = 1223;
     private readonly Func<ProcessStartInfo, CancellationToken, Task<int>> runAsync;
@@ -67,6 +69,15 @@ internal sealed class ElevatedServiceControlLauncher
                 action = ElevatedServiceControlAction.Shutdown;
                 return ElevatedServiceHelperParseResult.Valid;
             }
+
+            if (string.Equals(
+                    arguments[1],
+                    StopRazerServicesHelperArgument,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                action = ElevatedServiceControlAction.StopRazerServices;
+                return ElevatedServiceHelperParseResult.Valid;
+            }
         }
 
         return arguments.Skip(1).Any(IsReservedHelperArgument)
@@ -105,6 +116,7 @@ internal sealed class ElevatedServiceControlLauncher
             int exitCode = await runAsync(
                     CreateStartInfo(executablePath, action),
                     cancellationToken)
+                .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
             return exitCode == 0
                 ? ElevatedServiceControlOutcome.Completed
@@ -121,12 +133,16 @@ internal sealed class ElevatedServiceControlLauncher
     {
         ElevatedServiceControlAction.Start => StartHelperArgument,
         ElevatedServiceControlAction.Shutdown => ShutdownHelperArgument,
+        ElevatedServiceControlAction.StopRazerServices => StopRazerServicesHelperArgument,
         _ => throw new ArgumentOutOfRangeException(nameof(action)),
     };
 
     private static bool IsReservedHelperArgument(string argument) =>
         argument.StartsWith(StartHelperArgument, StringComparison.OrdinalIgnoreCase)
-        || argument.StartsWith(ShutdownHelperArgument, StringComparison.OrdinalIgnoreCase);
+        || argument.StartsWith(ShutdownHelperArgument, StringComparison.OrdinalIgnoreCase)
+        || argument.StartsWith(
+            StopRazerServicesHelperArgument,
+            StringComparison.OrdinalIgnoreCase);
 
     private static async Task<int> RunProcessAsync(
         ProcessStartInfo startInfo,

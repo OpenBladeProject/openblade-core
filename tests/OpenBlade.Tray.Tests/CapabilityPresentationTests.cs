@@ -286,13 +286,17 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(25, animated.Length);
+        Assert.Equal(26, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsCustomPerformanceVisible",
+                StringComparison.Ordinal) is true);
+        Assert.Contains(animated, element =>
+            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                "IsGpuAppCleanupVisible",
                 StringComparison.Ordinal) is true);
         Assert.Equal(
             1,
@@ -754,7 +758,7 @@ public sealed class CapabilityPresentationTests
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            14,
+            15,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -1026,6 +1030,34 @@ public sealed class CapabilityPresentationTests
             "ViewModel.IsServiceUnavailable",
             Attribute(startService, "Visibility"),
             StringComparison.Ordinal);
+        XElement stopRazerServices = NamedElement(
+            document,
+            "Button",
+            "StopRazerServicesButton");
+        Assert.Contains(
+            troubleshooting.Descendants(),
+            element => ReferenceEquals(element, stopRazerServices));
+        Assert.Equal("OnStopRazerServices", Attribute(stopRazerServices, "Click"));
+        Assert.Equal(
+            "{StaticResource DestructiveButtonStyle}",
+            Attribute(stopRazerServices, "Style"));
+        Assert.Equal(
+            "Stop Razer services",
+            Attribute(stopRazerServices, "AutomationProperties.Name"));
+        XElement razerServicesRow = stopRazerServices.Ancestors().First(element =>
+            element.Name.LocalName == "Border"
+            && Attribute(element, "Style") == "{StaticResource TroubleshootingSectionStyle}");
+        Assert.Contains(razerServicesRow.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Other Razer software running");
+        Assert.Contains(razerServicesRow.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text")?.Contains(
+                "ViewModel.TroubleshootingOtherRazerSoftwareStatus",
+                StringComparison.Ordinal) is true);
+        Assert.DoesNotContain(razerServicesRow.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Razer background services");
         foreach (string label in new[]
                  {
                      "OpenBlade service",
@@ -1652,7 +1684,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
         Assert.Equal(
-            7,
+            8,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "EntranceThemeTransition"));
     }
