@@ -21,14 +21,12 @@ internal sealed class InactiveGpuActivitySource : IGpuActivitySource
 /// </summary>
 internal sealed class WindowsGpuActivitySource : IGpuActivitySource, IDisposable
 {
-    private const double ActiveThresholdPercent = 0.1;
     private readonly WindowsNvidiaGpuActivityReader reader = new();
 
     public bool IsActive()
     {
         WindowsGpuActivitySnapshot snapshot = reader.Read();
-        return snapshot.Processes.Any(
-            process => process.UtilizationPercent > ActiveThresholdPercent);
+        return snapshot.Processes.Any(process => process.IsActive);
     }
 
     public void Dispose()

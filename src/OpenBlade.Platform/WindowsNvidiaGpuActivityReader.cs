@@ -5,7 +5,12 @@ namespace OpenBlade.Platform;
 
 public sealed record WindowsGpuProcessActivity(
     int ProcessId,
-    double UtilizationPercent);
+    double UtilizationPercent)
+{
+    public const double ActiveThresholdPercent = 0.1;
+
+    public bool IsActive => UtilizationPercent > ActiveThresholdPercent;
+}
 
 public sealed record WindowsGpuActivitySnapshot(
     bool IsAvailable,

@@ -14,7 +14,7 @@ public sealed class WinUiShellContractTests
             "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
 
         Assert.Equal(
-            5,
+            6,
             CountOccurrences(
                 powerModeCard,
                 "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
@@ -55,6 +55,27 @@ public sealed class WinUiShellContractTests
 
         Assert.Contains("Content=\"Close GPU apps\"", powerModeCard, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnCloseGpuAppsClick\"", powerModeCard, StringComparison.Ordinal);
+        int gpuAppsLabel = powerModeCard.IndexOf(
+            "Text=\"Apps using the NVIDIA GPU\"",
+            StringComparison.Ordinal);
+        int gpuAppsRowStart = powerModeCard.LastIndexOf(
+            "<Border",
+            gpuAppsLabel,
+            StringComparison.Ordinal);
+        int gpuAppsRowEnd = powerModeCard.IndexOf(
+            "Click=\"OnCloseGpuAppsClick\"",
+            gpuAppsLabel,
+            StringComparison.Ordinal);
+        Assert.True(gpuAppsRowStart >= 0 && gpuAppsRowEnd > gpuAppsRowStart);
+        string gpuAppsRow = powerModeCard[gpuAppsRowStart..gpuAppsRowEnd];
+        Assert.Contains(
+            "SettingsNeutralSubcardStyle",
+            gpuAppsRow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "SettingsLastSubcardStyle",
+            gpuAppsRow,
+            StringComparison.Ordinal);
         Assert.Contains("Close apps using the NVIDIA GPU?", codeBehind, StringComparison.Ordinal);
         Assert.Contains("Force close remaining apps?", codeBehind, StringComparison.Ordinal);
         string handler = SliceMethod(
@@ -941,8 +962,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
-        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
-        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
+        Assert.Equal(6, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"On battery\"", xaml, StringComparison.Ordinal);

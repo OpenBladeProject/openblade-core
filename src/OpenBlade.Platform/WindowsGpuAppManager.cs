@@ -42,7 +42,7 @@ public interface IWindowsGpuAppManager
 }
 
 /// <summary>
-/// Finds and closes current-user applications holding NVIDIA WDDM engines.
+/// Finds and closes current-user applications actively using NVIDIA WDDM engines.
 /// The caller remains responsible for showing the destructive confirmation.
 /// </summary>
 public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
@@ -124,14 +124,16 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
                 []);
         }
 
+        WindowsGpuProcessActivity[] activeProcesses = SelectActiveProcesses(
+            sample.Processes);
         Dictionary<int, int> parents = WindowsProcessTree.ReadParents();
         Dictionary<int, ProcessEntry> processTable = ReadProcessTable(
-            sample.Processes,
+            activeProcesses,
             parents,
             cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         IReadOnlyList<WindowsGpuApp> apps = CreateApps(
-            sample.Processes,
+            activeProcesses,
             processTable,
             currentSessionId);
         return new WindowsGpuAppScan(true, null, apps);
@@ -152,6 +154,13 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
     internal static bool IsProtectedProcessName(string name) =>
         name.StartsWith("OpenBlade", StringComparison.OrdinalIgnoreCase)
         || ProtectedProcessNames.Contains(name);
+
+    internal static WindowsGpuProcessActivity[] SelectActiveProcesses(
+        IReadOnlyList<WindowsGpuProcessActivity> processes)
+    {
+        ArgumentNullException.ThrowIfNull(processes);
+        return processes.Where(process => process.IsActive).ToArray();
+    }
 
     internal static IReadOnlyList<WindowsGpuApp> CreateApps(
         IReadOnlyList<WindowsGpuProcessActivity> activities,

@@ -164,6 +164,20 @@ public sealed class WindowsGpuActivityTests
     }
 
     [Fact]
+    public void ActiveProcessSelection_ExcludesIdleEngineOwnersAndNoise()
+    {
+        WindowsGpuProcessActivity[] active = WindowsGpuAppManager.SelectActiveProcesses(
+        [
+            new WindowsGpuProcessActivity(40, 0),
+            new WindowsGpuProcessActivity(41, 0.1),
+            new WindowsGpuProcessActivity(42, 0.1001),
+        ]);
+
+        WindowsGpuProcessActivity result = Assert.Single(active);
+        Assert.Equal(42, result.ProcessId);
+    }
+
+    [Fact]
     public void ProcessFailurePolicy_ContainsTreeKillAggregateWithoutHidingCodeBugs()
     {
         Assert.True(WindowsGpuAppManager.IsRecoverableProcessActionException(

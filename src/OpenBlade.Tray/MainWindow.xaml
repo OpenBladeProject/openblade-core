@@ -644,7 +644,8 @@
                                               SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastSubcardStyle}">
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    CornerRadius="0,0,8,8">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
