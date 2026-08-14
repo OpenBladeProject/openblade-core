@@ -5,6 +5,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Added an optional Windows power mode to each AC, USB-C, and battery profile.
+  The current-user Session Agent applies Best power efficiency, Balanced, or
+  Best performance when the active power profile changes.
+
 ### Fixed
 
 - Kept profile pending-change dots immediately beside their value text instead

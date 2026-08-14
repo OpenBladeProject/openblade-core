@@ -905,7 +905,8 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillStyle}\""));
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
-        Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Laptop performance\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
         Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));

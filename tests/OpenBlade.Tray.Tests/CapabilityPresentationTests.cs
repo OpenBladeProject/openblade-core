@@ -470,6 +470,7 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Content") == "Home");
 
         XElement performance = NamedElement(document, "ComboBox", "DashboardPerformanceSelector");
+        XElement windowsPowerMode = NamedElement(document, "ComboBox", "WindowsPowerModeSelector");
         XElement fans = NamedElement(document, "ComboBox", "DashboardFanModeSelector");
         XElement chargeLimit = NamedElement(document, "Slider", "DashboardChargeLimitSlider");
         XElement batteryProtection = NamedElement(document, "ToggleSwitch", "BatteryProtectionToggle");
@@ -477,10 +478,19 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "Button"
             && Attribute(element, "Content") == "{Binding FullChargeActionLabel}");
         Assert.Equal("OnDashboardPerformanceChanged", Attribute(performance, "SelectionChanged"));
-        Assert.Equal("Power mode", Attribute(performance, "AutomationProperties.Name"));
+        Assert.Equal("Laptop performance", Attribute(performance, "AutomationProperties.Name"));
+        Assert.Equal("OnWindowsPowerModeChanged", Attribute(windowsPowerMode, "SelectionChanged"));
+        Assert.Equal(
+            "{Binding AvailableWindowsPowerModeOptions}",
+            Attribute(windowsPowerMode, "ItemsSource"));
+        Assert.Equal("Label", Attribute(windowsPowerMode, "DisplayMemberPath"));
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "Power mode");
+            && Attribute(element, "Text") == "Laptop performance");
+        Assert.Contains(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Windows power mode");
+        Assert.Contains("Energy Saver is separate", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "CPU power limit");
@@ -507,7 +517,7 @@ public sealed class CapabilityPresentationTests
         {
             Assert.DoesNotContain(redundantDescription, xaml, StringComparison.Ordinal);
         }
-        Assert.DoesNotContain(document.Descendants(), element =>
+        Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Performance");
         Assert.Equal(
@@ -1453,9 +1463,11 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("ViewModel.IsBatteryProfileActive", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsUsbCProfileActive", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.PluggedInProfilePresentation.PowerMode", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.PluggedInProfilePresentation.WindowsPowerMode", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.UsbCProfilePresentation.LightingEffect", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.BatteryProfilePresentation.DisplayRefreshRate", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.SelectedProfilePresentation.PowerMode", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SelectedProfilePresentation.WindowsPowerMode", xaml, StringComparison.Ordinal);
         XElement profileValueTemplate = Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == "DataTemplate"
             && Attribute(element, "Key") == "ProfileValuePresentationTemplate");
@@ -1531,11 +1543,12 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "ContentTemplate")
                     == "{StaticResource CompactProfileValuePresentationTemplate}")
             .ToArray();
-        Assert.Equal(57, comparisonValues.Length);
-        Assert.Equal(19, compactValues.Length);
+        Assert.Equal(60, comparisonValues.Length);
+        Assert.Equal(20, compactValues.Length);
         string[] expectedProperties =
         [
             "PowerMode",
+            "WindowsPowerMode",
             "GpuTuning",
             "Fans",
             "BatteryProtection",

@@ -193,6 +193,7 @@ public sealed class BatteryConfigurationStore
                 or ProfileStore.PrehistoricSupportedSchemaVersion
                 or ProfileStore.ArchaicSupportedSchemaVersion
                 or ProfileStore.AntiqueSupportedSchemaVersion
+                or ProfileStore.ObsoleteSupportedSchemaVersion
                 or ProfileStore.CurrentSchemaVersion))
         {
             throw new InvalidDataException("The battery configuration marker is unsupported.");
@@ -307,13 +308,13 @@ public sealed class BatteryConfigurationStore
             throw new InvalidDataException("The battery preferences are missing.");
         }
 
-        if (expectedSchemaVersion < ProfileStore.CurrentSchemaVersion
+        if (expectedSchemaVersion < ProfileStore.BatteryProtectionProfileSchemaVersion
             && !document.Preferences.ProtectionEnabled.HasValue)
         {
             throw new InvalidDataException(
                 "The legacy battery protection preference is missing.");
         }
-        if (expectedSchemaVersion == ProfileStore.CurrentSchemaVersion
+        if (expectedSchemaVersion >= ProfileStore.BatteryProtectionProfileSchemaVersion
             && document.Preferences.ProtectionEnabled.HasValue)
         {
             throw new InvalidDataException(

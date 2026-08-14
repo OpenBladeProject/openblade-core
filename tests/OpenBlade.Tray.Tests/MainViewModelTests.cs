@@ -10,6 +10,41 @@ namespace OpenBlade.Tray.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public async Task WindowsPowerMode_StagesWithProfileAndSavesThroughLaptopActions()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(
+            ["Leave unchanged", "Best power efficiency", "Balanced", "Best performance"],
+            viewModel.AvailableWindowsPowerModeOptions.Select(option => option.Label));
+        Assert.Null(viewModel.SelectedWindowsPowerModeOption.Value);
+
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+
+        Assert.True(viewModel.HasThermalProfileDraft);
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.Equal("Leave unchanged", viewModel.PluggedInProfilePresentation.WindowsPowerMode.Text);
+        Assert.True(viewModel.PluggedInProfilePresentation.WindowsPowerMode.IsPending);
+        Assert.Equal(
+            "Best performance",
+            viewModel.PluggedInProfilePresentation.WindowsPowerMode.PendingText);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            client.LastProfiles?.PluggedIn.WindowsPowerMode);
+        Assert.False(viewModel.HasThermalProfileDraft);
+    }
+
+    [Fact]
     public async Task FirmwareCards_PresentInstalledMcuVersionConsistently()
     {
         var firmware = new FirmwareVersions(

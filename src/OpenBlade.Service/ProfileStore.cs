@@ -8,17 +8,19 @@ public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromIn
 
 public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
 {
-    internal const int CurrentSchemaVersion = 11;
-    internal const int PreviousSchemaVersion = 10;
-    internal const int OlderSchemaVersion = 9;
-    internal const int OldestSupportedSchemaVersion = 8;
-    internal const int EarlierSupportedSchemaVersion = 7;
-    internal const int EarliestSupportedSchemaVersion = 6;
-    internal const int AncientSupportedSchemaVersion = 5;
-    internal const int PrehistoricSupportedSchemaVersion = 4;
-    internal const int ArchaicSupportedSchemaVersion = 3;
-    internal const int AntiqueSupportedSchemaVersion = 2;
+    internal const int CurrentSchemaVersion = 12;
+    internal const int PreviousSchemaVersion = 11;
+    internal const int OlderSchemaVersion = 10;
+    internal const int OldestSupportedSchemaVersion = 9;
+    internal const int EarlierSupportedSchemaVersion = 8;
+    internal const int EarliestSupportedSchemaVersion = 7;
+    internal const int AncientSupportedSchemaVersion = 6;
+    internal const int PrehistoricSupportedSchemaVersion = 5;
+    internal const int ArchaicSupportedSchemaVersion = 4;
+    internal const int AntiqueSupportedSchemaVersion = 3;
+    internal const int ObsoleteSupportedSchemaVersion = 2;
     internal const int LegacySchemaVersion = 1;
+    internal const int BatteryProtectionProfileSchemaVersion = 11;
 
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -111,7 +113,8 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
             or AncientSupportedSchemaVersion
             or PrehistoricSupportedSchemaVersion
             or ArchaicSupportedSchemaVersion
-            or AntiqueSupportedSchemaVersion)
+            or AntiqueSupportedSchemaVersion
+            or ObsoleteSupportedSchemaVersion)
         {
             ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
                 json,
@@ -121,13 +124,17 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
                 throw new InvalidDataException("The profile document is missing.");
             }
 
-            bool? protectionDefault = schemaVersion == CurrentSchemaVersion
+            bool? protectionDefault = schemaVersion >= BatteryProtectionProfileSchemaVersion
                 ? null
                 : legacyBatteryProtectionDefault;
             profiles = NormalizeLegacyBatteryProfile(
                 document.Profiles,
                 out migrated,
                 protectionDefault);
+            if (schemaVersion < CurrentSchemaVersion)
+            {
+                profiles = ClearLegacyWindowsPowerModes(profiles);
+            }
             migrated |= schemaVersion != CurrentSchemaVersion;
         }
         else if (schemaVersion == LegacySchemaVersion)
@@ -257,6 +264,13 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
                 BatteryProtectionEnabled = batteryProtectionDefault.Value,
             }
             : profile;
+
+    private static ProfileSet ClearLegacyWindowsPowerModes(ProfileSet profiles) => profiles with
+    {
+        PluggedIn = profiles.PluggedIn with { WindowsPowerMode = null },
+        Battery = profiles.Battery with { WindowsPowerMode = null },
+        UsbC = profiles.UsbC with { WindowsPowerMode = null },
+    };
 
     private async Task<ProfileLoadResult> RecoverSafeDefaultsAsync(
         CancellationToken cancellationToken)

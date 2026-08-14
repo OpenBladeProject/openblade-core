@@ -192,6 +192,11 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidateFanControl(profile, name);
         ValidateDisplay(profile.Display, name);
         ValidateLaptopBehavior(profile.LaptopBehavior, name);
+        if (profile.WindowsPowerMode is { } windowsPowerMode
+            && !Enum.IsDefined(windowsPowerMode))
+        {
+            throw Invalid($"The {name} Windows power mode is undefined.");
+        }
         if (!profile.BatteryProtectionEnabled.HasValue)
         {
             throw Invalid($"The {name} profile battery protection setting is missing.");

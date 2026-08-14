@@ -393,8 +393,16 @@ public sealed class IpcMessageCodecTests
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         ProfileSet profiles = defaults with
         {
-            PluggedIn = defaults.PluggedIn with { BatteryProtectionEnabled = false },
-            Battery = defaults.Battery with { BatteryProtectionEnabled = true },
+            PluggedIn = defaults.PluggedIn with
+            {
+                BatteryProtectionEnabled = false,
+                WindowsPowerMode = WindowsPowerMode.BestPerformance,
+            },
+            Battery = defaults.Battery with
+            {
+                BatteryProtectionEnabled = true,
+                WindowsPowerMode = WindowsPowerMode.BestPowerEfficiency,
+            },
             UsbC = defaults.UsbC with { BatteryProtectionEnabled = false },
         };
         ServiceRequest request = new SetBatteryProtectionRequest(
@@ -414,7 +422,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(41, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(42, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -678,7 +686,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(41, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(42, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
