@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Added an administrator-approved Settings action that stops the exact known
+- Added an administrator-approved Troubleshooting action that stops the exact known
   Synapse and Chroma controller-service allowlist, then reports fresh Windows
   service readback without disabling startup or retrying uncertain requests.
 

@@ -512,7 +512,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void SettingsExposeReorderableTelemetryAndDestructiveShutdown()
+    public void SettingsExposeReorderableTelemetryAndTroubleshootingServiceControl()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
@@ -526,12 +526,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ReorderMode=\"Enabled\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource DestructiveButtonStyle}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
-        Assert.Contains("Text=\"Services\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Text=\"Stop Razer services\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Shutdown\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"StopRazerServicesButton\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnStopRazerServices\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("known Synapse and Chroma controller services", xaml, StringComparison.Ordinal);
         Assert.Contains("Stop Razer services?", window, StringComparison.Ordinal);
         Assert.Contains("Razer software may start the services again", window, StringComparison.Ordinal);
         Assert.Contains("PrimaryButtonStyle = (Style)Root.Resources[\"DestructiveButtonStyle\"]", window, StringComparison.Ordinal);
@@ -561,6 +559,19 @@ public sealed class WinUiShellContractTests
             "Toggled=\"OnExternalLightingOverridePolicyToggled\"",
             xaml,
             StringComparison.Ordinal);
+
+        int settingsShutdown = xaml.IndexOf(
+            "x:Name=\"SettingsShutdownSection\"",
+            StringComparison.Ordinal);
+        int troubleshooting = xaml.IndexOf(
+            "x:Name=\"TroubleshootingExpander\"",
+            StringComparison.Ordinal);
+        int stopRazerServices = xaml.IndexOf(
+            "x:Name=\"StopRazerServicesButton\"",
+            StringComparison.Ordinal);
+        Assert.True(settingsShutdown >= 0);
+        Assert.True(troubleshooting > settingsShutdown);
+        Assert.True(stopRazerServices > troubleshooting);
 
         int dashboardSelector = xaml.IndexOf(
             "Text=\"Shown on Dashboard\"",

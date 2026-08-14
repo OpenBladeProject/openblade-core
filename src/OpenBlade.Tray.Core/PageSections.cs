@@ -170,8 +170,8 @@ public static class PageLayoutPreferenceDefaults
         new(
             CustomizablePageKind.Settings,
             PageSectionKind.SettingsShutdown,
-            "Services",
-            "Stop known Razer controller services or shut down OpenBlade."),
+            "Shutdown",
+            "Stop OpenBlade until Windows restarts."),
         new(
             CustomizablePageKind.About,
             PageSectionKind.AboutOverview,
