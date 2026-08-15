@@ -26,6 +26,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Replaced common dropdown-only settings with responsive Windows selectors.
+  Performance, fan, function-row, lighting, display, and app settings use
+  horizontal choices when their options fit on one line without squeezing
+  adjacent labels, and retain a compact dropdown when the window or settings
+  row is too narrow.
 - Replaced the tray-dashboard customization dialog with a dedicated Settings
   page that shows only active controls and adjustments, keeps inactive choices
   in **Add** menus, exposes the two-adjustment limit, and updates the pinned tray
