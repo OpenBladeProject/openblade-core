@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added an importable example of a cyan sweep that moves from left to right
+  with a dim blue wake.
 - Added a versioned, data-only `.oblight` keyboard lighting preset format and
   a Lighting-page importer available when Lab features are enabled in Settings.
   Its bounded Razer `.chroma` version 1 adapter

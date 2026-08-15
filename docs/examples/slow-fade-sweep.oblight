@@ -1,0 +1,18 @@
+{
+  "format": "openblade-keyboard-lighting",
+  "schemaVersion": 1,
+  "metadata": {
+    "name": "Slow fade sweep",
+    "author": "OpenBlade",
+    "description": "A cyan sweep moves from left to right with a dim blue wake.",
+    "revision": 1
+  },
+  "effect": {
+    "kind": "tidal",
+    "brightnessPercent": 75,
+    "primaryColor": "#38E8FF",
+    "secondaryColor": "#00152A",
+    "randomColors": false,
+    "direction": "rightward"
+  }
+}

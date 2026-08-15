@@ -41,6 +41,9 @@ unsupported schema versions, and files larger than 64 KiB.
 
 The complete example is in
 [`docs/examples/northern-lights.oblight`](examples/northern-lights.oblight).
+For a moving preset,
+[`docs/examples/slow-fade-sweep.oblight`](examples/slow-fade-sweep.oblight)
+uses a bright cyan rightward sweep with a dim blue wake.
 The normative structure is
 [`docs/schemas/openblade-keyboard-lighting-v1.schema.json`](schemas/openblade-keyboard-lighting-v1.schema.json).
 Runtime semantic validation remains authoritative.

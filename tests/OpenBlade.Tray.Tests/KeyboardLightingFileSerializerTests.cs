@@ -58,6 +58,30 @@ public sealed class KeyboardLightingFileSerializerTests
     }
 
     [Fact]
+    public void Deserialize_ReadsThePublishedSlowFadeSweepExample()
+    {
+        string path = Path.Combine(
+            FindRepositoryRoot(),
+            "docs",
+            "examples",
+            "slow-fade-sweep.oblight");
+
+        KeyboardLightingPreset preset = KeyboardLightingFileSerializer.Deserialize(
+            File.ReadAllBytes(path));
+
+        Assert.Equal("Slow fade sweep", preset.Name);
+        Assert.Equal("OpenBlade", preset.Author);
+        Assert.Equal(
+            LightingSettingsFactory.Tidal(
+                new RgbColor(0x38, 0xE8, 0xFF),
+                new RgbColor(0x00, 0x15, 0x2A),
+                randomColors: false,
+                LightingDirection.Rightward,
+                brightness: 75),
+            preset.Lighting);
+    }
+
+    [Fact]
     public void Deserialize_AcceptsUtf8Bom()
     {
         byte[] content = Encoding.UTF8.GetBytes(ValidJson());
