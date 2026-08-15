@@ -2944,6 +2944,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool IsDisplayRefreshInProgress =>
         displayRefreshTask is { IsCompleted: false };
 
+    private async Task RefreshDisplaySettingsBeforeCaptureAsync()
+    {
+        Task? refreshAtRequest = displayRefreshTask;
+        if (refreshAtRequest is { IsCompleted: false })
+        {
+            await refreshAtRequest;
+        }
+
+        await RefreshDisplaySettingsAsync();
+    }
+
     private void OnDisplayUserSettingsChanged(
         object? sender,
         DisplayProfileSettingsChangedEventArgs args) =>
@@ -2969,7 +2980,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        await RefreshDisplaySettingsAsync();
+        await RefreshDisplaySettingsBeforeCaptureAsync();
         if (sourceAtStart != ViewModel.ActivePowerSource
             || !DisplayViewModel.CanCaptureCurrentSettings)
         {

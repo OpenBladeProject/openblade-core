@@ -1737,6 +1737,51 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void MainWindowUsesPostRequestRefreshBeforeCapturingProfile()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int captureRefresh = source.IndexOf(
+            "private async Task RefreshDisplaySettingsBeforeCaptureAsync()",
+            StringComparison.Ordinal);
+        int displaySettingsChanged = source.IndexOf(
+            "private void OnDisplayUserSettingsChanged",
+            captureRefresh,
+            StringComparison.Ordinal);
+        Assert.True(captureRefresh >= 0 && captureRefresh < displaySettingsChanged);
+
+        string captureRefreshPath = source[captureRefresh..displaySettingsChanged];
+        int snapshot = captureRefreshPath.IndexOf(
+            "Task? refreshAtRequest = displayRefreshTask;",
+            StringComparison.Ordinal);
+        int joinExisting = captureRefreshPath.IndexOf(
+            "await refreshAtRequest;",
+            StringComparison.Ordinal);
+        int refreshAgain = captureRefreshPath.IndexOf(
+            "await RefreshDisplaySettingsAsync();",
+            StringComparison.Ordinal);
+        Assert.True(snapshot >= 0 && snapshot < joinExisting && joinExisting < refreshAgain);
+
+        int saveHandler = source.IndexOf(
+            "private async Task HandleSaveCurrentDisplaySettingsToProfileAsync()",
+            StringComparison.Ordinal);
+        int applyHandler = source.IndexOf(
+            "private async void OnUseDisplayProfileSettings",
+            saveHandler,
+            StringComparison.Ordinal);
+        Assert.True(saveHandler >= 0 && saveHandler < applyHandler);
+
+        string savePath = source[saveHandler..applyHandler];
+        Assert.Contains(
+            "await RefreshDisplaySettingsBeforeCaptureAsync();",
+            savePath,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "await RefreshDisplaySettingsAsync();",
+            savePath,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void VisibleObservationFollowsEveryShowAndStopsBeforeHideAndViewModelDisposal()
     {
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
