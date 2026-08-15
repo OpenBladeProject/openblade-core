@@ -194,6 +194,29 @@ public sealed class DisplaySettingsViewModelTests
     }
 
     [Fact]
+    public async Task HdrChange_WaitsForBackgroundRefreshAndAppliesAfterward()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+        await viewModel.RefreshAsync();
+        adapter.BlockNextStateRead = true;
+
+        Task refresh = viewModel.RefreshAsync();
+        await adapter.StateReadStarted.Task;
+        Task change = viewModel.SetHdrEnabledAsync(enabled: true);
+
+        Assert.Empty(adapter.HdrRequests);
+        Assert.Equal(1, adapter.MaximumConcurrentOperations);
+        adapter.ReleaseStateRead.TrySetResult();
+        await Task.WhenAll(refresh, change);
+
+        Assert.Equal([true], adapter.HdrRequests);
+        Assert.Equal(1, adapter.MaximumConcurrentOperations);
+        Assert.True(viewModel.IsHdrEnabled);
+    }
+
+    [Fact]
     public async Task UnchangedBackgroundRefresh_ReusesOptionsAndDoesNotToggleControls()
     {
         var adapter = new FakeDisplaySettingsAdapter(

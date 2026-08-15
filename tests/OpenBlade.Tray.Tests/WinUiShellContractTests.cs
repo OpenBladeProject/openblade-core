@@ -2081,6 +2081,48 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void DisplayHdrToggleQueuesBehindRefreshAndRestoresConfirmedState()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int handlerStart = source.IndexOf(
+            "private async void OnDisplayHdrToggled(",
+            StringComparison.Ordinal);
+        int handlerEnd = source.IndexOf(
+            "private async void OnDisplayColorProfileChanged(",
+            handlerStart,
+            StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
+        string handler = source[handlerStart..handlerEnd];
+
+        Assert.DoesNotContain("changingDisplaySettings", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("RunDisplayOperationAsync", handler, StringComparison.Ordinal);
+        Assert.Contains("bool requested = toggle.IsOn;", handler, StringComparison.Ordinal);
+        Assert.Contains("toggle.IsEnabled = false;", handler, StringComparison.Ordinal);
+        Assert.Contains("RunHandlerAsync(", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "DisplayViewModel.SetHdrEnabledAsync(requested)",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains("finally", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "toggle.IsOn = DisplayViewModel.IsHdrEnabled;",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "toggle.IsEnabled = DisplayViewModel.CanChangeHdr;",
+            handler,
+            StringComparison.Ordinal);
+
+        int capture = handler.IndexOf("bool requested = toggle.IsOn;", StringComparison.Ordinal);
+        int disable = handler.IndexOf("toggle.IsEnabled = false;", StringComparison.Ordinal);
+        int queue = handler.IndexOf("await RunHandlerAsync(", StringComparison.Ordinal);
+        int restore = handler.IndexOf(
+            "toggle.IsOn = DisplayViewModel.IsHdrEnabled;",
+            StringComparison.Ordinal);
+        Assert.True(capture < disable && disable < queue && queue < restore);
+    }
+
+    [Fact]
     public void DisplayColorProfileSelectionUsesResponsiveEventAndRestoresConfirmedState()
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");

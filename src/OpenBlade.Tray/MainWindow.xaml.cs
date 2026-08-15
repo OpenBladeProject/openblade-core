@@ -75,7 +75,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingExternalLightingPolicy;
     private bool changingFirmwareCompatibilityOverride;
     private bool changingWindowsDynamicLighting;
-    private bool changingDisplaySettings;
     private bool changingDashboardCards;
     private bool trayDashboardCustomizationActive;
     private bool changingPageSections;
@@ -2943,14 +2942,24 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private async void OnDisplayHdrToggled(object sender, RoutedEventArgs args)
     {
         if (sender is not ToggleSwitch toggle
-            || changingDisplaySettings
             || toggle.IsOn == DisplayViewModel.IsHdrEnabled)
         {
             return;
         }
 
-        await RunDisplayOperationAsync(
-            () => DisplayViewModel.SetHdrEnabledAsync(toggle.IsOn));
+        bool requested = toggle.IsOn;
+        toggle.IsEnabled = false;
+        try
+        {
+            await RunHandlerAsync(
+                () => DisplayViewModel.SetHdrEnabledAsync(requested),
+                nameof(OnDisplayHdrToggled));
+        }
+        finally
+        {
+            toggle.IsOn = DisplayViewModel.IsHdrEnabled;
+            toggle.IsEnabled = DisplayViewModel.CanChangeHdr;
+        }
     }
 
     private async void OnDisplayColorProfileChanged(
@@ -3070,30 +3079,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private async Task<bool> OnSavedDisplayProfileRestoreRequested(
+    private Task<bool> OnSavedDisplayProfileRestoreRequested(
         PowerSource expectedPowerSource,
         DisplayProfileSettings settings,
-        CancellationToken token)
-    {
-        bool wasChanging = changingDisplaySettings;
-        changingDisplaySettings = true;
-        try
-        {
-            return await DisplayViewModel.ApplyProfileAsync(
-                expectedPowerSource,
-                settings,
-                token);
-        }
-        finally
-        {
-            changingDisplaySettings = wasChanging;
-        }
-    }
+        CancellationToken token) =>
+        DisplayViewModel.ApplyProfileAsync(
+            expectedPowerSource,
+            settings,
+            token);
 
     private async Task RunDisplayOperationAsync(Func<Task> operation)
     {
-        bool wasChanging = changingDisplaySettings;
-        changingDisplaySettings = true;
         try
         {
             await operation();
@@ -3107,10 +3103,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade display operation failed: {0}", exception);
-        }
-        finally
-        {
-            changingDisplaySettings = wasChanging;
         }
     }
 
