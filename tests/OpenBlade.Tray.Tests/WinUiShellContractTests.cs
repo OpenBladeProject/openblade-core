@@ -1684,6 +1684,104 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void MainWindowStartsInitialDisplayRefreshWithoutBlockingReadiness()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int initializeCore = source.IndexOf(
+            "private async Task InitializeCoreAsync()",
+            StringComparison.Ordinal);
+        int propertyChanged = source.IndexOf(
+            "private void OnViewModelPropertyChanged",
+            initializeCore,
+            StringComparison.Ordinal);
+        Assert.True(initializeCore >= 0 && initializeCore < propertyChanged);
+
+        string readinessPath = source[initializeCore..propertyChanged];
+        Assert.Contains(
+            "_ = RefreshDisplaySettingsAsync();",
+            readinessPath,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "await RefreshDisplaySettingsAsync();",
+            readinessPath,
+            StringComparison.Ordinal);
+
+        int refreshMethod = source.IndexOf(
+            "private Task RefreshDisplaySettingsAsync()",
+            StringComparison.Ordinal);
+        int displaySettingsChanged = source.IndexOf(
+            "private void OnDisplayUserSettingsChanged",
+            refreshMethod,
+            StringComparison.Ordinal);
+        Assert.True(refreshMethod >= 0 && refreshMethod < displaySettingsChanged);
+        string refreshPath = source[refreshMethod..displaySettingsChanged];
+        Assert.Contains(
+            "displayRefreshTask is { IsCompleted: false } activeRefresh",
+            refreshPath,
+            StringComparison.Ordinal);
+        Assert.Contains("return activeRefresh;", refreshPath, StringComparison.Ordinal);
+
+        int timerTick = source.IndexOf(
+            "private async void OnDisplayRefreshTimerTick",
+            StringComparison.Ordinal);
+        int pinnedCheck = source.IndexOf(
+            "private bool IsDashboardCardPinned",
+            timerTick,
+            StringComparison.Ordinal);
+        Assert.True(timerTick >= 0 && timerTick < pinnedCheck);
+        string timerPath = source[timerTick..pinnedCheck];
+        Assert.Contains(
+            "|| IsDisplayRefreshInProgress",
+            timerPath,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainWindowUsesPostRequestRefreshBeforeCapturingProfile()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int captureRefresh = source.IndexOf(
+            "private async Task RefreshDisplaySettingsBeforeCaptureAsync()",
+            StringComparison.Ordinal);
+        int displaySettingsChanged = source.IndexOf(
+            "private void OnDisplayUserSettingsChanged",
+            captureRefresh,
+            StringComparison.Ordinal);
+        Assert.True(captureRefresh >= 0 && captureRefresh < displaySettingsChanged);
+
+        string captureRefreshPath = source[captureRefresh..displaySettingsChanged];
+        int snapshot = captureRefreshPath.IndexOf(
+            "Task? refreshAtRequest = displayRefreshTask;",
+            StringComparison.Ordinal);
+        int joinExisting = captureRefreshPath.IndexOf(
+            "await refreshAtRequest;",
+            StringComparison.Ordinal);
+        int refreshAgain = captureRefreshPath.IndexOf(
+            "await RefreshDisplaySettingsAsync();",
+            StringComparison.Ordinal);
+        Assert.True(snapshot >= 0 && snapshot < joinExisting && joinExisting < refreshAgain);
+
+        int saveHandler = source.IndexOf(
+            "private async Task HandleSaveCurrentDisplaySettingsToProfileAsync()",
+            StringComparison.Ordinal);
+        int applyHandler = source.IndexOf(
+            "private async void OnUseDisplayProfileSettings",
+            saveHandler,
+            StringComparison.Ordinal);
+        Assert.True(saveHandler >= 0 && saveHandler < applyHandler);
+
+        string savePath = source[saveHandler..applyHandler];
+        Assert.Contains(
+            "await RefreshDisplaySettingsBeforeCaptureAsync();",
+            savePath,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "await RefreshDisplaySettingsAsync();",
+            savePath,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void VisibleObservationFollowsEveryShowAndStopsBeforeHideAndViewModelDisposal()
     {
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
