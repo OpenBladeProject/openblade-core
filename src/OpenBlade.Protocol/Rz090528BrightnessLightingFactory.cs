@@ -365,22 +365,6 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            PowerTransitionLightingReadResult result =
-                await ReadStateCoreAsync(cancellationToken).ConfigureAwait(false);
-            return result.State;
-        }
-        finally
-        {
-            operationGate.Release();
-        }
-    }
-
-    public async Task<PowerTransitionLightingReadResult>
-        ReadStateForPowerTransitionAsync(CancellationToken cancellationToken)
-    {
-        await EnterAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
             return await ReadStateCoreAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -389,25 +373,25 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         }
     }
 
-    private async Task<PowerTransitionLightingReadResult> ReadStateCoreAsync(
+    private async Task<LightingSettings?> ReadStateCoreAsync(
         CancellationToken cancellationToken)
     {
         byte raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
         if (raw != 0)
         {
-            return new(null, OffConfirmationUnavailable: false);
+            return null;
         }
 
-        if (PowerTransitionLightingObservation.RequiresOffConfirmation(OwnershipState))
+        if (OwnedRendererOffObservation.RequiresOffConfirmation(OwnershipState))
         {
             await Task.Delay(
-                PowerTransitionLightingObservation.OffConfirmationDelay,
+                OwnedRendererOffObservation.OffConfirmationDelay,
                 timeProvider,
                 cancellationToken).ConfigureAwait(false);
             raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
             if (raw != 0)
             {
-                return new(null, OffConfirmationUnavailable: false);
+                return null;
             }
         }
 
@@ -417,7 +401,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         // transition before its lifecycle event is processed.
         await StopStreamCoreAsync().ConfigureAwait(false);
         ClearOwnedEffectCore(LightingSettingsFactory.Off());
-        return new(LightingSettingsFactory.Off(), OffConfirmationUnavailable: false);
+        return LightingSettingsFactory.Off();
     }
 
     public async Task<LogoLightingMode?> ReadLogoStateAsync(

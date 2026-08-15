@@ -120,22 +120,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            PowerTransitionLightingReadResult result =
-                await ReadStateCoreAsync(cancellationToken).ConfigureAwait(false);
-            return result.State;
-        }
-        finally
-        {
-            operationGate.Release();
-        }
-    }
-
-    public async Task<PowerTransitionLightingReadResult>
-        ReadStateForPowerTransitionAsync(CancellationToken cancellationToken)
-    {
-        await EnterAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
             return await ReadStateCoreAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -144,7 +128,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
-    private async Task<PowerTransitionLightingReadResult> ReadStateCoreAsync(
+    private async Task<LightingSettings?> ReadStateCoreAsync(
         CancellationToken cancellationToken)
     {
         byte raw = await QueryBrightnessRawCoreAsync(cancellationToken)
@@ -154,23 +138,23 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         // intent here would incorrectly place it in ConfirmedDeviceState.
         if (raw != 0)
         {
-            return new(null, OffConfirmationUnavailable: false);
+            return null;
         }
 
-        if (PowerTransitionLightingObservation.RequiresOffConfirmation(OwnershipState))
+        if (OwnedRendererOffObservation.RequiresOffConfirmation(OwnershipState))
         {
             // A failed or canceled confirmation must not leave the transient
             // zero available to brightness-step code as a trusted baseline.
             lastKnownBrightnessRaw = null;
             await Task.Delay(
-                PowerTransitionLightingObservation.OffConfirmationDelay,
+                OwnedRendererOffObservation.OffConfirmationDelay,
                 timeProvider,
                 cancellationToken).ConfigureAwait(false);
             raw = await QueryBrightnessRawCoreAsync(cancellationToken)
                 .ConfigureAwait(false);
             if (raw != 0)
             {
-                return new(null, OffConfirmationUnavailable: false);
+                return null;
             }
         }
 
@@ -188,7 +172,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
         SetOwnership(LightingRendererOwnershipState.None);
 
-        return new(LightingSettingsFactory.Off(), OffConfirmationUnavailable: false);
+        return LightingSettingsFactory.Off();
     }
 
     public async Task<LogoLightingMode?> ReadLogoStateAsync(

@@ -347,18 +347,16 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
-    public async Task PowerTransitionStateRead_UsesConfirmingLightingPortRead()
+    public async Task PowerTransitionStateRead_UsesOwnedRendererStateRead()
     {
         var readOrder = new List<string>();
         var batteryFactory = new FakeQueryFactory(
             FakeQueryPort.Success(BatteryValidationSetting.Limit80, readOrder));
         var lightingPort = new FakeLightingPort
         {
-            PowerTransitionReadResult = new(
-                LightingSettingsFactory.Off(),
-                OffConfirmationUnavailable: false),
+            StateReadResult = LightingSettingsFactory.Off(),
             OwnershipState = LightingRendererOwnershipState.Static,
-            PowerTransitionReadOrder = readOrder,
+            ReadOrder = readOrder,
         };
         var lightingFactory = new FakeLightingFactory(lightingPort);
         using var provider = new WindowsVerifiedBladeDeviceProvider(
@@ -373,8 +371,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         Assert.Equal(LightingEffect.Off, result.State.Lighting?.Effect);
         Assert.False(result.LightingOffConfirmationUnavailable);
-        Assert.Equal(1, lightingPort.PowerTransitionStateReadCalls);
-        Assert.Equal(0, lightingPort.ReadStateCalls);
+        Assert.Equal(1, lightingPort.ReadStateCalls);
         Assert.Equal(
             LightingRendererOwnershipState.Static,
             lightingPort.OwnershipState);
@@ -390,7 +387,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             FakeQueryPort.Success(BatteryValidationSetting.Limit80));
         var lightingPort = new FakeLightingPort
         {
-            PowerTransitionReadFailure = new IOException("brightness unavailable"),
+            ReadFailure = new IOException("brightness unavailable"),
             OwnershipState = LightingRendererOwnershipState.Static,
             LogoState = LogoLightingMode.Static,
         };
@@ -409,13 +406,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(LogoLightingMode.Static, result.State.LogoLighting);
         Assert.True(result.LightingOffConfirmationUnavailable);
         Assert.NotNull(result.State.Battery);
-        Assert.Equal(1, lightingPort.PowerTransitionStateReadCalls);
-        Assert.Equal(0, lightingPort.ReadStateCalls);
+        Assert.Equal(1, lightingPort.ReadStateCalls);
         Assert.Equal(1, lightingPort.ReadLogoStateCalls);
         Assert.Equal(1, batteryFactory.OpenCount);
         Assert.Equal(1, lightingFactory.OpenCount);
 
-        lightingPort.PowerTransitionReadFailure = null;
+        lightingPort.ReadFailure = null;
         PowerTransitionDeviceStateReadResult recovered =
             await device.ReadStateForPowerTransitionAsync(default);
 
@@ -432,7 +428,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             FakeQueryPort.Success(BatteryValidationSetting.Limit80));
         var faultedPort = new FakeLightingPort
         {
-            PowerTransitionReadFailure = new IOException("brightness unavailable"),
+            ReadFailure = new IOException("brightness unavailable"),
             OwnershipState = LightingRendererOwnershipState.Faulted,
         };
         var recoveredPort = new FakeLightingPort();
@@ -453,7 +449,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.False(recovered.LightingOffConfirmationUnavailable);
         Assert.Equal(1, faultedPort.DisposeCount);
         Assert.Equal(2, lightingFactory.OpenCount);
-        Assert.Equal(1, recoveredPort.PowerTransitionStateReadCalls);
+        Assert.Equal(1, recoveredPort.ReadStateCalls);
     }
 
     [Fact]
@@ -2075,18 +2071,13 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int DriverModeReleaseCount { get; private set; }
 
-        public Exception? ReadFailure { get; init; }
+        public Exception? ReadFailure { get; set; }
 
-        public PowerTransitionLightingReadResult PowerTransitionReadResult { get; set; } =
-            new(State: null, OffConfirmationUnavailable: false);
+        public LightingSettings? StateReadResult { get; init; }
 
-        public Exception? PowerTransitionReadFailure { get; set; }
-
-        public List<string>? PowerTransitionReadOrder { get; init; }
+        public List<string>? ReadOrder { get; init; }
 
         public int ReadStateCalls { get; private set; }
-
-        public int PowerTransitionStateReadCalls { get; private set; }
 
         public LogoLightingMode? LogoState { get; init; }
 
@@ -2113,20 +2104,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken)
         {
             ReadStateCalls++;
+            ReadOrder?.Add("Lighting");
             return ReadFailure is null
-                ? Task.FromResult<LightingSettings?>(Writes.LastOrDefault())
+                ? Task.FromResult<LightingSettings?>(
+                    StateReadResult ?? Writes.LastOrDefault())
                 : Task.FromException<LightingSettings?>(ReadFailure);
-        }
-
-        public Task<PowerTransitionLightingReadResult>
-            ReadStateForPowerTransitionAsync(CancellationToken cancellationToken)
-        {
-            PowerTransitionStateReadCalls++;
-            PowerTransitionReadOrder?.Add("Lighting");
-            return PowerTransitionReadFailure is null
-                ? Task.FromResult(PowerTransitionReadResult)
-                : Task.FromException<PowerTransitionLightingReadResult>(
-                    PowerTransitionReadFailure);
         }
 
         public Task<LogoLightingMode?> ReadLogoStateAsync(

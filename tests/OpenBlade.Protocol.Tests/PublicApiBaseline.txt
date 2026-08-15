@@ -371,7 +371,6 @@ type interface OpenBlade.Protocol.IProductionLightingPort
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> InvalidateAsync()
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> RelinquishRendererAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingSettings> ReadStateAsync(System.Threading.CancellationToken cancellationToken)
-  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.PowerTransitionLightingReadResult> ReadStateForPowerTransitionAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<System.Byte> StepBrightnessAsync(OpenBlade.Contracts.KeyboardBrightnessDirection direction, System.Threading.CancellationToken cancellationToken)
   method virtual OpenBlade.Protocol.DriverModeRestoreOutcome get_DriverModeRestoreOutcome()
   method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
@@ -583,22 +582,6 @@ type struct OpenBlade.Protocol.PowerTransitionDeviceStateReadResult
   method virtual System.Boolean Equals(OpenBlade.Protocol.PowerTransitionDeviceStateReadResult other)
   property OpenBlade.Contracts.ConfirmedDeviceState State { get; init; }
   property System.Boolean LightingOffConfirmationUnavailable { get; init; }
-type struct OpenBlade.Protocol.PowerTransitionLightingReadResult
-  interface System.IEquatable<OpenBlade.Protocol.PowerTransitionLightingReadResult>
-  ctor (OpenBlade.Contracts.LightingSettings State, System.Boolean OffConfirmationUnavailable)
-  method OpenBlade.Contracts.LightingSettings get_State()
-  method System.Boolean get_OffConfirmationUnavailable()
-  method System.Void Deconstruct(out OpenBlade.Contracts.LightingSettings State, out System.Boolean OffConfirmationUnavailable)
-  method System.Void set_OffConfirmationUnavailable(System.Boolean value)
-  method System.Void set_State(OpenBlade.Contracts.LightingSettings value)
-  method override System.Boolean Equals(System.Object obj)
-  method override System.Int32 GetHashCode()
-  method override System.String ToString()
-  method static System.Boolean op_Equality(OpenBlade.Protocol.PowerTransitionLightingReadResult left, OpenBlade.Protocol.PowerTransitionLightingReadResult right)
-  method static System.Boolean op_Inequality(OpenBlade.Protocol.PowerTransitionLightingReadResult left, OpenBlade.Protocol.PowerTransitionLightingReadResult right)
-  method virtual System.Boolean Equals(OpenBlade.Protocol.PowerTransitionLightingReadResult other)
-  property OpenBlade.Contracts.LightingSettings State { get; init; }
-  property System.Boolean OffConfirmationUnavailable { get; init; }
 type sealed class OpenBlade.Protocol.ProductionBatteryFactory
   interface OpenBlade.Protocol.IProductionBatteryPortFactory
   method static OpenBlade.Protocol.IProductionBatteryPortFactory CreateWindows()

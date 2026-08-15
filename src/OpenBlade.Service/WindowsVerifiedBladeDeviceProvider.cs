@@ -314,6 +314,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     {
         private const int MaximumBatteryReadAttempts = 3;
 
+        private readonly record struct TransitionLightingReadResult(
+            LightingSettings? State,
+            bool OffConfirmationUnavailable);
+
         private readonly IProductionBatteryPortFactory batteryFactory;
         private readonly IFanRpmQueryRunFactory fanRpmFactory;
         private readonly IProductionLightingPortFactory lightingFactory;
@@ -511,7 +515,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                PowerTransitionLightingReadResult? transitionLightingRead =
+                TransitionLightingReadResult? transitionLightingRead =
                     confirmTransientLightingOff
                         ? await ReadPowerTransitionLightingStateCoreAsync(cancellationToken)
                             .ConfigureAwait(false)
@@ -620,7 +624,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
         private async Task<PowerTransitionDeviceStateReadResult>
             ReadBatteryStateOnceAsync(
-            PowerTransitionLightingReadResult? transitionLightingRead,
+            TransitionLightingReadResult? transitionLightingRead,
             CancellationToken cancellationToken)
         {
             HidSessionResult<IProductionBatteryPort> opened =
@@ -654,7 +658,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 GpuClockOffsetCapabilities? gpuOffsets = ReadManagedGpuClockOffsets();
                 CustomPerformanceSettings? customPerformance =
                     performanceFan.CustomPerformance;
-                PowerTransitionLightingReadResult lightingRead =
+                TransitionLightingReadResult lightingRead =
                     transitionLightingRead
                         ?? new(
                             await ReadLightingStateCoreAsync(cancellationToken)
@@ -2539,7 +2543,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
-        private async Task<PowerTransitionLightingReadResult>
+        private async Task<TransitionLightingReadResult>
             ReadPowerTransitionLightingStateCoreAsync(
             CancellationToken cancellationToken)
         {
@@ -2551,8 +2555,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         cancellationToken).ConfigureAwait(false);
                 return port is null
                     ? new(null, OffConfirmationUnavailable: true)
-                    : await port.ReadStateForPowerTransitionAsync(cancellationToken)
-                        .ConfigureAwait(false);
+                    : new(
+                        await port.ReadStateAsync(cancellationToken).ConfigureAwait(false),
+                        OffConfirmationUnavailable: false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

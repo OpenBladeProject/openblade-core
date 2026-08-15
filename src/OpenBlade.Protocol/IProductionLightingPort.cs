@@ -11,11 +11,7 @@ public enum DriverModeRestoreOutcome
     Failed,
 }
 
-public readonly record struct PowerTransitionLightingReadResult(
-    LightingSettings? State,
-    bool OffConfirmationUnavailable);
-
-internal static class PowerTransitionLightingObservation
+internal static class OwnedRendererOffObservation
 {
     internal static readonly TimeSpan OffConfirmationDelay =
         TimeSpan.FromMilliseconds(750);
@@ -72,9 +68,6 @@ public interface IProductionLightingPort : IAsyncDisposable
         Task.FromResult<bool?>(null);
 
     Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken);
-
-    Task<PowerTransitionLightingReadResult> ReadStateForPowerTransitionAsync(
-        CancellationToken cancellationToken);
 
     Task<LogoLightingMode?> ReadLogoStateAsync(CancellationToken cancellationToken) =>
         Task.FromResult<LogoLightingMode?>(null);
