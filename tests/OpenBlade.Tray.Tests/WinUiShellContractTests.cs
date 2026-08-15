@@ -302,6 +302,10 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
+            "PlaceholderText=\"{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "SelectionChanged=\"OnFunctionKeyPrimaryChanged\"",
             xaml,
             StringComparison.Ordinal);
@@ -1952,6 +1956,30 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("pendingChargeLimitPercent", source, StringComparison.Ordinal);
         Assert.Contains("command.ExecuteAsync(commit)", source, StringComparison.Ordinal);
         Assert.Contains("SynchronizeBatteryProtectionToggle(toggle)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DisplayRefreshSelectionQueuesBehindRefreshAndRestoresConfirmedState()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int handlerStart = source.IndexOf(
+            "private async void OnDisplayRefreshRateChanged(",
+            StringComparison.Ordinal);
+        int handlerEnd = source.IndexOf(
+            "private void OnDisplayPickerOpened(",
+            handlerStart,
+            StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
+        string handler = source[handlerStart..handlerEnd];
+
+        Assert.DoesNotContain("changingDisplaySettings", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("RunDisplayOperationAsync", handler, StringComparison.Ordinal);
+        Assert.Contains("RunHandlerAsync(", handler, StringComparison.Ordinal);
+        Assert.Contains("DisplayViewModel.SelectRefreshRateAsync(option)", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "selector.SelectedItem = DisplayViewModel.SelectedRefreshRate",
+            handler,
+            StringComparison.Ordinal);
     }
 
     [Fact]

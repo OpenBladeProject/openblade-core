@@ -148,6 +148,29 @@ public sealed class DisplaySettingsViewModelTests
     }
 
     [Fact]
+    public async Task RefreshRateChange_WaitsForBackgroundRefreshAndAppliesAfterward()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+        await viewModel.RefreshAsync();
+        adapter.BlockNextStateRead = true;
+
+        Task refresh = viewModel.RefreshAsync();
+        await adapter.StateReadStarted.Task;
+        Task change = viewModel.SelectRefreshRateAsync(Fixed240);
+
+        Assert.Empty(adapter.RefreshRequests);
+        Assert.Equal(1, adapter.MaximumConcurrentOperations);
+        adapter.ReleaseStateRead.TrySetResult();
+        await Task.WhenAll(refresh, change);
+
+        Assert.Equal([Fixed240.Key], adapter.RefreshRequests);
+        Assert.Equal(1, adapter.MaximumConcurrentOperations);
+        Assert.Equal(Fixed240.Key, viewModel.SelectedRefreshRate?.Key);
+    }
+
+    [Fact]
     public async Task UnchangedBackgroundRefresh_ReusesOptionsAndDoesNotToggleControls()
     {
         var adapter = new FakeDisplaySettingsAdapter(
@@ -423,9 +446,14 @@ public sealed class DisplaySettingsViewModelTests
 
         public bool BlockFirstRefreshChange { get; init; }
         public bool FailNextRefreshChange { get; init; }
+        public bool BlockNextStateRead { get; set; }
         public TaskCompletionSource FirstRefreshChangeStarted { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ReleaseFirstRefreshChange { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource StateReadStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseStateRead { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         public List<string> RefreshRequests { get; } = [];
         public List<PowerSource> RefreshRequestSources { get; } = [];
@@ -441,8 +469,21 @@ public sealed class DisplaySettingsViewModelTests
         public async Task<DisplaySettingsSnapshot> GetStateAsync(CancellationToken token)
         {
             await EnterAsync(token);
-            Exit();
-            return state;
+            try
+            {
+                if (BlockNextStateRead)
+                {
+                    BlockNextStateRead = false;
+                    StateReadStarted.TrySetResult();
+                    await ReleaseStateRead.Task.WaitAsync(token);
+                }
+
+                return state;
+            }
+            finally
+            {
+                Exit();
+            }
         }
 
         public async Task<DisplaySettingsSnapshot> SetRefreshRateAsync(

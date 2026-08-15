@@ -681,7 +681,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public void ResponsiveChoiceSelector_UsesNativeWideAndCompactPresentations()
+    public void ResponsiveChoiceSelector_DeclaresNativeWideAndCompactPresentations()
     {
         XDocument mainWindow = XDocument.Parse(ReadMainWindowXaml());
         XDocument selectorDocument = XDocument.Parse(
@@ -734,14 +734,6 @@ public sealed class CapabilityPresentationTests
             Assert.NotNull(Attribute(usage, "ExpandedMinWindowWidth"));
             Assert.Null(Attribute(usage, "SelectedIndex"));
         }
-
-        string source = ReadTraySource("ResponsiveChoiceSelector.xaml.cs");
-        Assert.Contains("observedXamlRoot.Changed += OnXamlRootChanged", source, StringComparison.Ordinal);
-        Assert.Contains("EstimateRequiredWindowWidth()", source, StringComparison.Ordinal);
-        Assert.Contains("projectedOptions.Count <= maximumItems", source, StringComparison.Ordinal);
-        Assert.Contains("SelectedItem is not null", source, StringComparison.Ordinal);
-        Assert.Contains("StableComboBoxSelection.SetAnchor", source, StringComparison.Ordinal);
-        Assert.Contains("Visibility.Collapsed", source, StringComparison.Ordinal);
     }
 
     [Fact]

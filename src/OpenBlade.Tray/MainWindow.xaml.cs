@@ -2916,9 +2916,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         object sender,
         ResponsiveChoiceSelectionChangedEventArgs args)
     {
-        if (sender is not ResponsiveChoiceSelector
+        if (sender is not ResponsiveChoiceSelector selector
             || args.SelectedItem is not DisplayRefreshRateOption option
-            || changingDisplaySettings
             || string.Equals(
                 option.Key,
                 DisplayViewModel.SelectedRefreshRate?.Key,
@@ -2927,8 +2926,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        await RunDisplayOperationAsync(
-            () => DisplayViewModel.SelectRefreshRateAsync(option));
+        await RunHandlerAsync(
+            () => DisplayViewModel.SelectRefreshRateAsync(option),
+            nameof(OnDisplayRefreshRateChanged));
+        selector.SelectedItem = DisplayViewModel.SelectedRefreshRate;
     }
 
     private void OnDisplayPickerOpened(object sender, object args) =>

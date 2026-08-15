@@ -1107,6 +1107,7 @@
                                                                             IsEnabled="{x:Bind CanEditFunctionKeyPrimary, Mode=OneWay}"
                                                                             ItemsSource="{x:Bind AvailableFunctionKeyPrimaryOptions, Mode=OneWay}"
                                                                             DisplayMemberPath="Label"
+                                                                            PlaceholderText="{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}"
                                                                             SelectedItem="{x:Bind SelectedFunctionKeyPrimaryOption, Mode=OneWay}"
                                                                             SelectionChanged="OnFunctionKeyPrimaryChanged" />
                                         </StackPanel>

@@ -316,11 +316,15 @@ public sealed partial class ResponsiveChoiceSelector
         synchronizingSelection = true;
         try
         {
-            CompactSelector.SelectedItem = selectedItem;
+            object? projectedSelection = selectedItem is null
+                ? null
+                : projectedOptions.FirstOrDefault(option =>
+                    OptionsEqual(option, selectedItem));
+            CompactSelector.SelectedItem = projectedSelection;
             StableComboBoxSelection.SetAnchor(CompactSelector, selectedItem);
             ExpandedSelector.SelectedItem = ExpandedSelector.Items
                 .OfType<SelectorBarItem>()
-                .FirstOrDefault(item => OptionsEqual(item.Tag, selectedItem));
+                .FirstOrDefault(item => ReferenceEquals(item.Tag, projectedSelection));
         }
         finally
         {
@@ -348,6 +352,23 @@ public sealed partial class ResponsiveChoiceSelector
 
     private void PublishSelection(object? selectedItem)
     {
+        if (selectedItem is null)
+        {
+            // WinUI may report a deferred null while rebuilding ComboBox items.
+            // Only the owning binding may authoritatively clear the selection.
+            if (SelectedItem is not null)
+            {
+                SynchronizeSelection(SelectedItem);
+            }
+            return;
+        }
+        if (OptionsEqual(selectedItem, SelectedItem))
+        {
+            // A source refresh may replace an option with an equal instance.
+            // Keep that native selection without publishing a user change.
+            return;
+        }
+
         SetValue(SelectedItemProperty, selectedItem);
         SelectionChanged?.Invoke(
             this,

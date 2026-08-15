@@ -19,6 +19,8 @@ internal enum StartOpenBladeResult
 public partial class App : Microsoft.UI.Xaml.Application
 {
     private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
+    private const string ResponsiveChoiceSelectorSmokeArgument =
+        "--responsive-choice-selector-smoke";
     private const string PerformanceNotificationReplacementTag = "performance";
     private static readonly TimeSpan RazerServiceStopCancellationTimeout =
         TimeSpan.FromSeconds(65);
@@ -49,6 +51,12 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         base.OnLaunched(args);
         string[] commandLineArguments = Environment.GetCommandLineArgs();
+        if (commandLineArguments is
+            [_, ResponsiveChoiceSelectorSmokeArgument, string selectorSmokeReportPath])
+        {
+            _ = RunResponsiveChoiceSelectorSmokeAsync(selectorSmokeReportPath);
+            return;
+        }
         if (commandLineArguments is [_, XamlStartupSmokeArgument, string smokeReportPath])
         {
             try
@@ -268,6 +276,200 @@ public partial class App : Microsoft.UI.Xaml.Application
         File.WriteAllText(smokeReportPath, "completed");
         Environment.Exit(0);
     }
+
+    private static async Task RunResponsiveChoiceSelectorSmokeAsync(string smokeReportPath)
+    {
+        try
+        {
+            File.WriteAllText(smokeReportPath, "construct responsive selector");
+            ResponsiveChoiceSelectorSmokeOption[] originalOptions =
+            [
+                new("a", "A"),
+                new("b", "B"),
+                new("c", "C"),
+            ];
+            var selector = new ResponsiveChoiceSelector
+            {
+                DisplayMemberPath = nameof(ResponsiveChoiceSelectorSmokeOption.Label),
+                ItemsSource = originalOptions,
+                SelectedItem = originalOptions[1],
+                PlaceholderText = "Checking",
+                ExpandedMinWindowWidth = 0,
+                ExpandedWidthAllowance = 0,
+                MaxExpandedItems = 3,
+            };
+            int publishedSelections = 0;
+            selector.SelectionChanged += (_, _) => publishedSelections++;
+
+            var loaded = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            selector.Loaded += (_, _) => loaded.TrySetResult(true);
+            var smokeWindow = new Microsoft.UI.Xaml.Window
+            {
+                Content = selector,
+            };
+            smokeWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1200, 600));
+            smokeWindow.Activate();
+            await loaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+
+            var compact = selector.FindName("CompactSelector")
+                as Microsoft.UI.Xaml.Controls.ComboBox
+                ?? throw new InvalidOperationException("Compact selector was not created.");
+            var expanded = selector.FindName("ExpandedSelector")
+                as Microsoft.UI.Xaml.Controls.SelectorBar
+                ?? throw new InvalidOperationException("Expanded selector was not created.");
+            RequireResponsiveSelector(
+                ReferenceEquals(selector.SelectedItem, originalOptions[1]),
+                "The initial authoritative selection was not retained.");
+            RequireResponsiveSelector(
+                ReferenceEquals(compact.SelectedItem, originalOptions[1]),
+                "The compact selector did not receive the initial selection.");
+            RequireResponsiveSelector(
+                ReferenceEquals(
+                    StableComboBoxSelection.GetAnchor(compact),
+                    originalOptions[1]),
+                "The compact selector anchor did not receive the initial selection.");
+            RequireResponsiveSelector(
+                ReferenceEquals(expanded.SelectedItem?.Tag, originalOptions[1]),
+                "The expanded selector did not receive the initial selection.");
+            RequireResponsiveSelector(
+                publishedSelections == 0,
+                "Initialization published a user selection.");
+            RequireResponsiveSelector(
+                compact.PlaceholderText == "Checking",
+                "The compact selector did not receive its placeholder.");
+
+            File.WriteAllText(smokeReportPath, "replace responsive selector options");
+            ResponsiveChoiceSelectorSmokeOption[] replacementOptions =
+            [
+                new("a", "A"),
+                new("b", "B"),
+                new("c", "C"),
+            ];
+            selector.ItemsSource = replacementOptions;
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            RequireResponsiveSelector(
+                ReferenceEquals(selector.SelectedItem, originalOptions[1]),
+                "An options refresh replaced the authoritative selection.");
+            RequireResponsiveSelector(
+                ReferenceEquals(
+                    StableComboBoxSelection.GetAnchor(compact),
+                    originalOptions[1]),
+                "An options refresh replaced the authoritative anchor.");
+            RequireResponsiveSelector(
+                ReferenceEquals(compact.SelectedItem, replacementOptions[1]),
+                "The compact selector did not reuse the equivalent replacement option.");
+            RequireResponsiveSelector(
+                ReferenceEquals(expanded.SelectedItem?.Tag, replacementOptions[1]),
+                "The expanded selector did not reuse the equivalent replacement option.");
+            RequireResponsiveSelector(
+                publishedSelections == 0,
+                "An options refresh published a user selection.");
+
+            File.WriteAllText(smokeReportPath, "defer compact null selection");
+            compact.SelectedItem = null;
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            RequireResponsiveSelector(
+                ReferenceEquals(selector.SelectedItem, originalOptions[1]),
+                "A deferred compact null cleared the authoritative selection.");
+            RequireResponsiveSelector(
+                ReferenceEquals(
+                    StableComboBoxSelection.GetAnchor(compact),
+                    originalOptions[1]),
+                "A deferred compact null cleared the authoritative anchor.");
+            RequireResponsiveSelector(
+                ReferenceEquals(compact.SelectedItem, replacementOptions[1]),
+                "The compact selection was not restored after a deferred null.");
+            RequireResponsiveSelector(
+                ReferenceEquals(expanded.SelectedItem?.Tag, replacementOptions[1]),
+                "A deferred compact null cleared the expanded selection.");
+            RequireResponsiveSelector(
+                publishedSelections == 0,
+                "A deferred compact null escaped as a user selection.");
+
+            File.WriteAllText(smokeReportPath, "clear authoritative selection");
+            selector.SelectedItem = null;
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            RequireResponsiveSelector(
+                compact.SelectedItem is null
+                    && expanded.SelectedItem is null
+                    && StableComboBoxSelection.GetAnchor(compact) is null,
+                "An authoritative null did not clear both presentations.");
+            RequireResponsiveSelector(
+                compact.Visibility == Visibility.Visible
+                    && expanded.Visibility == Visibility.Collapsed,
+                "An authoritative null did not use the compact presentation.");
+
+            File.WriteAllText(smokeReportPath, "synchronize responsive presentations");
+            selector.SelectedItem = replacementOptions[1];
+            compact.SelectedItem = replacementOptions[0];
+            RequireResponsiveSelector(
+                ReferenceEquals(selector.SelectedItem, replacementOptions[0])
+                    && ReferenceEquals(expanded.SelectedItem?.Tag, replacementOptions[0])
+                    && publishedSelections == 1,
+                "A compact user selection did not synchronize once.");
+            Microsoft.UI.Xaml.Controls.SelectorBarItem expandedOption =
+                expanded.Items
+                    .OfType<Microsoft.UI.Xaml.Controls.SelectorBarItem>()
+                    .Single(item => ReferenceEquals(item.Tag, replacementOptions[2]));
+            expanded.SelectedItem = expandedOption;
+            RequireResponsiveSelector(
+                ReferenceEquals(selector.SelectedItem, replacementOptions[2])
+                    && ReferenceEquals(compact.SelectedItem, replacementOptions[2])
+                    && publishedSelections == 2,
+                "An expanded user selection did not synchronize once.");
+
+            selector.MaxExpandedItems = 0;
+            RequireResponsiveSelector(
+                compact.Visibility == Visibility.Visible
+                    && expanded.Visibility == Visibility.Collapsed
+                    && ReferenceEquals(compact.SelectedItem, replacementOptions[2]),
+                "The compact presentation did not retain selection.");
+            selector.MaxExpandedItems = 3;
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            RequireResponsiveSelector(
+                compact.Visibility == Visibility.Collapsed
+                    && expanded.Visibility == Visibility.Visible
+                    && ReferenceEquals(expanded.SelectedItem?.Tag, replacementOptions[2]),
+                "The expanded presentation did not retain selection.");
+
+            smokeWindow.Close();
+            File.WriteAllText(smokeReportPath, "completed");
+            Environment.Exit(0);
+        }
+        catch (Exception exception)
+        {
+            File.WriteAllText(smokeReportPath, exception.ToString());
+            Environment.Exit(1);
+        }
+    }
+
+    private static Task DrainDispatcherAsync(DispatcherQueue dispatcherQueue)
+    {
+        var drained = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!dispatcherQueue.TryEnqueue(
+                DispatcherQueuePriority.Low,
+                () => drained.TrySetResult(true)))
+        {
+            throw new InvalidOperationException("The responsive selector dispatcher is unavailable.");
+        }
+        return drained.Task;
+    }
+
+    private static void RequireResponsiveSelector(bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    private sealed record ResponsiveChoiceSelectorSmokeOption(string Key, string Label);
 
     private MainWindow CreateMainWindow(IStartupRegistration startupRegistration)
     {
