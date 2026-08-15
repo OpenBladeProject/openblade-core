@@ -16,6 +16,7 @@ using OpenBlade.Contracts;
 using OpenBlade.Platform;
 using OpenBlade.Session;
 using Windows.Graphics;
+using Windows.UI.ViewManagement;
 using WinRT.Interop;
 
 namespace OpenBlade.Tray;
@@ -43,6 +44,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly SemaphoreSlim contentDialogGate = new(1, 1);
     private readonly MicaBackdropHost micaBackdropHost;
     private readonly AccentColorManager accentColorManager;
+    private readonly UISettings dashboardTextSettings = new();
+    private readonly SingleLineTextMeasurementCache dashboardTitleHeightCache = new();
     private readonly UiPreferenceStore preferenceStore;
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
@@ -4702,7 +4705,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        Thickness padding = IsTitleWrapped(title, args.NewSize.Height)
+        double singleLineHeight = dashboardTitleHeightCache.GetOrMeasure(
+            dashboardTextSettings.TextScaleFactor,
+            () => MeasureSingleLineTitleHeight(title));
+        Thickness padding = SingleLineTextMeasurementCache.IsWrapped(
+            args.NewSize.Height,
+            singleLineHeight)
             ? (Thickness)Root.Resources["DashboardWrappedTitleRowPadding"]
             : (Thickness)Root.Resources["DashboardSingleLineRowPadding"];
         if (!row.Padding.Equals(padding))
@@ -4711,7 +4719,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private static bool IsTitleWrapped(TextBlock title, double actualHeight)
+    private static double MeasureSingleLineTitleHeight(TextBlock title)
     {
         var singleLineProbe = new TextBlock
         {
@@ -4726,10 +4734,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         singleLineProbe.Measure(new Windows.Foundation.Size(
             double.PositiveInfinity,
             double.PositiveInfinity));
-        double singleLineHeight = singleLineProbe.DesiredSize.Height;
-        return double.IsFinite(singleLineHeight)
-            && singleLineHeight > 0
-            && actualHeight > singleLineHeight + 0.5;
+        return singleLineProbe.DesiredSize.Height;
     }
 
     private static T? FindVisualAncestor<T>(DependencyObject child)

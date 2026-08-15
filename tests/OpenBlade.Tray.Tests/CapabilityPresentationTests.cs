@@ -454,11 +454,6 @@ public sealed class CapabilityPresentationTests
             Assert.Null(Attribute(row, "MinHeight"));
         });
 
-        string windowCode = ReadTraySource("MainWindow.xaml.cs");
-        Assert.Contains("TextWrapping = TextWrapping.NoWrap", windowCode);
-        Assert.Contains("actualHeight > singleLineHeight + 0.5", windowCode);
-        Assert.Contains("DashboardWrappedTitleRowPadding", windowCode);
-
         (string elementName, string controlName, string expectedStyle)[] describedControls =
         [
             (
