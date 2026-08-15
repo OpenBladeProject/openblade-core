@@ -12,8 +12,12 @@
 </div>
 
 OpenBlade is a tray-first utility for performance, thermals, battery, display
-behavior, special keys, and lighting. It runs without Razer Synapse components
-and does not install a sensor or control kernel driver.
+behavior, special keys, and lighting. It runs without the Razer Synapse
+application and does not install a sensor or control kernel driver. When the
+exact admitted RZ09-0581 Razer driver stack is already present, OpenBlade can
+use it for the native Windows brightness flyout. WMI remains the fallback. See
+the [Razer driver package notes](docs/razer-brightness-driver-package.md) for
+the model, validation, and redistribution limits.
 
 Hardware support is evidence-based. OpenBlade is Razer-only, and a control is
 enabled only when its command has reviewed, sanitized capture evidence for the

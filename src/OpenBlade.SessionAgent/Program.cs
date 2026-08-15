@@ -221,7 +221,8 @@ internal static class Program
                         specialKeyBindings.ShouldHandleInDriverMode,
                         specialKeyExecutor.ExecuteAsync,
                         specialKeyExecutor.ExecuteDefaultAsync,
-                        functionRowActions.ExecuteAsync));
+                        ExecuteFunctionRowInputAsync: functionRowActions.ExecuteAsync,
+                        ResetFunctionRowInputAsync: functionRowActions.ResetAsync));
                 // Ambient Awareness and Audio Meter are mutually exclusive
                 // renderers for the same service request type. Share their
                 // persistent frame pipe so switching modes cannot strand a

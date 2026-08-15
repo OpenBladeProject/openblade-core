@@ -3956,6 +3956,18 @@
                                                    Style="{StaticResource TroubleshootingValueStyle}" />
                                     </Grid>
                                 </Border>
+                                <Border Style="{StaticResource SettingsRowStyle}"
+                                        ToolTipService.ToolTip="{x:Bind ViewModel.AboutDisplayBrightnessDriverToolTip, Mode=OneWay}"
+                                        AutomationProperties.HelpText="{x:Bind ViewModel.AboutDisplayBrightnessDriverToolTip, Mode=OneWay}">
+                                    <Grid ColumnSpacing="24">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Razer brightness driver" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{x:Bind ViewModel.AboutDisplayBrightnessDriverStatus, Mode=OneWay}"
+                                                   Style="{StaticResource TroubleshootingValueStyle}"
+                                                   AutomationProperties.Name="Display brightness driver status" />
+                                    </Grid>
+                                </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>

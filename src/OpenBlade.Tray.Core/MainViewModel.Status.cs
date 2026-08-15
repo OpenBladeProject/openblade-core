@@ -42,6 +42,8 @@ public sealed partial class MainViewModel
             == right.AlwaysOverrideExternalLightingChanges
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
         && left.FirmwareCompatibility == right.FirmwareCompatibility
+        && left.DisplayBrightnessHidAvailability
+            == right.DisplayBrightnessHidAvailability
         && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])

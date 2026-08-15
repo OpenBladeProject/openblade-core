@@ -117,6 +117,10 @@ public sealed class IpcMessageCodecTests
             Guid.NewGuid(),
             KeyboardBrightnessDirection.Decrease,
             OverrideLifetime.UntilPowerSourceChange),
+        new SetDisplayBrightnessHidUsageRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            DisplayBrightnessHidUsage.Increment),
         new SetExternalLightingOverridePolicyRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -226,6 +230,20 @@ public sealed class IpcMessageCodecTests
             Guid.NewGuid(),
             (LightingSuppressionReason)999,
             Suppressed: true);
+        using MemoryStream stream = new();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
+        Assert.Equal(0, stream.Length);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessHidUsageRequest_RejectsUnknownUsage()
+    {
+        var request = new SetDisplayBrightnessHidUsageRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            (DisplayBrightnessHidUsage)0x0071);
         using MemoryStream stream = new();
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
@@ -357,7 +375,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFourteenBatteryContracts_RoundTripExactShape()
+    public async Task VersionFortyThreeBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
@@ -422,7 +440,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(42, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(43, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -650,6 +668,24 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task ReadServerFrameAsync_RejectsUnknownDisplayBrightnessHidAvailability()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
+        JsonObject status = Assert.IsType<JsonObject>(
+            root[nameof(ServiceStatusEvent.Status)]);
+        status[nameof(ServiceStatusSnapshot.DisplayBrightnessHidAvailability)] = 999;
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ReadServerFrameAsync_RejectsDuplicateObservedPowerSourceBehaviors()
     {
         var observation = new PowerSourceBehaviorObservation(
@@ -677,7 +713,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFourteenStatus_AcceptsCompleteCapabilityCollections()
+    public async Task VersionFortyThreeStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -686,8 +722,25 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(42, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(43, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(DisplayBrightnessHidAvailability.Unknown)]
+    [InlineData(DisplayBrightnessHidAvailability.Available)]
+    [InlineData(DisplayBrightnessHidAvailability.Unavailable)]
+    public async Task DisplayBrightnessHidAvailability_RoundTrips(
+        DisplayBrightnessHidAvailability availability)
+    {
+        ServiceStatusSnapshot expected = CreateStatus() with
+        {
+            DisplayBrightnessHidAvailability = availability,
+        };
+
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+
+        Assert.Equal(availability, actual.DisplayBrightnessHidAvailability);
     }
 
     [Fact]
