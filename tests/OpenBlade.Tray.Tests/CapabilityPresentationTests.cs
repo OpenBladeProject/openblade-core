@@ -400,7 +400,7 @@ public sealed class CapabilityPresentationTests
         XElement neutralStyle = Assert.Single(document.Descendants(), element =>
             Attribute(element, "Key") == "SettingsNeutralSubcardStyle");
         Assert.Equal(
-            "{StaticResource SettingsSubcardStyle}",
+            "{StaticResource SettingsSubcardBaseStyle}",
             Attribute(neutralStyle, "BasedOn"));
         Assert.Contains(neutralStyle.Elements(), setter =>
             Attribute(setter, "Property") == "Background"
@@ -414,6 +414,53 @@ public sealed class CapabilityPresentationTests
                 == "local:SettingsCardPointerVisual.PointerOverBackground"
             && Attribute(setter, "Value")
                 == "{ThemeResource SubtleFillColorSecondaryBrush}");
+    }
+
+    [Fact]
+    public void MainWindow_FanEditorSubcardsUseHoverFreeBackground()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        string[] visibilityBindings =
+        [
+            "{Binding IsFixedFanSpeedVisible}",
+            "{Binding IsManualFanCurveVisible}",
+        ];
+
+        XElement[] fanEditorRows = document.Descendants()
+            .Where(element => visibilityBindings.Contains(
+                Attribute(element, "AnimatedVisibility.IsVisible"),
+                StringComparer.Ordinal))
+            .ToArray();
+
+        Assert.Equal(2, fanEditorRows.Length);
+        Assert.All(fanEditorRows, row =>
+        {
+            Assert.Equal(
+                "{StaticResource SettingsLastEditorSubcardStyle}",
+                Attribute(row, "Style"));
+        });
+
+        XElement editorStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsEditorSubcardStyle");
+        Assert.Equal(
+            "{StaticResource SettingsSubcardBaseStyle}",
+            Attribute(editorStyle, "BasedOn"));
+        Assert.Contains(editorStyle.Elements(), setter =>
+            Attribute(setter, "Property") == "Background"
+            && Attribute(setter, "Value") == "Transparent");
+        Assert.DoesNotContain(editorStyle.Elements(), setter =>
+            Attribute(setter, "Property")?.StartsWith(
+                "local:SettingsCardPointerVisual.",
+                StringComparison.Ordinal) is true);
+
+        XElement lastEditorStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsLastEditorSubcardStyle");
+        Assert.Equal(
+            "{StaticResource SettingsEditorSubcardStyle}",
+            Attribute(lastEditorStyle, "BasedOn"));
+        Assert.Contains(lastEditorStyle.Elements(), setter =>
+            Attribute(setter, "Property") == "CornerRadius"
+            && Attribute(setter, "Value") == "0,0,8,8");
     }
 
     [Fact]
