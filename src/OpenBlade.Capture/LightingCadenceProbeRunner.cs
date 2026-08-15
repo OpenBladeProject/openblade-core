@@ -34,6 +34,12 @@ internal sealed record LightingCadenceStageResult(
     string? Failure,
     IReadOnlyList<LightingCadenceFrameSample> Samples);
 
+internal enum LightingCadencePattern
+{
+    Marker,
+    Tidal,
+}
+
 internal sealed class LightingCadenceProbeRunner
 {
     internal const int MinimumFramesPerSecond = 30;
@@ -64,8 +70,27 @@ internal sealed class LightingCadenceProbeRunner
         TimeSpan warmupDuration,
         TimeSpan measurementDuration,
         Func<AmbientLightingFrame, CancellationToken, Task> pushFrame,
+        CancellationToken cancellationToken) =>
+        await RunAsync(
+            LightingCadencePattern.Marker,
+            targetFramesPerSecond,
+            warmupDuration,
+            measurementDuration,
+            pushFrame,
+            cancellationToken).ConfigureAwait(false);
+
+    internal async Task<LightingCadenceStageResult> RunAsync(
+        LightingCadencePattern pattern,
+        int targetFramesPerSecond,
+        TimeSpan warmupDuration,
+        TimeSpan measurementDuration,
+        Func<AmbientLightingFrame, CancellationToken, Task> pushFrame,
         CancellationToken cancellationToken)
     {
+        if (!Enum.IsDefined(pattern))
+        {
+            throw new ArgumentOutOfRangeException(nameof(pattern));
+        }
         ValidatePlan(targetFramesPerSecond, warmupDuration, measurementDuration);
         ArgumentNullException.ThrowIfNull(pushFrame);
 
@@ -115,7 +140,10 @@ internal sealed class LightingCadenceProbeRunner
 
             try
             {
-                AmbientLightingFrame frame = CreateFrame(frameIndex, scheduledAt);
+                AmbientLightingFrame frame = CreateFrame(
+                    pattern,
+                    frameIndex,
+                    scheduledAt);
                 await pushFrame(frame, cancellationToken).ConfigureAwait(false);
             }
             catch (BladeWriteException exception)
@@ -157,7 +185,17 @@ internal sealed class LightingCadenceProbeRunner
     }
 
     internal static AmbientLightingFrame CreateFrame(long frameIndex, TimeSpan scheduledAt)
+        => CreateFrame(LightingCadencePattern.Marker, frameIndex, scheduledAt);
+
+    internal static AmbientLightingFrame CreateFrame(
+        LightingCadencePattern pattern,
+        long frameIndex,
+        TimeSpan scheduledAt)
     {
+        if (!Enum.IsDefined(pattern))
+        {
+            throw new ArgumentOutOfRangeException(nameof(pattern));
+        }
         if (frameIndex < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(frameIndex));
@@ -167,6 +205,18 @@ internal sealed class LightingCadenceProbeRunner
             throw new ArgumentOutOfRangeException(nameof(scheduledAt));
         }
 
+        return pattern switch
+        {
+            LightingCadencePattern.Marker => CreateMarkerFrame(frameIndex, scheduledAt),
+            LightingCadencePattern.Tidal => CreateTidalFrame(scheduledAt),
+            _ => throw new ArgumentOutOfRangeException(nameof(pattern)),
+        };
+    }
+
+    private static AmbientLightingFrame CreateMarkerFrame(
+        long frameIndex,
+        TimeSpan scheduledAt)
+    {
         double phase = Pid02E0LightingMath.CyclePhase(scheduledAt, PatternCycle);
         MatrixRgb rendered = Pid02E0LightingMath.SpectrumColor(phase);
         var baseColor = new RgbColor(rendered.Red, rendered.Green, rendered.Blue);
@@ -182,6 +232,23 @@ internal sealed class LightingCadenceProbeRunner
             slots[MarkerSlots[bit]] = (grayCode & (1L << bit)) != 0
                 ? new RgbColor(0xFF, 0x20, 0x20)
                 : new RgbColor(0x20, 0x58, 0xFF);
+        }
+
+        return new AmbientLightingFrame(slots);
+    }
+
+    private static AmbientLightingFrame CreateTidalFrame(TimeSpan scheduledAt)
+    {
+        Pid02E0MatrixFrame rendered = Pid02E0TidalOracle.Render(
+            LightingDirection.Rightward,
+            scheduledAt,
+            new MatrixRgb(0x00, 0xFF, 0x00),
+            new MatrixRgb(0x00, 0x00, 0xFF));
+        RgbColor[] slots = new RgbColor[AmbientLightingFrame.SlotCount];
+        for (int slot = 0; slot < slots.Length; slot++)
+        {
+            MatrixRgb color = rendered[slot];
+            slots[slot] = new RgbColor(color.Red, color.Green, color.Blue);
         }
 
         return new AmbientLightingFrame(slots);

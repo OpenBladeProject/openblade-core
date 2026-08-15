@@ -1735,7 +1735,8 @@ Console.WriteLine(
 Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0581-lighting-cadence " +
     "--confirm-target RZ09-0581:1532:02E0:<BIOS>:000C:0001:375 " +
-    "--rates 30,45,60 --brightness <1-100> --seconds <5-60> " +
+    "--rates 30,45,60 --pattern <marker|tidal> " +
+    "--brightness <1-100> --seconds <5-60> " +
     "--output <directory>");
 Console.WriteLine("  OpenBlade.Capture probe-battery-sequence");
 Console.WriteLine("  OpenBlade.Capture validate-battery <off|50|55|60|65|70|75|80>");

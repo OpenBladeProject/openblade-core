@@ -16,20 +16,31 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
     {
         var port = new FakePort();
         var artifacts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        bool markerRunnerCalled = false;
+        bool tidalRunnerCalled = false;
         Rz090581LightingCadenceValidationCommand command = Create(
             port,
             "YES\r\nYES\r\nYES\r\nYES\r\nYES\r\nYES\r\n",
-            async (rate, _, _, pushFrame, cancellationToken) =>
+            (rate, _, _, _, _) =>
             {
-                await pushFrame(
-                    LightingCadenceProbeRunner.CreateFrame(0, TimeSpan.Zero),
-                    cancellationToken);
-                return QualifiedStage(rate);
+                markerRunnerCalled = true;
+                return Task.FromResult(QualifiedStage(rate));
             },
             (path, content, _) =>
             {
                 artifacts[path] = content;
                 return Task.CompletedTask;
+            },
+            runTidalStage: async (rate, _, _, pushFrame, cancellationToken) =>
+            {
+                tidalRunnerCalled = true;
+                await pushFrame(
+                    LightingCadenceProbeRunner.CreateFrame(
+                        LightingCadencePattern.Tidal,
+                        0,
+                        TimeSpan.Zero),
+                    cancellationToken);
+                return QualifiedStage(rate);
             });
 
         int exitCode = await command.RunAsync(
@@ -53,6 +64,8 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         string json = artifacts.Single(pair => pair.Key.EndsWith(".json")).Value;
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
+        Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal("tidal", root.GetProperty("pattern").GetString());
         Assert.True(root.GetProperty("transportQualified").GetBoolean());
         Assert.True(root.GetProperty("opticalValidationRequired").GetBoolean());
         Assert.False(root.GetProperty("lightingRecoveryRequired").GetBoolean());
@@ -68,7 +81,41 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         Assert.False(root.GetProperty("unknownPreTestStateRestored").GetBoolean());
         Assert.Equal(3, root.GetProperty("stages").GetArrayLength());
         Assert.DoesNotContain("serial", json, StringComparison.OrdinalIgnoreCase);
+        Assert.False(markerRunnerCalled);
+        Assert.True(tidalRunnerCalled);
         Assert.Equal(3, port.PushedFrames);
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectsUnknownPatternBeforeOpeningHardware()
+    {
+        bool opened = false;
+        var command = new Rz090581LightingCadenceValidationCommand(
+            _ =>
+            {
+                opened = true;
+                return Task.FromResult(
+                    new HidSessionResult<IProductionLightingPort>(new FakePort(), null));
+            },
+            _ => Task.FromResult(
+                new HidSessionResult<LightingBrightnessReading>(
+                    new LightingBrightnessReading(64),
+                    null)),
+            ExactIdentity,
+            (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
+            new StringReader(string.Empty),
+            new StringWriter(),
+            BuildIdentity,
+            writeArtifact: (_, _, _) => Task.CompletedTask,
+            registerCancellation: _ => NoopDisposable.Instance,
+            checkEnvironment: () => null);
+        string[] arguments = ValidArguments();
+        arguments[5] = "unknown";
+
+        int exitCode = await command.RunAsync(arguments, CancellationToken.None);
+
+        Assert.Equal(Rz090581LightingCadenceValidationCommand.UsageExitCode, exitCode);
+        Assert.False(opened);
     }
 
     [Fact]
@@ -534,7 +581,10 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             Task<LightingCadenceStageResult>> runStage,
         Func<string, string, CancellationToken, Task> writeArtifact,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
-        TextWriter? output = null) =>
+        TextWriter? output = null,
+        Func<int, TimeSpan, TimeSpan,
+            Func<AmbientLightingFrame, CancellationToken, Task>, CancellationToken,
+            Task<LightingCadenceStageResult>>? runTidalStage = null) =>
         new(
             _ => Task.FromResult(
                 new HidSessionResult<IProductionLightingPort>(port, null)),
@@ -552,7 +602,8 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             writeArtifact,
             delay ?? ((_, _) => Task.CompletedTask),
             _ => NoopDisposable.Instance,
-            () => null);
+            () => null,
+            runTidalStage);
 
     private static HostIdentityReadResult ExactIdentity() => new(
         new HostIdentityEvidence(
@@ -569,6 +620,8 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         Rz090581LightingCadenceValidationCommand.ExactTargetConfirmation("3.01"),
         "--rates",
         "30,45,60",
+        "--pattern",
+        "tidal",
         "--brightness",
         "25",
         "--seconds",

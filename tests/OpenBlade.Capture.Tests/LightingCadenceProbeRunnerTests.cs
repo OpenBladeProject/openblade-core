@@ -125,6 +125,32 @@ public sealed class LightingCadenceProbeRunnerTests
         Assert.Equal(frame0.Slots[2], frame1.Slots[2]);
     }
 
+    [Fact]
+    public void CreateFrame_TidalUsesCapturedOracleAndPreservesHoles()
+    {
+        TimeSpan scheduledAt = TimeSpan.FromMilliseconds(25);
+
+        AmbientLightingFrame actual = LightingCadenceProbeRunner.CreateFrame(
+            LightingCadencePattern.Tidal,
+            1,
+            scheduledAt);
+        Pid02E0MatrixFrame expected = Pid02E0TidalOracle.Render(
+            LightingDirection.Rightward,
+            scheduledAt,
+            new MatrixRgb(0x00, 0xFF, 0x00),
+            new MatrixRgb(0x00, 0x00, 0xFF));
+
+        Assert.True(actual.IsWellFormed());
+        Assert.All(
+            Enumerable.Range(0, AmbientLightingFrame.SlotCount),
+            slot => Assert.Equal(
+                new RgbColor(
+                    expected[slot].Red,
+                    expected[slot].Green,
+                    expected[slot].Blue),
+                actual.Slots[slot]));
+    }
+
     [Theory]
     [InlineData(45)]
     [InlineData(60)]

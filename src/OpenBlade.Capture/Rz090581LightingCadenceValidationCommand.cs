@@ -31,6 +31,7 @@ internal sealed record Rz090581LightingCadenceEvidence(
     int BrightnessPercent,
     int MeasurementSeconds,
     IReadOnlyList<int> RequestedRates,
+    LightingCadencePattern Pattern,
     bool BaselineBrightnessMatched,
     bool BaselineVisuallyConfirmed,
     IReadOnlyList<LightingCadenceStageEvidence> Stages,
@@ -82,6 +83,9 @@ internal sealed class Rz090581LightingCadenceValidationCommand
     private readonly Func<int, TimeSpan, TimeSpan,
         Func<AmbientLightingFrame, CancellationToken, Task>, CancellationToken,
         Task<LightingCadenceStageResult>> runStage;
+    private readonly Func<int, TimeSpan, TimeSpan,
+        Func<AmbientLightingFrame, CancellationToken, Task>, CancellationToken,
+        Task<LightingCadenceStageResult>> runTidalStage;
     private readonly TextReader input;
     private readonly TextWriter output;
     private readonly ProductionLightingBuildIdentity buildIdentity;
@@ -106,7 +110,10 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         Func<string, string, CancellationToken, Task>? writeArtifact = null,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
         Func<Action, IDisposable>? registerCancellation = null,
-        Func<string?>? checkEnvironment = null)
+        Func<string?>? checkEnvironment = null,
+        Func<int, TimeSpan, TimeSpan,
+            Func<AmbientLightingFrame, CancellationToken, Task>, CancellationToken,
+            Task<LightingCadenceStageResult>>? runTidalStage = null)
     {
         this.openPort = openPort ?? throw new ArgumentNullException(nameof(openPort));
         this.queryBrightness = queryBrightness
@@ -114,6 +121,7 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         this.readIdentity = readIdentity
             ?? throw new ArgumentNullException(nameof(readIdentity));
         this.runStage = runStage ?? throw new ArgumentNullException(nameof(runStage));
+        this.runTidalStage = runTidalStage ?? this.runStage;
         this.input = input ?? throw new ArgumentNullException(nameof(input));
         this.output = output ?? throw new ArgumentNullException(nameof(output));
         this.buildIdentity = buildIdentity
@@ -145,7 +153,15 @@ internal sealed class Rz090581LightingCadenceValidationCommand
             runner.RunAsync,
             input,
             output,
-            ProductionLightingEvidenceSource.ReadCurrentBuildIdentity());
+            ProductionLightingEvidenceSource.ReadCurrentBuildIdentity(),
+            runTidalStage: (rate, warmup, measurement, pushFrame, cancellationToken) =>
+                runner.RunAsync(
+                    LightingCadencePattern.Tidal,
+                    rate,
+                    warmup,
+                    measurement,
+                    pushFrame,
+                    cancellationToken));
     }
 
     internal static string ExactTargetConfirmation(string biosVersion) =>
@@ -230,8 +246,11 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         try
         {
             await output.WriteLineAsync(
-                "Transport timing is measured here. Optical refresh still requires " +
-                "a high-speed camera validation.").ConfigureAwait(false);
+                "Transport timing is measured here. Operator confirmation validates " +
+                "visible stability; exact optical refresh measurement is outside this " +
+                "validator.").ConfigureAwait(false);
+            await output.WriteLineAsync($"Pattern: {PatternName(options.Pattern)}.")
+                .ConfigureAwait(false);
             await output.WriteLineAsync(
                 "This replaces the current keyboard effect. OpenBlade cannot read or " +
                 "restore an unknown pre-test effect. A healthy or known-not-applied " +
@@ -297,7 +316,13 @@ internal sealed class Rz090581LightingCadenceValidationCommand
                                 AmbientAwarenessRegion.Full,
                                 options.Brightness),
                             commandCancellation.Token).ConfigureAwait(false);
-                        LightingCadenceStageResult transport = await runStage(
+                        Func<int, TimeSpan, TimeSpan,
+                            Func<AmbientLightingFrame, CancellationToken, Task>,
+                            CancellationToken, Task<LightingCadenceStageResult>> stageRunner =
+                            options.Pattern == LightingCadencePattern.Tidal
+                                ? runTidalStage
+                                : runStage;
+                        LightingCadenceStageResult transport = await stageRunner(
                             rate,
                             WarmupDuration,
                             TimeSpan.FromSeconds(options.Seconds),
@@ -305,7 +330,8 @@ internal sealed class Rz090581LightingCadenceValidationCommand
                             commandCancellation.Token).ConfigureAwait(false);
                         bool visuallyStable = transport.Failure is null
                             && await PromptYesAsync(
-                                $"Did the {rate} Hz effect remain stable, without freezing or corruption?",
+                                $"Did the {rate} Hz {PatternName(options.Pattern)} effect " +
+                                "remain stable, without freezing or corruption?",
                                 commandCancellation.Token).ConfigureAwait(false);
                         stages.Add(new(transport, visuallyStable));
 
@@ -447,7 +473,7 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         failure ??= passed ? null : "hardwareGatesIncomplete";
         DateTimeOffset completedAtUtc = utcNow();
         var evidence = new Rz090581LightingCadenceEvidence(
-            SchemaVersion: 1,
+            SchemaVersion: 2,
             EvidenceKind: "rz090581LightingCadenceValidation",
             new DeviceIdentity(
                 TargetBladeDevice.Model,
@@ -463,6 +489,7 @@ internal sealed class Rz090581LightingCadenceValidationCommand
             options.Brightness,
             options.Seconds,
             options.Rates,
+            options.Pattern,
             baselineBrightnessMatched,
             baselineVisuallyConfirmed,
             stages,
@@ -569,7 +596,8 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         await output.WriteLineAsync(
             "Usage: OpenBlade.Capture validate-rz09-0581-lighting-cadence " +
             "--confirm-target RZ09-0581:1532:02E0:<BIOS>:000C:0001:375 " +
-            "--rates 30,45,60 --brightness <1-100> --seconds <5-60> " +
+            "--rates 30,45,60 --pattern <marker|tidal> " +
+            "--brightness <1-100> --seconds <5-60> " +
             "--output <directory>").ConfigureAwait(false);
     }
 
@@ -578,28 +606,30 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         out CadenceOptions options)
     {
         options = null!;
-        if (arguments.Count != 10
+        if (arguments.Count != 12
             || !arguments[0].Equals("--confirm-target", StringComparison.Ordinal)
             || !arguments[2].Equals("--rates", StringComparison.Ordinal)
-            || !arguments[4].Equals("--brightness", StringComparison.Ordinal)
-            || !arguments[6].Equals("--seconds", StringComparison.Ordinal)
-            || !arguments[8].Equals("--output", StringComparison.Ordinal)
+            || !arguments[4].Equals("--pattern", StringComparison.Ordinal)
+            || !arguments[6].Equals("--brightness", StringComparison.Ordinal)
+            || !arguments[8].Equals("--seconds", StringComparison.Ordinal)
+            || !arguments[10].Equals("--output", StringComparison.Ordinal)
             || !arguments[1].StartsWith(TargetPrefix, StringComparison.Ordinal)
             || !arguments[1].EndsWith(TargetSuffix, StringComparison.Ordinal)
             || !TryParseRates(arguments[3], out int[] rates)
+            || !TryParsePattern(arguments[5], out LightingCadencePattern pattern)
             || !byte.TryParse(
-                arguments[5],
+                arguments[7],
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
                 out byte brightness)
             || brightness is 0 or > 100
             || !int.TryParse(
-                arguments[7],
+                arguments[9],
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
                 out int seconds)
             || seconds is < MinimumMeasurementSeconds or > MaximumMeasurementSeconds
-            || string.IsNullOrWhiteSpace(arguments[9]))
+            || string.IsNullOrWhiteSpace(arguments[11]))
         {
             return false;
         }
@@ -609,9 +639,10 @@ internal sealed class Rz090581LightingCadenceValidationCommand
             options = new(
                 arguments[1],
                 rates,
+                pattern,
                 brightness,
                 seconds,
-                Path.GetFullPath(arguments[9]));
+                Path.GetFullPath(arguments[11]));
             return true;
         }
         catch (Exception exception) when (exception is ArgumentException
@@ -648,6 +679,26 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         return true;
     }
 
+    private static bool TryParsePattern(
+        string value,
+        out LightingCadencePattern pattern)
+    {
+        pattern = value switch
+        {
+            "marker" => LightingCadencePattern.Marker,
+            "tidal" => LightingCadencePattern.Tidal,
+            _ => default,
+        };
+        return value is "marker" or "tidal";
+    }
+
+    private static string PatternName(LightingCadencePattern pattern) => pattern switch
+    {
+        LightingCadencePattern.Marker => "marker",
+        LightingCadencePattern.Tidal => "Tidal",
+        _ => throw new ArgumentOutOfRangeException(nameof(pattern)),
+    };
+
     private static string CreateMarkdown(Rz090581LightingCadenceEvidence evidence)
     {
         var builder = new StringBuilder();
@@ -656,6 +707,7 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         builder.AppendLine($"- Completed: {evidence.CompletedAtUtc:O}");
         builder.AppendLine($"- Result: {(evidence.Failure is null ? "passed" : "failed")}");
         builder.AppendLine($"- Failure: {evidence.Failure ?? "none"}");
+        builder.AppendLine($"- Pattern: {PatternName(evidence.Pattern)}");
         builder.AppendLine($"- Restoration outcome: {evidence.RestorationOutcome}");
         builder.AppendLine($"- Restored state: {evidence.RestoredStateKind ?? "none"}");
         builder.AppendLine(
@@ -775,6 +827,7 @@ internal sealed class Rz090581LightingCadenceValidationCommand
     private sealed record CadenceOptions(
         string Confirmation,
         IReadOnlyList<int> Rates,
+        LightingCadencePattern Pattern,
         byte Brightness,
         int Seconds,
         string OutputDirectory);
