@@ -361,6 +361,61 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_SettingsRowsShareCompactContentDrivenGeometry()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        string[] sharedStyleKeys =
+        [
+            "SettingsRowStyle",
+            "SettingsSubcardBaseStyle",
+        ];
+
+        foreach (string styleKey in sharedStyleKeys)
+        {
+            XElement style = Assert.Single(document.Descendants(), element =>
+                Attribute(element, "Key") == styleKey);
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "MinHeight"
+                && Attribute(setter, "Value") == "48");
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "Padding"
+                && Attribute(setter, "Value") == "16,4");
+            Assert.DoesNotContain(style.Elements(), setter =>
+                Attribute(setter, "Property") == "Height");
+        }
+
+        XElement batteryProtection = NamedElement(
+            document,
+            "ToggleSwitch",
+            "BatteryProtectionToggle");
+        XElement chargeLimit = NamedElement(
+            document,
+            "Slider",
+            "DashboardChargeLimitSlider");
+        XElement[] compactControls = [batteryProtection, chargeLimit];
+
+        Assert.All(compactControls, control =>
+        {
+            Assert.Null(Attribute(control, "Height"));
+            Assert.Null(Attribute(control, "MinHeight"));
+
+            XElement row = control.Ancestors()
+                .First(element => element.Name.LocalName == "Border");
+            Assert.Equal(
+                "{StaticResource SettingsRowStyle}",
+                Attribute(row, "Style"));
+            Assert.Null(Attribute(row, "Height"));
+            Assert.Null(Attribute(row, "MinHeight"));
+            Assert.Null(Attribute(row, "Padding"));
+        });
+
+        XElement sliderStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "InlineCardSliderStyle");
+        Assert.DoesNotContain(sliderStyle.Elements(), setter =>
+            Attribute(setter, "Property") is "Height" or "MinHeight");
+    }
+
+    [Fact]
     public void MainWindow_FoldsGpuOffsetsUnderANeutralTuningRow()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());

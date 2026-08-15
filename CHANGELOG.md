@@ -46,6 +46,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Reduced excess vertical space in Dashboard cards while preserving native
+  control sizing and allowing rows with descriptions or editors to grow.
 - Kept HDR toggles made during a background display refresh from being dropped,
   and restored the toggle from confirmed display state after the queued change.
 - Stopped the Fixed speed and Manual fan curve detail cards from appearing
