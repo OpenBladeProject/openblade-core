@@ -296,7 +296,6 @@ public partial class App : Microsoft.UI.Xaml.Application
                 PlaceholderText = "Checking",
                 ExpandedMinWindowWidth = 0,
                 ExpandedWidthAllowance = 0,
-                MaxExpandedItems = 3,
             };
             int publishedSelections = 0;
             selector.SelectionChanged += (_, _) => publishedSelections++;
@@ -423,19 +422,29 @@ public partial class App : Microsoft.UI.Xaml.Application
                     && publishedSelections == 2,
                 "An expanded user selection did not synchronize once.");
 
-            selector.MaxExpandedItems = 0;
+            selector.ExpandedMinWindowWidth = 2000;
             RequireResponsiveSelector(
                 compact.Visibility == Visibility.Visible
                     && expanded.Visibility == Visibility.Collapsed
                     && ReferenceEquals(compact.SelectedItem, replacementOptions[2]),
                 "The compact presentation did not retain selection.");
-            selector.MaxExpandedItems = 3;
+            selector.ExpandedMinWindowWidth = 0;
             await DrainDispatcherAsync(selector.DispatcherQueue);
             RequireResponsiveSelector(
                 compact.Visibility == Visibility.Collapsed
                     && expanded.Visibility == Visibility.Visible
                     && ReferenceEquals(expanded.SelectedItem?.Tag, replacementOptions[2]),
                 "The expanded presentation did not retain selection.");
+
+            File.WriteAllText(smokeReportPath, "validate width-only presentation");
+            selector.ItemsSource = new[] { replacementOptions[2] };
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            RequireResponsiveSelector(
+                compact.Visibility == Visibility.Collapsed
+                    && expanded.Visibility == Visibility.Visible
+                    && ReferenceEquals(expanded.SelectedItem?.Tag, replacementOptions[2]),
+                "A fitting option list was compacted because of its item count.");
 
             File.WriteAllText(smokeReportPath, "validate constrained responsive host");
             ResponsiveChoiceSelectorSmokeOption[] powerModeOptions =
@@ -453,7 +462,6 @@ public partial class App : Microsoft.UI.Xaml.Application
                 CompactMinWidth = 210,
                 ExpandedMinWindowWidth = 800,
                 ExpandedWidthAllowance = 260,
-                MaxExpandedItems = 4,
             };
             var supportingContent = new Microsoft.UI.Xaml.Controls.StackPanel
             {

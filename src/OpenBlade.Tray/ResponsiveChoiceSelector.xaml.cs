@@ -78,13 +78,6 @@ public sealed partial class ResponsiveChoiceSelector
             typeof(ResponsiveChoiceSelector),
             new PropertyMetadata(360d, OnResponsiveConstraintChanged));
 
-    public static readonly DependencyProperty MaxExpandedItemsProperty =
-        DependencyProperty.Register(
-            nameof(MaxExpandedItems),
-            typeof(int),
-            typeof(ResponsiveChoiceSelector),
-            new PropertyMetadata(int.MaxValue, OnResponsiveConstraintChanged));
-
     private readonly List<object> projectedOptions = [];
     private XamlRoot? observedXamlRoot;
     private FrameworkElement? responsiveHost;
@@ -151,12 +144,6 @@ public sealed partial class ResponsiveChoiceSelector
     {
         get => (double)GetValue(ExpandedWidthAllowanceProperty);
         set => SetValue(ExpandedWidthAllowanceProperty, value);
-    }
-
-    public int MaxExpandedItems
-    {
-        get => (int)GetValue(MaxExpandedItemsProperty);
-        set => SetValue(MaxExpandedItemsProperty, value);
     }
 
     private static void OnItemsSourceChanged(
@@ -453,15 +440,13 @@ public sealed partial class ResponsiveChoiceSelector
         double availableWidth = responsiveHost is null
             ? windowWidth
             : responsiveHost.ActualWidth;
-        int maximumItems = MaxExpandedItems < 0 ? 0 : MaxExpandedItems;
         double minimumWindowWidth = Math.Max(0, ExpandedMinWindowWidth);
         double expandedOptionsWidth = measuredExpandedWidth > 0
             ? measuredExpandedWidth
             : EstimateExpandedOptionsWidth();
         double minimumHostWidth = expandedOptionsWidth
             + Math.Max(0, ExpandedWidthAllowance);
-        bool useExpanded = projectedOptions.Count is > 1
-            && projectedOptions.Count <= maximumItems
+        bool useExpanded = projectedOptions.Count > 0
             && SelectedItem is not null
             && windowWidth >= minimumWindowWidth
             && availableWidth >= minimumHostWidth;
