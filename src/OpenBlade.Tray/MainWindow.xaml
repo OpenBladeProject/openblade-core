@@ -12,6 +12,9 @@
         <Grid.Resources>
             <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
             <Thickness x:Key="NavigationViewContentGridBorderThickness">0</Thickness>
+            <x:Double x:Key="DashboardSingleLineRowContentMinHeight">40</x:Double>
+            <Thickness x:Key="DashboardSingleLineRowPadding">16,4</Thickness>
+            <Thickness x:Key="DashboardWrappedTitleRowPadding">16,14</Thickness>
             <local:Int32DoubleConverter x:Key="Int32Double" />
             <local:RgbColorConverter x:Key="RgbColor" />
 
@@ -554,15 +557,19 @@
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                             <Border Style="{StaticResource SettingsRowStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsPerformanceVisible}">
-                                <Grid ColumnSpacing="20">
+                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                      ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Laptop performance" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Laptop performance"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal"
@@ -639,16 +646,19 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningEnabled}">
-                                <Grid ColumnSpacing="20">
+                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                      ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="GPU core clock offset"
-                                                   Style="{StaticResource CardTitleStyle}" />
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     </StackPanel>
                                     <Grid Grid.Column="1"
                                           Width="320"
@@ -679,16 +689,19 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningEnabled}">
-                                <Grid ColumnSpacing="20">
+                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                      ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="GPU memory clock offset"
-                                                   Style="{StaticResource CardTitleStyle}" />
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     </StackPanel>
                                     <Grid Grid.Column="1"
                                           Width="320"
@@ -719,15 +732,19 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
-                                <Grid ColumnSpacing="20">
+                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                      ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="CPU" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="CPU"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Name="DashboardCustomCpuSelector"
                                                                     Grid.Column="1"
@@ -741,15 +758,19 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
-                                <Grid ColumnSpacing="20">
+                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                      ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="GPU" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="GPU"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Name="DashboardCustomGpuSelector"
                                                                     Grid.Column="1"
@@ -796,15 +817,19 @@
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                             <Border Style="{StaticResource SettingsLastRowStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsFanControlVisible}">
-                                <Grid ColumnSpacing="20">
+                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                      ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Fans"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal"
@@ -829,15 +854,19 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsLastEditorSubcardStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsFixedFanSpeedVisible}">
-                                <Grid ColumnSpacing="20">
+                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                      ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="260" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Fan speed" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Fan speed"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     </StackPanel>
                                     <Grid Grid.Column="1"
                                           ColumnSpacing="12"
@@ -983,14 +1012,18 @@
                                    Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
-                            <Border Style="{StaticResource SettingsRowStyle}">
-                                <Grid ColumnSpacing="20">
+                            <Border Style="{StaticResource SettingsRowStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                      ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Battery protection" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Battery protection"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
@@ -1008,14 +1041,18 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}">
-                                <Grid ColumnSpacing="20">
+                            <Border Style="{StaticResource SettingsRowStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                      ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="260" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Charge limit"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     </StackPanel>
                                     <Grid Grid.Column="1"
                                           ColumnSpacing="12"
@@ -1055,14 +1092,18 @@
                                     </Grid>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastRowStyle}">
-                                <Grid ColumnSpacing="20">
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                      ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Temporary full charge" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Temporary full charge"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
@@ -1090,14 +1131,18 @@
                                 Visibility="{x:Bind HasKeyboardLaptopControls, Mode=OneWay}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsRowStyle}"
+                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
                                         Visibility="{x:Bind SupportsFunctionKeyPrimary, Mode=OneWay}">
-                                    <Grid ColumnSpacing="20">
+                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                          ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Function key behavior" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Function key behavior"
+                                                       Style="{StaticResource CardTitleStyle}"
+                                                       SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                             <Border x:Name="FunctionKeyFirmwareLoadingSlot"
@@ -1123,14 +1168,18 @@
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}"
+                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
                                         Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
-                                    <Grid ColumnSpacing="20">
+                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                          ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Gaming mode"
+                                                       Style="{StaticResource CardTitleStyle}"
+                                                       SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                             <Border x:Name="GamingModeFirmwareLoadingSlot"
@@ -1156,16 +1205,19 @@
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsEmphasizedSubcardStyle}"
+                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
-                                    <Grid ColumnSpacing="20">
+                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                          ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Block the Windows key"
-                                                       Style="{StaticResource CardTitleStyle}" />
+                                                       Style="{StaticResource CardTitleStyle}"
+                                                       SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                         </StackPanel>
                                         <ToggleSwitch Grid.Column="1"
                                                       HorizontalAlignment="Right"
@@ -1180,16 +1232,19 @@
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsLastEmphasizedSubcardStyle}"
+                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
-                                    <Grid ColumnSpacing="20">
+                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                          ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Block Alt+Tab"
-                                                       Style="{StaticResource CardTitleStyle}" />
+                                                       Style="{StaticResource CardTitleStyle}"
+                                                       SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                         </StackPanel>
                                         <ToggleSwitch Grid.Column="1"
                                                       HorizontalAlignment="Right"
@@ -1215,14 +1270,18 @@
                                    Visibility="{x:Bind SupportsStartupAnimation, Mode=OneWay}" />
                         <Border Style="{StaticResource SettingsGroupStyle}"
                                 Visibility="{x:Bind SupportsStartupAnimation, Mode=OneWay}">
-                            <Border Style="{StaticResource SettingsLastRowStyle}">
-                                <Grid ColumnSpacing="20">
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                      ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Startup animation"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <Border x:Name="StartupAnimationFirmwareLoadingSlot"

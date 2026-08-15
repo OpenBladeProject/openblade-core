@@ -9,12 +9,14 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.Windows.Storage.Pickers;
 using OpenBlade.Contracts;
 using OpenBlade.Platform;
 using OpenBlade.Session;
 using Windows.Graphics;
+using Windows.UI.ViewManagement;
 using WinRT.Interop;
 
 namespace OpenBlade.Tray;
@@ -42,6 +44,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly SemaphoreSlim contentDialogGate = new(1, 1);
     private readonly MicaBackdropHost micaBackdropHost;
     private readonly AccentColorManager accentColorManager;
+    private readonly UISettings dashboardTextSettings = new();
+    private readonly SingleLineTextMeasurementCache dashboardTitleHeightCache = new();
     private readonly UiPreferenceStore preferenceStore;
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
@@ -4689,6 +4693,65 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         UpdateDashboardLayout(args.NewSize.Width);
         UpdateProfilesLayout(args.NewSize.Width);
+    }
+
+    private void OnDashboardSingleLineTitleSizeChanged(
+        object sender,
+        SizeChangedEventArgs args)
+    {
+        if (sender is not TextBlock title
+            || FindVisualAncestor<Border>(title) is not Border row)
+        {
+            return;
+        }
+
+        double singleLineHeight = dashboardTitleHeightCache.GetOrMeasure(
+            dashboardTextSettings.TextScaleFactor,
+            () => MeasureSingleLineTitleHeight(title));
+        Thickness padding = SingleLineTextMeasurementCache.IsWrapped(
+            args.NewSize.Height,
+            singleLineHeight)
+            ? (Thickness)Root.Resources["DashboardWrappedTitleRowPadding"]
+            : (Thickness)Root.Resources["DashboardSingleLineRowPadding"];
+        if (!row.Padding.Equals(padding))
+        {
+            row.Padding = padding;
+        }
+    }
+
+    private static double MeasureSingleLineTitleHeight(TextBlock title)
+    {
+        var singleLineProbe = new TextBlock
+        {
+            Text = title.Text,
+            Style = title.Style,
+            TextWrapping = TextWrapping.NoWrap,
+            MaxLines = 1,
+            IsTextScaleFactorEnabled = title.IsTextScaleFactorEnabled,
+            Language = title.Language,
+            FlowDirection = title.FlowDirection,
+        };
+        singleLineProbe.Measure(new Windows.Foundation.Size(
+            double.PositiveInfinity,
+            double.PositiveInfinity));
+        return singleLineProbe.DesiredSize.Height;
+    }
+
+    private static T? FindVisualAncestor<T>(DependencyObject child)
+        where T : DependencyObject
+    {
+        DependencyObject current = child;
+        while (VisualTreeHelper.GetParent(current) is DependencyObject parent)
+        {
+            if (parent is T match)
+            {
+                return match;
+            }
+
+            current = parent;
+        }
+
+        return null;
     }
 
     private void UpdateDashboardLayout(double fallbackWidth = double.NaN)

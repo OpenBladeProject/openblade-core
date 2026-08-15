@@ -1540,6 +1540,9 @@ public sealed class WinUiShellContractTests
             bool isShellThemeSource = file.EndsWith(
                 "WindowsShellThemeSource.cs",
                 StringComparison.OrdinalIgnoreCase);
+            bool isTextScaleConsumer = file.EndsWith(
+                "MainWindow.xaml.cs",
+                StringComparison.OrdinalIgnoreCase);
             if (!isRegistryReader && !isShellThemeSource)
             {
                 Assert.DoesNotContain(
@@ -1551,11 +1554,15 @@ public sealed class WinUiShellContractTests
             {
                 Assert.DoesNotContain("SystemEvents", source, StringComparison.Ordinal);
             }
-            if (!file.EndsWith(
-                    "AccentColorManager.cs",
-                    StringComparison.OrdinalIgnoreCase))
+            bool isAccentColorManager = file.EndsWith(
+                "AccentColorManager.cs",
+                StringComparison.OrdinalIgnoreCase);
+            if (!isAccentColorManager && !isTextScaleConsumer)
             {
                 Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);
+            }
+            if (!isAccentColorManager)
+            {
                 Assert.DoesNotContain("ColorValuesChanged", source, StringComparison.Ordinal);
             }
             Assert.DoesNotContain("Application.RequestedTheme", source, StringComparison.Ordinal);

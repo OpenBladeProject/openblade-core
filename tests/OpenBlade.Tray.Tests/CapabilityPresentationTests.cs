@@ -361,6 +361,130 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_DashboardRowsCompactOnlySingleLineContent()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        string[] sharedStyleKeys =
+        [
+            "SettingsRowStyle",
+            "SettingsSubcardBaseStyle",
+        ];
+
+        foreach (string styleKey in sharedStyleKeys)
+        {
+            XElement style = Assert.Single(document.Descendants(), element =>
+                Attribute(element, "Key") == styleKey);
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "Padding"
+                && Attribute(setter, "Value") == "16,14");
+            Assert.DoesNotContain(style.Elements(), setter =>
+                Attribute(setter, "Property") is "Height" or "MinHeight");
+        }
+
+        XElement compactContentMinHeight = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "DashboardSingleLineRowContentMinHeight");
+        XElement compactPadding = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "DashboardSingleLineRowPadding");
+        XElement wrappedPadding = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "DashboardWrappedTitleRowPadding");
+        Assert.Equal("Double", compactContentMinHeight.Name.LocalName);
+        Assert.Equal("40", compactContentMinHeight.Value);
+        Assert.Equal("Thickness", compactPadding.Name.LocalName);
+        Assert.Equal("16,4", compactPadding.Value);
+        Assert.Equal("Thickness", wrappedPadding.Name.LocalName);
+        Assert.Equal("16,14", wrappedPadding.Value);
+
+        const string compactContentMinHeightReference =
+            "{StaticResource DashboardSingleLineRowContentMinHeight}";
+        const string compactPaddingReference =
+            "{StaticResource DashboardSingleLineRowPadding}";
+        XElement[] compactRows = document.Descendants()
+            .Where(element =>
+                element.Name.LocalName == "Border"
+                && Attribute(element, "Padding") == compactPaddingReference)
+            .ToArray();
+
+        Assert.Equal(15, compactRows.Length);
+        Assert.All(compactRows, row =>
+        {
+            Assert.Null(Attribute(row, "Height"));
+            Assert.Null(Attribute(row, "MinHeight"));
+            XElement content = Assert.Single(row.Elements());
+            Assert.Equal("Grid", content.Name.LocalName);
+            Assert.Equal(
+                compactContentMinHeightReference,
+                Attribute(content, "MinHeight"));
+            XElement title = content.Descendants().First(element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Style") == "{StaticResource CardTitleStyle}");
+            Assert.Equal(
+                "OnDashboardSingleLineTitleSizeChanged",
+                Attribute(title, "SizeChanged"));
+        });
+        Assert.Equal(
+            [
+                "Laptop performance",
+                "GPU core clock offset",
+                "GPU memory clock offset",
+                "CPU",
+                "GPU",
+                "Fans",
+                "Fan speed",
+                "Battery protection",
+                "Charge limit",
+                "Temporary full charge",
+                "Function key behavior",
+                "Gaming mode",
+                "Block the Windows key",
+                "Block Alt+Tab",
+                "Startup animation",
+            ],
+            compactRows.Select(row => row.Descendants().First(element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Style") == "{StaticResource CardTitleStyle}")
+                .Attribute("Text")?.Value));
+
+        XElement[] animatedCompactRows = compactRows
+            .Where(row => Attribute(row, "AnimatedVisibility.IsVisible") is not null)
+            .ToArray();
+        Assert.Equal(9, animatedCompactRows.Length);
+        Assert.All(animatedCompactRows, row =>
+        {
+            Assert.Null(Attribute(row, "Height"));
+            Assert.Null(Attribute(row, "MinHeight"));
+        });
+
+        (string elementName, string controlName, string expectedStyle)[] describedControls =
+        [
+            (
+                "ResponsiveChoiceSelector",
+                "LightingEffectPicker",
+                "{StaticResource SettingsLastRowStyle}"),
+            (
+                "Slider",
+                "DashboardLightingBrightnessSlider",
+                "{StaticResource SettingsRowStyle}"),
+        ];
+        foreach ((string elementName, string controlName, string expectedStyle) in describedControls)
+        {
+            XElement control = NamedElement(document, elementName, controlName);
+            XElement row = control.Ancestors()
+                .First(element => element.Name.LocalName == "Border");
+            Assert.Equal(expectedStyle, Attribute(row, "Style"));
+            Assert.Null(Attribute(row, "MinHeight"));
+            Assert.Null(Attribute(row, "Padding"));
+            Assert.Contains(row.Descendants(), element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Style") == "{StaticResource SecondaryTextStyle}");
+        }
+
+        XElement sliderStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "InlineCardSliderStyle");
+        Assert.DoesNotContain(sliderStyle.Elements(), setter =>
+            Attribute(setter, "Property") is "Height" or "MinHeight");
+    }
+
+    [Fact]
     public void MainWindow_FoldsGpuOffsetsUnderANeutralTuningRow()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
