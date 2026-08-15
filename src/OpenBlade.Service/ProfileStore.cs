@@ -22,6 +22,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
     internal const int ObsoleteSupportedSchemaVersion = 2;
     internal const int LegacySchemaVersion = 1;
     internal const int BatteryProtectionProfileSchemaVersion = 11;
+    internal const int WindowsPowerModeProfileSchemaVersion = 12;
 
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -133,7 +134,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
                 document.Profiles,
                 out migrated,
                 protectionDefault);
-            if (schemaVersion < CurrentSchemaVersion)
+            if (schemaVersion < WindowsPowerModeProfileSchemaVersion)
             {
                 profiles = ClearLegacyWindowsPowerModes(profiles);
             }

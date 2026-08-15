@@ -4919,6 +4919,9 @@ public sealed class MainViewModelTests
             null,
             1,
             expected);
+        var changedProperties = new HashSet<string?>();
+        viewModel.PropertyChanged += (_, args) =>
+            changedProperties.Add(args.PropertyName);
 
         bool imported = viewModel.TryImportKeyboardLighting(preset);
 
@@ -4927,6 +4930,8 @@ public sealed class MainViewModelTests
         Assert.Equal(expected, viewModel.LightingDraft with { LogoMode = null });
         Assert.True(viewModel.HasLightingProfileDifference);
         Assert.Equal(0, client.MutationCalls);
+        Assert.Contains(nameof(MainViewModel.LightingDraft), changedProperties);
+        Assert.Contains(nameof(MainViewModel.IsLightingApplyPending), changedProperties);
     }
 
     [Fact]

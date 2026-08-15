@@ -4712,6 +4712,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 throw new InvalidDataException(
                     "Lighting control became unavailable before the preset could be imported.");
             }
+
+            // The imported draft raises LightingDraft and IsLightingApplyPending.
+            // The shared property-change handler schedules the same debounced
+            // hardware commit used by direct Lighting-page edits.
         }
         catch (Exception exception)
         {

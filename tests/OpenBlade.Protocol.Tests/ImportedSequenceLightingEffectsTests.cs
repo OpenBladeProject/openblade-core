@@ -48,6 +48,18 @@ public sealed class ImportedSequenceLightingEffectsTests
     }
 
     [Fact]
+    public void Rz090528Renderer_HoldsTheFinalNonLoopingFrame()
+    {
+        var effect = new Rz090528ImportedSequenceEffect(Parameters(
+            KeyboardLightingLayoutIds.Rz09_0528,
+            loop: false));
+
+        Assert.Equal(new RgbColor(4, 5, 6), effect.RenderFrame(
+            TimeSpan.FromSeconds(10))[59]);
+        Assert.Null(effect.GetNextFrameDelay(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
     public void Renderers_RejectTheOtherModelsLayout()
     {
         Assert.Throws<ArgumentException>(() => new Pid02E0ImportedSequenceEffect(

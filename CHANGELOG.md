@@ -45,6 +45,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Preserved configured Windows power modes when migrating schema 12 profiles
+  to the keyboard-animation profile schema.
+- Kept a completed non-looping RZ09-0528 lighting sequence on its final frame
+  without faulting or surrendering the service-owned renderer.
 - Limited the tray-dashboard status row to three configurable readings so its
   icons and labels remain distinct instead of clipping in the fixed-width popup.
 - Reduced tray-dashboard background work by sharing one visible-surface

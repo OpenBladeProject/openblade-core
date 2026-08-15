@@ -60,8 +60,8 @@ internal sealed class Rz090528ImportedSequenceEffect : IRz090528LightingEffect
 
     public bool RequiresContinuousRendering => timeline.RequiresContinuousRendering;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed) =>
-        timeline.GetNextFrameDelay(elapsed) ?? Timeout.InfiniteTimeSpan;
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed) =>
+        timeline.GetNextFrameDelay(elapsed);
 
     public Rz090528MatrixFrame RenderFrame(TimeSpan elapsed) =>
         new(timeline.FrameAt(elapsed).Slots.ToArray());
