@@ -71,10 +71,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingGamingMode;
     private bool changingGamingModeKeyPolicy;
     private bool changingStartupAnimation;
+    private bool changingFunctionKeySelection;
     private bool changingExternalLightingPolicy;
     private bool changingFirmwareCompatibilityOverride;
     private bool changingWindowsDynamicLighting;
-    private bool changingDisplaySettings;
     private bool changingDashboardCards;
     private bool trayDashboardCustomizationActive;
     private bool changingPageSections;
@@ -1611,12 +1611,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDashboardPerformanceChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingPerformanceSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not PerformancePresetOption selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not PerformancePresetOption selected
             || selected.Value == ViewModel.SelectedPerformance)
         {
             return;
@@ -1646,12 +1646,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private void OnWindowsPowerModeChanged(object sender, SelectionChangedEventArgs args)
+    private void OnWindowsPowerModeChanged(
+        object sender,
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingWindowsPowerModeSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not WindowsPowerModeOption selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not WindowsPowerModeOption selected
             || selected == ViewModel.SelectedWindowsPowerModeOption)
         {
             return;
@@ -1669,14 +1671,53 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
+    private async void OnFunctionKeyPrimaryChanged(
+        object sender,
+        ResponsiveChoiceSelectionChangedEventArgs args)
+    {
+        if (changingFunctionKeySelection
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not FunctionKeyPrimaryOption selected
+            || selected.Value == ViewModel.FunctionKeyPrimary)
+        {
+            return;
+        }
+
+        changingFunctionKeySelection = true;
+        if (ViewModel.ApplyOneShotLaptopControlCommand is not AsyncRelayCommand command
+            || !command.CanExecute(selected.Action))
+        {
+            selector.SelectedItem = ViewModel.SelectedFunctionKeyPrimaryOption;
+            changingFunctionKeySelection = false;
+            return;
+        }
+
+        try
+        {
+            await command.ExecuteAsync(selected.Action);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade function key behavior selection failed: {0}",
+                exception);
+        }
+        finally
+        {
+            selector.SelectedItem = ViewModel.SelectedFunctionKeyPrimaryOption;
+            changingFunctionKeySelection = false;
+        }
+    }
+
     private async void OnDashboardCustomCpuChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingCustomPerformanceSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not CustomPerformanceLevel selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not CustomPerformanceLevel selected
             || selected == ViewModel.SelectedCustomCpuLevel)
         {
             return;
@@ -1691,12 +1732,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDashboardCustomGpuChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingCustomPerformanceSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not CustomPerformanceLevel selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not CustomPerformanceLevel selected
             || selected == ViewModel.SelectedCustomGpuLevel)
         {
             return;
@@ -2107,7 +2148,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async Task ApplyCustomPerformanceChangeAsync(
         CustomPerformanceSettings requested,
-        Microsoft.UI.Xaml.Controls.ComboBox selector)
+        ResponsiveChoiceSelector selector)
     {
         changingCustomPerformanceSelection = true;
         try
@@ -2133,12 +2174,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDashboardFanModeSelectionChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingFanSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || args.AddedItems.FirstOrDefault() is not FanModeOption selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not FanModeOption selected
             || selected.Value == ViewModel.SelectedFanMode)
         {
             return;
@@ -2874,11 +2915,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDisplayRefreshRateChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
-        if (sender is not Microsoft.UI.Xaml.Controls.ComboBox
-            { SelectedItem: DisplayRefreshRateOption option }
-            || changingDisplaySettings
+        if (sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not DisplayRefreshRateOption option
             || string.Equals(
                 option.Key,
                 DisplayViewModel.SelectedRefreshRate?.Key,
@@ -2887,8 +2927,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        await RunDisplayOperationAsync(
-            () => DisplayViewModel.SelectRefreshRateAsync(option));
+        await RunHandlerAsync(
+            () => DisplayViewModel.SelectRefreshRateAsync(option),
+            nameof(OnDisplayRefreshRateChanged));
+        selector.SelectedItem = DisplayViewModel.SelectedRefreshRate;
     }
 
     private void OnDisplayPickerOpened(object sender, object args) =>
@@ -2900,24 +2942,29 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private async void OnDisplayHdrToggled(object sender, RoutedEventArgs args)
     {
         if (sender is not ToggleSwitch toggle
-            || changingDisplaySettings
             || toggle.IsOn == DisplayViewModel.IsHdrEnabled)
         {
             return;
         }
 
-        await RunDisplayOperationAsync(
-            () => DisplayViewModel.SetHdrEnabledAsync(toggle.IsOn));
+        bool requested = toggle.IsOn;
+        await RunHandlerAsync(
+            () => DisplayViewModel.SetHdrEnabledAsync(requested),
+            nameof(OnDisplayHdrToggled));
+        toggle.IsOn = DisplayViewModel.IsHdrEnabled;
     }
 
     private async void OnDisplayColorProfileChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
-        if (sender is not Microsoft.UI.Xaml.Controls.ComboBox
-            { SelectedItem: DisplayColorProfileOption option }
-            || changingDisplaySettings
-            || string.Equals(
+        if (sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not DisplayColorProfileOption option)
+        {
+            return;
+        }
+
+        if (string.Equals(
                 option.Key,
                 DisplayViewModel.SelectedColorProfile?.Key,
                 StringComparison.Ordinal))
@@ -2925,8 +2972,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        await RunDisplayOperationAsync(
-            () => DisplayViewModel.SelectColorProfileAsync(option));
+        await RunHandlerAsync(
+            () => DisplayViewModel.SelectColorProfileAsync(option),
+            nameof(OnDisplayColorProfileChanged));
+        selector.SelectedItem = DisplayViewModel.SelectedColorProfile;
     }
 
     private Task RefreshDisplaySettingsAsync()
@@ -2936,8 +2985,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return activeRefresh;
         }
 
-        displayRefreshTask = RunDisplayOperationAsync(
-            () => DisplayViewModel.RefreshAsync());
+        displayRefreshTask = RunHandlerAsync(
+            () => DisplayViewModel.RefreshAsync(),
+            "display refresh");
         return displayRefreshTask;
     }
 
@@ -3022,49 +3072,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private async Task<bool> OnSavedDisplayProfileRestoreRequested(
+    private Task<bool> OnSavedDisplayProfileRestoreRequested(
         PowerSource expectedPowerSource,
         DisplayProfileSettings settings,
-        CancellationToken token)
-    {
-        bool wasChanging = changingDisplaySettings;
-        changingDisplaySettings = true;
-        try
-        {
-            return await DisplayViewModel.ApplyProfileAsync(
-                expectedPowerSource,
-                settings,
-                token);
-        }
-        finally
-        {
-            changingDisplaySettings = wasChanging;
-        }
-    }
-
-    private async Task RunDisplayOperationAsync(Func<Task> operation)
-    {
-        bool wasChanging = changingDisplaySettings;
-        changingDisplaySettings = true;
-        try
-        {
-            await operation();
-        }
-        catch (OperationCanceledException) when (Volatile.Read(ref disposed) != 0)
-        {
-        }
-        catch (ObjectDisposedException) when (Volatile.Read(ref disposed) != 0)
-        {
-        }
-        catch (Exception exception)
-        {
-            Trace.TraceError("OpenBlade display operation failed: {0}", exception);
-        }
-        finally
-        {
-            changingDisplaySettings = wasChanging;
-        }
-    }
+        CancellationToken token) =>
+        DisplayViewModel.ApplyProfileAsync(
+            expectedPowerSource,
+            settings,
+            token);
 
     private void OnProfileStateBadgeClick(object sender, RoutedEventArgs args)
     {

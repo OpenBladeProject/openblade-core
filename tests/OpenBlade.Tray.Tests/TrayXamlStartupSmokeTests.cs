@@ -9,17 +9,27 @@ public sealed class TrayXamlStartupSmokeTests
 {
     [InteractiveDesktopFact]
     [Trait("Category", "InteractiveDesktop")]
-    public async Task DashboardCompiledXamlLoadsWithEveryDefinitionVisible()
+    public Task DashboardCompiledXamlLoadsWithEveryDefinitionVisible() =>
+        RunTraySmokeAsync("--xaml-startup-smoke", "OpenBlade-xaml-smoke");
+
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task ResponsiveChoiceSelectorPreservesAuthoritativeSelection() =>
+        RunTraySmokeAsync(
+            "--responsive-choice-selector-smoke",
+            "OpenBlade-responsive-selector-smoke");
+
+    private static async Task RunTraySmokeAsync(string argument, string reportPrefix)
     {
         string executable = GetTrayExecutablePath();
         Assert.True(File.Exists(executable), $"Tray executable not found: {executable}");
         string reportPath = Path.Combine(
             Path.GetTempPath(),
-            $"OpenBlade-xaml-smoke-{Guid.NewGuid():N}.txt");
+            $"{reportPrefix}-{Guid.NewGuid():N}.txt");
 
         using var process = Process.Start(new ProcessStartInfo(
             executable,
-            $"--xaml-startup-smoke \"{reportPath}\"")
+            $"{argument} \"{reportPath}\"")
         {
             CreateNoWindow = true,
             UseShellExecute = false,
@@ -44,7 +54,7 @@ public sealed class TrayXamlStartupSmokeTests
         File.Delete(reportPath);
         Assert.True(
             process.ExitCode == 0,
-            $"Tray XAML startup smoke exited with {process.ExitCode}: {diagnostic}");
+            $"Tray smoke '{argument}' exited with {process.ExitCode}: {diagnostic}");
     }
 
     [Theory]
