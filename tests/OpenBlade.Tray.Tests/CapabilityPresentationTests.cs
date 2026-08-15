@@ -400,7 +400,7 @@ public sealed class CapabilityPresentationTests
         XElement neutralStyle = Assert.Single(document.Descendants(), element =>
             Attribute(element, "Key") == "SettingsNeutralSubcardStyle");
         Assert.Equal(
-            "{StaticResource SettingsSubcardStyle}",
+            "{StaticResource SettingsSubcardBaseStyle}",
             Attribute(neutralStyle, "BasedOn"));
         Assert.Contains(neutralStyle.Elements(), setter =>
             Attribute(setter, "Property") == "Background"
@@ -414,6 +414,40 @@ public sealed class CapabilityPresentationTests
                 == "local:SettingsCardPointerVisual.PointerOverBackground"
             && Attribute(setter, "Value")
                 == "{ThemeResource SubtleFillColorSecondaryBrush}");
+    }
+
+    [Fact]
+    public void MainWindow_FanEditorSubcardsUseNeutralHoverHighlight()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        string[] visibilityBindings =
+        [
+            "{Binding IsFixedFanSpeedVisible}",
+            "{Binding IsManualFanCurveVisible}",
+        ];
+
+        XElement[] fanEditorRows = document.Descendants()
+            .Where(element => visibilityBindings.Contains(
+                Attribute(element, "AnimatedVisibility.IsVisible"),
+                StringComparer.Ordinal))
+            .ToArray();
+
+        Assert.Equal(2, fanEditorRows.Length);
+        Assert.All(fanEditorRows, row =>
+        {
+            Assert.Equal(
+                "{StaticResource SettingsLastNeutralSubcardStyle}",
+                Attribute(row, "Style"));
+        });
+
+        XElement lastNeutralStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsLastNeutralSubcardStyle");
+        Assert.Equal(
+            "{StaticResource SettingsNeutralSubcardStyle}",
+            Attribute(lastNeutralStyle, "BasedOn"));
+        Assert.Contains(lastNeutralStyle.Elements(), setter =>
+            Attribute(setter, "Property") == "CornerRadius"
+            && Attribute(setter, "Value") == "0,0,8,8");
     }
 
     [Fact]
