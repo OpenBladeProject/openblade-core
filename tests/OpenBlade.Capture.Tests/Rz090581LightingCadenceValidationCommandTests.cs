@@ -64,7 +64,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         string json = artifacts.Single(pair => pair.Key.EndsWith(".json")).Value;
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
-        Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(3, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("tidal", root.GetProperty("pattern").GetString());
         Assert.True(root.GetProperty("transportQualified").GetBoolean());
         Assert.True(root.GetProperty("opticalValidationRequired").GetBoolean());
@@ -80,6 +80,22 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             root.GetProperty("restorationOutcome").GetString());
         Assert.False(root.GetProperty("unknownPreTestStateRestored").GetBoolean());
         Assert.Equal(3, root.GetProperty("stages").GetArrayLength());
+        JsonElement processorUsage = root.GetProperty("stages")[0]
+            .GetProperty("transport")
+            .GetProperty("processorUsage");
+        Assert.Equal(500, processorUsage
+            .GetProperty("processCpuTimeMilliseconds").GetDouble());
+        Assert.Equal(5000, processorUsage
+            .GetProperty("measurementWallTimeMilliseconds").GetDouble());
+        Assert.Equal(20, processorUsage
+            .GetProperty("logicalProcessorCount").GetInt32());
+        Assert.Equal(10, processorUsage
+            .GetProperty("singleLogicalProcessorPercent").GetDouble());
+        Assert.Equal(0.5, processorUsage
+            .GetProperty("wholeMachineCapacityPercent").GetDouble());
+        string markdown = artifacts.Single(pair => pair.Key.EndsWith(".md")).Value;
+        Assert.Contains("CPU (1 LP=100%)", markdown, StringComparison.Ordinal);
+        Assert.Contains("10.00%", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("serial", json, StringComparison.OrdinalIgnoreCase);
         Assert.False(markerRunnerCalled);
         Assert.True(tidalRunnerCalled);
@@ -641,6 +657,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         new(1, 1, 1, 1, 1),
         new(1000.0 / rate, 1000.0 / rate, 1000.0 / rate, 1000.0 / rate, 1000.0 / rate),
         1000.0 / rate,
+        new(500, 5000, 20, 10, 0.5),
         true,
         null,
         null,
@@ -659,6 +676,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         new(null, null, null, null, null),
         new(null, null, null, null, null),
         0,
+        null,
         false,
         submissionState,
         "matrixWriteFailed",

@@ -110,6 +110,71 @@ public sealed class LightingCadenceProbeRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_RecordsProcessCpuAcrossMeasuredWindow()
+    {
+        var time = new ManualTimeProvider();
+        var cpuReadings = new Queue<TimeSpan>(
+            [TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(1600)]);
+        var runner = new LightingCadenceProbeRunner(
+            time,
+            (duration, _) =>
+            {
+                time.Advance(duration);
+                return Task.CompletedTask;
+            },
+            () => cpuReadings.Dequeue(),
+            logicalProcessorCount: 12);
+
+        LightingCadenceStageResult result = await runner.RunAsync(
+            30,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1),
+            (_, _) => Task.CompletedTask,
+            CancellationToken.None);
+
+        LightingCadenceProcessorUsage usage = Assert.IsType<LightingCadenceProcessorUsage>(
+            result.ProcessorUsage);
+        Assert.Equal(600, usage.ProcessCpuTimeMilliseconds);
+        Assert.Equal(1000, usage.MeasurementWallTimeMilliseconds, precision: 6);
+        Assert.Equal(12, usage.LogicalProcessorCount);
+        Assert.Equal(60, usage.SingleLogicalProcessorPercent, precision: 10);
+        Assert.Equal(5, usage.WholeMachineCapacityPercent, precision: 10);
+        Assert.Empty(cpuReadings);
+    }
+
+    [Fact]
+    public async Task RunAsync_LeavesProcessorUsageNullWhenWarmupWriteFails()
+    {
+        var time = new ManualTimeProvider();
+        int cpuReads = 0;
+        var runner = new LightingCadenceProbeRunner(
+            time,
+            (duration, _) =>
+            {
+                time.Advance(duration);
+                return Task.CompletedTask;
+            },
+            () =>
+            {
+                cpuReads++;
+                return TimeSpan.Zero;
+            },
+            logicalProcessorCount: 12);
+
+        LightingCadenceStageResult result = await runner.RunAsync(
+            30,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1),
+            (_, _) => throw new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Injected warmup failure."),
+            CancellationToken.None);
+
+        Assert.Null(result.ProcessorUsage);
+        Assert.Equal(0, cpuReads);
+    }
+
+    [Fact]
     public void CreateFrame_PreservesHolesAndEncodesGrayCounter()
     {
         AmbientLightingFrame frame0 = LightingCadenceProbeRunner.CreateFrame(
@@ -171,6 +236,32 @@ public sealed class LightingCadenceProbeRunnerTests
         TimeSpan coarseDelay = LightingCadenceProbeRunner.CoarseDelayFor(frameBudget);
 
         Assert.Equal(TimeSpan.FromMilliseconds(25), frameBudget - coarseDelay);
+    }
+
+    [Fact]
+    public void CalculateProcessorUsage_ReportsOneCoreAndWholeMachineCapacity()
+    {
+        LightingCadenceProcessorUsage? usage =
+            LightingCadenceProbeRunner.CalculateProcessorUsage(
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(5),
+                logicalProcessorCount: 12);
+
+        Assert.NotNull(usage);
+        Assert.Equal(3000, usage.ProcessCpuTimeMilliseconds);
+        Assert.Equal(5000, usage.MeasurementWallTimeMilliseconds);
+        Assert.Equal(12, usage.LogicalProcessorCount);
+        Assert.Equal(60, usage.SingleLogicalProcessorPercent);
+        Assert.Equal(5, usage.WholeMachineCapacityPercent);
+    }
+
+    [Fact]
+    public void CalculateProcessorUsage_ReturnsNullForZeroWallTime()
+    {
+        Assert.Null(LightingCadenceProbeRunner.CalculateProcessorUsage(
+            TimeSpan.Zero,
+            TimeSpan.Zero,
+            logicalProcessorCount: 12));
     }
 
     private sealed class ManualTimeProvider : TimeProvider

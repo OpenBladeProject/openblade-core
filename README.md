@@ -194,10 +194,16 @@ Static green baseline.
 
 This validates host-to-keyboard transport completion and records operator
 confirmation of visible stability. It does not measure the LEDs' exact optical
-refresh rate. Near each deadline, the developer tool uses a process-local
-precision wait instead of changing the Windows timer period. If a write outcome
-is indeterminate, the validator stops without retrying or restoring lighting
-and reports that manual recovery is required.
+refresh rate. Each stage also records the validator process's CPU time across
+the measured window. `singleLogicalProcessorPercent` treats one fully occupied
+logical processor as 100%; `wholeMachineCapacityPercent` divides that value by
+the recorded logical-processor count, matching Task Manager's process-wide
+normalization. Near each deadline, the developer tool uses a process-local
+precision wait instead of changing the Windows timer period, so its CPU result
+measures the validator's intentional spin-wait cost rather than the installed
+service's `Task.Delay` scheduler. If a write outcome is indeterminate, the
+validator stops without retrying or restoring lighting and reports that manual
+recovery is required.
 
 The installed-product firmware workflow starts with a read-only baseline:
 

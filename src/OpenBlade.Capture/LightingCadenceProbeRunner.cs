@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -18,6 +19,13 @@ internal sealed record LightingCadenceMetricSummary(
     double? P99Milliseconds,
     double? MaximumMilliseconds);
 
+internal sealed record LightingCadenceProcessorUsage(
+    double ProcessCpuTimeMilliseconds,
+    double MeasurementWallTimeMilliseconds,
+    int LogicalProcessorCount,
+    double SingleLogicalProcessorPercent,
+    double WholeMachineCapacityPercent);
+
 internal sealed record LightingCadenceStageResult(
     int TargetFramesPerSecond,
     double FrameBudgetMilliseconds,
@@ -29,6 +37,7 @@ internal sealed record LightingCadenceStageResult(
     LightingCadenceMetricSummary WriteDuration,
     LightingCadenceMetricSummary CompletionInterval,
     double MaximumCompletionGapMilliseconds,
+    LightingCadenceProcessorUsage? ProcessorUsage,
     bool TransportQualified,
     WriteSubmissionState? FailureSubmissionState,
     string? Failure,
@@ -55,14 +64,24 @@ internal sealed class LightingCadenceProbeRunner
 
     private readonly TimeProvider timeProvider;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
+    private readonly Func<TimeSpan> readProcessCpuTime;
+    private readonly int logicalProcessorCount;
 
     internal LightingCadenceProbeRunner(
         TimeProvider timeProvider,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null,
+        Func<TimeSpan>? readProcessCpuTime = null,
+        int? logicalProcessorCount = null)
     {
         this.timeProvider = timeProvider
             ?? throw new ArgumentNullException(nameof(timeProvider));
         this.delay = delay ?? DelayPreciselyAsync;
+        this.readProcessCpuTime = readProcessCpuTime ?? ReadCurrentProcessCpuTime;
+        this.logicalProcessorCount = logicalProcessorCount ?? Environment.ProcessorCount;
+        if (this.logicalProcessorCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(logicalProcessorCount));
+        }
     }
 
     internal async Task<LightingCadenceStageResult> RunAsync(
@@ -103,12 +122,19 @@ internal sealed class LightingCadenceProbeRunner
         int skippedFrames = 0;
         WriteSubmissionState? failureSubmissionState = null;
         string? failure = null;
+        long? measurementStartedTimestamp = null;
+        TimeSpan? measurementStartedCpuTime = null;
 
         int frameIndex = 0;
         while (frameIndex < totalFrames)
         {
             cancellationToken.ThrowIfCancellationRequested();
             TimeSpan scheduledAt = ScheduledAt(frameIndex, targetFramesPerSecond);
+            if (frameIndex >= warmupFrames && measurementStartedTimestamp is null)
+            {
+                measurementStartedTimestamp = timeProvider.GetTimestamp();
+                measurementStartedCpuTime = readProcessCpuTime();
+            }
             TimeSpan elapsed = timeProvider.GetElapsedTime(startedTimestamp);
             if (elapsed < scheduledAt)
             {
@@ -129,6 +155,12 @@ internal sealed class LightingCadenceProbeRunner
             }
 
             bool measured = frameIndex >= warmupFrames;
+            if (measured && measurementStartedTimestamp is null)
+            {
+                // A delayed iteration can skip from warmup into measurement.
+                measurementStartedTimestamp = timeProvider.GetTimestamp();
+                measurementStartedCpuTime = readProcessCpuTime();
+            }
             long submittedTimestamp = timeProvider.GetTimestamp();
             TimeSpan submittedAt = timeProvider.GetElapsedTime(
                 startedTimestamp,
@@ -173,6 +205,20 @@ internal sealed class LightingCadenceProbeRunner
             frameIndex++;
         }
 
+        LightingCadenceProcessorUsage? processorUsage = null;
+        if (measurementStartedTimestamp is { } processorStartedTimestamp
+            && measurementStartedCpuTime is { } processorStartedCpuTime)
+        {
+            long processorCompletedTimestamp = timeProvider.GetTimestamp();
+            TimeSpan processorCompletedCpuTime = readProcessCpuTime();
+            processorUsage = CalculateProcessorUsage(
+                processorCompletedCpuTime - processorStartedCpuTime,
+                timeProvider.GetElapsedTime(
+                    processorStartedTimestamp,
+                    processorCompletedTimestamp),
+                logicalProcessorCount);
+        }
+
         return CreateResult(
             targetFramesPerSecond,
             measurementDuration,
@@ -181,6 +227,7 @@ internal sealed class LightingCadenceProbeRunner
             skippedFrames,
             failureSubmissionState,
             failure,
+            processorUsage,
             measuredSamples);
     }
 
@@ -296,6 +343,40 @@ internal sealed class LightingCadenceProbeRunner
                 ordered[^1]);
     }
 
+    internal static LightingCadenceProcessorUsage? CalculateProcessorUsage(
+        TimeSpan processCpuTime,
+        TimeSpan measurementWallTime,
+        int logicalProcessorCount)
+    {
+        if (processCpuTime < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(processCpuTime));
+        }
+        if (measurementWallTime < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(measurementWallTime));
+        }
+        if (logicalProcessorCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(logicalProcessorCount));
+        }
+        if (measurementWallTime == TimeSpan.Zero)
+        {
+            return null;
+        }
+
+        double singleLogicalProcessorPercent =
+            processCpuTime.TotalMilliseconds
+            / measurementWallTime.TotalMilliseconds
+            * 100;
+        return new LightingCadenceProcessorUsage(
+            processCpuTime.TotalMilliseconds,
+            measurementWallTime.TotalMilliseconds,
+            logicalProcessorCount,
+            singleLogicalProcessorPercent,
+            singleLogicalProcessorPercent / logicalProcessorCount);
+    }
+
     private static LightingCadenceStageResult CreateResult(
         int targetFramesPerSecond,
         TimeSpan measurementDuration,
@@ -304,6 +385,7 @@ internal sealed class LightingCadenceProbeRunner
         int skippedFrames,
         WriteSubmissionState? failureSubmissionState,
         string? failure,
+        LightingCadenceProcessorUsage? processorUsage,
         IReadOnlyList<LightingCadenceFrameSample> samples)
     {
         double frameBudgetMilliseconds = 1000.0 / targetFramesPerSecond;
@@ -339,10 +421,17 @@ internal sealed class LightingCadenceProbeRunner
             writeDuration,
             completionInterval,
             maximumGap,
+            processorUsage,
             qualified,
             failureSubmissionState,
             failure,
             samples);
+    }
+
+    private static TimeSpan ReadCurrentProcessCpuTime()
+    {
+        using Process process = Process.GetCurrentProcess();
+        return process.TotalProcessorTime;
     }
 
     private static int FrameCount(TimeSpan duration, int framesPerSecond) =>
