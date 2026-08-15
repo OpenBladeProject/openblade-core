@@ -2958,6 +2958,7 @@
                             </ContentControl>
                             <Button Content="Import preset"
                                     Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    Visibility="{x:Bind LabFeaturesEnabled, Mode=OneWay}"
                                     IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
                                     Click="OnImportKeyboardLighting"
                                     AutomationProperties.Name="Import keyboard lighting preset" />
@@ -3236,7 +3237,7 @@
                                                       Toggled="OnFirmwareCompatibilityOverrideToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -3258,6 +3259,30 @@
                                                       OnContent=""
                                                       IsOn="{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}"
                                                       Toggled="OnExternalLightingOverridePolicyToggled" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Lab features"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Show experimental features, including custom keyboard-lighting preset formats. Lab features may change or be removed."
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ToggleSwitch x:Name="LabFeaturesToggle"
+                                                      Grid.Column="1"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      MinWidth="0"
+                                                      AutomationProperties.Name="Enable Lab experimental features"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      Toggled="OnLabFeaturesToggled" />
                                     </Grid>
                                 </Border>
                             </StackPanel>

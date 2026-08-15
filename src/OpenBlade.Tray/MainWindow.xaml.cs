@@ -82,6 +82,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingSpecialKeyBindings;
     private bool changingAccentColor;
     private bool changingNotificationPreferences;
+    private bool labFeaturesEnabled;
     private bool notificationObservationReady;
     private bool troubleshootingHeaderPointerPressed;
     private bool dashboardCardsReady;
@@ -248,6 +249,21 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public FirmwareUpdateAssistantViewModel FirmwareUpdateViewModel { get; }
 
     public bool StartMinimized { get; private set; }
+
+    public bool LabFeaturesEnabled
+    {
+        get => labFeaturesEnabled;
+        private set
+        {
+            if (labFeaturesEnabled == value)
+            {
+                return;
+            }
+
+            labFeaturesEnabled = value;
+            OnPropertyChanged(nameof(LabFeaturesEnabled));
+        }
+    }
 
     public bool PerformanceNotificationsEnabled
     {
@@ -610,6 +626,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         NotificationPreferences initialNotifications = NotificationPreferences.Default;
         string? initialLastNotifiedReleaseTag = null;
         string? initialLastNotifiedFirmwareSignature = null;
+        bool initialLabFeaturesEnabled = false;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -669,6 +686,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialLastNotifiedReleaseTag = preferences.LastNotifiedReleaseTag;
             initialLastNotifiedFirmwareSignature =
                 preferences.LastNotifiedFirmwareSignature;
+            initialLabFeaturesEnabled = preferences.LabFeaturesEnabled;
         }
         catch (Exception exception)
         {
@@ -698,6 +716,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         changingAccentColor = false;
         NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
+        LabFeaturesEnabled = initialLabFeaturesEnabled;
+        LabFeaturesToggle.IsOn = LabFeaturesEnabled;
         ApplyNotificationPreferences(initialNotifications);
         lastNotifiedReleaseTag = initialLastNotifiedReleaseTag;
         lastNotifiedFirmwareSignature = initialLastNotifiedFirmwareSignature;
@@ -1017,7 +1037,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 Notifications: notificationPreferences,
                 LastNotifiedReleaseTag: lastNotifiedReleaseTag,
                 LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature,
-                TrayDashboard: trayDashboardPreference));
+                TrayDashboard: trayDashboardPreference,
+                LabFeaturesEnabled: LabFeaturesEnabled));
         }
         catch (ObjectDisposedException)
         {
@@ -1175,6 +1196,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         StartMinimized = toggle.IsOn;
+        QueuePreferenceSave();
+    }
+
+    private void OnLabFeaturesToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is not ToggleSwitch toggle
+            || Volatile.Read(ref disposed) != 0
+            || toggle.IsOn == LabFeaturesEnabled)
+        {
+            return;
+        }
+
+        LabFeaturesEnabled = toggle.IsOn;
         QueuePreferenceSave();
     }
 
@@ -4647,6 +4681,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnImportKeyboardLighting(object sender, RoutedEventArgs args)
     {
+        if (!LabFeaturesEnabled)
+        {
+            return;
+        }
+
         try
         {
             var picker = new FileOpenPicker(AppWindow.Id)

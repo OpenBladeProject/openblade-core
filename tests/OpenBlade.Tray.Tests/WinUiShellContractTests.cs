@@ -515,6 +515,10 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("Click=\"OnImportKeyboardLighting\"", lightingPage, StringComparison.Ordinal);
         Assert.Contains(
+            "Visibility=\"{x:Bind LabFeaturesEnabled, Mode=OneWay}\"",
+            lightingPage,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "IsEnabled=\"{x:Bind ViewModel.CanControlLighting, Mode=OneWay}\"",
             lightingPage,
             StringComparison.Ordinal);
@@ -525,6 +529,13 @@ public sealed class WinUiShellContractTests
         Assert.Contains("PrimaryButtonText = \"Import and apply\"", window, StringComparison.Ordinal);
         Assert.Contains("ViewModel.CanImportKeyboardLighting", window, StringComparison.Ordinal);
         Assert.Contains("ViewModel.TryImportKeyboardLighting", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "if (!LabFeaturesEnabled)",
+            SliceMethod(
+                window,
+                "private async void OnImportKeyboardLighting",
+                "private static async Task<byte[]> ReadBoundedKeyboardLightingFileAsync"),
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1693,6 +1704,14 @@ public sealed class WinUiShellContractTests
         Assert.Contains("preferenceSaveQueue.Enqueue", source, StringComparison.Ordinal);
         Assert.Contains("StartMinimized = preferences.StartMinimized", source, StringComparison.Ordinal);
         Assert.Contains("StartMinimizedToggle.IsOn = StartMinimized", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "initialLabFeaturesEnabled = preferences.LabFeaturesEnabled",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "LabFeaturesEnabled: LabFeaturesEnabled",
+            source,
+            StringComparison.Ordinal);
         Assert.Contains("\"preference save queue\"", source, StringComparison.Ordinal);
         Assert.Contains("preferenceSaveQueue.DisposeAsync", source, StringComparison.Ordinal);
 
@@ -1703,6 +1722,11 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         int watch = source.IndexOf("await ViewModel.StartAsync()", StringComparison.Ordinal);
         Assert.True(load >= 0 && load < apply && apply < subscribe && subscribe < watch);
+
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        Assert.Contains("Text=\"Lab features\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"LabFeaturesToggle\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Toggled=\"OnLabFeaturesToggled\"", xaml, StringComparison.Ordinal);
 
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         Assert.Contains(

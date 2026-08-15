@@ -189,8 +189,9 @@ supported by their laptop. The same importer accepts Razer `.chroma` version 1
 keyboard files. Uniform files convert losslessly; classic Keyboard per-key
 animations use a bounded, exact-model logical-key projection on the verified
 RZ09-0581 and RZ09-0528 layouts. Unsupported colored cells are reported, and
-per-key KeyboardExtended files are rejected instead of cropped. The versioned
-format, schema, compatibility rules, and example are in
+per-key KeyboardExtended files are rejected instead of cropped. Enable **Lab
+features** in Settings to show the importer. The versioned format, schema,
+compatibility rules, and example are in
 [`docs/keyboard-lighting-file-format.md`](docs/keyboard-lighting-file-format.md).
 
 ## Contributing

@@ -5,6 +5,11 @@ extension. Version 1 stores one portable keyboard effect preset. Importing a
 preset never grants a hardware capability: the effect must already be admitted
 for the exact connected Blade and its firmware.
 
+Keyboard lighting file import is experimental. Enable **Lab features** in
+OpenBlade Settings to show the importer on the Lighting page. Turning Labs off
+later hides new imports without disabling an effect that is already active or
+saved in a power profile.
+
 The media type is `application/vnd.openblade.keyboard-lighting+json`.
 
 The format is data-only. It cannot contain scripts, plug-ins, external assets,

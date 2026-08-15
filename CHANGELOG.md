@@ -8,7 +8,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Added a versioned, data-only `.oblight` keyboard lighting preset format and
-  a Lighting-page importer. Its bounded Razer `.chroma` version 1 adapter
+  a Lighting-page importer available when Lab features are enabled in Settings.
+  Its bounded Razer `.chroma` version 1 adapter
   converts uniform Keyboard and KeyboardExtended files losslessly, and plays
   classic Keyboard per-key animations through separate verified RZ09-0581 and
   RZ09-0528 logical-key projections. Imported animations persist with the power
