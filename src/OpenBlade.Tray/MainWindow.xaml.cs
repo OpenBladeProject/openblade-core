@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.Windows.Storage.Pickers;
 using OpenBlade.Contracts;
@@ -4689,6 +4690,63 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         UpdateDashboardLayout(args.NewSize.Width);
         UpdateProfilesLayout(args.NewSize.Width);
+    }
+
+    private void OnDashboardSingleLineTitleSizeChanged(
+        object sender,
+        SizeChangedEventArgs args)
+    {
+        if (sender is not TextBlock title
+            || FindVisualAncestor<Border>(title) is not Border row)
+        {
+            return;
+        }
+
+        Thickness padding = IsTitleWrapped(title, args.NewSize.Height)
+            ? (Thickness)Root.Resources["DashboardWrappedTitleRowPadding"]
+            : (Thickness)Root.Resources["DashboardSingleLineRowPadding"];
+        if (!row.Padding.Equals(padding))
+        {
+            row.Padding = padding;
+        }
+    }
+
+    private static bool IsTitleWrapped(TextBlock title, double actualHeight)
+    {
+        var singleLineProbe = new TextBlock
+        {
+            Text = title.Text,
+            Style = title.Style,
+            TextWrapping = TextWrapping.NoWrap,
+            MaxLines = 1,
+            IsTextScaleFactorEnabled = title.IsTextScaleFactorEnabled,
+            Language = title.Language,
+            FlowDirection = title.FlowDirection,
+        };
+        singleLineProbe.Measure(new Windows.Foundation.Size(
+            double.PositiveInfinity,
+            double.PositiveInfinity));
+        double singleLineHeight = singleLineProbe.DesiredSize.Height;
+        return double.IsFinite(singleLineHeight)
+            && singleLineHeight > 0
+            && actualHeight > singleLineHeight + 0.5;
+    }
+
+    private static T? FindVisualAncestor<T>(DependencyObject child)
+        where T : DependencyObject
+    {
+        DependencyObject current = child;
+        while (VisualTreeHelper.GetParent(current) is DependencyObject parent)
+        {
+            if (parent is T match)
+            {
+                return match;
+            }
+
+            current = parent;
+        }
+
+        return null;
     }
 
     private void UpdateDashboardLayout(double fallbackWidth = double.NaN)
