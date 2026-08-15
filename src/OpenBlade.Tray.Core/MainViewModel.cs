@@ -4686,16 +4686,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     private static LightingEffectOption CreateLightingEffectOption(LightingEffect effect) =>
-        new(
-            effect,
-            effect switch
-            {
-                LightingEffect.Spectrum => "Spectrum Cycling",
-                LightingEffect.AmbientAwareness => "Ambient Awareness",
-                LightingEffect.AudioMeter => "Audio Meter",
-                LightingEffect.Sequence => "Imported animation",
-                _ => effect.ToString(),
-            });
+        new(effect, LightingEffectLabel(effect));
+
+    private static string LightingEffectLabel(LightingEffect effect) => effect switch
+    {
+        LightingEffect.Spectrum => "Spectrum Cycling",
+        LightingEffect.AmbientAwareness => "Ambient Awareness",
+        LightingEffect.AudioMeter => "Audio Meter",
+        LightingEffect.Sequence => "Imported animation",
+        _ => effect.ToString(),
+    };
 
     private void NotifyActiveFanSelectionBinding()
     {
@@ -7400,13 +7400,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return "Off";
         }
 
-        string effect = lighting.Effect switch
-        {
-            LightingEffect.Spectrum => "Spectrum Cycling",
-            LightingEffect.AmbientAwareness => "Ambient Awareness",
-            LightingEffect.AudioMeter => "Audio Meter",
-            _ => lighting.Effect.ToString(),
-        };
+        string effect = LightingEffectLabel(lighting.Effect);
         string details = lighting.Parameters switch
         {
             BreathingLightingParameters
@@ -7740,7 +7734,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Effect: LightingEffect.Wheel,
             Parameters: WheelLightingParameters wheel,
         } => $"Wheel, {FormatRotationDirection(wheel.Direction)}",
-        _ => lighting.Effect.ToString(),
+        _ => LightingEffectLabel(lighting.Effect),
     };
 
     private static string FormatLightingColor(LightingSettings lighting) => lighting switch
@@ -7751,7 +7745,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Effect: LightingEffect.Wave or LightingEffect.Wheel
                 or LightingEffect.AmbientAwareness
                 or LightingEffect.AudioMeter
-                or LightingEffect.Fire,
+                or LightingEffect.Fire
+                or LightingEffect.Sequence,
         } => "Automatic",
         {
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },

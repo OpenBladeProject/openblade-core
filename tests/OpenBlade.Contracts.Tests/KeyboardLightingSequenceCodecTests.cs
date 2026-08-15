@@ -99,6 +99,27 @@ public sealed class KeyboardLightingSequenceCodecTests
             KeyboardLightingSequenceCodec.Encode(oversized));
     }
 
+    [Fact]
+    public void IsWellFormed_ValidatesMaximumTimelineWithoutAllocatingAFrameGraph()
+    {
+        var frame = new KeyboardLightingSequenceFrame(1, CreateBlackSlots());
+        string encoded = KeyboardLightingSequenceCodec.Encode(
+            Enumerable.Repeat(frame, 1363));
+        Assert.Equal(4096, Convert.FromBase64String(encoded).Length);
+        _ = KeyboardLightingSequenceCodec.IsWellFormed(encoded);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        bool valid = true;
+        for (int iteration = 0; iteration < 32; iteration++)
+        {
+            valid &= KeyboardLightingSequenceCodec.IsWellFormed(encoded);
+        }
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(valid);
+        Assert.InRange(allocated, 0, 256);
+    }
+
     [Theory]
     [MemberData(nameof(MalformedTimelines))]
     public void Decode_RejectsMalformedOrNoncanonicalTimeline(string timelineBase64)

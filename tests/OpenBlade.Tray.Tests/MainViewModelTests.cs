@@ -4894,6 +4894,64 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ImportedSequenceUsesFriendlyProfilePresentation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+        [
+            new KeyboardLightingSequenceFrame(
+                50,
+                new RgbColor[AmbientLightingFrame.SlotCount]),
+        ]);
+        LightingSettings sequence = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0581,
+            timeline,
+            loop: true,
+            brightness: 73);
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>
+                {
+                    LightingEffect.Off,
+                    LightingEffect.Sequence,
+                },
+                KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581,
+            });
+        client.Publish(status with
+        {
+            Profiles = status.Profiles with
+            {
+                PluggedIn = status.Profiles.PluggedIn with { Lighting = sequence },
+            },
+            DesiredState = status.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    sequence,
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.Profiles.PluggedIn.Lighting == sequence);
+
+        Assert.Equal(
+            "Imported animation",
+            viewModel.PluggedInProfilePresentation.LightingEffect.Text);
+        Assert.Equal(
+            "Automatic",
+            viewModel.PluggedInProfilePresentation.LightingColor.Text);
+        Assert.Equal(
+            "Imported animation | 73%",
+            viewModel.PluggedInProfileLightingSummary);
+        Assert.Equal(
+            "Imported animation",
+            viewModel.SelectedProfilePresentation.LightingEffect.Text);
+    }
+
+    [Fact]
     public async Task ImportKeyboardLighting_LoadsAnAdmittedPresetAsAnActiveDraft()
     {
         var client = new FakeServiceClient();

@@ -101,7 +101,25 @@ public static class KeyboardLightingSequenceCodec
         return Convert.ToBase64String(encoded, 0, offset);
     }
 
-    public static KeyboardLightingSequence Decode(string timelineBase64)
+    public static KeyboardLightingSequence Decode(string timelineBase64) =>
+        DecodeCore(timelineBase64, materialize: true)!;
+
+    public static bool IsWellFormed(string? timelineBase64)
+    {
+        try
+        {
+            _ = DecodeCore(timelineBase64, materialize: false);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    private static KeyboardLightingSequence? DecodeCore(
+        string? timelineBase64,
+        bool materialize)
     {
         if (string.IsNullOrEmpty(timelineBase64)
             || timelineBase64.Length > MaximumBase64CharacterCount)
@@ -109,18 +127,25 @@ public static class KeyboardLightingSequenceCodec
             throw new InvalidDataException("The lighting timeline is not valid canonical Base64.");
         }
 
-        byte[] buffer = new byte[MaximumDecodedByteCount];
+        Span<byte> buffer = stackalloc byte[MaximumDecodedByteCount];
         if (!Convert.TryFromBase64String(timelineBase64, buffer, out int byteCount)
-            || byteCount > MaximumDecodedByteCount
-            || !string.Equals(
-                Convert.ToBase64String(buffer, 0, byteCount),
-                timelineBase64,
-                StringComparison.Ordinal))
+            || byteCount > MaximumDecodedByteCount)
         {
             throw new InvalidDataException("The lighting timeline is not valid canonical Base64.");
         }
 
-        ReadOnlySpan<byte> encoded = buffer.AsSpan(0, byteCount);
+        Span<char> canonicalBase64 = stackalloc char[MaximumBase64CharacterCount];
+        if (!Convert.TryToBase64Chars(
+                buffer[..byteCount],
+                canonicalBase64,
+                out int canonicalCharacterCount)
+            || !timelineBase64.AsSpan().SequenceEqual(
+                canonicalBase64[..canonicalCharacterCount]))
+        {
+            throw new InvalidDataException("The lighting timeline is not valid canonical Base64.");
+        }
+
+        ReadOnlySpan<byte> encoded = buffer[..byteCount];
         if (encoded.Length < HeaderByteCount
             || BinaryPrimitives.ReadUInt32LittleEndian(encoded) != Magic
             || encoded[4] != FormatVersion)
@@ -133,8 +158,11 @@ public static class KeyboardLightingSequenceCodec
 
         int offset = HeaderByteCount;
         int totalDurationMilliseconds = 0;
-        var previous = new RgbColor[AmbientLightingFrame.SlotCount];
-        var frames = new KeyboardLightingSequenceFrame[frameCount];
+        Span<RgbColor> previous = stackalloc RgbColor[AmbientLightingFrame.SlotCount];
+        previous.Clear();
+        KeyboardLightingSequenceFrame[]? frames = materialize
+            ? new KeyboardLightingSequenceFrame[frameCount]
+            : null;
         for (int frameIndex = 0; frameIndex < frameCount; frameIndex++)
         {
             if (encoded.Length - offset < 3)
@@ -154,7 +182,6 @@ public static class KeyboardLightingSequenceCodec
                 throw new InvalidDataException("The lighting timeline delta list is invalid.");
             }
 
-            var slots = (RgbColor[])previous.Clone();
             int previousDeltaSlot = -1;
             for (int deltaIndex = 0; deltaIndex < deltaCount; deltaIndex++)
             {
@@ -171,14 +198,17 @@ public static class KeyboardLightingSequenceCodec
                     throw new InvalidDataException("The lighting timeline delta list is not canonical.");
                 }
 
-                slots[slot] = color;
+                previous[slot] = color;
                 previousDeltaSlot = slot;
             }
 
-            frames[frameIndex] = new KeyboardLightingSequenceFrame(
-                durationMilliseconds,
-                Array.AsReadOnly(slots));
-            previous = slots;
+            if (frames is not null)
+            {
+                RgbColor[] slots = previous.ToArray();
+                frames[frameIndex] = new KeyboardLightingSequenceFrame(
+                    durationMilliseconds,
+                    Array.AsReadOnly(slots));
+            }
         }
 
         if (offset != encoded.Length)
@@ -186,25 +216,9 @@ public static class KeyboardLightingSequenceCodec
             throw new InvalidDataException("The lighting timeline contains trailing data.");
         }
 
-        return new KeyboardLightingSequence(Array.AsReadOnly(frames));
-    }
-
-    public static bool IsWellFormed(string? timelineBase64)
-    {
-        if (timelineBase64 is null)
-        {
-            return false;
-        }
-
-        try
-        {
-            _ = Decode(timelineBase64);
-            return true;
-        }
-        catch (InvalidDataException)
-        {
-            return false;
-        }
+        return frames is null
+            ? null
+            : new KeyboardLightingSequence(Array.AsReadOnly(frames));
     }
 
     public static bool IsWellFormed(KeyboardLightingSequence? sequence)

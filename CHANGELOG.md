@@ -46,6 +46,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Validated imported lighting timelines without rebuilding their decoded frame
+  graph during each IPC status check.
+- Labeled imported animations consistently in profile details and summaries
+  instead of showing `Sequence` and `#000000`.
 - Preserved configured Windows power modes when migrating schema 12 profiles
   to the keyboard-animation profile schema.
 - Kept a completed non-looping RZ09-0528 lighting sequence on its final frame

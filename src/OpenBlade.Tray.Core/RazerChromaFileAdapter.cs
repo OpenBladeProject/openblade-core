@@ -138,8 +138,7 @@ public static class RazerChromaFileAdapter
         }
 
         IReadOnlyDictionary<int, byte> map = CreateLogicalKeyProjection(
-            keyboardLayoutId,
-            extended: false);
+            keyboardLayoutId);
         var unmappedColoredCells = new HashSet<int>();
         var projected = new List<KeyboardLightingSequenceFrame>(sourceFrames.Count);
         foreach (SourceFrame source in sourceFrames)
@@ -180,22 +179,18 @@ public static class RazerChromaFileAdapter
             timeline,
             loop: true,
             brightness: 100);
-        string sourceKind = device == KeyboardExtendedDevice
-            ? "KeyboardExtended"
-            : "Keyboard";
         string warning = unmappedColoredCells.Count == 0
             ? "Razer's generic canvas was projected through OpenBlade's admitted named-key map; visual parity with Synapse is not guaranteed."
             : $"Razer's generic canvas was projected through OpenBlade's admitted named-key map. {unmappedColoredCells.Count} colored source cells have no admitted laptop binding and were omitted; visual parity with Synapse is not guaranteed.";
         return Preset(
             presetName,
-            $"Imported from a Razer Chroma version 1 {sourceKind} animation using an exact-model logical-key projection.",
+            "Imported from a Razer Chroma version 1 Keyboard animation using an exact-model logical-key projection.",
             lighting,
             warning);
     }
 
     private static IReadOnlyDictionary<int, byte> CreateLogicalKeyProjection(
-        string? layoutId,
-        bool extended)
+        string? layoutId)
     {
         if (layoutId is not (
             KeyboardLightingLayoutIds.Rz09_0581 or
@@ -208,12 +203,7 @@ public static class RazerChromaFileAdapter
         var map = new Dictionary<int, byte>();
         void Add(int row, int column, byte slot)
         {
-            if (extended)
-            {
-                row++;
-                column++;
-            }
-            map.Add((row * (extended ? 24 : 22)) + column, slot);
+            map.Add((row * 22) + column, slot);
         }
 
         Add(0, 1, 1);
