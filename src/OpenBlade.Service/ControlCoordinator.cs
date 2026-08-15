@@ -599,12 +599,14 @@ public sealed class ControlCoordinator
         IReadOnlySet<DeviceSubsystem>? automaticWriteExclusions = null,
         Func<ConfirmedDeviceState, IReadOnlySet<DeviceSubsystem>>?
             automaticWriteExclusionResolver = null,
-        Func<CancellationToken, Task>? beforeInitialStateRead = null)
+        Func<CancellationToken, Task<PowerTransitionDeviceStateReadResult>>?
+            stateReader = null)
     {
         ArgumentNullException.ThrowIfNull(desired);
         var transition = new FullTransitionApplyState();
         DeviceCapabilities capabilities;
         ConfirmedDeviceState initial;
+        bool lightingReadUnavailable = false;
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
@@ -620,16 +622,28 @@ public sealed class ControlCoordinator
                 await RelinquishGpuClockOffsetManagementAsync(cancellationToken);
             }
 
-            if (beforeInitialStateRead is not null)
-            {
-                await beforeInitialStateRead(cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-            }
-            initial = await device.ReadStateAsync(cancellationToken);
+            PowerTransitionDeviceStateReadResult initialRead = stateReader is null
+                ? new(
+                    await device.ReadStateAsync(cancellationToken)
+                        .ConfigureAwait(false),
+                    LightingOffConfirmationUnavailable: false)
+                : await stateReader(cancellationToken).ConfigureAwait(false);
+            initial = initialRead.State;
+            lightingReadUnavailable =
+                initialRead.LightingOffConfirmationUnavailable;
             cancellationToken.ThrowIfCancellationRequested();
             if (automaticWriteExclusionResolver is not null)
             {
                 automaticWriteExclusions = automaticWriteExclusionResolver(initial);
+            }
+            if (initialRead.LightingOffConfirmationUnavailable)
+            {
+                automaticWriteExclusions = automaticWriteExclusions is null
+                    ? new HashSet<DeviceSubsystem> { DeviceSubsystem.Lighting }
+                    : new HashSet<DeviceSubsystem>(automaticWriteExclusions)
+                    {
+                        DeviceSubsystem.Lighting,
+                    };
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -659,6 +673,7 @@ public sealed class ControlCoordinator
                 initial,
                 states,
                 automaticWriteExclusions,
+                lightingReadUnavailable,
                 transition,
                 cancellationToken);
 
@@ -677,9 +692,18 @@ public sealed class ControlCoordinator
 
             cancellationToken.ThrowIfCancellationRequested();
             ConfirmedDeviceState final;
+            bool finalLightingReadUnavailable;
             try
             {
-                final = await device.ReadStateAsync(cancellationToken);
+                PowerTransitionDeviceStateReadResult finalRead = stateReader is null
+                    ? new(
+                        await device.ReadStateAsync(cancellationToken)
+                            .ConfigureAwait(false),
+                        LightingOffConfirmationUnavailable: false)
+                    : await stateReader(cancellationToken).ConfigureAwait(false);
+                final = finalRead.State;
+                finalLightingReadUnavailable =
+                    finalRead.LightingOffConfirmationUnavailable;
                 cancellationToken.ThrowIfCancellationRequested();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -712,7 +736,20 @@ public sealed class ControlCoordinator
                     effectiveDesired: desired);
             }
 
-            ReconcileFinalReadback(desired, states, final, transition);
+            IReadOnlySet<DeviceSubsystem> finalReadUnavailable =
+                finalLightingReadUnavailable
+                    ? new HashSet<DeviceSubsystem> { DeviceSubsystem.Lighting }
+                    : new HashSet<DeviceSubsystem>();
+            ReconcileFinalReadback(
+                desired,
+                states,
+                final,
+                finalReadUnavailable,
+                transition);
+            HashSet<DeviceSubsystem> attemptedWithoutConfirmation =
+                transition.Attempted
+                    .Where(finalReadUnavailable.Contains)
+                    .ToHashSet();
 
             return CreateFullOutcome(
                 transition.Provisional,
@@ -722,6 +759,12 @@ public sealed class ControlCoordinator
                 transition.Contradicted,
                 capabilities,
                 transition.DeviceAccessFailed,
+                confirmationUnavailable: attemptedWithoutConfirmation.Count > 0
+                    ? attemptedWithoutConfirmation
+                    : null,
+                preWriteState: attemptedWithoutConfirmation.Count > 0
+                    ? initial
+                    : null,
                 effectiveDesired: desired);
         }
         catch (OperationCanceledException exception)
@@ -861,6 +904,7 @@ public sealed class ControlCoordinator
         ConfirmedDeviceState initial,
         IReadOnlyDictionary<DeviceSubsystem, PendingSubsystem> states,
         IReadOnlySet<DeviceSubsystem>? automaticWriteExclusions,
+        bool lightingReadUnavailable,
         FullTransitionApplyState transition,
         CancellationToken cancellationToken)
     {
@@ -876,7 +920,10 @@ public sealed class ControlCoordinator
             PendingSubsystem pending = states[subsystem];
             if (automaticWriteExclusions?.Contains(subsystem) == true)
             {
-                transition.Provisional[subsystem] = ExternalChangePreserved(pending.Name);
+                transition.Provisional[subsystem] =
+                    subsystem == DeviceSubsystem.Lighting && lightingReadUnavailable
+                        ? AutomaticReadUnavailable(pending.Name)
+                        : ExternalChangePreserved(pending.Name);
                 continue;
             }
 
@@ -976,12 +1023,31 @@ public sealed class ControlCoordinator
         DesiredDeviceState desired,
         IReadOnlyDictionary<DeviceSubsystem, PendingSubsystem> states,
         ConfirmedDeviceState final,
+        IReadOnlySet<DeviceSubsystem> finalReadUnavailable,
         FullTransitionApplyState transition)
     {
         transition.Matched.Clear();
         foreach (DeviceSubsystem subsystem in DeviceSubsystemOrder.Default)
         {
             PendingSubsystem pending = states[subsystem];
+            if (finalReadUnavailable.Contains(subsystem))
+            {
+                if (transition.Attempted.Contains(subsystem))
+                {
+                    transition.Provisional[subsystem] = Indeterminate(
+                        pending.Name,
+                        new IOException(
+                            "The final lighting state could not be confirmed."));
+                }
+                else if (transition.Provisional[subsystem].Status
+                    == ControlResultStatus.Unchanged)
+                {
+                    transition.Provisional[subsystem] =
+                        AutomaticReadUnavailable(pending.Name);
+                }
+                transition.Matched.Remove(subsystem);
+                continue;
+            }
             if (transition.Attempted.Contains(subsystem))
             {
                 if (pending.Matches(final))
@@ -1624,6 +1690,11 @@ public sealed class ControlCoordinator
         ControlResultStatus.Blocked,
         $"Automatic {name.ToLowerInvariant()} profile application is paused because " +
         "the setting changed outside OpenBlade.");
+
+    private static ControlResult AutomaticReadUnavailable(string name) => new(
+        ControlResultStatus.Blocked,
+        $"Automatic {name.ToLowerInvariant()} profile application was skipped because " +
+        "the state could not be confirmed during the power-source transition.");
 
     private static ControlResult Applied(string name) => new(
         ControlResultStatus.Applied,

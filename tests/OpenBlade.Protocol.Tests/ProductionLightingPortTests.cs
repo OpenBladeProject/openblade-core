@@ -242,8 +242,9 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public async Task Rz090528ReadActive_ExternalOffDoesNotRelinquishOwnedRenderer()
+    public async Task Rz090528PowerTransitionRead_TransientOffPreservesOwnedRenderer()
     {
+        var time = new ManualTimeProvider();
         var session = new LightingSession(initialBrightness: 0xFF);
         await using var port = new Rz090528BrightnessLightingPort(
             new ValidationActor(
@@ -251,15 +252,22 @@ public sealed class ProductionLightingPortTests
                 new BatteryCommands(),
                 new TemporaryCommands()),
             TimeSpan.FromSeconds(1),
-            staticEffectAdmitted: true);
+            staticEffectAdmitted: true,
+            timeProvider: time);
         await port.SetLightingAsync(
             LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
             default);
-        session.Brightness = 0;
+        session.BrightnessQueryOverrides.Enqueue(0);
+        session.BrightnessQueryOverrides.Enqueue(0xFF);
 
-        bool? active = await port.ReadActiveAsync(default);
+        Task<PowerTransitionLightingReadResult> read =
+            port.ReadStateForPowerTransitionAsync(default);
+        Assert.False(read.IsCompleted);
+        time.Advance(PowerTransitionLightingObservation.OffConfirmationDelay);
+        PowerTransitionLightingReadResult result = await read;
 
-        Assert.False(active);
+        Assert.Null(result.State);
+        Assert.False(result.OffConfirmationUnavailable);
         Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
     }
 
@@ -1445,20 +1453,135 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public async Task ReadActive_ExternalOffDoesNotRelinquishOwnedRenderer()
+    public async Task PowerTransitionRead_TransientOffPreservesOwnedRenderer()
     {
+        var time = new ManualTimeProvider();
         var session = new LightingSession(initialBrightness: 0xFF);
         var writer = new MatrixWriter();
-        await using var port = CreatePort(session, writer, admitted: true);
+        await using var port = CreatePort(
+            session,
+            writer,
+            admitted: true,
+            timeProvider: time);
         await port.SetLightingAsync(
             LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
             default);
-        session.Brightness = 0;
+        session.BrightnessQueryOverrides.Enqueue(0);
+        session.BrightnessQueryOverrides.Enqueue(0xFF);
 
-        bool? active = await port.ReadActiveAsync(default);
+        Task<PowerTransitionLightingReadResult> read =
+            port.ReadStateForPowerTransitionAsync(default);
+        Assert.False(read.IsCompleted);
+        time.Advance(PowerTransitionLightingObservation.OffConfirmationDelay);
+        PowerTransitionLightingReadResult result = await read;
 
-        Assert.False(active);
+        Assert.Null(result.State);
+        Assert.False(result.OffConfirmationUnavailable);
         Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PowerTransitionRead_StableOffRelinquishesOwnedRenderer(
+        bool rz090528)
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using IProductionLightingPort port =
+            CreatePowerTransitionPort(session, time, rz090528);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+        session.BrightnessQueryOverrides.Enqueue(0);
+        session.BrightnessQueryOverrides.Enqueue(0);
+
+        Task<PowerTransitionLightingReadResult> read =
+            port.ReadStateForPowerTransitionAsync(default);
+        Assert.False(read.IsCompleted);
+        time.Advance(PowerTransitionLightingObservation.OffConfirmationDelay);
+        PowerTransitionLightingReadResult result = await read;
+
+        Assert.Equal(LightingEffect.Off, result.State?.Effect);
+        Assert.False(result.OffConfirmationUnavailable);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PowerTransitionRead_ConfirmationFailurePreservesOwnedRenderer(
+        bool rz090528)
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using IProductionLightingPort port =
+            CreatePowerTransitionPort(session, time, rz090528);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+        session.BrightnessQueryOverrides.Enqueue(0);
+        session.FailBrightnessQueryOnCall = session.BrightnessQueryCalls + 2;
+
+        Task<PowerTransitionLightingReadResult> read =
+            port.ReadStateForPowerTransitionAsync(default);
+        Assert.False(read.IsCompleted);
+        time.Advance(PowerTransitionLightingObservation.OffConfirmationDelay);
+
+        _ = await Assert.ThrowsAnyAsync<Exception>(() => read);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        if (!rz090528)
+        {
+            int queriesBeforeStep = session.BrightnessQueryCalls;
+            session.FailBrightnessQueryOnCall = null;
+            session.Brightness = 0xFF;
+
+            _ = await port.StepBrightnessAsync(
+                KeyboardBrightnessDirection.Decrease,
+                default);
+
+            Assert.True(session.BrightnessQueryCalls > queriesBeforeStep);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PowerTransitionRead_CancellationPreservesOwnershipAndReleasesGate(
+        bool rz090528)
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using IProductionLightingPort port =
+            CreatePowerTransitionPort(session, time, rz090528);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+        session.BrightnessQueryOverrides.Enqueue(0);
+        using var cancellation = new CancellationTokenSource();
+
+        Task<PowerTransitionLightingReadResult> read =
+            port.ReadStateForPowerTransitionAsync(cancellation.Token);
+        Assert.False(read.IsCompleted);
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        session.Brightness = 0xFF;
+        if (!rz090528)
+        {
+            int queriesBeforeStep = session.BrightnessQueryCalls;
+
+            _ = await port.StepBrightnessAsync(
+                KeyboardBrightnessDirection.Decrease,
+                default);
+
+            Assert.True(session.BrightnessQueryCalls > queriesBeforeStep);
+        }
+        else
+        {
+            Assert.Null(await port.ReadStateAsync(default));
+        }
     }
 
     [Fact]
@@ -2315,6 +2438,24 @@ public sealed class ProductionLightingPortTests
             cleanupDrainTimeout ?? TimeSpan.FromSeconds(1),
             pendingDisposals ?? new PendingDisposalRegistry());
 
+    private static IProductionLightingPort CreatePowerTransitionPort(
+        LightingSession session,
+        TimeProvider timeProvider,
+        bool rz090528) => rz090528
+        ? new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            staticEffectAdmitted: true,
+            timeProvider: timeProvider)
+        : CreatePort(
+            session,
+            new MatrixWriter(),
+            admitted: true,
+            timeProvider: timeProvider);
+
     private static SemaphoreSlim OperationGate(ProductionLightingPort port) =>
         Assert.IsType<SemaphoreSlim>(typeof(ProductionLightingPort)
             .GetField("operationGate", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -2378,6 +2519,10 @@ public sealed class ProductionLightingPortTests
 
         internal Queue<byte> BrightnessQueryOverrides { get; } = [];
 
+        internal int BrightnessQueryCalls { get; private set; }
+
+        internal int? FailBrightnessQueryOnCall { get; set; }
+
         internal byte Brightness { get; set; } = initialBrightness;
 
         internal bool LogoEnabled { get; set; } = true;
@@ -2426,6 +2571,18 @@ public sealed class ProductionLightingPortTests
             {
                 BrightnessSetCalls++;
                 if (FailBrightnessSetOnCall == BrightnessSetCalls)
+                {
+                    return Task.FromResult(
+                        new HidSessionResult<ReadOnlyMemory<byte>>(
+                            default,
+                            HidSessionFailureKind.ProtocolFailure));
+                }
+            }
+
+            if ((command.ClassId, command.CommandId) == (0x03, 0x83))
+            {
+                BrightnessQueryCalls++;
+                if (FailBrightnessQueryOnCall == BrightnessQueryCalls)
                 {
                     return Task.FromResult(
                         new HidSessionResult<ReadOnlyMemory<byte>>(

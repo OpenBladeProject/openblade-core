@@ -11,6 +11,16 @@ public enum DriverModeRestoreOutcome
     Failed,
 }
 
+public readonly record struct PowerTransitionLightingReadResult(
+    LightingSettings? State,
+    bool OffConfirmationUnavailable);
+
+internal static class PowerTransitionLightingObservation
+{
+    internal static readonly TimeSpan OffConfirmationDelay =
+        TimeSpan.FromMilliseconds(750);
+}
+
 /// <summary>
 /// Closed, typed production lighting surface. Raw Razer commands and matrix
 /// buffers never cross the protocol boundary.
@@ -58,7 +68,8 @@ public interface IProductionLightingPort : IAsyncDisposable
 
     Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken);
 
-    Task<bool?> ReadActiveAsync(CancellationToken cancellationToken);
+    Task<PowerTransitionLightingReadResult> ReadStateForPowerTransitionAsync(
+        CancellationToken cancellationToken);
 
     Task<LogoLightingMode?> ReadLogoStateAsync(CancellationToken cancellationToken) =>
         Task.FromResult<LogoLightingMode?>(null);

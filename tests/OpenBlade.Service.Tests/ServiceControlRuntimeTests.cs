@@ -5048,47 +5048,22 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         PowerSource source,
         PowerSource destination)
     {
-        var delays = new List<TimeSpan>();
         TestContext context = await CreateLightingTransitionContextAsync(
             LightingRendererOwnershipState.Static,
-            source,
-            (delay, _) =>
-            {
-                delays.Add(delay);
-                return Task.CompletedTask;
-            });
-        PowerProfile sourceProfile = source == PowerSource.PluggedIn
-            ? context.Runtime.GetStatus().Profiles.PluggedIn
-            : context.Runtime.GetStatus().Profiles.Battery;
+            source);
         PowerProfile destinationProfile = destination == PowerSource.PluggedIn
             ? context.Runtime.GetStatus().Profiles.PluggedIn
             : context.Runtime.GetStatus().Profiles.Battery;
-        context.Device.ConfirmedState = context.Device.ConfirmedState with
-        {
-            Lighting = LightingSettingsFactory.Off(),
-        };
-        context.Device.KeyboardLightingActivityStates.Enqueue(false);
-        context.Device.KeyboardLightingActivityStates.Enqueue(true);
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            context.Device.ConfirmedState with { Lighting = null },
+            LightingOffConfirmationUnavailable: false));
         context.Device.PowerTransitionReadCalls.Clear();
-        context.Device.AfterReadStateCall = _ =>
-        {
-            if (context.Device.PowerTransitionReadCalls.Count == 3)
-            {
-                context.Device.ConfirmedState = context.Device.ConfirmedState with
-                {
-                    Lighting = sourceProfile.Lighting,
-                };
-            }
-        };
         context.Telemetry.Current = CreateTelemetry(destination);
 
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
 
-        Assert.Equal([TimeSpan.FromMilliseconds(750)], delays);
-        Assert.Equal(2, context.Device.KeyboardLightingActivityReadCalls);
-        Assert.Equal(
-            ["Activity", "Activity", "State"],
-            context.Device.PowerTransitionReadCalls.Take(3));
+        Assert.Equal(2, context.Device.PowerTransitionStateReadCalls);
+        Assert.Equal("TransitionState", context.Device.PowerTransitionReadCalls[0]);
         Assert.Equal(1, context.Device.LightingSetCalls);
         Assert.Equal(destinationProfile.Lighting, context.Device.ConfirmedState.Lighting);
         Assert.DoesNotContain(
@@ -5106,27 +5081,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         PowerSource source,
         PowerSource destination)
     {
-        var delays = new List<TimeSpan>();
         TestContext context = await CreateLightingTransitionContextAsync(
             LightingRendererOwnershipState.Static,
-            source,
-            (delay, _) =>
-            {
-                delays.Add(delay);
-                return Task.CompletedTask;
-            });
+            source);
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
             Lighting = LightingSettingsFactory.Off(),
         };
-        context.Device.KeyboardLightingActivityStates.Enqueue(false);
-        context.Device.KeyboardLightingActivityStates.Enqueue(false);
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            context.Device.ConfirmedState,
+            LightingOffConfirmationUnavailable: false));
         context.Telemetry.Current = CreateTelemetry(destination);
 
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
 
-        Assert.Equal([TimeSpan.FromMilliseconds(750)], delays);
-        Assert.Equal(2, context.Device.KeyboardLightingActivityReadCalls);
+        Assert.Equal(2, context.Device.PowerTransitionStateReadCalls);
         Assert.Equal(0, context.Device.LightingSetCalls);
         Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
         Assert.Contains(
@@ -5152,22 +5121,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             transitionRetryDelay: static (_, _) => Task.CompletedTask);
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
-            Lighting = LightingSettingsFactory.Off(),
-        };
-        context.Device.KeyboardLightingActivityStates.Enqueue(false);
-        context.Device.KeyboardLightingActivityStates.Enqueue(true);
-        context.Device.PowerTransitionReadCalls.Clear();
-        context.Device.AfterReadStateCall = _ =>
-        {
-            if (context.Device.PowerTransitionReadCalls.Count == 3)
-            {
-                context.Device.ConfirmedState = context.Device.ConfirmedState with
-                {
-                    Lighting = LightingSettingsFactory.Static(
-                        new RgbColor(4, 5, 6),
-                        brightness: 30),
-                };
-            }
+            Lighting = LightingSettingsFactory.Static(
+                new RgbColor(4, 5, 6),
+                brightness: 30),
         };
         context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
 
@@ -5182,82 +5138,35 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.GetStatus().ExternalChanges);
     }
 
-    [Fact]
-    public async Task PowerTransition_TransientOffConfirmationUnavailable_PerformsNoWrites()
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, PowerSource.Battery)]
+    [InlineData(PowerSource.Battery, PowerSource.PluggedIn)]
+    public async Task PowerTransition_OffConfirmationUnavailable_SkipsOnlyLighting(
+        PowerSource source,
+        PowerSource destination)
     {
-        var delays = new List<TimeSpan>();
         TestContext context = await CreateLightingTransitionContextAsync(
             LightingRendererOwnershipState.Static,
-            transitionRetryDelay: (delay, _) =>
-            {
-                delays.Add(delay);
-                return Task.CompletedTask;
-            });
-        context.Device.ConfirmedState = context.Device.ConfirmedState with
-        {
-            Lighting = LightingSettingsFactory.Off(),
-        };
-        context.Device.KeyboardLightingActivityStates.Enqueue(false);
-        context.Device.KeyboardLightingActivityStates.Enqueue(null);
-        context.Device.KeyboardLightingActivityStates.Enqueue(null);
-        int stateReads = context.Device.StateReadCalls;
-        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+            source);
+        int performanceWrites = context.Device.PerformanceSetCalls;
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            context.Device.ConfirmedState with { Lighting = null },
+            LightingOffConfirmationUnavailable: true));
+        context.Telemetry.Current = CreateTelemetry(destination);
 
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
 
-        Assert.Equal(2, delays.Count);
-        Assert.Equal(3, context.Device.KeyboardLightingActivityReadCalls);
-        Assert.Equal(stateReads, context.Device.StateReadCalls);
-        Assert.Equal(0, context.Device.TotalSetterCalls);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
-    }
-
-    [Fact]
-    public async Task PowerTransition_TransientOffConfirmationRetryRecoversBeforeWrite()
-    {
-        var delays = new List<TimeSpan>();
-        TestContext? contextAtDelay = null;
-        TestContext context = await CreateLightingTransitionContextAsync(
-            LightingRendererOwnershipState.Static,
-            transitionRetryDelay: (delay, _) =>
-            {
-                Assert.Equal(0, contextAtDelay!.Device.TotalSetterCalls);
-                delays.Add(delay);
-                if (delays.Count == 2)
-                {
-                    PowerProfile source = contextAtDelay.Runtime.GetStatus()
-                        .Profiles.PluggedIn;
-                    contextAtDelay.Device.ConfirmedState =
-                        contextAtDelay.Device.ConfirmedState with
-                        {
-                            Lighting = source.Lighting,
-                        };
-                }
-                return Task.CompletedTask;
-            });
-        contextAtDelay = context;
-        context.Device.ConfirmedState = context.Device.ConfirmedState with
-        {
-            Lighting = LightingSettingsFactory.Off(),
-        };
-        context.Device.KeyboardLightingActivityStates.Enqueue(false);
-        context.Device.KeyboardLightingActivityStates.Enqueue(null);
-        context.Device.KeyboardLightingActivityStates.Enqueue(true);
-        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
-
-        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
-
-        Assert.Equal(
-            [TimeSpan.FromMilliseconds(750), TimeSpan.FromMilliseconds(750)],
-            delays);
-        Assert.Equal(3, context.Device.KeyboardLightingActivityReadCalls);
-        Assert.Equal(1, context.Device.LightingSetCalls);
-        Assert.Equal(
-            context.Runtime.GetStatus().Profiles.Battery.Lighting,
-            context.Device.ConfirmedState.Lighting);
+        Assert.Equal(performanceWrites + 1, context.Device.PerformanceSetCalls);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
         Assert.DoesNotContain(
             DeviceSubsystem.Lighting,
             context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains(
+            "lighting profile application was skipped",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -10782,9 +10691,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Action<int>? AfterReadStateCall { get; set; }
 
-        public Queue<bool?> KeyboardLightingActivityStates { get; } = new();
+        public Queue<PowerTransitionDeviceStateReadResult> PowerTransitionStateReads
+        {
+            get;
+        } = new();
 
-        public int KeyboardLightingActivityReadCalls { get; private set; }
+        public int PowerTransitionStateReadCalls { get; private set; }
 
         public List<string> PowerTransitionReadCalls { get; } = [];
 
@@ -10837,19 +10749,23 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             return Task.FromResult(ScopedLightingReadback);
         }
 
-        public async Task<bool?> ReadKeyboardLightingActiveAsync(
-            CancellationToken cancellationToken)
+        public async Task<PowerTransitionDeviceStateReadResult>
+            ReadStateForPowerTransitionAsync(CancellationToken cancellationToken)
         {
-            KeyboardLightingActivityReadCalls++;
-            PowerTransitionReadCalls.Add("Activity");
-            if (KeyboardLightingActivityStates.TryDequeue(out bool? active))
+            PowerTransitionStateReadCalls++;
+            if (PowerTransitionStateReads.TryDequeue(
+                out PowerTransitionDeviceStateReadResult scripted))
             {
-                return active;
+                cancellationToken.ThrowIfCancellationRequested();
+                TotalCalls++;
+                StateReadCalls++;
+                PowerTransitionReadCalls.Add("TransitionState");
+                return scripted;
             }
             ConfirmedDeviceState state = await ReadStateAsync(cancellationToken);
-            return state.Lighting is null
-                ? null
-                : state.Lighting.Effect != LightingEffect.Off;
+            return new(
+                state,
+                LightingOffConfirmationUnavailable: false);
         }
 
         public Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken)

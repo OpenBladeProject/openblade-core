@@ -43,8 +43,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Prevented brief firmware lighting-off readings during AC and battery
   transitions from being mistaken for external changes. OpenBlade now confirms
-  the reading once before applying the destination profile, while preserving a
-  stable external lighting change without overwriting it.
+  a zero reading at the point where it would release the owned renderer, while
+  preserving a stable external lighting change without overwriting it. If that
+  confirmation is unavailable, only lighting is skipped; the remaining profile
+  controls still apply.
 - Made the main window and tray dashboard available before the initial display
   query finishes, while coalescing display refreshes so a slow Session Agent
   response cannot queue redundant follow-up queries. Profile capture still waits

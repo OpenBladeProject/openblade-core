@@ -5827,37 +5827,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool preserveObservedExternalChanges,
         CancellationToken token)
     {
-        async Task PrepareInitialStateReadAsync(CancellationToken cancellationToken)
-        {
-            if (!ShouldProbeForTransientLightingOff())
-            {
-                return;
-            }
-
-            bool? active = await device.ReadKeyboardLightingActiveAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (active is null)
-            {
-                throw new IOException(
-                    "Keyboard lighting activity could not be read during the power-source transition.");
-            }
-            if (active.Value)
-            {
-                return;
-            }
-            await transitionRetryDelay(
-                PowerTransitionAccessRetryDelay,
-                cancellationToken).ConfigureAwait(false);
-            active = await device.ReadKeyboardLightingActiveAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (active is null)
-            {
-                throw new IOException(
-                    "Keyboard lighting activity could not be confirmed after a transient Off reading.");
-            }
-        }
-
-        bool ShouldProbeForTransientLightingOff() =>
+        bool ShouldConfirmTransientLightingOff() =>
             preserveObservedExternalChanges
             && priorDesired is not null
             && !preferences.AlwaysOverrideExternalLightingChanges
@@ -5871,6 +5841,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 lastOwnedLightingSettings)
             && priorDesired.Lighting.Value.Effect != LightingEffect.Off
             && desired.Lighting.Value.Effect != LightingEffect.Off;
+
+        Func<CancellationToken, Task<PowerTransitionDeviceStateReadResult>>?
+            transitionStateReader = ShouldConfirmTransientLightingOff()
+                ? device.ReadStateForPowerTransitionAsync
+                : null;
 
         IReadOnlySet<DeviceSubsystem> ResolveAutomaticWriteExclusions(
             ConfirmedDeviceState confirmed)
@@ -5906,7 +5881,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     desired,
                     token,
                     automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions,
-                    beforeInitialStateRead: PrepareInitialStateReadAsync);
+                    stateReader: transitionStateReader);
 
             if (ShouldRetryPowerTransitionAccess(outcome))
             {
@@ -5916,7 +5891,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         desired,
                         token,
                         automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions,
-                        beforeInitialStateRead: PrepareInitialStateReadAsync);
+                        stateReader: transitionStateReader);
             }
 
             return outcome;

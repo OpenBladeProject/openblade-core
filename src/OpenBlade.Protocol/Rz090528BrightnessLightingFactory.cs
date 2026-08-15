@@ -365,15 +365,11 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            byte raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
-            if (raw != 0)
-            {
-                return null;
-            }
-
-            await StopStreamCoreAsync().ConfigureAwait(false);
-            ClearOwnedEffectCore(LightingSettingsFactory.Off());
-            return LightingSettingsFactory.Off();
+            PowerTransitionLightingReadResult result =
+                await ReadStateCoreAsync(
+                    confirmOff: false,
+                    cancellationToken).ConfigureAwait(false);
+            return result.State;
         }
         finally
         {
@@ -381,17 +377,51 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         }
     }
 
-    public async Task<bool?> ReadActiveAsync(CancellationToken cancellationToken)
+    public async Task<PowerTransitionLightingReadResult>
+        ReadStateForPowerTransitionAsync(CancellationToken cancellationToken)
     {
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false) != 0;
+            return await ReadStateCoreAsync(
+                confirmOff: true,
+                cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             operationGate.Release();
         }
+    }
+
+    private async Task<PowerTransitionLightingReadResult> ReadStateCoreAsync(
+        bool confirmOff,
+        CancellationToken cancellationToken)
+    {
+        byte raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
+        if (raw != 0)
+        {
+            return new(null, OffConfirmationUnavailable: false);
+        }
+
+        if (confirmOff)
+        {
+            await Task.Delay(
+                PowerTransitionLightingObservation.OffConfirmationDelay,
+                timeProvider,
+                cancellationToken).ConfigureAwait(false);
+            raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
+            if (raw != 0)
+            {
+                return new(null, OffConfirmationUnavailable: false);
+            }
+        }
+
+        // A transition read reaches this destructive path only after two
+        // adjacent zero samples; ordinary observations retain one-sample
+        // behavior.
+        await StopStreamCoreAsync().ConfigureAwait(false);
+        ClearOwnedEffectCore(LightingSettingsFactory.Off());
+        return new(LightingSettingsFactory.Off(), OffConfirmationUnavailable: false);
     }
 
     public async Task<LogoLightingMode?> ReadLogoStateAsync(

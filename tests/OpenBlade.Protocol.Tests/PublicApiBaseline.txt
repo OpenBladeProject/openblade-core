@@ -298,8 +298,8 @@ type interface OpenBlade.Protocol.IBladeDevice
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.ConfirmedDeviceState> ReadStateAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.DeviceCapabilities> ReadCapabilitiesAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.FanRpmReadings> ReadFanRpmAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.PowerTransitionDeviceStateReadResult> ReadStateForPowerTransitionAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<System.Byte> StepKeyboardBrightnessAsync(OpenBlade.Contracts.KeyboardBrightnessDirection direction, System.Threading.CancellationToken cancellationToken)
-  method abstract System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReadKeyboardLightingActiveAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.ConfirmedDeviceState> ReadLightingStateAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> ReadLightingRendererOwnershipAsync(System.Threading.CancellationToken cancellationToken)
@@ -371,8 +371,8 @@ type interface OpenBlade.Protocol.IProductionLightingPort
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> InvalidateAsync()
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> RelinquishRendererAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingSettings> ReadStateAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.PowerTransitionLightingReadResult> ReadStateForPowerTransitionAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<System.Byte> StepBrightnessAsync(OpenBlade.Contracts.KeyboardBrightnessDirection direction, System.Threading.CancellationToken cancellationToken)
-  method abstract System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReadActiveAsync(System.Threading.CancellationToken cancellationToken)
   method virtual OpenBlade.Protocol.DriverModeRestoreOutcome get_DriverModeRestoreOutcome()
   method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Boolean> DisposeWithinCleanupDeadlineAsync()
@@ -567,6 +567,38 @@ type enum OpenBlade.Protocol.PerformanceFanValidationTarget
   field const OpenBlade.Protocol.PerformanceFanValidationTarget Fixed5400 = 3
   field const OpenBlade.Protocol.PerformanceFanValidationTarget Performance = 2
   field const OpenBlade.Protocol.PerformanceFanValidationTarget Silent = 1
+type struct OpenBlade.Protocol.PowerTransitionDeviceStateReadResult
+  interface System.IEquatable<OpenBlade.Protocol.PowerTransitionDeviceStateReadResult>
+  ctor (OpenBlade.Contracts.ConfirmedDeviceState State, System.Boolean LightingOffConfirmationUnavailable)
+  method OpenBlade.Contracts.ConfirmedDeviceState get_State()
+  method System.Boolean get_LightingOffConfirmationUnavailable()
+  method System.Void Deconstruct(out OpenBlade.Contracts.ConfirmedDeviceState State, out System.Boolean LightingOffConfirmationUnavailable)
+  method System.Void set_LightingOffConfirmationUnavailable(System.Boolean value)
+  method System.Void set_State(OpenBlade.Contracts.ConfirmedDeviceState value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.PowerTransitionDeviceStateReadResult left, OpenBlade.Protocol.PowerTransitionDeviceStateReadResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.PowerTransitionDeviceStateReadResult left, OpenBlade.Protocol.PowerTransitionDeviceStateReadResult right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.PowerTransitionDeviceStateReadResult other)
+  property OpenBlade.Contracts.ConfirmedDeviceState State { get; init; }
+  property System.Boolean LightingOffConfirmationUnavailable { get; init; }
+type struct OpenBlade.Protocol.PowerTransitionLightingReadResult
+  interface System.IEquatable<OpenBlade.Protocol.PowerTransitionLightingReadResult>
+  ctor (OpenBlade.Contracts.LightingSettings State, System.Boolean OffConfirmationUnavailable)
+  method OpenBlade.Contracts.LightingSettings get_State()
+  method System.Boolean get_OffConfirmationUnavailable()
+  method System.Void Deconstruct(out OpenBlade.Contracts.LightingSettings State, out System.Boolean OffConfirmationUnavailable)
+  method System.Void set_OffConfirmationUnavailable(System.Boolean value)
+  method System.Void set_State(OpenBlade.Contracts.LightingSettings value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.PowerTransitionLightingReadResult left, OpenBlade.Protocol.PowerTransitionLightingReadResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.PowerTransitionLightingReadResult left, OpenBlade.Protocol.PowerTransitionLightingReadResult right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.PowerTransitionLightingReadResult other)
+  property OpenBlade.Contracts.LightingSettings State { get; init; }
+  property System.Boolean OffConfirmationUnavailable { get; init; }
 type sealed class OpenBlade.Protocol.ProductionBatteryFactory
   interface OpenBlade.Protocol.IProductionBatteryPortFactory
   method static OpenBlade.Protocol.IProductionBatteryPortFactory CreateWindows()

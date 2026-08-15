@@ -120,30 +120,11 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            byte raw = await QueryBrightnessRawCoreAsync(cancellationToken)
-                .ConfigureAwait(false);
-            // PID 02E0 exposes an independent brightness query but no matrix-effect
-            // query. Only zero brightness proves Off; returning cached renderer
-            // intent here would incorrectly place it in ConfirmedDeviceState.
-            if (raw != 0)
-            {
-                return null;
-            }
-
-            // An independently observed Off means OpenBlade no longer owns the
-            // visible effect. Stop its host renderer so a later brightness change
-            // by another controller cannot resurrect stale OpenBlade frames.
-            await StopStreamCoreAsync().ConfigureAwait(false);
-            lock (effectSync)
-            {
-                activeEffect = null;
-                activeKeyTriggeredEffect = null;
-                pendingKeyTriggeredPulses.Clear();
-                lastDeliveredState = LightingSettingsFactory.Off();
-            }
-            SetOwnership(LightingRendererOwnershipState.None);
-
-            return LightingSettingsFactory.Off();
+            PowerTransitionLightingReadResult result =
+                await ReadStateCoreAsync(
+                    confirmOff: false,
+                    cancellationToken).ConfigureAwait(false);
+            return result.State;
         }
         finally
         {
@@ -151,18 +132,67 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
-    public async Task<bool?> ReadActiveAsync(CancellationToken cancellationToken)
+    public async Task<PowerTransitionLightingReadResult>
+        ReadStateForPowerTransitionAsync(CancellationToken cancellationToken)
     {
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await QueryBrightnessRawCoreAsync(cancellationToken)
-                .ConfigureAwait(false) != 0;
+            return await ReadStateCoreAsync(
+                confirmOff: true,
+                cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             operationGate.Release();
         }
+    }
+
+    private async Task<PowerTransitionLightingReadResult> ReadStateCoreAsync(
+        bool confirmOff,
+        CancellationToken cancellationToken)
+    {
+        byte raw = await QueryBrightnessRawCoreAsync(cancellationToken)
+            .ConfigureAwait(false);
+        // PID 02E0 exposes an independent brightness query but no matrix-effect
+        // query. Only zero brightness proves Off; returning cached renderer
+        // intent here would incorrectly place it in ConfirmedDeviceState.
+        if (raw != 0)
+        {
+            return new(null, OffConfirmationUnavailable: false);
+        }
+
+        if (confirmOff)
+        {
+            // A failed or canceled confirmation must not leave the transient
+            // zero available to brightness-step code as a trusted baseline.
+            lastKnownBrightnessRaw = null;
+            await Task.Delay(
+                PowerTransitionLightingObservation.OffConfirmationDelay,
+                timeProvider,
+                cancellationToken).ConfigureAwait(false);
+            raw = await QueryBrightnessRawCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (raw != 0)
+            {
+                return new(null, OffConfirmationUnavailable: false);
+            }
+        }
+
+        // During a power transition, only the second zero sample reaches this
+        // destructive decision. Unrelated device reads cannot open a new
+        // unguarded window between confirmation and renderer teardown.
+        await StopStreamCoreAsync().ConfigureAwait(false);
+        lock (effectSync)
+        {
+            activeEffect = null;
+            activeKeyTriggeredEffect = null;
+            pendingKeyTriggeredPulses.Clear();
+            lastDeliveredState = LightingSettingsFactory.Off();
+        }
+        SetOwnership(LightingRendererOwnershipState.None);
+
+        return new(LightingSettingsFactory.Off(), OffConfirmationUnavailable: false);
     }
 
     public async Task<LogoLightingMode?> ReadLogoStateAsync(
