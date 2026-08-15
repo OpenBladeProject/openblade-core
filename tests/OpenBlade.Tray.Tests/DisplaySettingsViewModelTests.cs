@@ -162,12 +162,17 @@ public sealed class DisplaySettingsViewModelTests
 
         Assert.Empty(adapter.RefreshRequests);
         Assert.Equal(1, adapter.MaximumConcurrentOperations);
+        Assert.True(viewModel.IsBusy);
+        Assert.False(viewModel.CanChangeRefreshRate);
+        Assert.False(viewModel.CanChangeHdr);
+        Assert.False(viewModel.CanChangeColorProfile);
         adapter.ReleaseStateRead.TrySetResult();
         await Task.WhenAll(refresh, change);
 
         Assert.Equal([Fixed240.Key], adapter.RefreshRequests);
         Assert.Equal(1, adapter.MaximumConcurrentOperations);
         Assert.Equal(Fixed240.Key, viewModel.SelectedRefreshRate?.Key);
+        Assert.False(viewModel.IsBusy);
     }
 
     [Fact]
@@ -185,12 +190,100 @@ public sealed class DisplaySettingsViewModelTests
 
         Assert.Empty(adapter.ColorRequests);
         Assert.Equal(1, adapter.MaximumConcurrentOperations);
+        Assert.True(viewModel.IsBusy);
+        Assert.False(viewModel.CanChangeRefreshRate);
+        Assert.False(viewModel.CanChangeHdr);
+        Assert.False(viewModel.CanChangeColorProfile);
         adapter.ReleaseStateRead.TrySetResult();
         await Task.WhenAll(refresh, change);
 
         Assert.Equal([Srgb.Key], adapter.ColorRequests);
         Assert.Equal(1, adapter.MaximumConcurrentOperations);
         Assert.Equal(Srgb.Key, viewModel.SelectedColorProfile?.Key);
+        Assert.False(viewModel.IsBusy);
+    }
+
+    [Fact]
+    public async Task HdrChange_WaitsForBackgroundRefreshAndAppliesAfterward()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+        await viewModel.RefreshAsync();
+        adapter.BlockNextStateRead = true;
+
+        Task refresh = viewModel.RefreshAsync();
+        await adapter.StateReadStarted.Task;
+        Task change = viewModel.SetHdrEnabledAsync(enabled: true);
+
+        Assert.Empty(adapter.HdrRequests);
+        Assert.Equal(1, adapter.MaximumConcurrentOperations);
+        Assert.True(viewModel.IsBusy);
+        Assert.False(viewModel.CanChangeRefreshRate);
+        Assert.False(viewModel.CanChangeHdr);
+        Assert.False(viewModel.CanChangeColorProfile);
+        adapter.ReleaseStateRead.TrySetResult();
+        await Task.WhenAll(refresh, change);
+
+        Assert.Equal([true], adapter.HdrRequests);
+        Assert.Equal(1, adapter.MaximumConcurrentOperations);
+        Assert.True(viewModel.IsHdrEnabled);
+        Assert.False(viewModel.IsBusy);
+    }
+
+    [Fact]
+    public async Task QueuedWrites_KeepBusyUntilLastWriteCompletes()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
+        {
+            BlockFirstRefreshChange = true,
+            BlockSecondRefreshChange = true,
+        };
+        await using var viewModel = CreateViewModel(adapter);
+        await viewModel.RefreshAsync();
+
+        Task first = viewModel.SelectRefreshRateAsync(Fixed240);
+        await adapter.FirstRefreshChangeStarted.Task;
+        Task second = viewModel.SelectRefreshRateAsync(Dynamic);
+
+        adapter.ReleaseFirstRefreshChange.TrySetResult();
+        await adapter.SecondRefreshChangeStarted.Task;
+        await first;
+
+        Assert.True(viewModel.IsBusy);
+        Assert.False(viewModel.CanChangeRefreshRate);
+        adapter.ReleaseSecondRefreshChange.TrySetResult();
+        await second;
+
+        Assert.False(viewModel.IsBusy);
+        Assert.True(viewModel.CanChangeRefreshRate);
+        Assert.Equal([Fixed240.Key, Dynamic.Key], adapter.RefreshRequests);
+    }
+
+    [Fact]
+    public async Task CanceledQueuedWrite_ClearsBusyWithoutEnteringAdapter()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+        await viewModel.RefreshAsync();
+        adapter.BlockNextStateRead = true;
+        using var cancellation = new CancellationTokenSource();
+
+        Task refresh = viewModel.RefreshAsync();
+        await adapter.StateReadStarted.Task;
+        Task change = viewModel.SetHdrEnabledAsync(enabled: true, cancellation.Token);
+        Assert.True(viewModel.IsBusy);
+
+        await cancellation.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => change);
+
+        Assert.Empty(adapter.HdrRequests);
+        Assert.False(viewModel.IsBusy);
+        Assert.True(viewModel.CanChangeHdr);
+        adapter.ReleaseStateRead.TrySetResult();
+        await refresh;
     }
 
     [Fact]
@@ -468,11 +561,16 @@ public sealed class DisplaySettingsViewModelTests
         private int refreshChanges;
 
         public bool BlockFirstRefreshChange { get; init; }
+        public bool BlockSecondRefreshChange { get; init; }
         public bool FailNextRefreshChange { get; init; }
         public bool BlockNextStateRead { get; set; }
         public TaskCompletionSource FirstRefreshChangeStarted { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ReleaseFirstRefreshChange { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondRefreshChangeStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseSecondRefreshChange { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource StateReadStarted { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -519,6 +617,7 @@ public sealed class DisplaySettingsViewModelTests
             {
                 RefreshRequests.Add(refreshRateKey);
                 RefreshRequestSources.Add(expectedPowerSource);
+                int refreshChangeNumber = Interlocked.Increment(ref refreshChanges);
                 if (FailNextRefreshChange)
                 {
                     return state with
@@ -528,10 +627,15 @@ public sealed class DisplaySettingsViewModelTests
                     };
                 }
 
-                if (BlockFirstRefreshChange && Interlocked.Increment(ref refreshChanges) == 1)
+                if (BlockFirstRefreshChange && refreshChangeNumber == 1)
                 {
                     FirstRefreshChangeStarted.TrySetResult();
                     await ReleaseFirstRefreshChange.Task.WaitAsync(token);
+                }
+                else if (BlockSecondRefreshChange && refreshChangeNumber == 2)
+                {
+                    SecondRefreshChangeStarted.TrySetResult();
+                    await ReleaseSecondRefreshChange.Task.WaitAsync(token);
                 }
 
                 state = state with { SelectedRefreshRateKey = refreshRateKey };
