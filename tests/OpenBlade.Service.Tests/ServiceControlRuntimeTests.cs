@@ -5169,6 +5169,51 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, PowerSource.Battery)]
+    [InlineData(PowerSource.Battery, PowerSource.PluggedIn)]
+    public async Task PowerTransition_FinalLightingReadUnavailableDoesNotBlockLaterTransition(
+        PowerSource source,
+        PowerSource destination)
+    {
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static,
+            source);
+        PowerProfile destinationProfile = destination == PowerSource.PluggedIn
+            ? context.Runtime.GetStatus().Profiles.PluggedIn
+            : context.Runtime.GetStatus().Profiles.Battery;
+        ConfirmedDeviceState initial = context.Device.ConfirmedState;
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            initial,
+            LightingOffConfirmationUnavailable: false));
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            initial with
+            {
+                Performance = destinationProfile.Performance,
+                Fans = destinationProfile.Fans,
+                Lighting = null,
+            },
+            LightingOffConfirmationUnavailable: true));
+        context.Telemetry.Current = CreateTelemetry(destination);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(lightingWrites + 1, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+
+        context.Telemetry.Current = CreateTelemetry(source);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(lightingWrites + 2, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
     [Fact]
     public async Task FirstObservation_ProfileMismatchEstablishesBaselineWithoutSetters()
     {

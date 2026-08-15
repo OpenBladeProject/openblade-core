@@ -19,6 +19,11 @@ internal static class PowerTransitionLightingObservation
 {
     internal static readonly TimeSpan OffConfirmationDelay =
         TimeSpan.FromMilliseconds(750);
+
+    internal static bool RequiresOffConfirmation(
+        LightingRendererOwnershipState ownership) =>
+        ownership is not LightingRendererOwnershipState.None
+            and not LightingRendererOwnershipState.Faulted;
 }
 
 /// <summary>

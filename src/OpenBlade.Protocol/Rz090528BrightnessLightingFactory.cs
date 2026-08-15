@@ -403,7 +403,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             return new(null, OffConfirmationUnavailable: false);
         }
 
-        if (confirmOff)
+        if (confirmOff
+            && PowerTransitionLightingObservation.RequiresOffConfirmation(
+                OwnershipState))
         {
             await Task.Delay(
                 PowerTransitionLightingObservation.OffConfirmationDelay,

@@ -162,7 +162,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             return new(null, OffConfirmationUnavailable: false);
         }
 
-        if (confirmOff)
+        if (confirmOff
+            && PowerTransitionLightingObservation.RequiresOffConfirmation(
+                OwnershipState))
         {
             // A failed or canceled confirmation must not leave the transient
             // zero available to brightness-step code as a trusted baseline.

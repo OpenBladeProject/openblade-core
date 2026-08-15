@@ -1510,6 +1510,42 @@ public sealed class ProductionLightingPortTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task PowerTransitionRead_AlreadyRelinquishedOffDoesNotReconfirm(
+        bool rz090528)
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using IProductionLightingPort port =
+            CreatePowerTransitionPort(session, time, rz090528);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+        session.BrightnessQueryOverrides.Enqueue(0);
+        session.BrightnessQueryOverrides.Enqueue(0);
+
+        Task<PowerTransitionLightingReadResult> firstRead =
+            port.ReadStateForPowerTransitionAsync(default);
+        Assert.False(firstRead.IsCompleted);
+        time.Advance(PowerTransitionLightingObservation.OffConfirmationDelay);
+        PowerTransitionLightingReadResult firstResult = await firstRead;
+        Assert.Equal(LightingEffect.Off, firstResult.State?.Effect);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        int queriesAfterRelinquish = session.BrightnessQueryCalls;
+        session.Brightness = 0;
+
+        Task<PowerTransitionLightingReadResult> secondRead =
+            port.ReadStateForPowerTransitionAsync(default);
+
+        Assert.True(secondRead.IsCompleted);
+        PowerTransitionLightingReadResult secondResult = await secondRead;
+        Assert.Equal(LightingEffect.Off, secondResult.State?.Effect);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Equal(queriesAfterRelinquish + 1, session.BrightnessQueryCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task PowerTransitionRead_ConfirmationFailurePreservesOwnedRenderer(
         bool rz090528)
     {
