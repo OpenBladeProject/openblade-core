@@ -3463,8 +3463,10 @@ public sealed class MainViewModelTests
         await using var viewModel = new MainViewModel(client, dispatcher, time);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        int dispatchesBeforeBaseline = dispatcher.CompletedCalls;
         client.Publish(baseline);
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeBaseline);
+        Assert.True(viewModel.CanControlHardware);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
             .ExecuteAsync(PerformancePreset.Performance);
@@ -3486,14 +3488,16 @@ public sealed class MainViewModelTests
                     SettingValueSource.PowerProfile),
             },
         };
+        int dispatchesBeforeLaggingStatus = dispatcher.CompletedCalls;
         client.Publish(lagging);
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Lagging status");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeLaggingStatus);
+        Assert.Equal("Lagging status", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
         time.Advance(TimeSpan.FromSeconds(3));
-        int completedCalls = dispatcher.CompletedCalls;
+        int dispatchesBeforeExpiredStatus = dispatcher.CompletedCalls;
         client.Publish(lagging with { Revision = baseline.Revision + 2 });
-        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeExpiredStatus);
 
         Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
     }
