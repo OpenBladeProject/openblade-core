@@ -12,6 +12,8 @@
         <Grid.Resources>
             <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
             <Thickness x:Key="NavigationViewContentGridBorderThickness">0</Thickness>
+            <x:Double x:Key="DashboardSingleLineRowMinHeight">48</x:Double>
+            <Thickness x:Key="DashboardSingleLineRowPadding">16,4</Thickness>
             <local:Int32DoubleConverter x:Key="Int32Double" />
             <local:RgbColorConverter x:Key="RgbColor" />
 
@@ -48,8 +50,7 @@
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="0,0,0,1" />
-                <Setter Property="MinHeight" Value="48" />
-                <Setter Property="Padding" Value="16,4" />
+                <Setter Property="Padding" Value="16,14" />
                 <Setter Property="local:SettingsCardPointerVisual.IsEnabled" Value="True" />
                 <Setter Property="local:SettingsCardPointerVisual.PointerOverBackground"
                         Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
@@ -62,8 +63,7 @@
             <Style x:Key="SettingsSubcardBaseStyle" TargetType="Border">
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="0,1,0,0" />
-                <Setter Property="MinHeight" Value="48" />
-                <Setter Property="Padding" Value="16,4" />
+                <Setter Property="Padding" Value="16,14" />
                 <Setter Property="Margin" Value="0" />
             </Style>
             <Style x:Key="SettingsEmphasizedSubcardStyle"
@@ -556,6 +556,8 @@
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                             <Border Style="{StaticResource SettingsRowStyle}"
+                                    MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
@@ -641,6 +643,8 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningEnabled}">
                                 <Grid ColumnSpacing="20">
@@ -681,6 +685,8 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningEnabled}">
                                 <Grid ColumnSpacing="20">
@@ -721,6 +727,8 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
@@ -743,6 +751,8 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
@@ -798,6 +808,8 @@
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                             <Border Style="{StaticResource SettingsLastRowStyle}"
+                                    MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsFanControlVisible}">
                                 <Grid ColumnSpacing="20">
@@ -831,6 +843,8 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsLastEditorSubcardStyle}"
+                                    MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsFixedFanSpeedVisible}">
                                 <Grid ColumnSpacing="20">
@@ -985,7 +999,9 @@
                                    Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
-                            <Border Style="{StaticResource SettingsRowStyle}">
+                            <Border Style="{StaticResource SettingsRowStyle}"
+                                    MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -1010,7 +1026,9 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}">
+                            <Border Style="{StaticResource SettingsRowStyle}"
+                                    MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -1057,7 +1075,9 @@
                                     </Grid>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                                    MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -1092,6 +1112,8 @@
                                 Visibility="{x:Bind HasKeyboardLaptopControls, Mode=OneWay}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsRowStyle}"
+                                        MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
                                         Visibility="{x:Bind SupportsFunctionKeyPrimary, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
@@ -1125,6 +1147,8 @@
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}"
+                                        MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
                                         Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
@@ -1158,6 +1182,8 @@
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsEmphasizedSubcardStyle}"
+                                        MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1182,6 +1208,8 @@
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsLastEmphasizedSubcardStyle}"
+                                        MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1217,7 +1245,9 @@
                                    Visibility="{x:Bind SupportsStartupAnimation, Mode=OneWay}" />
                         <Border Style="{StaticResource SettingsGroupStyle}"
                                 Visibility="{x:Bind SupportsStartupAnimation, Mode=OneWay}">
-                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                                    MinHeight="{StaticResource DashboardSingleLineRowMinHeight}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
