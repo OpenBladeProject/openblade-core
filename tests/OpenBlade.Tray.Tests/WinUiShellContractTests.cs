@@ -14,14 +14,16 @@ public sealed class WinUiShellContractTests
             "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
 
         Assert.Equal(
-            6,
+            5,
             CountOccurrences(
                 powerModeCard,
                 "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
-        Assert.DoesNotContain(
-            "Style=\"{StaticResource SettingsSubcardStyle}\"",
-            powerModeCard,
-            StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            CountOccurrences(
+                powerModeCard,
+                "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
+        Assert.DoesNotContain("SettingsEmphasizedSubcardStyle", powerModeCard, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -69,7 +71,7 @@ public sealed class WinUiShellContractTests
         Assert.True(gpuAppsRowStart >= 0 && gpuAppsRowEnd > gpuAppsRowStart);
         string gpuAppsRow = powerModeCard[gpuAppsRowStart..gpuAppsRowEnd];
         Assert.Contains(
-            "SettingsNeutralSubcardStyle",
+            "SettingsLastNeutralSubcardStyle",
             gpuAppsRow,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -77,7 +79,7 @@ public sealed class WinUiShellContractTests
             gpuAppsRow,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
-            "SettingsLastSubcardStyle",
+            "SettingsLastEmphasizedSubcardStyle",
             gpuAppsRow,
             StringComparison.Ordinal);
         Assert.Contains("Close apps using the NVIDIA GPU?", codeBehind, StringComparison.Ordinal);
@@ -677,7 +679,7 @@ public sealed class WinUiShellContractTests
             "Text=\"Shown on Dashboard\"",
             StringComparison.Ordinal);
         int previousSubcard = xaml.LastIndexOf(
-            "Style=\"{StaticResource SettingsSubcardStyle}\"",
+            "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\"",
             dashboardSelector,
             StringComparison.Ordinal);
         int previousRow = xaml.LastIndexOf(
@@ -1034,9 +1036,13 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Laptop performance\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
-        Assert.Equal(6, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
-        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
+        Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
+        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(1, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
+        Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
+        Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Key=\"SettingsLastSubcardStyle\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"On battery\"", xaml, StringComparison.Ordinal);
@@ -2094,32 +2100,27 @@ public sealed class WinUiShellContractTests
         Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
         string handler = source[handlerStart..handlerEnd];
 
-        Assert.DoesNotContain("changingDisplaySettings", handler, StringComparison.Ordinal);
         Assert.DoesNotContain("RunDisplayOperationAsync", handler, StringComparison.Ordinal);
         Assert.Contains("bool requested = toggle.IsOn;", handler, StringComparison.Ordinal);
-        Assert.Contains("toggle.IsEnabled = false;", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("toggle.IsEnabled =", handler, StringComparison.Ordinal);
         Assert.Contains("RunHandlerAsync(", handler, StringComparison.Ordinal);
         Assert.Contains(
             "DisplayViewModel.SetHdrEnabledAsync(requested)",
             handler,
             StringComparison.Ordinal);
-        Assert.Contains("finally", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("finally", handler, StringComparison.Ordinal);
         Assert.Contains(
             "toggle.IsOn = DisplayViewModel.IsHdrEnabled;",
-            handler,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "toggle.IsEnabled = DisplayViewModel.CanChangeHdr;",
             handler,
             StringComparison.Ordinal);
 
         int capture = handler.IndexOf("bool requested = toggle.IsOn;", StringComparison.Ordinal);
-        int disable = handler.IndexOf("toggle.IsEnabled = false;", StringComparison.Ordinal);
         int queue = handler.IndexOf("await RunHandlerAsync(", StringComparison.Ordinal);
         int restore = handler.IndexOf(
             "toggle.IsOn = DisplayViewModel.IsHdrEnabled;",
             StringComparison.Ordinal);
-        Assert.True(capture < disable && disable < queue && queue < restore);
+        Assert.True(capture < queue && queue < restore);
+        Assert.DoesNotContain("RunDisplayOperationAsync", source, StringComparison.Ordinal);
     }
 
     [Fact]

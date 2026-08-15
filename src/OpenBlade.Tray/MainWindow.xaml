@@ -58,25 +58,44 @@
                    BasedOn="{StaticResource SettingsRowStyle}">
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
-            <Style x:Key="SettingsSubcardStyle" TargetType="Border">
-                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+            <Style x:Key="SettingsSubcardBaseStyle" TargetType="Border">
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="0,1,0,0" />
                 <Setter Property="Padding" Value="16,14" />
                 <Setter Property="Margin" Value="0" />
             </Style>
-            <Style x:Key="SettingsLastSubcardStyle"
+            <Style x:Key="SettingsEmphasizedSubcardStyle"
                    TargetType="Border"
-                   BasedOn="{StaticResource SettingsSubcardStyle}">
+                   BasedOn="{StaticResource SettingsSubcardBaseStyle}">
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+            </Style>
+            <Style x:Key="SettingsLastEmphasizedSubcardStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SettingsEmphasizedSubcardStyle}">
                 <Setter Property="CornerRadius" Value="0,0,8,8" />
             </Style>
             <Style x:Key="SettingsNeutralSubcardStyle"
                    TargetType="Border"
-                   BasedOn="{StaticResource SettingsSubcardStyle}">
+                   BasedOn="{StaticResource SettingsSubcardBaseStyle}">
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="local:SettingsCardPointerVisual.IsEnabled" Value="True" />
                 <Setter Property="local:SettingsCardPointerVisual.PointerOverBackground"
                         Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+            </Style>
+            <Style x:Key="SettingsLastNeutralSubcardStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SettingsNeutralSubcardStyle}">
+                <Setter Property="CornerRadius" Value="0,0,8,8" />
+            </Style>
+            <Style x:Key="SettingsEditorSubcardStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SettingsSubcardBaseStyle}">
+                <Setter Property="Background" Value="Transparent" />
+            </Style>
+            <Style x:Key="SettingsLastEditorSubcardStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SettingsEditorSubcardStyle}">
+                <Setter Property="CornerRadius" Value="0,0,8,8" />
             </Style>
             <Style x:Key="InlineCardSliderStyle"
                    TargetType="Slider"
@@ -743,8 +762,7 @@
                                                                     SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
-                                    CornerRadius="0,0,8,8"
+                            <Border Style="{StaticResource SettingsLastNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuAppCleanupVisible}">
                                 <Grid ColumnSpacing="20">
@@ -810,7 +828,7 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastSubcardStyle}"
+                            <Border Style="{StaticResource SettingsLastEditorSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsFixedFanSpeedVisible}">
                                 <Grid ColumnSpacing="20">
@@ -850,7 +868,7 @@
                                     </Grid>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastSubcardStyle}"
+                            <Border Style="{StaticResource SettingsLastEditorSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsManualFanCurveVisible}">
                                 <StackPanel Spacing="12">
@@ -1137,7 +1155,7 @@
                                         </StackPanel>
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsSubcardStyle}"
+                                <Border Style="{StaticResource SettingsEmphasizedSubcardStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1161,7 +1179,7 @@
                                                       Toggled="OnBlockWindowsKeyInGamingModeToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastSubcardStyle}"
+                                <Border Style="{StaticResource SettingsLastEmphasizedSubcardStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -3409,7 +3427,7 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsSubcardStyle}"
+                            <Border Style="{StaticResource SettingsEmphasizedSubcardStyle}"
                                     Visibility="{x:Bind CustomAccentColorVisibility, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -3448,7 +3466,7 @@
                                             </StackPanel>
                                         </Border>
                                     </Expander.Header>
-                                    <Border Style="{StaticResource SettingsSubcardStyle}">
+                                    <Border Style="{StaticResource SettingsEmphasizedSubcardStyle}">
                                         <StackPanel Spacing="8">
                                             <TextBlock Text="Drag pages into the order you want. Dashboard stays first and About stays last."
                                                        Style="{StaticResource SecondaryTextStyle}" />
@@ -3485,7 +3503,7 @@
                                         </StackPanel>
                                     </Border>
                                 </Expander.Header>
-                                <Border Style="{StaticResource SettingsLastSubcardStyle}">
+                                <Border Style="{StaticResource SettingsLastEmphasizedSubcardStyle}">
                                     <StackPanel Spacing="8">
                                         <TextBlock Text="Check items to include. Drag them into the order you want."
                                                    Style="{StaticResource SecondaryTextStyle}" />

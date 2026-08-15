@@ -2948,18 +2948,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         bool requested = toggle.IsOn;
-        toggle.IsEnabled = false;
-        try
-        {
-            await RunHandlerAsync(
-                () => DisplayViewModel.SetHdrEnabledAsync(requested),
-                nameof(OnDisplayHdrToggled));
-        }
-        finally
-        {
-            toggle.IsOn = DisplayViewModel.IsHdrEnabled;
-            toggle.IsEnabled = DisplayViewModel.CanChangeHdr;
-        }
+        await RunHandlerAsync(
+            () => DisplayViewModel.SetHdrEnabledAsync(requested),
+            nameof(OnDisplayHdrToggled));
+        toggle.IsOn = DisplayViewModel.IsHdrEnabled;
     }
 
     private async void OnDisplayColorProfileChanged(
@@ -2993,8 +2985,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return activeRefresh;
         }
 
-        displayRefreshTask = RunDisplayOperationAsync(
-            () => DisplayViewModel.RefreshAsync());
+        displayRefreshTask = RunHandlerAsync(
+            () => DisplayViewModel.RefreshAsync(),
+            "display refresh");
         return displayRefreshTask;
     }
 
@@ -3087,24 +3080,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             expectedPowerSource,
             settings,
             token);
-
-    private async Task RunDisplayOperationAsync(Func<Task> operation)
-    {
-        try
-        {
-            await operation();
-        }
-        catch (OperationCanceledException) when (Volatile.Read(ref disposed) != 0)
-        {
-        }
-        catch (ObjectDisposedException) when (Volatile.Read(ref disposed) != 0)
-        {
-        }
-        catch (Exception exception)
-        {
-            Trace.TraceError("OpenBlade display operation failed: {0}", exception);
-        }
-    }
 
     private void OnProfileStateBadgeClick(object sender, RoutedEventArgs args)
     {
