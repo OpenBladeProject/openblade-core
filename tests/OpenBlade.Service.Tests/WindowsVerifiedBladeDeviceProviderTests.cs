@@ -392,6 +392,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         {
             PowerTransitionReadFailure = new IOException("brightness unavailable"),
             OwnershipState = LightingRendererOwnershipState.Static,
+            LogoState = LogoLightingMode.Static,
         };
         var lightingFactory = new FakeLightingFactory(lightingPort);
         using var provider = new WindowsVerifiedBladeDeviceProvider(
@@ -405,10 +406,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             await device.ReadStateForPowerTransitionAsync(default);
 
         Assert.Null(result.State.Lighting);
+        Assert.Equal(LogoLightingMode.Static, result.State.LogoLighting);
         Assert.True(result.LightingOffConfirmationUnavailable);
         Assert.NotNull(result.State.Battery);
         Assert.Equal(1, lightingPort.PowerTransitionStateReadCalls);
         Assert.Equal(0, lightingPort.ReadStateCalls);
+        Assert.Equal(1, lightingPort.ReadLogoStateCalls);
         Assert.Equal(1, batteryFactory.OpenCount);
         Assert.Equal(1, lightingFactory.OpenCount);
 
@@ -2085,6 +2088,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int PowerTransitionStateReadCalls { get; private set; }
 
+        public LogoLightingMode? LogoState { get; init; }
+
+        public int ReadLogoStateCalls { get; private set; }
+
         public Task EnsureDriverModeAsync(CancellationToken cancellationToken)
         {
             DriverModeEnsureCount++;
@@ -2120,6 +2127,13 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 ? Task.FromResult(PowerTransitionReadResult)
                 : Task.FromException<PowerTransitionLightingReadResult>(
                     PowerTransitionReadFailure);
+        }
+
+        public Task<LogoLightingMode?> ReadLogoStateAsync(
+            CancellationToken cancellationToken)
+        {
+            ReadLogoStateCalls++;
+            return Task.FromResult(LogoState);
         }
 
         public Task SetLightingAsync(

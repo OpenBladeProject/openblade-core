@@ -750,12 +750,16 @@ public sealed class ControlCoordinator
                 transition.Attempted
                     .Where(subsystem =>
                         finalReadUnavailable.Contains(subsystem)
-                        && !CanAcceptSetterCompletionWithoutReadback(
+                        && !CanAcceptUnavailableFinalReadback(
                             subsystem,
                             states[subsystem],
                             final,
                             desired,
-                            transition))
+                            transition)
+                        && !HasExplicitFinalReadbackContradiction(
+                            subsystem,
+                            final,
+                            desired))
                     .ToHashSet();
 
             return CreateFullOutcome(
@@ -1042,7 +1046,7 @@ public sealed class ControlCoordinator
                 if (transition.Attempted.Contains(subsystem))
                 {
                     transition.Provisional[subsystem] =
-                        CanAcceptSetterCompletionWithoutReadback(
+                        CanAcceptUnavailableFinalReadback(
                             subsystem,
                             pending,
                             final,
@@ -1073,12 +1077,12 @@ public sealed class ControlCoordinator
                 else
                 {
                     transition.Provisional[subsystem] =
-                        CanAcceptSetterCompletionWithoutReadback(
+                        HasAcceptedSetterCompletionWithoutReadback(
                             subsystem,
                             pending,
-                            final,
-                            desired,
                             transition)
+                            && (subsystem != DeviceSubsystem.Lighting
+                                || LogoMatches(final, desired.Lighting.Value))
                             ? AppliedWithoutReadback(pending.Name)
                             : Indeterminate(pending.Name, null);
                 }
@@ -1103,16 +1107,34 @@ public sealed class ControlCoordinator
         }
     }
 
-    private static bool CanAcceptSetterCompletionWithoutReadback(
+    private static bool CanAcceptUnavailableFinalReadback(
         DeviceSubsystem subsystem,
         PendingSubsystem pending,
         ConfirmedDeviceState final,
         DesiredDeviceState desired,
         FullTransitionApplyState transition) =>
-        transition.Completed.Contains(subsystem)
-        && pending.AcceptSetterCompletionWithoutReadback
+        HasAcceptedSetterCompletionWithoutReadback(
+            subsystem,
+            pending,
+            transition)
         && (subsystem != DeviceSubsystem.Lighting
+            || final.LogoLighting is null
             || LogoMatches(final, desired.Lighting.Value));
+
+    private static bool HasAcceptedSetterCompletionWithoutReadback(
+        DeviceSubsystem subsystem,
+        PendingSubsystem pending,
+        FullTransitionApplyState transition) =>
+        transition.Completed.Contains(subsystem)
+        && pending.AcceptSetterCompletionWithoutReadback;
+
+    private static bool HasExplicitFinalReadbackContradiction(
+        DeviceSubsystem subsystem,
+        ConfirmedDeviceState final,
+        DesiredDeviceState desired) =>
+        subsystem == DeviceSubsystem.Lighting
+        && final.LogoLighting is not null
+        && !LogoMatches(final, desired.Lighting.Value);
 
     private async Task<ScopedApplyOutcome> ApplyBatteryOperationAsync(
         Func<DeviceCapabilities, ConfirmedBatteryState?, BatteryOperationPlan> createPlan,
