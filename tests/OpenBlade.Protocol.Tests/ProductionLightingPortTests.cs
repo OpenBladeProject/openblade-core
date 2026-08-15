@@ -56,6 +56,7 @@ public sealed class ProductionLightingPortTests
                 LightingEffect.Ripple,
                 LightingEffect.AmbientAwareness,
                 LightingEffect.AudioMeter,
+                LightingEffect.Sequence,
             }.Order(),
             factory.Capabilities.LightingEffects.Order());
         Assert.Equal(
@@ -66,6 +67,9 @@ public sealed class ProductionLightingPortTests
             factory.Capabilities.WritableSpecialKeySlots);
         Assert.True(factory.Capabilities.SupportsKeyboardBrightness);
         Assert.True(factory.Capabilities.SupportsPlaybackMuteIndicator);
+        Assert.Equal(
+            KeyboardLightingLayoutIds.Rz09_0581,
+            factory.Capabilities.KeyboardLightingLayoutId);
         Assert.Null(factory.Capabilities.LampArrayLightingAccess);
         Assert.Empty(factory.Capabilities.PerformancePresets);
         Assert.Empty(factory.Capabilities.FanModes);

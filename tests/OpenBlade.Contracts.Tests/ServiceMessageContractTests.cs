@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionFortyTwoAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionFortyThreeAndRetainExactSizeLimit()
     {
-        Assert.Equal(42, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(43, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -133,6 +133,7 @@ public sealed class ServiceMessageContractTests
         Assert.Empty(capabilities.ChargeLimits);
         Assert.False(capabilities.SupportsBatteryProtectionOff);
         Assert.False(capabilities.SupportsTemporaryFullCharge);
+        Assert.Null(capabilities.KeyboardLightingLayoutId);
     }
 
     [Fact]

@@ -8,10 +8,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Added a versioned, data-only `.oblight` keyboard lighting preset format and
-  a Lighting-page importer, including a bounded adapter for uniform Razer
-  Keyboard and KeyboardExtended `.chroma` version 1 files. Imported effects are
-  strictly validated, confirmed before application, and remain limited to
-  capabilities already admitted for the exact connected Blade.
+  a Lighting-page importer. Its bounded Razer `.chroma` version 1 adapter
+  converts uniform Keyboard and KeyboardExtended files losslessly, and plays
+  classic Keyboard per-key animations through separate verified RZ09-0581 and
+  RZ09-0528 logical-key projections. Imported animations persist with the power
+  profile and keep running when the tray exits. Colored source cells without an
+  admitted binding are reported, while per-key KeyboardExtended files are
+  rejected instead of cropped. Imported effects remain limited to capabilities
+  already admitted for the exact connected Blade.
 - Added an optional Windows power mode to each AC, USB-C, and battery profile.
   The current-user Session Agent applies Best power efficiency, Balanced, or
   Best performance when the active power profile changes.

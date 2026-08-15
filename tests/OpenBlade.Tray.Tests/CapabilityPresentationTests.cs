@@ -2206,11 +2206,13 @@ public sealed class CapabilityPresentationTests
             capabilities: new DeviceCapabilities(
                 new HashSet<PerformancePreset> { PerformancePreset.Balanced },
                 new HashSet<FanMode> { FanMode.Automatic },
-                new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+                new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()
+                    .Where(effect => effect != LightingEffect.Sequence)),
                 ChargeLimits(), true, true)));
         Assert.True(viewModel.CanControlHardware);
         Assert.Equal(
-            Enum.GetValues<LightingEffect>().Length,
+            Enum.GetValues<LightingEffect>()
+                .Count(effect => effect != LightingEffect.Sequence),
             viewModel.AvailableLightingEffectOptions.Count);
         Assert.Equal(LightingEffect.Off, viewModel.AvailableLightingEffectOptions[0].Effect);
         Assert.Equal(

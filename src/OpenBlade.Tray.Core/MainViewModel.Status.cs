@@ -76,6 +76,10 @@ public sealed partial class MainViewModel
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
             && left.SupportsPlaybackMuteIndicator
                 == right.SupportsPlaybackMuteIndicator
+            && string.Equals(
+                left.KeyboardLightingLayoutId,
+                right.KeyboardLightingLayoutId,
+                StringComparison.Ordinal)
             && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
             && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
 

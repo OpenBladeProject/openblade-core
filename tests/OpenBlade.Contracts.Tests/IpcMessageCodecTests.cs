@@ -422,7 +422,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(42, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(43, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -686,7 +686,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(42, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(43, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1260,6 +1260,102 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task MaximumSequenceTimelineFitsWorstCaseStatusFrame()
+    {
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+            CreateMaximumSizedSequenceFrames());
+        LightingSettings lighting = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0581,
+            timeline,
+            loop: true,
+            brightness: 100);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Lighting = lighting },
+            Battery = defaults.Battery with { Lighting = lighting },
+            UsbC = defaults.UsbC with { Lighting = lighting },
+        };
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot status = baseline with
+        {
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                LightingEffects = new HashSet<LightingEffect>
+                {
+                    LightingEffect.Sequence,
+                },
+                KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581,
+            },
+            ConfirmedState = new ConfirmedDeviceState(null, null, null, lighting),
+            Profiles = profiles,
+            DesiredState = baseline.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    lighting,
+                    SettingValueSource.PowerProfile),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                lighting,
+                OverrideLifetime.Persistent),
+        };
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteServerFrameAsync(
+            stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+
+        int payloadLength = BitConverter.ToInt32(stream.ToArray(), 0);
+        Assert.InRange(payloadLength, 30_000, OpenBladeIpc.MaximumMessageBytes);
+        stream.Position = 0;
+        ServiceStatusEvent roundTrip = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+        Assert.Equal(timeline, Assert.IsType<SequenceLightingParameters>(
+            roundTrip.Status.Profiles.PluggedIn.Lighting.Parameters).TimelineBase64);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData(KeyboardLightingLayoutIds.Rz09_0581, false)]
+    public async Task WriteServerFrameAsync_RejectsInconsistentSequenceLayoutCapability(
+        string? layoutId,
+        bool includesSequence)
+    {
+        HashSet<LightingEffect> effects = includesSequence
+            ? [LightingEffect.Sequence]
+            : [];
+
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                LightingEffects = effects,
+                KeyboardLightingLayoutId = layoutId,
+            },
+        });
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsMalformedSequenceTimelineInProfile()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        LightingSettings malformed = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0581,
+            "not-base64",
+            loop: false,
+            brightness: 100);
+
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            Profiles = profiles with
+            {
+                PluggedIn = profiles.PluggedIn with { Lighting = malformed },
+            },
+        });
+    }
+
+    [Fact]
     public async Task WriteServerFrameAsync_RejectsUnsortedControllerNames()
     {
         using MemoryStream stream = new();
@@ -1621,6 +1717,21 @@ public sealed class IpcMessageCodecTests
             Firmware: null,
             ServiceVersion: "0.1.0-test",
             KeyboardDriverModeActive: true);
+    }
+
+    private static KeyboardLightingSequenceFrame[] CreateMaximumSizedSequenceFrames()
+    {
+        var frames = new KeyboardLightingSequenceFrame[584];
+        for (int index = 0; index < frames.Length; index++)
+        {
+            var slots = new RgbColor[AmbientLightingFrame.SlotCount];
+            slots[1] = index % 2 == 0
+                ? new RgbColor(1, 2, 3)
+                : new RgbColor(4, 5, 6);
+            frames[index] = new KeyboardLightingSequenceFrame(1, slots);
+        }
+
+        return frames;
     }
 
     private static async Task AssertMalformedNestedCapabilityRejectedAsync(

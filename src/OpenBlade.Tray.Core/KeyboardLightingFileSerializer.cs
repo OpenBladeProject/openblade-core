@@ -10,7 +10,8 @@ public sealed record KeyboardLightingPreset(
     string? Author,
     string? Description,
     int Revision,
-    LightingSettings Lighting);
+    LightingSettings Lighting,
+    string? ImportWarning = null);
 
 public static class KeyboardLightingFileSerializer
 {

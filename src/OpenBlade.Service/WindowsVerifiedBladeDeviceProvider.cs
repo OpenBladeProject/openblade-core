@@ -441,6 +441,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             lighting.Capabilities.SupportsKeyboardBrightness,
                         SupportsPlaybackMuteIndicator =
                             lighting.Capabilities.SupportsPlaybackMuteIndicator,
+                        KeyboardLightingLayoutId =
+                            lighting.Capabilities.KeyboardLightingLayoutId,
                     };
             }
             finally

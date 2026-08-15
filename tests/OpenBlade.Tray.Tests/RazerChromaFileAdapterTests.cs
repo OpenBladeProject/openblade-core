@@ -69,31 +69,60 @@ public sealed class RazerChromaFileAdapterTests
     }
 
     [Fact]
-    public void Deserialize_RejectsPerKeyColorsRatherThanGuessingALaptopMapping()
+    public void Deserialize_ProjectsPerKeyAnimationThroughExactRz090581NamedKeys()
     {
-        uint[] frame = CreateUniformFrame(6, 22, GreenColorRef);
-        frame[1] = 0;
+        uint[] first = CreateUniformFrame(6, 22, 0);
+        first[(5 * 22) + 11] = GreenColorRef;
+        uint[] second = CreateUniformFrame(6, 22, 0);
+        second[(3 * 22) + 8] = GreenColorRef;
 
-        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
-            RazerChromaFileAdapter.Deserialize(CreateAnimation(device: 0, frame)));
+        KeyboardLightingPreset preset = RazerChromaFileAdapter.Deserialize(
+            CreateAnimation(device: 0, first, second),
+            keyboardLayoutId: KeyboardLightingLayoutIds.Rz09_0581);
 
-        Assert.Contains("per-key", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("uniform", exception.Message, StringComparison.OrdinalIgnoreCase);
+        var parameters = Assert.IsType<SequenceLightingParameters>(preset.Lighting.Parameters);
+        KeyboardLightingSequence timeline =
+            KeyboardLightingSequenceCodec.Decode(parameters.TimelineBase64);
+        Assert.Equal(2, timeline.Frames.Count);
+        Assert.Equal(new RgbColor(0x47, 0xE1, 0x0C), timeline.Frames[0].Slots[94]);
+        Assert.Equal(default, timeline.Frames[0].Slots[91]);
+        Assert.Equal(new RgbColor(0x47, 0xE1, 0x0C), timeline.Frames[1].Slots[59]);
+        Assert.True(parameters.Loop);
+        Assert.Contains("visual parity", preset.ImportWarning, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Deserialize_RejectsChangingFramesRatherThanDiscardingAnimation()
+    public void Deserialize_UsesTheIndependentRz090528RightAltSlot()
     {
-        byte[] content = CreateAnimation(
-            device: 0,
-            CreateUniformFrame(6, 22, GreenColorRef),
-            CreateUniformFrame(6, 22, 0x00E22B8A));
+        uint[] first = CreateUniformFrame(6, 22, 0);
+        first[(5 * 22) + 11] = GreenColorRef;
+        uint[] second = CreateUniformFrame(6, 22, 0);
+        second[(3 * 22) + 8] = GreenColorRef;
+
+        KeyboardLightingPreset preset = RazerChromaFileAdapter.Deserialize(
+            CreateAnimation(device: 0, first, second),
+            keyboardLayoutId: KeyboardLightingLayoutIds.Rz09_0528);
+
+        var parameters = Assert.IsType<SequenceLightingParameters>(preset.Lighting.Parameters);
+        KeyboardLightingSequence timeline =
+            KeyboardLightingSequenceCodec.Decode(parameters.TimelineBase64);
+        Assert.Equal(new RgbColor(0x47, 0xE1, 0x0C), timeline.Frames[0].Slots[91]);
+        Assert.Equal(default, timeline.Frames[0].Slots[94]);
+    }
+
+    [Fact]
+    public void Deserialize_RejectsPerKeyExtendedCanvasWithoutAnAdmittedProjection()
+    {
+        uint[] frame = CreateUniformFrame(8, 24, 0);
+        frame[(1 * 24) + 2] = GreenColorRef;
 
         InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
-            RazerChromaFileAdapter.Deserialize(content));
+            RazerChromaFileAdapter.Deserialize(
+                CreateAnimation(device: 3, frame),
+                keyboardLayoutId: KeyboardLightingLayoutIds.Rz09_0581));
 
-        Assert.Contains("changes color", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Off or Static", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("KeyboardExtended", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("no admitted Blade projection", exception.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -168,7 +197,7 @@ public sealed class RazerChromaFileAdapterTests
     }
 
     [Fact]
-    public void Deserialize_RejectsNonFiniteOrNegativeDurations()
+    public void Deserialize_RejectsNonFiniteNegativeOrExcessiveDurations()
     {
         byte[] content = CreateAnimation(
             device: 0,
@@ -183,6 +212,10 @@ public sealed class RazerChromaFileAdapterTests
             RazerChromaFileAdapter.Deserialize(content));
 
         BinaryPrimitives.WriteSingleLittleEndian(content.AsSpan(10), -1f);
+        Assert.Throws<InvalidDataException>(() =>
+            RazerChromaFileAdapter.Deserialize(content));
+
+        BinaryPrimitives.WriteSingleLittleEndian(content.AsSpan(10), float.MaxValue);
         Assert.Throws<InvalidDataException>(() =>
             RazerChromaFileAdapter.Deserialize(content));
     }

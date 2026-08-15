@@ -95,21 +95,42 @@ protocol order.
 
 The importer accepts official binary version 1 files with device type `2D` and
 device `Keyboard` (6×22) or `KeyboardExtended` (8×24). It verifies the complete
-little-endian structure, frame count, finite non-negative durations, Win32
+little-endian structure, frame count, finite positive durations, Win32
 `COLORREF` values, exact length, and a 5 MiB size limit. It never loads the
 Chroma SDK or Synapse.
 
-OpenBlade imports a `.chroma` file only when every cell in every frame has the
-same color. All-black files become `off`; any other color becomes `static` at
-100% brightness. This conversion is independent of key layout and preserves
-the result exactly. Per-key colors or colors that change between frames fail
-with an explicit unsupported-animation error rather than being cropped,
-averaged, or silently remapped.
+Uniform files are layout-independent: all-black input becomes `off`, and any
+other single color becomes `static` at 100% brightness. The conversion is
+lossless even when the source contains multiple identical frames.
 
-Strict JSON remains the canonical format. A later schema can add bounded frames
-using Chroma-compatible timing semantics after an exact-model mapping and
-sequence renderer are admitted. No layout is silently copied between
-RZ09-0581 and RZ09-0528.
+Classic `Keyboard` per-key files are accepted on the separately verified
+RZ09-0581 and RZ09-0528 layouts. The adapter starts with Razer's official
+[named-key grid](https://github.com/razerofficial/CChromaEditor/blob/6ce8b24db8e4e00ddafe027de7589b2a0b4dc618/CChromaEditorLibrary/RzChromaSDKTypes.h#L173-L300),
+then projects only those logical keys whose target slot is already admitted for
+that exact model. It does not compress the generic 22-column canvas into the
+Blade's 17-column protocol frame, and it never borrows one model's slot map for
+the other. This matters for keys such as Right Alt, whose admitted protocol slot
+differs between the two models.
+
+This logical-key conversion is intentionally not advertised as Synapse-perfect.
+If a source colors cells without an admitted laptop binding, the confirmation
+dialog reports how many will be omitted. A per-key `KeyboardExtended` animation
+is rejected because its 8×24 canvas includes media and desktop-underglow zones
+with no admitted Blade projection. Uniform `KeyboardExtended` files remain
+supported.
+
+The resulting animation is normalized to a typed, data-only sequence owned by
+the service. It persists with its power profile and continues when the tray is
+closed. The sequence is limited to 1,800 source frames, 1–60,000 ms per frame,
+10 minutes total, and 4,096 decoded delta bytes. The service renders through the
+existing admitted matrix-frame operation; the imported file cannot provide HID
+reports, commands, identities, or mappings.
+
+Strict JSON remains the canonical interchange format for native presets. The
+version 1 `.oblight` schema describes built-in typed effects; imported Chroma
+sequences are normalized into bounded profile state rather than reinterpreting
+that schema. A future `.oblight` schema can expose the same sequence model while
+preserving version 1 meaning.
 
 Other formats informed the design but are not safe drop-in standards:
 

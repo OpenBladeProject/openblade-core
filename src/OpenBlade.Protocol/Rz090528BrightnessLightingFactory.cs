@@ -209,6 +209,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 allSynapseEffectsAdmitted),
             LogoLightingModes = new HashSet<LogoLightingMode>(
             Enum.GetValues<LogoLightingMode>()),
+            KeyboardLightingLayoutId = allSynapseEffectsAdmitted
+                ? KeyboardLightingLayoutIds.Rz09_0528
+                : null,
         };
 
     private static IReadOnlySet<LightingEffect> CreateAdmittedEffects(
@@ -219,7 +222,22 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         var effects = new HashSet<LightingEffect> { LightingEffect.Off };
         if (allSynapseEffectsAdmitted)
         {
-            effects.UnionWith(Enum.GetValues<LightingEffect>());
+            effects.UnionWith(
+            [
+                LightingEffect.Static,
+                LightingEffect.Spectrum,
+                LightingEffect.Breathing,
+                LightingEffect.Reactive,
+                LightingEffect.Tidal,
+                LightingEffect.Starlight,
+                LightingEffect.Wave,
+                LightingEffect.Wheel,
+                LightingEffect.Ripple,
+                LightingEffect.AmbientAwareness,
+                LightingEffect.AudioMeter,
+                LightingEffect.Fire,
+                LightingEffect.Sequence,
+            ]);
             return effects;
         }
 
@@ -866,6 +884,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             FireLightingParameters
                 when settings.Effect == LightingEffect.Fire =>
                 new Rz090528FireEffect(),
+            SequenceLightingParameters value
+                when settings.Effect == LightingEffect.Sequence =>
+                new Rz090528ImportedSequenceEffect(value),
             RippleLightingParameters value
                 when settings.Effect == LightingEffect.Ripple =>
                 new Rz090528RippleEffect(value.Color),
@@ -1262,6 +1283,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 LightingRendererOwnershipState.AmbientAwareness,
             LightingEffect.AudioMeter => LightingRendererOwnershipState.AudioMeter,
             LightingEffect.Fire => LightingRendererOwnershipState.Fire,
+            LightingEffect.Sequence => LightingRendererOwnershipState.Sequence,
             _ => LightingRendererOwnershipState.None,
         };
 

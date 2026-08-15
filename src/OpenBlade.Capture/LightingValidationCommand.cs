@@ -171,7 +171,9 @@ public sealed class LightingValidationCommand
                     {
                         failure = "controlsUnavailable";
                     }
-                    else if (!Enum.GetValues<LightingEffect>().All(
+                    else if (!Enum.GetValues<LightingEffect>()
+                        .Where(effect => effect != LightingEffect.Sequence)
+                        .All(
                         port.Capabilities.LightingEffects.Contains)
                         || !Enum.GetValues<LogoLightingMode>().All(
                             port.Capabilities.LogoLightingModes.Contains))

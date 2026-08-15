@@ -4676,7 +4676,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             KeyboardLightingPreset preset = isChroma
                 ? RazerChromaFileAdapter.Deserialize(
                     content,
-                    Path.GetFileNameWithoutExtension(result.Path))
+                    Path.GetFileNameWithoutExtension(result.Path),
+                    ViewModel.Capabilities.KeyboardLightingLayoutId)
                 : KeyboardLightingFileSerializer.Deserialize(content);
             if (!ViewModel.CanImportKeyboardLighting(preset))
             {
@@ -4693,7 +4694,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 Title = "Import keyboard lighting?",
                 Content = $"{preset.Name} uses the {preset.Lighting.Effect} effect at "
                     + $"{brightness}. Importing applies it through OpenBlade and keeps it "
-                    + "as an unsaved change for the active power profile.",
+                    + "as an unsaved change for the active power profile."
+                    + (string.IsNullOrWhiteSpace(preset.ImportWarning)
+                        ? string.Empty
+                        : $"\n\n{preset.ImportWarning}"),
                 PrimaryButtonText = "Import and apply",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,

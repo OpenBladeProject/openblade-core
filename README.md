@@ -186,8 +186,11 @@ the separate capture and documentation repositories.
 
 Users can write and share data-only `.oblight` presets for effects already
 supported by their laptop. The same importer accepts Razer `.chroma` version 1
-keyboard files when they reduce exactly to uniform Off or Static lighting. The
-versioned format, schema, compatibility rules, and example are in
+keyboard files. Uniform files convert losslessly; classic Keyboard per-key
+animations use a bounded, exact-model logical-key projection on the verified
+RZ09-0581 and RZ09-0528 layouts. Unsupported colored cells are reported, and
+per-key KeyboardExtended files are rejected instead of cropped. The versioned
+format, schema, compatibility rules, and example are in
 [`docs/keyboard-lighting-file-format.md`](docs/keyboard-lighting-file-format.md).
 
 ## Contributing

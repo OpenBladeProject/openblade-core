@@ -352,6 +352,7 @@ public enum LightingEffect
     AmbientAwareness,
     AudioMeter,
     Fire,
+    Sequence,
 }
 
 public enum AmbientAwarenessRegion
@@ -403,6 +404,7 @@ public enum LightingRendererOwnershipState
     AmbientAwareness,
     AudioMeter,
     Fire,
+    Sequence,
 }
 
 public enum KeyboardBrightnessDirection

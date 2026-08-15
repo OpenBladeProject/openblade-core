@@ -130,7 +130,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static readonly IReadOnlyList<LightingEffect> KnownLightingEffects =
         Enum.GetValues<LightingEffect>()
-            .Where(Enum.IsDefined)
+            .Where(effect => Enum.IsDefined(effect) && effect != LightingEffect.Sequence)
             .Order()
             .ToArray();
 
@@ -304,6 +304,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         StarlightLightingDuration.Medium;
     private ReactiveLightingDuration lightingReactiveDurationEditor =
         ReactiveLightingDuration.Medium;
+    private SequenceLightingParameters? importedSequenceParameters;
     private bool lightingRandomColorsEditor;
     private LightingDirection lightingDirectionEditor = LightingDirection.Rightward;
     private LightingRotationDirection lightingRotationDirectionEditor =
@@ -4619,7 +4620,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyActiveFanSelectionBinding();
         }
         LightingEffect[] lightingEffects = capabilities.LightingEffects
-            .Where(Enum.IsDefined)
+            .Where(effect => Enum.IsDefined(effect) && effect != LightingEffect.Sequence)
             .Order()
             .ToArray();
         if (!AvailableLightingEffects.SequenceEqual(lightingEffects))
@@ -4630,6 +4631,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             AvailableLightingEffects.Count > 0
                 ? AvailableLightingEffects
                 : KnownLightingEffects;
+        if (LightingEffectEditor == LightingEffect.Sequence
+            && !presentedLightingEffects.Contains(LightingEffect.Sequence))
+        {
+            presentedLightingEffects =
+            [
+                .. presentedLightingEffects,
+                LightingEffect.Sequence,
+            ];
+        }
         IReadOnlyList<LightingEffectOption> lightingEffectOptions =
             StableOptionCollection.ReuseEquivalent(
                 AvailableLightingEffectOptions,
@@ -4683,6 +4693,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 LightingEffect.Spectrum => "Spectrum Cycling",
                 LightingEffect.AmbientAwareness => "Ambient Awareness",
                 LightingEffect.AudioMeter => "Audio Meter",
+                LightingEffect.Sequence => "Imported animation",
                 _ => effect.ToString(),
             });
 
@@ -4845,7 +4856,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return CanControlLighting
             && LightingSettingsValidation.IsWellFormed(preset.Lighting)
             && preset.Lighting.LogoMode is null
-            && AvailableLightingEffects.Contains(preset.Lighting.Effect);
+            && Capabilities.LightingEffects.Contains(preset.Lighting.Effect)
+            && (preset.Lighting.Parameters is not SequenceLightingParameters sequence
+                || string.Equals(
+                    sequence.LayoutId,
+                    Capabilities.KeyboardLightingLayoutId,
+                    StringComparison.Ordinal));
     }
 
     public bool TryImportKeyboardLighting(KeyboardLightingPreset preset)
@@ -4857,6 +4873,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         SetKeyboardEffectUnconfirmed(false);
+        EnsureImportedSequenceOption(preset.Lighting);
         LoadLightingEditor(preset.Lighting with { LogoMode = LogoLightingModeEditor });
         SetLightingEditorDirty(true);
         Notify(nameof(LightingDraft));
@@ -6361,6 +6378,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void LoadLightingEditor(LightingSettings value)
     {
+        EnsureImportedSequenceOption(value);
+        if (value.Parameters is SequenceLightingParameters sequence)
+        {
+            importedSequenceParameters = sequence;
+        }
         int brightness = value.Effect == LightingEffect.Off
             ? 0
             : value.Brightness == 0
@@ -7887,9 +7909,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 brightness,
                 LightingAudioMeterDecayMillisecondsEditor),
             LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
+            LightingEffect.Sequence when importedSequenceParameters is not null =>
+                LightingSettingsFactory.Sequence(
+                    importedSequenceParameters.LayoutId,
+                    importedSequenceParameters.TimelineBase64,
+                    importedSequenceParameters.Loop,
+                    brightness),
             _ => new LightingSettings(LightingEffectEditor, default, brightness),
         };
         return keyboard with { LogoMode = LogoLightingModeEditor };
+    }
+
+    private void EnsureImportedSequenceOption(LightingSettings value)
+    {
+        if (value.Effect != LightingEffect.Sequence
+            || AvailableLightingEffectOptions.Any(
+                option => option.Effect == LightingEffect.Sequence))
+        {
+            return;
+        }
+
+        AvailableLightingEffectOptions =
+        [
+            .. AvailableLightingEffectOptions,
+            CreateLightingEffectOption(LightingEffect.Sequence),
+        ];
     }
 
     private void SeedVisibleLightingDefaults(

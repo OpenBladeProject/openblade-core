@@ -8289,7 +8289,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState.Ripple or
         LightingRendererOwnershipState.AmbientAwareness or
         LightingRendererOwnershipState.AudioMeter or
-        LightingRendererOwnershipState.Fire;
+        LightingRendererOwnershipState.Fire or
+        LightingRendererOwnershipState.Sequence;
 
     private static bool IsKeyTriggeredLightingOwnership(
         LightingRendererOwnershipState ownership) => ownership is
@@ -8313,6 +8314,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingEffect.AmbientAwareness => LightingRendererOwnershipState.AmbientAwareness,
             LightingEffect.AudioMeter => LightingRendererOwnershipState.AudioMeter,
             LightingEffect.Fire => LightingRendererOwnershipState.Fire,
+            LightingEffect.Sequence => LightingRendererOwnershipState.Sequence,
             _ => LightingRendererOwnershipState.None,
         });
 
@@ -8397,6 +8399,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
             && left.SupportsPlaybackMuteIndicator
                 == right.SupportsPlaybackMuteIndicator
+            && string.Equals(
+                left.KeyboardLightingLayoutId,
+                right.KeyboardLightingLayoutId,
+                StringComparison.Ordinal)
             && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
             && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
 
