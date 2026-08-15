@@ -2963,12 +2963,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        if (changingDisplaySettings)
-        {
-            selector.SelectedItem = DisplayViewModel.SelectedColorProfile;
-            return;
-        }
-
         if (string.Equals(
                 option.Key,
                 DisplayViewModel.SelectedColorProfile?.Key,
@@ -2977,8 +2971,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        await RunDisplayOperationAsync(
-            () => DisplayViewModel.SelectColorProfileAsync(option));
+        await RunHandlerAsync(
+            () => DisplayViewModel.SelectColorProfileAsync(option),
+            nameof(OnDisplayColorProfileChanged));
         selector.SelectedItem = DisplayViewModel.SelectedColorProfile;
     }
 

@@ -171,6 +171,29 @@ public sealed class DisplaySettingsViewModelTests
     }
 
     [Fact]
+    public async Task ColorProfileChange_WaitsForBackgroundRefreshAndAppliesAfterward()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+        await viewModel.RefreshAsync();
+        adapter.BlockNextStateRead = true;
+
+        Task refresh = viewModel.RefreshAsync();
+        await adapter.StateReadStarted.Task;
+        Task change = viewModel.SelectColorProfileAsync(Srgb);
+
+        Assert.Empty(adapter.ColorRequests);
+        Assert.Equal(1, adapter.MaximumConcurrentOperations);
+        adapter.ReleaseStateRead.TrySetResult();
+        await Task.WhenAll(refresh, change);
+
+        Assert.Equal([Srgb.Key], adapter.ColorRequests);
+        Assert.Equal(1, adapter.MaximumConcurrentOperations);
+        Assert.Equal(Srgb.Key, viewModel.SelectedColorProfile?.Key);
+    }
+
+    [Fact]
     public async Task UnchangedBackgroundRefresh_ReusesOptionsAndDoesNotToggleControls()
     {
         var adapter = new FakeDisplaySettingsAdapter(

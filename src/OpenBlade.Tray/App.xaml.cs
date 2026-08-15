@@ -368,6 +368,32 @@ public partial class App : Microsoft.UI.Xaml.Application
                 publishedSelections == 0,
                 "An options refresh published a user selection.");
 
+            File.WriteAllText(smokeReportPath, "remove authoritative selection from options");
+            selector.ItemsSource = new[]
+            {
+                replacementOptions[0],
+                replacementOptions[2],
+            };
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            RequireResponsiveSelector(
+                ReferenceEquals(selector.SelectedItem, originalOptions[1])
+                    && compact.Visibility == Visibility.Visible
+                    && expanded.Visibility == Visibility.Collapsed
+                    && compact.SelectedItem is null
+                    && expanded.SelectedItem is null
+                    && publishedSelections == 0,
+                "A removed authoritative selection did not use the compact placeholder.");
+            selector.ItemsSource = replacementOptions;
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            RequireResponsiveSelector(
+                compact.Visibility == Visibility.Collapsed
+                    && expanded.Visibility == Visibility.Visible
+                    && ReferenceEquals(expanded.SelectedItem?.Tag, replacementOptions[1])
+                    && publishedSelections == 0,
+                "Restoring an equivalent option did not restore the expanded selection.");
+
             File.WriteAllText(smokeReportPath, "defer compact null selection");
             compact.SelectedItem = null;
             await DrainDispatcherAsync(selector.DispatcherQueue);

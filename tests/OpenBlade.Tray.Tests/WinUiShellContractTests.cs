@@ -2106,8 +2106,9 @@ public sealed class WinUiShellContractTests
             "args.SelectedItem is not DisplayColorProfileOption option",
             handler,
             StringComparison.Ordinal);
-        Assert.Contains("changingDisplaySettings", handler, StringComparison.Ordinal);
-        Assert.Contains("RunDisplayOperationAsync(", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("changingDisplaySettings", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("RunDisplayOperationAsync", handler, StringComparison.Ordinal);
+        Assert.Contains("RunHandlerAsync(", handler, StringComparison.Ordinal);
         Assert.Contains(
             "DisplayViewModel.SelectColorProfileAsync(option)",
             handler,

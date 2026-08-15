@@ -377,7 +377,7 @@ public sealed partial class ResponsiveChoiceSelector
             StableComboBoxSelection.SetAnchor(CompactSelector, selectedItem);
             ExpandedSelector.SelectedItem = ExpandedSelector.Items
                 .OfType<SelectorBarItem>()
-                .FirstOrDefault(item => ReferenceEquals(item.Tag, projectedSelection));
+                .FirstOrDefault(item => OptionsEqual(item.Tag, projectedSelection));
         }
         finally
         {
@@ -446,8 +446,10 @@ public sealed partial class ResponsiveChoiceSelector
             : EstimateExpandedOptionsWidth();
         double minimumHostWidth = expandedOptionsWidth
             + Math.Max(0, ExpandedWidthAllowance);
+        bool hasProjectedSelection = SelectedItem is not null
+            && projectedOptions.Any(option => OptionsEqual(option, SelectedItem));
         bool useExpanded = projectedOptions.Count > 0
-            && SelectedItem is not null
+            && hasProjectedSelection
             && windowWidth >= minimumWindowWidth
             && availableWidth >= minimumHostWidth;
         if (expandedPresentationActive == useExpanded)
