@@ -43,6 +43,58 @@ public sealed class SingleLineTextMeasurementCacheTests
     }
 
     [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void GetOrMeasure_InvalidTextScaleReturnsNonfatalFallback(
+        double textScaleFactor)
+    {
+        var cache = new SingleLineTextMeasurementCache();
+        bool measured = false;
+
+        double height = cache.GetOrMeasure(textScaleFactor, () =>
+        {
+            measured = true;
+            return 20;
+        });
+
+        Assert.True(double.IsNaN(height));
+        Assert.False(measured);
+        Assert.False(SingleLineTextMeasurementCache.IsWrapped(40, height));
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void GetOrMeasure_InvalidHeightReturnsUncachedNonfatalFallback(
+        double invalidHeight)
+    {
+        var cache = new SingleLineTextMeasurementCache();
+        int measurementCount = 0;
+
+        double fallback = cache.GetOrMeasure(1.0, () =>
+        {
+            measurementCount++;
+            return invalidHeight;
+        });
+        double recovered = cache.GetOrMeasure(1.0, () =>
+        {
+            measurementCount++;
+            return 20;
+        });
+
+        Assert.True(double.IsNaN(fallback));
+        Assert.False(SingleLineTextMeasurementCache.IsWrapped(40, fallback));
+        Assert.Equal(20, recovered);
+        Assert.Equal(2, measurementCount);
+    }
+
+    [Theory]
     [InlineData(20, 20, false)]
     [InlineData(20.5, 20, false)]
     [InlineData(20.51, 20, true)]
