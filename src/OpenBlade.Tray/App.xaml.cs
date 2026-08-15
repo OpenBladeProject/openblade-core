@@ -538,7 +538,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                 "The compact presentation did not preserve supporting content width.");
 
             File.WriteAllText(smokeReportPath, "restore expanded responsive host");
-            layoutHost.Width = expandedWidth
+            double latestExpandedWidth = Math.Max(
+                expandedWidth,
+                layoutExpanded.ActualWidth);
+            layoutHost.Width = latestExpandedWidth
                 + layoutHost.ColumnSpacing
                 + minimumSupportingWidth
                 + 2;

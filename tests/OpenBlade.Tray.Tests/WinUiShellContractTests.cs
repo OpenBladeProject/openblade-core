@@ -1263,11 +1263,11 @@ public sealed class WinUiShellContractTests
         Assert.Contains("OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath", window, StringComparison.Ordinal);
         Assert.Contains("AppWindow.SetIcon(applicationIconPath)", window, StringComparison.Ordinal);
         Assert.Contains(
-            "args.AddedItems.FirstOrDefault() is not FanModeOption selected",
+            "args.SelectedItem is not FanModeOption selected",
             window,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
-            "selector.SelectedItem is not FanModeOption selected",
+            "args.AddedItems.FirstOrDefault() is not FanModeOption selected",
             window,
             StringComparison.Ordinal);
 
@@ -2076,6 +2076,44 @@ public sealed class WinUiShellContractTests
         Assert.Contains("DisplayViewModel.SelectRefreshRateAsync(option)", handler, StringComparison.Ordinal);
         Assert.Contains(
             "selector.SelectedItem = DisplayViewModel.SelectedRefreshRate",
+            handler,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DisplayColorProfileSelectionUsesResponsiveEventAndRestoresConfirmedState()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int handlerStart = source.IndexOf(
+            "private async void OnDisplayColorProfileChanged(",
+            StringComparison.Ordinal);
+        int handlerEnd = source.IndexOf(
+            "private Task RefreshDisplaySettingsAsync()",
+            handlerStart,
+            StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
+        string handler = source[handlerStart..handlerEnd];
+
+        Assert.Contains(
+            "ResponsiveChoiceSelectionChangedEventArgs args",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "sender is not ResponsiveChoiceSelector selector",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "args.SelectedItem is not DisplayColorProfileOption option",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains("changingDisplaySettings", handler, StringComparison.Ordinal);
+        Assert.Contains("RunDisplayOperationAsync(", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "DisplayViewModel.SelectColorProfileAsync(option)",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "selector.SelectedItem = DisplayViewModel.SelectedColorProfile",
             handler,
             StringComparison.Ordinal);
     }

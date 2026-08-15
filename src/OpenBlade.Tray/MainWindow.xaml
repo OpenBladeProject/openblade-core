@@ -90,12 +90,6 @@
                 <Setter Property="HorizontalAlignment" Value="Right" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
-            <Style x:Key="SettingsPickerStyle"
-                   TargetType="ComboBox"
-                   BasedOn="{StaticResource DefaultComboBoxStyle}">
-                <Setter Property="HorizontalAlignment" Value="Right" />
-                <Setter Property="VerticalAlignment" Value="Center" />
-            </Style>
             <Style x:Key="StatusPillButtonStyle"
                    TargetType="Button"
                    BasedOn="{StaticResource DefaultButtonStyle}">
@@ -716,16 +710,16 @@
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="CPU" Style="{StaticResource CardTitleStyle}" />
                                     </StackPanel>
-                                    <ComboBox x:Name="DashboardCustomCpuSelector"
-                                              Grid.Column="1"
-                                              MinWidth="150"
-                                              HorizontalAlignment="Right"
-                                              AutomationProperties.Name="Custom CPU level"
-                                              IsEnabled="{Binding CanEditPerformance}"
-                                              ItemsSource="{Binding AvailableCustomCpuLevels}"
-                                              SelectedItem="{Binding SelectedCustomCpuLevel}"
-                                              local:StableComboBoxSelection.Anchor="{Binding SelectedCustomCpuLevel, Mode=OneWay}"
-                                              SelectionChanged="OnDashboardCustomCpuChanged" />
+                                    <local:ResponsiveChoiceSelector x:Name="DashboardCustomCpuSelector"
+                                                                    Grid.Column="1"
+                                                                    CompactMinWidth="150"
+                                                                    ExpandedMinWindowWidth="800"
+                                                                    MaxExpandedItems="3"
+                                                                    AccessibleName="Custom CPU level"
+                                                                    IsEnabled="{Binding CanEditPerformance}"
+                                                                    ItemsSource="{Binding AvailableCustomCpuLevels}"
+                                                                    SelectedItem="{Binding SelectedCustomCpuLevel}"
+                                                                    SelectionChanged="OnDashboardCustomCpuChanged" />
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
@@ -739,16 +733,16 @@
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="GPU" Style="{StaticResource CardTitleStyle}" />
                                     </StackPanel>
-                                    <ComboBox x:Name="DashboardCustomGpuSelector"
-                                              Grid.Column="1"
-                                              MinWidth="150"
-                                              HorizontalAlignment="Right"
-                                              AutomationProperties.Name="Custom GPU level"
-                                              IsEnabled="{Binding CanEditPerformance}"
-                                              ItemsSource="{Binding AvailableCustomGpuLevels}"
-                                              SelectedItem="{Binding SelectedCustomGpuLevel}"
-                                              local:StableComboBoxSelection.Anchor="{Binding SelectedCustomGpuLevel, Mode=OneWay}"
-                                              SelectionChanged="OnDashboardCustomGpuChanged" />
+                                    <local:ResponsiveChoiceSelector x:Name="DashboardCustomGpuSelector"
+                                                                    Grid.Column="1"
+                                                                    CompactMinWidth="150"
+                                                                    ExpandedMinWindowWidth="800"
+                                                                    MaxExpandedItems="3"
+                                                                    AccessibleName="Custom GPU level"
+                                                                    IsEnabled="{Binding CanEditPerformance}"
+                                                                    ItemsSource="{Binding AvailableCustomGpuLevels}"
+                                                                    SelectedItem="{Binding SelectedCustomGpuLevel}"
+                                                                    SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
@@ -807,15 +801,15 @@
                                                       Visibility="Collapsed"
                                                       local:AnimatedVisibility.IsVisible="{Binding IsFanControlOperationInProgress}"
                                                       AutomationProperties.Name="Applying fan mode" />
-                                        <ComboBox x:Name="DashboardFanModeSelector"
-                                                  MinWidth="150"
-                                                  HorizontalAlignment="Right"
-                                                  AutomationProperties.Name="Fan mode"
-                                                  IsEnabled="{Binding CanChangeFanMode}"
-                                                  ItemsSource="{Binding AvailableActiveFanModeOptions}"
-                                                  SelectedItem="{Binding SelectedFanModeOption, Mode=OneWay}"
-                                                  local:StableComboBoxSelection.Anchor="{Binding SelectedFanModeOption, Mode=OneWay}"
-                                                  SelectionChanged="OnDashboardFanModeSelectionChanged" />
+                                        <local:ResponsiveChoiceSelector x:Name="DashboardFanModeSelector"
+                                                                        CompactMinWidth="150"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="3"
+                                                                        AccessibleName="Fan mode"
+                                                                        IsEnabled="{Binding CanChangeFanMode}"
+                                                                        ItemsSource="{Binding AvailableActiveFanModeOptions}"
+                                                                        SelectedItem="{Binding SelectedFanModeOption, Mode=OneWay}"
+                                                                        SelectionChanged="OnDashboardFanModeSelectionChanged" />
                                     </StackPanel>
                                 </Grid>
                             </Border>
@@ -1369,14 +1363,14 @@
                                             <TextBlock Text="Choose which part of the display colors the keyboard."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="150"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Ambient Awareness screen region"
-                                                  ItemsSource="{x:Bind AvailableAmbientAwarenessRegionOptions}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind SelectedAmbientAwarenessRegionOption, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedAmbientAwarenessRegionOption, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                        CompactMinWidth="150"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="5"
+                                                                        AccessibleName="Ambient Awareness screen region"
+                                                                        ItemsSource="{x:Bind AvailableAmbientAwarenessRegionOptions}"
+                                                                        DisplayMemberPath="Label"
+                                                                        SelectedItem="{x:Bind SelectedAmbientAwarenessRegionOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1469,13 +1463,13 @@
                                             <TextBlock Text="Use one color, alternate between two, or choose random colors."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="150"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Breathing color mode"
-                                                  ItemsSource="{x:Bind LightingBreathingColorModes}"
-                                                  SelectedItem="{x:Bind LightingBreathingColorModeEditor, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind LightingBreathingColorModeEditor, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                        CompactMinWidth="150"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="3"
+                                                                        AccessibleName="Breathing color mode"
+                                                                        ItemsSource="{x:Bind LightingBreathingColorModes}"
+                                                                        SelectedItem="{x:Bind LightingBreathingColorModeEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1492,13 +1486,13 @@
                                             <TextBlock Text="Use one color, alternate between two, or choose random colors."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="150"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Starlight color mode"
-                                                  ItemsSource="{x:Bind LightingStarlightColorModes}"
-                                                  SelectedItem="{x:Bind LightingStarlightColorModeEditor, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind LightingStarlightColorModeEditor, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                        CompactMinWidth="150"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="3"
+                                                                        AccessibleName="Starlight color mode"
+                                                                        ItemsSource="{x:Bind LightingStarlightColorModes}"
+                                                                        SelectedItem="{x:Bind LightingStarlightColorModeEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1535,14 +1529,14 @@
                                             <TextBlock Text="Choose which way the effect moves."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="150"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Lighting direction"
-                                                  ItemsSource="{x:Bind LightingDirectionOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind SelectedLightingDirectionOption, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedLightingDirectionOption, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                        CompactMinWidth="150"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="2"
+                                                                        AccessibleName="Lighting direction"
+                                                                        ItemsSource="{x:Bind LightingDirectionOptions, Mode=OneWay}"
+                                                                        DisplayMemberPath="Label"
+                                                                        SelectedItem="{x:Bind SelectedLightingDirectionOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1559,13 +1553,13 @@
                                             <TextBlock Text="Choose which way the Wheel effect rotates."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="170"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Wheel rotation direction"
-                                                  ItemsSource="{x:Bind LightingRotationDirections}"
-                                                  SelectedItem="{x:Bind LightingRotationDirectionEditor, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind LightingRotationDirectionEditor, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                        CompactMinWidth="170"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="2"
+                                                                        AccessibleName="Wheel rotation direction"
+                                                                        ItemsSource="{x:Bind LightingRotationDirections}"
+                                                                        SelectedItem="{x:Bind LightingRotationDirectionEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1671,13 +1665,13 @@
                                             <TextBlock Text="Choose how long pressed keys remain lit."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="150"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Reactive lighting duration"
-                                                  ItemsSource="{x:Bind LightingReactiveDurations}"
-                                                  SelectedItem="{x:Bind LightingReactiveDurationEditor, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind LightingReactiveDurationEditor, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                        CompactMinWidth="150"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="3"
+                                                                        AccessibleName="Reactive lighting duration"
+                                                                        ItemsSource="{x:Bind LightingReactiveDurations}"
+                                                                        SelectedItem="{x:Bind LightingReactiveDurationEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1694,13 +1688,13 @@
                                             <TextBlock Text="Choose how long each random key fades in and out."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="150"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Starlight lighting duration"
-                                                  ItemsSource="{x:Bind LightingStarlightDurations}"
-                                                  SelectedItem="{x:Bind LightingStarlightDurationEditor, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind LightingStarlightDurationEditor, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                        CompactMinWidth="150"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="3"
+                                                                        AccessibleName="Starlight lighting duration"
+                                                                        ItemsSource="{x:Bind LightingStarlightDurations}"
+                                                                        SelectedItem="{x:Bind LightingStarlightDurationEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1727,14 +1721,15 @@
                                             <TextBlock Text="Choose the lighting mode for the Razer logo on the lid."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="170"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Laptop logo lighting"
-                                                  ItemsSource="{x:Bind AvailableLogoLightingModeOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind SelectedLogoLightingModeOption, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedLogoLightingModeOption, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector x:Name="LaptopLogoModeSelector"
+                                                                        Grid.Column="1"
+                                                                        CompactMinWidth="170"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="3"
+                                                                        AccessibleName="Laptop logo lighting"
+                                                                        ItemsSource="{x:Bind AvailableLogoLightingModeOptions, Mode=OneWay}"
+                                                                        DisplayMemberPath="Label"
+                                                                        SelectedItem="{x:Bind SelectedLogoLightingModeOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -1900,19 +1895,19 @@
                                             <TextBlock Text="{x:Bind ColorProfileDescription, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ComboBox x:Name="DisplayColorProfilePicker"
-                                                  Grid.Column="1"
-                                                  MinWidth="180"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Display color profile"
-                                                  ItemsSource="{x:Bind ColorProfileOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind SelectedColorProfile, Mode=OneWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedColorProfile, Mode=OneWay}"
-                                                  IsEnabled="{x:Bind CanChangeColorProfile, Mode=OneWay}"
-                                                  DropDownOpened="OnDisplayPickerOpened"
-                                                  DropDownClosed="OnDisplayPickerClosed"
-                                                  SelectionChanged="OnDisplayColorProfileChanged" />
+                                        <local:ResponsiveChoiceSelector x:Name="DisplayColorProfilePicker"
+                                                                        Grid.Column="1"
+                                                                        CompactMinWidth="180"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="4"
+                                                                        AccessibleName="Display color profile"
+                                                                        ItemsSource="{x:Bind ColorProfileOptions, Mode=OneWay}"
+                                                                        DisplayMemberPath="Label"
+                                                                        SelectedItem="{x:Bind SelectedColorProfile, Mode=OneWay}"
+                                                                        IsEnabled="{x:Bind CanChangeColorProfile, Mode=OneWay}"
+                                                                        DropDownOpened="OnDisplayPickerOpened"
+                                                                        DropDownClosed="OnDisplayPickerClosed"
+                                                                        SelectionChanged="OnDisplayColorProfileChanged" />
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -3110,14 +3105,14 @@
                                         <TextBlock Text="Choose how often OpenBlade refreshes temperatures, fan speed, and net battery power while the window is open or the tray icon is hovered."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <ComboBox Grid.Column="1"
-                                              MinWidth="170"
-                                              Style="{StaticResource SettingsPickerStyle}"
-                                              AutomationProperties.Name="Live readings refresh interval"
-                                              ItemsSource="{x:Bind ViewModel.LiveReadingsRefreshOptions, Mode=OneWay}"
-                                              DisplayMemberPath="Label"
-                                              SelectedItem="{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}"
-                                              local:StableComboBoxSelection.Anchor="{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=OneWay}" />
+                                    <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                    CompactMinWidth="170"
+                                                                    ExpandedMinWindowWidth="800"
+                                                                    MaxExpandedItems="5"
+                                                                    AccessibleName="Live readings refresh interval"
+                                                                    ItemsSource="{x:Bind ViewModel.LiveReadingsRefreshOptions, Mode=OneWay}"
+                                                                    DisplayMemberPath="Label"
+                                                                    SelectedItem="{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}" />
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsRowStyle}">
@@ -3390,14 +3385,14 @@
                                         <TextBlock Text="Follow Windows, or always use light or dark mode."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <ComboBox Grid.Column="1"
-                                              MinWidth="170"
-                                              Style="{StaticResource SettingsPickerStyle}"
-                                              AutomationProperties.Name="App theme"
-                                              ItemsSource="{x:Bind ViewModel.ThemeSelectionOptions, Mode=OneWay}"
-                                              DisplayMemberPath="Label"
-                                              SelectedItem="{x:Bind ViewModel.SelectedThemeOption, Mode=TwoWay}"
-                                              local:StableComboBoxSelection.Anchor="{x:Bind ViewModel.SelectedThemeOption, Mode=OneWay}" />
+                                    <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                    CompactMinWidth="170"
+                                                                    ExpandedMinWindowWidth="800"
+                                                                    MaxExpandedItems="3"
+                                                                    AccessibleName="App theme"
+                                                                    ItemsSource="{x:Bind ViewModel.ThemeSelectionOptions, Mode=OneWay}"
+                                                                    DisplayMemberPath="Label"
+                                                                    SelectedItem="{x:Bind ViewModel.SelectedThemeOption, Mode=TwoWay}" />
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsRowStyle}">
@@ -3421,13 +3416,13 @@
                                                  Fill="{x:Bind AccentColorPreviewBrush, Mode=OneWay}"
                                                  Stroke="{ThemeResource ControlStrokeColorDefaultBrush}"
                                                  StrokeThickness="1" />
-                                        <ComboBox MinWidth="160"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="App accent color"
-                                                  ItemsSource="{x:Bind AccentColorOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind SelectedAccentColorOption, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedAccentColorOption, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector CompactMinWidth="160"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="3"
+                                                                        AccessibleName="App accent color"
+                                                                        ItemsSource="{x:Bind AccentColorOptions, Mode=OneWay}"
+                                                                        DisplayMemberPath="Label"
+                                                                        SelectedItem="{x:Bind SelectedAccentColorOption, Mode=TwoWay}" />
                                     </StackPanel>
                                 </Grid>
                             </Border>
@@ -3584,14 +3579,14 @@
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="160"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Update channel"
-                                                  ItemsSource="{x:Bind UpdateViewModel.ChannelOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind UpdateViewModel.SelectedChannelOption, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind UpdateViewModel.SelectedChannelOption, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                        CompactMinWidth="160"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="2"
+                                                                        AccessibleName="Update channel"
+                                                                        ItemsSource="{x:Bind UpdateViewModel.ChannelOptions, Mode=OneWay}"
+                                                                        DisplayMemberPath="Label"
+                                                                        SelectedItem="{x:Bind UpdateViewModel.SelectedChannelOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}">
@@ -3607,14 +3602,14 @@
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="160"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Update check interval"
-                                                  ItemsSource="{x:Bind UpdateViewModel.IntervalOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind UpdateViewModel.SelectedIntervalOption, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind UpdateViewModel.SelectedIntervalOption, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                        CompactMinWidth="160"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="5"
+                                                                        AccessibleName="Update check interval"
+                                                                        ItemsSource="{x:Bind UpdateViewModel.IntervalOptions, Mode=OneWay}"
+                                                                        DisplayMemberPath="Label"
+                                                                        SelectedItem="{x:Bind UpdateViewModel.SelectedIntervalOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsLastRowStyle}">
@@ -4063,14 +4058,14 @@
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="160"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Firmware update check interval"
-                                                  ItemsSource="{x:Bind FirmwareUpdateViewModel.IntervalOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind FirmwareUpdateViewModel.SelectedIntervalOption, Mode=TwoWay}"
-                                                  local:StableComboBoxSelection.Anchor="{x:Bind FirmwareUpdateViewModel.SelectedIntervalOption, Mode=OneWay}" />
+                                        <local:ResponsiveChoiceSelector Grid.Column="1"
+                                                                        CompactMinWidth="160"
+                                                                        ExpandedMinWindowWidth="800"
+                                                                        MaxExpandedItems="5"
+                                                                        AccessibleName="Firmware update check interval"
+                                                                        ItemsSource="{x:Bind FirmwareUpdateViewModel.IntervalOptions, Mode=OneWay}"
+                                                                        DisplayMemberPath="Label"
+                                                                        SelectedItem="{x:Bind FirmwareUpdateViewModel.SelectedIntervalOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 

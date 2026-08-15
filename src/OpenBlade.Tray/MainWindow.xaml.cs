@@ -1713,12 +1713,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDashboardCustomCpuChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingCustomPerformanceSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not CustomPerformanceLevel selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not CustomPerformanceLevel selected
             || selected == ViewModel.SelectedCustomCpuLevel)
         {
             return;
@@ -1733,12 +1733,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDashboardCustomGpuChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingCustomPerformanceSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not CustomPerformanceLevel selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not CustomPerformanceLevel selected
             || selected == ViewModel.SelectedCustomGpuLevel)
         {
             return;
@@ -2149,7 +2149,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async Task ApplyCustomPerformanceChangeAsync(
         CustomPerformanceSettings requested,
-        Microsoft.UI.Xaml.Controls.ComboBox selector)
+        ResponsiveChoiceSelector selector)
     {
         changingCustomPerformanceSelection = true;
         try
@@ -2175,12 +2175,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDashboardFanModeSelectionChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingFanSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || args.AddedItems.FirstOrDefault() is not FanModeOption selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not FanModeOption selected
             || selected.Value == ViewModel.SelectedFanMode)
         {
             return;
@@ -2955,12 +2955,21 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDisplayColorProfileChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
-        if (sender is not Microsoft.UI.Xaml.Controls.ComboBox
-            { SelectedItem: DisplayColorProfileOption option }
-            || changingDisplaySettings
-            || string.Equals(
+        if (sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not DisplayColorProfileOption option)
+        {
+            return;
+        }
+
+        if (changingDisplaySettings)
+        {
+            selector.SelectedItem = DisplayViewModel.SelectedColorProfile;
+            return;
+        }
+
+        if (string.Equals(
                 option.Key,
                 DisplayViewModel.SelectedColorProfile?.Key,
                 StringComparison.Ordinal))
@@ -2970,6 +2979,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         await RunDisplayOperationAsync(
             () => DisplayViewModel.SelectColorProfileAsync(option));
+        selector.SelectedItem = DisplayViewModel.SelectedColorProfile;
     }
 
     private Task RefreshDisplaySettingsAsync()
