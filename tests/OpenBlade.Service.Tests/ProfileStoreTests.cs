@@ -29,6 +29,7 @@ public sealed class ProfileStoreTests : IDisposable
                 GpuClockTuning = new GpuClockTuningSettings(
                     Enabled: true,
                     new GpuClockOffsetSettings(125, 500)),
+                WindowsPowerMode = WindowsPowerMode.BestPerformance,
                 LaptopBehavior = new LaptopBehaviorProfileSettings(
                     StartupAnimationEnabled: true,
                     FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
@@ -47,6 +48,37 @@ public sealed class ProfileStoreTests : IDisposable
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.Equal(expected, result.Profiles);
         Assert.False(File.Exists(path + ".tmp"));
+    }
+
+    [Fact]
+    public async Task Load_Schema11MigratesWindowsPowerModeToLeaveUnchanged()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet mislabeledLegacy = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                WindowsPowerMode = WindowsPowerMode.BestPerformance,
+            },
+        };
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(
+                new ProfileDocument(ProfileStore.PreviousSchemaVersion, mislabeledLegacy),
+                ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Null(result.Profiles.PluggedIn.WindowsPowerMode);
+        Assert.True(result.Profiles.PluggedIn.BatteryProtectionEnabled);
+        Assert.Contains(
+            $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
+            await File.ReadAllTextAsync(path),
+            StringComparison.Ordinal);
     }
 
     [Fact]

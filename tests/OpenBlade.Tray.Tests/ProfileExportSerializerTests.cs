@@ -19,7 +19,7 @@ public sealed class ProfileExportSerializerTests
 
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
-        Assert.Equal(7, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(8, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("0.1.0+abcdef0", root.GetProperty("applicationVersion").GetString());
         Assert.Equal(exportedAt, root.GetProperty("exportedAtUtc").GetDateTimeOffset());
         JsonElement exportedProfiles = root.GetProperty("profiles");
@@ -43,6 +43,10 @@ public sealed class ProfileExportSerializerTests
             .GetProperty("batteryProtectionEnabled").GetBoolean());
         Assert.True(exportedProfiles.GetProperty("usbC")
             .GetProperty("batteryProtectionEnabled").GetBoolean());
+        Assert.Equal(
+            JsonValueKind.Null,
+            exportedProfiles.GetProperty("pluggedIn")
+                .GetProperty("windowsPowerMode").ValueKind);
     }
 
     [Fact]
@@ -69,6 +73,7 @@ public sealed class ProfileExportSerializerTests
                 GpuClockTuning = new GpuClockTuningSettings(
                     Enabled: true,
                     new GpuClockOffsetSettings(125, 500)),
+                WindowsPowerMode = WindowsPowerMode.BestPerformance,
                 LaptopBehavior = new LaptopBehaviorProfileSettings(
                     StartupAnimationEnabled: true,
                     FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
@@ -88,6 +93,42 @@ public sealed class ProfileExportSerializerTests
         ProfileSet actual = ProfileExportSerializer.Deserialize(json);
 
         Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void Deserialize_VersionSevenPreservesBatteryProtectionAndLeavesPowerModeUnmanaged()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                BatteryProtectionEnabled = false,
+            },
+            Battery = profiles.Battery with
+            {
+                BatteryProtectionEnabled = true,
+                WindowsPowerMode = WindowsPowerMode.BestPowerEfficiency,
+            },
+            UsbC = profiles.UsbC with
+            {
+                BatteryProtectionEnabled = false,
+            },
+        };
+        string legacyJson = ProfileExportSerializer.Serialize(
+            profiles,
+            "0.5.6",
+            DateTimeOffset.UtcNow).Replace(
+                "\"schemaVersion\": 8",
+                "\"schemaVersion\": 7",
+                StringComparison.Ordinal);
+
+        ProfileSet imported = ProfileExportSerializer.Deserialize(legacyJson);
+
+        Assert.False(imported.PluggedIn.BatteryProtectionEnabled);
+        Assert.True(imported.Battery.BatteryProtectionEnabled);
+        Assert.False(imported.UsbC.BatteryProtectionEnabled);
+        Assert.Null(imported.Battery.WindowsPowerMode);
     }
 
     [Fact]
@@ -112,7 +153,7 @@ public sealed class ProfileExportSerializerTests
             legacy,
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 7",
+                "\"schemaVersion\": 8",
                 "\"schemaVersion\": 5",
                 StringComparison.Ordinal);
 
@@ -152,7 +193,7 @@ public sealed class ProfileExportSerializerTests
             legacy,
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 7",
+                "\"schemaVersion\": 8",
                 "\"schemaVersion\": 5",
                 StringComparison.Ordinal);
 
@@ -171,14 +212,14 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 7",
                 "\"schemaVersion\": 8",
+                "\"schemaVersion\": 9",
                 StringComparison.Ordinal);
 
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => ProfileExportSerializer.Deserialize(json));
 
-        Assert.Contains("schema 8", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("schema 9", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("newer version", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -189,7 +230,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 7",
+                "\"schemaVersion\": 8",
                 "\"schemaVersion\": 0",
                 StringComparison.Ordinal);
 
@@ -206,7 +247,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 7",
+                "\"schemaVersion\": 8",
                 "\"schemaVersion\": 1",
                 StringComparison.Ordinal);
 

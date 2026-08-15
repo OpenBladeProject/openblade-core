@@ -286,13 +286,17 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(25, animated.Length);
+        Assert.Equal(26, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsCustomPerformanceVisible",
+                StringComparison.Ordinal) is true);
+        Assert.Contains(animated, element =>
+            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                "IsGpuAppCleanupVisible",
                 StringComparison.Ordinal) is true);
         Assert.Equal(
             1,
@@ -470,6 +474,7 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Content") == "Home");
 
         XElement performance = NamedElement(document, "ComboBox", "DashboardPerformanceSelector");
+        XElement windowsPowerMode = NamedElement(document, "ComboBox", "WindowsPowerModeSelector");
         XElement fans = NamedElement(document, "ComboBox", "DashboardFanModeSelector");
         XElement chargeLimit = NamedElement(document, "Slider", "DashboardChargeLimitSlider");
         XElement batteryProtection = NamedElement(document, "ToggleSwitch", "BatteryProtectionToggle");
@@ -477,10 +482,27 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "Button"
             && Attribute(element, "Content") == "{Binding FullChargeActionLabel}");
         Assert.Equal("OnDashboardPerformanceChanged", Attribute(performance, "SelectionChanged"));
-        Assert.Equal("Power mode", Attribute(performance, "AutomationProperties.Name"));
+        Assert.Equal("Laptop performance", Attribute(performance, "AutomationProperties.Name"));
+        Assert.Equal("OnWindowsPowerModeChanged", Attribute(windowsPowerMode, "SelectionChanged"));
+        Assert.Equal(
+            "{Binding AvailableWindowsPowerModeOptions}",
+            Attribute(windowsPowerMode, "ItemsSource"));
+        Assert.Equal("Label", Attribute(windowsPowerMode, "DisplayMemberPath"));
+        XElement windowsPowerModeDescription = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "{Binding SelectedWindowsPowerModeDescription}");
+        Assert.Equal("Left", Attribute(windowsPowerModeDescription, "HorizontalAlignment"));
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "Power mode");
+            && Attribute(element, "Text") == "Laptop performance");
+        Assert.Contains(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Windows power mode");
+        Assert.Contains(
+            "SelectedWindowsPowerModeDescription",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Energy Saver is separate", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "CPU power limit");
@@ -507,7 +529,7 @@ public sealed class CapabilityPresentationTests
         {
             Assert.DoesNotContain(redundantDescription, xaml, StringComparison.Ordinal);
         }
-        Assert.DoesNotContain(document.Descendants(), element =>
+        Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Performance");
         Assert.Equal(
@@ -736,7 +758,7 @@ public sealed class CapabilityPresentationTests
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            14,
+            15,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -1008,6 +1030,34 @@ public sealed class CapabilityPresentationTests
             "ViewModel.IsServiceUnavailable",
             Attribute(startService, "Visibility"),
             StringComparison.Ordinal);
+        XElement stopRazerServices = NamedElement(
+            document,
+            "Button",
+            "StopRazerServicesButton");
+        Assert.Contains(
+            troubleshooting.Descendants(),
+            element => ReferenceEquals(element, stopRazerServices));
+        Assert.Equal("OnStopRazerServices", Attribute(stopRazerServices, "Click"));
+        Assert.Equal(
+            "{StaticResource DestructiveButtonStyle}",
+            Attribute(stopRazerServices, "Style"));
+        Assert.Equal(
+            "Stop Razer services",
+            Attribute(stopRazerServices, "AutomationProperties.Name"));
+        XElement razerServicesRow = stopRazerServices.Ancestors().First(element =>
+            element.Name.LocalName == "Border"
+            && Attribute(element, "Style") == "{StaticResource TroubleshootingSectionStyle}");
+        Assert.Contains(razerServicesRow.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Other Razer software running");
+        Assert.Contains(razerServicesRow.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text")?.Contains(
+                "ViewModel.TroubleshootingOtherRazerSoftwareStatus",
+                StringComparison.Ordinal) is true);
+        Assert.DoesNotContain(razerServicesRow.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Razer background services");
         foreach (string label in new[]
                  {
                      "OpenBlade service",
@@ -1464,9 +1514,11 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("ViewModel.IsBatteryProfileActive", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsUsbCProfileActive", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.PluggedInProfilePresentation.PowerMode", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.PluggedInProfilePresentation.WindowsPowerMode", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.UsbCProfilePresentation.LightingEffect", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.BatteryProfilePresentation.DisplayRefreshRate", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.SelectedProfilePresentation.PowerMode", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SelectedProfilePresentation.WindowsPowerMode", xaml, StringComparison.Ordinal);
         XElement profileValueTemplate = Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == "DataTemplate"
             && Attribute(element, "Key") == "ProfileValuePresentationTemplate");
@@ -1542,11 +1594,12 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "ContentTemplate")
                     == "{StaticResource CompactProfileValuePresentationTemplate}")
             .ToArray();
-        Assert.Equal(57, comparisonValues.Length);
-        Assert.Equal(19, compactValues.Length);
+        Assert.Equal(60, comparisonValues.Length);
+        Assert.Equal(20, compactValues.Length);
         string[] expectedProperties =
         [
             "PowerMode",
+            "WindowsPowerMode",
             "GpuTuning",
             "Fans",
             "BatteryProtection",
@@ -1642,7 +1695,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
         Assert.Equal(
-            7,
+            8,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "EntranceThemeTransition"));
     }

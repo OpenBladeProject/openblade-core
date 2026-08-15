@@ -1228,6 +1228,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   method OpenBlade.Contracts.PerformancePreset get_Performance()
   method OpenBlade.Contracts.PowerProfile <Clone>$()
   method System.Boolean get_EffectiveBatteryProtectionEnabled()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_WindowsPowerMode()
   method System.Nullable<System.Boolean> get_BatteryProtectionEnabled()
   method System.Void Deconstruct(out OpenBlade.Contracts.PerformancePreset Performance, out OpenBlade.Contracts.FanMode Fans, out OpenBlade.Contracts.LightingSettings Lighting, out OpenBlade.Contracts.DisplayProfileSettings Display)
   method System.Void set_BatteryProtectionEnabled(System.Nullable<System.Boolean> value)
@@ -1240,6 +1241,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   method System.Void set_Lighting(OpenBlade.Contracts.LightingSettings value)
   method System.Void set_LightingPowerPolicy(OpenBlade.Contracts.LightingPowerPolicy value)
   method System.Void set_Performance(OpenBlade.Contracts.PerformancePreset value)
+  method System.Void set_WindowsPowerMode(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
@@ -1258,6 +1260,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   property OpenBlade.Contracts.LightingSettings Lighting { get; init; }
   property OpenBlade.Contracts.PerformancePreset Performance { get; init; }
   property System.Boolean EffectiveBatteryProtectionEnabled { get; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> WindowsPowerMode { get; init; }
   property System.Nullable<System.Boolean> BatteryProtectionEnabled { get; init; }
 type enum OpenBlade.Contracts.PowerSource
   field System.Int32 value__
@@ -1395,6 +1398,9 @@ type sealed class OpenBlade.Contracts.RazerBladeModelInfo
   property System.String ProductName { get; init; }
   property System.String UsbProductId { get; init; }
   property System.String UsbVendorId { get; init; }
+type static class OpenBlade.Contracts.RazerControllerServiceAliases
+  method static System.Boolean Contains(System.String alias)
+  method static System.Boolean MatchesService(System.String serviceName, System.String displayName)
 type struct OpenBlade.Contracts.ReactiveKeyPulse
   interface System.IEquatable<OpenBlade.Contracts.ReactiveKeyPulse>
   ctor (System.Byte matrixSlot, System.Nullable<System.Int64> observedTimestamp = null)
@@ -2150,3 +2156,8 @@ type sealed class OpenBlade.Contracts.WheelLightingParameters
   method virtual OpenBlade.Contracts.WheelLightingParameters <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.WheelLightingParameters other)
   property OpenBlade.Contracts.LightingRotationDirection Direction { get; init; }
+type enum OpenBlade.Contracts.WindowsPowerMode
+  field System.Int32 value__
+  field const OpenBlade.Contracts.WindowsPowerMode Balanced = 1
+  field const OpenBlade.Contracts.WindowsPowerMode BestPerformance = 2
+  field const OpenBlade.Contracts.WindowsPowerMode BestPowerEfficiency = 0

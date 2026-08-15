@@ -14,7 +14,7 @@ public sealed class WinUiShellContractTests
             "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
 
         Assert.Equal(
-            5,
+            6,
             CountOccurrences(
                 powerModeCard,
                 "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
@@ -38,6 +38,65 @@ public sealed class WinUiShellContractTests
             gpuTuningCard,
             StringComparison.Ordinal);
         Assert.DoesNotContain("CardDescriptionStyle", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PowerModeCardOffersConfirmedGpuAppCleanup()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string codeBehind = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "MainWindow.xaml.cs");
+        string powerModeCard = SliceMethod(
+            xaml,
+            "<DataTemplate x:Key=\"DashboardPowerModeCardTemplate\"",
+            "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
+
+        Assert.Contains("Content=\"Close GPU apps\"", powerModeCard, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnCloseGpuAppsClick\"", powerModeCard, StringComparison.Ordinal);
+        int gpuAppsLabel = powerModeCard.IndexOf(
+            "Text=\"Apps using the NVIDIA GPU\"",
+            StringComparison.Ordinal);
+        int gpuAppsRowStart = powerModeCard.LastIndexOf(
+            "<Border",
+            gpuAppsLabel,
+            StringComparison.Ordinal);
+        int gpuAppsRowEnd = powerModeCard.IndexOf(
+            "Click=\"OnCloseGpuAppsClick\"",
+            gpuAppsLabel,
+            StringComparison.Ordinal);
+        Assert.True(gpuAppsRowStart >= 0 && gpuAppsRowEnd > gpuAppsRowStart);
+        string gpuAppsRow = powerModeCard[gpuAppsRowStart..gpuAppsRowEnd];
+        Assert.Contains(
+            "SettingsNeutralSubcardStyle",
+            gpuAppsRow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "local:AnimatedVisibility.IsVisible=\"{Binding IsGpuAppCleanupVisible}\"",
+            gpuAppsRow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "SettingsLastSubcardStyle",
+            gpuAppsRow,
+            StringComparison.Ordinal);
+        Assert.Contains("Close apps using the NVIDIA GPU?", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("Force close remaining apps?", codeBehind, StringComparison.Ordinal);
+        string handler = SliceMethod(
+            codeBehind,
+            "private async Task HandleCloseGpuAppsAsync",
+            "private async Task ShowGpuAppsMessageAsync");
+        Assert.Contains(
+            "afterClose.Status == SessionGpuOperationStatus.Failed",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "finalScan.Status == SessionGpuOperationStatus.Failed",
+            handler,
+            StringComparison.Ordinal);
+        Assert.True(
+            handler.IndexOf("catch (Exception exception)", StringComparison.Ordinal)
+                > handler.IndexOf("SessionGpuResponse finalScan", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -512,10 +571,11 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void SettingsExposeReorderableTelemetryAndDestructiveShutdown()
+    public void SettingsExposeReorderableTelemetryAndTroubleshootingServiceControl()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
         Assert.Contains("ViewModel.DashboardTelemetryItems", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.TrayHoverLabelItems", xaml, StringComparison.Ordinal);
@@ -525,6 +585,44 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ReorderMode=\"Enabled\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource DestructiveButtonStyle}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Shutdown\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"StopRazerServicesButton\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnStopRazerServices\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Stop Razer services?", window, StringComparison.Ordinal);
+        Assert.Contains("Razer software may start the services again", window, StringComparison.Ordinal);
+        Assert.Contains("PrimaryButtonStyle = (Style)Root.Resources[\"DestructiveButtonStyle\"]", window, StringComparison.Ordinal);
+        Assert.Contains("RazerServiceStopOperation.ActiveServices", window, StringComparison.Ordinal);
+        Assert.Contains("ElevatedServiceControlOutcome.Canceled", window, StringComparison.Ordinal);
+        Assert.Contains("OpenBlade did not retry any stop request", window, StringComparison.Ordinal);
+        Assert.Contains("StopRazerServicesProgressRing.IsActive = isBusy", window, StringComparison.Ordinal);
+        Assert.Contains("busyLabel: \"Checking…\"", window, StringComparison.Ordinal);
+        Assert.Contains("busyLabel: \"Stopping…\"", window, StringComparison.Ordinal);
+        Assert.Contains("HandleStopRazerServicesAsync", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "await RunHandlerAsync(\r\n            HandleStopRazerServicesAsync",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Volatile.Read(ref disposed) != 0 || Root.XamlRoot is not { } xamlRoot",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "OpenBlade could not show the '{0}' dialog",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains("contentDialogGate.WaitAsync()", window, StringComparison.Ordinal);
+        Assert.Contains("contentDialogGate.Release()", window, StringComparison.Ordinal);
+        Assert.Contains("dialog.XamlRoot = xamlRoot", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "Volatile.Read(ref disposed) == 0 && Root.XamlRoot is not null",
+            window,
+            StringComparison.Ordinal);
+        string contentDialog = SliceMethod(
+            window,
+            "private async Task<ContentDialogResult?> ShowContentDialogAsync",
+            "private async Task ShowMessageDialogAsync");
+        Assert.Equal(1, CountOccurrences(contentDialog, "await dialog.ShowAsync()"));
         Assert.Contains("#47E10C", app, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("x:Name=\"SettingsPageHeader\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Update channel\"", xaml, StringComparison.Ordinal);
@@ -545,6 +643,19 @@ public sealed class WinUiShellContractTests
             "Toggled=\"OnExternalLightingOverridePolicyToggled\"",
             xaml,
             StringComparison.Ordinal);
+
+        int settingsShutdown = xaml.IndexOf(
+            "x:Name=\"SettingsShutdownSection\"",
+            StringComparison.Ordinal);
+        int troubleshooting = xaml.IndexOf(
+            "x:Name=\"TroubleshootingExpander\"",
+            StringComparison.Ordinal);
+        int stopRazerServices = xaml.IndexOf(
+            "x:Name=\"StopRazerServicesButton\"",
+            StringComparison.Ordinal);
+        Assert.True(settingsShutdown >= 0);
+        Assert.True(troubleshooting > settingsShutdown);
+        Assert.True(stopRazerServices > troubleshooting);
 
         int dashboardSelector = xaml.IndexOf(
             "Text=\"Shown on Dashboard\"",
@@ -905,9 +1016,10 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillStyle}\""));
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
-        Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Laptop performance\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
-        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(6, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
@@ -1094,23 +1206,19 @@ public sealed class WinUiShellContractTests
         Assert.Contains("new ToolStripMenuItem(\"Open\")", trayHost, StringComparison.Ordinal);
         Assert.Contains("new ToolStripMenuItem(\"Exit\")", trayHost, StringComparison.Ordinal);
         Assert.Contains("menu.Items.Add(new ToolStripSeparator())", trayHost, StringComparison.Ordinal);
-        Assert.Contains("trayIcon.DoubleClick +=", trayHost, StringComparison.Ordinal);
+        Assert.Contains(
+            "trayIcon.MouseDoubleClick += OnTrayIconMouseDoubleClick",
+            trayHost,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "trayIcon.MouseDoubleClick -= OnTrayIconMouseDoubleClick",
+            trayHost,
+            StringComparison.Ordinal);
         Assert.Contains("viewModel.TrayHoverLabelText", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.PropertyChanged +=", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.PropertyChanged -=", trayHost, StringComparison.Ordinal);
         Assert.Contains("nameof(MainViewModel.TrayIconState)", trayHost, StringComparison.Ordinal);
         Assert.Contains("OpenBladeIconAssets.LoadTrayIcon", trayHost, StringComparison.Ordinal);
-        int doubleClickHandlerStart = trayHost.IndexOf(
-            "trayIcon.DoubleClick +=",
-            StringComparison.Ordinal);
-        int mouseMoveHandlerStart = trayHost.IndexOf(
-            "trayIcon.MouseMove +=",
-            doubleClickHandlerStart,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "openTray()",
-            trayHost[doubleClickHandlerStart..mouseMoveHandlerStart],
-            StringComparison.Ordinal);
         Assert.Contains("Interlocked.Exchange(ref disposed, 1)", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Visible = false", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Dispose()", trayHost, StringComparison.Ordinal);
@@ -1323,6 +1431,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("new CancellationTokenSource(TimeSpan.FromSeconds(10))", app, StringComparison.Ordinal);
         Assert.Contains("serviceClient.ShutdownOpenBladeAsync", app, StringComparison.Ordinal);
         Assert.Contains("WindowsServiceStartOperation.StartAsync", app, StringComparison.Ordinal);
+        Assert.Contains("RazerServiceStopOperation.StopAllAsync", app, StringComparison.Ordinal);
+        Assert.Contains("OpenBlade.Tray.StopRazerServicesHelper", app, StringComparison.Ordinal);
+        Assert.Contains("RazerServiceStopHardExitTimeout", app, StringComparison.Ordinal);
+        Assert.Contains("_ => Environment.Exit(1)", app, StringComparison.Ordinal);
         Assert.Contains("new CancellationTokenSource(TimeSpan.FromSeconds(65))", app, StringComparison.Ordinal);
         string helper = SliceMethod(
             app,
@@ -1572,6 +1684,104 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void MainWindowStartsInitialDisplayRefreshWithoutBlockingReadiness()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int initializeCore = source.IndexOf(
+            "private async Task InitializeCoreAsync()",
+            StringComparison.Ordinal);
+        int propertyChanged = source.IndexOf(
+            "private void OnViewModelPropertyChanged",
+            initializeCore,
+            StringComparison.Ordinal);
+        Assert.True(initializeCore >= 0 && initializeCore < propertyChanged);
+
+        string readinessPath = source[initializeCore..propertyChanged];
+        Assert.Contains(
+            "_ = RefreshDisplaySettingsAsync();",
+            readinessPath,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "await RefreshDisplaySettingsAsync();",
+            readinessPath,
+            StringComparison.Ordinal);
+
+        int refreshMethod = source.IndexOf(
+            "private Task RefreshDisplaySettingsAsync()",
+            StringComparison.Ordinal);
+        int displaySettingsChanged = source.IndexOf(
+            "private void OnDisplayUserSettingsChanged",
+            refreshMethod,
+            StringComparison.Ordinal);
+        Assert.True(refreshMethod >= 0 && refreshMethod < displaySettingsChanged);
+        string refreshPath = source[refreshMethod..displaySettingsChanged];
+        Assert.Contains(
+            "displayRefreshTask is { IsCompleted: false } activeRefresh",
+            refreshPath,
+            StringComparison.Ordinal);
+        Assert.Contains("return activeRefresh;", refreshPath, StringComparison.Ordinal);
+
+        int timerTick = source.IndexOf(
+            "private async void OnDisplayRefreshTimerTick",
+            StringComparison.Ordinal);
+        int pinnedCheck = source.IndexOf(
+            "private bool IsDashboardCardPinned",
+            timerTick,
+            StringComparison.Ordinal);
+        Assert.True(timerTick >= 0 && timerTick < pinnedCheck);
+        string timerPath = source[timerTick..pinnedCheck];
+        Assert.Contains(
+            "|| IsDisplayRefreshInProgress",
+            timerPath,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainWindowUsesPostRequestRefreshBeforeCapturingProfile()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int captureRefresh = source.IndexOf(
+            "private async Task RefreshDisplaySettingsBeforeCaptureAsync()",
+            StringComparison.Ordinal);
+        int displaySettingsChanged = source.IndexOf(
+            "private void OnDisplayUserSettingsChanged",
+            captureRefresh,
+            StringComparison.Ordinal);
+        Assert.True(captureRefresh >= 0 && captureRefresh < displaySettingsChanged);
+
+        string captureRefreshPath = source[captureRefresh..displaySettingsChanged];
+        int snapshot = captureRefreshPath.IndexOf(
+            "Task? refreshAtRequest = displayRefreshTask;",
+            StringComparison.Ordinal);
+        int joinExisting = captureRefreshPath.IndexOf(
+            "await refreshAtRequest;",
+            StringComparison.Ordinal);
+        int refreshAgain = captureRefreshPath.IndexOf(
+            "await RefreshDisplaySettingsAsync();",
+            StringComparison.Ordinal);
+        Assert.True(snapshot >= 0 && snapshot < joinExisting && joinExisting < refreshAgain);
+
+        int saveHandler = source.IndexOf(
+            "private async Task HandleSaveCurrentDisplaySettingsToProfileAsync()",
+            StringComparison.Ordinal);
+        int applyHandler = source.IndexOf(
+            "private async void OnUseDisplayProfileSettings",
+            saveHandler,
+            StringComparison.Ordinal);
+        Assert.True(saveHandler >= 0 && saveHandler < applyHandler);
+
+        string savePath = source[saveHandler..applyHandler];
+        Assert.Contains(
+            "await RefreshDisplaySettingsBeforeCaptureAsync();",
+            savePath,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "await RefreshDisplaySettingsAsync();",
+            savePath,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void VisibleObservationFollowsEveryShowAndStopsBeforeHideAndViewModelDisposal()
     {
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
@@ -1580,8 +1790,12 @@ public sealed class WinUiShellContractTests
             "src", "OpenBlade.Tray", "WinFormsTrayIconHost.cs");
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
-        Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveStateAsync", window, StringComparison.Ordinal);
+        Assert.Contains("new VisibleObservationLoop(ObserveVisibleSurfacesAsync", window, StringComparison.Ordinal);
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync", window, StringComparison.Ordinal);
+        Assert.Contains("ObserveGpuAppActivityAsync", window, StringComparison.Ordinal);
+        Assert.Contains("gpuAppObservationLoop.StartOrWake()", window, StringComparison.Ordinal);
+        Assert.Contains("gpuAppObservationLoop.Stop()", window, StringComparison.Ordinal);
+        Assert.Contains("gpuAppObservationLoop.DisposeAsync", window, StringComparison.Ordinal);
         Assert.Contains("observationIntervalProvider: () => Timeout.InfiniteTimeSpan", window, StringComparison.Ordinal);
         Assert.Contains("trayIcon.MouseMove += OnTrayIconMouseMove", trayHost, StringComparison.Ordinal);
         int mouseMoveHandler = trayHost.IndexOf(
@@ -1644,7 +1858,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("AppWindow.Show(true)", app, StringComparison.Ordinal);
         int showMethod = window.IndexOf("public void ShowAndActivate()", StringComparison.Ordinal);
-        int start = window.IndexOf("visibleObservationLoop.StartOrWake()", showMethod, StringComparison.Ordinal);
+        int start = window.IndexOf("UpdateActiveObservationLoop()", showMethod, StringComparison.Ordinal);
         int show = window.IndexOf("AppWindow.Show(true)", showMethod, StringComparison.Ordinal);
         Assert.True(showMethod >= 0 && start > showMethod && show > start);
 
@@ -1661,8 +1875,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         string hiddenBody = window[hiddenMethod..hiddenMethodEnd];
         Assert.DoesNotContain("trayObservationLoop.StartOrWake()", hiddenBody, StringComparison.Ordinal);
-        Assert.Contains("TryPreferEfficientProcessorsForCurrentThread()", hiddenBody, StringComparison.Ordinal);
-        Assert.Contains("TrySetProcessEcoQos(enabled: true)", hiddenBody, StringComparison.Ordinal);
+        Assert.Contains("ApplyProcessorVisibilityPolicy()", hiddenBody, StringComparison.Ordinal);
         Assert.Contains(
             "!window.UpdateViewModel.NeedsConsentPrompt",
             app,
@@ -1679,26 +1892,46 @@ public sealed class WinUiShellContractTests
             "\"main view model\"",
             StringComparison.Ordinal);
         Assert.True(disposeLoop >= 0 && disposeTrayLoop > disposeLoop && disposeViewModel > disposeTrayLoop);
+        Assert.DoesNotContain("trayDashboardObservationLoop", window, StringComparison.Ordinal);
         Assert.Contains("DisposeComponentSafelyAsync", window, StringComparison.Ordinal);
+        int processorPolicy = window.IndexOf(
+            "private void ApplyProcessorVisibilityPolicy()",
+            StringComparison.Ordinal);
+        int dashboardVisibility = window.IndexOf(
+            "public void SetTrayDashboardVisible(bool visible)",
+            StringComparison.Ordinal);
+        string processorPolicyBody = window[processorPolicy..dashboardVisibility];
+        Assert.Contains("windowVisible || trayDashboardVisible", processorPolicyBody, StringComparison.Ordinal);
+        Assert.Contains("TrySetProcessEcoQos(enabled: false)", processorPolicyBody, StringComparison.Ordinal);
+        Assert.Contains("TrySetProcessEcoQos(enabled: true)", processorPolicyBody, StringComparison.Ordinal);
     }
 
     [Fact]
     public void EfficientProcessorPolicyIsLimitedToTheTray()
     {
-        string serviceProgram = ReadRepositoryFile("src", "OpenBlade.Service", "Program.cs");
-        string serviceProject = ReadRepositoryFile(
-            "src", "OpenBlade.Service", "OpenBlade.Service.csproj");
-        string sessionAgentProgram = ReadRepositoryFile(
-            "src", "OpenBlade.SessionAgent", "Program.cs");
-        string sessionAgentProject = ReadRepositoryFile(
-            "src", "OpenBlade.SessionAgent", "OpenBlade.SessionAgent.csproj");
         string policy = ReadRepositoryFile(
             "src", "OpenBlade.Platform", "WindowsProcessorEfficiencyPolicy.cs");
 
-        Assert.DoesNotContain("OpenBlade.Platform", serviceProgram, StringComparison.Ordinal);
-        Assert.DoesNotContain("OpenBlade.Platform", serviceProject, StringComparison.Ordinal);
-        Assert.DoesNotContain("OpenBlade.Platform", sessionAgentProgram, StringComparison.Ordinal);
-        Assert.DoesNotContain("OpenBlade.Platform", sessionAgentProject, StringComparison.Ordinal);
+        foreach (string project in new[] { "OpenBlade.Service", "OpenBlade.SessionAgent" })
+        {
+            string projectDirectory = RepositoryPath("src", project);
+            foreach (string sourcePath in Directory.EnumerateFiles(
+                projectDirectory,
+                "*.cs",
+                SearchOption.AllDirectories).Where(path =>
+                    !path.Contains(
+                        $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
+                        StringComparison.OrdinalIgnoreCase)
+                    && !path.Contains(
+                        $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                Assert.DoesNotContain(
+                    "WindowsProcessorEfficiencyPolicy",
+                    File.ReadAllText(sourcePath),
+                    StringComparison.Ordinal);
+            }
+        }
         Assert.DoesNotContain("SetProcessDefaultCpuSets", policy, StringComparison.Ordinal);
     }
 
@@ -1878,6 +2111,623 @@ public sealed class WinUiShellContractTests
             "binding.SelectedAction = selectedAction;",
             window,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TrayDashboardUsesSingleClickAndSettingsOwnedLiveCustomization()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string trayHost = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "WinFormsTrayIconHost.cs");
+        string mainXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string mainWindow = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "MainWindow.xaml.cs");
+        string dashboardXaml = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "TrayDashboardWindow.xaml");
+        string dashboardWindow = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "TrayDashboardWindow.xaml.cs");
+        string popupPositioner = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "WindowsPopupPositioner.cs");
+        string dashboardPreferences = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray.Core",
+            "TrayDashboardPreferences.cs");
+        int dashboardDispose = dashboardWindow.IndexOf(
+            "public void Dispose()",
+            StringComparison.Ordinal);
+        int dashboardTrySetOwner = dashboardWindow.IndexOf(
+            "private void TrySetEditOwner(",
+            dashboardDispose,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "gpuClockOffsetCommits.Dispose();",
+            dashboardWindow[dashboardDispose..dashboardTrySetOwner],
+            StringComparison.Ordinal);
+        Assert.Contains("trayIcon.MouseClick += OnTrayIconMouseClick", trayHost, StringComparison.Ordinal);
+        Assert.Contains(
+            "trayIcon.MouseDoubleClick += OnTrayIconMouseDoubleClick",
+            trayHost,
+            StringComparison.Ordinal);
+        Assert.Contains("TrayIconActivationPolicy.Resolve(button)", trayHost, StringComparison.Ordinal);
+        Assert.Contains(
+            "TrayIconActivationPolicy.ResolveDoubleClick(button)",
+            trayHost,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "TrayIconActivationPolicy.ShouldSuppressTrailingClick(",
+            trayHost,
+            StringComparison.Ordinal);
+        Assert.Contains("SystemInformation.DoubleClickTime", trayHost, StringComparison.Ordinal);
+        Assert.Contains("System.Drawing.Point cursorPosition = Cursor.Position", trayHost, StringComparison.Ordinal);
+        Assert.Contains("new ToolStripMenuItem(\"Open\")", trayHost, StringComparison.Ordinal);
+        Assert.Contains(
+            "ShortcutKeyDisplayString = \"Double-click\"",
+            trayHost,
+            StringComparison.Ordinal);
+        Assert.Contains("new ToolStripMenuItem(\"Exit\")", trayHost, StringComparison.Ordinal);
+        Assert.Contains("new TrayDashboardWindow(", app, StringComparison.Ordinal);
+        Assert.Contains("WindowNative.GetWindowHandle(mainWindow)", app, StringComparison.Ordinal);
+        Assert.Contains("mainWindow.SetTrayDashboardVisible(visible)", app, StringComparison.Ordinal);
+        Assert.Contains("OpenMainWindowFromTrayIcon", app, StringComparison.Ordinal);
+        Assert.Contains("DismissForMainWindow()", app, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardEditSessionChanged +=", app, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnCustomizeTrayDashboard\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"TrayDashboardCustomizationPage\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("ItemsSource=\"{x:Bind TrayDashboardEditorControls, Mode=OneWay}\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("ItemsSource=\"{x:Bind TrayDashboardEditorSliders, Mode=OneWay}\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnAddTrayDashboardControl\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnAddTrayDashboardSlider\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnResetTrayDashboard\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(true)", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardEditSessionChanged?.Invoke(false)", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("EndTrayDashboardCustomization(showSettingsOverview: false)", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("HandleCustomizeTrayDashboardAsync", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Tray dashboard controls", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("AppWindow.Show(activateWindow: !editing)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("private const int PopupWidth = 360", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("presenter.IsAlwaysOnTop = false", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("MonitorFromPoint(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("GetDpiForMonitor(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("MonitorDpiType.Effective", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("TryPositionAt(", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetDpiForWindow(", dashboardWindow, StringComparison.Ordinal);
+        int beginEdit = dashboardWindow.IndexOf(
+            "public void BeginEditSession()",
+            StringComparison.Ordinal);
+        int endEdit = dashboardWindow.IndexOf(
+            "public void EndEditSession()",
+            beginEdit,
+            StringComparison.Ordinal);
+        string beginEditBody = dashboardWindow[beginEdit..endEdit];
+        Assert.True(
+            beginEditBody.IndexOf("TrySetEditOwner(editOwnerWindowHandle)", StringComparison.Ordinal)
+            < beginEditBody.IndexOf("ShowAt(", StringComparison.Ordinal));
+        Assert.Contains(
+            "checked(workArea.X + workArea.Width - 1)",
+            beginEditBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "checked(workArea.Y + workArea.Height - 1)",
+            beginEditBody,
+            StringComparison.Ordinal);
+        int dismissForMainWindow = dashboardWindow.IndexOf(
+            "public void DismissForMainWindow()",
+            endEdit,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "TrySetEditOwner(0)",
+            dashboardWindow[endEdit..dismissForMainWindow],
+            StringComparison.Ordinal);
+        int showAt = dashboardWindow.IndexOf(
+            "private void ShowAt(",
+            StringComparison.Ordinal);
+        int tryPosition = dashboardWindow.IndexOf(
+            "private void TryPositionAt(",
+            showAt,
+            StringComparison.Ordinal);
+        string showAtBody = dashboardWindow[showAt..tryPosition];
+        Assert.Contains("if (!editing)", showAtBody, StringComparison.Ordinal);
+        Assert.Contains("TryEstablishForeground()", showAtBody, StringComparison.Ordinal);
+        Assert.Contains("TryStartReveal(placement, displayArea, editing)", showAtBody, StringComparison.Ordinal);
+        int establishForeground = dashboardWindow.IndexOf(
+            "private bool TryEstablishForeground()",
+            tryPosition,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Activate();",
+            dashboardWindow[establishForeground..],
+            StringComparison.Ordinal);
+        int position = dashboardWindow.IndexOf(
+            "private void PositionAt(",
+            tryPosition,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "catch (Exception exception)",
+            dashboardWindow[tryPosition..position],
+            StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardInteractionPolicy.ShouldSuppressReopen", dashboardWindow, StringComparison.Ordinal);
+        int updateSliderRows = dashboardWindow.IndexOf(
+            "private void UpdateSliderRows()",
+            StringComparison.Ordinal);
+        int updateFansDetails = dashboardWindow.IndexOf(
+            "private void UpdateFansDetailsAvailability()",
+            updateSliderRows,
+            StringComparison.Ordinal);
+        string updateSliderRowsBody = dashboardWindow[updateSliderRows..updateFansDetails];
+        Assert.Contains("if (!slider.IsVisible)", updateSliderRowsBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsGpuClockTuningVisible", updateSliderRowsBody, StringComparison.Ordinal);
+        Assert.Contains("WindowOwnerIndex = -8", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains("SetWindowLongPtr", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains("DwmFlush()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("PostMessage(hostWindowHandle", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("SetWindowSubclass(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("DispatcherQueuePriority.High", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("StartRevealFrameClock()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("Thread? revealFrameClockThread", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("new Thread(RunRevealFrameClock)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("revealFrameClockThread is { IsAlive: true }", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("IsBackground = true", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("Thread.Sleep(16)", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Task.Run(() => RunRevealFrameClock", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("revealFrameClockCancellation", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains(
+            "WindowsPopupSlidePolicy.DurationMilliseconds + 100",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "revealCompletionTimer.IsRepeating = false",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            CountOccurrences(
+                dashboardWindow,
+                "revealCompletionPending = false;"));
+        Assert.Equal(
+            1,
+            CountOccurrences(
+                dashboardWindow,
+                "revealCompletionPending = true;"));
+        Assert.Contains("WindowsPopupSlidePolicy.ResolvePosition(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardResolvedPlacement resolvedPlacement", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("resolvedPlacement.RevealGeometry", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResolveRevealGeometry", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("Root.UpdateLayout()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("WindowsMotionSettings.AreAnimationsEnabled()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("WindowsPopupPositioner.PositionInFront(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("NotTopmostWindow", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains("GetSystemMetrics(VirtualScreenLeftMetric)", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains("GetSystemMetrics(VirtualScreenTopMetric)", popupPositioner, StringComparison.Ordinal);
+        Assert.DoesNotContain("TopmostWindow = new(-1)", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains("WindowsPopupPositioner.DisableTransitions(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("TryPrimeSurface();", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("TryStartDismissAnimation()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("hiding: revealHiding", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("ParkSurface();", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("AppWindow.Hide()", dashboardWindow, StringComparison.Ordinal);
+        int primeSurface = dashboardWindow.IndexOf(
+            "private void TryPrimeSurface()",
+            StringComparison.Ordinal);
+        int resolvePlacement = dashboardWindow.IndexOf(
+            "private ResolvedPlacement ResolvePlacement(",
+            primeSurface,
+            StringComparison.Ordinal);
+        string primeSurfaceBody = dashboardWindow[primeSurface..resolvePlacement];
+        int firstOffscreenPosition = primeSurfaceBody.IndexOf(
+            "WindowsPopupPositioner.PositionOffscreen(",
+            StringComparison.Ordinal);
+        int showPrewarmedSurface = primeSurfaceBody.IndexOf(
+            "AppWindow.Show(activateWindow: false);",
+            StringComparison.Ordinal);
+        int secondOffscreenPosition = primeSurfaceBody.IndexOf(
+            "WindowsPopupPositioner.PositionOffscreen(",
+            firstOffscreenPosition + 1,
+            StringComparison.Ordinal);
+        Assert.True(firstOffscreenPosition < showPrewarmedSurface);
+        Assert.True(showPrewarmedSurface < secondOffscreenPosition);
+        int parkSurface = dashboardWindow.IndexOf(
+            "private void ParkSurface()",
+            StringComparison.Ordinal);
+        int toRect = dashboardWindow.IndexOf(
+            "private static RectInt32 ToRectInt32(",
+            parkSurface,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "WindowsPopupPositioner.PositionOffscreen(",
+            dashboardWindow[parkSurface..toRect],
+            StringComparison.Ordinal);
+        Assert.Contains("foregroundTimer.IsRepeating = false", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("ScheduleForegroundCheckOrDismiss()", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("ShouldRetryForegroundActivation(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("WindowsPopupPositioner.TryActivate(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("SetForegroundWindow", popupPositioner, StringComparison.Ordinal);
+        int onActivated = dashboardWindow.IndexOf(
+            "private void OnActivated(",
+            StringComparison.Ordinal);
+        int moveFocus = dashboardWindow.IndexOf(
+            "private void MoveFocusOffInitialTile()",
+            onActivated,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Hide(",
+            dashboardWindow[onActivated..establishForeground],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "foregroundTimer.Start();",
+            dashboardWindow[onActivated..establishForeground],
+            StringComparison.Ordinal);
+        int foregroundTimerTick = dashboardWindow.IndexOf(
+            "private void OnForegroundTimerTick(",
+            moveFocus,
+            StringComparison.Ordinal);
+        int onClosing = dashboardWindow.IndexOf(
+            "private void OnClosing(",
+            foregroundTimerTick,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "WindowsPopupPositioner.IsShellTrayWindow(foreground)",
+            dashboardWindow[foregroundTimerTick..onClosing],
+            StringComparison.Ordinal);
+        Assert.Contains("GetClassName", popupPositioner, StringComparison.Ordinal);
+        Assert.Contains(
+            "TrayDashboardInteractionPolicy.IsShellTrayWindowClass",
+            popupPositioner,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("trayDashboardObservationLoop", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("private Task ObserveVisibleSurfacesAsync(", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("windowVisible || trayDashboardVisible", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("UpdateActiveObservationLoop();", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ObserveTrayDashboardStateAsync", mainWindow, StringComparison.Ordinal);
+        int trayDashboardVisibility = mainWindow.IndexOf(
+            "public void SetTrayDashboardVisible(bool visible)",
+            StringComparison.Ordinal);
+        int telemetryPresentation = mainWindow.IndexOf(
+            "private void UpdateDashboardTelemetryPresentationState()",
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.SetTrayDashboardTelemetryPresentationActive(visible)",
+            mainWindow[trayDashboardVisibility..telemetryPresentation],
+            StringComparison.Ordinal);
+        int requestTrayRefresh = mainWindow.IndexOf(
+            "public void RequestTrayTelemetryRefresh()",
+            telemetryPresentation,
+            StringComparison.Ordinal);
+        string telemetryPresentationBody =
+            mainWindow[telemetryPresentation..requestTrayRefresh];
+        Assert.Contains(
+            "windowVisible && HomePage.Visibility == Visibility.Visible",
+            telemetryPresentationBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "trayDashboardVisible",
+            telemetryPresentationBody,
+            StringComparison.Ordinal);
+        int hideDashboard = dashboardWindow.IndexOf(
+            "private void Hide(bool suppressNextTrayToggle = false)",
+            StringComparison.Ordinal);
+        int activatedDashboard = dashboardWindow.IndexOf(
+            "private void OnActivated(",
+            hideDashboard,
+            StringComparison.Ordinal);
+        string hideDashboardBody =
+            dashboardWindow[hideDashboard..activatedDashboard];
+        int startDismiss = hideDashboardBody.IndexOf(
+            "TryStartDismissAnimation()",
+            StringComparison.Ordinal);
+        int reportWithoutAnimation = hideDashboardBody.IndexOf(
+            "ReportVisibility(false)",
+            StringComparison.Ordinal);
+        Assert.True(startDismiss >= 0 && reportWithoutAnimation > startDismiss);
+        int revealRendering = dashboardWindow.IndexOf(
+            "private void AdvanceRevealAnimation()",
+            StringComparison.Ordinal);
+        int cancelReveal = dashboardWindow.IndexOf(
+            "private void CancelRevealAnimation()",
+            revealRendering,
+            StringComparison.Ordinal);
+        string revealRenderingBody = dashboardWindow[revealRendering..cancelReveal];
+        int parkedDismiss = revealRenderingBody.IndexOf(
+            "ParkSurface();",
+            StringComparison.Ordinal);
+        int reportedDismissed = revealRenderingBody.IndexOf(
+            "ReportVisibility(false);",
+            parkedDismiss,
+            StringComparison.Ordinal);
+        Assert.True(parkedDismiss >= 0 && reportedDismissed > parkedDismiss);
+        int completionTimerTick = revealRenderingBody.IndexOf(
+            "private void OnRevealCompletionTimerTick(",
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "if (!revealCompletionPending)",
+            revealRenderingBody[completionTimerTick..],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "CompleteRevealAnimation();",
+            revealRenderingBody[completionTimerTick..],
+            StringComparison.Ordinal);
+        int startRevealClock = dashboardWindow.IndexOf(
+            "private void StartRevealFrameClock()",
+            cancelReveal,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "revealCompletionPending = false;",
+            dashboardWindow[cancelReveal..startRevealClock],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "revealCompletionTimer.Stop();",
+            dashboardWindow[cancelReveal..startRevealClock],
+            StringComparison.Ordinal);
+        int ensureRevealClock = dashboardWindow.IndexOf(
+            "private void EnsureRevealFrameClock()",
+            startRevealClock,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "revealCompletionPending = true;",
+            dashboardWindow[startRevealClock..ensureRevealClock],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "revealCompletionTimer.Start();",
+            dashboardWindow[startRevealClock..ensureRevealClock],
+            StringComparison.Ordinal);
+        int primeFrame = revealRenderingBody.IndexOf(
+            "if (!revealHiding && revealPrimingFrames < 2)",
+            StringComparison.Ordinal);
+        int elapsedFrame = revealRenderingBody.IndexOf(
+            "TimeSpan elapsed =",
+            primeFrame,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "revealStartedTimestamp = Stopwatch.GetTimestamp();",
+            revealRenderingBody[primeFrame..elapsedFrame],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "return;",
+            revealRenderingBody[primeFrame..elapsedFrame],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "TryEstablishForeground();",
+            revealRenderingBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "DisplayInformation.DisplayContentsInvalidated",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ControlGrid\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ControlScroller\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", dashboardXaml, StringComparison.Ordinal);
+        int controlGrid = dashboardXaml.IndexOf(
+            "x:Name=\"ControlGrid\"",
+            StringComparison.Ordinal);
+        int performanceTile = dashboardXaml.IndexOf(
+            "x:Name=\"PerformanceTile\"",
+            controlGrid,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            3,
+            CountOccurrences(
+                dashboardXaml[controlGrid..performanceTile],
+                "<ColumnDefinition Width=\"*\" />"));
+        Assert.Contains("QuickTileSurfaceStyle", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"Height\" Value=\"48\" />", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"CornerRadius\" Value=\"6\" />", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Setter Property=\"CornerRadius\" Value=\"8\" />", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "<x:Double x:Key=\"QuickTileIconSize\">16</x:Double>",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<x:Double x:Key=\"DashboardPrimaryIconSize\">20</x:Double>",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<Setter Property=\"FontSize\" Value=\"{StaticResource DashboardPrimaryIconSize}\" />",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"FontSize\" Value=\"12\" />", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"FontSize\" Value=\"11\" />", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "<x:Double x:Key=\"SliderHorizontalThumbWidth\">16</x:Double>",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<x:Double x:Key=\"SliderHorizontalThumbHeight\">16</x:Double>",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Key=\"SliderTrackThemeHeight\"", dashboardXaml, StringComparison.Ordinal);
+        int quickSliderIconStyle = dashboardXaml.IndexOf(
+            "<Style x:Key=\"QuickSliderIconStyle\"",
+            StringComparison.Ordinal);
+        int quickSliderButtonStyle = dashboardXaml.IndexOf(
+            "<Style x:Key=\"QuickSliderIconButtonStyle\"",
+            quickSliderIconStyle,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<Setter Property=\"FontSize\" Value=\"{StaticResource DashboardPrimaryIconSize}\" />",
+            dashboardXaml[quickSliderIconStyle..quickSliderButtonStyle],
+            StringComparison.Ordinal);
+        Assert.Contains("Padding=\"20,14,20,10\"", dashboardXaml, StringComparison.Ordinal);
+        int dashboardPage = dashboardXaml.IndexOf(
+            "<Grid x:Name=\"DashboardPage\">",
+            StringComparison.Ordinal);
+        int controlScroller = dashboardXaml.IndexOf(
+            "<ScrollViewer x:Name=\"ControlScroller\"",
+            dashboardPage,
+            StringComparison.Ordinal);
+        string dashboardRows = dashboardXaml[dashboardPage..controlScroller];
+        Assert.Contains("<RowDefinition Height=\"*\" />", dashboardRows, StringComparison.Ordinal);
+        Assert.Contains("<RowDefinition Height=\"Auto\" />", dashboardRows, StringComparison.Ordinal);
+        Assert.DoesNotContain("Height=\"211\"", dashboardRows, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"SliderSection\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Visibility=\"Collapsed\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"SliderGrid\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"SliderScroller\"", dashboardXaml, StringComparison.Ordinal);
+        int sliderSection = dashboardXaml.IndexOf(
+            "<Border x:Name=\"SliderSection\"",
+            StringComparison.Ordinal);
+        int detailPage = dashboardXaml.IndexOf(
+            "<Grid x:Name=\"DetailPage\"",
+            sliderSection,
+            StringComparison.Ordinal);
+        string sliderSectionXaml = dashboardXaml[sliderSection..detailPage];
+        Assert.Contains("CanToggleGpuClockTuning", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.Contains("CanEditGpuClockTuning", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.Equal(8, CountOccurrences(sliderSectionXaml, "<ColumnDefinition"));
+        Assert.Equal(
+            4,
+            CountOccurrences(sliderSectionXaml, "<ColumnDefinition Width=\"36\" />"));
+        Assert.Equal(4, CountOccurrences(sliderSectionXaml, "ColumnSpacing=\"8\""));
+        Assert.Equal(4, CountOccurrences(sliderSectionXaml, "Margin=\"0,0,10,0\""));
+        Assert.Contains("Padding=\"12,7\"", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<ColumnDefinition Width=\"28\" />", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Grid.Column=\"2\"", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("QuickSliderValueStyle", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("TrayDashboardChargeLimitLabel", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(" MHz", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(" %", sliderSectionXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ChargeLimitSliderRow\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"LightingBrightnessSliderRow\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"Keyboard brightness\"",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        int lightingBrightnessRow = dashboardXaml.IndexOf(
+            "x:Name=\"LightingBrightnessSliderRow\"",
+            StringComparison.Ordinal);
+        int gpuCoreClockRow = dashboardXaml.IndexOf(
+            "x:Name=\"GpuCoreClockSliderRow\"",
+            lightingBrightnessRow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Glyph=\"&#xED39;\"",
+            dashboardXaml[lightingBrightnessRow..gpuCoreClockRow],
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Glyph=\"&#xE706;\"",
+            dashboardXaml[lightingBrightnessRow..gpuCoreClockRow],
+            StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GpuCoreClockSliderRow\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GpuMemoryClockSliderRow\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"BatteryTile\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"BatteryDetail\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"BatteryProtectionTile\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"FunctionRowTile\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GamingModeTile\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GpuTuningTile\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnFunctionRowCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnGamingModeCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnGamingModeDetailsClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnBatteryProtectionClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsChecked=\"{Binding BatteryProtectionEnabled, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{Binding CanChangeBatteryProtection, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"BatteryPowerStatus\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PowerSourceStatus\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"FanSpeedStatus\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"FansStatus\"", dashboardXaml, StringComparison.Ordinal);
+        int statusIconStyle = dashboardXaml.IndexOf(
+            "x:Key=\"StatusIconStyle\"",
+            StringComparison.Ordinal);
+        int endStatusIconStyle = dashboardXaml.IndexOf(
+            "x:Key=\"QuickSliderIconButtonStyle\"",
+            statusIconStyle,
+            StringComparison.Ordinal);
+        string statusIconStyleBody = dashboardXaml[statusIconStyle..endStatusIconStyle];
+        Assert.Contains(
+            "<Setter Property=\"Width\" Value=\"{StaticResource DashboardPrimaryIconSize}\" />",
+            statusIconStyleBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<Setter Property=\"Height\" Value=\"{StaticResource DashboardPrimaryIconSize}\" />",
+            statusIconStyleBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "<ColumnDefinition Width=\"{StaticResource DashboardPrimaryIconSize}\" />",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Glyph=\"&#xE713;\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("AutomationProperties.Name=\"Open OpenBlade\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Click=\"OnSettingsClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("DisplayMemberPath=\"Label\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("SizeChanged=\"OnRootSizeChanged\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("private void OnRootSizeChanged(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"DetailPage\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnDetailBackClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnPerformanceCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnPerformanceDetailsClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnFansCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnLightingCycleClick\"", dashboardXaml, StringComparison.Ordinal);
+        int fansTile = dashboardXaml.IndexOf(
+            "x:Name=\"FansTile\"",
+            performanceTile,
+            StringComparison.Ordinal);
+        int lightingTile = dashboardXaml.IndexOf(
+            "x:Name=\"LightingTile\"",
+            fansTile,
+            StringComparison.Ordinal);
+        Assert.Contains("Glyph=\"&#xEC4A;\"", dashboardXaml[performanceTile..fansTile], StringComparison.Ordinal);
+        Assert.DoesNotContain("Glyph=\"&#xE7F4;\"", dashboardXaml[performanceTile..fansTile], StringComparison.Ordinal);
+        Assert.Contains("Data=\"M8,6.5", dashboardXaml[fansTile..lightingTile], StringComparison.Ordinal);
+        Assert.DoesNotContain("Glyph=\"&#xE895;\"", dashboardXaml[fansTile..lightingTile], StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"FansDetailsColumn\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("AvailableActiveFanModeOptions.Count > 1", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("UpdateSliderRows();", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("SliderSection.Visibility = row == 0", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("MaximumVisibleSliders", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("Choose up to two sliders", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("MaximumVisibleStatusItems", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("Choose up to three live readings", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{x:Bind IsEnabled, Mode=OneWay}\"", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("gpuClockOffsetCommits.Schedule(requested)", dashboardWindow, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                dashboardWindow,
+                "GpuClockOffsetCommitPolicy.CanCommit("));
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                mainWindow,
+                "GpuClockOffsetCommitPolicy.CanCommit("));
+        Assert.Contains("CreateSliderOptions", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardSliderOptionTemplate", mainXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardInteractionPolicy.ResolveNextIndex(", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"InitialFocusTarget\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("IsTabStop=\"True\"", dashboardXaml[dashboardXaml.IndexOf("x:Name=\"InitialFocusTarget\"", StringComparison.Ordinal)..], StringComparison.Ordinal);
+        Assert.Contains("TabIndex=\"2147483647\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("MoveFocusOffInitialTile();", dashboardWindow, StringComparison.Ordinal);
+        Assert.Contains("DispatcherQueuePriority.Low", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Glyph=\"&#xE895;\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            CountOccurrences(dashboardXaml, "Data=\"M8,6.5"));
+        Assert.DoesNotContain("Glyph=\"&#xE9D0;\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardBatteryPowerFlowLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardTemperatureLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardPowerSourceLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("TrayDashboardFanSpeedLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("TrayDashboardFanModeLabel", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Customize", dashboardXaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Preview", dashboardXaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ControlGrid.Children.Remove", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("ControlGrid.Children.Add", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"ExpandedControlContainer\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"More\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsSizeEnabled", mainXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("UpdateSizeAvailability", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetEffectiveExpandedControl", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("TrayDashboardControlSize", dashboardPreferences, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExpandedControl", dashboardPreferences, StringComparison.Ordinal);
+        Assert.Contains("CurrentSchemaVersion = 2", dashboardPreferences, StringComparison.Ordinal);
+        Assert.Contains("The first six controls remain visible.", mainXaml, StringComparison.Ordinal);
     }
 
     [Fact]

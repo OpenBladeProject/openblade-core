@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
+    <ProjectReference Include="..\OpenBlade.Platform\OpenBlade.Platform.csproj" />
     <ProjectReference Include="..\OpenBlade.Protocol\OpenBlade.Protocol.csproj" />
   </ItemGroup>
   <ItemGroup>

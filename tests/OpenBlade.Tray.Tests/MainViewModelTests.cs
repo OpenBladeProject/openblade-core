@@ -9,6 +9,127 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class MainViewModelTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task WindowsPowerMode_CannotStageWhenProfileCannotBeSaved(
+        bool deviceVerified,
+        bool writesBlocked)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot ready = CreateStatus(verified: true, blocked: false);
+        client.Publish(ready);
+        await WaitUntilAsync(() => viewModel.CanEditWindowsPowerMode);
+
+        client.Publish(ready with
+        {
+            Revision = 2,
+            DeviceVerified = deviceVerified,
+            WritesBlocked = writesBlocked,
+            Message = "Controls unavailable",
+        });
+        await WaitUntilAsync(() => !viewModel.CanControlHardware);
+
+        Assert.False(viewModel.CanEditWindowsPowerMode);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+        Assert.False(viewModel.HasThermalProfileDraft);
+    }
+
+    [Fact]
+    public async Task WindowsPowerMode_ServiceProfileUpdateNotifiesDashboardSelection()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        var changedProperties = new ConcurrentQueue<string?>();
+        viewModel.PropertyChanged += (_, args) => changedProperties.Enqueue(args.PropertyName);
+
+        client.Publish(initial with
+        {
+            Revision = 2,
+            Profiles = initial.Profiles with
+            {
+                PluggedIn = initial.Profiles.PluggedIn with
+                {
+                    WindowsPowerMode = WindowsPowerMode.Balanced,
+                },
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.PluggedInProfilePresentation.WindowsPowerMode.Text == "Balanced");
+
+        Assert.Equal(WindowsPowerMode.Balanced, viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.Contains(nameof(MainViewModel.SelectedWindowsPowerModeOption), changedProperties);
+        Assert.Contains(nameof(MainViewModel.SelectedWindowsPowerModeDescription), changedProperties);
+    }
+
+    [Fact]
+    public async Task WindowsPowerMode_StagesWithProfileAndSavesThroughLaptopActions()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(
+            ["Leave unchanged", "Best power efficiency", "Balanced", "Best performance"],
+            viewModel.AvailableWindowsPowerModeOptions.Select(option => option.Label));
+        Assert.Equal(
+            [
+                "Keeps the current Windows setting.",
+                "Favors lower energy use.",
+                "Balances performance and energy use.",
+                "Favors responsiveness over energy use.",
+            ],
+            viewModel.AvailableWindowsPowerModeOptions.Select(option => option.Description));
+        Assert.Null(viewModel.SelectedWindowsPowerModeOption.Value);
+
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+
+        Assert.True(viewModel.HasThermalProfileDraft);
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.Equal("Leave unchanged", viewModel.PluggedInProfilePresentation.WindowsPowerMode.Text);
+        Assert.True(viewModel.PluggedInProfilePresentation.WindowsPowerMode.IsPending);
+        Assert.Equal(
+            "Best performance",
+            viewModel.PluggedInProfilePresentation.WindowsPowerMode.PendingText);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            client.LastProfiles?.PluggedIn.WindowsPowerMode);
+        Assert.False(viewModel.HasThermalProfileDraft);
+    }
+
+    [Fact]
+    public async Task GpuAppCleanupVisibilityPublishesConfirmedChanges()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+        List<string?> changed = [];
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        await viewModel.SetGpuAppCleanupVisibleAsync(true, CancellationToken.None);
+        await viewModel.SetGpuAppCleanupVisibleAsync(true, CancellationToken.None);
+        await viewModel.SetGpuAppCleanupVisibleAsync(false, CancellationToken.None);
+
+        Assert.False(viewModel.IsGpuAppCleanupVisible);
+        Assert.Equal(
+            2,
+            changed.Count(name => name == nameof(MainViewModel.IsGpuAppCleanupVisible)));
+    }
+
     [Fact]
     public async Task FirmwareCards_PresentInstalledMcuVersionConsistently()
     {
@@ -1961,6 +2082,10 @@ public sealed class MainViewModelTests
 
         viewModel.LiveReadingsEnabled = false;
         await viewModel.ObserveStateAsync(CancellationToken.None);
+        await viewModel.ObserveTrayDashboardStateAsync(
+            includeMainDashboardReadings: false,
+            LiveReadingSensors.All,
+            CancellationToken.None);
 
         Assert.Equal([true], client.IncludeLiveReadingsRequests);
         Assert.Null(viewModel.LiveReadings);
@@ -1991,12 +2116,32 @@ public sealed class MainViewModelTests
         client.PendingObservation.SetResult(CreateStatus(true, false));
         await hidden;
 
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task dashboard = viewModel.ObserveTrayDashboardStateAsync(
+            includeMainDashboardReadings: false,
+            LiveReadingSensors.FanSpeeds,
+            CancellationToken.None);
+        client.PendingObservation.SetResult(CreateStatus(true, false));
+        await dashboard;
+
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task combined = viewModel.ObserveTrayDashboardStateAsync(
+            includeMainDashboardReadings: true,
+            LiveReadingSensors.FanSpeeds,
+            CancellationToken.None);
+        client.PendingObservation.SetResult(CreateStatus(true, false));
+        await combined;
+
         Assert.Equal(
             [
                 LiveReadingSensors.BatteryPower
                     | LiveReadingSensors.CpuTemperature
                     | LiveReadingSensors.GpuTemperature,
                 LiveReadingSensors.BatteryPower,
+                LiveReadingSensors.BatteryPower | LiveReadingSensors.FanSpeeds,
+                LiveReadingSensors.All,
             ],
             client.RequestedLiveReadings);
         Assert.True(viewModel.HasEnabledTrayHoverLiveReadings);
@@ -5435,7 +5580,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task HiddenDashboard_DoesNotRebuildTelemetryPresentation()
+    public async Task HiddenDashboards_DoNotRebuildTelemetryPresentation()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -5469,6 +5614,12 @@ public sealed class MainViewModelTests
         Assert.DoesNotContain(nameof(viewModel.CpuTemperatureValue), changed);
         Assert.DoesNotContain(nameof(viewModel.GpuTemperatureValue), changed);
         Assert.DoesNotContain(nameof(viewModel.VisibleDashboardTelemetryGroups), changed);
+        Assert.DoesNotContain(
+            nameof(viewModel.TrayDashboardBatteryPowerFlowLabel),
+            changed);
+        Assert.DoesNotContain(nameof(viewModel.TrayDashboardTemperatureLabel), changed);
+        Assert.DoesNotContain(nameof(viewModel.TrayDashboardFanSpeedLabel), changed);
+        Assert.DoesNotContain(nameof(viewModel.TrayDashboardFanSpeedToolTip), changed);
 
         changed.Clear();
         viewModel.SetDashboardTelemetryPresentationActive(true);
@@ -5479,6 +5630,21 @@ public sealed class MainViewModelTests
         Assert.Contains(nameof(viewModel.CpuTemperatureValue), changed);
         Assert.Contains(nameof(viewModel.GpuTemperatureValue), changed);
         Assert.Contains(nameof(viewModel.VisibleDashboardTelemetryGroups), changed);
+        Assert.DoesNotContain(
+            nameof(viewModel.TrayDashboardBatteryPowerFlowLabel),
+            changed);
+
+        changed.Clear();
+        viewModel.SetTrayDashboardTelemetryPresentationActive(true);
+
+        Assert.Contains(
+            nameof(viewModel.TrayDashboardBatteryPowerFlowLabel),
+            changed);
+        Assert.Contains(nameof(viewModel.TrayDashboardTemperatureLabel), changed);
+        Assert.Contains(nameof(viewModel.TrayDashboardFanSpeedLabel), changed);
+        Assert.Contains(nameof(viewModel.TrayDashboardFanSpeedToolTip), changed);
+        Assert.DoesNotContain(nameof(viewModel.BatteryPowerFlowLabel), changed);
+        Assert.DoesNotContain(nameof(viewModel.VisibleDashboardTelemetryGroups), changed);
     }
 
     [Fact]
@@ -6107,6 +6273,38 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.CanChangeBatteryProtection);
         Assert.True(viewModel.CanAdjustChargeLimit);
         Assert.True(viewModel.ToggleFullChargeCommand.CanExecute(true));
+    }
+
+    [Fact]
+    public async Task TrayDashboardChargeLimitLabelReflectsProtectionState()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        ServiceStatusSnapshot enabled = CreateStatus(verified: true, blocked: false);
+        client.Publish(enabled);
+        await WaitUntilAsync(() =>
+            viewModel.TrayDashboardChargeLimitLabel == "80 %");
+
+        client.Publish(enabled with
+        {
+            Revision = 2,
+            ConfirmedState = enabled.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(false, null, false),
+            },
+            DesiredState = enabled.DesiredState with
+            {
+                Battery = new DesiredBatteryState(
+                    enabled.DesiredState.Battery.ConfiguredPolicy,
+                    protectionEnabled: false,
+                    temporaryFullCharge: false),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.TrayDashboardChargeLimitLabel == "Off");
+
+        Assert.False(viewModel.BatteryProtectionEnabled);
     }
 
     [Theory]

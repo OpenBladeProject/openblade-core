@@ -411,8 +411,16 @@ public sealed class IpcMessageCodecTests
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         ProfileSet profiles = defaults with
         {
-            PluggedIn = defaults.PluggedIn with { BatteryProtectionEnabled = false },
-            Battery = defaults.Battery with { BatteryProtectionEnabled = true },
+            PluggedIn = defaults.PluggedIn with
+            {
+                BatteryProtectionEnabled = false,
+                WindowsPowerMode = WindowsPowerMode.BestPerformance,
+            },
+            Battery = defaults.Battery with
+            {
+                BatteryProtectionEnabled = true,
+                WindowsPowerMode = WindowsPowerMode.BestPowerEfficiency,
+            },
             UsbC = defaults.UsbC with { BatteryProtectionEnabled = false },
         };
         ServiceRequest request = new SetBatteryProtectionRequest(

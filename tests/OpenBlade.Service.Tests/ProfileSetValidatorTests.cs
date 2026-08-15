@@ -6,6 +6,38 @@ namespace OpenBlade.Service.Tests;
 public sealed class ProfileSetValidatorTests
 {
     [Theory]
+    [InlineData(null)]
+    [InlineData(WindowsPowerMode.BestPowerEfficiency)]
+    [InlineData(WindowsPowerMode.Balanced)]
+    [InlineData(WindowsPowerMode.BestPerformance)]
+    public void Validate_AcceptsSupportedWindowsPowerMode(WindowsPowerMode? mode)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+
+        ProfileSetValidator.CreateUnverifiedSafeDefaults().Validate(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { WindowsPowerMode = mode },
+        });
+    }
+
+    [Fact]
+    public void Validate_RejectsUndefinedWindowsPowerMode()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            ProfileSetValidator.CreateUnverifiedSafeDefaults().Validate(profiles with
+            {
+                Battery = profiles.Battery with
+                {
+                    WindowsPowerMode = (WindowsPowerMode)999,
+                },
+            }));
+
+        Assert.Contains("Windows power mode is undefined", exception.Message);
+    }
+
+    [Theory]
     [InlineData(PerformancePreset.Silent, FanMode.Automatic)]
     [InlineData(PerformancePreset.Balanced, FanMode.Automatic)]
     [InlineData(PerformancePreset.Performance, FanMode.Automatic)]

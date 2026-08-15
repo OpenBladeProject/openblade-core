@@ -24,6 +24,9 @@ public sealed class ProfileDefaultsTests
         Assert.True(profiles.PluggedIn.BatteryProtectionEnabled);
         Assert.True(profiles.Battery.BatteryProtectionEnabled);
         Assert.True(profiles.UsbC.BatteryProtectionEnabled);
+        Assert.Null(profiles.PluggedIn.WindowsPowerMode);
+        Assert.Null(profiles.Battery.WindowsPowerMode);
+        Assert.Null(profiles.UsbC.WindowsPowerMode);
         Assert.Equal(80, profiles.BatteryPolicy.ChargeLimitPercent);
     }
 

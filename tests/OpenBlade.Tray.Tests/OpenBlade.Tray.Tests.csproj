@@ -28,6 +28,8 @@
              Link="WindowsStartupRegistration.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\ElevatedServiceControlLauncher.cs"
              Link="ElevatedServiceControlLauncher.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\RazerServiceStopOperation.cs"
+             Link="RazerServiceStopOperation.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\ServiceStateConfirmation.cs"
              Link="ServiceStateConfirmation.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\WindowsServiceStateConfirmation.cs"
@@ -43,5 +45,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenBlade.Tray.Core\OpenBlade.Tray.Core.csproj" />
   </ItemGroup>
+
+  <Target Name="BuildTrayForXamlStartupSmoke" BeforeTargets="Build">
+    <MSBuild Projects="..\..\src\OpenBlade.Tray\OpenBlade.Tray.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration)"
+             BuildInParallel="false" />
+  </Target>
 
 </Project>
