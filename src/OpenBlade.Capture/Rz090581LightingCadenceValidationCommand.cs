@@ -38,10 +38,14 @@ internal sealed record Rz090581LightingCadenceEvidence(
     bool RestoredBrightnessMatched,
     bool RestoredOwnershipMatched,
     bool RestoredVisuallyConfirmed,
-    string RestoredStateKind,
+    string? RestoredStateKind,
+    string RestorationOutcome,
     bool UnknownPreTestStateRestored,
+    bool CleanupRequired,
     bool CleanupCompleted,
-    bool ManualRecoveryRequired,
+    bool CleanupPending,
+    bool LightingRecoveryRequired,
+    string? LightingRecoveryReason,
     bool TransportQualified,
     bool OpticalValidationRequired,
     string? Failure);
@@ -212,8 +216,11 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         bool restoredBrightnessMatched = false;
         bool restoredOwnershipMatched = false;
         bool restoredVisuallyConfirmed = false;
+        bool cleanupRequired = false;
         bool cleanupCompleted = false;
-        bool manualRecoveryRequired = false;
+        bool cleanupPending = false;
+        bool lightingRecoveryRequired = false;
+        string? lightingRecoveryReason = null;
         bool canceled = false;
         string? failure = null;
         LightingSettings baseline = LightingSettingsFactory.Static(
@@ -305,7 +312,8 @@ internal sealed class Rz090581LightingCadenceValidationCommand
                         if (transport.FailureSubmissionState ==
                             WriteSubmissionState.Indeterminate)
                         {
-                            manualRecoveryRequired = true;
+                            lightingRecoveryRequired = true;
+                            lightingRecoveryReason = "indeterminateMatrixWrite";
                             failure = "indeterminateMatrixWrite";
                             break;
                         }
@@ -335,8 +343,11 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         }
         catch (BladeWriteException exception)
         {
-            manualRecoveryRequired =
+            lightingRecoveryRequired =
                 exception.SubmissionState == WriteSubmissionState.Indeterminate;
+            lightingRecoveryReason = lightingRecoveryRequired
+                ? "indeterminateMatrixWrite"
+                : null;
             failure = $"matrixWrite:{exception.SubmissionState}";
         }
         catch (OperationCanceledException) when (commandCancellation.IsCancellationRequested)
@@ -350,13 +361,15 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         }
         finally
         {
-            if (port is not null && hardwareTouched && !manualRecoveryRequired)
+            if (port is not null && hardwareTouched && !lightingRecoveryRequired)
             {
                 restorationAttempted = true;
+                bool restorationWriteCompleted = false;
                 try
                 {
                     await port.SetLightingAsync(baseline, CancellationToken.None)
                         .ConfigureAwait(false);
+                    restorationWriteCompleted = true;
                     restoredBrightnessMatched = await BrightnessMatchesAsync(
                         options.Brightness,
                         CancellationToken.None).ConfigureAwait(false);
@@ -369,15 +382,22 @@ internal sealed class Rz090581LightingCadenceValidationCommand
                 }
                 catch (BladeWriteException exception)
                 {
-                    manualRecoveryRequired =
-                        exception.SubmissionState == WriteSubmissionState.Indeterminate;
+                    lightingRecoveryRequired = true;
+                    lightingRecoveryReason = exception.SubmissionState ==
+                        WriteSubmissionState.Indeterminate
+                        ? "indeterminateRestoreWrite"
+                        : "baselineRestoreKnownNotApplied";
                     failure = AppendFailure(
                         failure,
                         $"restoreWrite:{exception.SubmissionState}");
                 }
                 catch (Exception exception)
                 {
-                    manualRecoveryRequired = true;
+                    if (!restorationWriteCompleted)
+                    {
+                        lightingRecoveryRequired = true;
+                        lightingRecoveryReason = "baselineRestoreFailed";
+                    }
                     failure = AppendFailure(
                         failure,
                         $"restoreFailed:{ExceptionKind(exception)}");
@@ -386,19 +406,20 @@ internal sealed class Rz090581LightingCadenceValidationCommand
 
             if (port is not null)
             {
+                cleanupRequired = true;
                 try
                 {
                     cleanupCompleted = await port.DisposeWithinCleanupDeadlineAsync()
                         .ConfigureAwait(false);
                     if (!cleanupCompleted)
                     {
-                        manualRecoveryRequired = true;
+                        cleanupPending = true;
                         failure = AppendFailure(failure, "cleanupPending");
                     }
                 }
                 catch
                 {
-                    manualRecoveryRequired = true;
+                    cleanupPending = true;
                     failure = AppendFailure(failure, "disposeFailed");
                 }
             }
@@ -408,6 +429,13 @@ internal sealed class Rz090581LightingCadenceValidationCommand
             && restoredBrightnessMatched
             && restoredOwnershipMatched
             && restoredVisuallyConfirmed;
+        string restorationOutcome = restored
+            ? "knownStaticGreenBaselineConfirmed"
+            : !restorationAttempted && lightingRecoveryRequired
+                ? "skippedForUnprovenLightingState"
+                : restorationAttempted
+                    ? "knownStaticGreenBaselineUnconfirmed"
+                    : "notRequired";
         bool transportQualified = stages.Count == options.Rates.Count
             && stages.All(stage => stage.Transport.TransportQualified);
         bool passed = failure is null
@@ -442,10 +470,14 @@ internal sealed class Rz090581LightingCadenceValidationCommand
             restoredBrightnessMatched,
             restoredOwnershipMatched,
             restoredVisuallyConfirmed,
-            RestoredStateKind: "knownStaticGreenBaseline",
+            RestoredStateKind: restored ? "knownStaticGreenBaseline" : null,
+            restorationOutcome,
             UnknownPreTestStateRestored: false,
+            cleanupRequired,
             cleanupCompleted,
-            manualRecoveryRequired,
+            cleanupPending,
+            lightingRecoveryRequired,
+            lightingRecoveryReason,
             transportQualified,
             OpticalValidationRequired: true,
             failure);
@@ -454,6 +486,7 @@ internal sealed class Rz090581LightingCadenceValidationCommand
             $"rz09-0581-lighting-cadence-{completedAtUtc:yyyyMMddTHHmmssfffZ}";
         string jsonPath = Path.Combine(options.OutputDirectory, $"{stem}.json");
         string markdownPath = Path.Combine(options.OutputDirectory, $"{stem}.md");
+        bool artifactsWritten = true;
         try
         {
             await writeArtifact(
@@ -471,16 +504,37 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         }
         catch
         {
+            artifactsWritten = false;
             await output.WriteLineAsync("Validation artifacts could not be written.")
                 .ConfigureAwait(false);
-            return ValidationFailureExitCode;
         }
 
-        if (manualRecoveryRequired)
+        if (lightingRecoveryRequired)
         {
             await output.WriteLineAsync(
-                "The last lighting state could not be proven safe. Lighting was not " +
-                "retried; manual recovery is required.").ConfigureAwait(false);
+                $"Lighting recovery is required ({lightingRecoveryReason ?? "unknown"}). " +
+                "The known Static green baseline was not confirmed; do not retry the " +
+                "validator until the keyboard state is recovered manually.")
+                .ConfigureAwait(false);
+        }
+        else if (restorationAttempted && !restored)
+        {
+            await output.WriteLineAsync(
+                "The known Static green baseline restoration was attempted but not " +
+                "fully confirmed. Inspect the keyboard state before another validation.")
+                .ConfigureAwait(false);
+        }
+        if (cleanupPending)
+        {
+            await output.WriteLineAsync(
+                "Lighting-port cleanup did not complete within its bounded deadline. " +
+                "Cleanup status is separate from the lighting restoration evidence; " +
+                "do not start another validation while cleanup may still be draining.")
+                .ConfigureAwait(false);
+        }
+        if (!artifactsWritten)
+        {
+            return ValidationFailureExitCode;
         }
 
         return passed
@@ -602,11 +656,17 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         builder.AppendLine($"- Completed: {evidence.CompletedAtUtc:O}");
         builder.AppendLine($"- Result: {(evidence.Failure is null ? "passed" : "failed")}");
         builder.AppendLine($"- Failure: {evidence.Failure ?? "none"}");
-        builder.AppendLine($"- Restored state: {evidence.RestoredStateKind}");
+        builder.AppendLine($"- Restoration outcome: {evidence.RestorationOutcome}");
+        builder.AppendLine($"- Restored state: {evidence.RestoredStateKind ?? "none"}");
         builder.AppendLine(
             $"- Unknown pre-test state restored: {evidence.UnknownPreTestStateRestored}");
+        builder.AppendLine($"- Cleanup required: {evidence.CleanupRequired}");
         builder.AppendLine($"- Cleanup completed: {evidence.CleanupCompleted}");
-        builder.AppendLine($"- Manual recovery required: {evidence.ManualRecoveryRequired}");
+        builder.AppendLine($"- Cleanup pending: {evidence.CleanupPending}");
+        builder.AppendLine(
+            $"- Lighting recovery required: {evidence.LightingRecoveryRequired}");
+        builder.AppendLine(
+            $"- Lighting recovery reason: {evidence.LightingRecoveryReason ?? "none"}");
         builder.AppendLine("- Optical validation: required; transport completion is not LED refresh proof");
         builder.AppendLine();
         builder.AppendLine("| Target | Completed | Skipped | Achieved | p99 write | Max gap | Transport | Visual |");

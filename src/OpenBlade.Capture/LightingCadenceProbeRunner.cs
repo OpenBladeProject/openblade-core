@@ -44,6 +44,8 @@ internal sealed class LightingCadenceProbeRunner
     private static readonly int[] MarkerSlots =
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     private static readonly TimeSpan PatternCycle = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan CoarseDelaySafetyMargin =
+        TimeSpan.FromMilliseconds(25);
 
     private readonly TimeProvider timeProvider;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
@@ -54,11 +56,7 @@ internal sealed class LightingCadenceProbeRunner
     {
         this.timeProvider = timeProvider
             ?? throw new ArgumentNullException(nameof(timeProvider));
-        this.delay = delay
-            ?? ((duration, cancellationToken) => Task.Delay(
-                duration,
-                this.timeProvider,
-                cancellationToken));
+        this.delay = delay ?? DelayPreciselyAsync;
     }
 
     internal async Task<LightingCadenceStageResult> RunAsync(
@@ -204,6 +202,18 @@ internal sealed class LightingCadenceProbeRunner
             (frameIndex * TimeSpan.TicksPerSecond) / framesPerSecond));
     }
 
+    internal static TimeSpan CoarseDelayFor(TimeSpan duration)
+    {
+        if (duration < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(duration));
+        }
+
+        return duration > CoarseDelaySafetyMargin
+            ? duration - CoarseDelaySafetyMargin
+            : TimeSpan.Zero;
+    }
+
     internal static LightingCadenceMetricSummary Summarize(
         IEnumerable<double> milliseconds)
     {
@@ -270,6 +280,35 @@ internal sealed class LightingCadenceProbeRunner
 
     private static int FrameCount(TimeSpan duration, int framesPerSecond) =>
         checked((int)Math.Ceiling(duration.TotalSeconds * framesPerSecond));
+
+    private async Task DelayPreciselyAsync(
+        TimeSpan duration,
+        CancellationToken cancellationToken)
+    {
+        if (duration <= TimeSpan.Zero)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return;
+        }
+
+        long startedTimestamp = timeProvider.GetTimestamp();
+        TimeSpan coarseDelay = CoarseDelayFor(duration);
+        if (coarseDelay > TimeSpan.Zero)
+        {
+            await Task.Delay(coarseDelay, timeProvider, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // Windows' default timer tick is too coarse to qualify 45 or 60 Hz.
+        // Keep any Task.Delay at least 25 ms away from the deadline, then use
+        // this validation process's current worker thread for the final wait.
+        // This is intentionally local and does not change the system timer period.
+        while (timeProvider.GetElapsedTime(startedTimestamp) < duration)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Thread.SpinWait(64);
+        }
+    }
 
     private static double Percentile(IReadOnlyList<double> ordered, double percentile)
     {

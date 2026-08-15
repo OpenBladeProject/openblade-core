@@ -125,6 +125,28 @@ public sealed class LightingCadenceProbeRunnerTests
         Assert.Equal(frame0.Slots[2], frame1.Slots[2]);
     }
 
+    [Theory]
+    [InlineData(45)]
+    [InlineData(60)]
+    public void CoarseDelayFor_AvoidsSystemTimerAtHighRefreshRates(int rate)
+    {
+        TimeSpan frameBudget = LightingCadenceProbeRunner.ScheduledAt(1, rate);
+
+        TimeSpan coarseDelay = LightingCadenceProbeRunner.CoarseDelayFor(frameBudget);
+
+        Assert.Equal(TimeSpan.Zero, coarseDelay);
+    }
+
+    [Fact]
+    public void CoarseDelayFor_LeavesTwentyFiveMillisecondsBeforeThirtyHzDeadline()
+    {
+        TimeSpan frameBudget = LightingCadenceProbeRunner.ScheduledAt(1, 30);
+
+        TimeSpan coarseDelay = LightingCadenceProbeRunner.CoarseDelayFor(frameBudget);
+
+        Assert.Equal(TimeSpan.FromMilliseconds(25), frameBudget - coarseDelay);
+    }
+
     private sealed class ManualTimeProvider : TimeProvider
     {
         private long timestamp;

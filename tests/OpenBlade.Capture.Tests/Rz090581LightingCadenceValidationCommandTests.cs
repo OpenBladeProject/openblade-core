@@ -55,11 +55,16 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         JsonElement root = document.RootElement;
         Assert.True(root.GetProperty("transportQualified").GetBoolean());
         Assert.True(root.GetProperty("opticalValidationRequired").GetBoolean());
-        Assert.False(root.GetProperty("manualRecoveryRequired").GetBoolean());
+        Assert.False(root.GetProperty("lightingRecoveryRequired").GetBoolean());
+        Assert.True(root.GetProperty("cleanupRequired").GetBoolean());
         Assert.True(root.GetProperty("cleanupCompleted").GetBoolean());
+        Assert.False(root.GetProperty("cleanupPending").GetBoolean());
         Assert.Equal(
             "knownStaticGreenBaseline",
             root.GetProperty("restoredStateKind").GetString());
+        Assert.Equal(
+            "knownStaticGreenBaselineConfirmed",
+            root.GetProperty("restorationOutcome").GetString());
         Assert.False(root.GetProperty("unknownPreTestStateRestored").GetBoolean());
         Assert.Equal(3, root.GetProperty("stages").GetArrayLength());
         Assert.DoesNotContain("serial", json, StringComparison.OrdinalIgnoreCase);
@@ -115,9 +120,18 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         Assert.NotNull(json);
         using JsonDocument document = JsonDocument.Parse(json);
         Assert.True(document.RootElement
-            .GetProperty("manualRecoveryRequired").GetBoolean());
+            .GetProperty("lightingRecoveryRequired").GetBoolean());
+        Assert.Equal(
+            "indeterminateMatrixWrite",
+            document.RootElement.GetProperty("lightingRecoveryReason").GetString());
         Assert.False(document.RootElement
             .GetProperty("restorationAttempted").GetBoolean());
+        Assert.Equal(
+            JsonValueKind.Null,
+            document.RootElement.GetProperty("restoredStateKind").ValueKind);
+        Assert.Equal(
+            "skippedForUnprovenLightingState",
+            document.RootElement.GetProperty("restorationOutcome").GetString());
         Assert.Equal(1, port.PushedFrames);
     }
 
@@ -331,7 +345,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         Assert.True(document.RootElement
             .GetProperty("restorationAttempted").GetBoolean());
         Assert.False(document.RootElement
-            .GetProperty("manualRecoveryRequired").GetBoolean());
+            .GetProperty("lightingRecoveryRequired").GetBoolean());
     }
 
     [Fact]
@@ -339,9 +353,101 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
     {
         var port = new FakePort { CleanupCompletes = false };
         string? json = null;
+        var output = new StringWriter();
         Rz090581LightingCadenceValidationCommand command = Create(
             port,
             "YES\r\nYES\r\nYES\r\nYES\r\nYES\r\nYES\r\n",
+            (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
+            (path, content, _) =>
+            {
+                if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                {
+                    json = content;
+                }
+                return Task.CompletedTask;
+            },
+            output: output);
+
+        int exitCode = await command.RunAsync(
+            ValidArguments(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            Rz090581LightingCadenceValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        Assert.NotNull(json);
+        using JsonDocument document = JsonDocument.Parse(json);
+        Assert.True(document.RootElement.GetProperty("cleanupRequired").GetBoolean());
+        Assert.False(document.RootElement.GetProperty("cleanupCompleted").GetBoolean());
+        Assert.True(document.RootElement.GetProperty("cleanupPending").GetBoolean());
+        Assert.False(document.RootElement
+            .GetProperty("lightingRecoveryRequired").GetBoolean());
+        Assert.Equal(
+            "knownStaticGreenBaselineConfirmed",
+            document.RootElement.GetProperty("restorationOutcome").GetString());
+        Assert.Contains(
+            "cleanupPending",
+            document.RootElement.GetProperty("failure").GetString(),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Cleanup status is separate from the lighting restoration evidence",
+            output.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_WarnsAboutLightingRecoveryWhenArtifactWriteFails()
+    {
+        var port = new FakePort
+        {
+            PushFailure = new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate write."),
+        };
+        var output = new StringWriter();
+        Rz090581LightingCadenceValidationCommand command = Create(
+            port,
+            "YES\r\nYES\r\n",
+            async (rate, _, _, pushFrame, cancellationToken) =>
+            {
+                try
+                {
+                    await pushFrame(
+                        LightingCadenceProbeRunner.CreateFrame(0, TimeSpan.Zero),
+                        cancellationToken);
+                }
+                catch (BladeWriteException exception)
+                {
+                    return FailedStage(rate, exception.SubmissionState);
+                }
+                throw new InvalidOperationException("The injected write should fail.");
+            },
+            (_, _, _) => throw new IOException("Injected artifact failure."),
+            output: output);
+
+        int exitCode = await command.RunAsync(
+            ValidArguments(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            Rz090581LightingCadenceValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        string text = output.ToString();
+        Assert.Contains("Validation artifacts could not be written.", text);
+        Assert.Contains(
+            "Lighting recovery is required (indeterminateMatrixWrite)",
+            text,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotClaimRestoredStateWhenRestoreWriteFails()
+    {
+        var port = new FakePort { FailStaticWriteNumber = 5 };
+        string? json = null;
+        Rz090581LightingCadenceValidationCommand command = Create(
+            port,
+            "YES\r\nYES\r\nYES\r\nYES\r\nYES\r\n",
             (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
             (path, content, _) =>
             {
@@ -361,13 +467,17 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             exitCode);
         Assert.NotNull(json);
         using JsonDocument document = JsonDocument.Parse(json);
-        Assert.False(document.RootElement.GetProperty("cleanupCompleted").GetBoolean());
+        Assert.Equal(
+            JsonValueKind.Null,
+            document.RootElement.GetProperty("restoredStateKind").ValueKind);
+        Assert.Equal(
+            "knownStaticGreenBaselineUnconfirmed",
+            document.RootElement.GetProperty("restorationOutcome").GetString());
         Assert.True(document.RootElement
-            .GetProperty("manualRecoveryRequired").GetBoolean());
-        Assert.Contains(
-            "cleanupPending",
-            document.RootElement.GetProperty("failure").GetString(),
-            StringComparison.Ordinal);
+            .GetProperty("lightingRecoveryRequired").GetBoolean());
+        Assert.Equal(
+            "indeterminateRestoreWrite",
+            document.RootElement.GetProperty("lightingRecoveryReason").GetString());
     }
 
     [Fact]
@@ -423,7 +533,8 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             Func<AmbientLightingFrame, CancellationToken, Task>, CancellationToken,
             Task<LightingCadenceStageResult>> runStage,
         Func<string, string, CancellationToken, Task> writeArtifact,
-        Func<TimeSpan, CancellationToken, Task>? delay = null) =>
+        Func<TimeSpan, CancellationToken, Task>? delay = null,
+        TextWriter? output = null) =>
         new(
             _ => Task.FromResult(
                 new HidSessionResult<IProductionLightingPort>(port, null)),
@@ -435,7 +546,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             ExactIdentity,
             runStage,
             new StringReader(answers),
-            new StringWriter(),
+            output ?? new StringWriter(),
             BuildIdentity,
             () => DateTimeOffset.Parse("2026-08-15T12:00:00Z"),
             writeArtifact,
@@ -524,6 +635,10 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
 
         internal bool CleanupCompletes { get; init; } = true;
 
+        internal int? FailStaticWriteNumber { get; init; }
+
+        private int staticWrites;
+
         public Task<LightingSettings?> ReadStateAsync(
             CancellationToken cancellationToken) =>
             Task.FromResult<LightingSettings?>(null);
@@ -533,6 +648,13 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             CancellationToken cancellationToken)
         {
             Settings.Add(settings);
+            if (settings.Effect == LightingEffect.Static
+                && ++staticWrites == FailStaticWriteNumber)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "Injected restore write failure.");
+            }
             OwnershipState = settings.Effect switch
             {
                 LightingEffect.Static => LightingRendererOwnershipState.Static,
