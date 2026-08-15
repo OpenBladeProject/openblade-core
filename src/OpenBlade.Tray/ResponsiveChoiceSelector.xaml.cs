@@ -3,6 +3,7 @@ using System.Reflection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace OpenBlade.Tray;
 
@@ -86,6 +87,8 @@ public sealed partial class ResponsiveChoiceSelector
 
     private readonly List<object> projectedOptions = [];
     private XamlRoot? observedXamlRoot;
+    private FrameworkElement? responsiveHost;
+    private double measuredExpandedWidth;
     private bool synchronizingSelection;
     private bool expandedPresentationActive;
 
@@ -211,6 +214,7 @@ public sealed partial class ResponsiveChoiceSelector
     private void OnLoaded(object sender, RoutedEventArgs args)
     {
         ObserveXamlRoot();
+        ObserveResponsiveHost();
         ApplyStaticProperties();
         RebuildOptions();
     }
@@ -221,6 +225,12 @@ public sealed partial class ResponsiveChoiceSelector
         {
             observedXamlRoot.Changed -= OnXamlRootChanged;
             observedXamlRoot = null;
+        }
+
+        if (responsiveHost is not null)
+        {
+            responsiveHost.SizeChanged -= OnResponsiveHostSizeChanged;
+            responsiveHost = null;
         }
     }
 
@@ -246,6 +256,61 @@ public sealed partial class ResponsiveChoiceSelector
     private void OnXamlRootChanged(XamlRoot sender, XamlRootChangedEventArgs args) =>
         UpdatePresentationMode();
 
+    private void ObserveResponsiveHost()
+    {
+        FrameworkElement? host = FindResponsiveHost();
+        if (ReferenceEquals(responsiveHost, host))
+        {
+            return;
+        }
+
+        if (responsiveHost is not null)
+        {
+            responsiveHost.SizeChanged -= OnResponsiveHostSizeChanged;
+        }
+
+        responsiveHost = host;
+        if (responsiveHost is not null)
+        {
+            responsiveHost.SizeChanged += OnResponsiveHostSizeChanged;
+        }
+    }
+
+    private FrameworkElement? FindResponsiveHost()
+    {
+        DependencyObject current = this;
+        while (VisualTreeHelper.GetParent(current) is DependencyObject parent)
+        {
+            if (current is FrameworkElement element
+                && parent is Grid grid
+                && Grid.GetColumn(element) > 0)
+            {
+                return grid;
+            }
+
+            current = parent;
+        }
+
+        return null;
+    }
+
+    private void OnResponsiveHostSizeChanged(object sender, SizeChangedEventArgs args) =>
+        UpdatePresentationMode();
+
+    private void OnExpandedSelectorSizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        double width = args.NewSize.Width;
+        if (!double.IsFinite(width)
+            || width <= 0
+            || width <= measuredExpandedWidth + 0.5)
+        {
+            return;
+        }
+
+        measuredExpandedWidth = width;
+        UpdatePresentationMode();
+    }
+
     private void ApplyStaticProperties()
     {
         CompactSelector.DisplayMemberPath = DisplayMemberPath;
@@ -258,6 +323,7 @@ public sealed partial class ResponsiveChoiceSelector
     private void RebuildOptions()
     {
         object? selectedItem = SelectedItem;
+        measuredExpandedWidth = 0;
         synchronizingSelection = true;
         try
         {
@@ -383,15 +449,22 @@ public sealed partial class ResponsiveChoiceSelector
 
     private void UpdatePresentationMode()
     {
-        double width = XamlRoot?.Size.Width ?? 0;
+        double windowWidth = XamlRoot?.Size.Width ?? 0;
+        double availableWidth = responsiveHost is null
+            ? windowWidth
+            : responsiveHost.ActualWidth;
         int maximumItems = MaxExpandedItems < 0 ? 0 : MaxExpandedItems;
-        double minimumWidth = Math.Max(
-            Math.Max(0, ExpandedMinWindowWidth),
-            EstimateRequiredWindowWidth());
+        double minimumWindowWidth = Math.Max(0, ExpandedMinWindowWidth);
+        double expandedOptionsWidth = measuredExpandedWidth > 0
+            ? measuredExpandedWidth
+            : EstimateExpandedOptionsWidth();
+        double minimumHostWidth = expandedOptionsWidth
+            + Math.Max(0, ExpandedWidthAllowance);
         bool useExpanded = projectedOptions.Count is > 1
             && projectedOptions.Count <= maximumItems
             && SelectedItem is not null
-            && width >= minimumWidth;
+            && windowWidth >= minimumWindowWidth
+            && availableWidth >= minimumHostWidth;
         if (expandedPresentationActive == useExpanded)
         {
             return;
@@ -406,7 +479,7 @@ public sealed partial class ResponsiveChoiceSelector
             : Visibility.Visible;
     }
 
-    private double EstimateRequiredWindowWidth()
+    private double EstimateExpandedOptionsWidth()
     {
         double estimatedOptionsWidth = projectedOptions.Sum(option =>
             Math.Clamp(
@@ -416,7 +489,7 @@ public sealed partial class ResponsiveChoiceSelector
                 MaximumEstimatedItemWidthDip));
         estimatedOptionsWidth += Math.Max(0, projectedOptions.Count - 1)
             * EstimatedItemSpacingDip;
-        return estimatedOptionsWidth + Math.Max(0, ExpandedWidthAllowance);
+        return estimatedOptionsWidth;
     }
 
     private static bool OptionsEqual(object? left, object? right) =>

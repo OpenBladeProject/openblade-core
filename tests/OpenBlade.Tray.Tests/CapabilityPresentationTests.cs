@@ -700,6 +700,9 @@ public sealed class CapabilityPresentationTests
             "OnExpandedSelectionChanged",
             Attribute(expanded, "SelectionChanged"));
         Assert.Equal(
+            "OnExpandedSelectorSizeChanged",
+            Attribute(expanded, "SizeChanged"));
+        Assert.Equal(
             "OnCompactSelectionChanged",
             Attribute(compact, "SelectionChanged"));
         Assert.Equal("OnCompactDropDownOpened", Attribute(compact, "DropDownOpened"));

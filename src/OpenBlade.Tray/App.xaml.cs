@@ -437,6 +437,133 @@ public partial class App : Microsoft.UI.Xaml.Application
                     && ReferenceEquals(expanded.SelectedItem?.Tag, replacementOptions[2]),
                 "The expanded presentation did not retain selection.");
 
+            File.WriteAllText(smokeReportPath, "validate constrained responsive host");
+            ResponsiveChoiceSelectorSmokeOption[] powerModeOptions =
+            [
+                new("unchanged", "Leave unchanged"),
+                new("efficiency", "Best power efficiency"),
+                new("balanced", "Balanced"),
+                new("performance", "Best performance"),
+            ];
+            var layoutSelector = new ResponsiveChoiceSelector
+            {
+                DisplayMemberPath = nameof(ResponsiveChoiceSelectorSmokeOption.Label),
+                ItemsSource = powerModeOptions,
+                SelectedItem = powerModeOptions[0],
+                CompactMinWidth = 210,
+                ExpandedMinWindowWidth = 800,
+                ExpandedWidthAllowance = 260,
+                MaxExpandedItems = 4,
+            };
+            var supportingContent = new Microsoft.UI.Xaml.Controls.StackPanel
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            supportingContent.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+            {
+                Text = "Windows power mode",
+            });
+            supportingContent.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+            {
+                Text = "Keeps the current Windows setting.",
+                TextWrapping = TextWrapping.Wrap,
+            });
+            var layoutHost = new Microsoft.UI.Xaml.Controls.Grid
+            {
+                Width = 1400,
+                ColumnSpacing = 20,
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
+            };
+            layoutHost.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star),
+            });
+            layoutHost.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition
+            {
+                Width = GridLength.Auto,
+            });
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(layoutSelector, 1);
+            layoutHost.Children.Add(supportingContent);
+            layoutHost.Children.Add(layoutSelector);
+
+            var layoutLoaded = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            layoutSelector.Loaded += (_, _) => layoutLoaded.TrySetResult(true);
+            var layoutWindow = new Microsoft.UI.Xaml.Window
+            {
+                Content = layoutHost,
+            };
+            layoutWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1800, 600));
+            layoutWindow.Activate();
+            await layoutLoaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            double rasterizationScale = layoutSelector.XamlRoot?.RasterizationScale ?? 1;
+            layoutWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(
+                (int)Math.Ceiling(1400 * rasterizationScale),
+                (int)Math.Ceiling(600 * rasterizationScale)));
+            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
+            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
+
+            var layoutCompact = layoutSelector.FindName("CompactSelector")
+                as Microsoft.UI.Xaml.Controls.ComboBox
+                ?? throw new InvalidOperationException("Layout compact selector was not created.");
+            var layoutExpanded = layoutSelector.FindName("ExpandedSelector")
+                as Microsoft.UI.Xaml.Controls.SelectorBar
+                ?? throw new InvalidOperationException("Layout expanded selector was not created.");
+            RequireResponsiveSelector(
+                layoutCompact.Visibility == Visibility.Collapsed
+                    && layoutExpanded.Visibility == Visibility.Visible,
+                "A wide settings row did not use the expanded presentation.");
+            double expandedWidth = layoutExpanded.ActualWidth;
+            RequireResponsiveSelector(
+                double.IsFinite(expandedWidth) && expandedWidth > 0,
+                "The expanded presentation did not report a usable width.");
+
+            const double minimumSupportingWidth = 240;
+            double constrainedHostWidth = expandedWidth
+                + layoutHost.ColumnSpacing
+                + minimumSupportingWidth
+                - 1;
+            layoutHost.Width = constrainedHostWidth;
+            layoutHost.UpdateLayout();
+            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
+            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
+            RequireResponsiveSelector(
+                layoutCompact.Visibility == Visibility.Visible
+                    && layoutExpanded.Visibility == Visibility.Collapsed,
+                $"A constrained settings row did not use the compact presentation: "
+                + $"host={layoutHost.ActualWidth}, supporting={supportingContent.ActualWidth}, "
+                + $"expanded={layoutExpanded.ActualWidth}, measured={expandedWidth}.");
+            RequireResponsiveSelector(
+                supportingContent.ActualWidth >= minimumSupportingWidth,
+                "The compact presentation did not preserve supporting content width.");
+
+            File.WriteAllText(smokeReportPath, "restore expanded responsive host");
+            layoutHost.Width = expandedWidth
+                + layoutHost.ColumnSpacing
+                + minimumSupportingWidth
+                + 2;
+            layoutHost.UpdateLayout();
+            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
+            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
+            RequireResponsiveSelector(
+                layoutCompact.Visibility == Visibility.Collapsed
+                    && layoutExpanded.Visibility == Visibility.Visible
+                    && supportingContent.ActualWidth >= minimumSupportingWidth,
+                $"A widened settings row did not safely restore the expanded presentation: "
+                + $"host={layoutHost.ActualWidth}, supporting={supportingContent.ActualWidth}, "
+                + $"expanded={layoutExpanded.ActualWidth}, measured={expandedWidth}.");
+
+            layoutHost.Width = constrainedHostWidth;
+            layoutHost.UpdateLayout();
+            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
+            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
+            RequireResponsiveSelector(
+                layoutCompact.Visibility == Visibility.Visible
+                    && layoutExpanded.Visibility == Visibility.Collapsed
+                    && ReferenceEquals(layoutCompact.SelectedItem, powerModeOptions[0]),
+                "A second constrained layout did not preserve compact selection.");
+
+            layoutWindow.Close();
             smokeWindow.Close();
             File.WriteAllText(smokeReportPath, "completed");
             Environment.Exit(0);
