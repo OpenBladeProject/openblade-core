@@ -366,9 +366,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         try
         {
             PowerTransitionLightingReadResult result =
-                await ReadStateCoreAsync(
-                    confirmOff: false,
-                    cancellationToken).ConfigureAwait(false);
+                await ReadStateCoreAsync(cancellationToken).ConfigureAwait(false);
             return result.State;
         }
         finally
@@ -383,9 +381,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await ReadStateCoreAsync(
-                confirmOff: true,
-                cancellationToken).ConfigureAwait(false);
+            return await ReadStateCoreAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -394,7 +390,6 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     }
 
     private async Task<PowerTransitionLightingReadResult> ReadStateCoreAsync(
-        bool confirmOff,
         CancellationToken cancellationToken)
     {
         byte raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
@@ -403,9 +398,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             return new(null, OffConfirmationUnavailable: false);
         }
 
-        if (confirmOff
-            && PowerTransitionLightingObservation.RequiresOffConfirmation(
-                OwnershipState))
+        if (PowerTransitionLightingObservation.RequiresOffConfirmation(OwnershipState))
         {
             await Task.Delay(
                 PowerTransitionLightingObservation.OffConfirmationDelay,
@@ -418,9 +411,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             }
         }
 
-        // A transition read reaches this destructive path only after two
-        // adjacent zero samples; ordinary observations retain one-sample
-        // behavior.
+        // While OpenBlade owns the renderer, only the second zero sample reaches
+        // this destructive decision. Keeping the confirmation at the port
+        // boundary also protects ordinary observations that overlap a power
+        // transition before its lifecycle event is processed.
         await StopStreamCoreAsync().ConfigureAwait(false);
         ClearOwnedEffectCore(LightingSettingsFactory.Off());
         return new(LightingSettingsFactory.Off(), OffConfirmationUnavailable: false);

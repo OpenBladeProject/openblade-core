@@ -121,9 +121,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         try
         {
             PowerTransitionLightingReadResult result =
-                await ReadStateCoreAsync(
-                    confirmOff: false,
-                    cancellationToken).ConfigureAwait(false);
+                await ReadStateCoreAsync(cancellationToken).ConfigureAwait(false);
             return result.State;
         }
         finally
@@ -138,9 +136,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await ReadStateCoreAsync(
-                confirmOff: true,
-                cancellationToken).ConfigureAwait(false);
+            return await ReadStateCoreAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -149,7 +145,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     }
 
     private async Task<PowerTransitionLightingReadResult> ReadStateCoreAsync(
-        bool confirmOff,
         CancellationToken cancellationToken)
     {
         byte raw = await QueryBrightnessRawCoreAsync(cancellationToken)
@@ -162,9 +157,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             return new(null, OffConfirmationUnavailable: false);
         }
 
-        if (confirmOff
-            && PowerTransitionLightingObservation.RequiresOffConfirmation(
-                OwnershipState))
+        if (PowerTransitionLightingObservation.RequiresOffConfirmation(OwnershipState))
         {
             // A failed or canceled confirmation must not leave the transient
             // zero available to brightness-step code as a trusted baseline.
@@ -181,9 +174,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             }
         }
 
-        // During a power transition, only the second zero sample reaches this
-        // destructive decision. Unrelated device reads cannot open a new
-        // unguarded window between confirmation and renderer teardown.
+        // While OpenBlade owns the renderer, only the second zero sample reaches
+        // this destructive decision. Keeping the confirmation at the port
+        // boundary also protects ordinary observations that overlap a power
+        // transition before its lifecycle event is processed.
         await StopStreamCoreAsync().ConfigureAwait(false);
         lock (effectSync)
         {
