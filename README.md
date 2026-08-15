@@ -185,8 +185,9 @@ the separate capture and documentation repositories.
 ## Keyboard lighting files
 
 Users can write and share data-only `.oblight` presets for effects already
-supported by their laptop. The versioned format, schema, compatibility rules,
-and example are in
+supported by their laptop. The same importer accepts Razer `.chroma` version 1
+keyboard files when they reduce exactly to uniform Off or Static lighting. The
+versioned format, schema, compatibility rules, and example are in
 [`docs/keyboard-lighting-file-format.md`](docs/keyboard-lighting-file-format.md).
 
 ## Contributing

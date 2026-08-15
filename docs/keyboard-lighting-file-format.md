@@ -81,21 +81,35 @@ Lighting-page edit. The confirmation dialog states that it will apply, and the
 result remains an unsaved change for the active power profile until the user
 saves or discards it. The file does not change lid-logo lighting.
 
-## Why this is not raw `.chroma`
+## Razer `.chroma` compatibility
 
-Razer's [MIT-licensed Chroma editor](https://github.com/razerofficial/CChromaEditor/blob/master/LICENSE)
-and its [binary `.chroma` serializer](https://github.com/razerofficial/CChromaEditor/blob/master/CChromaEditorLibrary/Animation2D.cpp)
-are the main compatibility reference. They provide useful fixed-grid animation
-frames and per-frame durations, and Razer documents sequential client
-rendering. However, the binary container has no magic signature, embedded grid
-dimensions, layout identifier, metadata envelope, or schema. Its generic
-keyboard canvas also does not establish a reviewed mapping to either OpenBlade
-model's exact protocol order.
+Razer's [MIT-licensed Chroma editor](https://github.com/razerofficial/CChromaEditor/blob/6ce8b24db8e4e00ddafe027de7589b2a0b4dc618/LICENSE)
+and its [binary `.chroma` serializer](https://github.com/razerofficial/CChromaEditor/blob/6ce8b24db8e4e00ddafe027de7589b2a0b4dc618/CChromaEditorLibrary/Animation2D.cpp#L370-L461)
+and [matching reader](https://github.com/razerofficial/CChromaEditor/blob/6ce8b24db8e4e00ddafe027de7589b2a0b4dc618/CChromaEditorLibrary/ChromaSDKPlugin.cpp#L1142-L1356)
+are the main compatibility references. They provide useful fixed-grid animation
+frames and per-frame durations, and Razer documents sequential client rendering.
+However, the binary container has no magic signature, embedded grid dimensions,
+layout identifier, metadata envelope, or schema. Its generic keyboard canvas
+also does not establish a reviewed mapping to either OpenBlade model's exact
+protocol order.
 
-OpenBlade therefore uses strict JSON as its canonical format. A later schema can
-add bounded frames using Chroma-compatible timing semantics. Direct `.chroma`
-import requires a separately reviewed mapping for each exact model; no layout is
-silently copied between RZ09-0581 and RZ09-0528.
+The importer accepts official binary version 1 files with device type `2D` and
+device `Keyboard` (6×22) or `KeyboardExtended` (8×24). It verifies the complete
+little-endian structure, frame count, finite non-negative durations, Win32
+`COLORREF` values, exact length, and a 5 MiB size limit. It never loads the
+Chroma SDK or Synapse.
+
+OpenBlade imports a `.chroma` file only when every cell in every frame has the
+same color. All-black files become `off`; any other color becomes `static` at
+100% brightness. This conversion is independent of key layout and preserves
+the result exactly. Per-key colors or colors that change between frames fail
+with an explicit unsupported-animation error rather than being cropped,
+averaged, or silently remapped.
+
+Strict JSON remains the canonical format. A later schema can add bounded frames
+using Chroma-compatible timing semantics after an exact-model mapping and
+sequence renderer are admitted. No layout is silently copied between
+RZ09-0581 and RZ09-0528.
 
 Other formats informed the design but are not safe drop-in standards:
 

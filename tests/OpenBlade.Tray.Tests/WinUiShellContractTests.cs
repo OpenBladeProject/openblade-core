@@ -519,6 +519,7 @@ public sealed class WinUiShellContractTests
             lightingPage,
             StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".oblight\")", window, StringComparison.Ordinal);
+        Assert.Contains("FileTypeFilter.Add(\".chroma\")", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".json\")", window, StringComparison.Ordinal);
         Assert.Contains("ReadBoundedKeyboardLightingFileAsync", window, StringComparison.Ordinal);
         Assert.Contains("PrimaryButtonText = \"Import and apply\"", window, StringComparison.Ordinal);

@@ -4654,6 +4654,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 Title = "Import OpenBlade keyboard lighting",
             };
             picker.FileTypeFilter.Add(".oblight");
+            picker.FileTypeFilter.Add(".chroma");
             picker.FileTypeFilter.Add(".json");
 
             PickFileResult? result = await picker.PickSingleFileAsync();
@@ -4662,8 +4663,21 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 return;
             }
 
-            KeyboardLightingPreset preset = KeyboardLightingFileSerializer.Deserialize(
-                await ReadBoundedKeyboardLightingFileAsync(result.Path));
+            bool isChroma = string.Equals(
+                Path.GetExtension(result.Path),
+                ".chroma",
+                StringComparison.OrdinalIgnoreCase);
+            int maximumFileSize = isChroma
+                ? RazerChromaFileAdapter.MaximumFileSizeBytes
+                : KeyboardLightingFileSerializer.MaximumFileSizeBytes;
+            byte[] content = await ReadBoundedKeyboardLightingFileAsync(
+                result.Path,
+                maximumFileSize);
+            KeyboardLightingPreset preset = isChroma
+                ? RazerChromaFileAdapter.Deserialize(
+                    content,
+                    Path.GetFileNameWithoutExtension(result.Path))
+                : KeyboardLightingFileSerializer.Deserialize(content);
             if (!ViewModel.CanImportKeyboardLighting(preset))
             {
                 throw new InvalidDataException(
@@ -4704,9 +4718,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private static async Task<byte[]> ReadBoundedKeyboardLightingFileAsync(string path)
+    private static async Task<byte[]> ReadBoundedKeyboardLightingFileAsync(
+        string path,
+        int maximum)
     {
-        int maximum = KeyboardLightingFileSerializer.MaximumFileSizeBytes;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximum);
         await using var stream = new FileStream(
             path,
             FileMode.Open,
@@ -4717,7 +4733,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (stream.Length > maximum)
         {
             throw new InvalidDataException(
-                $"Keyboard lighting files cannot exceed {maximum / 1024} KiB.");
+                $"The selected lighting file cannot exceed {FormatFileSize(maximum)}.");
         }
 
         byte[] buffer = new byte[maximum + 1];
@@ -4735,10 +4751,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (length > maximum)
         {
             throw new InvalidDataException(
-                $"Keyboard lighting files cannot exceed {maximum / 1024} KiB.");
+                $"The selected lighting file cannot exceed {FormatFileSize(maximum)}.");
         }
         return buffer.AsSpan(0, length).ToArray();
     }
+
+    private static string FormatFileSize(int bytes) => bytes >= 1024 * 1024
+        ? $"{bytes / (1024 * 1024)} MiB"
+        : $"{bytes / 1024} KiB";
 
     private void OnRootSizeChanged(object sender, SizeChangedEventArgs args)
     {
