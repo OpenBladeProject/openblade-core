@@ -417,7 +417,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public void MainWindow_FanEditorSubcardsUseNeutralHoverHighlight()
+    public void MainWindow_FanEditorSubcardsUseHoverFreeBackground()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
         string[] visibilityBindings =
@@ -436,16 +436,29 @@ public sealed class CapabilityPresentationTests
         Assert.All(fanEditorRows, row =>
         {
             Assert.Equal(
-                "{StaticResource SettingsLastNeutralSubcardStyle}",
+                "{StaticResource SettingsLastEditorSubcardStyle}",
                 Attribute(row, "Style"));
         });
 
-        XElement lastNeutralStyle = Assert.Single(document.Descendants(), element =>
-            Attribute(element, "Key") == "SettingsLastNeutralSubcardStyle");
+        XElement editorStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsEditorSubcardStyle");
         Assert.Equal(
-            "{StaticResource SettingsNeutralSubcardStyle}",
-            Attribute(lastNeutralStyle, "BasedOn"));
-        Assert.Contains(lastNeutralStyle.Elements(), setter =>
+            "{StaticResource SettingsSubcardBaseStyle}",
+            Attribute(editorStyle, "BasedOn"));
+        Assert.Contains(editorStyle.Elements(), setter =>
+            Attribute(setter, "Property") == "Background"
+            && Attribute(setter, "Value") == "Transparent");
+        Assert.DoesNotContain(editorStyle.Elements(), setter =>
+            Attribute(setter, "Property")?.StartsWith(
+                "local:SettingsCardPointerVisual.",
+                StringComparison.Ordinal) is true);
+
+        XElement lastEditorStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsLastEditorSubcardStyle");
+        Assert.Equal(
+            "{StaticResource SettingsEditorSubcardStyle}",
+            Attribute(lastEditorStyle, "BasedOn"));
+        Assert.Contains(lastEditorStyle.Elements(), setter =>
             Attribute(setter, "Property") == "CornerRadius"
             && Attribute(setter, "Value") == "0,0,8,8");
     }

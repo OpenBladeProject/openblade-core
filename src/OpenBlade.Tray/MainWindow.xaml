@@ -87,6 +87,16 @@
                    BasedOn="{StaticResource SettingsNeutralSubcardStyle}">
                 <Setter Property="CornerRadius" Value="0,0,8,8" />
             </Style>
+            <Style x:Key="SettingsEditorSubcardStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SettingsSubcardBaseStyle}">
+                <Setter Property="Background" Value="Transparent" />
+            </Style>
+            <Style x:Key="SettingsLastEditorSubcardStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SettingsEditorSubcardStyle}">
+                <Setter Property="CornerRadius" Value="0,0,8,8" />
+            </Style>
             <Style x:Key="InlineCardSliderStyle"
                    TargetType="Slider"
                    BasedOn="{StaticResource DefaultSliderStyle}">
@@ -829,7 +839,7 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastNeutralSubcardStyle}"
+                            <Border Style="{StaticResource SettingsLastEditorSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsFixedFanSpeedVisible}">
                                 <Grid ColumnSpacing="20">
@@ -869,7 +879,7 @@
                                     </Grid>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastNeutralSubcardStyle}"
+                            <Border Style="{StaticResource SettingsLastEditorSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsManualFanCurveVisible}">
                                 <StackPanel Spacing="12">

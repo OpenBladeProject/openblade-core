@@ -663,7 +663,7 @@ public sealed class WinUiShellContractTests
             "Text=\"Shown on Dashboard\"",
             StringComparison.Ordinal);
         int previousSubcard = xaml.LastIndexOf(
-            "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\"",
+            "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\"",
             dashboardSelector,
             StringComparison.Ordinal);
         int previousRow = xaml.LastIndexOf(
@@ -1023,7 +1023,8 @@ public sealed class WinUiShellContractTests
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
         Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
-        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
+        Assert.Equal(1, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
+        Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Key=\"SettingsLastSubcardStyle\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);

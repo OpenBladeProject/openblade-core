@@ -42,9 +42,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Stopped the Fixed speed and Manual fan curve detail cards from appearing
-  highlighted while idle, and split shared nested-card styling into explicit
-  neutral and emphasized variants so future editors cannot inherit the
-  always-on highlight by default.
+  highlighted while idle or when editing, and split shared nested-card styling
+  into explicit hover-free editor, neutral hover, and emphasized variants so
+  future editors cannot inherit an unintended full-card highlight.
 - Made the main window and tray dashboard available before the initial display
   query finishes, while coalescing display refreshes so a slow Session Agent
   response cannot queue redundant follow-up queries. Profile capture still waits
