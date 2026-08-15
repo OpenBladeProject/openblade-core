@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionFortyTwoAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionFortyThreeAndRetainExactSizeLimit()
     {
-        Assert.Equal(42, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(43, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -31,6 +31,7 @@ public sealed class ServiceMessageContractTests
             (typeof(SetFanOverrideRequest), "setFanOverride"),
             (typeof(SetLightingOverrideRequest), "setLightingOverride"),
             (typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness"),
+            (typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage"),
             (typeof(SetKeyboardLightingControlModeRequest), "setKeyboardLightingControlMode"),
             (typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy"),
             (typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride"),
@@ -66,6 +67,7 @@ public sealed class ServiceMessageContractTests
             "AlwaysOverrideExternalLightingChanges", "KeyboardDriverModeActive",
             "PerformanceShortcutPreview", "BatteryHealth", "KeyboardLightingControlMode",
             "ControlAccess", "AllowUntestedFirmware", "FirmwareCompatibility",
+            "DisplayBrightnessHidAvailability",
         ];
 
         Assert.Equal(
@@ -87,6 +89,7 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(SessionControlAccess), typeof(ServiceStatusSnapshot).GetProperty("ControlAccess")!.PropertyType);
         Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("AllowUntestedFirmware")!.PropertyType);
         Assert.Equal(typeof(FirmwareCompatibilityStatus), typeof(ServiceStatusSnapshot).GetProperty("FirmwareCompatibility")!.PropertyType);
+        Assert.Equal(typeof(DisplayBrightnessHidAvailability), typeof(ServiceStatusSnapshot).GetProperty("DisplayBrightnessHidAvailability")!.PropertyType);
         Assert.Equal(typeof(BatteryPolicy), typeof(ServiceStatusSnapshot).GetProperty("BatteryPolicyOverride")!.PropertyType);
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("BatteryProtectionOverride")!.PropertyType);
     }

@@ -157,6 +157,11 @@ public sealed class ControlRequestHandler
                     step.Direction,
                     step.Lifetime,
                     cancellationToken)),
+            SetDisplayBrightnessHidUsageRequest set => Result(
+                request.RequestId,
+                await runtime.SetDisplayBrightnessHidUsageAsync(
+                    set.Usage,
+                    cancellationToken)),
             SetKeyboardLightingControlModeRequest set => Result(
                 request.RequestId,
                 await runtime.SetKeyboardLightingControlModeAsync(

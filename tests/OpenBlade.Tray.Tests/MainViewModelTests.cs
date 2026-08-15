@@ -5957,6 +5957,24 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AboutDisplayBrightnessDriverStatus_DistinguishesUnknownInspection()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            DisplayBrightnessHidAvailability =
+                DisplayBrightnessHidAvailability.Unknown,
+        });
+
+        await WaitUntilAsync(() =>
+            viewModel.AboutDisplayBrightnessDriverStatus == "Unknown");
+
+        Assert.Equal("Unknown", viewModel.AboutDisplayBrightnessDriverStatus);
+    }
+
+    [Fact]
     public async Task ControlAccessStatus_DistinguishesEveryFailClosedState()
     {
         var client = new FakeServiceClient();
@@ -5974,11 +5992,16 @@ public sealed class MainViewModelTests
             viewModel.AboutUiVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal("Unavailable", viewModel.AboutDisplayBrightnessDriverStatus);
         Assert.Equal("Unavailable", viewModel.TroubleshootingUsbDeviceStatus);
         Assert.False(viewModel.HasTroubleshootingRecentError);
         Assert.Empty(viewModel.TroubleshootingRecentErrorStatus);
 
-        client.Publish(CreateStatus(verified: false, blocked: true));
+        client.Publish(CreateStatus(verified: false, blocked: true) with
+        {
+            DisplayBrightnessHidAvailability =
+                DisplayBrightnessHidAvailability.Unavailable,
+        });
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Laptop not found"
             && viewModel.PerformanceSourceLabel == "Laptop not found");
@@ -5988,6 +6011,9 @@ public sealed class MainViewModelTests
         Assert.Equal("Running", viewModel.TroubleshootingServiceStatus);
         Assert.Equal("0.1.0-test", viewModel.AboutServiceVersionStatus);
         Assert.Equal("Not detected", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal(
+            "Not available · OpenBlade OSD",
+            viewModel.AboutDisplayBrightnessDriverStatus);
         Assert.Equal("Laptop not found", viewModel.TroubleshootingControlsStatus);
         Assert.False(viewModel.HasAttention);
         Assert.Equal("Laptop not found", viewModel.PerformanceSourceLabel);
@@ -6037,6 +6063,8 @@ public sealed class MainViewModelTests
                 "98.3.5c.40.3d",
                 RazerBladeModelCatalog.OpenBladeTargetModelNumber),
             KeyboardDriverModeActive = true,
+            DisplayBrightnessHidAvailability =
+                DisplayBrightnessHidAvailability.Available,
         });
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Ready"
@@ -6053,6 +6081,13 @@ public sealed class MainViewModelTests
         Assert.Equal("1.04", viewModel.AboutEcVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutMcuVersionStatus);
         Assert.Equal("98.3.5c.40.3d", viewModel.AboutVbiosVersionStatus);
+        Assert.Equal(
+            "Available · Windows OSD",
+            viewModel.AboutDisplayBrightnessDriverStatus);
+        Assert.Contains(
+            "OpenBlade uses its own flyout",
+            viewModel.AboutDisplayBrightnessDriverToolTip,
+            StringComparison.Ordinal);
 
         var driverStatusChanges = new List<string?>();
         viewModel.PropertyChanged += (_, args) =>

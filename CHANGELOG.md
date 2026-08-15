@@ -7,6 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added Windows-native display-brightness handling and flyout presentation for
+  the reconstructed function row, using the exact admitted Razer virtual
+  Consumer Control path already present on the RZ09-0581. The existing WMI
+  brightness path and OpenBlade flyout remain available when that path is
+  unavailable. About shows which brightness path is currently available.
 - Added an optional Windows power mode to each AC, USB-C, and battery profile.
   The current-user Session Agent applies Best power efficiency, Balanced, or
   Best performance when the active power profile changes.
@@ -40,6 +45,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Made the main window and tray dashboard available before the initial display
+  query finishes, while coalescing display refreshes so a slow Session Agent
+  response cannot queue redundant follow-up queries. Profile capture still waits
+  for a display read that began after the save request.
 - Limited the tray-dashboard status row to three configurable readings so its
   icons and labels remain distinct instead of clipping in the fixed-width popup.
 - Reduced tray-dashboard background work by sharing one visible-surface

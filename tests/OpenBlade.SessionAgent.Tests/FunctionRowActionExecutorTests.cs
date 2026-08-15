@@ -19,7 +19,7 @@ public sealed class FunctionRowActionExecutorTests
         var input = new RecordingInputSender();
         var executor = CreateExecutor(input: input);
 
-        await executor.ExecuteAsync(action, CancellationToken.None);
+        await executor.ExecuteAsync(Input(action), CancellationToken.None);
 
         Assert.Equal([expected], input.MediaActions);
     }
@@ -34,7 +34,7 @@ public sealed class FunctionRowActionExecutorTests
         var input = new RecordingInputSender();
         var executor = CreateExecutor(input: input);
 
-        await executor.ExecuteAsync(action, CancellationToken.None);
+        await executor.ExecuteAsync(Input(action), CancellationToken.None);
 
         Assert.Equal([expected], input.Shortcuts);
     }
@@ -50,7 +50,7 @@ public sealed class FunctionRowActionExecutorTests
         var osd = new RecordingDisplayBrightnessOsd();
         var executor = CreateExecutor(display: display, osd: osd);
 
-        await executor.ExecuteAsync(action, CancellationToken.None);
+        await executor.ExecuteAsync(Input(action), CancellationToken.None);
 
         Assert.Equal([expectedDirection], display.Directions);
         Assert.Equal([display.NextBrightness!.Value], osd.Values);
@@ -67,10 +67,177 @@ public sealed class FunctionRowActionExecutorTests
         var executor = CreateExecutor(display: display, osd: osd);
 
         await executor.ExecuteAsync(
-            FunctionRowAction.DisplayBrightnessUp,
+            Input(FunctionRowAction.DisplayBrightnessUp),
             CancellationToken.None);
 
         Assert.Empty(osd.Values);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessDisplayedAvailability_DoesNotSkipLiveFallbackDecision()
+    {
+        var client = new RecordingServiceClient(
+            Status(LightingSettingsFactory.Off()) with
+            {
+                DisplayBrightnessHidAvailability =
+                    DisplayBrightnessHidAvailability.Available,
+            })
+        {
+            DisplayBrightnessHidResult = new(
+                ControlOperationStatus.Blocked,
+                "Native brightness input is unavailable."),
+        };
+        var display = new RecordingDisplayBrightnessController();
+        var osd = new RecordingDisplayBrightnessOsd();
+        var executor = CreateExecutor(client, display: display, osd: osd);
+
+        await executor.ExecuteAsync(
+            Input(FunctionRowAction.DisplayBrightnessUp),
+            CancellationToken.None);
+
+        Assert.Equal([1], display.Directions);
+        Assert.Equal([display.NextBrightness!.Value], osd.Values);
+        Assert.Equal(0, client.GetStatusCalls);
+    }
+
+    [Theory]
+    [InlineData(FunctionRowAction.DisplayBrightnessDown, DisplayBrightnessHidUsage.Decrement)]
+    [InlineData(FunctionRowAction.DisplayBrightnessUp, DisplayBrightnessHidUsage.Increment)]
+    public async Task DisplayBrightnessNative_RefreshesWatchdogAndReliesOnWindowsRepeat(
+        FunctionRowAction action,
+        DisplayBrightnessHidUsage expectedUsage)
+    {
+        var client = new RecordingServiceClient(Status(LightingSettingsFactory.Off()))
+        {
+            DisplayBrightnessHidResult = new(ControlOperationStatus.Applied, "Applied."),
+        };
+        var display = new RecordingDisplayBrightnessController();
+        var osd = new RecordingDisplayBrightnessOsd();
+        var executor = CreateExecutor(client, display: display, osd: osd);
+
+        await executor.ExecuteAsync(Input(action, scanCode: 0x42), CancellationToken.None);
+        await executor.ExecuteAsync(
+            Input(action, FunctionRowInputPhase.Repeat, 0x42),
+            CancellationToken.None);
+        await executor.ExecuteAsync(
+            Input(action, FunctionRowInputPhase.Up, 0x42),
+            CancellationToken.None);
+
+        Assert.Equal(
+            [expectedUsage, expectedUsage, DisplayBrightnessHidUsage.Released],
+            client.DisplayBrightnessHidUsages);
+        Assert.Empty(display.Directions);
+        Assert.Empty(osd.Values);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessIndeterminatePress_NeutralizesWithoutFallback()
+    {
+        var client = new RecordingServiceClient(Status(LightingSettingsFactory.Off()));
+        client.DisplayBrightnessHidResults.Enqueue(
+            new(ControlOperationStatus.Failed, "Press outcome is unknown."));
+        client.DisplayBrightnessHidResults.Enqueue(
+            new(ControlOperationStatus.Applied, "Released."));
+        var display = new RecordingDisplayBrightnessController();
+        var executor = CreateExecutor(client, display: display);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => executor.ExecuteAsync(
+            Input(FunctionRowAction.DisplayBrightnessUp, scanCode: 0x43),
+            CancellationToken.None));
+
+        Assert.Equal(
+            [DisplayBrightnessHidUsage.Increment, DisplayBrightnessHidUsage.Released],
+            client.DisplayBrightnessHidUsages);
+        Assert.Empty(display.Directions);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessFailedRelease_IsRetriedByReset()
+    {
+        var client = new RecordingServiceClient(Status(LightingSettingsFactory.Off()));
+        client.DisplayBrightnessHidResults.Enqueue(
+            new(ControlOperationStatus.Applied, "Pressed."));
+        client.DisplayBrightnessHidResults.Enqueue(
+            new(ControlOperationStatus.Failed, "Release failed."));
+        client.DisplayBrightnessHidResults.Enqueue(
+            new(ControlOperationStatus.Applied, "Released."));
+        var executor = CreateExecutor(client);
+
+        await executor.ExecuteAsync(
+            Input(FunctionRowAction.DisplayBrightnessUp, scanCode: 0x43),
+            CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => executor.ExecuteAsync(
+            Input(
+                FunctionRowAction.DisplayBrightnessUp,
+                FunctionRowInputPhase.Up,
+                0x43),
+            CancellationToken.None));
+        await executor.ResetAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [
+                DisplayBrightnessHidUsage.Increment,
+                DisplayBrightnessHidUsage.Released,
+                DisplayBrightnessHidUsage.Released,
+            ],
+            client.DisplayBrightnessHidUsages);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessFailedNativeRepeat_IsRetriedByReset()
+    {
+        var client = new RecordingServiceClient(Status(LightingSettingsFactory.Off()));
+        client.DisplayBrightnessHidResults.Enqueue(
+            new(ControlOperationStatus.Applied, "Pressed."));
+        client.DisplayBrightnessHidResults.Enqueue(
+            new(ControlOperationStatus.Failed, "Refresh failed."));
+        client.DisplayBrightnessHidResults.Enqueue(
+            new(ControlOperationStatus.Applied, "Released."));
+        var executor = CreateExecutor(client);
+
+        await executor.ExecuteAsync(
+            Input(FunctionRowAction.DisplayBrightnessUp, scanCode: 0x43),
+            CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => executor.ExecuteAsync(
+            Input(
+                FunctionRowAction.DisplayBrightnessUp,
+                FunctionRowInputPhase.Repeat,
+                0x43),
+            CancellationToken.None));
+        await executor.ResetAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [
+                DisplayBrightnessHidUsage.Increment,
+                DisplayBrightnessHidUsage.Increment,
+                DisplayBrightnessHidUsage.Released,
+            ],
+            client.DisplayBrightnessHidUsages);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessSecondNativeKey_ReleasesFirstBeforePressing()
+    {
+        var client = new RecordingServiceClient(Status(LightingSettingsFactory.Off()))
+        {
+            DisplayBrightnessHidResult = new(ControlOperationStatus.Applied, "Applied."),
+        };
+        var executor = CreateExecutor(client);
+
+        await executor.ExecuteAsync(
+            Input(FunctionRowAction.DisplayBrightnessUp, scanCode: 0x43),
+            CancellationToken.None);
+        await executor.ExecuteAsync(
+            Input(FunctionRowAction.DisplayBrightnessDown, scanCode: 0x42),
+            CancellationToken.None);
+
+        Assert.Equal(
+            [
+                DisplayBrightnessHidUsage.Increment,
+                DisplayBrightnessHidUsage.Released,
+                DisplayBrightnessHidUsage.Decrement,
+            ],
+            client.DisplayBrightnessHidUsages);
     }
 
     [Theory]
@@ -88,7 +255,7 @@ public sealed class FunctionRowActionExecutorTests
             Status(LightingSettingsFactory.SpectrumCycling(50)));
         var executor = CreateExecutor(client: client);
 
-        await executor.ExecuteAsync(action, CancellationToken.None);
+        await executor.ExecuteAsync(Input(action), CancellationToken.None);
 
         Assert.Equal(
             [(expectedDirection, OverrideLifetime.UntilPowerSourceChange)],
@@ -113,7 +280,7 @@ public sealed class FunctionRowActionExecutorTests
 
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => executor.ExecuteAsync(
-                FunctionRowAction.KeyboardBrightnessUp,
+                Input(FunctionRowAction.KeyboardBrightnessUp),
                 CancellationToken.None));
 
         Assert.Equal(
@@ -258,6 +425,11 @@ public sealed class FunctionRowActionExecutorTests
             display ?? new RecordingDisplayBrightnessController(),
             osd ?? new RecordingDisplayBrightnessOsd());
 
+    private static FunctionRowInputEvent Input(
+        FunctionRowAction action,
+        FunctionRowInputPhase phase = FunctionRowInputPhase.Down,
+        uint scanCode = 0x3B) => new(scanCode, action, phase);
+
     private static ServiceStatusSnapshot Status(
         LightingSettings desired,
         LightingSettings? profileLighting = null)
@@ -356,6 +528,10 @@ public sealed class FunctionRowActionExecutorTests
         { get; } = [];
         public ControlOperationResult LightingResult { get; set; } =
             new(ControlOperationStatus.Applied, "Applied.");
+        public ControlOperationResult DisplayBrightnessHidResult { get; set; } =
+            new(ControlOperationStatus.Blocked, "Native brightness input is unavailable.");
+        public Queue<ControlOperationResult> DisplayBrightnessHidResults { get; } = [];
+        public List<DisplayBrightnessHidUsage> DisplayBrightnessHidUsages { get; } = [];
 
         public override Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
         {
@@ -378,6 +554,16 @@ public sealed class FunctionRowActionExecutorTests
         {
             KeyboardBrightnessSteps.Add((direction, lifetime));
             return Task.FromResult(LightingResult);
+        }
+
+        public override Task<ControlOperationResult> SetDisplayBrightnessHidUsageAsync(
+            DisplayBrightnessHidUsage usage,
+            CancellationToken token)
+        {
+            DisplayBrightnessHidUsages.Add(usage);
+            return Task.FromResult(DisplayBrightnessHidResults.Count == 0
+                ? DisplayBrightnessHidResult
+                : DisplayBrightnessHidResults.Dequeue());
         }
 
     }

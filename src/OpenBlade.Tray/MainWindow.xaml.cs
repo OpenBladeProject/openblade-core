@@ -60,6 +60,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly CoalescingCommitState<GpuClockOffsetSettings> gpuClockOffsetCommits = new();
     private readonly object initializationSync = new();
     private Task? initializationTask;
+    private Task? displayRefreshTask;
     private bool initialPlacementAttempted;
     private bool changingPerformanceSelection;
     private bool changingWindowsPowerModeSelection;
@@ -771,7 +772,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
         DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
         DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
-        await RefreshDisplaySettingsAsync();
+        _ = RefreshDisplaySettingsAsync();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
@@ -2805,6 +2806,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             || (DisplayPage.Visibility != Visibility.Visible
                 && !(HomePage.Visibility == Visibility.Visible
                     && IsDashboardCardPinned(DashboardCardKind.Display)))
+            || IsDisplayRefreshInProgress
             || DisplayViewModel.IsBusy
             || openDisplayPickerCount > 0)
         {
@@ -2970,8 +2972,31 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             () => DisplayViewModel.SelectColorProfileAsync(option));
     }
 
-    private Task RefreshDisplaySettingsAsync() =>
-        RunDisplayOperationAsync(() => DisplayViewModel.RefreshAsync());
+    private Task RefreshDisplaySettingsAsync()
+    {
+        if (displayRefreshTask is { IsCompleted: false } activeRefresh)
+        {
+            return activeRefresh;
+        }
+
+        displayRefreshTask = RunDisplayOperationAsync(
+            () => DisplayViewModel.RefreshAsync());
+        return displayRefreshTask;
+    }
+
+    private bool IsDisplayRefreshInProgress =>
+        displayRefreshTask is { IsCompleted: false };
+
+    private async Task RefreshDisplaySettingsBeforeCaptureAsync()
+    {
+        Task? refreshAtRequest = displayRefreshTask;
+        if (refreshAtRequest is { IsCompleted: false })
+        {
+            await refreshAtRequest;
+        }
+
+        await RefreshDisplaySettingsAsync();
+    }
 
     private void OnDisplayUserSettingsChanged(
         object? sender,
@@ -2998,7 +3023,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        await RefreshDisplaySettingsAsync();
+        await RefreshDisplaySettingsBeforeCaptureAsync();
         if (sourceAtStart != ViewModel.ActivePowerSource
             || !DisplayViewModel.CanCaptureCurrentSettings)
         {
