@@ -381,6 +381,19 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         }
     }
 
+    public async Task<bool?> ReadActiveAsync(CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false) != 0;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<LogoLightingMode?> ReadLogoStateAsync(
         CancellationToken cancellationToken) =>
         await ReadLogoCandidateStateAsync(cancellationToken).ConfigureAwait(false);

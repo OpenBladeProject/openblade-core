@@ -58,6 +58,8 @@ public interface IProductionLightingPort : IAsyncDisposable
 
     Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken);
 
+    Task<bool?> ReadActiveAsync(CancellationToken cancellationToken);
+
     Task<LogoLightingMode?> ReadLogoStateAsync(CancellationToken cancellationToken) =>
         Task.FromResult<LogoLightingMode?>(null);
 

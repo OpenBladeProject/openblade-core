@@ -614,6 +614,8 @@ public sealed class ControlRequestHandlerTests
         public int Calls { get; private set; }
         public Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken) => Count(DeviceCapabilities.Unavailable());
         public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken) => Count(new ConfirmedDeviceState(null, null, null, null));
+        public Task<bool?> ReadKeyboardLightingActiveAsync(
+            CancellationToken cancellationToken) => Count<bool?>(null);
         public Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken) =>
             Count<FanRpmReadings?>(null);
         public Task<AdapterPowerState> ReadAdapterPowerStateAsync(CancellationToken cancellationToken) =>

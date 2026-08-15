@@ -598,7 +598,8 @@ public sealed class ControlCoordinator
         CancellationToken cancellationToken,
         IReadOnlySet<DeviceSubsystem>? automaticWriteExclusions = null,
         Func<ConfirmedDeviceState, IReadOnlySet<DeviceSubsystem>>?
-            automaticWriteExclusionResolver = null)
+            automaticWriteExclusionResolver = null,
+        Func<CancellationToken, Task>? beforeInitialStateRead = null)
     {
         ArgumentNullException.ThrowIfNull(desired);
         var transition = new FullTransitionApplyState();
@@ -619,6 +620,11 @@ public sealed class ControlCoordinator
                 await RelinquishGpuClockOffsetManagementAsync(cancellationToken);
             }
 
+            if (beforeInitialStateRead is not null)
+            {
+                await beforeInitialStateRead(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
             initial = await device.ReadStateAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (automaticWriteExclusionResolver is not null)

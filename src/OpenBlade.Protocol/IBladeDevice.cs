@@ -12,6 +12,8 @@ public interface IBladeDevice
         CancellationToken cancellationToken) =>
         ReadStateAsync(cancellationToken);
 
+    Task<bool?> ReadKeyboardLightingActiveAsync(CancellationToken cancellationToken);
+
     Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken);
 
     Task<AdapterPowerState> ReadAdapterPowerStateAsync(

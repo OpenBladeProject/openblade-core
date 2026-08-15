@@ -242,6 +242,28 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task Rz090528ReadActive_ExternalOffDoesNotRelinquishOwnedRenderer()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            staticEffectAdmitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+        session.Brightness = 0;
+
+        bool? active = await port.ReadActiveAsync(default);
+
+        Assert.False(active);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+    }
+
+    [Fact]
     public async Task Rz090528Spectrum_AcknowledgesFirstFrameThenStreamsSetOnlyFrames()
     {
         var session = new LightingSession(initialBrightness: 128);
@@ -1420,6 +1442,23 @@ public sealed class ProductionLightingPortTests
         BladeWriteException exception = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), default));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, exception.SubmissionState);
+    }
+
+    [Fact]
+    public async Task ReadActive_ExternalOffDoesNotRelinquishOwnedRenderer()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+        session.Brightness = 0;
+
+        bool? active = await port.ReadActiveAsync(default);
+
+        Assert.False(active);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
     }
 
     [Fact]

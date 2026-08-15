@@ -1699,6 +1699,9 @@ public sealed class ControlCoordinatorTests
             return Task.FromResult(new ConfirmedDeviceState(null, null, null, null));
         }
 
+        public Task<bool?> ReadKeyboardLightingActiveAsync(
+            CancellationToken cancellationToken) => Task.FromResult<bool?>(null);
+
         public Task<FanRpmReadings?> ReadFanRpmAsync(
             CancellationToken cancellationToken) => Task.FromResult<FanRpmReadings?>(null);
 
@@ -1887,6 +1890,12 @@ public sealed class ControlCoordinatorTests
 
             return Task.FromResult(State);
         }
+
+        public Task<bool?> ReadKeyboardLightingActiveAsync(
+            CancellationToken cancellationToken) => Task.FromResult<bool?>(
+                State.Lighting is null
+                    ? null
+                    : State.Lighting.Effect != LightingEffect.Off);
 
         public Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken) =>
             Task.FromResult<FanRpmReadings?>(null);

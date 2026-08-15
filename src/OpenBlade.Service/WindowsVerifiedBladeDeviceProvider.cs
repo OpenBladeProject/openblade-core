@@ -594,6 +594,43 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
+        public async Task<bool?> ReadKeyboardLightingActiveAsync(
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                try
+                {
+                    IProductionLightingPort? port =
+                        await GetLightingPortCoreAsync(
+                            LightingPortOperation.KeyboardLightingStateRead,
+                            cancellationToken).ConfigureAwait(false);
+                    return port is null
+                        ? null
+                        : await port.ReadActiveAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                    when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (ObjectDisposedException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         private async Task<ConfirmedDeviceState> ReadBatteryStateOnceAsync(
             CancellationToken cancellationToken)
         {

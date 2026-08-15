@@ -347,6 +347,55 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task ReadKeyboardLightingActive_UsesNonMutatingPortProbe()
+    {
+        var batteryFactory = new FakeQueryFactory();
+        var lightingPort = new FakeLightingPort
+        {
+            ActiveResult = false,
+            OwnershipState = LightingRendererOwnershipState.Static,
+        };
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(batteryFactory),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        bool? active = await device.ReadKeyboardLightingActiveAsync(default);
+
+        Assert.False(active);
+        Assert.Equal(1, lightingPort.ReadActiveCalls);
+        Assert.Equal(0, lightingPort.ReadStateCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            lightingPort.OwnershipState);
+        Assert.Equal(0, batteryFactory.OpenCount);
+    }
+
+    [Fact]
+    public async Task ReadKeyboardLightingActive_ProbeFailureReturnsUnavailable()
+    {
+        var lightingPort = new FakeLightingPort
+        {
+            ActiveFailure = new IOException("brightness unavailable"),
+        };
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            new FakeLightingFactory(lightingPort));
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        bool? active = await device.ReadKeyboardLightingActiveAsync(default);
+
+        Assert.Null(active);
+        Assert.Equal(1, lightingPort.ReadActiveCalls);
+        Assert.Equal(0, lightingPort.ReadStateCalls);
+    }
+
+    [Fact]
     public async Task KeyboardBrightnessStep_UsesRecoveredSupportedPort()
     {
         var lightingPort = new FakeLightingPort
@@ -1967,6 +2016,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public Exception? ReadFailure { get; init; }
 
+        public bool? ActiveResult { get; init; } = true;
+
+        public Exception? ActiveFailure { get; init; }
+
+        public int ReadStateCalls { get; private set; }
+
+        public int ReadActiveCalls { get; private set; }
+
         public Task EnsureDriverModeAsync(CancellationToken cancellationToken)
         {
             DriverModeEnsureCount++;
@@ -1985,10 +2042,21 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             return Task.FromResult<bool?>(false);
         }
 
-        public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken) =>
-            ReadFailure is null
+        public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken)
+        {
+            ReadStateCalls++;
+            return ReadFailure is null
                 ? Task.FromResult<LightingSettings?>(Writes.LastOrDefault())
                 : Task.FromException<LightingSettings?>(ReadFailure);
+        }
+
+        public Task<bool?> ReadActiveAsync(CancellationToken cancellationToken)
+        {
+            ReadActiveCalls++;
+            return ActiveFailure is null
+                ? Task.FromResult(ActiveResult)
+                : Task.FromException<bool?>(ActiveFailure);
+        }
 
         public Task SetLightingAsync(
             LightingSettings settings,

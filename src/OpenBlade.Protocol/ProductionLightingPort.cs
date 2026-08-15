@@ -151,6 +151,20 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
+    public async Task<bool?> ReadActiveAsync(CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await QueryBrightnessRawCoreAsync(cancellationToken)
+                .ConfigureAwait(false) != 0;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<LogoLightingMode?> ReadLogoStateAsync(
         CancellationToken cancellationToken)
     {

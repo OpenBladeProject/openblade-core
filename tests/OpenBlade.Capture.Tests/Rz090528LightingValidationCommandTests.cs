@@ -165,6 +165,9 @@ public sealed class Rz090528LightingValidationCommandTests
             CancellationToken cancellationToken) =>
             Task.FromResult<LightingSettings?>(null);
 
+        public Task<bool?> ReadActiveAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<bool?>(null);
+
         public Task SetLightingAsync(
             LightingSettings settings,
             CancellationToken cancellationToken)

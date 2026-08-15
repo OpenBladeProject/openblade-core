@@ -5827,6 +5827,51 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool preserveObservedExternalChanges,
         CancellationToken token)
     {
+        async Task PrepareInitialStateReadAsync(CancellationToken cancellationToken)
+        {
+            if (!ShouldProbeForTransientLightingOff())
+            {
+                return;
+            }
+
+            bool? active = await device.ReadKeyboardLightingActiveAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (active is null)
+            {
+                throw new IOException(
+                    "Keyboard lighting activity could not be read during the power-source transition.");
+            }
+            if (active.Value)
+            {
+                return;
+            }
+            await transitionRetryDelay(
+                PowerTransitionAccessRetryDelay,
+                cancellationToken).ConfigureAwait(false);
+            active = await device.ReadKeyboardLightingActiveAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (active is null)
+            {
+                throw new IOException(
+                    "Keyboard lighting activity could not be confirmed after a transient Off reading.");
+            }
+        }
+
+        bool ShouldProbeForTransientLightingOff() =>
+            preserveObservedExternalChanges
+            && priorDesired is not null
+            && !preferences.AlwaysOverrideExternalLightingChanges
+            && !driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting)
+            && !ControllerMayOwnLighting(current)
+            && !IsKeyboardLightingDelegated
+            && IsExplicitLightingOwnership(current.LightingRendererOwnership)
+            && lastOwnedLightingSettings == priorDesired.Lighting.Value
+            && OwnershipMatches(
+                current.LightingRendererOwnership,
+                lastOwnedLightingSettings)
+            && priorDesired.Lighting.Value.Effect != LightingEffect.Off
+            && desired.Lighting.Value.Effect != LightingEffect.Off;
+
         IReadOnlySet<DeviceSubsystem> ResolveAutomaticWriteExclusions(
             ConfirmedDeviceState confirmed)
         {
@@ -5860,7 +5905,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 .ApplyDesiredStateOutcomeAsync(
                     desired,
                     token,
-                    automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions);
+                    automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions,
+                    beforeInitialStateRead: PrepareInitialStateReadAsync);
 
             if (ShouldRetryPowerTransitionAccess(outcome))
             {
@@ -5869,7 +5915,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .ApplyDesiredStateOutcomeAsync(
                         desired,
                         token,
-                        automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions);
+                        automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions,
+                        beforeInitialStateRead: PrepareInitialStateReadAsync);
             }
 
             return outcome;
