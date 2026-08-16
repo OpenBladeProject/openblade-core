@@ -60,6 +60,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept the Lab features row aligned with neighboring Settings rows when showing
+  its information button.
 - Validated imported lighting timelines without rebuilding their decoded frame
   graph during each IPC status check.
 - Labeled imported animations consistently in profile details and summaries

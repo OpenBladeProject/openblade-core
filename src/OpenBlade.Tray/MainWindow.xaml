@@ -3350,8 +3350,8 @@
                                                            VerticalAlignment="Center"
                                                            Style="{StaticResource CardTitleStyle}" />
                                                 <Button x:Name="LabFeaturesInfoButton"
-                                                        Width="28"
-                                                        Height="28"
+                                                        Width="20"
+                                                        Height="20"
                                                         MinWidth="0"
                                                         MinHeight="0"
                                                         Padding="0"

@@ -1790,6 +1790,14 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LabFeaturesInfoButton\"", xaml, StringComparison.Ordinal);
+        string labFeaturesInfoButton = SliceMethod(
+            xaml,
+            "<Button x:Name=\"LabFeaturesInfoButton\"",
+            "<Button.Flyout>");
+        Assert.Contains("Width=\"20\"", labFeaturesInfoButton, StringComparison.Ordinal);
+        Assert.Contains("Height=\"20\"", labFeaturesInfoButton, StringComparison.Ordinal);
+        Assert.DoesNotContain("Width=\"28\"", labFeaturesInfoButton, StringComparison.Ordinal);
+        Assert.DoesNotContain("Height=\"28\"", labFeaturesInfoButton, StringComparison.Ordinal);
         Assert.Contains(
             "AutomationProperties.Name=\"About Lab features\"",
             xaml,
