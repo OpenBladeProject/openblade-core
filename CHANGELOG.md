@@ -5,8 +5,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
-## [0.8.4-nightly.20] - 2026-08-15
-
 ### Added
 
 - Added an importable example of a cyan sweep that moves from left to right
@@ -21,44 +19,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   admitted binding are reported, while per-key KeyboardExtended files are
   rejected instead of cropped. Imported effects remain limited to capabilities
   already admitted for the exact connected Blade.
-- Added Windows-native display-brightness handling and flyout presentation for
-  the reconstructed function row, using the exact admitted Razer virtual
-  Consumer Control path already present on the RZ09-0581. The existing WMI
-  brightness path and OpenBlade flyout remain available when that path is
-  unavailable. About shows which brightness path is currently available.
-- Added an optional Windows power mode to each AC, USB-C, and battery profile.
-  The current-user Session Agent applies Best power efficiency, Balanced, or
-  Best performance when the active power profile changes.
-- Added a **Close GPU apps** action to Power mode. It finds current-user apps
-  actively using NVIDIA WDDM engines without waking an idle GPU, shows the exact
-  targets, asks them to close, and offers an explicit force-close step for
-  survivors while protecting Windows, OpenBlade, and other sessions. The action
-  stays hidden when no active NVIDIA GPU users are detected.
-- Added an administrator-approved Troubleshooting action that stops the exact known
-  Synapse and Chroma controller-service allowlist, then reports fresh Windows
-  service readback without disabling startup or retrying uncertain requests.
 
 ### Changed
 
 - Moved the Lab keyboard preset importer into the Keyboard section and replaced
   the long Lab features description with an on-demand list of current features.
-- Replaced common dropdown-only settings with responsive Windows selectors.
-  Performance, fan, function-row, lighting, display, and app settings use
-  horizontal choices when their options fit on one line without squeezing
-  adjacent labels, and retain a compact dropdown when the window or settings
-  row is too narrow.
-- Replaced the tray-dashboard customization dialog with a dedicated Settings
-  page that shows only active controls and adjustments, keeps inactive choices
-  in **Add** menus, exposes the two-adjustment limit, and updates the pinned tray
-  popup live while items are reordered, added, removed, or reset.
-- Expanded tray-dashboard quick controls with battery protection, function-row
-  mode, gaming mode and its key-blocking options, plus an optional GPU-tuning
-  toggle.
-- Renamed the tray-dashboard lighting adjustment to **Keyboard brightness** so
-  its target is explicit in Settings and accessibility presentation.
-- Matched the tray dashboard to the Windows Quick Settings 360 by 388 DIP
-  footprint, added configurable power-source and fan-speed status items, and
-  standardized its primary icon scale.
 
 ### Fixed
 
@@ -83,6 +48,56 @@ All notable changes to OpenBlade are documented in this file. The project follow
   to the keyboard-animation profile schema.
 - Kept a completed non-looping RZ09-0528 lighting sequence on its final frame
   without faulting or surrendering the service-owned renderer.
+- Prevented brief firmware lighting-off readings during AC and battery
+  transitions from being mistaken for external changes. OpenBlade now confirms
+  a zero reading at the point where it would release the owned renderer, while
+  preserving a stable external lighting change without overwriting it. If that
+  confirmation is unavailable, only lighting is skipped; the remaining profile
+  controls still apply.
+
+## [0.8.4-nightly.20] - 2026-08-15
+
+### Added
+
+- Added Windows-native display-brightness handling and flyout presentation for
+  the reconstructed function row, using the exact admitted Razer virtual
+  Consumer Control path already present on the RZ09-0581. The existing WMI
+  brightness path and OpenBlade flyout remain available when that path is
+  unavailable. About shows which brightness path is currently available.
+- Added an optional Windows power mode to each AC, USB-C, and battery profile.
+  The current-user Session Agent applies Best power efficiency, Balanced, or
+  Best performance when the active power profile changes.
+- Added a **Close GPU apps** action to Power mode. It finds current-user apps
+  actively using NVIDIA WDDM engines without waking an idle GPU, shows the exact
+  targets, asks them to close, and offers an explicit force-close step for
+  survivors while protecting Windows, OpenBlade, and other sessions. The action
+  stays hidden when no active NVIDIA GPU users are detected.
+- Added an administrator-approved Troubleshooting action that stops the exact known
+  Synapse and Chroma controller-service allowlist, then reports fresh Windows
+  service readback without disabling startup or retrying uncertain requests.
+
+### Changed
+
+- Replaced common dropdown-only settings with responsive Windows selectors.
+  Performance, fan, function-row, lighting, display, and app settings use
+  horizontal choices when their options fit on one line without squeezing
+  adjacent labels, and retain a compact dropdown when the window or settings
+  row is too narrow.
+- Replaced the tray-dashboard customization dialog with a dedicated Settings
+  page that shows only active controls and adjustments, keeps inactive choices
+  in **Add** menus, exposes the two-adjustment limit, and updates the pinned tray
+  popup live while items are reordered, added, removed, or reset.
+- Expanded tray-dashboard quick controls with battery protection, function-row
+  mode, gaming mode and its key-blocking options, plus an optional GPU-tuning
+  toggle.
+- Renamed the tray-dashboard lighting adjustment to **Keyboard brightness** so
+  its target is explicit in Settings and accessibility presentation.
+- Matched the tray dashboard to the Windows Quick Settings 360 by 388 DIP
+  footprint, added configurable power-source and fan-speed status items, and
+  standardized its primary icon scale.
+
+### Fixed
+
 - Reduced excess vertical space in single-line Dashboard rows while preserving
   the original spacing for descriptions, editors, and titles that wrap at
   narrow widths without disrupting conditional-row animations.
@@ -92,12 +107,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   highlighted while idle or when editing, and split shared nested-card styling
   into explicit hover-free editor, neutral hover, and emphasized variants so
   future editors cannot inherit an unintended full-card highlight.
-- Prevented brief firmware lighting-off readings during AC and battery
-  transitions from being mistaken for external changes. OpenBlade now confirms
-  a zero reading at the point where it would release the owned renderer, while
-  preserving a stable external lighting change without overwriting it. If that
-  confirmation is unavailable, only lighting is skipped; the remaining profile
-  controls still apply.
 - Made the main window and tray dashboard available before the initial display
   query finishes, while coalescing display refreshes so a slow Session Agent
   response cannot queue redundant follow-up queries. Profile capture still waits
