@@ -87,7 +87,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingSpecialKeyBindings;
     private bool changingAccentColor;
     private bool changingNotificationPreferences;
-    private bool labFeaturesEnabled;
     private bool notificationObservationReady;
     private bool troubleshootingHeaderPointerPressed;
     private bool dashboardCardsReady;
@@ -254,21 +253,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public FirmwareUpdateAssistantViewModel FirmwareUpdateViewModel { get; }
 
     public bool StartMinimized { get; private set; }
-
-    public bool LabFeaturesEnabled
-    {
-        get => labFeaturesEnabled;
-        private set
-        {
-            if (labFeaturesEnabled == value)
-            {
-                return;
-            }
-
-            labFeaturesEnabled = value;
-            OnPropertyChanged(nameof(LabFeaturesEnabled));
-        }
-    }
 
     public bool PerformanceNotificationsEnabled
     {
@@ -721,8 +705,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         changingAccentColor = false;
         NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
-        LabFeaturesEnabled = initialLabFeaturesEnabled;
-        LabFeaturesToggle.IsOn = LabFeaturesEnabled;
+        ViewModel.LabFeaturesEnabled = initialLabFeaturesEnabled;
+        LabFeaturesToggle.IsOn = ViewModel.LabFeaturesEnabled;
         ApplyNotificationPreferences(initialNotifications);
         lastNotifiedReleaseTag = initialLastNotifiedReleaseTag;
         lastNotifiedFirmwareSignature = initialLastNotifiedFirmwareSignature;
@@ -1043,7 +1027,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastNotifiedReleaseTag: lastNotifiedReleaseTag,
                 LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature,
                 TrayDashboard: trayDashboardPreference,
-                LabFeaturesEnabled: LabFeaturesEnabled));
+                LabFeaturesEnabled: ViewModel.LabFeaturesEnabled));
         }
         catch (ObjectDisposedException)
         {
@@ -1208,12 +1192,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         if (sender is not ToggleSwitch toggle
             || Volatile.Read(ref disposed) != 0
-            || toggle.IsOn == LabFeaturesEnabled)
+            || toggle.IsOn == ViewModel.LabFeaturesEnabled)
         {
             return;
         }
 
-        LabFeaturesEnabled = toggle.IsOn;
+        ViewModel.LabFeaturesEnabled = toggle.IsOn;
         QueuePreferenceSave();
     }
 
@@ -4725,7 +4709,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnImportKeyboardLighting(object sender, RoutedEventArgs args)
     {
-        if (!LabFeaturesEnabled)
+        if (!ViewModel.LabFeaturesEnabled)
         {
             return;
         }

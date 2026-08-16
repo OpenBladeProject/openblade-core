@@ -525,20 +525,47 @@ public sealed class WinUiShellContractTests
             xaml,
             "<ScrollViewer x:Name=\"LightingPage\"",
             "<ScrollViewer x:Name=\"DisplayPage\"");
+        string lightingHeader = SliceMethod(
+            lightingPage,
+            "<Grid x:Name=\"LightingPageHeader\"",
+            "<StackPanel x:Name=\"LightingCardsHost\"");
+        string lightingTemplate = SliceMethod(
+            xaml,
+            "<DataTemplate x:Key=\"DashboardLightingCardTemplate\"",
+            "<DataTemplate x:Key=\"DashboardDisplayCardTemplate\"");
+        string keyboardSection = SliceMethod(
+            lightingTemplate,
+            "<StackPanel x:Name=\"LightingKeyboardSection\"",
+            "<StackPanel x:Name=\"LightingLogoSection\"");
 
-        Assert.Contains("Content=\"Import preset\"", lightingPage, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Import keyboard lighting preset",
+            lightingHeader,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Name=\"ImportKeyboardLightingPresetCard\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains("Text=\"Import preset\"", keyboardSection, StringComparison.Ordinal);
         Assert.Contains(
             "AutomationProperties.Name=\"Import keyboard lighting preset\"",
-            lightingPage,
+            keyboardSection,
             StringComparison.Ordinal);
-        Assert.Contains("Click=\"OnImportKeyboardLighting\"", lightingPage, StringComparison.Ordinal);
+        Assert.Contains(
+            "Style=\"{StaticResource IconActionButtonStyle}\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Click=\"OnImportKeyboardLighting\"",
+            keyboardSection,
+            StringComparison.Ordinal);
         Assert.Contains(
             "Visibility=\"{x:Bind LabFeaturesEnabled, Mode=OneWay}\"",
-            lightingPage,
+            keyboardSection,
             StringComparison.Ordinal);
         Assert.Contains(
-            "IsEnabled=\"{x:Bind ViewModel.CanControlLighting, Mode=OneWay}\"",
-            lightingPage,
+            "IsEnabled=\"{x:Bind CanControlLighting, Mode=OneWay}\"",
+            keyboardSection,
             StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".oblight\")", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".chroma\")", window, StringComparison.Ordinal);
@@ -548,7 +575,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ViewModel.CanImportKeyboardLighting", window, StringComparison.Ordinal);
         Assert.Contains("ViewModel.TryImportKeyboardLighting", window, StringComparison.Ordinal);
         Assert.Contains(
-            "if (!LabFeaturesEnabled)",
+            "if (!ViewModel.LabFeaturesEnabled)",
             SliceMethod(
                 window,
                 "private async void OnImportKeyboardLighting",
@@ -1738,7 +1765,7 @@ public sealed class WinUiShellContractTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
-            "LabFeaturesEnabled: LabFeaturesEnabled",
+            "LabFeaturesEnabled: ViewModel.LabFeaturesEnabled",
             source,
             StringComparison.Ordinal);
         Assert.Contains("\"preference save queue\"", source, StringComparison.Ordinal);
@@ -1754,7 +1781,38 @@ public sealed class WinUiShellContractTests
 
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         Assert.Contains("Text=\"Lab features\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"Turn on experimental features.\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Show experimental features, including custom keyboard-lighting preset formats.",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"LabFeaturesInfoButton\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"About Lab features\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("<Button.Flyout>", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Current Lab features\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"Keyboard lighting preset import\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"Import .oblight and Razer .chroma files.\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"Lab features may change or be removed.\"",
+            xaml,
+            StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LabFeaturesToggle\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "IsOn=\"{x:Bind ViewModel.LabFeaturesEnabled, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
         Assert.Contains("Toggled=\"OnLabFeaturesToggled\"", xaml, StringComparison.Ordinal);
 
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");

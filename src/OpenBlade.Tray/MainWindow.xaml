@@ -1766,6 +1766,38 @@
 
                             </StackPanel>
                         </Border>
+                        <Border x:Name="ImportKeyboardLightingPresetCard"
+                                Style="{StaticResource SettingsGroupStyle}"
+                                Margin="0,10,0,0"
+                                Visibility="{x:Bind LabFeaturesEnabled, Mode=OneWay}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                                    Padding="0">
+                                <Button Style="{StaticResource IconActionButtonStyle}"
+                                        CornerRadius="8"
+                                        IsEnabled="{x:Bind CanControlLighting, Mode=OneWay}"
+                                        Click="OnImportKeyboardLighting"
+                                        AutomationProperties.Name="Import keyboard lighting preset"
+                                        ToolTipService.ToolTip="Import keyboard lighting preset">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Import preset"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Load an OpenBlade or Razer Chroma keyboard lighting file."
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <FontIcon Grid.Column="1"
+                                                  Glyph="&#xE8E5;"
+                                                  VerticalAlignment="Center"
+                                                  Style="{StaticResource CardActionIconStyle}" />
+                                    </Grid>
+                                </Button>
+                            </Border>
+                        </Border>
                         </StackPanel>
 
                         <StackPanel x:Name="LightingLogoSection"
@@ -3007,12 +3039,6 @@
                                         Command="{x:Bind ViewModel.DiscardLightingProfileDraftCommand}" />
                                 </StackPanel>
                             </ContentControl>
-                            <Button Content="Import preset"
-                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                    Visibility="{x:Bind LabFeaturesEnabled, Mode=OneWay}"
-                                    IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
-                                    Click="OnImportKeyboardLighting"
-                                    AutomationProperties.Name="Import keyboard lighting preset" />
                             <Button Content="Customize"
                                     Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="Lighting"
@@ -3318,9 +3344,46 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Lab features"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Show experimental features, including custom keyboard-lighting preset formats. Lab features may change or be removed."
+                                            <StackPanel Orientation="Horizontal"
+                                                        Spacing="4">
+                                                <TextBlock Text="Lab features"
+                                                           VerticalAlignment="Center"
+                                                           Style="{StaticResource CardTitleStyle}" />
+                                                <Button x:Name="LabFeaturesInfoButton"
+                                                        Width="28"
+                                                        Height="28"
+                                                        MinWidth="0"
+                                                        MinHeight="0"
+                                                        Padding="0"
+                                                        Background="Transparent"
+                                                        BorderThickness="0"
+                                                        VerticalAlignment="Center"
+                                                        AutomationProperties.Name="About Lab features"
+                                                        ToolTipService.ToolTip="About Lab features">
+                                                    <Button.Flyout>
+                                                        <Flyout Placement="BottomEdgeAlignedLeft">
+                                                            <StackPanel MaxWidth="320"
+                                                                        Spacing="12">
+                                                                <TextBlock Text="Current Lab features"
+                                                                           Style="{StaticResource CardTitleStyle}" />
+                                                                <StackPanel Spacing="3">
+                                                                    <TextBlock Text="Keyboard lighting preset import"
+                                                                               FontWeight="SemiBold" />
+                                                                    <TextBlock Text="Import .oblight and Razer .chroma files."
+                                                                               Style="{StaticResource SecondaryTextStyle}"
+                                                                               TextWrapping="Wrap" />
+                                                                </StackPanel>
+                                                                <TextBlock Text="Lab features may change or be removed."
+                                                                           Style="{StaticResource SecondaryTextStyle}"
+                                                                           TextWrapping="Wrap" />
+                                                            </StackPanel>
+                                                        </Flyout>
+                                                    </Button.Flyout>
+                                                    <FontIcon Glyph="&#xE946;"
+                                                              FontSize="14" />
+                                                </Button>
+                                            </StackPanel>
+                                            <TextBlock Text="Turn on experimental features."
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
@@ -3332,6 +3395,7 @@
                                                       AutomationProperties.Name="Enable Lab experimental features"
                                                       OffContent=""
                                                       OnContent=""
+                                                      IsOn="{x:Bind ViewModel.LabFeaturesEnabled, Mode=OneWay}"
                                                       Toggled="OnLabFeaturesToggled" />
                                     </Grid>
                                 </Border>

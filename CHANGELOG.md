@@ -38,6 +38,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Moved the Lab keyboard preset importer into the Keyboard section and replaced
+  the long Lab features description with an on-demand list of current features.
 - Replaced common dropdown-only settings with responsive Windows selectors.
   Performance, fan, function-row, lighting, display, and app settings use
   horizontal choices when their options fit on one line without squeezing

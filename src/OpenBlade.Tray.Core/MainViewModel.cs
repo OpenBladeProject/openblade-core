@@ -360,6 +360,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private LaptopBehaviorProfileSettings? activeProfileOriginalLaptopBehavior;
     private DisplayProfileSettings? activeProfileOriginalDisplay;
     private ThemePreference theme = ThemePreference.FollowWindows;
+    private bool labFeaturesEnabled;
     private LiveReadingsCadence liveReadingsRefreshCadence =
         LiveReadingsCadence.EveryTwoSeconds;
     private TrayHoverLabelMode trayHoverLabelMode =
@@ -3608,6 +3609,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    public bool LabFeaturesEnabled
+    {
+        get => labFeaturesEnabled;
+        set => SetField(ref labFeaturesEnabled, value);
+    }
+
     public IReadOnlyList<ThemePreference> ThemeOptions { get; } =
         Enum.GetValues<ThemePreference>();
 
@@ -4895,7 +4902,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanImportKeyboardLighting(KeyboardLightingPreset preset)
     {
         ArgumentNullException.ThrowIfNull(preset);
-        return CanControlLighting
+        return LabFeaturesEnabled
+            && CanControlLighting
             && LightingSettingsValidation.IsWellFormed(preset.Lighting)
             && preset.Lighting.LogoMode is null
             && Capabilities.LightingEffects.Contains(preset.Lighting.Effect)

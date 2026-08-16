@@ -4976,6 +4976,7 @@ public sealed class MainViewModelTests
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        viewModel.LabFeaturesEnabled = true;
         await viewModel.StartAsync();
         DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
@@ -5013,10 +5014,43 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ImportKeyboardLighting_RejectsNewPresetsWhileLabFeaturesAreDisabled()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities));
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        var preset = new KeyboardLightingPreset(
+            "Imported green",
+            "User",
+            null,
+            1,
+            LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 73));
+
+        Assert.False(viewModel.LabFeaturesEnabled);
+        Assert.False(viewModel.CanImportKeyboardLighting(preset));
+        Assert.False(viewModel.TryImportKeyboardLighting(preset));
+        Assert.False(viewModel.IsLightingApplyPending);
+    }
+
+    [Fact]
     public async Task ImportKeyboardLighting_RejectsAnEffectUnavailableOnTheLaptop()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        viewModel.LabFeaturesEnabled = true;
         await viewModel.StartAsync();
         DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
