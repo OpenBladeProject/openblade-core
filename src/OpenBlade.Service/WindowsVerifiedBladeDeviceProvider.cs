@@ -93,6 +93,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         }
     }
 
+    public void SetLightingRefreshRate(LightingRefreshRate refreshRate) =>
+        device.SetDesiredLightingRefreshRate(refreshRate);
+
     public FirmwareCompatibilityStatus FirmwareCompatibility =>
         (FirmwareCompatibilityStatus)Volatile.Read(ref firmwareCompatibility);
 
@@ -345,6 +348,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         // Desired Windows playback state, retained independently of any one
         // renderer port so a recycled exact-device session can reapply it.
         private int desiredPlaybackMuteState = -1;
+        private int desiredLightingRefreshRate = (int)LightingRefreshRate.ThirtyHz;
 
         internal bool HasOwnedKeyTriggeredRenderer
         {
@@ -447,6 +451,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             lighting.Capabilities.SupportsPlaybackMuteIndicator,
                         KeyboardLightingLayoutId =
                             lighting.Capabilities.KeyboardLightingLayoutId,
+                        SupportedLightingRefreshRates =
+                            lighting.Capabilities.SupportedLightingRefreshRates,
                     };
             }
             finally
@@ -1509,6 +1515,45 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             return ExecuteProductionLightingWriteAsync(value, cancellationToken);
         }
 
+        internal void SetDesiredLightingRefreshRate(LightingRefreshRate refreshRate)
+        {
+            if (!Enum.IsDefined(refreshRate))
+            {
+                throw new ArgumentOutOfRangeException(nameof(refreshRate));
+            }
+
+            Volatile.Write(ref desiredLightingRefreshRate, (int)refreshRate);
+        }
+
+        public async Task SetLightingRefreshRateAsync(
+            LightingRefreshRate refreshRate,
+            CancellationToken cancellationToken)
+        {
+            if (!lightingFactory.Capabilities.SupportedLightingRefreshRates.Contains(
+                    refreshRate))
+            {
+                await RejectProductionWrite(
+                    "The requested lighting refresh rate is not admitted.")
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                IProductionLightingPort port = await GetLightingPortForWriteCoreAsync(
+                    LightingPortOperation.LightingChange,
+                    cancellationToken).ConfigureAwait(false);
+                await port.SetLightingRefreshRateAsync(refreshRate, cancellationToken)
+                    .ConfigureAwait(false);
+                SetDesiredLightingRefreshRate(refreshRate);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         public Task<byte> StepKeyboardBrightnessAsync(
             KeyboardBrightnessDirection direction,
             CancellationToken cancellationToken)
@@ -2349,6 +2394,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     LightingPortOpenFailureOrigin.Returned,
                     ExceptionType: null));
                 return null;
+            }
+
+            LightingRefreshRate refreshRate = (LightingRefreshRate)Volatile.Read(
+                ref desiredLightingRefreshRate);
+            if (port.Capabilities.SupportedLightingRefreshRates.Contains(refreshRate))
+            {
+                try
+                {
+                    await port.SetLightingRefreshRateAsync(refreshRate, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    await port.DisposeAsync().ConfigureAwait(false);
+                    throw;
+                }
             }
 
             int muted = Volatile.Read(ref desiredPlaybackMuteState);

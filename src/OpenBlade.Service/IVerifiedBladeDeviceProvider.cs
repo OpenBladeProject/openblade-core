@@ -15,6 +15,10 @@ public interface IVerifiedBladeDeviceProvider
 
     void SetAllowUntestedFirmware(bool enabled);
 
+    void SetLightingRefreshRate(LightingRefreshRate refreshRate)
+    {
+    }
+
     bool TryGetVerifiedDevice(out IBladeDevice device);
 
     bool TryGetRecentlyVerifiedReadOnlyDevice(out IBladeDevice device) =>

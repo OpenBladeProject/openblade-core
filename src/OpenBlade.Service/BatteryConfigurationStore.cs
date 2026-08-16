@@ -184,6 +184,7 @@ public sealed class BatteryConfigurationStore
             ProfileStore.SerializerOptions);
         if (marker is null || marker.SchemaVersion is not (
                 ProfileStore.LegacySchemaVersion
+                or ProfileStore.LatestSupportedSchemaVersion
                 or ProfileStore.EarliestSupportedSchemaVersion
                 or ProfileStore.EarlierSupportedSchemaVersion
                 or ProfileStore.OldestSupportedSchemaVersion

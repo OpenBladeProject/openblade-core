@@ -7,6 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added an opt-in **60 Hz lighting** Lab mode for the admitted RZ09-0581
+  keyboard transport. The service keeps 30 Hz as the default, persists the
+  selection after the tray exits, and applies it to supported built-in,
+  Ambient Awareness, and Audio Meter animation while RZ09-0528 remains at
+  30 Hz.
 - Added an importable example of a cyan sweep that moves from left to right
   with a dim blue wake.
 - Added a versioned, data-only `.oblight` keyboard lighting preset format and

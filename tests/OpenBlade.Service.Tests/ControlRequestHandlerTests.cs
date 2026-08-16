@@ -38,6 +38,10 @@ public sealed class ControlRequestHandlerTests
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 Enabled: true),
+            new SetLightingRefreshRateRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                LightingRefreshRate.SixtyHz),
             new SetFirmwareCompatibilityOverrideRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -89,7 +93,8 @@ public sealed class ControlRequestHandlerTests
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
             "StepKeyboardBrightness", "SetDisplayBrightnessHidUsage",
-            "SetExternalLightingOverridePolicy", "SetFirmwareCompatibilityOverride",
+            "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
+            "SetFirmwareCompatibilityOverride",
             "ReapplyChangedSettings",
             "SetLightingSuppression",
             "PulseReactiveKey", "PushAmbientLightingFrame",
@@ -445,6 +450,14 @@ public sealed class ControlRequestHandlerTests
         {
             Assert.True(enabled);
             return Record("SetExternalLightingOverridePolicy");
+        }
+
+        public Task<ControlOperationResult> SetLightingRefreshRateAsync(
+            LightingRefreshRate refreshRate,
+            CancellationToken token)
+        {
+            Assert.Equal(LightingRefreshRate.SixtyHz, refreshRate);
+            return Record("SetLightingRefreshRate");
         }
 
         public Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(

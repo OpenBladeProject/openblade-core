@@ -27,6 +27,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage")]
 [JsonDerivedType(typeof(SetKeyboardLightingControlModeRequest), "setKeyboardLightingControlMode")]
 [JsonDerivedType(typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy")]
+[JsonDerivedType(typeof(SetLightingRefreshRateRequest), "setLightingRefreshRate")]
 [JsonDerivedType(typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride")]
 [JsonDerivedType(typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings")]
 [JsonDerivedType(typeof(SetLightingSuppressionRequest), "setLightingSuppression")]
@@ -159,6 +160,12 @@ public sealed record SetExternalLightingOverridePolicyRequest(
     bool Enabled)
     : ServiceRequest(Version, RequestId);
 
+public sealed record SetLightingRefreshRateRequest(
+    int Version,
+    Guid RequestId,
+    LightingRefreshRate RefreshRate)
+    : ServiceRequest(Version, RequestId);
+
 public sealed record SetFirmwareCompatibilityOverrideRequest(
     int Version,
     Guid RequestId,
@@ -272,7 +279,8 @@ public sealed record ServiceStatusSnapshot(
     FirmwareCompatibilityStatus FirmwareCompatibility =
         FirmwareCompatibilityStatus.Unknown,
     DisplayBrightnessHidAvailability DisplayBrightnessHidAvailability =
-        DisplayBrightnessHidAvailability.Unknown)
+        DisplayBrightnessHidAvailability.Unknown,
+    LightingRefreshRate LightingRefreshRate = LightingRefreshRate.ThirtyHz)
 {
     public IReadOnlyList<DeviceSubsystem> UnconfirmedWrites { get; init; } = [];
 

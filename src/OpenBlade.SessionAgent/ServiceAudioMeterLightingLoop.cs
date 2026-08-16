@@ -261,6 +261,10 @@ internal sealed class AudioMeterDecaySmoother
     }
 }
 
+internal readonly record struct AudioMeterRenderingConfiguration(
+    AudioMeterLightingParameters Parameters,
+    LightingRefreshRate RefreshRate);
+
 public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
 {
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(1);
@@ -273,7 +277,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
     private readonly SemaphoreSlim rendererStateGate = new(1, 1);
     private CancellationTokenSource? rendererCancellation;
     private Task? rendererTask;
-    private AudioMeterLightingParameters? activeParameters;
+    private AudioMeterRenderingConfiguration? activeConfiguration;
     private int disposed;
 
     public ServiceAudioMeterLightingLoop(
@@ -303,22 +307,25 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                 .WithCancellation(cancellationToken)
                 .ConfigureAwait(false))
             {
-                AudioMeterLightingParameters? parameters = update switch
+                AudioMeterRenderingConfiguration? configuration = update switch
                 {
                     ServiceWatchUpdate.Connected connected
                         when connected.Status.LightingRendererOwnership ==
                             LightingRendererOwnershipState.AudioMeter
                         && connected.Status.DesiredState.Lighting.Value.Parameters is
                             AudioMeterLightingParameters audioMeter =>
-                        audioMeter,
+                        new AudioMeterRenderingConfiguration(
+                            audioMeter,
+                            connected.Status.LightingRefreshRate),
                     _ => null,
                 };
-                await SetParametersAsync(parameters, cancellationToken).ConfigureAwait(false);
+                await SetConfigurationAsync(configuration, cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
         finally
         {
-            await SetParametersAsync(null, CancellationToken.None).ConfigureAwait(false);
+            await SetConfigurationAsync(null, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
@@ -326,19 +333,19 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
     {
         if (Interlocked.Exchange(ref disposed, 1) == 0)
         {
-            await SetParametersAsync(null, CancellationToken.None).ConfigureAwait(false);
+            await SetConfigurationAsync(null, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
-    private async Task SetParametersAsync(
-        AudioMeterLightingParameters? parameters,
+    private async Task SetConfigurationAsync(
+        AudioMeterRenderingConfiguration? configuration,
         CancellationToken cancellationToken)
     {
         await rendererStateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (activeParameters == parameters
-                && (parameters is null || rendererTask is { IsCompleted: false }))
+            if (activeConfiguration == configuration
+                && (configuration is null || rendererTask is { IsCompleted: false }))
             {
                 return;
             }
@@ -347,7 +354,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
             Task? previousTask = rendererTask;
             rendererCancellation = null;
             rendererTask = null;
-            activeParameters = null;
+            activeConfiguration = null;
             previousCancellation?.Cancel();
             if (previousTask is not null)
             {
@@ -360,15 +367,15 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                 }
             }
             previousCancellation?.Dispose();
-            if (parameters is null || Volatile.Read(ref disposed) != 0)
+            if (configuration is null || Volatile.Read(ref disposed) != 0)
             {
                 return;
             }
 
             var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             rendererCancellation = linked;
-            rendererTask = RenderAsync(parameters, linked.Token);
-            activeParameters = parameters;
+            rendererTask = RenderAsync(configuration.Value, linked.Token);
+            activeConfiguration = configuration;
         }
         finally
         {
@@ -377,11 +384,15 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
     }
 
     private async Task RenderAsync(
-        AudioMeterLightingParameters parameters,
+        AudioMeterRenderingConfiguration configuration,
         CancellationToken cancellationToken)
     {
         IAudioMeterLightingSampler? sampler = null;
-        var cadence = new SessionLightingFrameCadence(timeProvider);
+        AudioMeterLightingParameters parameters = configuration.Parameters;
+        var cadence = new SessionLightingFrameCadence(
+            timeProvider,
+            configuration.RefreshRate);
+        var pacer = new SessionLightingFramePacer(timeProvider, delay);
         var smoother = new AudioMeterDecaySmoother();
         long? lastCaptureTimestamp = null;
         try
@@ -413,6 +424,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                     ResetSampler(ref sampler);
                     smoother.Reset();
                     lastCaptureTimestamp = null;
+                    pacer.Reset();
                     ReportFailure(exception);
                     await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
                     continue;
@@ -434,7 +446,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                         cadence.RecordSent(frame);
                     }
 
-                    await delay(decision.NextInterval, cancellationToken)
+                    await pacer.WaitAsync(decision.NextInterval, cancellationToken)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (
@@ -444,6 +456,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                 }
                 catch (Exception exception)
                 {
+                    pacer.Reset();
                     ReportFailure(exception);
                     await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
                 }

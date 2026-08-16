@@ -20,7 +20,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
     private readonly SemaphoreSlim rendererStateGate = new(1, 1);
     private CancellationTokenSource? rendererCancellation;
     private Task? rendererTask;
-    private AmbientAwarenessRegion? activeRegion;
+    private AmbientRenderingConfiguration? activeConfiguration;
     private int disposed;
 
     public ServiceAmbientLightingLoop(
@@ -55,17 +55,20 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                         .WithCancellation(cancellationToken)
                         .ConfigureAwait(false))
                     {
-                        AmbientAwarenessRegion? region = update switch
+                        AmbientRenderingConfiguration? configuration = update switch
                         {
                             ServiceWatchUpdate.Connected connected
                                 when connected.Status.LightingRendererOwnership ==
                                     LightingRendererOwnershipState.AmbientAwareness
                                 && connected.Status.DesiredState.Lighting.Value.Parameters is
                                     AmbientAwarenessLightingParameters parameters =>
-                                parameters.Region,
+                                new AmbientRenderingConfiguration(
+                                    parameters.Region,
+                                    connected.Status.LightingRefreshRate),
                             _ => null,
                         };
-                        await SetRegionAsync(region, cancellationToken).ConfigureAwait(false);
+                        await SetConfigurationAsync(configuration, cancellationToken)
+                            .ConfigureAwait(false);
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -74,7 +77,8 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                 }
                 catch (Exception exception)
                 {
-                    await SetRegionAsync(null, CancellationToken.None).ConfigureAwait(false);
+                    await SetConfigurationAsync(null, CancellationToken.None)
+                        .ConfigureAwait(false);
                     ReportFailure(exception);
                     await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
                 }
@@ -82,7 +86,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         }
         finally
         {
-            await SetRegionAsync(null, CancellationToken.None).ConfigureAwait(false);
+            await SetConfigurationAsync(null, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
@@ -93,18 +97,18 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
             return;
         }
 
-        await SetRegionAsync(null, CancellationToken.None).ConfigureAwait(false);
+        await SetConfigurationAsync(null, CancellationToken.None).ConfigureAwait(false);
     }
 
-    private async Task SetRegionAsync(
-        AmbientAwarenessRegion? region,
+    private async Task SetConfigurationAsync(
+        AmbientRenderingConfiguration? configuration,
         CancellationToken cancellationToken)
     {
         await rendererStateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (activeRegion == region
-                && (region is null || rendererTask is { IsCompleted: false }))
+            if (activeConfiguration == configuration
+                && (configuration is null || rendererTask is { IsCompleted: false }))
             {
                 return;
             }
@@ -113,7 +117,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
             Task? previousTask = rendererTask;
             rendererCancellation = null;
             rendererTask = null;
-            activeRegion = null;
+            activeConfiguration = null;
             previousCancellation?.Cancel();
             if (previousTask is not null)
             {
@@ -126,15 +130,15 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                 }
             }
             previousCancellation?.Dispose();
-            if (region is null || Volatile.Read(ref disposed) != 0)
+            if (configuration is null || Volatile.Read(ref disposed) != 0)
             {
                 return;
             }
 
             var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             rendererCancellation = linked;
-            rendererTask = RenderAsync(region.Value, linked.Token);
-            activeRegion = region;
+            rendererTask = RenderAsync(configuration.Value, linked.Token);
+            activeConfiguration = configuration;
         }
         finally
         {
@@ -143,11 +147,14 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
     }
 
     private async Task RenderAsync(
-        AmbientAwarenessRegion region,
+        AmbientRenderingConfiguration configuration,
         CancellationToken cancellationToken)
     {
         IAmbientScreenSampler? sampler = null;
-        var cadence = new SessionLightingFrameCadence(timeProvider);
+        var cadence = new SessionLightingFrameCadence(
+            timeProvider,
+            configuration.RefreshRate);
+        var pacer = new SessionLightingFramePacer(timeProvider, delay);
         // Keep sampler ownership parallel with ServiceAudioMeterLightingLoop:
         // native sampler failures recreate resources, while service failures retain them.
         try
@@ -158,7 +165,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                 try
                 {
                     sampler ??= samplerFactory.Create();
-                    frame = sampler.Capture(region);
+                    frame = sampler.Capture(configuration.Region);
                 }
                 catch (OperationCanceledException) when (
                     cancellationToken.IsCancellationRequested)
@@ -168,6 +175,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                 catch (Exception exception)
                 {
                     ResetSampler(ref sampler);
+                    pacer.Reset();
                     ReportFailure(exception);
                     await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
                     continue;
@@ -189,7 +197,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                         cadence.RecordSent(frame);
                     }
 
-                    await delay(decision.NextInterval, cancellationToken)
+                    await pacer.WaitAsync(decision.NextInterval, cancellationToken)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (
@@ -199,6 +207,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                 }
                 catch (Exception exception)
                 {
+                    pacer.Reset();
                     ReportFailure(exception);
                     await delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
                 }
@@ -241,11 +250,66 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
     }
 }
 
+internal readonly record struct AmbientRenderingConfiguration(
+    AmbientAwarenessRegion Region,
+    LightingRefreshRate RefreshRate);
+
 internal readonly record struct SessionLightingFrameDecision(
     bool ShouldSend,
     TimeSpan NextInterval);
 
-internal sealed class SessionLightingFrameCadence(TimeProvider timeProvider)
+internal sealed class SessionLightingFramePacer(
+    TimeProvider timeProvider,
+    Func<TimeSpan, CancellationToken, Task> delay)
+{
+    private readonly TimeProvider timeProvider =
+        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    private readonly Func<TimeSpan, CancellationToken, Task> delay =
+        delay ?? throw new ArgumentNullException(nameof(delay));
+    private long originTimestamp = timeProvider.GetTimestamp();
+    private TimeSpan? nextDeadline;
+    private TimeSpan? lastInterval;
+
+    internal async Task WaitAsync(
+        TimeSpan interval,
+        CancellationToken cancellationToken)
+    {
+        if (interval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(interval));
+        }
+
+        TimeSpan elapsed = timeProvider.GetElapsedTime(originTimestamp);
+        if (nextDeadline is null || lastInterval != interval)
+        {
+            nextDeadline = elapsed + interval;
+        }
+        else
+        {
+            nextDeadline += interval;
+            while (nextDeadline <= elapsed)
+            {
+                nextDeadline += interval;
+            }
+        }
+
+        lastInterval = interval;
+        TimeSpan remaining = nextDeadline.Value - elapsed;
+        if (remaining > TimeSpan.Zero)
+        {
+            await delay(remaining, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    internal void Reset()
+    {
+        originTimestamp = timeProvider.GetTimestamp();
+        nextDeadline = null;
+        lastInterval = null;
+    }
+}
+
+internal sealed class SessionLightingFrameCadence
 {
     // Match the matrix renderer's proven 30 FPS cadence while the sampled
     // colors are changing. After roughly half a second without a change,
@@ -257,11 +321,30 @@ internal sealed class SessionLightingFrameCadence(TimeProvider timeProvider)
         TimeSpan.TicksPerSecond / 30);
     internal static readonly TimeSpan StaticInterval = TimeSpan.FromMilliseconds(200);
 
-    private readonly TimeProvider timeProvider =
-        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    private readonly TimeProvider timeProvider;
+    private readonly TimeSpan activeInterval;
+    private readonly int staticFrameThreshold;
     private IReadOnlyList<RgbColor>? lastSentFrame;
     private DateTimeOffset? lastSentAt;
     private int unchangedFrames;
+
+    internal SessionLightingFrameCadence(
+        TimeProvider timeProvider,
+        LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz)
+    {
+        this.timeProvider = timeProvider
+            ?? throw new ArgumentNullException(nameof(timeProvider));
+        activeInterval = refreshRate switch
+        {
+            LightingRefreshRate.ThirtyHz => ActiveInterval,
+            LightingRefreshRate.SixtyHz => TimeSpan.FromTicks(
+                TimeSpan.TicksPerSecond / 60),
+            _ => throw new ArgumentOutOfRangeException(nameof(refreshRate)),
+        };
+        staticFrameThreshold = refreshRate == LightingRefreshRate.SixtyHz
+            ? StaticFrameThreshold * 2
+            : StaticFrameThreshold;
+    }
 
     internal SessionLightingFrameDecision Evaluate(AmbientLightingFrame frame)
     {
@@ -272,14 +355,14 @@ internal sealed class SessionLightingFrameCadence(TimeProvider timeProvider)
         if (changed)
         {
             unchangedFrames = 0;
-            nextInterval = ActiveInterval;
+            nextInterval = activeInterval;
         }
         else
         {
-            unchangedFrames = Math.Min(StaticFrameThreshold, unchangedFrames + 1);
-            nextInterval = unchangedFrames >= StaticFrameThreshold
+            unchangedFrames = Math.Min(staticFrameThreshold, unchangedFrames + 1);
+            nextInterval = unchangedFrames >= staticFrameThreshold
                 ? StaticInterval
-                : ActiveInterval;
+                : activeInterval;
         }
 
         DateTimeOffset now = timeProvider.GetUtcNow();

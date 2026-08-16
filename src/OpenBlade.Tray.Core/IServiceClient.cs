@@ -86,6 +86,10 @@ public interface IServiceClient : IServiceStatusWatcher
         bool enabled,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetLightingRefreshRateAsync(
+        LightingRefreshRate refreshRate,
+        CancellationToken token);
+
     Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
         bool enabled,
         CancellationToken token);

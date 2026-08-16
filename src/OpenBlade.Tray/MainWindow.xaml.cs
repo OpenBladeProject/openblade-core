@@ -77,6 +77,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingStartupAnimation;
     private bool changingFunctionKeySelection;
     private bool changingExternalLightingPolicy;
+    private bool changingLightingRefreshRate;
     private bool changingFirmwareCompatibilityOverride;
     private bool changingWindowsDynamicLighting;
     private bool changingDashboardCards;
@@ -1464,6 +1465,43 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             toggle.IsOn = ViewModel.AlwaysOverrideExternalLightingChanges;
             toggle.IsEnabled = true;
             changingExternalLightingPolicy = false;
+        }
+    }
+
+    private async void OnLightingRefreshRateToggled(
+        object sender,
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleLightingRefreshRateToggledAsync(sender),
+            nameof(OnLightingRefreshRateToggled));
+
+    private async Task HandleLightingRefreshRateToggledAsync(object sender)
+    {
+        if (changingLightingRefreshRate
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || !ViewModel.LabFeaturesEnabled
+            || !ViewModel.CanSetLightingRefreshRate
+            || toggle.IsOn == ViewModel.IsSixtyHzLightingEnabled)
+        {
+            return;
+        }
+
+        changingLightingRefreshRate = true;
+        toggle.IsEnabled = false;
+        try
+        {
+            await ViewModel.SetLightingRefreshRateAsync(
+                toggle.IsOn
+                    ? LightingRefreshRate.SixtyHz
+                    : LightingRefreshRate.ThirtyHz,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.IsSixtyHzLightingEnabled;
+            toggle.IsEnabled = ViewModel.CanSetLightingRefreshRate;
+            changingLightingRefreshRate = false;
         }
     }
 
