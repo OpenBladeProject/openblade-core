@@ -12,8 +12,38 @@ on:
         required: false
         default: 0
         type: number
+      validation-mode:
+        description: Full, affected, or none.
+        required: false
+        default: full
+        type: string
+      validation-plan-json:
+        description: Validated affected-project plan emitted by the CI classifier.
+        required: false
+        default: '{}'
+        type: string
+      run-quality:
+        description: Run .NET formatting, builds, and tests.
+        required: false
+        default: true
+        type: boolean
+      run-contracts:
+        description: Run PowerShell build-contract suites.
+        required: false
+        default: true
+        type: boolean
+      run-component-publish:
+        description: Publish only affected executable components.
+        required: false
+        default: false
+        type: boolean
       run-installer:
         description: Run the complete production installer validation lane.
+        required: false
+        default: true
+        type: boolean
+      checkout-captures:
+        description: Initialize the pinned capture-evidence submodule.
         required: false
         default: true
         type: boolean
@@ -32,6 +62,13 @@ jobs:
         env:
           OPENBLADE_BUILD_CHANNEL: ${{ inputs.channel }}
           OPENBLADE_BUILD_REVISION: ${{ inputs.build-revision }}
+          OPENBLADE_VALIDATION_MODE: ${{ inputs.validation-mode }}
+          OPENBLADE_VALIDATION_PLAN_JSON: ${{ inputs.validation-plan-json }}
+          OPENBLADE_RUN_QUALITY: ${{ inputs.run-quality }}
+          OPENBLADE_RUN_CONTRACTS: ${{ inputs.run-contracts }}
+          OPENBLADE_RUN_COMPONENT_PUBLISH: ${{ inputs.run-component-publish }}
+          OPENBLADE_RUN_INSTALLER: ${{ inputs.run-installer }}
+          OPENBLADE_CHECKOUT_CAPTURES: ${{ inputs.checkout-captures }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:OPENBLADE_BUILD_CHANNEL -notin @('Stable', 'Nightly')) {
@@ -50,10 +87,55 @@ jobs:
               ($revision -lt 1 -or $revision -gt 65535)) {
             throw 'Nightly build revisions must be between 1 and 65535.'
           }
+          if ($env:OPENBLADE_VALIDATION_MODE -notin @('full', 'affected', 'none')) {
+            throw "Unsupported validation mode '$env:OPENBLADE_VALIDATION_MODE'."
+          }
+          if ($env:OPENBLADE_RUN_COMPONENT_PUBLISH -eq 'true' -and
+              $env:OPENBLADE_RUN_INSTALLER -eq 'true') {
+            throw 'Component and complete installer publication must not run together.'
+          }
+          if ($env:OPENBLADE_VALIDATION_MODE -eq 'full' -and
+              ($env:OPENBLADE_RUN_QUALITY -ne 'true' -or
+               $env:OPENBLADE_RUN_CONTRACTS -ne 'true' -or
+               $env:OPENBLADE_RUN_COMPONENT_PUBLISH -ne 'false' -or
+               $env:OPENBLADE_RUN_INSTALLER -ne 'true' -or
+               $env:OPENBLADE_CHECKOUT_CAPTURES -ne 'true')) {
+            throw 'Full validation requires exhaustive lanes and capture evidence.'
+          }
+          if ($env:OPENBLADE_VALIDATION_MODE -eq 'none' -and
+              ($env:OPENBLADE_RUN_QUALITY -ne 'false' -or
+               $env:OPENBLADE_RUN_CONTRACTS -ne 'false' -or
+               $env:OPENBLADE_RUN_COMPONENT_PUBLISH -ne 'false' -or
+               $env:OPENBLADE_RUN_INSTALLER -ne 'false' -or
+               $env:OPENBLADE_CHECKOUT_CAPTURES -ne 'false')) {
+            throw 'Validation mode none cannot enable an execution lane.'
+          }
+          if ($env:OPENBLADE_VALIDATION_MODE -eq 'affected') {
+            $plan = $env:OPENBLADE_VALIDATION_PLAN_JSON | ConvertFrom-Json
+            if ($plan.mode -ne 'affected') {
+              throw 'The affected validation plan mode does not match the request.'
+            }
+            $expectedInputs = [ordered]@{
+              OPENBLADE_RUN_QUALITY = @($plan.QualityProjects).Count -gt 0
+              OPENBLADE_RUN_CONTRACTS = @($plan.ContractTests).Count -gt 0
+              OPENBLADE_RUN_COMPONENT_PUBLISH =
+                @($plan.PublishProjects).Count -gt 0 -and -not [bool]$plan.RunInstaller
+              OPENBLADE_RUN_INSTALLER = [bool]$plan.RunInstaller
+              OPENBLADE_CHECKOUT_CAPTURES = [bool]$plan.RequiresCaptures
+            }
+            foreach ($expectedInput in $expectedInputs.GetEnumerator()) {
+              $actual = [Environment]::GetEnvironmentVariable($expectedInput.Key)
+              $expected = $expectedInput.Value.ToString().ToLowerInvariant()
+              if ($actual -ne $expected) {
+                throw "$($expectedInput.Key) must be '$expected' for the affected plan."
+              }
+            }
+          }
 
   quality-and-tests:
     name: Quality and tests
     needs: validate-request
+    if: ${{ inputs.run-quality }}
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -61,11 +143,19 @@ jobs:
       DOTNET_NOLOGO: true
       OPENBLADE_SKIP_INTERACTIVE_DESKTOP_TESTS: 0
     steps:
-      - name: Check out source
+      - name: Check out source with capture evidence
+        if: ${{ inputs.checkout-captures }}
         uses: actions/checkout@v7
         with:
           persist-credentials: false
           submodules: recursive
+
+      - name: Check out source without capture evidence
+        if: ${{ !inputs.checkout-captures }}
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: false
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
@@ -73,9 +163,11 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
+        if: inputs.validation-mode == 'full'
         run: dotnet restore OpenBlade.slnx -p:NuGetAudit=false
 
       - name: Verify formatting
+        if: inputs.validation-mode == 'full'
         run: >-
           dotnet format OpenBlade.slnx
           --verify-no-changes
@@ -84,6 +176,7 @@ jobs:
           --verbosity minimal
 
       - name: Build
+        if: inputs.validation-mode == 'full'
         run: >-
           dotnet build OpenBlade.slnx
           -p:NuGetAudit=false
@@ -92,6 +185,7 @@ jobs:
           --verbosity minimal
 
       - name: Test
+        if: inputs.validation-mode == 'full'
         run: >-
           dotnet test OpenBlade.slnx
           -p:NuGetAudit=false
@@ -100,9 +194,75 @@ jobs:
           -m:1
           --verbosity minimal
 
+      - name: Run affected quality and tests
+        if: inputs.validation-mode == 'affected'
+        shell: powershell
+        env:
+          OPENBLADE_VALIDATION_PLAN_JSON: ${{ inputs.validation-plan-json }}
+        run: >-
+          .\build\Run-AffectedCi.ps1
+          -Lane Quality
+          -PlanJson $env:OPENBLADE_VALIDATION_PLAN_JSON
+
   build-contracts:
     name: Build contracts
     needs: validate-request
+    if: ${{ inputs.run-contracts }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: true
+    steps:
+      - name: Check out source with capture evidence
+        if: ${{ inputs.checkout-captures }}
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Check out source without capture evidence
+        if: ${{ !inputs.checkout-captures }}
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        if: inputs.validation-mode == 'full'
+        run: dotnet restore OpenBlade.slnx -p:NuGetAudit=false
+
+      # This lane intentionally does not build the solution first. Contract
+      # scripts inspect source or produce their own isolated build outputs;
+      # tests that consume shared bin/obj output belong in quality-and-tests.
+      - name: Validate installer and Store authoring
+        if: inputs.validation-mode == 'full'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-ChildItem .\tests\Build.Tests\*.Tests.ps1 |
+            Sort-Object Name |
+            ForEach-Object { & $_.FullName }
+
+      - name: Run affected build contracts
+        if: inputs.validation-mode == 'affected'
+        shell: powershell
+        env:
+          OPENBLADE_VALIDATION_PLAN_JSON: ${{ inputs.validation-plan-json }}
+        run: >-
+          .\build\Run-AffectedCi.ps1
+          -Lane Contracts
+          -PlanJson $env:OPENBLADE_VALIDATION_PLAN_JSON
+
+  component-publish:
+    name: Component publish
+    needs: validate-request
+    if: ${{ inputs.run-component-publish }}
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -113,26 +273,22 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-          submodules: recursive
+          submodules: false
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore
-        run: dotnet restore OpenBlade.slnx -p:NuGetAudit=false
-
-      # This lane intentionally does not build the solution first. Contract
-      # scripts inspect source or produce their own isolated build outputs;
-      # tests that consume shared bin/obj output belong in quality-and-tests.
-      - name: Validate installer and Store authoring
+      - name: Publish affected components
         shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Get-ChildItem .\tests\Build.Tests\*.Tests.ps1 |
-            Sort-Object Name |
-            ForEach-Object { & $_.FullName }
+        env:
+          OPENBLADE_VALIDATION_PLAN_JSON: ${{ inputs.validation-plan-json }}
+        run: >-
+          .\build\Run-AffectedCi.ps1
+          -Lane Publish
+          -PlanJson $env:OPENBLADE_VALIDATION_PLAN_JSON
+          -Configuration Release
 
   installer-validation:
     name: Installer validation
@@ -190,6 +346,7 @@ jobs:
       - validate-request
       - quality-and-tests
       - build-contracts
+      - component-publish
       - installer-validation
     if: ${{ always() }}
     runs-on: ubuntu-latest
@@ -207,12 +364,20 @@ jobs:
           OPENBLADE_VALIDATE_RESULT: ${{ needs.validate-request.result }}
           OPENBLADE_QUALITY_RESULT: ${{ needs.quality-and-tests.result }}
           OPENBLADE_CONTRACT_RESULT: ${{ needs.build-contracts.result }}
+          OPENBLADE_COMPONENT_PUBLISH_RESULT: ${{ needs.component-publish.result }}
           OPENBLADE_INSTALLER_RESULT: ${{ needs.installer-validation.result }}
+          OPENBLADE_RUN_QUALITY: ${{ inputs.run-quality }}
+          OPENBLADE_RUN_CONTRACTS: ${{ inputs.run-contracts }}
+          OPENBLADE_RUN_COMPONENT_PUBLISH: ${{ inputs.run-component-publish }}
           OPENBLADE_RUN_INSTALLER: ${{ inputs.run-installer }}
         run: |
           ./build/Assert-CiLaneResults.ps1 `
             -ValidateResult $env:OPENBLADE_VALIDATE_RESULT `
             -QualityResult $env:OPENBLADE_QUALITY_RESULT `
             -ContractResult $env:OPENBLADE_CONTRACT_RESULT `
+            -ComponentPublishResult $env:OPENBLADE_COMPONENT_PUBLISH_RESULT `
             -InstallerResult $env:OPENBLADE_INSTALLER_RESULT `
+            -RunQuality $env:OPENBLADE_RUN_QUALITY `
+            -RunContracts $env:OPENBLADE_RUN_CONTRACTS `
+            -RunComponentPublish $env:OPENBLADE_RUN_COMPONENT_PUBLISH `
             -RunInstaller $env:OPENBLADE_RUN_INSTALLER

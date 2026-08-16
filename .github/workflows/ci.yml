@@ -26,8 +26,13 @@ jobs:
     name: Classify changes
     runs-on: ubuntu-latest
     outputs:
-      requires-build: ${{ steps.scope.outputs.requires-build }}
-      requires-installer: ${{ steps.scope.outputs.requires-installer }}
+      validation-mode: ${{ steps.scope.outputs.validation-mode }}
+      validation-plan-json: ${{ steps.scope.outputs.validation-plan-json }}
+      run-quality: ${{ steps.scope.outputs.run-quality }}
+      run-contracts: ${{ steps.scope.outputs.run-contracts }}
+      run-component-publish: ${{ steps.scope.outputs.run-component-publish }}
+      run-installer: ${{ steps.scope.outputs.run-installer }}
+      checkout-captures: ${{ steps.scope.outputs.checkout-captures }}
     steps:
       - name: Check out source metadata
         uses: actions/checkout@v7
@@ -41,6 +46,7 @@ jobs:
         shell: pwsh
         env:
           OPENBLADE_EVENT_NAME: ${{ github.event_name }}
+          OPENBLADE_PR_DRAFT: ${{ github.event.pull_request.draft }}
           OPENBLADE_BEFORE_SHA: ${{ github.event.before }}
           OPENBLADE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           OPENBLADE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -49,9 +55,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           . ./build/CiBuildScope.ps1
 
-          $forceBuild = $env:OPENBLADE_EVENT_NAME -eq 'workflow_dispatch'
+          $forceFull = $env:OPENBLADE_EVENT_NAME -ne 'pull_request' -or
+            $env:OPENBLADE_PR_DRAFT -ne 'true'
           $changedPaths = @()
-          if (-not $forceBuild) {
+          if (-not $forceFull) {
             if ($env:OPENBLADE_EVENT_NAME -eq 'pull_request') {
               $baseSha = $env:OPENBLADE_BASE_SHA
               $headSha = $env:OPENBLADE_HEAD_SHA
@@ -64,34 +71,53 @@ jobs:
             if ([string]::IsNullOrWhiteSpace($baseSha) -or
                 [string]::IsNullOrWhiteSpace($headSha) -or
                 $baseSha -match '^0{40}$') {
-              $forceBuild = $true
+              $forceFull = $true
             }
             else {
               $changedPaths = @(
                 git diff --name-only --no-renames $baseSha $headSha --)
               if ($LASTEXITCODE -ne 0) {
-                throw 'Unable to determine the changed paths.'
+                $changedPaths = @()
+                $forceFull = $true
               }
             }
           }
 
-          $requiresBuild = Test-OpenBladeCiBuildRequired `
+          $plan = Get-OpenBladeCiPlan `
             -ChangedPath $changedPaths `
-            -Force:$forceBuild
-          $requiresInstaller = Test-OpenBladeCiInstallerRequired `
-            -ChangedPath $changedPaths `
-            -Force:$forceBuild
-          "requires-build=$($requiresBuild.ToString().ToLowerInvariant())" |
-            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "requires-installer=$($requiresInstaller.ToString().ToLowerInvariant())" |
-            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            -ForceFull:$forceFull
+          $planJson = $plan | ConvertTo-Json -Depth 8 -Compress
+          $runQuality = @($plan.QualityProjects).Count -gt 0
+          $runContracts = @($plan.ContractTests).Count -gt 0
+          $runComponentPublish = @($plan.PublishProjects).Count -gt 0 -and
+            -not $plan.RunInstaller
+          $outputs = [ordered]@{
+            'validation-mode' = $plan.Mode
+            'validation-plan-json' = $planJson
+            'run-quality' = $runQuality.ToString().ToLowerInvariant()
+            'run-contracts' = $runContracts.ToString().ToLowerInvariant()
+            'run-component-publish' = $runComponentPublish.ToString().ToLowerInvariant()
+            'run-installer' = $plan.RunInstaller.ToString().ToLowerInvariant()
+            'checkout-captures' = $plan.RequiresCaptures.ToString().ToLowerInvariant()
+          }
+          foreach ($output in $outputs.GetEnumerator()) {
+            "$($output.Key)=$($output.Value)" |
+              Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+          Format-OpenBladeCiPlan -Plan $plan |
+            Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY
 
   build-and-test:
     needs: classify-changes
-    if: ${{ needs.classify-changes.outputs.requires-build == 'true' }}
     uses: ./.github/workflows/build.yml
     with:
       channel: Stable
-      run-installer: ${{ needs.classify-changes.outputs.requires-installer == 'true' }}
+      validation-mode: ${{ needs.classify-changes.outputs.validation-mode }}
+      validation-plan-json: ${{ needs.classify-changes.outputs.validation-plan-json }}
+      run-quality: ${{ needs.classify-changes.outputs.run-quality == 'true' }}
+      run-contracts: ${{ needs.classify-changes.outputs.run-contracts == 'true' }}
+      run-component-publish: ${{ needs.classify-changes.outputs.run-component-publish == 'true' }}
+      run-installer: ${{ needs.classify-changes.outputs.run-installer == 'true' }}
+      checkout-captures: ${{ needs.classify-changes.outputs.checkout-captures == 'true' }}
     permissions:
       contents: read
