@@ -50,8 +50,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Offered **Repair** and **Uninstall** when an interactive installer finds one
   cached OpenBlade bundle with the same version. Repair overwrites the installed
-  files with the incoming payload and retires the old registration; Uninstall
-  removes through the cached installed bundle without registering the incoming one.
+  files, records instance-specific ownership, and retires the old registration
+  without letting it remove the repaired payload. Uninstall keeps saved profiles
+  and removes through the cached installed bundle without registering the incoming one.
 - Reduced excess vertical space in single-line Dashboard rows while preserving
   the original spacing for descriptions, editors, and titles that wrap at
   narrow widths without disrupting conditional-row animations.

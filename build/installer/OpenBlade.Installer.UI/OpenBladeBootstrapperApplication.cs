@@ -11,6 +11,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 {
     private const string ProgressPipeVariable = "OpenBladeSetupProgressPipe";
     private const string PurgeProfilesVariable = "OpenBladePurgeProfiles";
+    private const string BundleOwnerIdVariable = "OpenBladeBundleOwnerId";
     private const string InstalledVersionVariable = "OpenBladeInstalledVersion";
     private const string LaunchTargetVariable = "LaunchTarget";
     private const string LaunchWorkingFolderVariable = "LaunchWorkingFolder";
@@ -107,6 +108,12 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             && (!overwriteNewerVersion || command.Display != Display.Full))
         {
             RequireNewerVersionOverwriteConfirmation();
+            return;
+        }
+
+        if (action is LaunchAction.Install or LaunchAction.Repair or LaunchAction.Uninstall
+            && !EnsureBundleOwnerId())
+        {
             return;
         }
 
@@ -364,13 +371,6 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             return;
         }
 
-        if (newerRelatedBundleVersion is not null
-            && detectionAction is LaunchAction.Install or LaunchAction.Repair)
-        {
-            RequireNewerVersionOverwriteConfirmation();
-            return;
-        }
-
         if (sameVersionRelatedBundleVersion is string maintenanceVersion
             && ShouldOfferSameVersionMaintenance(
                 command.Action,
@@ -388,6 +388,13 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
                 installed))
         {
             RejectSameVersionReplacement(sameVersion);
+            return;
+        }
+
+        if (newerRelatedBundleVersion is not null
+            && detectionAction is LaunchAction.Install or LaunchAction.Repair)
+        {
+            RequireNewerVersionOverwriteConfirmation();
             return;
         }
 
@@ -633,12 +640,12 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private void RejectSameVersionReplacement(string installedVersion)
     {
+        bool canOfferMaintenance = CanOfferSameVersionMaintenance();
         string message =
             $"Another OpenBlade {installedVersion} installer build is already registered. "
-            + (sameVersionRelatedBundleCached
-                ? "Run this installer interactively and choose Repair or Uninstall."
-                : "Its cached installer is unavailable, so setup cannot safely repair or remove it. "
-                    + "Use Windows installer recovery before trying again.");
+            + SelectSameVersionConflictGuidance(
+                canOfferMaintenance,
+                sameVersionRelatedBundleCached);
         RejectRelatedBundleReplacement(
             SelectRelatedBundleConflictStatus(multipleRegistrations: false),
             message);
@@ -711,6 +718,30 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             bundleCode,
             sameVersionRelatedBundleCode,
             StringComparison.OrdinalIgnoreCase);
+
+    private bool EnsureBundleOwnerId()
+    {
+        string? current = TryGetVariable(BundleOwnerIdVariable);
+        if (IsValidBundleOwnerId(current))
+        {
+            return true;
+        }
+
+        if (installed)
+        {
+            CompleteWithFailure(
+                InstallerConfigurationCorrupt,
+                "The registered OpenBlade installer ownership token is missing or malformed. "
+                + "Use Windows installer recovery before trying again.");
+            return false;
+        }
+
+        Engine.SetVariableString(
+            BundleOwnerIdVariable,
+            Guid.NewGuid().ToString("D"),
+            false);
+        return true;
+    }
 
     private void AddDetail(string message)
     {
@@ -902,7 +933,24 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         bool canOfferMaintenance) =>
         canOfferMaintenance
         && display == Display.Full
-        && action is LaunchAction.Unknown or LaunchAction.Install;
+        && action is LaunchAction.Unknown
+            or LaunchAction.Install
+            or LaunchAction.Repair
+            or LaunchAction.Uninstall;
+
+    internal static bool IsValidBundleOwnerId(string? value) =>
+        Guid.TryParseExact(value, "D", out _);
+
+    internal static string SelectSameVersionConflictGuidance(
+        bool canOfferMaintenance,
+        bool relatedBundleCached) =>
+        canOfferMaintenance
+            ? "Run this installer interactively and choose Repair or Uninstall."
+            : !relatedBundleCached
+                ? "Its cached installer is unavailable, so setup cannot safely repair or remove it. "
+                    + "Use Windows installer recovery before trying again."
+                : "Setup cannot safely choose one maintenance owner for this state. "
+                    + "Use Windows Installed apps to repair or remove the registered bundle first.";
 
     internal static bool ShouldBlockMultipleRelatedBundles(
         LaunchAction action,

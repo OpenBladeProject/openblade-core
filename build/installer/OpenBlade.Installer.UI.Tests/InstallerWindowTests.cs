@@ -44,9 +44,12 @@ public sealed class InstallerWindowTests
             window.ShowSameVersionMaintenance("1.2.3");
             Assert.Equal("OpenBlade 1.2.3 is installed", window.ReadyHeading.Text);
             Assert.Contains("overwrites", window.ReadyMessage.Text);
+            Assert.Contains("keeping saved profiles", window.ReadyMessage.Text);
             Assert.Equal(Visibility.Collapsed, window.InstallButton.Visibility);
             Assert.Equal(Visibility.Visible, window.RepairButton.Visibility);
             Assert.Equal(Visibility.Visible, window.UninstallButton.Visibility);
+            Assert.Equal(Visibility.Collapsed, window.PurgeProfilesCheckBox.Visibility);
+            Assert.False(window.PurgeProfilesCheckBox.IsChecked);
 
             window.ShowNewerVersionConfirmation(
                 "2.0.0",
@@ -225,7 +228,8 @@ public sealed class InstallerWindowTests
     [Theory]
     [InlineData(LaunchAction.Unknown, Display.Full, true, true)]
     [InlineData(LaunchAction.Install, Display.Full, true, true)]
-    [InlineData(LaunchAction.Repair, Display.Full, true, false)]
+    [InlineData(LaunchAction.Repair, Display.Full, true, true)]
+    [InlineData(LaunchAction.Uninstall, Display.Full, true, true)]
     [InlineData(LaunchAction.Unknown, Display.Passive, true, false)]
     [InlineData(LaunchAction.Unknown, Display.Full, false, false)]
     public void SameVersionMaintenanceRequiresAnInteractiveInstallEntryPoint(
@@ -240,6 +244,35 @@ public sealed class InstallerWindowTests
                 action,
                 display,
                 canOfferMaintenance));
+    }
+
+    [Theory]
+    [InlineData("01234567-89ab-cdef-0123-456789abcdef", true)]
+    [InlineData("0123456789abcdef0123456789abcdef", false)]
+    [InlineData("{01234567-89ab-cdef-0123-456789abcdef}", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void BundleOwnerIdRequiresCanonicalDFormat(string? value, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.IsValidBundleOwnerId(value));
+    }
+
+    [Theory]
+    [InlineData(true, true, "choose Repair or Uninstall")]
+    [InlineData(false, false, "cached installer is unavailable")]
+    [InlineData(false, true, "cannot safely choose one maintenance owner")]
+    public void SameVersionConflictGuidanceMatchesTheFullMaintenanceGate(
+        bool canOfferMaintenance,
+        bool relatedBundleCached,
+        string expected)
+    {
+        Assert.Contains(
+            expected,
+            OpenBladeBootstrapperApplication.SelectSameVersionConflictGuidance(
+                canOfferMaintenance,
+                relatedBundleCached));
     }
 
     [Theory]

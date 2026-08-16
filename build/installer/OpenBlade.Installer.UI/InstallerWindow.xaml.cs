@@ -60,12 +60,13 @@ internal partial class InstallerWindow : Window
         HeaderSubtitle.Text = "Maintenance";
         ReadyHeading.Text = $"OpenBlade {installedVersion} is installed";
         ReadyMessage.Text =
-            "Repair overwrites the installed files with this installer, or uninstall OpenBlade from this PC.";
+            "Repair overwrites the installed files with this installer, or uninstall OpenBlade while keeping saved profiles.";
         InstallButton.Visibility = Visibility.Collapsed;
         InstallButton.Content = "Install";
         RepairButton.Visibility = Visibility.Visible;
         UninstallButton.Visibility = Visibility.Visible;
-        PurgeProfilesCheckBox.Visibility = Visibility.Visible;
+        PurgeProfilesCheckBox.IsChecked = false;
+        PurgeProfilesCheckBox.Visibility = Visibility.Collapsed;
     }
 
     public void ShowNewerVersionConfirmation(

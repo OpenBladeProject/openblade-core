@@ -36,4 +36,33 @@ public sealed class BundleOwnershipRegistrationTests
             expected,
             WindowsBundleOwnershipRegistration.IsOwnedByBuild(installed, current));
     }
+
+    [Fact]
+    public void FormatOwnedBuildIdentity_DistinguishesBundleRegistrationsOfTheSameBuild()
+    {
+        const string firstOwnerId = "01234567-89ab-cdef-0123-456789abcdef";
+        const string secondOwnerId = "fedcba98-7654-3210-fedc-ba9876543210";
+        string first = WindowsBundleOwnershipRegistration.FormatOwnedBuildIdentity(
+            "0.8.5",
+            firstOwnerId);
+        string second = WindowsBundleOwnershipRegistration.FormatOwnedBuildIdentity(
+            "0.8.5",
+            secondOwnerId);
+
+        Assert.Equal("0.8.5|bundle:01234567-89ab-cdef-0123-456789abcdef", first);
+        Assert.True(WindowsBundleOwnershipRegistration.IsOwnedByBuild(first, first));
+        Assert.False(WindowsBundleOwnershipRegistration.IsOwnedByBuild(first, second));
+        Assert.False(WindowsBundleOwnershipRegistration.IsOwnedByBuild("0.8.5", first));
+        Assert.False(WindowsBundleOwnershipRegistration.IsOwnedByBuild(first, "0.8.5"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-guid")]
+    [InlineData("{01234567-89ab-cdef-0123-456789abcdef}")]
+    public void FormatOwnedBuildIdentity_RejectsMalformedBundleOwnerId(string ownerId)
+    {
+        Assert.Throws<ArgumentException>(
+            () => WindowsBundleOwnershipRegistration.FormatOwnedBuildIdentity("0.8.5", ownerId));
+    }
 }

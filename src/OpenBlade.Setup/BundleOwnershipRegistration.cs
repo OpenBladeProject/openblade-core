@@ -29,9 +29,18 @@ public interface IBundleOwnershipRegistration
 
 internal sealed class WindowsBundleOwnershipRegistration : IBundleOwnershipRegistration
 {
+    private const string BundleOwnerSeparator = "|bundle:";
     internal const string RegistryPath = @"SOFTWARE\OSSBlade\OpenBlade\Installer";
     internal const string ProductRegistryPath = @"SOFTWARE\OSSBlade\OpenBlade";
     internal const string PublisherRegistryPath = @"SOFTWARE\OSSBlade";
+    private readonly string currentBuildIdentity;
+
+    internal WindowsBundleOwnershipRegistration(string? bundleOwnerId = null)
+    {
+        currentBuildIdentity = FormatOwnedBuildIdentity(
+            OpenBladeProductVersion.Read(typeof(WindowsBundleOwnershipRegistration).Assembly),
+            bundleOwnerId);
+    }
 
     public BundleOwnershipIdentity? Capture()
     {
@@ -59,14 +68,14 @@ internal sealed class WindowsBundleOwnershipRegistration : IBundleOwnershipRegis
 
     public bool IsOwnedByCurrentBuild(BundleOwnershipIdentity ownership) =>
         ownership is { IsWellFormed: true }
-        && IsOwnedByBuild(ownership.InstalledBuild, CurrentBuildIdentity);
+        && IsOwnedByBuild(ownership.InstalledBuild, currentBuildIdentity);
 
     public void Install() =>
         Write(new BundleOwnershipIdentity(
             "WiX Burn",
             FormatInstalledVersion(
                 typeof(WindowsBundleOwnershipRegistration).Assembly.GetName().Version),
-            CurrentBuildIdentity));
+            currentBuildIdentity));
 
     public void Restore(BundleOwnershipIdentity ownership)
     {
@@ -127,8 +136,29 @@ internal sealed class WindowsBundleOwnershipRegistration : IBundleOwnershipRegis
         !string.IsNullOrWhiteSpace(installedBuild)
         && string.Equals(installedBuild.Trim(), currentBuild, StringComparison.Ordinal);
 
-    private static string CurrentBuildIdentity =>
-        OpenBladeProductVersion.Read(typeof(WindowsBundleOwnershipRegistration).Assembly);
+    internal static string FormatOwnedBuildIdentity(
+        string buildIdentity,
+        string? bundleOwnerId)
+    {
+        if (string.IsNullOrWhiteSpace(buildIdentity))
+        {
+            throw new ArgumentException("The build identity is required.", nameof(buildIdentity));
+        }
+
+        if (bundleOwnerId is null)
+        {
+            return buildIdentity;
+        }
+
+        if (!Guid.TryParseExact(bundleOwnerId, "D", out Guid parsedBundleOwnerId))
+        {
+            throw new ArgumentException(
+                "The bundle owner ID must be a D-format GUID.",
+                nameof(bundleOwnerId));
+        }
+
+        return buildIdentity + BundleOwnerSeparator + parsedBundleOwnerId.ToString("D");
+    }
 
     private static string ReadRequiredString(RegistryKey key, string valueName)
     {

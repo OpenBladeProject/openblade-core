@@ -46,6 +46,12 @@
         Type="numeric"
         Value="0" />
 
+    <Variable
+        Name="OpenBladeBundleOwnerId"
+        Type="string"
+        Value=""
+        Persisted="yes" />
+
     <util:RegistrySearch
         Id="OpenBladeBundleOwnershipSearch"
         Variable="OpenBladeInstalledVersion"
@@ -111,9 +117,9 @@
           SourceFile="!(bindpath.OpenBladeBundle)\OpenBlade.Setup.exe"
           DisplayName="OpenBlade setup"
           Description="Installs, repairs, or removes OpenBlade."
-          InstallArguments="install --bundle-managed"
-          RepairArguments="install --bundle-managed"
-          UninstallArguments="uninstall --bundle-managed"
+          InstallArguments="install --bundle-managed --bundle-owner-id &quot;[OpenBladeBundleOwnerId]&quot;"
+          RepairArguments="install --bundle-managed --bundle-owner-id &quot;[OpenBladeBundleOwnerId]&quot;"
+          UninstallArguments="uninstall --bundle-managed --bundle-owner-id &quot;[OpenBladeBundleOwnerId]&quot;"
           DetectCondition="OpenBladeInstalledVersion AND OpenBladeInstalledVersion &gt;= v$(OpenBladeVersion)"
           PerMachine="yes"
           Cache="keep"

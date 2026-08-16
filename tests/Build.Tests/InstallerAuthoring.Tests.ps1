@@ -162,6 +162,19 @@ Assert-True ($purgeVariable.GetAttribute('Type') -eq 'numeric') `
 Assert-True ($purgeVariable.GetAttribute('Value') -eq '0') `
     'Uninstall must keep profiles unless the user explicitly opts out.'
 
+$bundleOwnerVariable = $bundle.SelectSingleNode(
+    "*[local-name()='Variable'][@Name='OpenBladeBundleOwnerId']")
+Assert-True ($null -ne $bundleOwnerVariable) `
+    'The bundle must define an instance-specific setup ownership token.'
+Assert-True ($bundleOwnerVariable.GetAttribute('Type') -eq 'string') `
+    'The setup ownership token must be a string variable.'
+Assert-True ($bundleOwnerVariable.GetAttribute('Value') -eq '') `
+    'A fresh bundle must generate its setup ownership token at runtime.'
+Assert-True ($bundleOwnerVariable.GetAttribute('Persisted') -eq 'yes') `
+    'The setup ownership token must survive later repair and uninstall runs.'
+Assert-True ($bundleOwnerVariable.GetAttribute('Hidden') -ne 'yes') `
+    'WiX does not permit a persisted bundle variable to also be hidden.'
+
 $search = $bundle.SelectSingleNode(
     "*[local-name()='RegistrySearch'][@Id='OpenBladeBundleOwnershipSearch']")
 Assert-True ($null -ne $search) 'The bundle ownership registry search is missing.'
@@ -182,9 +195,9 @@ $package = $bundle.SelectSingleNode(
     "*[local-name()='Chain']/*[local-name()='ExePackage'][@Id='OpenBladeSetup']")
 Assert-True ($null -ne $package) 'The OpenBlade setup executable package is missing.'
 $expectedPackageAttributes = [ordered]@{
-    InstallArguments = 'install --bundle-managed'
-    RepairArguments = 'install --bundle-managed'
-    UninstallArguments = 'uninstall --bundle-managed'
+    InstallArguments = 'install --bundle-managed --bundle-owner-id "[OpenBladeBundleOwnerId]"'
+    RepairArguments = 'install --bundle-managed --bundle-owner-id "[OpenBladeBundleOwnerId]"'
+    UninstallArguments = 'uninstall --bundle-managed --bundle-owner-id "[OpenBladeBundleOwnerId]"'
     DetectCondition = 'OpenBladeInstalledVersion AND OpenBladeInstalledVersion >= v$(OpenBladeVersion)'
     PerMachine = 'yes'
     Cache = 'keep'
@@ -269,6 +282,8 @@ Assert-True ($bootstrapperSource.Contains('ShowNewerVersionConfirmation')) `
     'Interactive setup must ask before replacing a newer OpenBlade version.'
 Assert-True ($bootstrapperSource.Contains('ShowSameVersionMaintenance')) `
     'Interactive setup must offer maintenance for one cached equal-version bundle.'
+Assert-True ($bootstrapperSource.Contains('EnsureBundleOwnerId()')) `
+    'Install, repair, and uninstall must validate or create the persisted bundle owner token.'
 Assert-True ($bootstrapperSource.Contains('PlanRelatedBundle += OnPlanRelatedBundle')) `
     'Equal-version uninstall must target the installed related bundle.'
 Assert-True ($bootstrapperSource.Contains('SelectRelatedBundleRequestState')) `

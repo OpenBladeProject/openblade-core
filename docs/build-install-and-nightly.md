@@ -57,7 +57,9 @@ development builds without changing the base product version:
 
 - When interactive setup finds exactly one cached bundle with the same version,
   it offers **Repair** to overwrite the installed files with the incoming
-  payload or **Uninstall** to run the installed bundle's removal path.
+  payload or **Uninstall** to run the installed bundle's removal path while
+  keeping saved profiles. Repair records a persisted per-bundle ownership token
+  so even a predecessor built from the same revision cannot remove the new payload.
 - Quiet `/install` keeps treating an equal version as a version conflict because
   it cannot choose a maintenance action on the user's behalf. Use `/repair` or
   `/uninstall` explicitly for unattended maintenance.

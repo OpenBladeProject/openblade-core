@@ -178,9 +178,9 @@ function Assert-OpenBladeInstallerBundle {
         }
 
         $expectedAttributes = [ordered]@{
-            InstallArguments = 'install --bundle-managed'
-            RepairArguments = 'install --bundle-managed'
-            UninstallArguments = 'uninstall --bundle-managed'
+            InstallArguments = 'install --bundle-managed --bundle-owner-id "[OpenBladeBundleOwnerId]"'
+            RepairArguments = 'install --bundle-managed --bundle-owner-id "[OpenBladeBundleOwnerId]"'
+            UninstallArguments = 'uninstall --bundle-managed --bundle-owner-id "[OpenBladeBundleOwnerId]"'
             DetectCondition = "OpenBladeInstalledVersion AND OpenBladeInstalledVersion >= v$ExpectedVersion"
             Scope = 'perMachine'
             Cache = 'keep'
@@ -202,6 +202,16 @@ function Assert-OpenBladeInstallerBundle {
             ($purgeVariable.GetAttribute('Type') -ne 'numeric') -or
             ($purgeVariable.GetAttribute('Value') -ne '0')) {
             throw "The Burn manifest does not default profile removal to off."
+        }
+
+        $bundleOwnerVariable = $manifest.SelectSingleNode(
+            '/burn:BurnManifest/burn:Variable[@Id="OpenBladeBundleOwnerId"]',
+            $namespaces)
+        if (($null -eq $bundleOwnerVariable) -or
+            ($bundleOwnerVariable.GetAttribute('Type') -ne 'string') -or
+            ($bundleOwnerVariable.GetAttribute('Value') -ne '') -or
+            ($bundleOwnerVariable.GetAttribute('Persisted') -ne 'yes')) {
+            throw "The Burn manifest does not persist its instance-specific setup ownership token."
         }
 
         $purgeCommandLine = $package.SelectSingleNode(
