@@ -31,6 +31,37 @@ public sealed class PersistentOverrideStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAndLoad_RoundTripsSequenceWithoutChangingEnvelopeSchema()
+    {
+        PersistentOverrideStore store = CreateStore();
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+        [
+            new KeyboardLightingSequenceFrame(
+                100,
+                new RgbColor[AmbientLightingFrame.SlotCount]),
+        ]);
+        var expected = new PersistentOverrideState(
+            null,
+            null,
+            LightingSettingsFactory.Sequence(
+                KeyboardLightingLayoutIds.Rz09_0581,
+                timeline,
+                loop: true,
+                brightness: 75));
+
+        await store.SaveAsync(expected, CancellationToken.None);
+        PersistentOverrideLoadResult loaded = await store.LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Recovered);
+        Assert.Equal(expected, loaded.Overrides);
+        Assert.Contains(
+            "\"schemaVersion\": 6",
+            await File.ReadAllTextAsync(
+                Path.Combine(directory, "manual-overrides.json")),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SaveAndLoad_RoundTripsFixedFanSpeedDetails()
     {
         PersistentOverrideStore store = CreateStore();
