@@ -365,20 +365,43 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            byte raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
-            if (raw != 0)
-            {
-                return null;
-            }
-
-            await StopStreamCoreAsync().ConfigureAwait(false);
-            ClearOwnedEffectCore(LightingSettingsFactory.Off());
-            return LightingSettingsFactory.Off();
+            return await ReadStateCoreAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             operationGate.Release();
         }
+    }
+
+    private async Task<LightingSettings?> ReadStateCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        byte raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
+        if (raw != 0)
+        {
+            return null;
+        }
+
+        if (OwnedRendererOffObservation.RequiresOffConfirmation(OwnershipState))
+        {
+            await Task.Delay(
+                OwnedRendererOffObservation.OffConfirmationDelay,
+                timeProvider,
+                cancellationToken).ConfigureAwait(false);
+            raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
+            if (raw != 0)
+            {
+                return null;
+            }
+        }
+
+        // While OpenBlade owns the renderer, only the second zero sample reaches
+        // this destructive decision. Keeping the confirmation at the port
+        // boundary also protects ordinary observations that overlap a power
+        // transition before its lifecycle event is processed.
+        await StopStreamCoreAsync().ConfigureAwait(false);
+        ClearOwnedEffectCore(LightingSettingsFactory.Off());
+        return LightingSettingsFactory.Off();
     }
 
     public async Task<LogoLightingMode?> ReadLogoStateAsync(

@@ -314,6 +314,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     {
         private const int MaximumBatteryReadAttempts = 3;
 
+        private readonly record struct TransitionLightingReadResult(
+            LightingSettings? State,
+            bool OffConfirmationUnavailable);
+
         private readonly IProductionBatteryPortFactory batteryFactory;
         private readonly IFanRpmQueryRunFactory fanRpmFactory;
         private readonly IProductionLightingPortFactory lightingFactory;
@@ -491,15 +495,39 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         public async Task<ConfirmedDeviceState> ReadStateAsync(
             CancellationToken cancellationToken)
         {
+            PowerTransitionDeviceStateReadResult result =
+                await ReadStateCoreAsync(
+                    confirmTransientLightingOff: false,
+                    cancellationToken).ConfigureAwait(false);
+            return result.State;
+        }
+
+        public Task<PowerTransitionDeviceStateReadResult>
+            ReadStateForPowerTransitionAsync(CancellationToken cancellationToken) =>
+            ReadStateCoreAsync(
+                confirmTransientLightingOff: true,
+                cancellationToken);
+
+        private async Task<PowerTransitionDeviceStateReadResult> ReadStateCoreAsync(
+            bool confirmTransientLightingOff,
+            CancellationToken cancellationToken)
+        {
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                TransitionLightingReadResult? transitionLightingRead =
+                    confirmTransientLightingOff
+                        ? await ReadPowerTransitionLightingStateCoreAsync(cancellationToken)
+                            .ConfigureAwait(false)
+                        : null;
                 bool observedTimeout = false;
                 for (int attempt = 0; ; attempt++)
                 {
                     try
                     {
-                        return await ReadBatteryStateOnceAsync(cancellationToken)
+                        return await ReadBatteryStateOnceAsync(
+                            transitionLightingRead,
+                            cancellationToken)
                             .ConfigureAwait(false);
                     }
                     catch (RazerProtocolException exception) when (
@@ -594,7 +622,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
-        private async Task<ConfirmedDeviceState> ReadBatteryStateOnceAsync(
+        private async Task<PowerTransitionDeviceStateReadResult>
+            ReadBatteryStateOnceAsync(
+            TransitionLightingReadResult? transitionLightingRead,
             CancellationToken cancellationToken)
         {
             HidSessionResult<IProductionBatteryPort> opened =
@@ -628,21 +658,27 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 GpuClockOffsetCapabilities? gpuOffsets = ReadManagedGpuClockOffsets();
                 CustomPerformanceSettings? customPerformance =
                     performanceFan.CustomPerformance;
-                LightingSettings? lighting =
-                    await ReadLightingStateCoreAsync(cancellationToken).ConfigureAwait(false);
+                TransitionLightingReadResult lightingRead =
+                    transitionLightingRead
+                        ?? new(
+                            await ReadLightingStateCoreAsync(cancellationToken)
+                                .ConfigureAwait(false),
+                            OffConfirmationUnavailable: false);
                 LogoLightingMode? logo =
                     await ReadLogoLightingStateCoreAsync(cancellationToken)
                         .ConfigureAwait(false);
-                return new ConfirmedDeviceState(
-                    performanceFan.Performance,
-                    performanceFan.Fans,
-                    battery,
-                    lighting)
-                {
-                    CustomPerformance = customPerformance,
-                    GpuClockOffsets = gpuOffsets,
-                    LogoLighting = logo,
-                };
+                return new(
+                    new ConfirmedDeviceState(
+                        performanceFan.Performance,
+                        performanceFan.Fans,
+                        battery,
+                        lightingRead.State)
+                    {
+                        CustomPerformance = customPerformance,
+                        GpuClockOffsets = gpuOffsets,
+                        LogoLighting = logo,
+                    },
+                    lightingRead.OffConfirmationUnavailable);
             }
         }
 
@@ -2501,14 +2537,52 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 // brightness read must not dispose an otherwise healthy renderer.
                 // Retire only a port whose renderer has independently reported
                 // that it is no longer usable.
-                IProductionLightingPort? current = lightingPort;
-                if (current?.OwnershipState is
-                    LightingRendererOwnershipState.None or
-                    LightingRendererOwnershipState.Faulted)
-                {
-                    await ResetLightingPortCoreAsync(current).ConfigureAwait(false);
-                }
+                await RetireUnusableLightingPortAfterReadFailureAsync()
+                    .ConfigureAwait(false);
                 return null;
+            }
+        }
+
+        private async Task<TransitionLightingReadResult>
+            ReadPowerTransitionLightingStateCoreAsync(
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                IProductionLightingPort? port =
+                    await GetLightingPortCoreAsync(
+                        LightingPortOperation.KeyboardLightingStateRead,
+                        cancellationToken).ConfigureAwait(false);
+                return port is null
+                    ? new(null, OffConfirmationUnavailable: true)
+                    : new(
+                        await port.ReadStateAsync(cancellationToken).ConfigureAwait(false),
+                        OffConfirmationUnavailable: false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
+            catch
+            {
+                await RetireUnusableLightingPortAfterReadFailureAsync()
+                    .ConfigureAwait(false);
+                return new(null, OffConfirmationUnavailable: true);
+            }
+        }
+
+        private async Task RetireUnusableLightingPortAfterReadFailureAsync()
+        {
+            IProductionLightingPort? current = lightingPort;
+            if (current?.OwnershipState is
+                LightingRendererOwnershipState.None or
+                LightingRendererOwnershipState.Faulted)
+            {
+                await ResetLightingPortCoreAsync(current).ConfigureAwait(false);
             }
         }
 

@@ -11,6 +11,17 @@ public enum DriverModeRestoreOutcome
     Failed,
 }
 
+internal static class OwnedRendererOffObservation
+{
+    internal static readonly TimeSpan OffConfirmationDelay =
+        TimeSpan.FromMilliseconds(750);
+
+    internal static bool RequiresOffConfirmation(
+        LightingRendererOwnershipState ownership) =>
+        ownership is not LightingRendererOwnershipState.None
+            and not LightingRendererOwnershipState.Faulted;
+}
+
 /// <summary>
 /// Closed, typed production lighting surface. Raw Razer commands and matrix
 /// buffers never cross the protocol boundary.

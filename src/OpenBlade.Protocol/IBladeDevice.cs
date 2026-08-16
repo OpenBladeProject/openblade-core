@@ -2,6 +2,10 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
+public readonly record struct PowerTransitionDeviceStateReadResult(
+    ConfirmedDeviceState State,
+    bool LightingOffConfirmationUnavailable);
+
 public interface IBladeDevice
 {
     Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken);
@@ -11,6 +15,9 @@ public interface IBladeDevice
     Task<ConfirmedDeviceState> ReadLightingStateAsync(
         CancellationToken cancellationToken) =>
         ReadStateAsync(cancellationToken);
+
+    Task<PowerTransitionDeviceStateReadResult> ReadStateForPowerTransitionAsync(
+        CancellationToken cancellationToken);
 
     Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken);
 
