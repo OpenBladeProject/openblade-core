@@ -52,7 +52,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   cached OpenBlade bundle with the same version. Repair overwrites the installed
   files, records instance-specific ownership, and retires the old registration
   without letting it remove the repaired payload. Uninstall keeps saved profiles
-  and removes through the cached installed bundle without registering the incoming one.
+  and removes through the cached installed bundle without registering the incoming
+  one, with guidance to use its Windows Installed apps entry when profile removal
+  is also wanted.
 - Reduced excess vertical space in single-line Dashboard rows while preserving
   the original spacing for descriptions, editors, and titles that wrap at
   narrow widths without disrupting conditional-row animations.

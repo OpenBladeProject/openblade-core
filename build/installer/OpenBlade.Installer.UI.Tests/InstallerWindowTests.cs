@@ -45,6 +45,7 @@ public sealed class InstallerWindowTests
             Assert.Equal("OpenBlade 1.2.3 is installed", window.ReadyHeading.Text);
             Assert.Contains("overwrites", window.ReadyMessage.Text);
             Assert.Contains("keeping saved profiles", window.ReadyMessage.Text);
+            Assert.Contains("Windows Installed apps", window.ReadyMessage.Text);
             Assert.Equal(Visibility.Collapsed, window.InstallButton.Visibility);
             Assert.Equal(Visibility.Visible, window.RepairButton.Visibility);
             Assert.Equal(Visibility.Visible, window.UninstallButton.Visibility);
@@ -90,11 +91,14 @@ public sealed class InstallerWindowTests
                 ((SolidColorBrush)window.Resources["WindowBrush"]).Color,
                 ((SolidColorBrush)window.CancelConfirmationPanel.Background).Color);
 
-            window.ShowSuccess(LaunchAction.Install);
+            window.ShowSuccess(LaunchAction.Install, purgeProfiles: false);
             Assert.Equal(Visibility.Collapsed, window.CancelConfirmationPanel.Visibility);
             Assert.Equal(Visibility.Visible, window.LaunchButton.Visibility);
-            window.ShowSuccess(LaunchAction.Uninstall);
+            window.ShowSuccess(LaunchAction.Uninstall, purgeProfiles: false);
             Assert.Equal(Visibility.Collapsed, window.LaunchButton.Visibility);
+            Assert.Contains("kept", window.SuccessMessage.Text);
+            window.ShowSuccess(LaunchAction.Uninstall, purgeProfiles: true);
+            Assert.Contains("also removed", window.SuccessMessage.Text);
 
             window.ShowHelp();
             Assert.Equal("Help", window.HeaderSubtitle.Text);
@@ -308,6 +312,21 @@ public sealed class InstallerWindowTests
         Assert.Equal(
             expected,
             OpenBladeBootstrapperApplication.SelectDetectionGateAction(action, display));
+    }
+
+    [Theory]
+    [InlineData(LaunchAction.Unknown, true)]
+    [InlineData(LaunchAction.Install, true)]
+    [InlineData(LaunchAction.Repair, true)]
+    [InlineData(LaunchAction.Uninstall, true)]
+    [InlineData(LaunchAction.Layout, false)]
+    public void BundleOwnerIdIsRequiredOnlyForActionsThatCanExecuteSetup(
+        LaunchAction action,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.RequiresBundleOwnerId(action));
     }
 
     [Fact]

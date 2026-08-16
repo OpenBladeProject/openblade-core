@@ -33,6 +33,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private bool applying;
     private bool cancellationRequested;
     private bool allowNewerVersionOverwrite;
+    private bool purgeProfilesRequested;
     private bool sameVersionRelatedBundleCached;
     private bool sameVersionMaintenance;
     private int phaseCount = 2;
@@ -111,8 +112,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             return;
         }
 
-        if (action is LaunchAction.Install or LaunchAction.Repair or LaunchAction.Uninstall
-            && !EnsureBundleOwnerId())
+        if (RequiresBundleOwnerId(action) && !EnsureBundleOwnerId())
         {
             return;
         }
@@ -125,6 +125,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             && newerRelatedBundleVersion is not null
             && command.Display == Display.Full;
         cancellationRequested = false;
+        purgeProfilesRequested = purgeProfiles;
         cacheProgress = 0;
         executeProgress = 0;
         Engine.SetVariableNumeric(PurgeProfilesVariable, purgeProfiles ? 1 : 0);
@@ -599,7 +600,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
         else
         {
-            Ui(() => window?.ShowSuccess(plannedAction));
+            Ui(() => window?.ShowSuccess(plannedAction, purgeProfilesRequested));
         }
     }
 
@@ -940,6 +941,12 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     internal static bool IsValidBundleOwnerId(string? value) =>
         Guid.TryParseExact(value, "D", out _);
+
+    internal static bool RequiresBundleOwnerId(LaunchAction action) =>
+        action is LaunchAction.Unknown
+            or LaunchAction.Install
+            or LaunchAction.Repair
+            or LaunchAction.Uninstall;
 
     internal static string SelectSameVersionConflictGuidance(
         bool canOfferMaintenance,
