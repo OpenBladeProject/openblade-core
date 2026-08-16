@@ -60,6 +60,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Advanced the combined service IPC contract to version 44 so components using
+  incompatible version-43 status shapes are rejected before body parsing.
 - Rejected imported lighting sequences for a different keyboard layout before
   opening the lighting device or changing its state.
 - Kept the Lab features row aligned with neighboring Settings rows when showing
