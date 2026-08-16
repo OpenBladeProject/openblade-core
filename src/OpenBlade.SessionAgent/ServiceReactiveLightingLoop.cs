@@ -15,7 +15,7 @@ public sealed record ReactiveKeyboardSourceOptions(
     Action<SpecialKeySlot> PublishSpecialKey,
     Func<SpecialKeySlot, bool> ShouldOverrideSpecialKey,
     Action<SpecialKeySlot> PublishDefaultLaptopKey,
-    Action<FunctionRowAction> PublishFunctionRowAction,
+    Action<FunctionRowInputEvent> PublishFunctionRowInput,
     Func<FunctionKeyPrimaryMode?> ReadFunctionKeyPrimaryMode,
     Func<KeyboardDriverModeObservation> ReadDriverModeObservation,
     Func<GamingModeKeyPolicy> ReadGamingModeKeyPolicy,
@@ -34,7 +34,8 @@ public sealed record ServiceReactiveLightingLoopOptions(
     Func<SpecialKeySlot, bool>? ShouldOverrideSpecialKey = null,
     Func<SpecialKeySlot, CancellationToken, Task>? ExecuteSpecialKeyAsync = null,
     Func<SpecialKeySlot, CancellationToken, Task>? ExecuteDefaultLaptopKeyAsync = null,
-    Func<FunctionRowAction, CancellationToken, Task>? ExecuteFunctionRowActionAsync = null,
+    Func<FunctionRowInputEvent, CancellationToken, Task>? ExecuteFunctionRowInputAsync = null,
+    Func<CancellationToken, Task>? ResetFunctionRowInputAsync = null,
     TimeSpan? PerformanceShortcutQuietPeriod = null);
 
 /// <summary>
@@ -56,7 +57,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
     private readonly IPerformanceShortcutNotificationSink shortcutNotifications;
     private readonly Action<Exception>? errorHandler;
-    private readonly BoundedEnumActionPump<FunctionRowAction>? functionRowActionPump;
+    private readonly FunctionRowInputPump? functionRowInputPump;
     private readonly object performanceShortcutStateSync = new();
     private readonly SemaphoreSlim performanceShortcutPreviewGate = new(1, 1);
     private readonly Guid performanceShortcutSessionId = Guid.NewGuid();
@@ -93,10 +94,11 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             options.PerformanceShortcutQuietPeriod,
             errorHandler: ReportFailure);
         shouldOverrideSpecialKey = options.ShouldOverrideSpecialKey ?? (_ => false);
-        if (options.ExecuteFunctionRowActionAsync is not null)
+        if (options.ExecuteFunctionRowInputAsync is not null)
         {
-            functionRowActionPump = new BoundedEnumActionPump<FunctionRowAction>(
-                options.ExecuteFunctionRowActionAsync,
+            functionRowInputPump = new FunctionRowInputPump(
+                options.ExecuteFunctionRowInputAsync,
+                options.ResetFunctionRowInputAsync ?? (_ => Task.CompletedTask),
                 errorHandler: ReportFailure);
         }
         if (options.ExecuteSpecialKeyAsync is not null)
@@ -200,9 +202,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         {
             await defaultLaptopKeyPump.DisposeAsync().ConfigureAwait(false);
         }
-        if (functionRowActionPump is not null)
+        if (functionRowInputPump is not null)
         {
-            await functionRowActionPump.DisposeAsync().ConfigureAwait(false);
+            await functionRowInputPump.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -223,7 +225,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             CancelPendingPerformanceShortcut();
             specialKeyPump?.ClearPending();
             defaultLaptopKeyPump?.ClearPending();
-            functionRowActionPump?.ClearPending();
+            functionRowInputPump?.Reset();
             return;
         }
 
@@ -265,10 +267,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                                 "Default laptop-key input could not keep up and skipped a button press."));
                         }
                     },
-                    PublishFunctionRowAction: action =>
+                    PublishFunctionRowInput: inputEvent =>
                     {
-                        if (functionRowActionPump is null
-                            || !functionRowActionPump.TryEnqueue(action))
+                        if (functionRowInputPump is null
+                            || !functionRowInputPump.TryEnqueue(inputEvent))
                         {
                             ReportFailure(new InvalidOperationException(
                                 "Function-row input could not keep up and skipped a key press."));
@@ -352,7 +354,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 (int)SpecialKeySlotSet.None);
             Interlocked.Exchange(ref functionKeyPrimaryMode, -1);
             SetDriverModeUnknown("The laptop is not currently verified.");
-            functionRowActionPump?.ClearPending();
+            functionRowInputPump?.Reset();
             Interlocked.Exchange(ref gamingModeKeyPolicyBits, 0);
         }
         else
@@ -385,14 +387,14 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 SetDriverModeConfirmed(active);
                 if (!active)
                 {
-                    functionRowActionPump?.ClearPending();
+                    functionRowInputPump?.Reset();
                 }
             }
             else
             {
                 SetDriverModeUnknown(
                     "The service could not confirm keyboard Driver mode.");
-                functionRowActionPump?.ClearPending();
+                functionRowInputPump?.Reset();
             }
 
             LaptopBehaviorProfileSettings behavior =

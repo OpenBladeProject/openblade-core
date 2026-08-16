@@ -167,6 +167,8 @@ public static class IpcMessageCodec
             StepKeyboardBrightnessRequest step =>
                 Enum.IsDefined(step.Direction)
                 && Enum.IsDefined(step.Lifetime),
+            SetDisplayBrightnessHidUsageRequest set =>
+                Enum.IsDefined(set.Usage),
             SetKeyboardLightingControlModeRequest set => Enum.IsDefined(set.Mode),
             SetExternalLightingOverridePolicyRequest => true,
             SetFirmwareCompatibilityOverrideRequest => true,
@@ -431,6 +433,11 @@ public static class IpcMessageCodec
         if (!Enum.IsDefined(status.ControlAccess))
         {
             throw InvalidStatus("session control access is unknown");
+        }
+
+        if (!Enum.IsDefined(status.DisplayBrightnessHidAvailability))
+        {
+            throw InvalidStatus("display-brightness HID availability is unknown");
         }
 
         if (status.FunctionKeyPrimary is { } functionKeyPrimary

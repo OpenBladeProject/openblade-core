@@ -2590,6 +2590,10 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.SupportsFunctionKeyPrimary);
 
         Assert.Equal("Checking", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Null(viewModel.SelectedFunctionKeyPrimaryOption);
+        Assert.Equal(
+            ["Function keys", "Media keys"],
+            viewModel.AvailableFunctionKeyPrimaryOptions.Select(option => option.Label));
         Assert.DoesNotContain("â", viewModel.FunctionKeyPrimaryStateLabel, StringComparison.Ordinal);
         Assert.True(viewModel.IsFunctionKeyFieldLoading);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
@@ -2629,6 +2633,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.StartupAnimationEnabled);
         Assert.True(viewModel.StartupAnimationToggleIsOn);
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.FunctionKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.IsFunctionKeyFieldLoading);
         Assert.True(viewModel.CanEditFunctionKeyPrimary);
         Assert.False(viewModel.GamingModeToggleIsOn);
@@ -2670,6 +2677,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsGamingModeFieldLoading);
         Assert.False(viewModel.StartupAnimationToggleIsOn);
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.FunctionKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.GamingModeToggleIsOn);
         Assert.False(viewModel.CanEditStartupAnimation);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
@@ -2713,6 +2723,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsFunctionKeyFieldLoading);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
         Assert.Equal("Media keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.ApplyOneShotLaptopControlCommand.CanExecute(
             viewModel.FunctionKeysPrimaryAction));
 
@@ -2824,6 +2837,9 @@ public sealed class MainViewModelTests
             .ExecuteAsync(viewModel.MultimediaKeysPrimaryAction);
 
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.FunctionKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.IsFunctionKeyFieldLoading);
         Assert.True(viewModel.CanEditFunctionKeyPrimary);
     }
@@ -6073,6 +6089,24 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AboutDisplayBrightnessDriverStatus_DistinguishesUnknownInspection()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            DisplayBrightnessHidAvailability =
+                DisplayBrightnessHidAvailability.Unknown,
+        });
+
+        await WaitUntilAsync(() =>
+            viewModel.AboutDisplayBrightnessDriverStatus == "Unknown");
+
+        Assert.Equal("Unknown", viewModel.AboutDisplayBrightnessDriverStatus);
+    }
+
+    [Fact]
     public async Task ControlAccessStatus_DistinguishesEveryFailClosedState()
     {
         var client = new FakeServiceClient();
@@ -6090,11 +6124,16 @@ public sealed class MainViewModelTests
             viewModel.AboutUiVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal("Unavailable", viewModel.AboutDisplayBrightnessDriverStatus);
         Assert.Equal("Unavailable", viewModel.TroubleshootingUsbDeviceStatus);
         Assert.False(viewModel.HasTroubleshootingRecentError);
         Assert.Empty(viewModel.TroubleshootingRecentErrorStatus);
 
-        client.Publish(CreateStatus(verified: false, blocked: true));
+        client.Publish(CreateStatus(verified: false, blocked: true) with
+        {
+            DisplayBrightnessHidAvailability =
+                DisplayBrightnessHidAvailability.Unavailable,
+        });
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Laptop not found"
             && viewModel.PerformanceSourceLabel == "Laptop not found");
@@ -6104,6 +6143,9 @@ public sealed class MainViewModelTests
         Assert.Equal("Running", viewModel.TroubleshootingServiceStatus);
         Assert.Equal("0.1.0-test", viewModel.AboutServiceVersionStatus);
         Assert.Equal("Not detected", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal(
+            "Not available · OpenBlade OSD",
+            viewModel.AboutDisplayBrightnessDriverStatus);
         Assert.Equal("Laptop not found", viewModel.TroubleshootingControlsStatus);
         Assert.False(viewModel.HasAttention);
         Assert.Equal("Laptop not found", viewModel.PerformanceSourceLabel);
@@ -6153,6 +6195,8 @@ public sealed class MainViewModelTests
                 "98.3.5c.40.3d",
                 RazerBladeModelCatalog.OpenBladeTargetModelNumber),
             KeyboardDriverModeActive = true,
+            DisplayBrightnessHidAvailability =
+                DisplayBrightnessHidAvailability.Available,
         });
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Ready"
@@ -6169,6 +6213,13 @@ public sealed class MainViewModelTests
         Assert.Equal("1.04", viewModel.AboutEcVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutMcuVersionStatus);
         Assert.Equal("98.3.5c.40.3d", viewModel.AboutVbiosVersionStatus);
+        Assert.Equal(
+            "Available · Windows OSD",
+            viewModel.AboutDisplayBrightnessDriverStatus);
+        Assert.Contains(
+            "OpenBlade uses its own flyout",
+            viewModel.AboutDisplayBrightnessDriverToolTip,
+            StringComparison.Ordinal);
 
         var driverStatusChanges = new List<string?>();
         viewModel.PropertyChanged += (_, args) =>

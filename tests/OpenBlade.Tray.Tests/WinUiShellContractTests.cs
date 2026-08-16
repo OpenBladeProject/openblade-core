@@ -14,14 +14,16 @@ public sealed class WinUiShellContractTests
             "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
 
         Assert.Equal(
-            6,
+            5,
             CountOccurrences(
                 powerModeCard,
                 "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
-        Assert.DoesNotContain(
-            "Style=\"{StaticResource SettingsSubcardStyle}\"",
-            powerModeCard,
-            StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            CountOccurrences(
+                powerModeCard,
+                "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
+        Assert.DoesNotContain("SettingsEmphasizedSubcardStyle", powerModeCard, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -69,7 +71,7 @@ public sealed class WinUiShellContractTests
         Assert.True(gpuAppsRowStart >= 0 && gpuAppsRowEnd > gpuAppsRowStart);
         string gpuAppsRow = powerModeCard[gpuAppsRowStart..gpuAppsRowEnd];
         Assert.Contains(
-            "SettingsNeutralSubcardStyle",
+            "SettingsLastNeutralSubcardStyle",
             gpuAppsRow,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -77,7 +79,7 @@ public sealed class WinUiShellContractTests
             gpuAppsRow,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
-            "SettingsLastSubcardStyle",
+            "SettingsLastEmphasizedSubcardStyle",
             gpuAppsRow,
             StringComparison.Ordinal);
         Assert.Contains("Close apps using the NVIDIA GPU?", codeBehind, StringComparison.Ordinal);
@@ -290,11 +292,23 @@ public sealed class WinUiShellContractTests
 
         Assert.Contains("Text=\"Laptop logo\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Laptop behavior\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Set function key behavior\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AccessibleName=\"Set function key behavior\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"GamingModeToggle\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"StartupAnimationToggle\"", xaml, StringComparison.Ordinal);
         Assert.Contains(
-            "Content=\"{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}\"",
+            "ItemsSource=\"{x:Bind AvailableFunctionKeyPrimaryOptions, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectedItem=\"{x:Bind SelectedFunctionKeyPrimaryOption, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "PlaceholderText=\"{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectionChanged=\"OnFunctionKeyPrimaryChanged\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -335,7 +349,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal(3, CountOccurrences(xaml, "FirmwareLoadingSlot\""));
         Assert.True(
             xaml.IndexOf("FunctionKeyFirmwareLoadingSlot", StringComparison.Ordinal)
-            < xaml.IndexOf("AutomationProperties.Name=\"Set function key behavior\"", StringComparison.Ordinal));
+            < xaml.IndexOf("AccessibleName=\"Set function key behavior\"", StringComparison.Ordinal));
         Assert.True(
             xaml.IndexOf("GamingModeFirmwareLoadingSlot", StringComparison.Ordinal)
             < xaml.IndexOf("x:Name=\"GamingModeToggle\"", StringComparison.Ordinal));
@@ -367,11 +381,15 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("toggle.IsEnabled = false;", firmwareToggleHelper, StringComparison.Ordinal);
         Assert.DoesNotContain("toggle.IsEnabled = true;", firmwareToggleHelper, StringComparison.Ordinal);
 
-        int functionKeys = xaml.IndexOf("AutomationProperties.Name=\"Set function key behavior\"", StringComparison.Ordinal);
+        int functionKeys = xaml.IndexOf("AccessibleName=\"Set function key behavior\"", StringComparison.Ordinal);
         int gamingMode = xaml.IndexOf("x:Name=\"GamingModeToggle\"", StringComparison.Ordinal);
         int startupAnimation = xaml.IndexOf("x:Name=\"StartupAnimationToggle\"", StringComparison.Ordinal);
         Assert.True(functionKeys < gamingMode);
         Assert.True(gamingMode < startupAnimation);
+
+        Assert.Contains("selected.Action", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SelectedFunctionKeyPrimaryOption", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ApplyOneShotLaptopControlCommand", window, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -704,7 +722,7 @@ public sealed class WinUiShellContractTests
             "Text=\"Shown on Dashboard\"",
             StringComparison.Ordinal);
         int previousSubcard = xaml.LastIndexOf(
-            "Style=\"{StaticResource SettingsSubcardStyle}\"",
+            "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\"",
             dashboardSelector,
             StringComparison.Ordinal);
         int previousRow = xaml.LastIndexOf(
@@ -1061,9 +1079,13 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Laptop performance\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
-        Assert.Equal(6, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
-        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
+        Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
+        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(1, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
+        Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
+        Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Key=\"SettingsLastSubcardStyle\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"On battery\"", xaml, StringComparison.Ordinal);
@@ -1290,11 +1312,11 @@ public sealed class WinUiShellContractTests
         Assert.Contains("OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath", window, StringComparison.Ordinal);
         Assert.Contains("AppWindow.SetIcon(applicationIconPath)", window, StringComparison.Ordinal);
         Assert.Contains(
-            "args.AddedItems.FirstOrDefault() is not FanModeOption selected",
+            "args.SelectedItem is not FanModeOption selected",
             window,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
-            "selector.SelectedItem is not FanModeOption selected",
+            "args.AddedItems.FirstOrDefault() is not FanModeOption selected",
             window,
             StringComparison.Ordinal);
 
@@ -1561,6 +1583,9 @@ public sealed class WinUiShellContractTests
             bool isShellThemeSource = file.EndsWith(
                 "WindowsShellThemeSource.cs",
                 StringComparison.OrdinalIgnoreCase);
+            bool isTextScaleConsumer = file.EndsWith(
+                "MainWindow.xaml.cs",
+                StringComparison.OrdinalIgnoreCase);
             if (!isRegistryReader && !isShellThemeSource)
             {
                 Assert.DoesNotContain(
@@ -1572,11 +1597,15 @@ public sealed class WinUiShellContractTests
             {
                 Assert.DoesNotContain("SystemEvents", source, StringComparison.Ordinal);
             }
-            if (!file.EndsWith(
-                    "AccentColorManager.cs",
-                    StringComparison.OrdinalIgnoreCase))
+            bool isAccentColorManager = file.EndsWith(
+                "AccentColorManager.cs",
+                StringComparison.OrdinalIgnoreCase);
+            if (!isAccentColorManager && !isTextScaleConsumer)
             {
                 Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);
+            }
+            if (!isAccentColorManager)
+            {
                 Assert.DoesNotContain("ColorValuesChanged", source, StringComparison.Ordinal);
             }
             Assert.DoesNotContain("Application.RequestedTheme", source, StringComparison.Ordinal);
@@ -1737,6 +1766,104 @@ public sealed class WinUiShellContractTests
         Assert.True(
             app.IndexOf("await windowInitializationTask", StringComparison.Ordinal)
             < app.LastIndexOf("exitLifecycle.TryRunWhileActive", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MainWindowStartsInitialDisplayRefreshWithoutBlockingReadiness()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int initializeCore = source.IndexOf(
+            "private async Task InitializeCoreAsync()",
+            StringComparison.Ordinal);
+        int propertyChanged = source.IndexOf(
+            "private void OnViewModelPropertyChanged",
+            initializeCore,
+            StringComparison.Ordinal);
+        Assert.True(initializeCore >= 0 && initializeCore < propertyChanged);
+
+        string readinessPath = source[initializeCore..propertyChanged];
+        Assert.Contains(
+            "_ = RefreshDisplaySettingsAsync();",
+            readinessPath,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "await RefreshDisplaySettingsAsync();",
+            readinessPath,
+            StringComparison.Ordinal);
+
+        int refreshMethod = source.IndexOf(
+            "private Task RefreshDisplaySettingsAsync()",
+            StringComparison.Ordinal);
+        int displaySettingsChanged = source.IndexOf(
+            "private void OnDisplayUserSettingsChanged",
+            refreshMethod,
+            StringComparison.Ordinal);
+        Assert.True(refreshMethod >= 0 && refreshMethod < displaySettingsChanged);
+        string refreshPath = source[refreshMethod..displaySettingsChanged];
+        Assert.Contains(
+            "displayRefreshTask is { IsCompleted: false } activeRefresh",
+            refreshPath,
+            StringComparison.Ordinal);
+        Assert.Contains("return activeRefresh;", refreshPath, StringComparison.Ordinal);
+
+        int timerTick = source.IndexOf(
+            "private async void OnDisplayRefreshTimerTick",
+            StringComparison.Ordinal);
+        int pinnedCheck = source.IndexOf(
+            "private bool IsDashboardCardPinned",
+            timerTick,
+            StringComparison.Ordinal);
+        Assert.True(timerTick >= 0 && timerTick < pinnedCheck);
+        string timerPath = source[timerTick..pinnedCheck];
+        Assert.Contains(
+            "|| IsDisplayRefreshInProgress",
+            timerPath,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainWindowUsesPostRequestRefreshBeforeCapturingProfile()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int captureRefresh = source.IndexOf(
+            "private async Task RefreshDisplaySettingsBeforeCaptureAsync()",
+            StringComparison.Ordinal);
+        int displaySettingsChanged = source.IndexOf(
+            "private void OnDisplayUserSettingsChanged",
+            captureRefresh,
+            StringComparison.Ordinal);
+        Assert.True(captureRefresh >= 0 && captureRefresh < displaySettingsChanged);
+
+        string captureRefreshPath = source[captureRefresh..displaySettingsChanged];
+        int snapshot = captureRefreshPath.IndexOf(
+            "Task? refreshAtRequest = displayRefreshTask;",
+            StringComparison.Ordinal);
+        int joinExisting = captureRefreshPath.IndexOf(
+            "await refreshAtRequest;",
+            StringComparison.Ordinal);
+        int refreshAgain = captureRefreshPath.IndexOf(
+            "await RefreshDisplaySettingsAsync();",
+            StringComparison.Ordinal);
+        Assert.True(snapshot >= 0 && snapshot < joinExisting && joinExisting < refreshAgain);
+
+        int saveHandler = source.IndexOf(
+            "private async Task HandleSaveCurrentDisplaySettingsToProfileAsync()",
+            StringComparison.Ordinal);
+        int applyHandler = source.IndexOf(
+            "private async void OnUseDisplayProfileSettings",
+            saveHandler,
+            StringComparison.Ordinal);
+        Assert.True(saveHandler >= 0 && saveHandler < applyHandler);
+
+        string savePath = source[saveHandler..applyHandler];
+        Assert.Contains(
+            "await RefreshDisplaySettingsBeforeCaptureAsync();",
+            savePath,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "await RefreshDisplaySettingsAsync();",
+            savePath,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1996,6 +2123,106 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("pendingChargeLimitPercent", source, StringComparison.Ordinal);
         Assert.Contains("command.ExecuteAsync(commit)", source, StringComparison.Ordinal);
         Assert.Contains("SynchronizeBatteryProtectionToggle(toggle)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DisplayRefreshSelectionQueuesBehindRefreshAndRestoresConfirmedState()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int handlerStart = source.IndexOf(
+            "private async void OnDisplayRefreshRateChanged(",
+            StringComparison.Ordinal);
+        int handlerEnd = source.IndexOf(
+            "private void OnDisplayPickerOpened(",
+            handlerStart,
+            StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
+        string handler = source[handlerStart..handlerEnd];
+
+        Assert.DoesNotContain("changingDisplaySettings", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("RunDisplayOperationAsync", handler, StringComparison.Ordinal);
+        Assert.Contains("RunHandlerAsync(", handler, StringComparison.Ordinal);
+        Assert.Contains("DisplayViewModel.SelectRefreshRateAsync(option)", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "selector.SelectedItem = DisplayViewModel.SelectedRefreshRate",
+            handler,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DisplayHdrToggleQueuesBehindRefreshAndRestoresConfirmedState()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int handlerStart = source.IndexOf(
+            "private async void OnDisplayHdrToggled(",
+            StringComparison.Ordinal);
+        int handlerEnd = source.IndexOf(
+            "private async void OnDisplayColorProfileChanged(",
+            handlerStart,
+            StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
+        string handler = source[handlerStart..handlerEnd];
+
+        Assert.DoesNotContain("RunDisplayOperationAsync", handler, StringComparison.Ordinal);
+        Assert.Contains("bool requested = toggle.IsOn;", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("toggle.IsEnabled =", handler, StringComparison.Ordinal);
+        Assert.Contains("RunHandlerAsync(", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "DisplayViewModel.SetHdrEnabledAsync(requested)",
+            handler,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("finally", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "toggle.IsOn = DisplayViewModel.IsHdrEnabled;",
+            handler,
+            StringComparison.Ordinal);
+
+        int capture = handler.IndexOf("bool requested = toggle.IsOn;", StringComparison.Ordinal);
+        int queue = handler.IndexOf("await RunHandlerAsync(", StringComparison.Ordinal);
+        int restore = handler.IndexOf(
+            "toggle.IsOn = DisplayViewModel.IsHdrEnabled;",
+            StringComparison.Ordinal);
+        Assert.True(capture < queue && queue < restore);
+        Assert.DoesNotContain("RunDisplayOperationAsync", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DisplayColorProfileSelectionUsesResponsiveEventAndRestoresConfirmedState()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int handlerStart = source.IndexOf(
+            "private async void OnDisplayColorProfileChanged(",
+            StringComparison.Ordinal);
+        int handlerEnd = source.IndexOf(
+            "private Task RefreshDisplaySettingsAsync()",
+            handlerStart,
+            StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
+        string handler = source[handlerStart..handlerEnd];
+
+        Assert.Contains(
+            "ResponsiveChoiceSelectionChangedEventArgs args",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "sender is not ResponsiveChoiceSelector selector",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "args.SelectedItem is not DisplayColorProfileOption option",
+            handler,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("changingDisplaySettings", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("RunDisplayOperationAsync", handler, StringComparison.Ordinal);
+        Assert.Contains("RunHandlerAsync(", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "DisplayViewModel.SelectColorProfileAsync(option)",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "selector.SelectedItem = DisplayViewModel.SelectedColorProfile",
+            handler,
+            StringComparison.Ordinal);
     }
 
     [Fact]

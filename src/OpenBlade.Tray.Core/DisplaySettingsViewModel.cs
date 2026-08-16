@@ -125,7 +125,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     private bool isAvailable;
     private bool isHdrSupported;
     private bool isHdrEnabled;
-    private bool isBusy;
+    private int pendingWriteCount;
     private PowerSource activePowerSource = PowerSource.ExternalUnknown;
     private DisplayProfileSettings activeProfileSettings =
         DisplayProfileSettings.Unconfigured();
@@ -236,17 +236,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         }
     }
 
-    public bool IsBusy
-    {
-        get => isBusy;
-        private set
-        {
-            if (SetField(ref isBusy, value))
-            {
-                NotifyControlStateChanged();
-            }
-        }
-    }
+    public bool IsBusy => Volatile.Read(ref pendingWriteCount) > 0;
 
     public PowerSource ActivePowerSource
     {
@@ -568,14 +558,16 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             CancellationTokenSource.CreateLinkedTokenSource(
                 lifetimeCancellation.Token,
                 token);
-        await operationGate.WaitAsync(linkedCancellation.Token);
+        bool enteredGate = false;
+        if (showBusy)
+        {
+            RegisterPendingWrite();
+        }
+
         try
         {
-            if (showBusy)
-            {
-                IsBusy = true;
-            }
-
+            await operationGate.WaitAsync(linkedCancellation.Token);
+            enteredGate = true;
             DisplaySettingsSnapshot state = await operation(linkedCancellation.Token);
             Apply(state);
             applied?.Invoke(state);
@@ -590,12 +582,33 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         }
         finally
         {
-            if (showBusy)
+            if (enteredGate)
             {
-                IsBusy = false;
+                operationGate.Release();
             }
 
-            operationGate.Release();
+            if (showBusy)
+            {
+                UnregisterPendingWrite();
+            }
+        }
+    }
+
+    private void RegisterPendingWrite()
+    {
+        if (Interlocked.Increment(ref pendingWriteCount) == 1)
+        {
+            OnPropertyChanged(nameof(IsBusy));
+            NotifyControlStateChanged();
+        }
+    }
+
+    private void UnregisterPendingWrite()
+    {
+        if (Interlocked.Decrement(ref pendingWriteCount) == 0)
+        {
+            OnPropertyChanged(nameof(IsBusy));
+            NotifyControlStateChanged();
         }
     }
 

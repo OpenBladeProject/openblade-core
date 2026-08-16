@@ -148,8 +148,10 @@ public sealed class FunctionRowInputTests
             functionKeyPressed: true,
             FunctionKeyPrimaryMode.FunctionKeys,
             driverModeActive: true,
-            out FunctionRowAction? downAction));
-        Assert.Equal(FunctionRowAction.VolumeMute, downAction);
+            out FunctionRowInputEvent? downEvent));
+        Assert.Equal(
+            new FunctionRowInputEvent(0x3B, FunctionRowAction.VolumeMute, FunctionRowInputPhase.Down),
+            downEvent);
 
         Assert.True(state.Process(
             0x3B,
@@ -157,8 +159,10 @@ public sealed class FunctionRowInputTests
             functionKeyPressed: false,
             FunctionKeyPrimaryMode.MultimediaKeys,
             driverModeActive: false,
-            out FunctionRowAction? upAction));
-        Assert.Null(upAction);
+            out FunctionRowInputEvent? upEvent));
+        Assert.Equal(
+            new FunctionRowInputEvent(0x3B, FunctionRowAction.VolumeMute, FunctionRowInputPhase.Up),
+            upEvent);
     }
 
     [Fact]
@@ -172,8 +176,8 @@ public sealed class FunctionRowInputTests
             functionKeyPressed: false,
             FunctionKeyPrimaryMode.MultimediaKeys,
             driverModeActive: true,
-            out FunctionRowAction? action));
-        Assert.Null(action);
+            out FunctionRowInputEvent? inputEvent));
+        Assert.Null(inputEvent);
     }
 
     [Theory]
@@ -196,8 +200,10 @@ public sealed class FunctionRowInputTests
             functionKeyPressed: false,
             FunctionKeyPrimaryMode.MultimediaKeys,
             driverModeActive: true,
-            out FunctionRowAction? first));
-        Assert.Equal(expected, first);
+            out FunctionRowInputEvent? first));
+        Assert.Equal(
+            new FunctionRowInputEvent(scanCode, expected, FunctionRowInputPhase.Down),
+            first);
 
         Assert.True(state.Process(
             scanCode,
@@ -205,7 +211,60 @@ public sealed class FunctionRowInputTests
             functionKeyPressed: true,
             FunctionKeyPrimaryMode.FunctionKeys,
             driverModeActive: false,
-            out FunctionRowAction? repeated));
-        Assert.Equal(shouldRepeat ? expected : null, repeated);
+            out FunctionRowInputEvent? repeated));
+        Assert.Equal(
+            shouldRepeat
+                ? new FunctionRowInputEvent(scanCode, expected, FunctionRowInputPhase.Repeat)
+                : null,
+            repeated);
+    }
+
+    [Theory]
+    [InlineData(FunctionKeyPrimaryMode.MultimediaKeys, false)]
+    [InlineData(FunctionKeyPrimaryMode.FunctionKeys, true)]
+    public void StatefulInput_DisplayBrightnessPublishesResolvedDownRepeatAndUp(
+        FunctionKeyPrimaryMode primaryMode,
+        bool functionKeyPressed)
+    {
+        var state = new RazerBladeFunctionRowInputState();
+
+        Assert.True(state.Process(
+            0x43,
+            keyDown: true,
+            functionKeyPressed,
+            primaryMode,
+            driverModeActive: true,
+            out FunctionRowInputEvent? down));
+        Assert.Equal(
+            new FunctionRowInputEvent(
+                0x43,
+                FunctionRowAction.DisplayBrightnessUp,
+                FunctionRowInputPhase.Down),
+            down);
+
+        Assert.True(state.Process(
+            0x43,
+            keyDown: true,
+            functionKeyPressed: !functionKeyPressed,
+            primaryMode == FunctionKeyPrimaryMode.MultimediaKeys
+                ? FunctionKeyPrimaryMode.FunctionKeys
+                : FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: false,
+            out FunctionRowInputEvent? repeat));
+        Assert.Equal(FunctionRowInputPhase.Repeat, repeat?.Phase);
+
+        Assert.True(state.Process(
+            0x43,
+            keyDown: false,
+            functionKeyPressed: !functionKeyPressed,
+            primaryMode: null,
+            driverModeActive: false,
+            out FunctionRowInputEvent? up));
+        Assert.Equal(
+            new FunctionRowInputEvent(
+                0x43,
+                FunctionRowAction.DisplayBrightnessUp,
+                FunctionRowInputPhase.Up),
+            up);
     }
 }

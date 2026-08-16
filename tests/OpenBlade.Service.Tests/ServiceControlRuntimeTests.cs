@@ -15,6 +15,180 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task DisplayBrightnessHid_HeldUsageIsSubmittedOnceThenReleased()
+    {
+        var controller = new RecordingDisplayBrightnessHidController();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            displayBrightnessHidController: controller);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult down = await context.Runtime.SetDisplayBrightnessHidUsageAsync(
+            DisplayBrightnessHidUsage.Decrement,
+            CancellationToken.None);
+        ControlOperationResult repeat = await context.Runtime.SetDisplayBrightnessHidUsageAsync(
+            DisplayBrightnessHidUsage.Decrement,
+            CancellationToken.None);
+        ControlOperationResult up = await context.Runtime.SetDisplayBrightnessHidUsageAsync(
+            DisplayBrightnessHidUsage.Released,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, down.Status);
+        Assert.Equal(ControlOperationStatus.Applied, repeat.Status);
+        Assert.Equal(ControlOperationStatus.Applied, up.Status);
+        Assert.Equal(
+            [
+                DisplayBrightnessHidUsage.Released,
+                DisplayBrightnessHidUsage.Decrement,
+                DisplayBrightnessHidUsage.Released,
+            ],
+            controller.Usages);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessHid_UnverifiedDeviceBlocksBeforeTransport()
+    {
+        var controller = new RecordingDisplayBrightnessHidController();
+        TestContext context = CreateContext(
+            providerAvailable: false,
+            displayBrightnessHidController: controller);
+
+        ControlOperationResult result = await context.Runtime.SetDisplayBrightnessHidUsageAsync(
+            DisplayBrightnessHidUsage.Increment,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Empty(controller.Usages);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessHid_IndeterminatePressStillRequiresRelease()
+    {
+        var controller = new RecordingDisplayBrightnessHidController(
+            new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Neutralized."),
+            new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Submission could not be confirmed."),
+            new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Released."));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            displayBrightnessHidController: controller);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult down = await context.Runtime.SetDisplayBrightnessHidUsageAsync(
+            DisplayBrightnessHidUsage.Increment,
+            CancellationToken.None);
+        ControlOperationResult up = await context.Runtime.SetDisplayBrightnessHidUsageAsync(
+            DisplayBrightnessHidUsage.Released,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, down.Status);
+        Assert.Equal(ControlOperationStatus.Applied, up.Status);
+        Assert.Equal(
+            [
+                DisplayBrightnessHidUsage.Released,
+                DisplayBrightnessHidUsage.Increment,
+                DisplayBrightnessHidUsage.Released,
+            ],
+            controller.Usages);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessHid_DriverModeMaintenanceNeutralizesStaleUsageOnce()
+    {
+        var controller = new RecordingDisplayBrightnessHidController();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            displayBrightnessHidController: controller);
+
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+
+        Assert.Equal([DisplayBrightnessHidUsage.Released], controller.Usages);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessHid_LowPowerCleanupReleasesHeldUsage()
+    {
+        var controller = new RecordingDisplayBrightnessHidController();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            displayBrightnessHidController: controller);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.DriverModeActive = true;
+        await context.Runtime.SetDisplayBrightnessHidUsageAsync(
+            DisplayBrightnessHidUsage.Increment,
+            CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.PrepareForLowPowerAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(
+            [
+                DisplayBrightnessHidUsage.Released,
+                DisplayBrightnessHidUsage.Increment,
+                DisplayBrightnessHidUsage.Released,
+            ],
+            controller.Usages);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessHid_OppositeDirectionReleasesBeforeNewPress()
+    {
+        var controller = new RecordingDisplayBrightnessHidController();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            displayBrightnessHidController: controller);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.SetDisplayBrightnessHidUsageAsync(
+            DisplayBrightnessHidUsage.Increment,
+            CancellationToken.None);
+        await context.Runtime.SetDisplayBrightnessHidUsageAsync(
+            DisplayBrightnessHidUsage.Decrement,
+            CancellationToken.None);
+
+        Assert.Equal(
+            [
+                DisplayBrightnessHidUsage.Released,
+                DisplayBrightnessHidUsage.Increment,
+                DisplayBrightnessHidUsage.Released,
+                DisplayBrightnessHidUsage.Decrement,
+            ],
+            controller.Usages);
+    }
+
+    [Theory]
+    [InlineData(DisplayBrightnessHidAvailability.Unknown)]
+    [InlineData(DisplayBrightnessHidAvailability.Available)]
+    [InlineData(DisplayBrightnessHidAvailability.Unavailable)]
+    public async Task DisplayBrightnessHidAvailability_IsPublishedWithoutUsageWrite(
+        DisplayBrightnessHidAvailability availability)
+    {
+        var controller = new RecordingDisplayBrightnessHidController
+        {
+            Availability = availability,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            displayBrightnessHidController: controller);
+
+        Assert.Equal(
+            availability,
+            context.Runtime.GetStatus().DisplayBrightnessHidAvailability);
+        Assert.Empty(controller.Usages);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            availability,
+            context.Runtime.GetStatus().DisplayBrightnessHidAvailability);
+    }
+
+    [Fact]
     public async Task ActivateUserAsync_SwitchesProfilesAndSameUserIsNoOp()
     {
         ProfileSet firstProfiles = ProfileDefaults.CreateSafeDefaults();
@@ -7056,6 +7230,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(ServiceControlRuntime.Equivalent(
             baseline,
             baseline with { BatteryProtectionOverride = false }));
+        Assert.False(ServiceControlRuntime.Equivalent(
+            baseline,
+            baseline with
+            {
+                DisplayBrightnessHidAvailability =
+                    DisplayBrightnessHidAvailability.Available,
+            }));
     }
 
     [Fact]
@@ -8757,13 +8938,24 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Fact]
     public async Task LiveReadingsFastPath_DeviceMissForcesNextPollThroughFullObservation()
     {
-        TestContext context = CreateContext(providerAvailable: true);
+        var brightnessController = new RecordingDisplayBrightnessHidController
+        {
+            Availability = DisplayBrightnessHidAvailability.Available,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            displayBrightnessHidController: brightnessController);
         await context.Runtime.ObserveAsync(
             includeLiveReadings: true,
             CancellationToken.None);
         int capabilityReads = context.Device.CapabilitiesReadCalls;
+        Assert.Equal(
+            DisplayBrightnessHidAvailability.Available,
+            context.Runtime.GetStatus().DisplayBrightnessHidAvailability);
 
         context.Provider.Available = false;
+        brightnessController.Availability =
+            DisplayBrightnessHidAvailability.Unavailable;
         await context.Runtime.ObserveAsync(
             includeLiveReadings: true,
             CancellationToken.None);
@@ -8788,6 +8980,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.False(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            DisplayBrightnessHidAvailability.Unavailable,
+            context.Runtime.GetStatus().DisplayBrightnessHidAvailability);
         Assert.Equal(capabilityReads, context.Device.CapabilitiesReadCalls);
     }
 
@@ -9631,7 +9826,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         BatteryHealthStatus? batteryHealth = null,
         LowPowerGate? lowPowerGate = null,
         TimeProvider? timeProvider = null,
-        IUserConfigurationRepository? userConfigurationRepository = null)
+        IUserConfigurationRepository? userConfigurationRepository = null,
+        IDisplayBrightnessHidController? displayBrightnessHidController = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -9710,7 +9906,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             fanTemperatureSource: fanTemperatureSource
                 ?? new FixedFanTemperatureSource(default),
             timeProvider: timeProvider,
-            userConfigurationRepository: userConfigurationRepository);
+            userConfigurationRepository: userConfigurationRepository,
+            displayBrightnessHidController: displayBrightnessHidController);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -9876,6 +10073,33 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         CountingProvider Provider,
         CountingBladeDevice Device,
         DiagnosticHistory History);
+
+    private sealed class RecordingDisplayBrightnessHidController(
+        params ControlOperationResult[] results)
+        : IDisplayBrightnessHidController
+    {
+        private readonly Queue<ControlOperationResult> results = new(results);
+
+        public List<DisplayBrightnessHidUsage> Usages { get; } = [];
+
+        public DisplayBrightnessHidAvailability Availability { get; set; } =
+            DisplayBrightnessHidAvailability.Available;
+
+        public DisplayBrightnessHidAvailability GetAvailability() => Availability;
+
+        public Task<ControlOperationResult> SetUsageAsync(
+            DisplayBrightnessHidUsage usage,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Usages.Add(usage);
+            return Task.FromResult(results.Count > 0
+                ? results.Dequeue()
+                : new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    "Applied."));
+        }
+    }
 
     private sealed class FixedFirmwareVersionSource(FirmwareVersions versions)
         : IFirmwareVersionSource

@@ -361,6 +361,130 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_DashboardRowsCompactOnlySingleLineContent()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        string[] sharedStyleKeys =
+        [
+            "SettingsRowStyle",
+            "SettingsSubcardBaseStyle",
+        ];
+
+        foreach (string styleKey in sharedStyleKeys)
+        {
+            XElement style = Assert.Single(document.Descendants(), element =>
+                Attribute(element, "Key") == styleKey);
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "Padding"
+                && Attribute(setter, "Value") == "16,14");
+            Assert.DoesNotContain(style.Elements(), setter =>
+                Attribute(setter, "Property") is "Height" or "MinHeight");
+        }
+
+        XElement compactContentMinHeight = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "DashboardSingleLineRowContentMinHeight");
+        XElement compactPadding = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "DashboardSingleLineRowPadding");
+        XElement wrappedPadding = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "DashboardWrappedTitleRowPadding");
+        Assert.Equal("Double", compactContentMinHeight.Name.LocalName);
+        Assert.Equal("40", compactContentMinHeight.Value);
+        Assert.Equal("Thickness", compactPadding.Name.LocalName);
+        Assert.Equal("16,4", compactPadding.Value);
+        Assert.Equal("Thickness", wrappedPadding.Name.LocalName);
+        Assert.Equal("16,14", wrappedPadding.Value);
+
+        const string compactContentMinHeightReference =
+            "{StaticResource DashboardSingleLineRowContentMinHeight}";
+        const string compactPaddingReference =
+            "{StaticResource DashboardSingleLineRowPadding}";
+        XElement[] compactRows = document.Descendants()
+            .Where(element =>
+                element.Name.LocalName == "Border"
+                && Attribute(element, "Padding") == compactPaddingReference)
+            .ToArray();
+
+        Assert.Equal(15, compactRows.Length);
+        Assert.All(compactRows, row =>
+        {
+            Assert.Null(Attribute(row, "Height"));
+            Assert.Null(Attribute(row, "MinHeight"));
+            XElement content = Assert.Single(row.Elements());
+            Assert.Equal("Grid", content.Name.LocalName);
+            Assert.Equal(
+                compactContentMinHeightReference,
+                Attribute(content, "MinHeight"));
+            XElement title = content.Descendants().First(element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Style") == "{StaticResource CardTitleStyle}");
+            Assert.Equal(
+                "OnDashboardSingleLineTitleSizeChanged",
+                Attribute(title, "SizeChanged"));
+        });
+        Assert.Equal(
+            [
+                "Laptop performance",
+                "GPU core clock offset",
+                "GPU memory clock offset",
+                "CPU",
+                "GPU",
+                "Fans",
+                "Fan speed",
+                "Battery protection",
+                "Charge limit",
+                "Temporary full charge",
+                "Function key behavior",
+                "Gaming mode",
+                "Block the Windows key",
+                "Block Alt+Tab",
+                "Startup animation",
+            ],
+            compactRows.Select(row => row.Descendants().First(element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Style") == "{StaticResource CardTitleStyle}")
+                .Attribute("Text")?.Value));
+
+        XElement[] animatedCompactRows = compactRows
+            .Where(row => Attribute(row, "AnimatedVisibility.IsVisible") is not null)
+            .ToArray();
+        Assert.Equal(9, animatedCompactRows.Length);
+        Assert.All(animatedCompactRows, row =>
+        {
+            Assert.Null(Attribute(row, "Height"));
+            Assert.Null(Attribute(row, "MinHeight"));
+        });
+
+        (string elementName, string controlName, string expectedStyle)[] describedControls =
+        [
+            (
+                "ResponsiveChoiceSelector",
+                "LightingEffectPicker",
+                "{StaticResource SettingsLastRowStyle}"),
+            (
+                "Slider",
+                "DashboardLightingBrightnessSlider",
+                "{StaticResource SettingsRowStyle}"),
+        ];
+        foreach ((string elementName, string controlName, string expectedStyle) in describedControls)
+        {
+            XElement control = NamedElement(document, elementName, controlName);
+            XElement row = control.Ancestors()
+                .First(element => element.Name.LocalName == "Border");
+            Assert.Equal(expectedStyle, Attribute(row, "Style"));
+            Assert.Null(Attribute(row, "MinHeight"));
+            Assert.Null(Attribute(row, "Padding"));
+            Assert.Contains(row.Descendants(), element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Style") == "{StaticResource SecondaryTextStyle}");
+        }
+
+        XElement sliderStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "InlineCardSliderStyle");
+        Assert.DoesNotContain(sliderStyle.Elements(), setter =>
+            Attribute(setter, "Property") is "Height" or "MinHeight");
+    }
+
+    [Fact]
     public void MainWindow_FoldsGpuOffsetsUnderANeutralTuningRow()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
@@ -400,7 +524,7 @@ public sealed class CapabilityPresentationTests
         XElement neutralStyle = Assert.Single(document.Descendants(), element =>
             Attribute(element, "Key") == "SettingsNeutralSubcardStyle");
         Assert.Equal(
-            "{StaticResource SettingsSubcardStyle}",
+            "{StaticResource SettingsSubcardBaseStyle}",
             Attribute(neutralStyle, "BasedOn"));
         Assert.Contains(neutralStyle.Elements(), setter =>
             Attribute(setter, "Property") == "Background"
@@ -414,6 +538,53 @@ public sealed class CapabilityPresentationTests
                 == "local:SettingsCardPointerVisual.PointerOverBackground"
             && Attribute(setter, "Value")
                 == "{ThemeResource SubtleFillColorSecondaryBrush}");
+    }
+
+    [Fact]
+    public void MainWindow_FanEditorSubcardsUseHoverFreeBackground()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        string[] visibilityBindings =
+        [
+            "{Binding IsFixedFanSpeedVisible}",
+            "{Binding IsManualFanCurveVisible}",
+        ];
+
+        XElement[] fanEditorRows = document.Descendants()
+            .Where(element => visibilityBindings.Contains(
+                Attribute(element, "AnimatedVisibility.IsVisible"),
+                StringComparer.Ordinal))
+            .ToArray();
+
+        Assert.Equal(2, fanEditorRows.Length);
+        Assert.All(fanEditorRows, row =>
+        {
+            Assert.Equal(
+                "{StaticResource SettingsLastEditorSubcardStyle}",
+                Attribute(row, "Style"));
+        });
+
+        XElement editorStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsEditorSubcardStyle");
+        Assert.Equal(
+            "{StaticResource SettingsSubcardBaseStyle}",
+            Attribute(editorStyle, "BasedOn"));
+        Assert.Contains(editorStyle.Elements(), setter =>
+            Attribute(setter, "Property") == "Background"
+            && Attribute(setter, "Value") == "Transparent");
+        Assert.DoesNotContain(editorStyle.Elements(), setter =>
+            Attribute(setter, "Property")?.StartsWith(
+                "local:SettingsCardPointerVisual.",
+                StringComparison.Ordinal) is true);
+
+        XElement lastEditorStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsLastEditorSubcardStyle");
+        Assert.Equal(
+            "{StaticResource SettingsEditorSubcardStyle}",
+            Attribute(lastEditorStyle, "BasedOn"));
+        Assert.Contains(lastEditorStyle.Elements(), setter =>
+            Attribute(setter, "Property") == "CornerRadius"
+            && Attribute(setter, "Value") == "0,0,8,8");
     }
 
     [Fact]
@@ -473,16 +644,25 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "NavigationViewItem"
             && Attribute(element, "Content") == "Home");
 
-        XElement performance = NamedElement(document, "ComboBox", "DashboardPerformanceSelector");
-        XElement windowsPowerMode = NamedElement(document, "ComboBox", "WindowsPowerModeSelector");
-        XElement fans = NamedElement(document, "ComboBox", "DashboardFanModeSelector");
+        XElement performance = NamedElement(
+            document,
+            "ResponsiveChoiceSelector",
+            "DashboardPerformanceSelector");
+        XElement windowsPowerMode = NamedElement(
+            document,
+            "ResponsiveChoiceSelector",
+            "WindowsPowerModeSelector");
+        XElement fans = NamedElement(
+            document,
+            "ResponsiveChoiceSelector",
+            "DashboardFanModeSelector");
         XElement chargeLimit = NamedElement(document, "Slider", "DashboardChargeLimitSlider");
         XElement batteryProtection = NamedElement(document, "ToggleSwitch", "BatteryProtectionToggle");
         XElement temporaryFullCharge = Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == "Button"
             && Attribute(element, "Content") == "{Binding FullChargeActionLabel}");
         Assert.Equal("OnDashboardPerformanceChanged", Attribute(performance, "SelectionChanged"));
-        Assert.Equal("Laptop performance", Attribute(performance, "AutomationProperties.Name"));
+        Assert.Equal("Laptop performance", Attribute(performance, "AccessibleName"));
         Assert.Equal("OnWindowsPowerModeChanged", Attribute(windowsPowerMode, "SelectionChanged"));
         Assert.Equal(
             "{Binding AvailableWindowsPowerModeOptions}",
@@ -544,8 +724,8 @@ public sealed class CapabilityPresentationTests
         Assert.All(
             new[]
             {
-                NamedElement(document, "ComboBox", "DashboardCustomCpuSelector"),
-                NamedElement(document, "ComboBox", "DashboardCustomGpuSelector"),
+                NamedElement(document, "ResponsiveChoiceSelector", "DashboardCustomCpuSelector"),
+                NamedElement(document, "ResponsiveChoiceSelector", "DashboardCustomGpuSelector"),
             },
             selector => Assert.Equal(
                 "{Binding CanEditPerformance}",
@@ -675,6 +855,124 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void ResponsiveChoiceSelector_DeclaresNativeWideAndCompactPresentations()
+    {
+        XDocument mainWindow = XDocument.Parse(ReadMainWindowXaml());
+        XDocument selectorDocument = XDocument.Parse(
+            ReadTraySource("ResponsiveChoiceSelector.xaml"));
+        string selectorSource = ReadTraySource("ResponsiveChoiceSelector.xaml.cs");
+        XElement expanded = NamedElement(
+            selectorDocument,
+            "SelectorBar",
+            "ExpandedSelector");
+        XElement compact = NamedElement(
+            selectorDocument,
+            "ComboBox",
+            "CompactSelector");
+
+        Assert.Equal("Collapsed", Attribute(expanded, "Visibility"));
+        Assert.Equal(
+            "OnExpandedSelectionChanged",
+            Attribute(expanded, "SelectionChanged"));
+        Assert.Equal(
+            "OnExpandedSelectorSizeChanged",
+            Attribute(expanded, "SizeChanged"));
+        Assert.Equal(
+            "OnCompactSelectionChanged",
+            Attribute(compact, "SelectionChanged"));
+        Assert.Equal("OnCompactDropDownOpened", Attribute(compact, "DropDownOpened"));
+        Assert.Equal("OnCompactDropDownClosed", Attribute(compact, "DropDownClosed"));
+        Assert.Null(Attribute(expanded, "Style"));
+        Assert.Null(Attribute(compact, "Style"));
+        Assert.DoesNotContain(
+            selectorDocument.Descendants(),
+            element => element.Name.LocalName is "ControlTemplate" or "ToggleButton");
+        Assert.DoesNotContain("MaxExpandedItems", selectorSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "availableWidth >= minimumHostWidth",
+            selectorSource,
+            StringComparison.Ordinal);
+
+        XElement[] usages = mainWindow.Descendants()
+            .Where(element => element.Name.LocalName == "ResponsiveChoiceSelector")
+            .ToArray();
+        Assert.Equal(23, usages.Length);
+        Assert.All(usages, usage =>
+        {
+            Assert.NotNull(Attribute(usage, "ItemsSource"));
+            Assert.NotNull(Attribute(usage, "SelectedItem"));
+            Assert.NotNull(Attribute(usage, "AccessibleName"));
+            Assert.NotNull(Attribute(usage, "ExpandedMinWindowWidth"));
+            Assert.Null(Attribute(usage, "SelectedIndex"));
+        });
+
+        foreach (string name in new[]
+                 {
+                     "DashboardPerformanceSelector",
+                     "WindowsPowerModeSelector",
+                     "FunctionKeyPrimarySelector",
+                     "LightingEffectPicker",
+                     "DisplayRefreshRatePicker",
+                     "DisplayColorProfilePicker",
+                     "LaptopLogoModeSelector",
+                 })
+        {
+            XElement usage = NamedElement(
+                mainWindow,
+                "ResponsiveChoiceSelector",
+                name);
+            Assert.Equal("Label", Attribute(usage, "DisplayMemberPath"));
+        }
+    }
+
+    [Fact]
+    public void MainWindow_ExtendsResponsiveChoicesToRemainingSmallOptionPickers()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        string[] expected =
+        [
+            "Custom CPU level",
+            "Custom GPU level",
+            "Fan mode",
+            "Ambient Awareness screen region",
+            "Breathing color mode",
+            "Starlight color mode",
+            "Lighting direction",
+            "Wheel rotation direction",
+            "Reactive lighting duration",
+            "Starlight lighting duration",
+            "Laptop logo lighting",
+            "Display color profile",
+            "Live readings refresh interval",
+            "App theme",
+            "App accent color",
+            "Update channel",
+            "Update check interval",
+            "Firmware update check interval",
+        ];
+
+        foreach (string accessibleName in expected)
+        {
+            XElement selector = Assert.Single(document.Descendants(), element =>
+                element.Name.LocalName == "ResponsiveChoiceSelector"
+                && Attribute(element, "AccessibleName") == accessibleName);
+            Assert.Null(Attribute(selector, "MaxExpandedItems"));
+        }
+
+        Assert.DoesNotContain(document.Descendants(), element =>
+            Attribute(element, "MaxExpandedItems") is not null);
+
+        XElement[] retainedDropdowns = document.Descendants()
+            .Where(element => element.Name.LocalName == "ComboBox")
+            .ToArray();
+        Assert.Equal(2, retainedDropdowns.Length);
+        Assert.Contains(retainedDropdowns, element =>
+            Attribute(element, "AutomationProperties.Name") == "Profile to review");
+        Assert.Contains(retainedDropdowns, element =>
+            Attribute(element, "SelectionChanged") == "OnSpecialKeyActionSelectionChanged");
+    }
+
+    [Fact]
     public void MainWindow_UsesAutoHidingScrollViewersWithEdgeAlignedPadding()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
@@ -724,7 +1022,10 @@ public sealed class CapabilityPresentationTests
         Assert.Single(displayTemplate.Descendants(), element =>
             Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}");
 
-        XElement refresh = NamedElement(document, "ComboBox", "DisplayRefreshRatePicker");
+        XElement refresh = NamedElement(
+            document,
+            "ResponsiveChoiceSelector",
+            "DisplayRefreshRatePicker");
         Assert.Equal(
             "{x:Bind RefreshRateOptions, Mode=OneWay}",
             Attribute(refresh, "ItemsSource"));
@@ -738,10 +1039,15 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("Center", Attribute(hdr, "VerticalAlignment"));
         Assert.Equal("OnDisplayHdrToggled", Attribute(hdr, "Toggled"));
 
-        XElement color = NamedElement(document, "ComboBox", "DisplayColorProfilePicker");
+        XElement color = NamedElement(
+            document,
+            "ResponsiveChoiceSelector",
+            "DisplayColorProfilePicker");
         Assert.Equal(
             "{x:Bind CanChangeColorProfile, Mode=OneWay}",
             Attribute(color, "IsEnabled"));
+        Assert.Equal("OnDisplayPickerOpened", Attribute(color, "DropDownOpened"));
+        Assert.Equal("OnDisplayPickerClosed", Attribute(color, "DropDownClosed"));
         Assert.Equal("OnDisplayColorProfileChanged", Attribute(color, "SelectionChanged"));
     }
 
@@ -788,54 +1094,33 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("ViewModel.ManualChangeDurationOptions", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.SelectedManualChangeDurationOption", xaml, StringComparison.Ordinal);
         XElement liveReadings = Assert.Single(settings.Descendants(), element =>
-            element.Name.LocalName == "ComboBox"
-            && Attribute(element, "AutomationProperties.Name")
+            element.Name.LocalName == "ResponsiveChoiceSelector"
+            && Attribute(element, "AccessibleName")
                 == "Live readings refresh interval");
-        Assert.Equal(
-            "{StaticResource SettingsPickerStyle}",
-            Attribute(liveReadings, "Style"));
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshOptions, Mode=OneWay}",
             Attribute(liveReadings, "ItemsSource"));
         Assert.Equal(
             "{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}",
             Attribute(liveReadings, "SelectedItem"));
-        XElement appTheme = Assert.Single(settings.Descendants(), element =>
-            element.Name.LocalName == "ComboBox"
-            && Attribute(element, "AutomationProperties.Name") == "App theme");
-        Assert.Equal(
-            "{StaticResource SettingsPickerStyle}",
-            Attribute(appTheme, "Style"));
-        XElement settingsPickerStyle = Assert.Single(document.Descendants(), element =>
-            element.Name.LocalName == "Style"
-            && Attribute(element, "Key") == "SettingsPickerStyle");
-        Assert.Equal("ComboBox", Attribute(settingsPickerStyle, "TargetType"));
-        Assert.Equal(
-            "{StaticResource DefaultComboBoxStyle}",
-            Attribute(settingsPickerStyle, "BasedOn"));
-        Assert.Contains(settingsPickerStyle.Elements(), element =>
-            element.Name.LocalName == "Setter"
-            && Attribute(element, "Property") == "HorizontalAlignment"
-            && Attribute(element, "Value") == "Right");
-        Assert.Contains(settingsPickerStyle.Elements(), element =>
-            element.Name.LocalName == "Setter"
-            && Attribute(element, "Property") == "VerticalAlignment"
-            && Attribute(element, "Value") == "Center");
+        _ = Assert.Single(settings.Descendants(), element =>
+            element.Name.LocalName == "ResponsiveChoiceSelector"
+            && Attribute(element, "AccessibleName") == "App theme");
+        Assert.DoesNotContain(document.Descendants(), element =>
+            Attribute(element, "Key") == "SettingsPickerStyle");
         foreach (string pickerName in new[]
                  {
                      "Live readings refresh interval",
                      "App theme",
+                     "App accent color",
+                     "Update channel",
                      "Update check interval",
                  })
         {
             XElement picker = Assert.Single(settings.Descendants(), element =>
-                element.Name.LocalName == "ComboBox"
-                && Attribute(element, "AutomationProperties.Name") == pickerName);
-            Assert.Equal(
-                "{StaticResource SettingsPickerStyle}",
-                Attribute(picker, "Style"));
-            Assert.Null(Attribute(picker, "HorizontalAlignment"));
-            Assert.Null(Attribute(picker, "VerticalAlignment"));
+                element.Name.LocalName == "ResponsiveChoiceSelector"
+                && Attribute(element, "AccessibleName") == pickerName);
+            Assert.Null(Attribute(picker, "MaxExpandedItems"));
         }
         Assert.Contains(
             "Choose how often OpenBlade refreshes temperatures, fan speed, and net battery power while the window is open or the tray icon is hovered.",
@@ -1115,6 +1400,14 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("ViewModel.AboutServiceVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutBatteryHealthStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains(
+            "ViewModel.AboutDisplayBrightnessDriverStatus",
+            aboutPage.ToString(),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.AboutDisplayBrightnessDriverToolTip",
+            aboutPage.ToString(),
+            StringComparison.Ordinal);
+        Assert.Contains(
             "ViewModel.TroubleshootingUsbDeviceStatus",
             aboutPage.ToString(),
             StringComparison.Ordinal);
@@ -1122,6 +1415,9 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(aboutPage.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Battery health");
+        Assert.Contains(aboutPage.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Razer brightness driver");
         Assert.Equal(
             new string?[] { "OpenBlade app", "Session agent", "Service" },
             aboutVersions
@@ -2386,7 +2682,10 @@ public sealed class CapabilityPresentationTests
             "LightingNavigationItem");
         XElement page = NamedElement(document, "ScrollViewer", "LightingPage");
         XElement lightingTemplate = NamedTemplate(document, "DashboardLightingCardTemplate");
-        XElement effectPicker = NamedElement(document, "ComboBox", "LightingEffectPicker");
+        XElement effectPicker = NamedElement(
+            document,
+            "ResponsiveChoiceSelector",
+            "LightingEffectPicker");
         XElement controls = NamedElement(document, "ContentControl", "LightingControls");
         XElement keyboardSection = NamedElement(
             document,
@@ -2416,6 +2715,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind CanRequestHardwareControl, Mode=OneWay}",
             Attribute(controls, "IsEnabled"));
+        Assert.Contains(controls, effectPicker.Ancestors());
         Assert.Equal(
             "{x:Bind IsLightingControlUnavailableNoticeVisible, Mode=OneWay}",
             Attribute(infoBar, "IsOpen"));
@@ -2425,6 +2725,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind AvailableLightingEffectOptions, Mode=OneWay}",
             Attribute(effectPicker, "ItemsSource"));
+        Assert.Equal(
+            "{x:Bind SelectedLightingEffectOption, Mode=TwoWay}",
+            Attribute(effectPicker, "SelectedItem"));
         Assert.All([keyboardSection, powerSavingSection], section =>
         {
             Assert.Null(Attribute(section, "IsEnabled"));
