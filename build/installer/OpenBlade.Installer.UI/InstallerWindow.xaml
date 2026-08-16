@@ -207,13 +207,14 @@
       <RowDefinition Height="38" />
     </Grid.RowDefinitions>
 
-    <Grid Grid.Row="0">
+    <Grid x:Name="HeaderPanel" Grid.Row="0">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="62" />
         <ColumnDefinition Width="*" />
       </Grid.ColumnDefinitions>
       <Image x:Name="BrandImage" Width="52" Height="52"
              HorizontalAlignment="Left" VerticalAlignment="Top"
+             Focusable="False" IsHitTestVisible="False"
              Source="/OpenBlade.Installer.UI;component/Assets/OpenBlade.png" />
       <StackPanel Grid.Column="1" Margin="10,2,0,0">
         <TextBlock Text="OpenBlade" FontSize="26" FontWeight="SemiBold" />
@@ -242,19 +243,19 @@
             <TextBlock x:Name="ReadyMessage" Margin="0,12,0,0" TextWrapping="Wrap"
                        Foreground="{DynamicResource SecondaryTextBrush}" />
             <CheckBox x:Name="PurgeProfilesCheckBox" Margin="0,22,0,0"
-                      Content="Remove saved profiles and settings"
+                      Content="Remove saved _profiles and settings"
                       Visibility="Collapsed" />
           </StackPanel>
-          <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button x:Name="RepairButton" Content="Repair" Click="RepairButton_Click"
+          <UniformGrid Grid.Row="1" Rows="1" HorizontalAlignment="Right">
+            <Button x:Name="RepairButton" Content="_Repair" Click="RepairButton_Click"
                     Visibility="Collapsed" />
-            <Button x:Name="UninstallButton" Content="Uninstall" Click="UninstallButton_Click"
+            <Button x:Name="UninstallButton" Content="_Uninstall" Click="UninstallButton_Click"
                     Visibility="Collapsed" />
-            <Button x:Name="InstallButton" Content="Install" Click="InstallButton_Click"
+            <Button x:Name="InstallButton" Content="_Install" Click="InstallButton_Click"
                     Visibility="Collapsed" />
-            <Button x:Name="ReadyCancelButton" Content="Cancel"
+            <Button x:Name="ReadyCancelButton" Content="_Cancel"
                     Click="ReadyCancelButton_Click" />
-          </StackPanel>
+          </UniformGrid>
         </Grid>
 
         <Grid x:Name="ProgressPanel" Visibility="Collapsed">
@@ -268,21 +269,24 @@
           <TextBlock x:Name="ProgressHeading" FontSize="18" FontWeight="SemiBold" />
           <TextBlock x:Name="ProgressMessage" Grid.Row="1" Margin="0,10,0,0"
                      Text="Preparing…" TextTrimming="CharacterEllipsis"
+                     AutomationProperties.LiveSetting="Polite"
                      Foreground="{DynamicResource SecondaryTextBrush}" />
           <ProgressBar x:Name="OverallProgress" Grid.Row="2" Margin="0,12,0,0"
-                       Height="16" Minimum="0" Maximum="100" />
+                       Height="16" Minimum="0" Maximum="100"
+                       AutomationProperties.Name="Setup progress" />
           <Grid Grid.Row="3" Margin="0,8,0,0">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
               <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <ToggleButton x:Name="DetailsToggle" Content="Show details"
+            <ToggleButton x:Name="DetailsToggle" Content="Show _details"
                           HorizontalAlignment="Left" Checked="DetailsToggle_Changed"
                           Unchecked="DetailsToggle_Changed" />
             <Border x:Name="DetailsBorder" Grid.Row="1" Margin="0,8,0,12"
                     BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                     Background="{DynamicResource InputBrush}" Visibility="Collapsed">
               <TextBox x:Name="DetailsText" IsReadOnly="True" BorderThickness="0"
+                       AutomationProperties.Name="Setup details"
                        Background="Transparent" Foreground="{DynamicResource TextBrush}"
                        FontFamily="Cascadia Mono, Consolas" FontSize="11"
                        Padding="8" TextWrapping="Wrap"
@@ -290,7 +294,7 @@
                        HorizontalScrollBarVisibility="Disabled" />
             </Border>
           </Grid>
-          <Button x:Name="ProgressCancelButton" Grid.Row="4" Content="Cancel"
+          <Button x:Name="ProgressCancelButton" Grid.Row="4" Content="_Cancel"
                   HorizontalAlignment="Right" Click="CancelButton_Click" />
         </Grid>
 
@@ -309,9 +313,9 @@
                        TextWrapping="Wrap" />
           </StackPanel>
           <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button x:Name="LaunchButton" Content="Launch OpenBlade"
+            <Button x:Name="LaunchButton" Content="_Launch OpenBlade"
                     Click="LaunchButton_Click" Visibility="Collapsed" MinWidth="142" />
-            <Button Content="Close" Click="CloseButton_Click" />
+            <Button x:Name="SuccessCloseButton" Content="_Close" Click="CloseButton_Click" />
           </StackPanel>
         </Grid>
 
@@ -326,12 +330,13 @@
                        Foreground="{DynamicResource SecondaryTextBrush}" />
           </StackPanel>
           <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button x:Name="OpenLogButton" Content="Open log" Click="OpenLogButton_Click" />
-            <Button Content="Close" Click="CloseButton_Click" />
+            <Button x:Name="OpenLogButton" Content="_Open log" Click="OpenLogButton_Click" />
+            <Button x:Name="FailureCloseButton" Content="_Close" Click="CloseButton_Click" />
           </StackPanel>
         </Grid>
 
         <Grid x:Name="CancelConfirmationPanel" Panel.ZIndex="10"
+              KeyboardNavigation.TabNavigation="Cycle"
               Background="{DynamicResource WindowBrush}" Visibility="Collapsed">
           <Grid.RowDefinitions>
             <RowDefinition Height="*" />
@@ -345,8 +350,10 @@
                        Text="OpenBlade will stop safely and restore the previous installation state." />
           </StackPanel>
           <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Keep working" Click="KeepWorkingButton_Click" MinWidth="112" />
-            <Button Content="Cancel setup" Click="ConfirmCancelButton_Click" MinWidth="112" />
+            <Button x:Name="KeepWorkingButton" Content="Keep _working"
+                    Click="KeepWorkingButton_Click" MinWidth="112" />
+            <Button x:Name="ConfirmCancelButton" Content="Cancel _setup"
+                    Click="ConfirmCancelButton_Click" MinWidth="112" />
           </StackPanel>
         </Grid>
       </Grid>

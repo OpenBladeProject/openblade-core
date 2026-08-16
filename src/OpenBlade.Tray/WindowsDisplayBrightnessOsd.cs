@@ -86,6 +86,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
     private readonly TaskCompletionSource initialization =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Action<Exception>? errorHandler;
+    private readonly string windowTitle;
     private readonly object slideGate = new();
     private nint windowHandle;
     private int latestBrightness;
@@ -102,9 +103,12 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
     private bool slideHidesWindow;
     private CancellationTokenSource? slideCancellation;
 
-    private WindowsDisplayBrightnessOsd(Action<Exception>? errorHandler)
+    private WindowsDisplayBrightnessOsd(
+        Action<Exception>? errorHandler,
+        string windowTitle)
     {
         this.errorHandler = errorHandler;
+        this.windowTitle = windowTitle;
         messageThread = new Thread(RunMessageWindow)
         {
             IsBackground = true,
@@ -116,11 +120,12 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
     }
 
     internal static IDisplayBrightnessOsdPresenter CreateBestEffort(
-        Action<Exception>? errorHandler = null)
+        Action<Exception>? errorHandler = null,
+        string windowTitle = "OpenBlade brightness")
     {
         try
         {
-            return new WindowsDisplayBrightnessOsd(errorHandler);
+            return new WindowsDisplayBrightnessOsd(errorHandler, windowTitle);
         }
         catch (Exception exception)
         {
@@ -226,7 +231,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
             nint created = CreateWindowEx(
                 ExtendedStyle,
                 windowClassName,
-                "OpenBlade brightness",
+                windowTitle,
                 PopupStyle,
                 0,
                 0,

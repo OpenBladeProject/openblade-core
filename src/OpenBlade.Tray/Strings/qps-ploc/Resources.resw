@@ -12,11 +12,98 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="App_ExitDialog_Heading" xml:space="preserve">
+    <value>[!! Éxít OpenBlade? ~~ !!]</value>
+  </data>
+  <data name="App_ExitDialog_KeepRunning" xml:space="preserve">
+    <value>[!! Kéép báckgróúnd féátúrés rúnníng ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="App_ExitDialog_ShutDown" xml:space="preserve">
+    <value>[!! Shút dówn cómplétélý ~~~~~~~ !!]</value>
+  </data>
+  <data name="App_ExitDialog_Text" xml:space="preserve">
+    <value>[!! Chóósé whéthér kéýbóárd líghtíng, hótkéýs, prófílés, ánd áútómátíón  ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="App_ExitError_Heading" xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót shút dówn ~~~~~~ !!]</value>
+  </data>
+  <data name="App_ExitError_Text" xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót shút dówn: {0} ~~~~~~ !!]</value>
+  </data>
+  <data name="App_PerformanceNotification_ChangedBody" xml:space="preserve">
+    <value>[!! Thé pérfórmáncé módé chángéd. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="App_PerformanceNotification_ChangedTitle" xml:space="preserve">
+    <value>[!! Pérfórmáncé módé chángéd ~~~~~~~~ !!]</value>
+  </data>
+  <data name="App_PerformanceNotification_CurrentMode" xml:space="preserve">
+    <value>[!! Cúrrént módé: {0} ~~~~ !!]</value>
+  </data>
+  <data name="App_PerformanceNotification_FailedBody" xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót ápplý thé séléctéd módé. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="App_PerformanceNotification_FailedTitle" xml:space="preserve">
+    <value>[!! Pérfórmáncé módé cóúld nót bé chángéd ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Common_Cancel" xml:space="preserve">
+    <value>[!! Cáncél ~~~ !!]</value>
+  </data>
+  <data name="Common_Close" xml:space="preserve">
+    <value>[!! Clósé ~~ !!]</value>
+  </data>
+  <data name="Common_Done" xml:space="preserve">
+    <value>[!! Dóné ~~ !!]</value>
+  </data>
+  <data name="Common_ErrorWithDetails" xml:space="preserve">
+    <value>{0}</value>
+  </data>
+  <data name="Common_Import" xml:space="preserve">
+    <value>[!! Ímpórt ~~~ !!]</value>
+  </data>
+  <data name="Common_Save" xml:space="preserve">
+    <value>[!! Sávé ~~ !!]</value>
+  </data>
+  <data name="Common_Working" xml:space="preserve">
+    <value>[!! Wórkíng… ~~~ !!]</value>
+  </data>
+  <data name="DiagnosticArchivePicker_Title" xml:space="preserve">
+    <value>[!! Éxpórt OpenBlade díágnóstícs ~~~~~~ !!]</value>
+  </data>
+  <data name="DiagnosticArchivePicker_ZipArchives" xml:space="preserve">
+    <value>[!! ZÍP árchívés ~~~~ !!]</value>
+  </data>
+  <data name="DisplayBrightnessOsd_WindowTitle" xml:space="preserve">
+    <value>[!! OpenBlade bríghtnéss ~~~~ !!]</value>
+  </data>
+  <data name="InstalledComponentVersion_Unavailable" xml:space="preserve">
+    <value>[!! Únáváíláblé ~~~~ !!]</value>
+  </data>
   <data name="MainWindow_AboutNavigationItemText.Content" xml:space="preserve">
     <value>[!! Ábóút ~~ !!]</value>
   </data>
   <data name="MainWindow_AboutTestedPlatformWarningText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Sýstém vérsíón cómpátíbílítý wárníng ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Accent_Custom" xml:space="preserve">
+    <value>[!! Cústóm ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Accent_CustomSummary" xml:space="preserve">
+    <value>[!! Cústóm ({0}) ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Accent_OpenBladeGreen" xml:space="preserve">
+    <value>[!! OpenBlade gréén ~~ !!]</value>
+  </data>
+  <data name="MainWindow_Accent_OpenBladeGreenSummary" xml:space="preserve">
+    <value>[!! OpenBlade gréén (#47É10C) ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Accent_Windows" xml:space="preserve">
+    <value>[!! Windows áccént ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_AccentPicker_PrimaryButton" xml:space="preserve">
+    <value>[!! Úsé cólór ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_AccentPicker_Title" xml:space="preserve">
+    <value>[!! Chóósé án áccént cólór ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_AddTrayDashboardControlButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Ádd tráý dáshbóárd cóntról ~~~~~~~~~ !!]</value>
@@ -40,13 +127,13 @@
     <value>[!! Chéck cúrrént státé ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ButtonCheckForUpdates.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Chéck óffícíál Rázér fírmwáré vérsíóns ~~~~~~~~~~~~ !!]</value>
+    <value>[!! Chéck óffícíál Razer fírmwáré vérsíóns ~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ButtonCheckForUpdates.Content" xml:space="preserve">
     <value>[!! Chéck fór úpdátés ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ButtonCheckNow.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Chéck GítHúb fór ÓpénBládé úpdátés ~~~~~~~~~~~ !!]</value>
+    <value>[!! Chéck GitHub fór OpenBlade úpdátés ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ButtonCheckNow.Content" xml:space="preserve">
     <value>[!! Chéck nów ~~~ !!]</value>
@@ -61,7 +148,7 @@
     <value>[!! Chóósé sécónd kéýbóárd cólór ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ButtonCloseGPUApps.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Clósé ápps úsíng thé NVÍDÍÁ GPÚ ~~~~~~~~~~ !!]</value>
+    <value>[!! Clósé ápps úsíng thé NVIDIA GPÚ ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ButtonCloseGPUApps.Content" xml:space="preserve">
     <value>[!! Clósé GPÚ ápps ~~~~~ !!]</value>
@@ -139,7 +226,7 @@
     <value>[!! Ímpórt prófílés ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ButtonReapplyOpenBladeSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Réápplý ÓpénBládé séttíngs ~~~~~~~~~ !!]</value>
+    <value>[!! Réápplý OpenBlade séttíngs ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ButtonReset.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Rését tráý dáshbóárd ~~~~~~~ !!]</value>
@@ -151,7 +238,7 @@
     <value>[!! Rését tó défáúlt ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ButtonShutDownOpenBlade.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Shút dówn ÓpénBládé ~~~~~~ !!]</value>
+    <value>[!! Shút dówn OpenBlade ~~~ !!]</value>
   </data>
   <data name="MainWindow_ButtonUseProfileSettings.Content" xml:space="preserve">
     <value>[!! Úsé prófílé séttíngs ~~~~~~~ !!]</value>
@@ -167,6 +254,24 @@
   </data>
   <data name="MainWindow_ComboBoxProfileToReview.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Prófílé tó révíéw ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CustomizeDashboard_AutomationName" xml:space="preserve">
+    <value>[!! Dáshbóárd cárds ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CustomizeDashboard_Instructions" xml:space="preserve">
+    <value>[!! Chéck cárds tó shów. Drág thém íntó thé órdér ýóú wánt. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CustomizeDashboard_Title" xml:space="preserve">
+    <value>[!! Cústómízé Dáshbóárd ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CustomizePage_AutomationName" xml:space="preserve">
+    <value>[!! {0} págé séctíóns ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CustomizePage_Instructions" xml:space="preserve">
+    <value>[!! Chéck séctíóns tó shów. Drág thém íntó thé órdér ýóú wánt. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CustomizePage_Title" xml:space="preserve">
+    <value>[!! Cústómízé {0} ~~~~ !!]</value>
   </data>
   <data name="MainWindow_DashboardAudioMeterColorBoostSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Áúdíó Métér cólór bóóst ~~~~~~~ !!]</value>
@@ -210,6 +315,12 @@
   <data name="MainWindow_ExpanderGPUCurve.Header" xml:space="preserve">
     <value>[!! GPÚ cúrvé ~~~ !!]</value>
   </data>
+  <data name="MainWindow_FirmwareOverride_CheckBox" xml:space="preserve">
+    <value>[!! Ígnóré thís fírmwáré mísmátch ánd rún ánýwáý ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_FirmwareOverride_Warning" xml:space="preserve">
+    <value>[!! Fórcíng cóntról máý sénd cáptúréd cómmánds tó fírmwáré théý wéré nót válídátéd ágáínst. Éxáct láptóp ánd ÚSB ídéntítý chécks rémáín réqúíréd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_FixedFanSpeedSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Fíxéd fán spééd ~~~~~ !!]</value>
   </data>
@@ -218,6 +329,98 @@
   </data>
   <data name="MainWindow_GamingModeToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Gámíng módé ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_AfterCloseUnavailable" xml:space="preserve">
+    <value>[!! GPÚ áctívítý cóúld nót bé chéckéd áftér clósíng ápps. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_AfterForceUnavailable" xml:space="preserve">
+    <value>[!! GPÚ áctívítý cóúld nót bé chéckéd áftér fórcé clósíng ápps. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_AppItem" xml:space="preserve">
+    <value>[!! - {0} (PÍD {1}) ~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_AppItemWithReason" xml:space="preserve">
+    <value>[!! - {0} (PÍD {1}): {2} ~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseButton" xml:space="preserve">
+    <value>[!! Clósé ápps ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseConfirmationIntro" xml:space="preserve">
+    <value>[!! OpenBlade wíll ásk thésé ápps tó clósé. Sávé ýóúr wórk fírst.
+
+ ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseConfirmationTitle" xml:space="preserve">
+    <value>[!! Clósé ápps úsíng thé NVIDIA GPÚ? ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_ClosedBody" xml:space="preserve">
+    <value>[!! Thé séléctéd ápps réléáséd théír NVIDIA GPÚ éngínés. Thé GPÚ máý táké á mómént tó rétúrn tó sléép. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_ClosedTitle" xml:space="preserve">
+    <value>[!! GPÚ ápps clóséd ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_CountersUnavailable" xml:space="preserve">
+    <value>[!! Windows GPÚ áctívítý cóúntérs áré únáváíláblé. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_FailureItem" xml:space="preserve">
+    <value>[!! - PÍD {0}: {1} ~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_FailuresHeading" xml:space="preserve">
+    <value>[!!
+
+Répórtéd fáílúrés:
+{0} ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceButton" xml:space="preserve">
+    <value>[!! Fórcé clósé ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceClosedBody" xml:space="preserve">
+    <value>[!! Thé séléctéd ápps wéré fórcé clóséd. Thé GPÚ máý táké á mómént tó rétúrn tó sléép. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceClosedTitle" xml:space="preserve">
+    <value>[!! GPÚ ápps fórcé clóséd ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceConfirmationIntro" xml:space="preserve">
+    <value>[!! Thésé ápps díd nót clósé. Fórcé clósíng cán díscárd únsávéd wórk.
+
+ ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceConfirmationTitle" xml:space="preserve">
+    <value>[!! Fórcé clósé rémáíníng ápps? ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_KeepRunningButton" xml:space="preserve">
+    <value>[!! Kéép rúnníng ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneSafeToClose" xml:space="preserve">
+    <value>[!! Nó GPÚ úsérs cán bé clóséd sáfélý.
+
+ ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneToCloseTitle" xml:space="preserve">
+    <value>[!! Nó GPÚ ápps tó clósé ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneUsingGpu" xml:space="preserve">
+    <value>[!! Nó cúrrént-úsér ápps áré hóldíng án NVIDIA GPÚ éngíné. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_NotCloseableHeading" xml:space="preserve">
+    <value>[!!
+
+Nót clóséáblé:
+ ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_SessionAgentFailure" xml:space="preserve">
+    <value>[!! Thé Session Agent cóúld nót cómplété thé GPÚ ápp ópérátíón: {0} ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_StillRunningTitle" xml:space="preserve">
+    <value>[!! GPÚ ápps stíll rúnníng ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_SurvivorsHeading" xml:space="preserve">
+    <value>[!! Sómé ápps cóúld nót bé clóséd:
+
+ ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_UnavailableTitle" xml:space="preserve">
+    <value>[!! GPÚ áctívítý únáváíláblé ~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_GpuClockTuningToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! GPÚ túníng ~~~~ !!]</value>
@@ -238,16 +441,16 @@
     <value>[!! Ópén dócúméntátíón ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_HyperlinkButtonOpenGitHubIssues.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Ópén GítHúb Íssúés ~~~~~~ !!]</value>
+    <value>[!! Ópén GitHub Íssúés ~~~~ !!]</value>
   </data>
   <data name="MainWindow_HyperlinkButtonOpenGitHubIssues.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>[!! Ópén GítHúb Íssúés ~~~~~~ !!]</value>
+    <value>[!! Ópén GitHub Íssúés ~~~~ !!]</value>
   </data>
   <data name="MainWindow_HyperlinkButtonOpenOfficialRazerFirmwareSupportPage.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Ópén óffícíál Rázér fírmwáré súppórt págé ~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Ópén óffícíál Razer fírmwáré súppórt págé ~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_HyperlinkButtonOpenOfficialRazerFirmwareSupportPage.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>[!! Ópén óffícíál Rázér fírmwáré súppórt págé ~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Ópén óffícíál Razer fírmwáré súppórt págé ~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_HyperlinkButtonOpenReleaseNotes.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Ópén réléásé nótés ~~~~~~ !!]</value>
@@ -262,13 +465,13 @@
     <value>[!! Ópén sóúrcé códé ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_HyperlinkButtonViewRelease.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Víéw áváíláblé ÓpénBládé réléásé ~~~~~~~~~~~ !!]</value>
+    <value>[!! Víéw áváíláblé OpenBlade réléásé ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_HyperlinkButtonViewRelease.Content" xml:space="preserve">
     <value>[!! Víéw réléásé ~~~~ !!]</value>
   </data>
   <data name="MainWindow_ImageOpenBladeAppIcon.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! ÓpénBládé ápp ícón ~~~~~~ !!]</value>
+    <value>[!! OpenBlade ápp ícón ~~~ !!]</value>
   </data>
   <data name="MainWindow_InfoBadgeDashboardHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Dáshbóárd hás únsávéd chángés ~~~~~~~~~~ !!]</value>
@@ -318,6 +521,41 @@
   <data name="MainWindow_LightingIdleTimeoutToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Túrn óff kéýbóárd líghtíng áftér ínáctívítý ~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_LightingImport_Brightness" xml:space="preserve">
+    <value>[!! {0}% bríghtnéss ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
+    <value>[!! {0} úsés thé {1} éfféct át {2}. Ímpórtíng ápplíés ít thróúgh OpenBlade ánd kééps ít ás án únsávéd chángé fór thé áctívé pówér prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
+    <value>[!! Ímpórt kéýbóárd líghtíng? ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LightingImport_ControlUnavailable" xml:space="preserve">
+    <value>[!! Líghtíng cóntról bécámé únáváíláblé béfóré thé prését cóúld bé ímpórtéd. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LightingImport_EffectUnavailable" xml:space="preserve">
+    <value>[!! Thé {0} éfféct ís únáváíláblé ón thís láptóp ríght nów. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LightingImport_FailedTitle" xml:space="preserve">
+    <value>[!! Kéýbóárd líghtíng cóúld nót bé ímpórtéd ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LightingImport_FileTooLarge" xml:space="preserve">
+    <value>[!! Thé séléctéd líghtíng fílé cánnót éxcééd {0}. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LightingImport_ImportApplyButton" xml:space="preserve">
+    <value>[!! Ímpórt ánd ápplý ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LightingImport_Off" xml:space="preserve">
+    <value>[!! óff ~~ !!]</value>
+  </data>
+  <data name="MainWindow_LightingImport_PickerTitle" xml:space="preserve">
+    <value>[!! Ímpórt OpenBlade kéýbóárd líghtíng ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LightingImport_Warning" xml:space="preserve">
+    <value>
+
+{0}</value>
+  </data>
   <data name="MainWindow_LightingNavigationItemText.Content" xml:space="preserve">
     <value>[!! Líghtíng ~~~ !!]</value>
   </data>
@@ -342,11 +580,71 @@
   <data name="MainWindow_NavigationMenuExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Návígátíón ménú órdér ~~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_Notification_AppUpdateBody" xml:space="preserve">
+    <value>[!! OpenBlade {0} ís réádý tó dównlóád. ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_AppUpdateTitle" xml:space="preserve">
+    <value>[!! OpenBlade úpdáté áváíláblé ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
+    <value>[!! Razer cóntróllér détéctéd ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
+    <value>[!! Razer fírmwáré úpdáté áváíláblé ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_OperationFailedTitle" xml:space="preserve">
+    <value>[!! OpenBlade ópérátíón fáíléd ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileAc" xml:space="preserve">
+    <value>[!! ÁC prófílé ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileActive" xml:space="preserve">
+    <value>[!! áctívé pówér prófílé ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileBattery" xml:space="preserve">
+    <value>[!! Báttérý prófílé ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileChangedBody" xml:space="preserve">
+    <value>[!! OpenBlade ís nów úsíng thé {0}. ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileChangedTitle" xml:space="preserve">
+    <value>[!! Pówér prófílé chángéd ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileUsbC" xml:space="preserve">
+    <value>[!! ÚSB-C prófílé ~~~~ !!]</value>
+  </data>
   <data name="MainWindow_OfficialFirmwareUpdatesCardText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Óffícíál Rázér fírmwáré úpdáté ássístánt ~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Óffícíál Razer fírmwáré úpdáté ássístánt ~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Ópérátíón érrór ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProfileExport_FailedBody" xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót sávé thé séléctéd JSÓN fílé. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProfileExport_FailedTitle" xml:space="preserve">
+    <value>[!! Prófílés cóúld nót bé éxpórtéd ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProfileExport_Title" xml:space="preserve">
+    <value>[!! Éxpórt OpenBlade prófílés ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProfileImport_ConfirmBody" xml:space="preserve">
+    <value>[!! Thís réplácés thé sávéd ÁC, ÚSB-C, báttérý, ánd báttérý-prótéctíón prófílés. Cúrrént hárdwáré séttíngs áré nót chángéd úntíl ýóú ápplý ór swítch prófílés. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProfileImport_ConfirmTitle" xml:space="preserve">
+    <value>[!! Ímpórt prófílés? ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProfileImport_FailedTitle" xml:space="preserve">
+    <value>[!! Prófílés cóúld nót bé ímpórtéd ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProfileImport_PickerTitle" xml:space="preserve">
+    <value>[!! Ímpórt OpenBlade prófílés ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProfileImport_UnavailableSettings" xml:space="preserve">
+    <value>[!! Thé ímpórtéd prófílés ínclúdé séttíngs thát áré únáváíláblé ón thís láptóp. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProfilePicker_JsonFiles" xml:space="preserve">
+    <value>[!! JSÓN fílés ~~~~ !!]</value>
   </data>
   <data name="MainWindow_ProfileStateBadgeText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Ópén tróúbléshóótíng détáíls ~~~~~~~~~~ !!]</value>
@@ -376,10 +674,10 @@
     <value>[!! Ápplýíng témpórárý fúll chárgé ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ProgressRingCheckingGitHubForUpdates.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Chéckíng GítHúb fór úpdátés ~~~~~~~~~ !!]</value>
+    <value>[!! Chéckíng GitHub fór úpdátés ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ProgressRingCheckingRazerForFirmwareVersions.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Chéckíng Rázér fór fírmwáré vérsíóns ~~~~~~~~~~~~ !!]</value>
+    <value>[!! Chéckíng Razer fór fírmwáré vérsíóns ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ProgressRingReadingOrApplyingFunctionKeyBehavior.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Réádíng ór ápplýíng fúnctíón kéý béhávíór ~~~~~~~~~~~~~ !!]</value>
@@ -432,20 +730,117 @@
   <data name="MainWindow_SettingsNavigationItemText.Content" xml:space="preserve">
     <value>[!! Séttíngs ~~~ !!]</value>
   </data>
+  <data name="MainWindow_Shutdown_Content" xml:space="preserve">
+    <value>[!! Thís stóps thé ápp, díspláý hélpér, ánd hárdwáré sérvícé.  ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Shutdown_FailedTitle" xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót shút dówn ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Shutdown_PrimaryButton" xml:space="preserve">
+    <value>[!! Shút dówn ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Shutdown_Title" xml:space="preserve">
+    <value>[!! Shút dówn OpenBlade? ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Start_AlreadyRunningBody" xml:space="preserve">
+    <value>[!! Thé tráý wíll récónnéct áútómátícállý. Thís cán táké á féw sécónds. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Start_AlreadyRunningTitle" xml:space="preserve">
+    <value>[!! OpenBlade sérvícé ís álréádý rúnníng ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Start_Button" xml:space="preserve">
+    <value>[!! Stárt OpenBlade ~~ !!]</value>
+  </data>
+  <data name="MainWindow_Start_FailedTitle" xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót stárt ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Start_Starting" xml:space="preserve">
+    <value>[!! Stártíng OpenBlade ~~~ !!]</value>
+  </data>
   <data name="MainWindow_StartMinimizedToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Stárt ÓpénBládé mínímízéd ~~~~~~~~~ !!]</value>
+    <value>[!! Stárt OpenBlade mínímízéd ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_StartOpenBladeButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Stárt ÓpénBládé ~~~~~ !!]</value>
+    <value>[!! Stárt OpenBlade ~~ !!]</value>
   </data>
   <data name="MainWindow_StartupAnimationToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Stártúp ánímátíón ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_AutomationName" xml:space="preserve">
+    <value>[!! Stóp Razer sérvícés ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
+    <value>[!! Windows díd nót gránt ádmínístrátór pérmíssíón. OpenBlade díd nót rétrý thé réqúést. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
+    <value>[!! Razer sérvícé stóp cáncéléd ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_Checking" xml:space="preserve">
+    <value>[!! Chéckíng… ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
+    <value>[!! Thésé knówn cóntróllér sérvícés áré cúrréntlý áctívé:
+
+{0}
+
+Áftér áppróvál, OpenBlade wíll fréshlý chéck thé sámé révíéwéd állówlíst ánd stóp áný áctívé mátchés. Thís dóés nót únínstáll Razer sóftwáré ór dísáblé sérvícé stártúp. Razer sóftwáré máý stárt thé sérvícés ágáín, ánd féátúrés thát dépénd ón thém máý stóp wórkíng úntíl thén. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
+    <value>[!! Stóp Razer sérvícés? ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_FailedTitle" xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót stóp Razer sérvícés ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_IndeterminateNote" xml:space="preserve">
+    <value>[!!
+
+Thé hélpér résúlt wás índétérmínáté, bút frésh réádbáck cónfírms thé sérvícés áré stóppéd ór nó lóngér ínstálléd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoneBody" xml:space="preserve">
+    <value>[!! OpenBlade fóúnd nó áctívé Sýnápsé ór Chrómá cóntróllér sérvícés ín íts révíéwéd állówlíst. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoneTitle" xml:space="preserve">
+    <value>[!! Nó knówn Razer cóntróllér sérvícés áré rúnníng ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoRetryNote" xml:space="preserve">
+    <value>[!!
+
+OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_PartialTitle" xml:space="preserve">
+    <value>[!! Sómé Razer sérvícés cóúld nót bé cónfírméd stóppéd ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_RemainingHeading" xml:space="preserve">
+    <value>[!! Stíll áctívé ór péndíng:
+ ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_StopButton" xml:space="preserve">
+    <value>[!! Stóp sérvícés ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_StoppedHeading" xml:space="preserve">
+    <value>[!! Stóppéd ór nó lóngér ínstálléd:
+ ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_Stopping" xml:space="preserve">
+    <value>[!! Stóppíng… ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_SucceededTitle" xml:space="preserve">
+    <value>[!! Razer sérvícés stóppéd ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_UnconfirmedBody" xml:space="preserve">
+    <value>[!! Thé élévátéd réqúést fíníshéd, bút OpenBlade cóúld nót réád thé fínál sérvícé státé. {0} ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_UnconfirmedTitle" xml:space="preserve">
+    <value>[!! Razer sérvícé státús ís úncónfírméd ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_StopRazer_WorkingAutomationName" xml:space="preserve">
+    <value>[!! Wórkíng wíth Razer sérvícés ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_StopRazerServicesButtonLabelText.Text" xml:space="preserve">
     <value>[!! Stóp sérvícés ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_StopRazerServicesButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Stóp Rázér sérvícés ~~~~~~ !!]</value>
+    <value>[!! Stóp Razer sérvícés ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TaskbarHoverLabelExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Táskbár hóvér lábél séttíngs ~~~~~~~~~ !!]</value>
@@ -496,10 +891,10 @@
     <value>[!! Áppéáráncé ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockApplyNVIDIAClockOffsetsIndependentlyOfPower.Text" xml:space="preserve">
-    <value>[!! Ápplý NVÍDÍÁ clóck óffséts índépéndéntlý óf Pówér módé ~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Ápplý NVIDIA clóck óffséts índépéndéntlý óf Pówér módé ~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockAppsUsingTheNVIDIAGPU.Text" xml:space="preserve">
-    <value>[!! Ápps úsíng thé NVÍDÍÁ GPÚ ~~~~~~~~ !!]</value>
+    <value>[!! Ápps úsíng thé NVIDIA GPÚ ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockAppTheme.Text" xml:space="preserve">
     <value>[!! Ápp thémé ~~~ !!]</value>
@@ -547,13 +942,13 @@
     <value>[!! Blóck Ált+Táb ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockBlockTheWindowsKey.Text" xml:space="preserve">
-    <value>[!! Blóck thé Wíndóws kéý ~~~~~~~ !!]</value>
+    <value>[!! Blóck thé Windows kéý ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockBlockWindowsKey.Text" xml:space="preserve">
-    <value>[!! Blóck Wíndóws kéý ~~~~~~ !!]</value>
+    <value>[!! Blóck Windows kéý ~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockBlockWindowsKey2.Text" xml:space="preserve">
-    <value>[!! Blóck Wíndóws kéý ~~~~~~ !!]</value>
+    <value>[!! Blóck Windows kéý ~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockBreathingColors.Text" xml:space="preserve">
     <value>[!! Bréáthíng cólórs ~~~~~~ !!]</value>
@@ -568,7 +963,7 @@
     <value>[!! Búílt-ín díspláý ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockBypassOnlyTheTestedFirmwareCheckFor.Text" xml:space="preserve">
-    <value>[!! Býpáss ónlý thé téstéd fírmwáré chéck fór án éxáct súppórtéd Rázér Bládé. Óthér hárdwáré sáfétý chécks stáý énábléd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Býpáss ónlý thé téstéd fírmwáré chéck fór án éxáct súppórtéd Razer Bládé. Óthér hárdwáré sáfétý chécks stáý énábléd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockChangesPending.Text" xml:space="preserve">
     <value>[!! Chángés péndíng ~~~~~ !!]</value>
@@ -610,7 +1005,7 @@
     <value>[!! Chóósé á néw cólór páír fór éách Tídál cýclé. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockChooseARefreshRateReportedByWindows.Text" xml:space="preserve">
-    <value>[!! Chóósé á réfrésh ráté répórtéd bý Wíndóws ór úsé dýnámíc réfrésh ráté. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Chóósé á réfrésh ráté répórtéd bý Windows ór úsé dýnámíc réfrésh ráté. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockChooseFrom1To60Minutes.Text" xml:space="preserve">
     <value>[!! Chóósé fróm 1 tó 60 mínútés. ~~~~~~~ !!]</value>
@@ -622,7 +1017,7 @@
     <value>[!! Chóósé hów lóng présséd kéýs rémáín lít. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
-    <value>[!! Chóósé hów óftén ÓpénBládé réfréshés témpérátúrés, fán spééd, ánd nét báttérý pówér whílé thé wíndów ís ópén ór thé tráý ícón ís hóvéréd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Chóósé hów óftén OpenBlade réfréshés témpérátúrés, fán spééd, ánd nét báttérý pówér whílé thé wíndów ís ópén ór thé tráý ícón ís hóvéréd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
     <value>[!! Chóósé thé cóntróls ánd lívé détáíls shówn whén ýóú clíck thé tráý ícón. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
@@ -631,7 +1026,7 @@
     <value>[!! Chóósé thé éfféct's sécónd cólór. ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheLightingModeForTheRazer.Text" xml:space="preserve">
-    <value>[!! Chóósé thé líghtíng módé fór thé Rázér lógó ón thé líd. ~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Chóósé thé líghtíng módé fór thé Razer lógó ón thé líd. ~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheOrderOfPagesInThe.Text" xml:space="preserve">
     <value>[!! Chóósé thé órdér óf págés ín thé léft ménú. ~~~~~~~~~~~~ !!]</value>
@@ -769,7 +1164,7 @@
     <value>[!! Fírmwáré úpdátés ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockFollowWindowsOrAlwaysUseLightOr.Text" xml:space="preserve">
-    <value>[!! Fóllów Wíndóws, ór álwáýs úsé líght ór dárk módé. ~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Fóllów Windows, ór álwáýs úsé líght ór dárk módé. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockForceRunOnIncompatibleFirmware.Text" xml:space="preserve">
     <value>[!! Fórcé rún ón íncómpátíblé fírmwáré ~~~~~~~~~~~ !!]</value>
@@ -817,7 +1212,7 @@
     <value>[!! HDR ~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockImportOblightAndRazerChromaFiles.Text" xml:space="preserve">
-    <value>[!! Ímpórt .óblíght ánd Rázér .chrómá fílés. ~~~~~~~~~~~~ !!]</value>
+    <value>[!! Ímpórt .óblíght ánd Razer .chrómá fílés. ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockImportPreset.Text" xml:space="preserve">
     <value>[!! Ímpórt prését ~~~~~ !!]</value>
@@ -835,7 +1230,7 @@
     <value>[!! Íncréásé hów strónglý áúdíó lévéls drívé thé kéýbóárd cólórs. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockIndependentOpenSourceProjectNotAffiliatedWith.Text" xml:space="preserve">
-    <value>[!! Índépéndént ópén-sóúrcé prójéct; nót áffílíátéd wíth Rázér. ~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Índépéndént ópén-sóúrcé prójéct; nót áffílíátéd wíth Razer. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockInstalled.Text" xml:space="preserve">
     <value>[!! Ínstálléd ~~~~ !!]</value>
@@ -910,13 +1305,13 @@
     <value>[!! Líghtíng éfféct ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockLightweightControlsForRazerBladeLaptops.Text" xml:space="preserve">
-    <value>[!! Líghtwéíght cóntróls fór Rázér Bládé láptóps ~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Líghtwéíght cóntróls fór Razer Bládé láptóps ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockLiveReadings.Text" xml:space="preserve">
     <value>[!! Lívé réádíngs ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockLoadAnOpenBladeOrRazerChromaKeyboard.Text" xml:space="preserve">
-    <value>[!! Lóád án ÓpénBládé ór Rázér Chrómá kéýbóárd líghtíng fílé. ~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Lóád án OpenBlade ór Razer Chrómá kéýbóárd líghtíng fílé. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockMCU.Text" xml:space="preserve">
     <value>[!! MCÚ ~~ !!]</value>
@@ -931,13 +1326,13 @@
     <value>[!! Návígátíón ménú ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockNewOpenBladeReleases.Text" xml:space="preserve">
-    <value>[!! Néw ÓpénBládé réléásés. ~~~~~~~ !!]</value>
+    <value>[!! Néw OpenBlade réléásés. ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockNewRazerBIOSECOrMCUFirmware.Text" xml:space="preserve">
-    <value>[!! Néw Rázér BÍÓS, ÉC, ór MCÚ fírmwáré. ~~~~~~~~~~ !!]</value>
+    <value>[!! Néw Razer BÍÓS, ÉC, ór MCÚ fírmwáré. ~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockNewRazerControllersAdvisoriesStayVisible.Text" xml:space="preserve">
-    <value>[!! Néw Rázér cóntróllérs. Ádvísóríés stáý vísíblé. ~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Néw Razer cóntróllérs. Ádvísóríés stáý vísíblé. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockNotifications.Text" xml:space="preserve">
     <value>[!! Nótífícátíóns ~~~~~ !!]</value>
@@ -946,34 +1341,34 @@
     <value>[!! Óffícíál fírmwáré ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockOpenBladeApp.Text" xml:space="preserve">
-    <value>[!! ÓpénBládé ápp ~~~~~ !!]</value>
+    <value>[!! OpenBlade ápp ~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockOpenBladeService.Text" xml:space="preserve">
-    <value>[!! ÓpénBládé sérvícé ~~~~~~ !!]</value>
+    <value>[!! OpenBlade sérvícé ~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockOpenBladeServiceVersion.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! ÓpénBládé sérvícé vérsíón ~~~~~~~~~ !!]</value>
+    <value>[!! OpenBlade sérvícé vérsíón ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockOpenBladeSessionAgentVersion.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! ÓpénBládé séssíón ágént vérsíón ~~~~~~~~~~ !!]</value>
+    <value>[!! OpenBlade séssíón ágént vérsíón ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockOpenBladeUsesTheLaptopFirmwareTemperatureAnd.Text" xml:space="preserve">
-    <value>[!! ÓpénBládé úsés thé láptóp fírmwáré témpérátúré ánd NVÍDÍÁ GPÚ témpérátúré. Íf éíthér réádíng ís únáváíláblé, ít úsés máxímúm fán spééd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! OpenBlade úsés thé láptóp fírmwáré témpérátúré ánd NVIDIA GPÚ témpérátúré. Íf éíthér réádíng ís únáváíláblé, ít úsés máxímúm fán spééd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockOpenGitHubIssuesToReportABug.Text" xml:space="preserve">
-    <value>[!! Ópén GítHúb Íssúés tó répórt á búg ór réqúést án ímpróvémént. ~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Ópén GitHub Íssúés tó répórt á búg ór réqúést án ímpróvémént. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockOpenInTheNotificationAreaWithoutShowing.Text" xml:space="preserve">
     <value>[!! Ópén ín thé nótífícátíón áréá wíthóút shówíng thé wíndów. ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockOpenOfficialRazerPage.Text" xml:space="preserve">
-    <value>[!! Ópén óffícíál Rázér págé ~~~~~~~~ !!]</value>
+    <value>[!! Ópén óffícíál Razer págé ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockOperationFailures.Text" xml:space="preserve">
     <value>[!! Ópérátíón fáílúrés ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockOtherRazerSoftwareRunning.Text" xml:space="preserve">
-    <value>[!! Óthér Rázér sóftwáré rúnníng ~~~~~~~~~ !!]</value>
+    <value>[!! Óthér Razer sóftwáré rúnníng ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockOverrideExternalLightingChanges.Text" xml:space="preserve">
     <value>[!! Óvérrídé éxtérnál líghtíng chángés ~~~~~~~~~~~ !!]</value>
@@ -1012,7 +1407,7 @@
     <value>[!! Rándóm cólórs ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockRazerBrightnessDriver.Text" xml:space="preserve">
-    <value>[!! Rázér bríghtnéss drívér ~~~~~~~~ !!]</value>
+    <value>[!! Razer bríghtnéss drívér ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockReactiveDuration.Text" xml:space="preserve">
     <value>[!! Réáctívé dúrátíón ~~~~~~ !!]</value>
@@ -1021,7 +1416,7 @@
     <value>[!! Réád sétúp, úságé, ánd cómpátíbílítý ínfórmátíón. ~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockReapplyOpenBladeSettings.Text" xml:space="preserve">
-    <value>[!! Réápplý ÓpénBládé séttíngs ~~~~~~~~~ !!]</value>
+    <value>[!! Réápplý OpenBlade séttíngs ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockRecentError.Text" xml:space="preserve">
     <value>[!! Récént érrór ~~~~ !!]</value>
@@ -1054,7 +1449,7 @@
     <value>[!! Sécónd cólór ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockSeeWhatChangedInEachOpenBladeBuild.Text" xml:space="preserve">
-    <value>[!! Séé whát chángéd ín éách ÓpénBládé búíld. ~~~~~~~~~~~~ !!]</value>
+    <value>[!! Séé whát chángéd ín éách OpenBlade búíld. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockService.Text" xml:space="preserve">
     <value>[!! Sérvícé ~~~ !!]</value>
@@ -1087,7 +1482,7 @@
     <value>[!! Shút dówn ~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockShutDownOpenBlade.Text" xml:space="preserve">
-    <value>[!! Shút dówn ÓpénBládé ~~~~~~ !!]</value>
+    <value>[!! Shút dówn OpenBlade ~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockSmoothQuietChanges.Text" xml:space="preserve">
     <value>[!! Smóóth qúíét chángés ~~~~~~~ !!]</value>
@@ -1111,7 +1506,7 @@
     <value>[!! Stárt mínímízéd ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockStartOpenBlade.Text" xml:space="preserve">
-    <value>[!! Stárt ÓpénBládé ~~~~~ !!]</value>
+    <value>[!! Stárt OpenBlade ~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockStartup.Text" xml:space="preserve">
     <value>[!! Stártúp ~~~ !!]</value>
@@ -1129,7 +1524,7 @@
     <value>[!! Státús rów ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockStopTheAppDisplayHelperAndHardware.Text" xml:space="preserve">
-    <value>[!! Stóp thé ápp, díspláý hélpér, ánd hárdwáré sérvícé. Ýóú cán stárt ÓpénBládé ágáín fróm tróúbléshóótíng. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Stóp thé ápp, díspláý hélpér, ánd hárdwáré sérvícé. Ýóú cán stárt OpenBlade ágáín fróm tróúbléshóótíng. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockSupport.Text" xml:space="preserve">
     <value>[!! Súppórt ~~~ !!]</value>
@@ -1192,13 +1587,13 @@
     <value>[!! Úsé óné cólór, áltérnáté bétwéén twó, ór chóósé rándóm cólórs. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockUseOpenBladeGreenTheWindowsAccentOr.Text" xml:space="preserve">
-    <value>[!! Úsé ÓpénBládé gréén, thé Wíndóws áccént, ór á cólór ýóú chóósé. ~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Úsé OpenBlade gréén, thé Windows áccént, ór á cólór ýóú chóósé. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockUseTheHotterSensorForBothFans.Text" xml:space="preserve">
     <value>[!! Úsé thé hóttér sénsór fór bóth fáns ~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockUseWindowsForKeyboardEffectsAndBrightness.Text" xml:space="preserve">
-    <value>[!! Úsé Wíndóws fór kéýbóárd éffécts ánd bríghtnéss. ~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Úsé Windows fór kéýbóárd éffécts ánd bríghtnéss. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockVBIOS.Text" xml:space="preserve">
     <value>[!! VBÍÓS ~~ !!]</value>
@@ -1207,34 +1602,34 @@
     <value>[!! Vérsíóns ~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockViewAndContributeToOpenBladeOnGitHub.Text" xml:space="preserve">
-    <value>[!! Víéw ánd cóntríbúté tó ÓpénBládé ón GítHúb. ~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Víéw ánd cóntríbúté tó OpenBlade ón GitHub. ~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockViewFirmwareDownloadsAndReleaseDetailsOn.Text" xml:space="preserve">
-    <value>[!! Víéw fírmwáré dównlóáds ánd réléásé détáíls ón Rázér's síté. ~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Víéw fírmwáré dównlóáds ánd réléásé détáíls ón Razer's síté. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockViewLiveConnectionAndControlDetails.Text" xml:space="preserve">
     <value>[!! Víéw lívé cónnéctíón ánd cóntról détáíls. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockWhenOffOpenBladeYieldsKeyboardLightingTo.Text" xml:space="preserve">
-    <value>[!! Whén óff, ÓpénBládé ýíélds kéýbóárd líghtíng tó Sýnápsé. Túrn ít ón tó réápplý thé lást ÓpénBládé éfféct áftér án éxtérnál chángé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Whén óff, OpenBlade ýíélds kéýbóárd líghtíng tó Sýnápsé. Túrn ít ón tó réápplý thé lást OpenBlade éfféct áftér án éxtérnál chángé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockWhenTheDisplayTurnsOff.Text" xml:space="preserve">
     <value>[!! Whén thé díspláý túrns óff ~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockWindows11X64.Text" xml:space="preserve">
-    <value>[!! Wíndóws 11 x64 ~~~ !!]</value>
+    <value>[!! Windows 11 x64 ~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockWindowsDynamicLighting.Text" xml:space="preserve">
-    <value>[!! Wíndóws Dýnámíc Líghtíng ~~~~~~~~ !!]</value>
+    <value>[!! Windows Dynamic Lighting ~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockWindowsPowerMode.Text" xml:space="preserve">
-    <value>[!! Wíndóws pówér módé ~~~~~~ !!]</value>
+    <value>[!! Windows pówér módé ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockWindowsPowerMode2.Text" xml:space="preserve">
-    <value>[!! Wíndóws pówér módé ~~~~~~ !!]</value>
+    <value>[!! Windows pówér módé ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockWindowsPowerMode3.Text" xml:space="preserve">
-    <value>[!! Wíndóws pówér módé ~~~~~~ !!]</value>
+    <value>[!! Windows pówér módé ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockYourDashboardIsEmpty.Text" xml:space="preserve">
     <value>[!! Ýóúr Dáshbóárd ís émptý ~~~~~~~ !!]</value>
@@ -1246,22 +1641,22 @@
     <value>[!! Blóck Ált+Táb ín Gámíng módé ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ToggleSwitchBlockTheWindowsKeyInGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Blóck thé Wíndóws kéý ín Gámíng módé ~~~~~~~~~~~ !!]</value>
+    <value>[!! Blóck thé Windows kéý ín Gámíng módé ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ToggleSwitchForceRunOnIncompatibleFirmware.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Fórcé rún ón íncómpátíblé fírmwáré ~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeOperationFails.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Nótífý whén án ÓpénBládé ópérátíón fáíls ~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Nótífý whén án OpenBlade ópérátíón fáíls ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeUpdateIsAvailable.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Nótífý whén án ÓpénBládé úpdáté ís áváíláblé ~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Nótífý whén án OpenBlade úpdáté ís áváíláblé ~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenAnotherRazerControllerIsDetected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Nótífý whén ánóthér Rázér cóntróllér ís détéctéd ~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Nótífý whén ánóthér Razer cóntróllér ís détéctéd ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenARazerFirmwareUpdateIs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Nótífý whén á Rázér fírmwáré úpdáté ís áváíláblé ~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Nótífý whén á Razer fírmwáré úpdáté ís áváíláblé ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenTheActivePowerProfileChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Nótífý whén thé áctívé pówér prófílé chángés ~~~~~~~~~~~~~~ !!]</value>
@@ -1273,16 +1668,85 @@
     <value>[!! Rándóm Tídál cólórs ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ToggleSwitchStartOpenBladeWhenISignIn.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Stárt ÓpénBládé whén Í sígn ín ~~~~~~~~~ !!]</value>
+    <value>[!! Stárt OpenBlade whén Í sígn ín ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TrayDashboard_Count" xml:space="preserve">
+    <value>[!! {0} óf {1} ~~ !!]</value>
   </data>
   <data name="MainWindow_TroubleshootingExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Tróúbléshóótíng détáíls ~~~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_UpdateConsent_CloseButton" xml:space="preserve">
+    <value>[!! Mánúál ónlý ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_Content" xml:space="preserve">
+    <value>[!! OpenBlade cán chéck GitHub fór á néw réléásé óncé pér dáý whén  ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_PrimaryButton" xml:space="preserve">
+    <value>[!! Úsé dáílý chécks ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_Title" xml:space="preserve">
+    <value>[!! Chéck fór OpenBlade úpdátés? ~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_WindowsDynamicLightingToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Lét Wíndóws Dýnámíc Líghtíng cóntról thé kéýbóárd ~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Lét Windows Dynamic Lighting cóntról thé kéýbóárd ~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_WindowsPowerModeSelectorText.AccessibleName" xml:space="preserve">
-    <value>[!! Wíndóws pówér módé ~~~~~~ !!]</value>
+    <value>[!! Windows pówér módé ~~~~ !!]</value>
+  </data>
+  <data name="Navigation_About" xml:space="preserve">
+    <value>[!! Ábóút ~~ !!]</value>
+  </data>
+  <data name="Navigation_Display" xml:space="preserve">
+    <value>[!! Díspláý ~~~ !!]</value>
+  </data>
+  <data name="Navigation_Laptop" xml:space="preserve">
+    <value>[!! Láptóp ~~~ !!]</value>
+  </data>
+  <data name="Navigation_Lighting" xml:space="preserve">
+    <value>[!! Líghtíng ~~~ !!]</value>
+  </data>
+  <data name="Navigation_Profiles" xml:space="preserve">
+    <value>[!! Prófílés ~~~ !!]</value>
+  </data>
+  <data name="Navigation_Settings" xml:space="preserve">
+    <value>[!! Séttíngs ~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Validation_UnknownKey" xml:space="preserve">
+    <value>[!! Únknówn shórtcút kéý: {0} ~~~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Validation_UnknownModifier" xml:space="preserve">
+    <value>[!! Únknówn módífíér: {0} ~~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_AppPath" xml:space="preserve">
+    <value>[!! Ápp ór fílé páth ~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Shortcut" xml:space="preserve">
+    <value>[!! Shórtcút ~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Text" xml:space="preserve">
+    <value>[!! Téxt ~~ !!]</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Website" xml:space="preserve">
+    <value>[!! Wébsíté ~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Shortcut" xml:space="preserve">
+    <value>[!! Fór éxámplé: Ctrl+Shíft+M ~~~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Text" xml:space="preserve">
+    <value>[!! Téxt tó týpé ~~~~ !!]</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Fans" xml:space="preserve">
+    <value>[!! Fáns ~~ !!]</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_GamingMode" xml:space="preserve">
+    <value>[!! Gámíng módé ~~~~ !!]</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Lighting" xml:space="preserve">
+    <value>[!! Líghtíng ~~~ !!]</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Performance" xml:space="preserve">
+    <value>[!! Pérfórmáncé ~~~~ !!]</value>
   </data>
   <data name="TrayDashboardWindow_ButtonBackToQuickControls.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Báck tó qúíck cóntróls ~~~~~~~ !!]</value>
@@ -1366,13 +1830,13 @@
     <value>[!! Blóck Ált+Táb ~~~~ !!]</value>
   </data>
   <data name="TrayDashboardWindow_TextBlockBlockWindowsKey.Text" xml:space="preserve">
-    <value>[!! Blóck Wíndóws kéý ~~~~~~ !!]</value>
+    <value>[!! Blóck Windows kéý ~~~ !!]</value>
   </data>
   <data name="TrayDashboardWindow_TextBlockC.Text" xml:space="preserve">
     <value>[!! C ~~ !!]</value>
   </data>
   <data name="TrayDashboardWindow_TextBlockChooseWhichKeysWindowsBlocksWhileGaming.Text" xml:space="preserve">
-    <value>[!! Chóósé whích kéýs Wíndóws blócks whílé gámíng módé ís ón. ~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Chóósé whích kéýs Windows blócks whílé gámíng módé ís ón. ~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="TrayDashboardWindow_TextBlockFans.Text" xml:space="preserve">
     <value>[!! Fáns ~~ !!]</value>
@@ -1396,6 +1860,15 @@
     <value>[!! Pérfórmáncé ~~~~ !!]</value>
   </data>
   <data name="TrayDashboardWindow_WindowTitle" xml:space="preserve">
-    <value>[!! ÓpénBládé qúíck cóntróls ~~~~~~~~ !!]</value>
+    <value>[!! OpenBlade qúíck cóntróls ~~~~~ !!]</value>
+  </data>
+  <data name="TrayIconMenu_DoubleClick" xml:space="preserve">
+    <value>[!! Dóúblé-clíck ~~~~ !!]</value>
+  </data>
+  <data name="TrayIconMenu_Exit" xml:space="preserve">
+    <value>[!! Éxít ~~ !!]</value>
+  </data>
+  <data name="TrayIconMenu_Open" xml:space="preserve">
+    <value>[!! Ópén ~~ !!]</value>
   </data>
 </root>

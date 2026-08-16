@@ -20,11 +20,19 @@ public sealed class SetupPayloadTransactionTests
         await transaction.ActivateAsync(CancellationToken.None);
         await transaction.CommitAsync(CancellationToken.None);
 
-        Assert.Contains("Copying OpenBlade.Service.exe", progress.Messages);
-        Assert.Contains("Copying OpenBlade.Tray.exe", progress.Messages);
-        Assert.Contains("Activating the staged OpenBlade files", progress.Messages);
-        Assert.Contains("Committing the OpenBlade file transaction", progress.Messages);
-        Assert.DoesNotContain(progress.Messages, message => message.Contains(tree.Root, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            progress.Events,
+            item => item.Code == SetupProgressCode.CopyFile
+                && Assert.Single(item.Arguments) == "OpenBlade.Service.exe");
+        Assert.Contains(
+            progress.Events,
+            item => item.Code == SetupProgressCode.CopyFile
+                && Assert.Single(item.Arguments) == "OpenBlade.Tray.exe");
+        Assert.Contains(progress.Events, item => item.Code == SetupProgressCode.ActivateFiles);
+        Assert.Contains(progress.Events, item => item.Code == SetupProgressCode.CommitFiles);
+        Assert.DoesNotContain(
+            progress.Events.SelectMany(item => item.Arguments),
+            argument => argument.Contains(tree.Root, StringComparison.OrdinalIgnoreCase));
     }
 
     [Theory]

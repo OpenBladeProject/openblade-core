@@ -198,38 +198,38 @@ public static class TrayDashboardPreferenceDefaults
     [
         new(
             TrayDashboardControlKind.Performance,
-            "Performance",
-            "Choose the active power mode.",
+            TrayText.Get("Performance"),
+            TrayText.Get("Choose the active power mode."),
             true),
         new(
             TrayDashboardControlKind.Fans,
-            "Fans",
-            "Choose the current fan mode.",
+            TrayText.Get("Fans"),
+            TrayText.Get("Choose the current fan mode."),
             true),
         new(
             TrayDashboardControlKind.Lighting,
-            "Lighting",
-            "Choose the keyboard effect and brightness.",
+            TrayText.Get("Lighting"),
+            TrayText.Get("Choose the keyboard effect and brightness."),
             true),
         new(
             TrayDashboardControlKind.BatteryProtection,
-            "Battery protection",
-            "Turn the configured battery charge limit on or off.",
+            TrayText.Get("Battery protection"),
+            TrayText.Get("Turn the configured battery charge limit on or off."),
             true),
         new(
             TrayDashboardControlKind.FunctionRow,
-            "Function row",
-            "Choose function keys or media keys as the primary action.",
+            TrayText.Get("Function row"),
+            TrayText.Get("Choose function keys or media keys as the primary action."),
             true),
         new(
             TrayDashboardControlKind.GamingMode,
-            "Gaming mode",
-            "Turn the laptop gaming mode on or off.",
+            TrayText.Get("Gaming mode"),
+            TrayText.Get("Turn the laptop gaming mode on or off."),
             true),
         new(
             TrayDashboardControlKind.GpuTuning,
-            "GPU tuning",
-            "Turn GPU clock tuning on or off.",
+            TrayText.Get("GPU tuning"),
+            TrayText.Get("Turn GPU clock tuning on or off."),
             false),
     ];
 
@@ -244,10 +244,10 @@ public static class TrayDashboardPreferenceDefaults
     private static readonly (TrayDashboardSliderKind Kind, string Label, bool IsVisible)[]
         SliderDefinitions =
         [
-            (TrayDashboardSliderKind.LightingBrightness, "Keyboard brightness", true),
-            (TrayDashboardSliderKind.ChargeLimit, "Charge limit", true),
-            (TrayDashboardSliderKind.GpuCoreClock, "GPU core clock", false),
-            (TrayDashboardSliderKind.GpuMemoryClock, "GPU memory clock", false),
+            (TrayDashboardSliderKind.LightingBrightness, TrayText.Get("Keyboard brightness"), true),
+            (TrayDashboardSliderKind.ChargeLimit, TrayText.Get("Charge limit"), true),
+            (TrayDashboardSliderKind.GpuCoreClock, TrayText.Get("GPU core clock"), false),
+            (TrayDashboardSliderKind.GpuMemoryClock, TrayText.Get("GPU memory clock"), false),
         ];
 
     public static TrayDashboardPreference Preference { get; } = new(
@@ -513,10 +513,10 @@ public static class TrayDashboardPreferenceDefaults
 
     private static string StatusLabel(TrayDashboardStatusItemKind kind) => kind switch
     {
-        TrayDashboardStatusItemKind.BatteryPower => "Battery power",
-        TrayDashboardStatusItemKind.Temperatures => "Temperatures",
-        TrayDashboardStatusItemKind.PowerSource => "Power source",
-        TrayDashboardStatusItemKind.FanSpeed => "Fan speed",
+        TrayDashboardStatusItemKind.BatteryPower => TrayText.Get("Battery power"),
+        TrayDashboardStatusItemKind.Temperatures => TrayText.Get("Temperatures"),
+        TrayDashboardStatusItemKind.PowerSource => TrayText.Get("Power source"),
+        TrayDashboardStatusItemKind.FanSpeed => TrayText.Get("Fan speed"),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 }

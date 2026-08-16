@@ -8,8 +8,13 @@ $repository = Split-Path -Parent $PSScriptRoot
 function ConvertTo-PseudoLocalizedText {
     param([Parameter(Mandatory)][string]$Text)
 
+    if ($Text -notmatch '\p{L}') {
+        return $Text
+    }
+
     $protected = [Collections.Generic.List[string]]::new()
-    $accented = [regex]::Replace($Text, '\{[^{}]+\}', {
+    $protectedPattern = '(?:\{[^{}]+\}|_[\p{L}]|https?://\S+|[A-Za-z]:\\\S+|OpenBlade(?:\.[A-Za-z0-9]+)*|Dynamic Lighting|Session Agent|Razer|NVIDIA|Windows|WinUI|WPF|GitHub)'
+    $accented = [regex]::Replace($Text, $protectedPattern, {
         param($match)
         $index = $protected.Count
         $protected.Add($match.Value)
@@ -26,7 +31,8 @@ function ConvertTo-PseudoLocalizedText {
     }
     $letterCount = ([regex]::Matches($accented, '[\p{L}]')).Count
     $expansion = '~' * [Math]::Max(2, [Math]::Ceiling($letterCount * 0.35))
-    $result = "[!! $accented $expansion !!]"
+    $prefix = if ($Text -match '^\r?\n') { '[!!' } else { '[!! ' }
+    $result = "$prefix$accented $expansion !!]"
     for ($index = 0; $index -lt $protected.Count; $index++) {
         $result = $result.Replace("@@$index@@", $protected[$index])
     }
@@ -62,5 +68,18 @@ Write-PseudoResource `
 Write-PseudoResource `
     -Source (Join-Path $repository 'build\installer\OpenBlade.Installer.UI\Properties\Resources.resx') `
     -Destination (Join-Path $repository 'build\installer\OpenBlade.Installer.UI\Properties\Resources.qps-ploc.resx')
+
+foreach ($catalog in @(
+        @('src\OpenBlade.Tray.Core\Properties\Resources.resx',
+          'src\OpenBlade.Tray.Core\Properties\Resources.qps-ploc.resx'),
+        @('src\OpenBlade.Setup\Properties\Resources.resx',
+          'src\OpenBlade.Setup\Properties\Resources.qps-ploc.resx'))) {
+    $source = Join-Path $repository $catalog[0]
+    if (Test-Path -LiteralPath $source -PathType Leaf) {
+        Write-PseudoResource `
+            -Source $source `
+            -Destination (Join-Path $repository $catalog[1])
+    }
+}
 
 Write-Host 'Updated qps-ploc resources from authoritative en-US catalogs.'

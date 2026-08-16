@@ -2,10 +2,15 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Security.Principal;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.Windows.Globalization;
 using OpenBlade.Contracts;
 using OpenBlade.Platform;
 using OpenBlade.Session;
+using Windows.Graphics.Imaging;
+using Windows.Storage.Streams;
 using WinRT.Interop;
 
 namespace OpenBlade.Tray;
@@ -22,6 +27,10 @@ public partial class App : Microsoft.UI.Xaml.Application
     private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
     private const string ResponsiveChoiceSelectorSmokeArgument =
         "--responsive-choice-selector-smoke";
+    private const string LocalizationSnapshotDirectoryVariable =
+        "OPENBLADE_LOCALIZATION_SNAPSHOT_DIR";
+    private const string LocalizationLanguageVariable =
+        "OPENBLADE_LOCALIZATION_LANGUAGE";
     private const string PerformanceNotificationReplacementTag = "performance";
     private static readonly TimeSpan RazerServiceStopCancellationTimeout =
         TimeSpan.FromSeconds(65);
@@ -46,29 +55,39 @@ public partial class App : Microsoft.UI.Xaml.Application
     private WindowsProcessorEfficiencyPolicy processorPolicy = null!;
     private int fatalCrashReported;
 
+    static App()
+    {
+        ApplyLocalizationEnvironmentOverride();
+    }
+
+    public App()
+    {
+        ApplyLocalizationEnvironmentOverride();
+        InitializeComponent();
+    }
+
     public bool ExitRequested => exitLifecycle?.ExitRequested == true;
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         string[] commandLineArguments = Environment.GetCommandLineArgs();
-        if (string.Equals(
+        bool pseudoLocalizationRequested = string.Equals(
                 Environment.GetEnvironmentVariable("OPENBLADE_PSEUDO_LOCALIZATION"),
                 "1",
-                StringComparison.Ordinal))
-        {
-            try
-            {
-                CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("qps-ploc");
-            }
-            catch (Exception exception) when (
-                commandLineArguments is [_, XamlStartupSmokeArgument, string])
-            {
-                File.WriteAllText(commandLineArguments[2], exception.ToString());
-                Environment.Exit(1);
-                return;
-            }
-        }
+                StringComparison.Ordinal);
+        string? localizationLanguage = Environment.GetEnvironmentVariable(
+            LocalizationLanguageVariable);
         base.OnLaunched(args);
+        string? localizationSnapshotDirectory = Environment.GetEnvironmentVariable(
+            LocalizationSnapshotDirectoryVariable);
+        if (!string.IsNullOrWhiteSpace(localizationSnapshotDirectory))
+        {
+            _ = RunLocalizationSnapshotAsync(
+                localizationSnapshotDirectory,
+                pseudoLocalizationRequested,
+                localizationLanguage);
+            return;
+        }
         if (commandLineArguments is
             [_, ResponsiveChoiceSelectorSmokeArgument, string selectorSmokeReportPath])
         {
@@ -79,7 +98,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             try
             {
-                RunXamlStartupSmoke(smokeReportPath);
+                RunXamlStartupSmoke(
+                    smokeReportPath,
+                    pseudoLocalizationRequested,
+                    localizationLanguage);
             }
             catch (Exception exception)
             {
@@ -262,12 +284,27 @@ public partial class App : Microsoft.UI.Xaml.Application
         ShowMainWindow(initialLaunch: true);
     }
 
-    private void RunXamlStartupSmoke(string smokeReportPath)
+    private void RunXamlStartupSmoke(
+        string smokeReportPath,
+        bool pseudoLocalizationRequested,
+        string? localizationLanguage)
     {
+        if (pseudoLocalizationRequested)
+        {
+            AssertPseudoResourcesLoaded();
+        }
+        else if (!string.IsNullOrWhiteSpace(localizationLanguage))
+        {
+            AssertEnglishResourceFallback();
+        }
         File.WriteAllText(smokeReportPath, "enable visual styles");
         System.Windows.Forms.Application.EnableVisualStyles();
         File.WriteAllText(smokeReportPath, "construct main window");
         var smokeMainWindow = new MainWindow();
+        if (pseudoLocalizationRequested)
+        {
+            AssertPseudoXamlApplied(smokeMainWindow);
+        }
         File.WriteAllText(smokeReportPath, "construct dashboard window");
         var smokeDashboardWindow = new TrayDashboardWindow(
             smokeMainWindow.ViewModel,
@@ -293,6 +330,238 @@ public partial class App : Microsoft.UI.Xaml.Application
         smokeMainWindow.Close();
         File.WriteAllText(smokeReportPath, "completed");
         Environment.Exit(0);
+    }
+
+    private static void ApplyLocalizationEnvironmentOverride()
+    {
+        string? language = RequestedLocalizationLanguage();
+        if (string.IsNullOrWhiteSpace(language))
+        {
+            return;
+        }
+
+        CultureInfo managedCulture = CultureInfo.GetCultureInfo(language);
+        string resourceLanguage = managedCulture.Name;
+        ApplicationLanguages.PrimaryLanguageOverride = resourceLanguage;
+        CultureInfo.CurrentUICulture = managedCulture;
+        LocalizedResources.SetLanguageOverride(resourceLanguage);
+    }
+
+    private static string? RequestedLocalizationLanguage() => string.Equals(
+                Environment.GetEnvironmentVariable("OPENBLADE_PSEUDO_LOCALIZATION"),
+                "1",
+                StringComparison.Ordinal)
+            ? "qps-ploc"
+            : Environment.GetEnvironmentVariable(LocalizationLanguageVariable);
+
+    private async Task RunLocalizationSnapshotAsync(
+        string outputDirectory,
+        bool pseudoLocalizationRequested,
+        string? localizationLanguage)
+    {
+        string? reportPath = null;
+        MainWindow? snapshotMainWindow = null;
+        TrayDashboardWindow? snapshotDashboardWindow = null;
+        try
+        {
+            string resolvedDirectory = Path.GetFullPath(outputDirectory);
+            reportPath = Path.Combine(resolvedDirectory, "snapshot-report.txt");
+            Directory.CreateDirectory(resolvedDirectory);
+            if (pseudoLocalizationRequested)
+            {
+                AssertPseudoResourcesLoaded();
+            }
+            else if (!string.IsNullOrWhiteSpace(localizationLanguage))
+            {
+                AssertEnglishResourceFallback();
+            }
+
+            System.Windows.Forms.Application.EnableVisualStyles();
+            snapshotMainWindow = MainWindow.CreateLocalizationSnapshot();
+            snapshotMainWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 820));
+            snapshotMainWindow.Activate();
+            foreach (string destination in new[]
+            {
+                "home",
+                "profiles",
+                "laptop",
+                "lighting",
+                "display",
+                "settings",
+                "about",
+            })
+            {
+                snapshotMainWindow.SelectLocalizationSnapshotPage(destination);
+                await WaitForSnapshotLayoutAsync();
+                await SaveSnapshotAsync(
+                    snapshotMainWindow.Content,
+                    Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+            }
+
+            snapshotDashboardWindow = new TrayDashboardWindow(
+                snapshotMainWindow.ViewModel,
+                WindowNative.GetWindowHandle(snapshotMainWindow),
+                _ => { });
+            TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
+            snapshotDashboardWindow.ApplyPreferences(defaults with
+            {
+                Controls = defaults.Controls!
+                    .Select(control => control with { IsVisible = true })
+                    .ToArray(),
+                StatusItems = defaults.StatusItems!
+                    .Select(status => status with { IsVisible = true })
+                    .ToArray(),
+                Sliders = defaults.Sliders!
+                    .Select(slider => slider with { IsVisible = true })
+                    .ToArray(),
+            });
+            snapshotDashboardWindow.AppWindow.Resize(
+                new Windows.Graphics.SizeInt32(430, 760));
+            snapshotDashboardWindow.Activate();
+            await WaitForSnapshotLayoutAsync();
+            await SaveSnapshotAsync(
+                snapshotDashboardWindow.Content,
+                Path.Combine(resolvedDirectory, "tray-dashboard.png"));
+
+            await File.WriteAllTextAsync(
+                reportPath,
+                pseudoLocalizationRequested
+                    ? "completed qps-ploc"
+                    : "completed en-US");
+            Environment.Exit(0);
+        }
+        catch (Exception exception)
+        {
+            if (reportPath is not null)
+            {
+                try
+                {
+                    await File.WriteAllTextAsync(reportPath, exception.ToString());
+                }
+                catch (Exception reportException)
+                {
+                    Trace.TraceError(
+                        "OpenBlade localization snapshot report failed: {0}",
+                        reportException);
+                }
+            }
+            else
+            {
+                Trace.TraceError(
+                    "OpenBlade localization snapshot setup failed: {0}",
+                    exception);
+            }
+            Environment.Exit(1);
+        }
+        finally
+        {
+            snapshotDashboardWindow?.Dispose();
+            snapshotMainWindow?.Close();
+        }
+    }
+
+    private static async Task WaitForSnapshotLayoutAsync()
+    {
+        // Let the built-in navigation transition finish before capturing geometry.
+        await Task.Delay(750);
+        await Task.Yield();
+    }
+
+    private static void AssertPseudoResourcesLoaded()
+    {
+        const string visibleResourceKey = "MainWindow_ButtonCheckNow.Content";
+        string visibleText = LocalizedResources.Get(
+            visibleResourceKey,
+            "Check now");
+        string accessibleName = LocalizedResources.Get(
+            "MainWindow_ButtonCheckNow.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
+            "Check GitHub for OpenBlade updates");
+        string? resolvedLanguage = LocalizedResources.GetResolvedLanguage(
+            visibleResourceKey);
+        if (!visibleText.StartsWith("[!!", StringComparison.Ordinal)
+            || !accessibleName.StartsWith("[!!", StringComparison.Ordinal)
+            || !string.Equals(
+                resolvedLanguage,
+                "qps-ploc",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "The qps-ploc resource context did not load known visible and accessibility resources. "
+                    + $"Visible='{visibleText}', accessible='{accessibleName}', "
+                    + $"override='{ApplicationLanguages.PrimaryLanguageOverride}', "
+                    + $"candidate='{resolvedLanguage ?? "<none>"}'.");
+        }
+    }
+
+    private static void AssertEnglishResourceFallback()
+    {
+        string knownResource = LocalizedResources.Get(
+            "MainWindow_ButtonCheckNow.Content",
+            "Check now");
+        if (!string.Equals(knownResource, "Check now", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "An unsupported localization language did not fall back to en-US.");
+        }
+    }
+
+    private static void AssertPseudoXamlApplied(MainWindow mainWindow)
+    {
+        string expectedContent = LocalizedResources.Get(
+            "MainWindow_ButtonCheckNow.Content",
+            "Check now");
+        string expectedAccessibleName = LocalizedResources.Get(
+            "MainWindow_ButtonCheckNow.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
+            "Check GitHub for OpenBlade updates");
+        if (!mainWindow.HasLocalizedCheckNowButton(expectedContent, expectedAccessibleName))
+        {
+            throw new InvalidOperationException(
+                "Compiled x:Uid resources did not apply qps-ploc visible and accessibility text. "
+                    + $"Expected content='{expectedContent}', accessible='{expectedAccessibleName}'. "
+                    + "The named Settings-page button retained a different value.");
+        }
+    }
+
+    private static async Task SaveSnapshotAsync(object? content, string path)
+    {
+        if (content is not UIElement element)
+        {
+            throw new InvalidOperationException(
+                "The localization snapshot window has no renderable content.");
+        }
+
+        var bitmap = new RenderTargetBitmap();
+        await bitmap.RenderAsync(element);
+        if (bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
+        {
+            throw new InvalidOperationException(
+                "The localization snapshot window produced an empty image.");
+        }
+
+        Windows.Storage.Streams.IBuffer pixels = await bitmap.GetPixelsAsync();
+        using var stream = new InMemoryRandomAccessStream();
+        BitmapEncoder encoder = await BitmapEncoder.CreateAsync(
+            BitmapEncoder.PngEncoderId,
+            stream);
+        using var pixelReader = DataReader.FromBuffer(pixels);
+        byte[] pixelBytes = new byte[checked((int)pixels.Length)];
+        pixelReader.ReadBytes(pixelBytes);
+        encoder.SetPixelData(
+            BitmapPixelFormat.Bgra8,
+            BitmapAlphaMode.Premultiplied,
+            checked((uint)bitmap.PixelWidth),
+            checked((uint)bitmap.PixelHeight),
+            96,
+            96,
+            pixelBytes);
+        await encoder.FlushAsync();
+
+        stream.Seek(0);
+        using var reader = new DataReader(stream.GetInputStreamAt(0));
+        await reader.LoadAsync(checked((uint)stream.Size));
+        byte[] encoded = new byte[checked((int)stream.Size)];
+        reader.ReadBytes(encoded);
+        await File.WriteAllBytesAsync(path, encoded);
     }
 
     private static async Task RunResponsiveChoiceSelectorSmokeAsync(string smokeReportPath)
@@ -734,8 +1003,12 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (signal.Kind == PerformanceShortcutNotificationKind.Failed)
         {
             notification = new TrayNotification(
-                "Performance mode could not be changed",
-                "OpenBlade could not apply the selected mode.",
+                LocalizedResources.Get(
+                    "App_PerformanceNotification_FailedTitle",
+                    "Performance mode could not be changed"),
+                LocalizedResources.Get(
+                    "App_PerformanceNotification_FailedBody",
+                    "OpenBlade could not apply the selected mode."),
                 TrayNotificationSeverity.Error,
                 ReplacementTag: PerformanceNotificationReplacementTag,
                 Destination: TrayNotificationDestination.Troubleshooting);
@@ -743,8 +1016,13 @@ public partial class App : Microsoft.UI.Xaml.Application
         else
         {
             string body = signal.Preset is { } preset
-                ? $"Current mode: {PerformancePresetPresentation.Label(preset)}"
-                : "The performance mode changed.";
+                ? LocalizedResources.Format(
+                    "App_PerformanceNotification_CurrentMode",
+                    "Current mode: {0}",
+                    PerformancePresetPresentation.Label(preset))
+                : LocalizedResources.Get(
+                    "App_PerformanceNotification_ChangedBody",
+                    "The performance mode changed.");
             string? logoAssetRelativePath = signal.Preset is { } selectedPreset
                 ? PerformanceNotificationIconAsset.Resolve(
                     mainWindow?.ViewModel.ActivePowerSource
@@ -752,7 +1030,9 @@ public partial class App : Microsoft.UI.Xaml.Application
                     selectedPreset)
                 : null;
             notification = new TrayNotification(
-                "Performance mode changed",
+                LocalizedResources.Get(
+                    "App_PerformanceNotification_ChangedTitle",
+                    "Performance mode changed"),
                 body,
                 TrayNotificationSeverity.Information,
                 LogoAssetRelativePath: logoAssetRelativePath,
@@ -942,8 +1222,13 @@ public partial class App : Microsoft.UI.Xaml.Application
                 ShowTrayTaskDialog(new TaskDialogPage
                 {
                     Caption = "OpenBlade",
-                    Heading = "OpenBlade could not shut down",
-                    Text = exception.Message,
+                    Heading = LocalizedResources.Get(
+                        "App_ExitError_Heading",
+                        "OpenBlade could not shut down"),
+                    Text = LocalizedResources.Format(
+                        "App_ExitError_Text",
+                        "OpenBlade could not shut down: {0}",
+                        exception.Message),
                     Buttons = { TaskDialogButton.Close },
                     DefaultButton = TaskDialogButton.Close,
                 });
@@ -959,14 +1244,22 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private TrayExitChoice ShowTrayExitDialog()
     {
-        var keepRunning = new TaskDialogButton("Keep background features running");
-        var shutDown = new TaskDialogButton("Shut down completely");
+        var keepRunning = new TaskDialogButton(LocalizedResources.Get(
+            "App_ExitDialog_KeepRunning",
+            "Keep background features running"));
+        var shutDown = new TaskDialogButton(LocalizedResources.Get(
+            "App_ExitDialog_ShutDown",
+            "Shut down completely"));
         var page = new TaskDialogPage
         {
             Caption = "OpenBlade",
-            Heading = "Exit OpenBlade?",
-            Text = "Choose whether keyboard lighting, hotkeys, profiles, and automation "
-                + "should keep running in the background.",
+            Heading = LocalizedResources.Get(
+                "App_ExitDialog_Heading",
+                "Exit OpenBlade?"),
+            Text = LocalizedResources.Get(
+                "App_ExitDialog_Text",
+                "Choose whether keyboard lighting, hotkeys, profiles, and automation "
+                    + "should keep running in the background."),
             AllowCancel = true,
             DefaultButton = TaskDialogButton.Cancel,
             Buttons =

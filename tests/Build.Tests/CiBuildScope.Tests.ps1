@@ -197,6 +197,16 @@ $trayLocalization = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
 Assert-Contains $trayLocalization.ContractTests `
     'tests/Build.Tests/LocalizationResources.Tests.ps1' `
     'Tray resource changes must validate localization contracts.'
+foreach ($localizedPath in @(
+        'src/OpenBlade.Tray.Core/Properties/Resources.resx',
+        'src/OpenBlade.Setup/Properties/Resources.resx',
+        'build/installer/Bundle.en-US.wxl',
+        'build/Capture-LocalizationSnapshots.ps1')) {
+    $localization = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($localizedPath)
+    Assert-Contains $localization.ContractTests `
+        'tests/Build.Tests/LocalizationResources.Tests.ps1' `
+        "Localization path '$localizedPath' must validate resource contracts."
+}
 
 foreach ($globalPath in @(
         'Directory.Build.props',

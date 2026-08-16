@@ -12,30 +12,30 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
 {
     public static IReadOnlyList<SpecialKeyActionOption> ActionOptions { get; } =
     [
-        new(SpecialKeyActionKind.Default, "Default"),
-        new(SpecialKeyActionKind.Disabled, "Disabled"),
-        new(SpecialKeyActionKind.KeyboardShortcut, "Keyboard shortcut"),
-        new(SpecialKeyActionKind.MouseLeftClick, "Left click"),
-        new(SpecialKeyActionKind.MouseRightClick, "Right click"),
-        new(SpecialKeyActionKind.MouseMiddleClick, "Middle click"),
-        new(SpecialKeyActionKind.MouseBack, "Mouse back"),
-        new(SpecialKeyActionKind.MouseForward, "Mouse forward"),
-        new(SpecialKeyActionKind.MouseDoubleClick, "Double click"),
-        new(SpecialKeyActionKind.MouseScrollUp, "Scroll up"),
-        new(SpecialKeyActionKind.MouseScrollDown, "Scroll down"),
-        new(SpecialKeyActionKind.MediaPreviousTrack, "Previous track"),
-        new(SpecialKeyActionKind.MediaPlayPause, "Play or pause"),
-        new(SpecialKeyActionKind.MediaNextTrack, "Next track"),
-        new(SpecialKeyActionKind.VolumeMute, "Mute volume"),
-        new(SpecialKeyActionKind.VolumeDown, "Volume down"),
-        new(SpecialKeyActionKind.VolumeUp, "Volume up"),
-        new(SpecialKeyActionKind.MicrophoneMute, "Mute microphone"),
-        new(SpecialKeyActionKind.LaunchApplication, "Launch an app"),
-        new(SpecialKeyActionKind.OpenWebsite, "Open a website"),
-        new(SpecialKeyActionKind.TypeText, "Type text"),
-        new(SpecialKeyActionKind.CyclePowerMode, "Cycle OpenBlade power mode"),
-        new(SpecialKeyActionKind.ToggleGamingMode, "Toggle Gaming mode"),
-        new(SpecialKeyActionKind.CycleLightingEffect, "Cycle keyboard effect"),
+        Option(SpecialKeyActionKind.Default, "SpecialKey_Action_Default", "Default"),
+        Option(SpecialKeyActionKind.Disabled, "SpecialKey_Action_Disabled", "Disabled"),
+        Option(SpecialKeyActionKind.KeyboardShortcut, "SpecialKey_Action_KeyboardShortcut", "Keyboard shortcut"),
+        Option(SpecialKeyActionKind.MouseLeftClick, "SpecialKey_Action_LeftClick", "Left click"),
+        Option(SpecialKeyActionKind.MouseRightClick, "SpecialKey_Action_RightClick", "Right click"),
+        Option(SpecialKeyActionKind.MouseMiddleClick, "SpecialKey_Action_MiddleClick", "Middle click"),
+        Option(SpecialKeyActionKind.MouseBack, "SpecialKey_Action_MouseBack", "Mouse back"),
+        Option(SpecialKeyActionKind.MouseForward, "SpecialKey_Action_MouseForward", "Mouse forward"),
+        Option(SpecialKeyActionKind.MouseDoubleClick, "SpecialKey_Action_DoubleClick", "Double click"),
+        Option(SpecialKeyActionKind.MouseScrollUp, "SpecialKey_Action_ScrollUp", "Scroll up"),
+        Option(SpecialKeyActionKind.MouseScrollDown, "SpecialKey_Action_ScrollDown", "Scroll down"),
+        Option(SpecialKeyActionKind.MediaPreviousTrack, "SpecialKey_Action_PreviousTrack", "Previous track"),
+        Option(SpecialKeyActionKind.MediaPlayPause, "SpecialKey_Action_PlayPause", "Play or pause"),
+        Option(SpecialKeyActionKind.MediaNextTrack, "SpecialKey_Action_NextTrack", "Next track"),
+        Option(SpecialKeyActionKind.VolumeMute, "SpecialKey_Action_MuteVolume", "Mute volume"),
+        Option(SpecialKeyActionKind.VolumeDown, "SpecialKey_Action_VolumeDown", "Volume down"),
+        Option(SpecialKeyActionKind.VolumeUp, "SpecialKey_Action_VolumeUp", "Volume up"),
+        Option(SpecialKeyActionKind.MicrophoneMute, "SpecialKey_Action_MuteMicrophone", "Mute microphone"),
+        Option(SpecialKeyActionKind.LaunchApplication, "SpecialKey_Action_LaunchApplication", "Launch an app"),
+        Option(SpecialKeyActionKind.OpenWebsite, "SpecialKey_Action_OpenWebsite", "Open a website"),
+        Option(SpecialKeyActionKind.TypeText, "SpecialKey_Action_TypeText", "Type text"),
+        Option(SpecialKeyActionKind.CyclePowerMode, "SpecialKey_Action_CyclePowerMode", "Cycle OpenBlade power mode"),
+        Option(SpecialKeyActionKind.ToggleGamingMode, "SpecialKey_Action_ToggleGamingMode", "Toggle Gaming mode"),
+        Option(SpecialKeyActionKind.CycleLightingEffect, "SpecialKey_Action_CycleLightingEffect", "Cycle keyboard effect"),
     ];
 
     private SpecialKeyActionOption selectedAction;
@@ -136,24 +136,25 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
 
     public string ValueLabel => SelectedAction.Kind switch
     {
-        SpecialKeyActionKind.KeyboardShortcut => "Shortcut",
-        SpecialKeyActionKind.LaunchApplication => "App or file path",
-        SpecialKeyActionKind.OpenWebsite => "Website",
-        SpecialKeyActionKind.TypeText => "Text",
+        SpecialKeyActionKind.KeyboardShortcut => LocalizedResources.Get("SpecialKey_ValueLabel_Shortcut", "Shortcut"),
+        SpecialKeyActionKind.LaunchApplication => LocalizedResources.Get("SpecialKey_ValueLabel_AppPath", "App or file path"),
+        SpecialKeyActionKind.OpenWebsite => LocalizedResources.Get("SpecialKey_ValueLabel_Website", "Website"),
+        SpecialKeyActionKind.TypeText => LocalizedResources.Get("SpecialKey_ValueLabel_Text", "Text"),
         _ => string.Empty,
     };
 
     public string ValuePlaceholder => SelectedAction.Kind switch
     {
-        SpecialKeyActionKind.KeyboardShortcut => "For example: Ctrl+Shift+M",
+        SpecialKeyActionKind.KeyboardShortcut => LocalizedResources.Get("SpecialKey_ValuePlaceholder_Shortcut", "For example: Ctrl+Shift+M"),
         SpecialKeyActionKind.LaunchApplication => @"C:\Path\To\App.exe",
         SpecialKeyActionKind.OpenWebsite => "https://example.com",
-        SpecialKeyActionKind.TypeText => "Text to type",
+        SpecialKeyActionKind.TypeText => LocalizedResources.Get("SpecialKey_ValuePlaceholder_Text", "Text to type"),
         _ => string.Empty,
     };
 
-    public string ValidationMessage => SpecialKeyBindingDefaults.GetValidationMessage(
-        new SpecialKeyAction(SelectedAction.Kind, Value));
+    public string ValidationMessage => LocalizeValidationMessage(
+        SpecialKeyBindingDefaults.GetValidationMessage(
+            new SpecialKeyAction(SelectedAction.Kind, Value)));
 
     public Visibility ValidationMessageVisibility =>
         string.IsNullOrEmpty(ValidationMessage)
@@ -168,4 +169,50 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    private static SpecialKeyActionOption Option(
+        SpecialKeyActionKind kind,
+        string resourceKey,
+        string englishLabel) =>
+        new(kind, LocalizedResources.Get(resourceKey, englishLabel));
+
+    private static string LocalizeValidationMessage(string message)
+    {
+        if (string.IsNullOrEmpty(message))
+        {
+            return string.Empty;
+        }
+
+        if (message.StartsWith("Unknown modifier: ", StringComparison.Ordinal))
+        {
+            return LocalizedResources.Format(
+                "SpecialKey_Validation_UnknownModifier",
+                "Unknown modifier: {0}",
+                message["Unknown modifier: ".Length..]);
+        }
+        if (message.StartsWith("Unknown shortcut key: ", StringComparison.Ordinal))
+        {
+            return LocalizedResources.Format(
+                "SpecialKey_Validation_UnknownKey",
+                "Unknown shortcut key: {0}",
+                message["Unknown shortcut key: ".Length..]);
+        }
+
+        return message switch
+        {
+            "Enter a value for this action." => LocalizedResources.Get(
+                "SpecialKey_Validation_EnterValue",
+                message),
+            "Use a shortcut such as Ctrl+Shift+M." => LocalizedResources.Get(
+                "SpecialKey_Validation_UseShortcut",
+                message),
+            "A shortcut must include a non-modifier key." => LocalizedResources.Get(
+                "SpecialKey_Validation_NonModifierKey",
+                message),
+            "Enter a complete http or https address." => LocalizedResources.Get(
+                "SpecialKey_Validation_WebAddress",
+                message),
+            _ => message,
+        };
+    }
 }

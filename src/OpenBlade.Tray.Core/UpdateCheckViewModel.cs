@@ -30,7 +30,7 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
     private DateTimeOffset? retryAfter;
     private string? entityTag;
     private ReleaseUpdateInfo? cachedRelease;
-    private string statusText = "Updates have not been checked.";
+    private string statusText = TrayText.Get("Updates have not been checked.");
     private bool promptShown;
     private bool isChecking;
     private bool isUpdateAvailable;
@@ -66,17 +66,17 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     public IReadOnlyList<UpdateChannelOption> ChannelOptions { get; } =
     [
-        new(UpdateChannel.Stable, "Stable"),
-        new(UpdateChannel.Nightly, "Nightly"),
+        new(UpdateChannel.Stable, TrayText.Get("Stable")),
+        new(UpdateChannel.Nightly, TrayText.Get("Nightly")),
     ];
 
     public IReadOnlyList<UpdateCheckIntervalOption> IntervalOptions { get; } =
     [
-        new(UpdateCheckInterval.EveryStartup, "Every startup"),
-        new(UpdateCheckInterval.Daily, "Daily"),
-        new(UpdateCheckInterval.Weekly, "Weekly"),
-        new(UpdateCheckInterval.Monthly, "Monthly"),
-        new(UpdateCheckInterval.ManualOnly, "Manual only"),
+        new(UpdateCheckInterval.EveryStartup, TrayText.Get("Every startup")),
+        new(UpdateCheckInterval.Daily, TrayText.Get("Daily")),
+        new(UpdateCheckInterval.Weekly, TrayText.Get("Weekly")),
+        new(UpdateCheckInterval.Monthly, TrayText.Get("Monthly")),
+        new(UpdateCheckInterval.ManualOnly, TrayText.Get("Manual only")),
     ];
 
     public UpdateChannel Channel
@@ -314,7 +314,7 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         }
 
         IsChecking = true;
-        StatusText = "Checking GitHub for updates...";
+        StatusText = TrayText.Get("Checking GitHub for updates...");
         IsUpdateAvailable = false;
         ReleasePageUri = null;
 
@@ -354,7 +354,7 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            StatusText = "Update check canceled.";
+            StatusText = TrayText.Get("Update check canceled.");
             throw;
         }
         catch (ReleaseUpdateConnectivityException exception)
@@ -365,23 +365,26 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
             retryAfter = timeProvider.GetUtcNow() + FailureRetryDelay;
             Notify(nameof(RetryAfter));
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
-            StatusText = "No internet connection. Check your connection and try again.";
+            StatusText = TrayText.Get(
+                "No internet connection. Check your connection and try again.");
         }
         catch (ReleaseUpdateRateLimitException exception)
         {
             retryAfter = exception.RetryAfter;
             Notify(nameof(RetryAfter));
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
-            StatusText = $"GitHub rate limit reached. Try again after "
-                + $"{exception.RetryAfter.ToLocalTime():g}.";
+            StatusText = TrayText.Format(
+                "GitHub rate limit reached. Try again after {0:g}.",
+                exception.RetryAfter.ToLocalTime());
         }
         catch (ReleaseUpdateRetryException exception)
         {
             retryAfter = exception.RetryAfter;
             Notify(nameof(RetryAfter));
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
-            StatusText = $"GitHub is temporarily unavailable. Try again after "
-                + $"{exception.RetryAfter.ToLocalTime():g}.";
+            StatusText = TrayText.Format(
+                "GitHub is temporarily unavailable. Try again after {0:g}.",
+                exception.RetryAfter.ToLocalTime());
         }
         catch (Exception exception)
         {
@@ -389,7 +392,7 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
             retryAfter = timeProvider.GetUtcNow() + FailureRetryDelay;
             Notify(nameof(RetryAfter));
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
-            StatusText = "Couldn't check for updates. Try again later.";
+            StatusText = TrayText.Get("Couldn't check for updates. Try again later.");
         }
         finally
         {
@@ -402,15 +405,16 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
     {
         if (release is null)
         {
-            StatusText = "No eligible published release is available.";
+            StatusText = TrayText.Get("No eligible published release is available.");
             return;
         }
 
         if (currentVersion is null)
         {
             ReleasePageUri = release.ReleasePageUri;
-            StatusText = $"Latest release: {release.TagName}. "
-                + "The installed version could not be compared.";
+            StatusText = TrayText.Format(
+                "Latest release: {0}. The installed version could not be compared.",
+                release.TagName);
             return;
         }
 
@@ -418,7 +422,9 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         {
             IsUpdateAvailable = true;
             ReleasePageUri = release.ReleasePageUri;
-            StatusText = $"OpenBlade {release.TagName.TrimStart('v', 'V')} is available.";
+            StatusText = TrayText.Format(
+                "OpenBlade {0} is available.",
+                release.TagName.TrimStart('v', 'V'));
             UpdateAvailable?.Invoke(
                 this,
                 new AppUpdateAvailableEventArgs(
@@ -427,7 +433,7 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         }
         else
         {
-            StatusText = "OpenBlade is up to date.";
+            StatusText = TrayText.Get("OpenBlade is up to date.");
         }
     }
 
@@ -439,7 +445,9 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         cachedRelease = null;
         IsUpdateAvailable = false;
         ReleasePageUri = null;
-        StatusText = $"Updates have not been checked for the {Channel} channel.";
+        StatusText = TrayText.Format(
+            "Updates have not been checked for the {0} channel.",
+            ChannelOptions.Single(option => option.Channel == Channel).Label);
         Notify(nameof(LastSuccessfulCheckAt));
         Notify(nameof(RetryAfter));
     }

@@ -51,6 +51,10 @@
              Targets="Build"
              Properties="Configuration=$(Configuration)"
              BuildInParallel="false" />
+    <MSBuild Projects="..\..\src\OpenBlade.Tray\OpenBlade.Tray.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);OpenBladeLocalizationPreview=true"
+             BuildInParallel="false" />
   </Target>
 
 </Project>

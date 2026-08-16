@@ -109,7 +109,11 @@ internal sealed class WindowsTrayBrightnessOsdHost : IDisposable
             return 0;
         }
 
-        presenter ??= WindowsDisplayBrightnessOsd.CreateBestEffort(errorHandler);
+        presenter ??= WindowsDisplayBrightnessOsd.CreateBestEffort(
+            errorHandler,
+            LocalizedResources.Get(
+                "DisplayBrightnessOsd_WindowTitle",
+                "OpenBlade brightness"));
         presenter.Show(checked((byte)windowParameter));
         return 1;
     }

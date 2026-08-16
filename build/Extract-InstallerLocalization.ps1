@@ -7,7 +7,6 @@ $repository = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repository 'build\installer\OpenBlade.Installer.UI'
 $utf8 = [Text.UTF8Encoding]::new($false, $true)
 $xaml = [IO.File]::ReadAllText((Join-Path $project 'InstallerWindow.xaml'), $utf8)
-$code = [IO.File]::ReadAllText((Join-Path $project 'InstallerWindow.xaml.cs'), $utf8)
 $values = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 
 foreach ($match in [regex]::Matches(
@@ -18,9 +17,20 @@ foreach ($match in [regex]::Matches(
         [void]$values.Add($value)
     }
 }
+$windowCode = [IO.File]::ReadAllText((Join-Path $project 'InstallerWindow.xaml.cs'), $utf8)
 foreach ($match in [regex]::Matches(
-        $code,
+        $windowCode,
         '(?<=[(?,:\s])"(?<value>(?:[^"\\]|\\.)*)"')) {
+    $value = [Text.RegularExpressions.Regex]::Unescape($match.Groups['value'].Value)
+    if (-not [string]::IsNullOrWhiteSpace($value) -and $value -match '[\p{L}]') {
+        [void]$values.Add($value)
+    }
+}
+$bootstrapperCode = [IO.File]::ReadAllText(
+    (Join-Path $project 'OpenBladeBootstrapperApplication.cs'), $utf8)
+foreach ($match in [regex]::Matches(
+        $bootstrapperCode,
+        'InstallerStrings\.(?:Get|Format)\(\s*"(?<value>(?:[^"\\]|\\.)*)"')) {
     $value = [Text.RegularExpressions.Regex]::Unescape($match.Groups['value'].Value)
     if (-not [string]::IsNullOrWhiteSpace($value) -and $value -match '[\p{L}]') {
         [void]$values.Add($value)

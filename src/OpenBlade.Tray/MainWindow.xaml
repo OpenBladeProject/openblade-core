@@ -2394,17 +2394,27 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <Grid Margin="0,0,0,20" ColumnSpacing="16">
+                        <Grid x:Name="ProfilesPageHeader"
+                              Margin="0,0,0,20"
+                              ColumnSpacing="16"
+                              RowSpacing="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Uid="MainWindow_TextBlockProfiles2" Text="Profiles"
                                        Style="{StaticResource PageHeaderTitleStyle}" />
-                            <StackPanel Grid.Column="1"
+                            <StackPanel x:Name="ProfilesHeaderActions"
+                                        Grid.Row="1"
+                                        Grid.ColumnSpan="2"
                                         Orientation="Horizontal"
                                         Spacing="8"
-                                        HorizontalAlignment="Right"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,2,0,0"
                                         VerticalAlignment="Center">
                                 <Button x:Uid="MainWindow_ButtonImportProfiles" Content="Import profiles"
                                         Click="OnImportProfiles"
@@ -2985,34 +2995,6 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <VisualStateManager.VisualStateGroups>
-                                <VisualStateGroup>
-                                    <VisualState x:Name="LightingHeaderWide">
-                                        <VisualState.StateTriggers>
-                                            <AdaptiveTrigger MinWindowWidth="900" />
-                                        </VisualState.StateTriggers>
-                                        <VisualState.Setters>
-                                            <Setter Target="LightingHeaderActions.(Grid.Row)" Value="0" />
-                                            <Setter Target="LightingHeaderActions.(Grid.Column)" Value="1" />
-                                            <Setter Target="LightingHeaderActions.(Grid.ColumnSpan)" Value="1" />
-                                            <Setter Target="LightingHeaderActions.HorizontalAlignment" Value="Right" />
-                                            <Setter Target="LightingHeaderActions.Margin" Value="0,2,0,0" />
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                    <VisualState x:Name="LightingHeaderCompact">
-                                        <VisualState.StateTriggers>
-                                            <AdaptiveTrigger MinWindowWidth="0" />
-                                        </VisualState.StateTriggers>
-                                        <VisualState.Setters>
-                                            <Setter Target="LightingHeaderActions.(Grid.Row)" Value="1" />
-                                            <Setter Target="LightingHeaderActions.(Grid.Column)" Value="0" />
-                                            <Setter Target="LightingHeaderActions.(Grid.ColumnSpan)" Value="2" />
-                                            <Setter Target="LightingHeaderActions.HorizontalAlignment" Value="Left" />
-                                            <Setter Target="LightingHeaderActions.Margin" Value="0,2,0,0" />
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                </VisualStateGroup>
-                            </VisualStateManager.VisualStateGroups>
                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                 <TextBlock x:Uid="MainWindow_TextBlockLighting" Text="Lighting" Style="{StaticResource PageHeaderTitleStyle}" />
                                 <ProgressRing x:Uid="MainWindow_ProgressRingApplyingLighting" Style="{StaticResource FirmwareProgressRingStyle}"
@@ -3020,9 +3002,12 @@
                                               AutomationProperties.Name="Applying lighting" />
                             </StackPanel>
                             <StackPanel x:Name="LightingHeaderActions"
-                                        Grid.Column="1"
+                                        Grid.Row="1"
+                                        Grid.ColumnSpan="2"
                                         Orientation="Horizontal"
                                         Spacing="12"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,2,0,0"
                                         VerticalAlignment="Center">
                             <ContentControl x:Name="LightingProfileSaveActions"
                                             VerticalAlignment="Center"
@@ -3790,7 +3775,7 @@
                                                              NavigateUri="{x:Bind UpdateViewModel.ReleasePageUri, Mode=OneWay}"
                                                              Visibility="{x:Bind UpdateViewModel.HasReleasePage, Mode=OneWay}"
                                                              AutomationProperties.Name="View available OpenBlade release" />
-                                            <Button x:Uid="MainWindow_ButtonCheckNow" Content="Check now"
+                                            <Button x:Uid="MainWindow_ButtonCheckNow" x:Name="CheckNowButton" Content="Check now"
                                                     Command="{x:Bind UpdateViewModel.CheckForUpdatesCommand}"
                                                     AutomationProperties.Name="Check GitHub for OpenBlade updates" />
                                         </StackPanel>
@@ -3999,13 +3984,22 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <Grid Margin="0,0,0,20" ColumnSpacing="16">
+                        <Grid Margin="0,0,0,20" ColumnSpacing="16" RowSpacing="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock x:Uid="MainWindow_TextBlockAbout" Text="About" Style="{StaticResource PageHeaderTitleStyle}" />
-                            <Button x:Uid="MainWindow_ButtonCustomize7" Grid.Column="1"
+                            <TextBlock x:Uid="MainWindow_TextBlockAbout" Grid.ColumnSpan="2"
+                                       Text="About" Style="{StaticResource PageHeaderTitleStyle}" />
+                            <Button x:Name="AboutHeaderActions"
+                                    x:Uid="MainWindow_ButtonCustomize7"
+                                    Grid.Row="1"
+                                    Grid.ColumnSpan="2"
+                                    HorizontalAlignment="Left"
                                     Content="Customize"
                                     Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="About"

@@ -12,11 +12,98 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="App_ExitDialog_Heading" xml:space="preserve">
+    <value>Exit OpenBlade?</value>
+  </data>
+  <data name="App_ExitDialog_KeepRunning" xml:space="preserve">
+    <value>Keep background features running</value>
+  </data>
+  <data name="App_ExitDialog_ShutDown" xml:space="preserve">
+    <value>Shut down completely</value>
+  </data>
+  <data name="App_ExitDialog_Text" xml:space="preserve">
+    <value>Choose whether keyboard lighting, hotkeys, profiles, and automation </value>
+  </data>
+  <data name="App_ExitError_Heading" xml:space="preserve">
+    <value>OpenBlade could not shut down</value>
+  </data>
+  <data name="App_ExitError_Text" xml:space="preserve">
+    <value>OpenBlade could not shut down: {0}</value>
+  </data>
+  <data name="App_PerformanceNotification_ChangedBody" xml:space="preserve">
+    <value>The performance mode changed.</value>
+  </data>
+  <data name="App_PerformanceNotification_ChangedTitle" xml:space="preserve">
+    <value>Performance mode changed</value>
+  </data>
+  <data name="App_PerformanceNotification_CurrentMode" xml:space="preserve">
+    <value>Current mode: {0}</value>
+  </data>
+  <data name="App_PerformanceNotification_FailedBody" xml:space="preserve">
+    <value>OpenBlade could not apply the selected mode.</value>
+  </data>
+  <data name="App_PerformanceNotification_FailedTitle" xml:space="preserve">
+    <value>Performance mode could not be changed</value>
+  </data>
+  <data name="Common_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Common_Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Common_Done" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="Common_ErrorWithDetails" xml:space="preserve">
+    <value>{0}</value>
+  </data>
+  <data name="Common_Import" xml:space="preserve">
+    <value>Import</value>
+  </data>
+  <data name="Common_Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Common_Working" xml:space="preserve">
+    <value>Working…</value>
+  </data>
+  <data name="DiagnosticArchivePicker_Title" xml:space="preserve">
+    <value>Export OpenBlade diagnostics</value>
+  </data>
+  <data name="DiagnosticArchivePicker_ZipArchives" xml:space="preserve">
+    <value>ZIP archives</value>
+  </data>
+  <data name="DisplayBrightnessOsd_WindowTitle" xml:space="preserve">
+    <value>OpenBlade brightness</value>
+  </data>
+  <data name="InstalledComponentVersion_Unavailable" xml:space="preserve">
+    <value>Unavailable</value>
+  </data>
   <data name="MainWindow_AboutNavigationItemText.Content" xml:space="preserve">
     <value>About</value>
   </data>
   <data name="MainWindow_AboutTestedPlatformWarningText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>System version compatibility warning</value>
+  </data>
+  <data name="MainWindow_Accent_Custom" xml:space="preserve">
+    <value>Custom</value>
+  </data>
+  <data name="MainWindow_Accent_CustomSummary" xml:space="preserve">
+    <value>Custom ({0})</value>
+  </data>
+  <data name="MainWindow_Accent_OpenBladeGreen" xml:space="preserve">
+    <value>OpenBlade green</value>
+  </data>
+  <data name="MainWindow_Accent_OpenBladeGreenSummary" xml:space="preserve">
+    <value>OpenBlade green (#47E10C)</value>
+  </data>
+  <data name="MainWindow_Accent_Windows" xml:space="preserve">
+    <value>Windows accent</value>
+  </data>
+  <data name="MainWindow_AccentPicker_PrimaryButton" xml:space="preserve">
+    <value>Use color</value>
+  </data>
+  <data name="MainWindow_AccentPicker_Title" xml:space="preserve">
+    <value>Choose an accent color</value>
   </data>
   <data name="MainWindow_AddTrayDashboardControlButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Add tray dashboard control</value>
@@ -168,6 +255,24 @@
   <data name="MainWindow_ComboBoxProfileToReview.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Profile to review</value>
   </data>
+  <data name="MainWindow_CustomizeDashboard_AutomationName" xml:space="preserve">
+    <value>Dashboard cards</value>
+  </data>
+  <data name="MainWindow_CustomizeDashboard_Instructions" xml:space="preserve">
+    <value>Check cards to show. Drag them into the order you want.</value>
+  </data>
+  <data name="MainWindow_CustomizeDashboard_Title" xml:space="preserve">
+    <value>Customize Dashboard</value>
+  </data>
+  <data name="MainWindow_CustomizePage_AutomationName" xml:space="preserve">
+    <value>{0} page sections</value>
+  </data>
+  <data name="MainWindow_CustomizePage_Instructions" xml:space="preserve">
+    <value>Check sections to show. Drag them into the order you want.</value>
+  </data>
+  <data name="MainWindow_CustomizePage_Title" xml:space="preserve">
+    <value>Customize {0}</value>
+  </data>
   <data name="MainWindow_DashboardAudioMeterColorBoostSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Audio Meter color boost</value>
   </data>
@@ -210,6 +315,12 @@
   <data name="MainWindow_ExpanderGPUCurve.Header" xml:space="preserve">
     <value>GPU curve</value>
   </data>
+  <data name="MainWindow_FirmwareOverride_CheckBox" xml:space="preserve">
+    <value>Ignore this firmware mismatch and run anyway</value>
+  </data>
+  <data name="MainWindow_FirmwareOverride_Warning" xml:space="preserve">
+    <value>Forcing control may send captured commands to firmware they were not validated against. Exact laptop and USB identity checks remain required.</value>
+  </data>
   <data name="MainWindow_FixedFanSpeedSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Fixed fan speed</value>
   </data>
@@ -218,6 +329,98 @@
   </data>
   <data name="MainWindow_GamingModeToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Gaming mode</value>
+  </data>
+  <data name="MainWindow_GpuApps_AfterCloseUnavailable" xml:space="preserve">
+    <value>GPU activity could not be checked after closing apps.</value>
+  </data>
+  <data name="MainWindow_GpuApps_AfterForceUnavailable" xml:space="preserve">
+    <value>GPU activity could not be checked after force closing apps.</value>
+  </data>
+  <data name="MainWindow_GpuApps_AppItem" xml:space="preserve">
+    <value>- {0} (PID {1})</value>
+  </data>
+  <data name="MainWindow_GpuApps_AppItemWithReason" xml:space="preserve">
+    <value>- {0} (PID {1}): {2}</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseButton" xml:space="preserve">
+    <value>Close apps</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseConfirmationIntro" xml:space="preserve">
+    <value>OpenBlade will ask these apps to close. Save your work first.
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseConfirmationTitle" xml:space="preserve">
+    <value>Close apps using the NVIDIA GPU?</value>
+  </data>
+  <data name="MainWindow_GpuApps_ClosedBody" xml:space="preserve">
+    <value>The selected apps released their NVIDIA GPU engines. The GPU may take a moment to return to sleep.</value>
+  </data>
+  <data name="MainWindow_GpuApps_ClosedTitle" xml:space="preserve">
+    <value>GPU apps closed</value>
+  </data>
+  <data name="MainWindow_GpuApps_CountersUnavailable" xml:space="preserve">
+    <value>Windows GPU activity counters are unavailable.</value>
+  </data>
+  <data name="MainWindow_GpuApps_FailureItem" xml:space="preserve">
+    <value>- PID {0}: {1}</value>
+  </data>
+  <data name="MainWindow_GpuApps_FailuresHeading" xml:space="preserve">
+    <value>
+
+Reported failures:
+{0}</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceButton" xml:space="preserve">
+    <value>Force close</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceClosedBody" xml:space="preserve">
+    <value>The selected apps were force closed. The GPU may take a moment to return to sleep.</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceClosedTitle" xml:space="preserve">
+    <value>GPU apps force closed</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceConfirmationIntro" xml:space="preserve">
+    <value>These apps did not close. Force closing can discard unsaved work.
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceConfirmationTitle" xml:space="preserve">
+    <value>Force close remaining apps?</value>
+  </data>
+  <data name="MainWindow_GpuApps_KeepRunningButton" xml:space="preserve">
+    <value>Keep running</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneSafeToClose" xml:space="preserve">
+    <value>No GPU users can be closed safely.
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneToCloseTitle" xml:space="preserve">
+    <value>No GPU apps to close</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneUsingGpu" xml:space="preserve">
+    <value>No current-user apps are holding an NVIDIA GPU engine.</value>
+  </data>
+  <data name="MainWindow_GpuApps_NotCloseableHeading" xml:space="preserve">
+    <value>
+
+Not closeable:
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_SessionAgentFailure" xml:space="preserve">
+    <value>The Session Agent could not complete the GPU app operation: {0}</value>
+  </data>
+  <data name="MainWindow_GpuApps_StillRunningTitle" xml:space="preserve">
+    <value>GPU apps still running</value>
+  </data>
+  <data name="MainWindow_GpuApps_SurvivorsHeading" xml:space="preserve">
+    <value>Some apps could not be closed:
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_UnavailableTitle" xml:space="preserve">
+    <value>GPU activity unavailable</value>
   </data>
   <data name="MainWindow_GpuClockTuningToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>GPU tuning</value>
@@ -318,6 +521,41 @@
   <data name="MainWindow_LightingIdleTimeoutToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Turn off keyboard lighting after inactivity</value>
   </data>
+  <data name="MainWindow_LightingImport_Brightness" xml:space="preserve">
+    <value>{0}% brightness</value>
+  </data>
+  <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
+    <value>{0} uses the {1} effect at {2}. Importing applies it through OpenBlade and keeps it as an unsaved change for the active power profile.</value>
+  </data>
+  <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
+    <value>Import keyboard lighting?</value>
+  </data>
+  <data name="MainWindow_LightingImport_ControlUnavailable" xml:space="preserve">
+    <value>Lighting control became unavailable before the preset could be imported.</value>
+  </data>
+  <data name="MainWindow_LightingImport_EffectUnavailable" xml:space="preserve">
+    <value>The {0} effect is unavailable on this laptop right now.</value>
+  </data>
+  <data name="MainWindow_LightingImport_FailedTitle" xml:space="preserve">
+    <value>Keyboard lighting could not be imported</value>
+  </data>
+  <data name="MainWindow_LightingImport_FileTooLarge" xml:space="preserve">
+    <value>The selected lighting file cannot exceed {0}.</value>
+  </data>
+  <data name="MainWindow_LightingImport_ImportApplyButton" xml:space="preserve">
+    <value>Import and apply</value>
+  </data>
+  <data name="MainWindow_LightingImport_Off" xml:space="preserve">
+    <value>off</value>
+  </data>
+  <data name="MainWindow_LightingImport_PickerTitle" xml:space="preserve">
+    <value>Import OpenBlade keyboard lighting</value>
+  </data>
+  <data name="MainWindow_LightingImport_Warning" xml:space="preserve">
+    <value>
+
+{0}</value>
+  </data>
   <data name="MainWindow_LightingNavigationItemText.Content" xml:space="preserve">
     <value>Lighting</value>
   </data>
@@ -342,11 +580,71 @@
   <data name="MainWindow_NavigationMenuExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Navigation menu order</value>
   </data>
+  <data name="MainWindow_Notification_AppUpdateBody" xml:space="preserve">
+    <value>OpenBlade {0} is ready to download.</value>
+  </data>
+  <data name="MainWindow_Notification_AppUpdateTitle" xml:space="preserve">
+    <value>OpenBlade update available</value>
+  </data>
+  <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
+    <value>Razer controller detected</value>
+  </data>
+  <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
+    <value>Razer firmware update available</value>
+  </data>
+  <data name="MainWindow_Notification_OperationFailedTitle" xml:space="preserve">
+    <value>OpenBlade operation failed</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileAc" xml:space="preserve">
+    <value>AC profile</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileActive" xml:space="preserve">
+    <value>active power profile</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileBattery" xml:space="preserve">
+    <value>Battery profile</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileChangedBody" xml:space="preserve">
+    <value>OpenBlade is now using the {0}.</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileChangedTitle" xml:space="preserve">
+    <value>Power profile changed</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileUsbC" xml:space="preserve">
+    <value>USB-C profile</value>
+  </data>
   <data name="MainWindow_OfficialFirmwareUpdatesCardText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Official Razer firmware update assistant</value>
   </data>
   <data name="MainWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Operation error</value>
+  </data>
+  <data name="MainWindow_ProfileExport_FailedBody" xml:space="preserve">
+    <value>OpenBlade could not save the selected JSON file.</value>
+  </data>
+  <data name="MainWindow_ProfileExport_FailedTitle" xml:space="preserve">
+    <value>Profiles could not be exported</value>
+  </data>
+  <data name="MainWindow_ProfileExport_Title" xml:space="preserve">
+    <value>Export OpenBlade profiles</value>
+  </data>
+  <data name="MainWindow_ProfileImport_ConfirmBody" xml:space="preserve">
+    <value>This replaces the saved AC, USB-C, battery, and battery-protection profiles. Current hardware settings are not changed until you apply or switch profiles.</value>
+  </data>
+  <data name="MainWindow_ProfileImport_ConfirmTitle" xml:space="preserve">
+    <value>Import profiles?</value>
+  </data>
+  <data name="MainWindow_ProfileImport_FailedTitle" xml:space="preserve">
+    <value>Profiles could not be imported</value>
+  </data>
+  <data name="MainWindow_ProfileImport_PickerTitle" xml:space="preserve">
+    <value>Import OpenBlade profiles</value>
+  </data>
+  <data name="MainWindow_ProfileImport_UnavailableSettings" xml:space="preserve">
+    <value>The imported profiles include settings that are unavailable on this laptop.</value>
+  </data>
+  <data name="MainWindow_ProfilePicker_JsonFiles" xml:space="preserve">
+    <value>JSON files</value>
   </data>
   <data name="MainWindow_ProfileStateBadgeText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Open troubleshooting details</value>
@@ -432,6 +730,33 @@
   <data name="MainWindow_SettingsNavigationItemText.Content" xml:space="preserve">
     <value>Settings</value>
   </data>
+  <data name="MainWindow_Shutdown_Content" xml:space="preserve">
+    <value>This stops the app, display helper, and hardware service. </value>
+  </data>
+  <data name="MainWindow_Shutdown_FailedTitle" xml:space="preserve">
+    <value>OpenBlade could not shut down</value>
+  </data>
+  <data name="MainWindow_Shutdown_PrimaryButton" xml:space="preserve">
+    <value>Shut down</value>
+  </data>
+  <data name="MainWindow_Shutdown_Title" xml:space="preserve">
+    <value>Shut down OpenBlade?</value>
+  </data>
+  <data name="MainWindow_Start_AlreadyRunningBody" xml:space="preserve">
+    <value>The tray will reconnect automatically. This can take a few seconds.</value>
+  </data>
+  <data name="MainWindow_Start_AlreadyRunningTitle" xml:space="preserve">
+    <value>OpenBlade service is already running</value>
+  </data>
+  <data name="MainWindow_Start_Button" xml:space="preserve">
+    <value>Start OpenBlade</value>
+  </data>
+  <data name="MainWindow_Start_FailedTitle" xml:space="preserve">
+    <value>OpenBlade could not start</value>
+  </data>
+  <data name="MainWindow_Start_Starting" xml:space="preserve">
+    <value>Starting OpenBlade</value>
+  </data>
   <data name="MainWindow_StartMinimizedToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Start OpenBlade minimized</value>
   </data>
@@ -440,6 +765,76 @@
   </data>
   <data name="MainWindow_StartupAnimationToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Startup animation</value>
+  </data>
+  <data name="MainWindow_StopRazer_AutomationName" xml:space="preserve">
+    <value>Stop Razer services</value>
+  </data>
+  <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
+    <value>Windows did not grant administrator permission. OpenBlade did not retry the request.</value>
+  </data>
+  <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
+    <value>Razer service stop canceled</value>
+  </data>
+  <data name="MainWindow_StopRazer_Checking" xml:space="preserve">
+    <value>Checking…</value>
+  </data>
+  <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
+    <value>These known controller services are currently active:
+
+{0}
+
+After approval, OpenBlade will freshly check the same reviewed allowlist and stop any active matches. This does not uninstall Razer software or disable service startup. Razer software may start the services again, and features that depend on them may stop working until then.</value>
+  </data>
+  <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
+    <value>Stop Razer services?</value>
+  </data>
+  <data name="MainWindow_StopRazer_FailedTitle" xml:space="preserve">
+    <value>OpenBlade could not stop Razer services</value>
+  </data>
+  <data name="MainWindow_StopRazer_IndeterminateNote" xml:space="preserve">
+    <value>
+
+The helper result was indeterminate, but fresh readback confirms the services are stopped or no longer installed.</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoneBody" xml:space="preserve">
+    <value>OpenBlade found no active Synapse or Chroma controller services in its reviewed allowlist.</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoneTitle" xml:space="preserve">
+    <value>No known Razer controller services are running</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoRetryNote" xml:space="preserve">
+    <value>
+
+OpenBlade did not retry any stop request.</value>
+  </data>
+  <data name="MainWindow_StopRazer_PartialTitle" xml:space="preserve">
+    <value>Some Razer services could not be confirmed stopped</value>
+  </data>
+  <data name="MainWindow_StopRazer_RemainingHeading" xml:space="preserve">
+    <value>Still active or pending:
+</value>
+  </data>
+  <data name="MainWindow_StopRazer_StopButton" xml:space="preserve">
+    <value>Stop services</value>
+  </data>
+  <data name="MainWindow_StopRazer_StoppedHeading" xml:space="preserve">
+    <value>Stopped or no longer installed:
+</value>
+  </data>
+  <data name="MainWindow_StopRazer_Stopping" xml:space="preserve">
+    <value>Stopping…</value>
+  </data>
+  <data name="MainWindow_StopRazer_SucceededTitle" xml:space="preserve">
+    <value>Razer services stopped</value>
+  </data>
+  <data name="MainWindow_StopRazer_UnconfirmedBody" xml:space="preserve">
+    <value>The elevated request finished, but OpenBlade could not read the final service state. {0}</value>
+  </data>
+  <data name="MainWindow_StopRazer_UnconfirmedTitle" xml:space="preserve">
+    <value>Razer service status is unconfirmed</value>
+  </data>
+  <data name="MainWindow_StopRazer_WorkingAutomationName" xml:space="preserve">
+    <value>Working with Razer services</value>
   </data>
   <data name="MainWindow_StopRazerServicesButtonLabelText.Text" xml:space="preserve">
     <value>Stop services</value>
@@ -1275,14 +1670,83 @@
   <data name="MainWindow_ToggleSwitchStartOpenBladeWhenISignIn.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Start OpenBlade when I sign in</value>
   </data>
+  <data name="MainWindow_TrayDashboard_Count" xml:space="preserve">
+    <value>{0} of {1}</value>
+  </data>
   <data name="MainWindow_TroubleshootingExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Troubleshooting details</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_CloseButton" xml:space="preserve">
+    <value>Manual only</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_Content" xml:space="preserve">
+    <value>OpenBlade can check GitHub for a new release once per day when </value>
+  </data>
+  <data name="MainWindow_UpdateConsent_PrimaryButton" xml:space="preserve">
+    <value>Use daily checks</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_Title" xml:space="preserve">
+    <value>Check for OpenBlade updates?</value>
   </data>
   <data name="MainWindow_WindowsDynamicLightingToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Let Windows Dynamic Lighting control the keyboard</value>
   </data>
   <data name="MainWindow_WindowsPowerModeSelectorText.AccessibleName" xml:space="preserve">
     <value>Windows power mode</value>
+  </data>
+  <data name="Navigation_About" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="Navigation_Display" xml:space="preserve">
+    <value>Display</value>
+  </data>
+  <data name="Navigation_Laptop" xml:space="preserve">
+    <value>Laptop</value>
+  </data>
+  <data name="Navigation_Lighting" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="Navigation_Profiles" xml:space="preserve">
+    <value>Profiles</value>
+  </data>
+  <data name="Navigation_Settings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="SpecialKey_Validation_UnknownKey" xml:space="preserve">
+    <value>Unknown shortcut key: {0}</value>
+  </data>
+  <data name="SpecialKey_Validation_UnknownModifier" xml:space="preserve">
+    <value>Unknown modifier: {0}</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_AppPath" xml:space="preserve">
+    <value>App or file path</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Shortcut" xml:space="preserve">
+    <value>Shortcut</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Text" xml:space="preserve">
+    <value>Text</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Website" xml:space="preserve">
+    <value>Website</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Shortcut" xml:space="preserve">
+    <value>For example: Ctrl+Shift+M</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Text" xml:space="preserve">
+    <value>Text to type</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Fans" xml:space="preserve">
+    <value>Fans</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_GamingMode" xml:space="preserve">
+    <value>Gaming mode</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Lighting" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Performance" xml:space="preserve">
+    <value>Performance</value>
   </data>
   <data name="TrayDashboardWindow_ButtonBackToQuickControls.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Back to quick controls</value>
@@ -1397,5 +1861,14 @@
   </data>
   <data name="TrayDashboardWindow_WindowTitle" xml:space="preserve">
     <value>OpenBlade quick controls</value>
+  </data>
+  <data name="TrayIconMenu_DoubleClick" xml:space="preserve">
+    <value>Double-click</value>
+  </data>
+  <data name="TrayIconMenu_Exit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="TrayIconMenu_Open" xml:space="preserve">
+    <value>Open</value>
   </data>
 </root>

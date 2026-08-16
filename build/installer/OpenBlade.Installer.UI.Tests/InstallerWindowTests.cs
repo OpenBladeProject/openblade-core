@@ -1,11 +1,16 @@
 using System;
 using System.Globalization;
+using System.IO;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using WixToolset.BootstrapperApplicationApi;
 using Xunit;
 
@@ -93,7 +98,7 @@ public sealed class InstallerWindowTests
                 "2.0.0",
                 "1.2.3",
                 returnToInstalledState: true);
-            Assert.Equal("Overwrite", window.InstallButton.Content);
+            Assert.Equal("_Overwrite", window.InstallButton.Content);
             Assert.Contains("2.0.0", window.ReadyMessage.Text);
             Assert.Contains("1.2.3", window.ReadyMessage.Text);
             Assert.Equal(Visibility.Collapsed, window.RepairButton.Visibility);
@@ -102,16 +107,18 @@ public sealed class InstallerWindowTests
             window.ReadyCancelButton.RaiseEvent(
                 new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             Assert.Equal("Maintenance", window.HeaderSubtitle.Text);
-            Assert.Equal("Install", window.InstallButton.Content);
+            Assert.Equal("_Install", window.InstallButton.Content);
             Assert.Equal(Visibility.Visible, window.RepairButton.Visibility);
             Assert.Equal(Visibility.Visible, window.UninstallButton.Visibility);
 
             window.ShowProgress(LaunchAction.Install);
             window.SetProgress(42, "Copying OpenBlade.Tray.exe");
+            string localizedStatus = window.ProgressMessage.Text;
             window.AddDetail("Copying OpenBlade.Tray.exe");
             window.DetailsToggle.IsChecked = true;
             Assert.Equal(42, window.OverallProgress.Value);
             Assert.Contains("Copying OpenBlade.Tray.exe", window.DetailsText.Text);
+            Assert.Equal(localizedStatus, window.ProgressMessage.Text);
             Assert.Equal(Visibility.Visible, window.DetailsBorder.Visibility);
             Assert.Equal(430, window.Height);
             Assert.Equal(430, window.MinHeight);
@@ -144,6 +151,299 @@ public sealed class InstallerWindowTests
             window.ShowFailure("Expected test failure", null);
             Assert.Equal("Expected test failure", window.FailureMessage.Text);
             Assert.False(window.OpenLogButton.IsEnabled);
+        });
+    }
+
+    [Fact]
+    public void MalformedTranslatedFormatFallsBackToAuthoritativeEnglishTemplate()
+    {
+        Assert.Equal(
+            "Value: 42",
+            InstallerStrings.FormatLocalized("Value: {0}", "Broken {", 42));
+    }
+
+    [Fact]
+    public void PseudoLocalizationSnapshotsRenderEveryCriticalInstallerState()
+    {
+        string? outputDirectory = Environment.GetEnvironmentVariable(
+            "OPENBLADE_LOCALIZATION_SNAPSHOT_DIR");
+        if (string.IsNullOrWhiteSpace(outputDirectory))
+        {
+            return;
+        }
+
+        string? snapshotState = Environment.GetEnvironmentVariable(
+            "OPENBLADE_LOCALIZATION_SNAPSHOT_STATE");
+        Assert.False(
+            string.IsNullOrWhiteSpace(snapshotState),
+            "Set OPENBLADE_LOCALIZATION_SNAPSHOT_STATE so each state renders in a fresh testhost process.");
+        Directory.CreateDirectory(outputDirectory);
+        switch (snapshotState)
+        {
+            case "install":
+                Capture(
+                    "installer-install",
+                    window => window.ShowReady(installed: false),
+                    window => [window.InstallButton, window.ReadyCancelButton]);
+                break;
+            case "maintenance":
+                Capture(
+                    "installer-maintenance",
+                    window => window.ShowReady(installed: true),
+                    window =>
+                    [
+                        window.RepairButton,
+                        window.UninstallButton,
+                        window.ReadyCancelButton,
+                    ]);
+                break;
+            case "newer-version":
+                Capture(
+                    "installer-newer-version",
+                    window => window.ShowNewerVersionConfirmation("0.11.0", "0.10.0", true),
+                    window => [window.InstallButton, window.ReadyCancelButton]);
+                break;
+            case "progress":
+                Capture(
+                    "installer-progress",
+                    window =>
+                    {
+                        window.ShowProgress(LaunchAction.Install);
+                        window.SetProgress(47, InstallerStrings.Get("Installing OpenBlade"));
+                        window.AddDetail("Stable diagnostic detail: OpenBlade.Tray.exe");
+                        window.DetailsToggle.IsChecked = true;
+                    },
+                    window => [window.DetailsToggle, window.ProgressCancelButton]);
+                break;
+            case "cancel":
+                Capture(
+                    "installer-cancel",
+                    window =>
+                    {
+                        window.ShowProgress(LaunchAction.Install);
+                        window.ProgressCancelButton.RaiseEvent(
+                            new RoutedEventArgs(Button.ClickEvent));
+                    },
+                    window => [window.KeepWorkingButton, window.ConfirmCancelButton]);
+                break;
+            case "success":
+                Capture(
+                    "installer-success",
+                    window => window.ShowSuccess(LaunchAction.Install, purgeProfiles: false),
+                    window => [window.LaunchButton, window.SuccessCloseButton]);
+                break;
+            case "failure":
+                Capture(
+                    "installer-failure",
+                    window => window.ShowFailure(string.Empty, null),
+                    window => [window.OpenLogButton, window.FailureCloseButton]);
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"Unknown installer localization snapshot state '{snapshotState}'.");
+        }
+
+        void Capture(
+            string name,
+            Action<InstallerWindow> showState,
+            Func<InstallerWindow, FrameworkElement[]> selectActiveActions)
+        {
+            RunWithUiCulture("qps-ploc", () =>
+            {
+                InstallerWindow window = new(
+                    new OpenBladeBootstrapperApplication(),
+                    "0.10.0");
+                showState(window);
+                FrameworkElement[] activeActions = selectActiveActions(window);
+                FrameworkElement visual = (FrameworkElement)window.Content;
+                window.Content = null;
+                Thickness contentMargin = visual.Margin;
+                visual.Margin = new Thickness();
+                Border snapshot = new()
+                {
+                    Width = window.Width,
+                    Height = window.Height,
+                    Background = window.Background,
+                    Padding = contentMargin,
+                    Child = visual,
+                };
+                foreach (object key in window.Resources.Keys)
+                {
+                    snapshot.Resources[key] = window.Resources[key];
+                }
+                try
+                {
+                    snapshot.Measure(new Size(window.Width, window.Height));
+                    snapshot.Arrange(new Rect(0, 0, window.Width, window.Height));
+                    snapshot.UpdateLayout();
+                    snapshot.InvalidateMeasure();
+                    snapshot.InvalidateArrange();
+                    snapshot.Measure(new Size(window.Width, window.Height));
+                    snapshot.Arrange(new Rect(0, 0, window.Width, window.Height));
+                    snapshot.UpdateLayout();
+                    Assert.Equal(window.Width, snapshot.RenderSize.Width, precision: 3);
+                    Assert.Equal(window.Height, snapshot.RenderSize.Height, precision: 3);
+                    AssertWithinSnapshot(snapshot, window.HeaderPanel);
+                    AssertWithinSnapshot(snapshot, window.VersionText);
+                    foreach (FrameworkElement action in activeActions)
+                    {
+                        AssertWithinSnapshot(snapshot, action);
+                    }
+                    RenderTargetBitmap bitmap = new(
+                        (int)window.Width,
+                        (int)window.Height,
+                        96,
+                        96,
+                        PixelFormats.Pbgra32);
+                    bitmap.Render(snapshot);
+                    PngBitmapEncoder encoder = new();
+                    encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                    using FileStream output = File.Create(
+                        Path.Combine(outputDirectory, name + ".png"));
+                    encoder.Save(output);
+                }
+                finally
+                {
+                    snapshot.Child = null;
+                    visual.Margin = contentMargin;
+                    window.Content = visual;
+                    window.Close();
+                }
+            });
+        }
+    }
+
+    private static void AssertWithinSnapshot(
+        FrameworkElement snapshot,
+        FrameworkElement element)
+    {
+        Rect bounds = element.TransformToAncestor(snapshot).TransformBounds(
+            new Rect(0, 0, element.ActualWidth, element.ActualHeight));
+        Rect viewport = new(0, 0, snapshot.RenderSize.Width, snapshot.RenderSize.Height);
+        Assert.True(
+            viewport.Contains(bounds),
+            $"{element.Name} bounds {bounds} exceed snapshot viewport {viewport}.");
+    }
+
+    [Fact]
+    public void InteractiveStatesExposeAutomationNamesAndUniqueAccessKeys()
+    {
+        RunInSta(() =>
+        {
+            InstallerWindow window = new(new OpenBladeBootstrapperApplication(), "1.2.3");
+
+            Assert.False(window.BrandImage.Focusable);
+            Assert.False(window.BrandImage.IsHitTestVisible);
+            window.ShowReady(installed: false);
+            AssertUniqueAccessKeys(window.InstallButton, window.ReadyCancelButton);
+
+            window.ShowReady(installed: true);
+            AssertUniqueAccessKeys(
+                window.PurgeProfilesCheckBox,
+                window.RepairButton,
+                window.UninstallButton,
+                window.ReadyCancelButton);
+
+            window.ShowProgress(LaunchAction.Install);
+            Assert.Equal("Setup progress", AutomationProperties.GetName(window.OverallProgress));
+            Assert.Equal("Setup details", AutomationProperties.GetName(window.DetailsText));
+            Assert.Equal(AutomationLiveSetting.Polite, AutomationProperties.GetLiveSetting(window.ProgressMessage));
+            AssertUniqueAccessKeys(window.DetailsToggle, window.ProgressCancelButton);
+
+            window.ProgressCancelButton.RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            Assert.False(window.ProgressPanel.IsEnabled);
+            Assert.Equal(KeyboardNavigationMode.Cycle, KeyboardNavigation.GetTabNavigation(window.CancelConfirmationPanel));
+            AssertUniqueAccessKeys(window.KeepWorkingButton, window.ConfirmCancelButton);
+
+            window.KeepWorkingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.True(window.ProgressPanel.IsEnabled);
+
+            window.ShowSuccess(LaunchAction.Install, purgeProfiles: false);
+            AssertUniqueAccessKeys(window.LaunchButton, window.SuccessCloseButton);
+
+            window.ShowFailure("Expected", null);
+            AssertUniqueAccessKeys(window.OpenLogButton, window.FailureCloseButton);
+        });
+    }
+
+    [Fact]
+    public void InteractiveStateChangesMoveKeyboardFocusToThePrimaryAction()
+    {
+        RunInSta(() =>
+        {
+            InstallerWindow window = new(new OpenBladeBootstrapperApplication(), "1.2.3")
+            {
+                WindowStartupLocation = WindowStartupLocation.Manual,
+                Left = -10000,
+                Top = -10000,
+                ShowInTaskbar = false,
+            };
+            window.Show();
+            _ = window.Activate();
+
+            window.ShowReady(installed: false);
+            DrainFocus(window);
+            Assert.Same(window.InstallButton, FocusManager.GetFocusedElement(window));
+
+            window.ShowProgress(LaunchAction.Install);
+            DrainFocus(window);
+            Assert.Same(window.ProgressCancelButton, FocusManager.GetFocusedElement(window));
+
+            window.ProgressCancelButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            DrainFocus(window);
+            Assert.Same(window.KeepWorkingButton, FocusManager.GetFocusedElement(window));
+
+            window.KeepWorkingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            DrainFocus(window);
+            Assert.Same(window.ProgressCancelButton, FocusManager.GetFocusedElement(window));
+
+            window.ShowSuccess(LaunchAction.Install, purgeProfiles: false);
+            DrainFocus(window);
+            Assert.Same(window.LaunchButton, FocusManager.GetFocusedElement(window));
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void EveryProgressCodeHasPseudoLocalizedVisibleStatus()
+    {
+        RunWithUiCulture("qps-ploc", () =>
+        {
+            foreach (InstallerSetupProgressCode code in Enum.GetValues(
+                         typeof(InstallerSetupProgressCode)))
+            {
+                string wireValue = code == InstallerSetupProgressCode.CopyFile
+                    ? "v1|CopyFile|T3BlbkJsYWRlLlRyYXkuZXhl"
+                    : $"v1|{code}";
+                Assert.True(InstallerSetupProgress.TryParse(wireValue, out InstallerSetupProgress? progress));
+
+                string status = OpenBladeBootstrapperApplication.LocalizeProgress(progress!);
+
+                Assert.StartsWith("[!! ", status, StringComparison.Ordinal);
+            }
+        });
+    }
+
+    [Fact]
+    public void PackageExecutionStatusIsLocalizedWithoutUsingBurnDisplayNames()
+    {
+        RunWithUiCulture("qps-ploc", () =>
+        {
+            string prerequisite = OpenBladeBootstrapperApplication.DescribePackageExecutionStatus(
+                "OpenBladeVcRuntime",
+                relatedVersion: null);
+            string setup = OpenBladeBootstrapperApplication.DescribePackageExecutionStatus(
+                "OpenBladeSetup",
+                relatedVersion: null);
+            string related = OpenBladeBootstrapperApplication.DescribePackageExecutionStatus(
+                "{RELATED-BUNDLE}",
+                "1.2.3");
+
+            Assert.StartsWith("[!! ", prerequisite, StringComparison.Ordinal);
+            Assert.StartsWith("[!! ", setup, StringComparison.Ordinal);
+            Assert.StartsWith("[!! ", related, StringComparison.Ordinal);
+            Assert.Contains("1.2.3", related, StringComparison.Ordinal);
         });
     }
 
@@ -563,6 +863,45 @@ public sealed class InstallerWindowTests
         thread.Start();
         Assert.True(thread.Join(TimeSpan.FromSeconds(30)), "The installer UI test timed out.");
         failure?.Throw();
+    }
+
+    private static void DrainFocus(DispatcherObject owner) =>
+        owner.Dispatcher.Invoke(
+            DispatcherPriority.ApplicationIdle,
+            new Action(() => { }));
+
+    private static void AssertUniqueAccessKeys(params FrameworkElement[] elements)
+    {
+        char[] keys = elements
+            .Where(element => element.Visibility == Visibility.Visible)
+            .Select(element => element switch
+            {
+                ContentControl control => control.Content?.ToString(),
+                _ => null,
+            })
+            .Select(GetAccessKey)
+            .ToArray();
+
+        Assert.DoesNotContain('\0', keys);
+        Assert.Equal(keys.Length, keys.Select(char.ToUpperInvariant).Distinct().Count());
+    }
+
+    private static char GetAccessKey(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return '\0';
+        }
+
+        for (int index = 0; index < value!.Length - 1; index++)
+        {
+            if (value[index] == '_' && value[index + 1] != '_')
+            {
+                return value[index + 1];
+            }
+        }
+
+        return '\0';
     }
 
     private static void RunWithUiCulture(string cultureName, Action action)

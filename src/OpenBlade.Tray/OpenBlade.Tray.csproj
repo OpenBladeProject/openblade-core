@@ -14,6 +14,10 @@
     <PublishTrimmed>false</PublishTrimmed>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <DefaultLanguage>en-US</DefaultLanguage>
+    <AssemblyName Condition="'$(OpenBladeLocalizationPreview)' == 'true'">OpenBlade.LocalizationPreview</AssemblyName>
+    <BaseOutputPath Condition="'$(OpenBladeLocalizationPreview)' == 'true'">bin-localization-preview\</BaseOutputPath>
+    <IntermediateOutputPath Condition="'$(OpenBladeLocalizationPreview)' == 'true'">obj\localization-preview\$(Configuration)\</IntermediateOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin-localization-preview\**;obj-localization-preview\**;obj\localization-preview\**</DefaultItemExcludes>
     <ApplicationIcon Condition="Exists('Assets\Brand\OpenBlade.ico')">Assets\Brand\OpenBlade.ico</ApplicationIcon>
     <!-- On .NET 10, this prevents the Windows Desktop SDK from sending WinUI XAML through the WPF compiler while WinForms supplies the tray icon. -->
     <ImportFrameworkWinFXTargets>true</ImportFrameworkWinFXTargets>
@@ -22,6 +26,9 @@
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" />
     <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" />
     <PackageReference Include="System.ServiceProcess.ServiceController" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(OpenBladeLocalizationPreview)' != 'true'">
+    <PRIResource Remove="Strings\qps-ploc\Resources.resw" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />

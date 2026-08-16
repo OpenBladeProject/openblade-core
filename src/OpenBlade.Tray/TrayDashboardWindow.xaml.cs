@@ -1335,16 +1335,24 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     }
 
     private void OnPerformanceDetailsClick(object sender, RoutedEventArgs args) =>
-        ShowDetail(TrayDashboardControlKind.Performance, "Performance");
+        ShowDetail(
+            TrayDashboardControlKind.Performance,
+            LocalizedResources.Get("TrayDashboard_DetailTitle_Performance", "Performance"));
 
     private void OnFansDetailsClick(object sender, RoutedEventArgs args) =>
-        ShowDetail(TrayDashboardControlKind.Fans, "Fans");
+        ShowDetail(
+            TrayDashboardControlKind.Fans,
+            LocalizedResources.Get("TrayDashboard_DetailTitle_Fans", "Fans"));
 
     private void OnLightingDetailsClick(object sender, RoutedEventArgs args) =>
-        ShowDetail(TrayDashboardControlKind.Lighting, "Lighting");
+        ShowDetail(
+            TrayDashboardControlKind.Lighting,
+            LocalizedResources.Get("TrayDashboard_DetailTitle_Lighting", "Lighting"));
 
     private void OnGamingModeDetailsClick(object sender, RoutedEventArgs args) =>
-        ShowDetail(TrayDashboardControlKind.GamingMode, "Gaming mode");
+        ShowDetail(
+            TrayDashboardControlKind.GamingMode,
+            LocalizedResources.Get("TrayDashboard_DetailTitle_GamingMode", "Gaming mode"));
 
     private void OnDetailBackClick(object sender, RoutedEventArgs args) =>
         ShowDashboardPage();

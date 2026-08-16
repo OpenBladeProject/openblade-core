@@ -18,13 +18,15 @@ public static class TrayDashboardStatusPresentation
         if (milliwatts == 0)
         {
             return powerSource is PowerSource.PluggedIn or PowerSource.UsbC
-                ? "Idle"
+                ? TrayText.Get("Idle")
                 : "—";
         }
 
         double watts = Math.Abs((long)milliwatts) / 1000d;
-        string value = watts.ToString("0.0", CultureInfo.InvariantCulture);
-        return milliwatts > 0 ? $"+{value} W" : $"{value} W";
+        string value = watts.ToString("0.0", CultureInfo.CurrentCulture);
+        return milliwatts > 0
+            ? TrayText.Format("+{0} W", value)
+            : TrayText.Format("{0} W", value);
     }
 
     public static string Temperatures(
@@ -39,9 +41,9 @@ public static class TrayDashboardStatusPresentation
 
         return (cpuCelsius, gpuCelsius) switch
         {
-            (int cpu, int gpu) => $"{cpu}° / {gpu}°",
-            (int cpu, null) => $"{cpu}°",
-            (null, int gpu) => $"{gpu}°",
+            (int cpu, int gpu) => TrayText.Format("{0}° / {1}°", cpu, gpu),
+            (int cpu, null) => TrayText.Format("{0}°", cpu),
+            (null, int gpu) => TrayText.Format("{0}°", gpu),
             _ => "—",
         };
     }
@@ -53,7 +55,7 @@ public static class TrayDashboardStatusPresentation
             {
                 OpenBlade.Contracts.PowerSource.PluggedIn => "AC",
                 OpenBlade.Contracts.PowerSource.UsbC => "USB-C",
-                OpenBlade.Contracts.PowerSource.Battery => "Battery",
+                OpenBlade.Contracts.PowerSource.Battery => TrayText.Get("Battery"),
                 _ => "—",
             };
 
@@ -66,7 +68,10 @@ public static class TrayDashboardStatusPresentation
 
         return (fan1Rpm, fan2Rpm) switch
         {
-            (int fan1, int fan2) => $"{FormatFanSpeed(fan1)} / {FormatFanSpeed(fan2)}",
+            (int fan1, int fan2) => TrayText.Format(
+                "{0} / {1}",
+                FormatFanSpeed(fan1),
+                FormatFanSpeed(fan2)),
             (int fan1, null) => FormatFanSpeed(fan1),
             (null, int fan2) => FormatFanSpeed(fan2),
             _ => "—",
@@ -74,6 +79,8 @@ public static class TrayDashboardStatusPresentation
     }
 
     private static string FormatFanSpeed(int rpm) => rpm < 1000
-        ? rpm.ToString(CultureInfo.InvariantCulture)
-        : $"{(rpm / 1000d).ToString("0.#", CultureInfo.InvariantCulture)}K";
+        ? rpm.ToString(CultureInfo.CurrentCulture)
+        : TrayText.Format(
+            "{0}K",
+            (rpm / 1000d).ToString("0.#", CultureInfo.CurrentCulture));
 }

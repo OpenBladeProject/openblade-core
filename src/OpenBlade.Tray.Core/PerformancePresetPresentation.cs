@@ -32,12 +32,12 @@ public static class PerformancePresetPresentation
 
     public static string Label(PerformancePreset value) => value switch
     {
-        PerformancePreset.Balanced => "Balanced",
-        PerformancePreset.Silent => "Silent",
-        PerformancePreset.Performance => "Performance",
-        PerformancePreset.BatteryBalanced => "Balanced",
-        PerformancePreset.BatterySaver => "Battery Saver",
-        PerformancePreset.Custom => "Custom",
+        PerformancePreset.Balanced => TrayText.Get("Balanced"),
+        PerformancePreset.Silent => TrayText.Get("Silent"),
+        PerformancePreset.Performance => TrayText.Get("Performance"),
+        PerformancePreset.BatteryBalanced => TrayText.Get("Balanced"),
+        PerformancePreset.BatterySaver => TrayText.Get("Battery Saver"),
+        PerformancePreset.Custom => TrayText.Get("Custom"),
         _ => value.ToString(),
     };
 

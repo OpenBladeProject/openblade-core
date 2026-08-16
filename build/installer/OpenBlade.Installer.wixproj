@@ -4,12 +4,14 @@
     <OutputType>Bundle</OutputType>
     <InstallerPlatform>x64</InstallerPlatform>
     <OutputName>OpenBlade-Setup</OutputName>
+    <Cultures>en-US</Cultures>
     <AcceptEula>wix7</AcceptEula>
     <DefineConstants>OpenBladeVersion=$(OpenBladeVersion)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="WixToolset.Util.wixext" />
+    <EmbeddedResource Include="Bundle.en-US.wxl" />
   </ItemGroup>
 
   <ItemGroup>

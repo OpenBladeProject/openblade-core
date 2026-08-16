@@ -38,6 +38,9 @@ function ConvertTo-ResourceProperty {
         'AutomationProperties.Name' {
             return '[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name'
         }
+        'AutomationProperties.HelpText' {
+            return '[using:Microsoft.UI.Xaml.Automation]AutomationProperties.HelpText'
+        }
         'ToolTipService.ToolTip' {
             return '[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip'
         }
@@ -46,6 +49,19 @@ function ConvertTo-ResourceProperty {
 }
 
 $resources = [ordered]@{}
+$codePattern = 'LocalizedResources\.(?:Get|Format)\(\s*"(?<key>(?:[^"\\]|\\.)*)"\s*,\s*"(?<value>(?:[^"\\]|\\.)*)"'
+foreach ($codeFile in @(Get-ChildItem (Join-Path $repository 'src\OpenBlade.Tray') `
+        -Filter '*.cs' -File -Recurse | Where-Object FullName -notmatch '\\(?:bin|obj)\\')) {
+    $code = [IO.File]::ReadAllText($codeFile.FullName, [Text.UTF8Encoding]::new($false, $true))
+    foreach ($match in [regex]::Matches($code, $codePattern)) {
+        $key = [Text.RegularExpressions.Regex]::Unescape($match.Groups['key'].Value)
+        $value = [Text.RegularExpressions.Regex]::Unescape($match.Groups['value'].Value)
+        if ($resources.Contains($key) -and $resources[$key] -ne $value) {
+            throw "Runtime resource key '$key' maps to conflicting fallbacks."
+        }
+        $resources[$key] = $value
+    }
+}
 $usedUids = @{}
 foreach ($relativePath in $files) {
     $path = Join-Path $repository $relativePath
@@ -58,7 +74,7 @@ foreach ($relativePath in $files) {
         $attributes = $tagMatch.Groups['attributes'].Value
         $localizable = @([regex]::Matches(
             $attributes,
-            '(?<property>Text|Header|Content|PlaceholderText|Title|AccessibleName|AutomationProperties\.Name|ToolTipService\.ToolTip)="(?<value>[^"{}]+)"') |
+            '(?<property>Text|Header|Content|PlaceholderText|Title|AccessibleName|AccessKey|AutomationProperties\.(?:Name|HelpText)|ToolTipService\.ToolTip)="(?<value>[^"{}]+)"') |
             Where-Object {
                 $value = $_.Groups['value'].Value
                 -not [string]::IsNullOrWhiteSpace($value) -and

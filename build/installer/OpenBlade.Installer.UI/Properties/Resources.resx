@@ -12,11 +12,44 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="Cancel" xml:space="preserve">
-    <value>Cancel</value>
+  <data name="_Cancel" xml:space="preserve">
+    <value>_Cancel</value>
   </data>
-  <data name="Cancel setup" xml:space="preserve">
-    <value>Cancel setup</value>
+  <data name="_Close" xml:space="preserve">
+    <value>_Close</value>
+  </data>
+  <data name="_Install" xml:space="preserve">
+    <value>_Install</value>
+  </data>
+  <data name="_Launch OpenBlade" xml:space="preserve">
+    <value>_Launch OpenBlade</value>
+  </data>
+  <data name="_Open log" xml:space="preserve">
+    <value>_Open log</value>
+  </data>
+  <data name="_Overwrite" xml:space="preserve">
+    <value>_Overwrite</value>
+  </data>
+  <data name="_Repair" xml:space="preserve">
+    <value>_Repair</value>
+  </data>
+  <data name="_Uninstall" xml:space="preserve">
+    <value>_Uninstall</value>
+  </data>
+  <data name="Activating OpenBlade files…" xml:space="preserve">
+    <value>Activating OpenBlade files…</value>
+  </data>
+  <data name="Another OpenBlade {0} installer build is already registered. {1}" xml:space="preserve">
+    <value>Another OpenBlade {0} installer build is already registered. {1}</value>
+  </data>
+  <data name="Applying the requested changes…" xml:space="preserve">
+    <value>Applying the requested changes…</value>
+  </data>
+  <data name="Applying OpenBlade changes…" xml:space="preserve">
+    <value>Applying OpenBlade changes…</value>
+  </data>
+  <data name="Cancel _setup" xml:space="preserve">
+    <value>Cancel _setup</value>
   </data>
   <data name="Cancel setup?" xml:space="preserve">
     <value>Cancel setup?</value>
@@ -27,23 +60,29 @@
   <data name="Cancelling and restoring the previous state…" xml:space="preserve">
     <value>Cancelling and restoring the previous state…</value>
   </data>
+  <data name="Checking the OpenBlade service…" xml:space="preserve">
+    <value>Checking the OpenBlade service…</value>
+  </data>
   <data name="Checking this PC…" xml:space="preserve">
     <value>Checking this PC…</value>
   </data>
-  <data name="Close" xml:space="preserve">
-    <value>Close</value>
+  <data name="Committing OpenBlade files…" xml:space="preserve">
+    <value>Committing OpenBlade files…</value>
   </data>
   <data name="Complete" xml:space="preserve">
     <value>Complete</value>
   </data>
+  <data name="Copying {0}…" xml:space="preserve">
+    <value>Copying {0}…</value>
+  </data>
+  <data name="Creating OpenBlade shortcuts…" xml:space="preserve">
+    <value>Creating OpenBlade shortcuts…</value>
+  </data>
   <data name="Help" xml:space="preserve">
     <value>Help</value>
   </data>
-  <data name="Hide details" xml:space="preserve">
-    <value>Hide details</value>
-  </data>
-  <data name="Install" xml:space="preserve">
-    <value>Install</value>
+  <data name="Hide _details" xml:space="preserve">
+    <value>Hide _details</value>
   </data>
   <data name="Install OpenBlade" xml:space="preserve">
     <value>Install OpenBlade</value>
@@ -57,11 +96,17 @@
   <data name="Installing OpenBlade" xml:space="preserve">
     <value>Installing OpenBlade</value>
   </data>
-  <data name="Keep working" xml:space="preserve">
-    <value>Keep working</value>
+  <data name="Installing the OpenBlade service…" xml:space="preserve">
+    <value>Installing the OpenBlade service…</value>
   </data>
-  <data name="Launch OpenBlade" xml:space="preserve">
-    <value>Launch OpenBlade</value>
+  <data name="Installing required Windows components…" xml:space="preserve">
+    <value>Installing required Windows components…</value>
+  </data>
+  <data name="Its cached installer is unavailable, so setup cannot safely repair or remove it. Use Windows installer recovery before trying again." xml:space="preserve">
+    <value>Its cached installer is unavailable, so setup cannot safely repair or remove it. Use Windows installer recovery before trying again.</value>
+  </data>
+  <data name="Keep _working" xml:space="preserve">
+    <value>Keep _working</value>
   </data>
   <data name="Maintenance" xml:space="preserve">
     <value>Maintenance</value>
@@ -69,11 +114,11 @@
   <data name="Newer version installed" xml:space="preserve">
     <value>Newer version installed</value>
   </data>
-  <data name="Open log" xml:space="preserve">
-    <value>Open log</value>
-  </data>
   <data name="OpenBlade" xml:space="preserve">
     <value>OpenBlade</value>
+  </data>
+  <data name="OpenBlade {0} is already installed. Run this installer interactively to confirm overwriting it." xml:space="preserve">
+    <value>OpenBlade {0} is already installed. Run this installer interactively to confirm overwriting it.</value>
   </data>
   <data name="OpenBlade {0} is installed" xml:space="preserve">
     <value>OpenBlade {0} is installed</value>
@@ -90,26 +135,71 @@
   <data name="OpenBlade Setup" xml:space="preserve">
     <value>OpenBlade Setup</value>
   </data>
+  <data name="OpenBlade setup could not inspect the installed state." xml:space="preserve">
+    <value>OpenBlade setup could not inspect the installed state.</value>
+  </data>
+  <data name="OpenBlade setup could not prepare the requested action." xml:space="preserve">
+    <value>OpenBlade setup could not prepare the requested action.</value>
+  </data>
+  <data name="OpenBlade setup could not prepare the requested action: {0}" xml:space="preserve">
+    <value>OpenBlade setup could not prepare the requested action: {0}</value>
+  </data>
+  <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
+    <value>OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again.</value>
+  </data>
+  <data name="OpenBlade was installed, but it could not be launched: {0}" xml:space="preserve">
+    <value>OpenBlade was installed, but it could not be launched: {0}</value>
+  </data>
   <data name="OpenBlade was removed" xml:space="preserve">
     <value>OpenBlade was removed</value>
   </data>
   <data name="OpenBlade will stop safely and restore the previous installation state." xml:space="preserve">
     <value>OpenBlade will stop safely and restore the previous installation state.</value>
   </data>
-  <data name="Overwrite" xml:space="preserve">
-    <value>Overwrite</value>
+  <data name="Preparing OpenBlade files…" xml:space="preserve">
+    <value>Preparing OpenBlade files…</value>
+  </data>
+  <data name="Preparing Windows uninstall support…" xml:space="preserve">
+    <value>Preparing Windows uninstall support…</value>
   </data>
   <data name="Preparing…" xml:space="preserve">
     <value>Preparing…</value>
   </data>
-  <data name="Remove saved profiles and settings" xml:space="preserve">
-    <value>Remove saved profiles and settings</value>
+  <data name="Reading the current installation…" xml:space="preserve">
+    <value>Reading the current installation…</value>
+  </data>
+  <data name="Recording installer ownership…" xml:space="preserve">
+    <value>Recording installer ownership…</value>
+  </data>
+  <data name="Registering Dynamic Lighting…" xml:space="preserve">
+    <value>Registering Dynamic Lighting…</value>
+  </data>
+  <data name="Remove saved _profiles and settings" xml:space="preserve">
+    <value>Remove saved _profiles and settings</value>
+  </data>
+  <data name="Removing an earlier OpenBlade registration…" xml:space="preserve">
+    <value>Removing an earlier OpenBlade registration…</value>
+  </data>
+  <data name="Removing Dynamic Lighting registration…" xml:space="preserve">
+    <value>Removing Dynamic Lighting registration…</value>
   </data>
   <data name="Removing OpenBlade" xml:space="preserve">
     <value>Removing OpenBlade</value>
   </data>
-  <data name="Repair" xml:space="preserve">
-    <value>Repair</value>
+  <data name="Removing OpenBlade {0}" xml:space="preserve">
+    <value>Removing OpenBlade {0}</value>
+  </data>
+  <data name="Removing OpenBlade files…" xml:space="preserve">
+    <value>Removing OpenBlade files…</value>
+  </data>
+  <data name="Removing OpenBlade shortcuts…" xml:space="preserve">
+    <value>Removing OpenBlade shortcuts…</value>
+  </data>
+  <data name="Removing saved OpenBlade data…" xml:space="preserve">
+    <value>Removing saved OpenBlade data…</value>
+  </data>
+  <data name="Removing the OpenBlade service…" xml:space="preserve">
+    <value>Removing the OpenBlade service…</value>
   </data>
   <data name="Repair overwrites the installed files with this installer, or uninstall OpenBlade while keeping saved profiles. To remove saved profiles too, close this installer and uninstall the registered OpenBlade entry from Windows Installed apps." xml:space="preserve">
     <value>Repair overwrites the installed files with this installer, or uninstall OpenBlade while keeping saved profiles. To remove saved profiles too, close this installer and uninstall the registered OpenBlade entry from Windows Installed apps.</value>
@@ -126,6 +216,12 @@
   <data name="Resolve existing OpenBlade installers" xml:space="preserve">
     <value>Resolve existing OpenBlade installers</value>
   </data>
+  <data name="Restoring the previous installation state…" xml:space="preserve">
+    <value>Restoring the previous installation state…</value>
+  </data>
+  <data name="Run this installer interactively and choose Repair or Uninstall." xml:space="preserve">
+    <value>Run this installer interactively and choose Repair or Uninstall.</value>
+  </data>
   <data name="Run this installer normally to install, repair, or remove OpenBlade." xml:space="preserve">
     <value>Run this installer normally to install, repair, or remove OpenBlade.</value>
   </data>
@@ -138,23 +234,50 @@
   <data name="Setup" xml:space="preserve">
     <value>Setup</value>
   </data>
+  <data name="Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first." xml:space="preserve">
+    <value>Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first.</value>
+  </data>
   <data name="Setup completed successfully." xml:space="preserve">
     <value>Setup completed successfully.</value>
   </data>
   <data name="Setup could not finish" xml:space="preserve">
     <value>Setup could not finish</value>
   </data>
+  <data name="Setup details" xml:space="preserve">
+    <value>Setup details</value>
+  </data>
   <data name="Setup failed" xml:space="preserve">
     <value>Setup failed</value>
   </data>
-  <data name="Show details" xml:space="preserve">
-    <value>Show details</value>
+  <data name="Setup failed with 0x{0:X8}." xml:space="preserve">
+    <value>Setup failed with 0x{0:X8}.</value>
   </data>
-  <data name="Uninstall" xml:space="preserve">
-    <value>Uninstall</value>
+  <data name="Setup failed: {0}" xml:space="preserve">
+    <value>Setup failed: {0}</value>
+  </data>
+  <data name="Setup progress" xml:space="preserve">
+    <value>Setup progress</value>
+  </data>
+  <data name="Setup was cancelled and the previous state was restored." xml:space="preserve">
+    <value>Setup was cancelled and the previous state was restored.</value>
+  </data>
+  <data name="Show _details" xml:space="preserve">
+    <value>Show _details</value>
+  </data>
+  <data name="Stopping OpenBlade components…" xml:space="preserve">
+    <value>Stopping OpenBlade components…</value>
+  </data>
+  <data name="The registered OpenBlade installer ownership token is missing or malformed. Use Windows installer recovery before trying again." xml:space="preserve">
+    <value>The registered OpenBlade installer ownership token is missing or malformed. Use Windows installer recovery before trying again.</value>
+  </data>
+  <data name="The setup command is unavailable." xml:space="preserve">
+    <value>The setup command is unavailable.</value>
   </data>
   <data name="Version {0}" xml:space="preserve">
     <value>Version {0}</value>
+  </data>
+  <data name="Windows could not open the requested path: {0}" xml:space="preserve">
+    <value>Windows could not open the requested path: {0}</value>
   </data>
   <data name="Working" xml:space="preserve">
     <value>Working</value>

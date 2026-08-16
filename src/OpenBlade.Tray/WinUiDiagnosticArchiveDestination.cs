@@ -26,9 +26,13 @@ public sealed class WinUiDiagnosticArchiveDestination(WindowId windowId)
             SuggestedFileName = suggestedBaseName,
             DefaultFileExtension = ".zip",
             ShowOverwritePrompt = true,
-            Title = "Export OpenBlade diagnostics",
+            Title = LocalizedResources.Get(
+                "DiagnosticArchivePicker_Title",
+                "Export OpenBlade diagnostics"),
         };
-        picker.FileTypeChoices.Add("ZIP archives", [".zip"]);
+        picker.FileTypeChoices.Add(
+            LocalizedResources.Get("DiagnosticArchivePicker_ZipArchives", "ZIP archives"),
+            [".zip"]);
 
         PickFileResult? result = await picker.PickSaveFileAsync().AsTask(token);
         token.ThrowIfCancellationRequested();

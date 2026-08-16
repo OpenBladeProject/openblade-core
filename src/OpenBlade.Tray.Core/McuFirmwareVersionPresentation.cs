@@ -8,7 +8,7 @@ internal static class McuFirmwareVersionPresentation
     {
         string firmwareValue = string.IsNullOrWhiteSpace(value)
             || string.Equals(value.Trim(), "Unavailable", StringComparison.OrdinalIgnoreCase)
-            ? "Unavailable"
+            ? TrayText.Get("Unavailable")
             : value.Trim();
         if (Version.TryParse(firmwareValue, out Version? version)
             && version.Build == 0

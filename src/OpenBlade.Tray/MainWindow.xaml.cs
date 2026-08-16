@@ -52,6 +52,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly VisibleObservationLoop trayObservationLoop;
     private readonly VisibleObservationLoop gpuAppObservationLoop;
     private readonly WindowsProcessorEfficiencyPolicy processorPolicy;
+    private readonly bool localizationSnapshotMode;
     private readonly Func<TrayNotification, bool> showNotification;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
     private readonly SessionGpuAppAdapter gpuAppAdapter;
@@ -140,8 +141,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     internal MainWindow(
         WindowsProcessorEfficiencyPolicy processorPolicy,
         IStartupRegistration startupRegistration,
-        Func<TrayNotification, bool>? showNotification = null)
+        Func<TrayNotification, bool>? showNotification = null,
+        bool localizationSnapshotMode = false)
     {
+        this.localizationSnapshotMode = localizationSnapshotMode;
         this.processorPolicy = processorPolicy
             ?? throw new ArgumentNullException(nameof(processorPolicy));
         ArgumentNullException.ThrowIfNull(startupRegistration);
@@ -225,6 +228,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         gpuClockOffsetCommitTimer.IsRepeating = false;
         gpuClockOffsetCommitTimer.Tick += OnGpuClockOffsetCommitTimerTick;
         micaBackdropHost = new MicaBackdropHost(this, Root);
+        if (localizationSnapshotMode)
+        {
+            Root.Background = (Microsoft.UI.Xaml.Media.Brush)
+                Microsoft.UI.Xaml.Application.Current.Resources[
+                "SolidBackgroundFillColorBaseBrush"];
+        }
         Root.DataContext = ViewModel;
         Root.Loaded += OnRootLoaded;
         Root.SizeChanged += OnRootSizeChanged;
@@ -251,6 +260,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public UpdateCheckViewModel UpdateViewModel { get; }
 
     public FirmwareUpdateAssistantViewModel FirmwareUpdateViewModel { get; }
+
+    internal static MainWindow CreateLocalizationSnapshot() => new(
+        WindowsProcessorEfficiencyPolicy.Discover(),
+        new WindowsStartupRegistration(),
+        showNotification: null,
+        localizationSnapshotMode: true);
 
     public bool StartMinimized { get; private set; }
 
@@ -318,9 +333,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public IReadOnlyList<AppAccentColorOption> AccentColorOptions { get; } =
     [
-        new(AppAccentColorMode.RazerGreen, "OpenBlade green"),
-        new(AppAccentColorMode.Windows, "Windows accent"),
-        new(AppAccentColorMode.Custom, "Custom"),
+        new(AppAccentColorMode.RazerGreen, LocalizedResources.Get("MainWindow_Accent_OpenBladeGreen", "OpenBlade green")),
+        new(AppAccentColorMode.Windows, LocalizedResources.Get("MainWindow_Accent_Windows", "Windows accent")),
+        new(AppAccentColorMode.Custom, LocalizedResources.Get("MainWindow_Accent_Custom", "Custom")),
     ];
 
     public AppAccentColorOption SelectedAccentColorOption
@@ -342,10 +357,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public string AccentColorSummary => accentColorMode switch
     {
-        AppAccentColorMode.RazerGreen => "OpenBlade green (#47E10C)",
-        AppAccentColorMode.Windows => "Windows accent",
-        AppAccentColorMode.Custom => $"Custom ({customAccentColor})",
-        _ => "OpenBlade green (#47E10C)",
+        AppAccentColorMode.RazerGreen => LocalizedResources.Get("MainWindow_Accent_OpenBladeGreenSummary", "OpenBlade green (#47E10C)"),
+        AppAccentColorMode.Windows => LocalizedResources.Get("MainWindow_Accent_Windows", "Windows accent"),
+        AppAccentColorMode.Custom => LocalizedResources.Format("MainWindow_Accent_CustomSummary", "Custom ({0})", customAccentColor),
+        _ => LocalizedResources.Get("MainWindow_Accent_OpenBladeGreenSummary", "OpenBlade green (#47E10C)"),
     };
 
     public Microsoft.UI.Xaml.Media.Brush AccentColorPreviewBrush =>
@@ -1221,8 +1236,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         if (!TryShowNotification(new TrayNotification(
-            "OpenBlade update available",
-            $"OpenBlade {args.ReleaseTag.TrimStart('v', 'V')} is ready to download.",
+            LocalizedResources.Get(
+                "MainWindow_Notification_AppUpdateTitle",
+                "OpenBlade update available"),
+            LocalizedResources.Format(
+                "MainWindow_Notification_AppUpdateBody",
+                "OpenBlade {0} is ready to download.",
+                args.ReleaseTag.TrimStart('v', 'V')),
             TrayNotificationSeverity.Information,
             ReplacementTag: AppUpdateNotificationTag,
             Destination: TrayNotificationDestination.Updates)))
@@ -1247,7 +1267,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         if (!TryShowNotification(new TrayNotification(
-            "Razer firmware update available",
+            LocalizedResources.Get(
+                "MainWindow_Notification_FirmwareUpdateTitle",
+                "Razer firmware update available"),
             args.Summary,
             TrayNotificationSeverity.Information,
             ReplacementTag: FirmwareUpdateNotificationTag,
@@ -1332,14 +1354,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             {
                 string profile = current switch
                 {
-                    PowerSource.PluggedIn => "AC profile",
-                    PowerSource.UsbC => "USB-C profile",
-                    PowerSource.Battery => "Battery profile",
-                    _ => "active power profile",
+                    PowerSource.PluggedIn => LocalizedResources.Get("MainWindow_Notification_ProfileAc", "AC profile"),
+                    PowerSource.UsbC => LocalizedResources.Get("MainWindow_Notification_ProfileUsbC", "USB-C profile"),
+                    PowerSource.Battery => LocalizedResources.Get("MainWindow_Notification_ProfileBattery", "Battery profile"),
+                    _ => LocalizedResources.Get("MainWindow_Notification_ProfileActive", "active power profile"),
                 };
                 TryShowNotification(new TrayNotification(
-                    "Power profile changed",
-                    $"OpenBlade is now using the {profile}.",
+                    LocalizedResources.Get(
+                        "MainWindow_Notification_ProfileChangedTitle",
+                        "Power profile changed"),
+                    LocalizedResources.Format(
+                        "MainWindow_Notification_ProfileChangedBody",
+                        "OpenBlade is now using the {0}.",
+                        profile),
                     TrayNotificationSeverity.Information,
                     ReplacementTag: ProfileNotificationTag,
                     Destination: TrayNotificationDestination.Laptop));
@@ -1360,7 +1387,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 && IsNotificationEnabled(NotificationCategory.ControllerAdvisories))
             {
                 TryShowNotification(new TrayNotification(
-                    "Razer controller detected",
+                    LocalizedResources.Get(
+                        "MainWindow_Notification_ControllerDetectedTitle",
+                        "Razer controller detected"),
                     current,
                     TrayNotificationSeverity.Information,
                     ReplacementTag: ControllerAdvisoryNotificationTag,
@@ -1380,7 +1409,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 && IsNotificationEnabled(NotificationCategory.OperationFailures))
             {
                 TryShowNotification(new TrayNotification(
-                    "OpenBlade operation failed",
+                    LocalizedResources.Get(
+                        "MainWindow_Notification_OperationFailedTitle",
+                        "OpenBlade operation failed"),
                     current,
                     TrayNotificationSeverity.Error,
                     ReplacementTag: OperationFailureNotificationTag,
@@ -1414,12 +1445,20 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         var dialog = new ContentDialog
         {
             XamlRoot = Root.XamlRoot,
-            Title = "Check for OpenBlade updates?",
-            Content = "OpenBlade can check GitHub for a new release once per day when "
-                + "the tray starts. The check sends no hardware state, profiles, "
-                + "settings, or diagnostics. You can change this later in Settings.",
-            PrimaryButtonText = "Use daily checks",
-            CloseButtonText = "Manual only",
+            Title = LocalizedResources.Get(
+                "MainWindow_UpdateConsent_Title",
+                "Check for OpenBlade updates?"),
+            Content = LocalizedResources.Get(
+                "MainWindow_UpdateConsent_Content",
+                "OpenBlade can check GitHub for a new release once per day when "
+                    + "the tray starts. The check sends no hardware state, profiles, "
+                    + "settings, or diagnostics. You can change this later in Settings."),
+            PrimaryButtonText = LocalizedResources.Get(
+                "MainWindow_UpdateConsent_PrimaryButton",
+                "Use daily checks"),
+            CloseButtonText = LocalizedResources.Get(
+                "MainWindow_UpdateConsent_CloseButton",
+                "Manual only"),
             DefaultButton = ContentDialogButton.Primary,
         };
 
@@ -1799,8 +1838,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             if (scan.Status == SessionGpuOperationStatus.Failed)
             {
                 await ShowGpuAppsMessageAsync(
-                    "GPU activity unavailable",
-                    scan.Error ?? "Windows GPU activity counters are unavailable.");
+                    LocalizedResources.Get("MainWindow_GpuApps_UnavailableTitle", "GPU activity unavailable"),
+                    scan.Error ?? LocalizedResources.Get(
+                        "MainWindow_GpuApps_CountersUnavailable",
+                        "Windows GPU activity counters are unavailable."));
                 return;
             }
 
@@ -1809,26 +1850,38 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             if (eligible.Length == 0)
             {
                 string message = blocked.Length == 0
-                    ? "No current-user apps are holding an NVIDIA GPU engine."
-                    : "No GPU users can be closed safely.\n\n"
+                    ? LocalizedResources.Get(
+                        "MainWindow_GpuApps_NoneUsingGpu",
+                        "No current-user apps are holding an NVIDIA GPU engine.")
+                    : LocalizedResources.Get(
+                        "MainWindow_GpuApps_NoneSafeToClose",
+                        "No GPU users can be closed safely.\n\n")
                         + FormatGpuApps(blocked, includeBlockReason: true);
-                await ShowGpuAppsMessageAsync("No GPU apps to close", message);
+                await ShowGpuAppsMessageAsync(
+                    LocalizedResources.Get("MainWindow_GpuApps_NoneToCloseTitle", "No GPU apps to close"),
+                    message);
                 return;
             }
 
             var confirmation = new ContentDialog
             {
                 XamlRoot = Root.XamlRoot,
-                Title = "Close apps using the NVIDIA GPU?",
+                Title = LocalizedResources.Get(
+                    "MainWindow_GpuApps_CloseConfirmationTitle",
+                    "Close apps using the NVIDIA GPU?"),
                 Content = CreateGpuAppsDialogContent(
-                    "OpenBlade will ask these apps to close. Save your work first.\n\n"
+                    LocalizedResources.Get(
+                        "MainWindow_GpuApps_CloseConfirmationIntro",
+                        "OpenBlade will ask these apps to close. Save your work first.\n\n")
                     + FormatGpuApps(eligible, includeBlockReason: false)
                     + (blocked.Length == 0
                         ? string.Empty
-                        : "\n\nNot closeable:\n"
+                        : LocalizedResources.Get(
+                            "MainWindow_GpuApps_NotCloseableHeading",
+                            "\n\nNot closeable:\n")
                             + FormatGpuApps(blocked, includeBlockReason: true))),
-                PrimaryButtonText = "Close apps",
-                CloseButtonText = "Cancel",
+                PrimaryButtonText = LocalizedResources.Get("MainWindow_GpuApps_CloseButton", "Close apps"),
+                CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
                 DefaultButton = ContentDialogButton.Close,
             };
             if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
@@ -1847,28 +1900,36 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             if (afterClose.Status == SessionGpuOperationStatus.Failed)
             {
                 await ShowGpuAppsMessageAsync(
-                    "GPU activity unavailable",
-                    afterClose.Error ?? "GPU activity could not be checked after closing apps.");
+                    LocalizedResources.Get("MainWindow_GpuApps_UnavailableTitle", "GPU activity unavailable"),
+                    afterClose.Error ?? LocalizedResources.Get(
+                        "MainWindow_GpuApps_AfterCloseUnavailable",
+                        "GPU activity could not be checked after closing apps."));
                 return;
             }
             SessionGpuApp[] remaining = MatchTargets(afterClose.Apps, eligible);
             if (remaining.Length == 0)
             {
                 await ShowGpuAppsMessageAsync(
-                    "GPU apps closed",
-                    "The selected apps released their NVIDIA GPU engines. The GPU may take a moment to return to sleep.");
+                    LocalizedResources.Get("MainWindow_GpuApps_ClosedTitle", "GPU apps closed"),
+                    LocalizedResources.Get(
+                        "MainWindow_GpuApps_ClosedBody",
+                        "The selected apps released their NVIDIA GPU engines. The GPU may take a moment to return to sleep."));
                 return;
             }
 
             var forceConfirmation = new ContentDialog
             {
                 XamlRoot = Root.XamlRoot,
-                Title = "Force close remaining apps?",
+                Title = LocalizedResources.Get(
+                    "MainWindow_GpuApps_ForceConfirmationTitle",
+                    "Force close remaining apps?"),
                 Content = CreateGpuAppsDialogContent(
-                    "These apps did not close. Force closing can discard unsaved work.\n\n"
+                    LocalizedResources.Get(
+                        "MainWindow_GpuApps_ForceConfirmationIntro",
+                        "These apps did not close. Force closing can discard unsaved work.\n\n")
                     + FormatGpuApps(remaining, includeBlockReason: false)),
-                PrimaryButtonText = "Force close",
-                CloseButtonText = "Keep running",
+                PrimaryButtonText = LocalizedResources.Get("MainWindow_GpuApps_ForceButton", "Force close"),
+                CloseButtonText = LocalizedResources.Get("MainWindow_GpuApps_KeepRunningButton", "Keep running"),
                 DefaultButton = ContentDialogButton.Close,
             };
             if (await forceConfirmation.ShowAsync() != ContentDialogResult.Primary)
@@ -1886,14 +1947,20 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             if (finalScan.Status == SessionGpuOperationStatus.Failed)
             {
                 await ShowGpuAppsMessageAsync(
-                    "GPU activity unavailable",
-                    finalScan.Error ?? "GPU activity could not be checked after force closing apps.");
+                    LocalizedResources.Get("MainWindow_GpuApps_UnavailableTitle", "GPU activity unavailable"),
+                    finalScan.Error ?? LocalizedResources.Get(
+                        "MainWindow_GpuApps_AfterForceUnavailable",
+                        "GPU activity could not be checked after force closing apps."));
                 return;
             }
             SessionGpuApp[] survivors = MatchTargets(finalScan.Apps, remaining);
             string finalMessage = survivors.Length == 0
-                ? "The selected apps were force closed. The GPU may take a moment to return to sleep."
-                : "Some apps could not be closed:\n\n"
+                ? LocalizedResources.Get(
+                    "MainWindow_GpuApps_ForceClosedBody",
+                    "The selected apps were force closed. The GPU may take a moment to return to sleep.")
+                : LocalizedResources.Get(
+                    "MainWindow_GpuApps_SurvivorsHeading",
+                    "Some apps could not be closed:\n\n")
                     + FormatGpuApps(survivors, includeBlockReason: true);
             if (forced.Results.Any(result => !result.Succeeded))
             {
@@ -1901,11 +1968,20 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     Environment.NewLine,
                     forced.Results
                         .Where(result => !result.Succeeded)
-                        .Select(result => $"- PID {result.ProcessId}: {result.Error}"));
-                finalMessage += $"\n\nReported failures:\n{failures}";
+                        .Select(result => LocalizedResources.Format(
+                            "MainWindow_GpuApps_FailureItem",
+                            "- PID {0}: {1}",
+                            result.ProcessId,
+                            result.Error)));
+                finalMessage += LocalizedResources.Format(
+                    "MainWindow_GpuApps_FailuresHeading",
+                    "\n\nReported failures:\n{0}",
+                    failures);
             }
             await ShowGpuAppsMessageAsync(
-                survivors.Length == 0 ? "GPU apps force closed" : "GPU apps still running",
+                survivors.Length == 0
+                    ? LocalizedResources.Get("MainWindow_GpuApps_ForceClosedTitle", "GPU apps force closed")
+                    : LocalizedResources.Get("MainWindow_GpuApps_StillRunningTitle", "GPU apps still running"),
                 finalMessage);
         }
         catch (Exception exception) when (
@@ -1915,8 +1991,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 or OperationCanceledException)
         {
             await ShowGpuAppsMessageAsync(
-                "GPU activity unavailable",
-                $"The Session Agent could not complete the GPU app operation: {exception.Message}");
+                LocalizedResources.Get("MainWindow_GpuApps_UnavailableTitle", "GPU activity unavailable"),
+                LocalizedResources.Format(
+                    "MainWindow_GpuApps_SessionAgentFailure",
+                    "The Session Agent could not complete the GPU app operation: {0}",
+                    exception.Message));
         }
         finally
         {
@@ -1947,7 +2026,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             XamlRoot = Root.XamlRoot,
             Title = title,
             Content = CreateGpuAppsDialogContent(message),
-            CloseButtonText = "Close",
+            CloseButtonText = LocalizedResources.Get("Common_Close", "Close"),
             DefaultButton = ContentDialogButton.Close,
         };
         _ = await dialog.ShowAsync();
@@ -1966,8 +2045,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         bool includeBlockReason) => string.Join(
             Environment.NewLine,
             apps.Select(app => includeBlockReason && app.BlockReason is not null
-                ? $"- {app.Name} (PID {app.ProcessId}): {app.BlockReason}"
-                : $"- {app.Name} (PID {app.ProcessId})"));
+                ? LocalizedResources.Format(
+                    "MainWindow_GpuApps_AppItemWithReason",
+                    "- {0} (PID {1}): {2}",
+                    app.Name,
+                    app.ProcessId,
+                    app.BlockReason)
+                : LocalizedResources.Format(
+                    "MainWindow_GpuApps_AppItem",
+                    "- {0} (PID {1})",
+                    app.Name,
+                    app.ProcessId)));
 
     private static SessionGpuApp[] MatchTargets(
         IReadOnlyList<SessionGpuApp> current,
@@ -2754,7 +2842,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         LaptopPage.Visibility = destination == "laptop"
             ? Visibility.Visible
             : Visibility.Collapsed;
-        LightingPage.Visibility = destination == "lighting" && ViewModel.IsLightingVisible
+        LightingPage.Visibility = destination == "lighting"
+            && (localizationSnapshotMode || ViewModel.IsLightingVisible)
             ? Visibility.Visible
             : Visibility.Collapsed;
         DisplayPage.Visibility = destination == "display"
@@ -2799,13 +2888,39 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     UpdateDashboardLayout();
                 });
         }
-        else if (destination == "display")
+        else if (destination == "display" && !localizationSnapshotMode)
         {
             _ = RefreshDisplaySettingsAsync();
         }
 
         UpdateDisplayRefreshState();
     }
+
+    internal void SelectLocalizationSnapshotPage(string destination)
+    {
+        NavigationViewItem selected = destination switch
+        {
+            "home" => HomeNavigationItem,
+            "profiles" => ProfilesNavigationItem,
+            "laptop" => LaptopNavigationItem,
+            "lighting" => LightingNavigationItem,
+            "display" => DisplayNavigationItem,
+            "settings" => SettingsNavigationItem,
+            "about" => AboutNavigationItem,
+            _ => throw new ArgumentOutOfRangeException(nameof(destination)),
+        };
+        MainNavigation.SelectedItem = selected;
+        ApplyNavigationDestination(destination);
+    }
+
+    internal bool HasLocalizedCheckNowButton(
+        string expectedContent,
+        string expectedAccessibleName) =>
+        string.Equals(CheckNowButton.Content as string, expectedContent, StringComparison.Ordinal)
+        && string.Equals(
+            AutomationProperties.GetName(CheckNowButton),
+            expectedAccessibleName,
+            StringComparison.Ordinal);
 
     private void UpdateGpuAppObservationState()
     {
@@ -3152,13 +3267,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             content.Children.Add(new TextBlock
             {
-                Text = "Forcing control may send captured commands to firmware they were not validated against. Exact laptop and USB identity checks remain required.",
+                Text = LocalizedResources.Get(
+                    "MainWindow_FirmwareOverride_Warning",
+                    "Forcing control may send captured commands to firmware they were not validated against. Exact laptop and USB identity checks remain required."),
                 TextWrapping = TextWrapping.Wrap,
                 Style = (Style)Root.Resources["SecondaryTextStyle"],
             });
             runAnyway = new Microsoft.UI.Xaml.Controls.CheckBox
             {
-                Content = "Ignore this firmware mismatch and run anyway",
+                Content = LocalizedResources.Get(
+                    "MainWindow_FirmwareOverride_CheckBox",
+                    "Ignore this firmware mismatch and run anyway"),
                 IsChecked = ViewModel.AllowUntestedFirmware,
             };
             content.Children.Add(runAnyway);
@@ -3169,8 +3288,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             XamlRoot = Root.XamlRoot,
             Title = ViewModel.PlatformCompatibilityWarningTitle,
             Content = content,
-            PrimaryButtonText = runAnyway is null ? string.Empty : "Save",
-            CloseButtonText = "Close",
+            PrimaryButtonText = runAnyway is null
+                ? string.Empty
+                : LocalizedResources.Get("Common_Save", "Save"),
+            CloseButtonText = LocalizedResources.Get("Common_Close", "Close"),
             DefaultButton = ContentDialogButton.Close,
         };
         if (await ShowContentDialogAsync(dialog) != ContentDialogResult.Primary
@@ -3213,7 +3334,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        SetStopRazerServicesProgress(isBusy: true, busyLabel: "Checking…");
+        SetStopRazerServicesProgress(
+            isBusy: true,
+            busyLabel: LocalizedResources.Get("MainWindow_StopRazer_Checking", "Checking…"));
         try
         {
             RazerServiceInventory before = await RazerServiceStopOperation.ObserveAsync(
@@ -3228,8 +3351,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             if (candidates.Count == 0)
             {
                 await ShowMessageDialogAsync(
-                    "No known Razer controller services are running",
-                    "OpenBlade found no active Synapse or Chroma controller services in its reviewed allowlist.");
+                    LocalizedResources.Get(
+                        "MainWindow_StopRazer_NoneTitle",
+                        "No known Razer controller services are running"),
+                    LocalizedResources.Get(
+                        "MainWindow_StopRazer_NoneBody",
+                        "OpenBlade found no active Synapse or Chroma controller services in its reviewed allowlist."));
                 return;
             }
 
@@ -3244,14 +3371,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             var confirmation = new ContentDialog
             {
                 XamlRoot = xamlRoot,
-                Title = "Stop Razer services?",
-                Content = "These known controller services are currently active:\n\n"
-                    + serviceList
-                    + "\n\nAfter approval, OpenBlade will freshly check the same reviewed allowlist "
-                    + "and stop any active matches. This does not uninstall Razer software or disable service startup. "
-                    + "Razer software may start the services again, and features that depend on them may stop working until then.",
-                PrimaryButtonText = "Stop services",
-                CloseButtonText = "Cancel",
+                Title = LocalizedResources.Get("MainWindow_StopRazer_ConfirmTitle", "Stop Razer services?"),
+                Content = LocalizedResources.Format(
+                    "MainWindow_StopRazer_ConfirmBody",
+                    "These known controller services are currently active:\n\n{0}\n\nAfter approval, OpenBlade will freshly check the same reviewed allowlist and stop any active matches. This does not uninstall Razer software or disable service startup. Razer software may start the services again, and features that depend on them may stop working until then.",
+                    serviceList),
+                PrimaryButtonText = LocalizedResources.Get("MainWindow_StopRazer_StopButton", "Stop services"),
+                CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
                 DefaultButton = ContentDialogButton.Close,
                 PrimaryButtonStyle = (Style)Root.Resources["DestructiveButtonStyle"],
             };
@@ -3261,7 +3387,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 return;
             }
 
-            SetStopRazerServicesProgress(isBusy: true, busyLabel: "Stopping…");
+            SetStopRazerServicesProgress(
+                isBusy: true,
+                busyLabel: LocalizedResources.Get("MainWindow_StopRazer_Stopping", "Stopping…"));
 
             if (Microsoft.UI.Xaml.Application.Current is not App app)
             {
@@ -3272,8 +3400,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             if (outcome == ElevatedServiceControlOutcome.Canceled)
             {
                 await ShowMessageDialogAsync(
-                    "Razer service stop canceled",
-                    "Windows did not grant administrator permission. OpenBlade did not retry the request.");
+                    LocalizedResources.Get("MainWindow_StopRazer_CanceledTitle", "Razer service stop canceled"),
+                    LocalizedResources.Get(
+                        "MainWindow_StopRazer_CanceledBody",
+                        "Windows did not grant administrator permission. OpenBlade did not retry the request."));
                 return;
             }
 
@@ -3285,8 +3415,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             Trace.TraceError("Razer service stop failed: {0}", exception);
             await ShowMessageDialogAsync(
-                "OpenBlade could not stop Razer services",
-                exception.Message);
+                LocalizedResources.Get(
+                    "MainWindow_StopRazer_FailedTitle",
+                    "OpenBlade could not stop Razer services"),
+                LocalizedResources.Format("Common_ErrorWithDetails", "{0}", exception.Message));
         }
         finally
         {
@@ -3305,9 +3437,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (!after.Complete)
         {
             await ShowMessageDialogAsync(
-                "Razer service status is unconfirmed",
-                "The elevated request finished, but OpenBlade could not read the final service state. "
-                    + after.Error);
+                LocalizedResources.Get(
+                    "MainWindow_StopRazer_UnconfirmedTitle",
+                    "Razer service status is unconfirmed"),
+                LocalizedResources.Format(
+                    "MainWindow_StopRazer_UnconfirmedBody",
+                    "The elevated request finished, but OpenBlade could not read the final service state. {0}",
+                    after.Error));
             return;
         }
 
@@ -3320,10 +3456,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (remaining.Count == 0)
         {
             string note = helperOutcome == ElevatedServiceControlOutcome.Indeterminate
-                ? "\n\nThe helper result was indeterminate, but fresh readback confirms the services are stopped or no longer installed."
+                ? LocalizedResources.Get(
+                    "MainWindow_StopRazer_IndeterminateNote",
+                    "\n\nThe helper result was indeterminate, but fresh readback confirms the services are stopped or no longer installed.")
                 : string.Empty;
             await ShowMessageDialogAsync(
-                "Razer services stopped",
+                LocalizedResources.Get("MainWindow_StopRazer_SucceededTitle", "Razer services stopped"),
                 string.Join(Environment.NewLine, stopped.Select(service => $"• {service}"))
                     + note);
             return;
@@ -3331,16 +3469,24 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         string content = stopped.Count == 0
             ? string.Empty
-            : "Stopped or no longer installed:\n"
+            : LocalizedResources.Get(
+                "MainWindow_StopRazer_StoppedHeading",
+                "Stopped or no longer installed:\n")
                 + string.Join(Environment.NewLine, stopped.Select(service => $"• {service}"))
                 + "\n\n";
-        content += "Still active or pending:\n"
+        content += LocalizedResources.Get(
+                "MainWindow_StopRazer_RemainingHeading",
+                "Still active or pending:\n")
             + string.Join(
                 Environment.NewLine,
                 remaining.Select(service => $"• {service.DisplayName}"))
-            + "\n\nOpenBlade did not retry any stop request.";
+            + LocalizedResources.Get(
+                "MainWindow_StopRazer_NoRetryNote",
+                "\n\nOpenBlade did not retry any stop request.");
         await ShowMessageDialogAsync(
-            "Some Razer services could not be confirmed stopped",
+            LocalizedResources.Get(
+                "MainWindow_StopRazer_PartialTitle",
+                "Some Razer services could not be confirmed stopped"),
             content);
     }
 
@@ -3394,7 +3540,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 XamlRoot = xamlRoot,
                 Title = title,
                 Content = content,
-                CloseButtonText = "Close",
+                CloseButtonText = LocalizedResources.Get("Common_Close", "Close"),
                 DefaultButton = ContentDialogButton.Close,
             };
             await ShowContentDialogAsync(dialog);
@@ -3419,11 +3565,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ? Visibility.Collapsed
             : Visibility.Visible;
         StopRazerServicesButtonLabel.Text = isBusy
-            ? busyLabel ?? "Working…"
-            : "Stop services";
+            ? busyLabel ?? LocalizedResources.Get("Common_Working", "Working…")
+            : LocalizedResources.Get("MainWindow_StopRazer_StopButton", "Stop services");
         AutomationProperties.SetName(
             StopRazerServicesButton,
-            isBusy ? busyLabel ?? "Working with Razer services" : "Stop Razer services");
+            isBusy
+                ? busyLabel ?? LocalizedResources.Get(
+                    "MainWindow_StopRazer_WorkingAutomationName",
+                    "Working with Razer services")
+                : LocalizedResources.Get(
+                    "MainWindow_StopRazer_AutomationName",
+                    "Stop Razer services"));
     }
 
     private async void OnShutdownOpenBlade(object sender, RoutedEventArgs args)
@@ -3431,11 +3583,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         var confirmation = new ContentDialog
         {
             XamlRoot = Root.XamlRoot,
-            Title = "Shut down OpenBlade?",
-            Content = "This stops the app, display helper, and hardware service. "
-                + "Reopen OpenBlade and use Start OpenBlade in troubleshooting to turn it back on.",
-            PrimaryButtonText = "Shut down",
-            CloseButtonText = "Cancel",
+            Title = LocalizedResources.Get("MainWindow_Shutdown_Title", "Shut down OpenBlade?"),
+            Content = LocalizedResources.Get(
+                "MainWindow_Shutdown_Content",
+                "This stops the app, display helper, and hardware service. "
+                    + "Reopen OpenBlade and use Start OpenBlade in troubleshooting to turn it back on."),
+            PrimaryButtonText = LocalizedResources.Get("MainWindow_Shutdown_PrimaryButton", "Shut down"),
+            CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
             DefaultButton = ContentDialogButton.Close,
             PrimaryButtonStyle = (Style)Root.Resources["DestructiveButtonStyle"],
         };
@@ -3455,8 +3609,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             Trace.TraceError("OpenBlade shutdown failed: {0}", exception);
             await ShowMessageDialogAsync(
-                "OpenBlade could not shut down",
-                exception.Message);
+                LocalizedResources.Get("MainWindow_Shutdown_FailedTitle", "OpenBlade could not shut down"),
+                LocalizedResources.Format("Common_ErrorWithDetails", "{0}", exception.Message));
         }
     }
 
@@ -3477,8 +3631,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 {
                     SetStartOpenBladeProgress(isStarting: false);
                     await ShowMessageDialogAsync(
-                        "OpenBlade service is already running",
-                        "The tray will reconnect automatically. This can take a few seconds.");
+                        LocalizedResources.Get(
+                            "MainWindow_Start_AlreadyRunningTitle",
+                            "OpenBlade service is already running"),
+                        LocalizedResources.Get(
+                            "MainWindow_Start_AlreadyRunningBody",
+                            "The tray will reconnect automatically. This can take a few seconds."));
                 }
             }
         }
@@ -3486,8 +3644,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             Trace.TraceError("OpenBlade service start failed: {0}", exception);
             await ShowMessageDialogAsync(
-                "OpenBlade could not start",
-                exception.Message);
+                LocalizedResources.Get("MainWindow_Start_FailedTitle", "OpenBlade could not start"),
+                LocalizedResources.Format("Common_ErrorWithDetails", "{0}", exception.Message));
         }
         finally
         {
@@ -3503,7 +3661,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         StartOpenBladeButton.IsEnabled = !isStarting;
         AutomationProperties.SetName(
             StartOpenBladeButton,
-            isStarting ? "Starting OpenBlade" : "Start OpenBlade");
+            isStarting
+                ? LocalizedResources.Get("MainWindow_Start_Starting", "Starting OpenBlade")
+                : LocalizedResources.Get("MainWindow_Start_Button", "Start OpenBlade"));
         StartOpenBladeProgressRing.IsActive = isStarting;
         StartOpenBladeProgressRing.Opacity = isStarting ? 1 : 0;
     }
@@ -3517,9 +3677,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 SuggestedFileName = $"OpenBlade-profiles-{DateTime.Now:yyyy-MM-dd}",
                 DefaultFileExtension = ".json",
                 ShowOverwritePrompt = true,
-                Title = "Export OpenBlade profiles",
+                Title = LocalizedResources.Get("MainWindow_ProfileExport_Title", "Export OpenBlade profiles"),
             };
-            picker.FileTypeChoices.Add("JSON files", [".json"]);
+            picker.FileTypeChoices.Add(
+                LocalizedResources.Get("MainWindow_ProfilePicker_JsonFiles", "JSON files"),
+                [".json"]);
 
             PickFileResult? result = await picker.PickSaveFileAsync();
             if (result is null)
@@ -3539,8 +3701,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             Trace.TraceError("OpenBlade profile export failed: {0}", exception);
             await ShowMessageDialogAsync(
-                "Profiles could not be exported",
-                "OpenBlade could not save the selected JSON file.");
+                LocalizedResources.Get("MainWindow_ProfileExport_FailedTitle", "Profiles could not be exported"),
+                LocalizedResources.Get(
+                    "MainWindow_ProfileExport_FailedBody",
+                    "OpenBlade could not save the selected JSON file."));
         }
     }
 
@@ -3660,9 +3824,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         dashboardCustomizerApply = ApplyEditorToDashboard;
 
         ContentDialog dialog = CreateCustomizationDialog(
-            "Customize Dashboard",
-            "Dashboard cards",
-            "Check cards to show. Drag them into the order you want.",
+            LocalizedResources.Get("MainWindow_CustomizeDashboard_Title", "Customize Dashboard"),
+            LocalizedResources.Get("MainWindow_CustomizeDashboard_AutomationName", "Dashboard cards"),
+            LocalizedResources.Get(
+                "MainWindow_CustomizeDashboard_Instructions",
+                "Check cards to show. Drag them into the order you want."),
             editorCards,
             "DashboardCardOptionTemplate");
         dashboardCustomizerDialog = dialog;
@@ -3964,8 +4130,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 < TrayDashboardPreferenceDefaults.MaximumVisibleSliders
             && trayDashboardAllSliderOptions.Any(option => !option.IsVisible);
         TrayDashboardSliderCountText.Text =
-            $"{TrayDashboardEditorSliders.Count} of "
-            + TrayDashboardPreferenceDefaults.MaximumVisibleSliders;
+            LocalizedResources.Format(
+                "MainWindow_TrayDashboard_Count",
+                "{0} of {1}",
+                TrayDashboardEditorSliders.Count,
+                TrayDashboardPreferenceDefaults.MaximumVisibleSliders);
         int visibleStatusItemCount =
             TrayDashboardEditorStatusItems.Count(option => option.IsVisible);
         foreach (TrayDashboardStatusItemOption option in TrayDashboardEditorStatusItems)
@@ -3975,8 +4144,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     < TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems;
         }
         TrayDashboardStatusCountText.Text =
-            $"{visibleStatusItemCount} of "
-            + TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems;
+            LocalizedResources.Format(
+                "MainWindow_TrayDashboard_Count",
+                "{0} of {1}",
+                visibleStatusItemCount,
+                TrayDashboardPreferenceDefaults.MaximumVisibleStatusItems);
     }
 
     private void ApplyTrayDashboardPreference(
@@ -4100,9 +4272,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 section.Description,
                 section.IsVisible)));
         ContentDialog dialog = CreateCustomizationDialog(
-            $"Customize {GetCustomizablePageLabel(page)}",
-            $"{page} page sections",
-            "Check sections to show. Drag them into the order you want.",
+            LocalizedResources.Format(
+                "MainWindow_CustomizePage_Title",
+                "Customize {0}",
+                GetCustomizablePageLabel(page)),
+            LocalizedResources.Format(
+                "MainWindow_CustomizePage_AutomationName",
+                "{0} page sections",
+                GetCustomizablePageLabel(page)),
+            LocalizedResources.Get(
+                "MainWindow_CustomizePage_Instructions",
+                "Check sections to show. Drag them into the order you want."),
             editorSections,
             "PageSectionOptionTemplate");
         if (await ShowContentDialogAsync(dialog) is null)
@@ -4172,7 +4352,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             XamlRoot = Root.XamlRoot,
             Title = title,
             Content = content,
-            CloseButtonText = "Done",
+            CloseButtonText = LocalizedResources.Get("Common_Done", "Done"),
             DefaultButton = ContentDialogButton.Close,
         };
     }
@@ -4206,12 +4386,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private static string GetCustomizablePageLabel(CustomizablePageKind page) =>
         page switch
         {
-            CustomizablePageKind.Profiles => "Profiles",
-            CustomizablePageKind.Display => "Display",
-            CustomizablePageKind.Laptop => "Laptop",
-            CustomizablePageKind.Lighting => "Lighting",
-            CustomizablePageKind.Settings => "Settings",
-            CustomizablePageKind.About => "About",
+            CustomizablePageKind.Profiles => LocalizedResources.Get("Navigation_Profiles", "Profiles"),
+            CustomizablePageKind.Display => LocalizedResources.Get("Navigation_Display", "Display"),
+            CustomizablePageKind.Laptop => LocalizedResources.Get("Navigation_Laptop", "Laptop"),
+            CustomizablePageKind.Lighting => LocalizedResources.Get("Navigation_Lighting", "Lighting"),
+            CustomizablePageKind.Settings => LocalizedResources.Get("Navigation_Settings", "Settings"),
+            CustomizablePageKind.About => LocalizedResources.Get("Navigation_About", "About"),
             _ => throw new ArgumentOutOfRangeException(nameof(page), page, null),
         };
 
@@ -4348,11 +4528,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private static string GetPrimaryNavigationLabel(PrimaryNavigationItemKind kind) =>
         kind switch
         {
-            PrimaryNavigationItemKind.Profiles => "Profiles",
-            PrimaryNavigationItemKind.Laptop => "Laptop",
-            PrimaryNavigationItemKind.Lighting => "Lighting",
-            PrimaryNavigationItemKind.Display => "Display",
-            PrimaryNavigationItemKind.Settings => "Settings",
+            PrimaryNavigationItemKind.Profiles => LocalizedResources.Get("Navigation_Profiles", "Profiles"),
+            PrimaryNavigationItemKind.Laptop => LocalizedResources.Get("Navigation_Laptop", "Laptop"),
+            PrimaryNavigationItemKind.Lighting => LocalizedResources.Get("Navigation_Lighting", "Lighting"),
+            PrimaryNavigationItemKind.Display => LocalizedResources.Get("Navigation_Display", "Display"),
+            PrimaryNavigationItemKind.Settings => LocalizedResources.Get("Navigation_Settings", "Settings"),
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -4394,10 +4574,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         var dialog = new ContentDialog
         {
             XamlRoot = Root.XamlRoot,
-            Title = "Choose an accent color",
+            Title = LocalizedResources.Get("MainWindow_AccentPicker_Title", "Choose an accent color"),
             Content = picker,
-            PrimaryButtonText = "Use color",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = LocalizedResources.Get("MainWindow_AccentPicker_PrimaryButton", "Use color"),
+            CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
         if (await ShowContentDialogAsync(dialog) != ContentDialogResult.Primary)
@@ -4666,7 +4846,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             var picker = new FileOpenPicker(AppWindow.Id)
             {
-                Title = "Import OpenBlade profiles",
+                Title = LocalizedResources.Get("MainWindow_ProfileImport_PickerTitle", "Import OpenBlade profiles"),
             };
             picker.FileTypeFilter.Add(".json");
 
@@ -4681,10 +4861,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             var confirmation = new ContentDialog
             {
                 XamlRoot = Root.XamlRoot,
-                Title = "Import profiles?",
-                Content = "This replaces the saved AC, USB-C, battery, and battery-protection profiles. Current hardware settings are not changed until you apply or switch profiles.",
-                PrimaryButtonText = "Import",
-                CloseButtonText = "Cancel",
+                Title = LocalizedResources.Get("MainWindow_ProfileImport_ConfirmTitle", "Import profiles?"),
+                Content = LocalizedResources.Get(
+                    "MainWindow_ProfileImport_ConfirmBody",
+                    "This replaces the saved AC, USB-C, battery, and battery-protection profiles. Current hardware settings are not changed until you apply or switch profiles."),
+                PrimaryButtonText = LocalizedResources.Get("Common_Import", "Import"),
+                CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
                 DefaultButton = ContentDialogButton.Primary,
             };
             if (await ShowContentDialogAsync(confirmation) != ContentDialogResult.Primary)
@@ -4695,15 +4877,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             if (!await ViewModel.ImportProfilesAsync(profiles, CancellationToken.None))
             {
                 throw new InvalidDataException(
-                    "The imported profiles include settings that are unavailable on this laptop.");
+                    LocalizedResources.Get(
+                        "MainWindow_ProfileImport_UnavailableSettings",
+                        "The imported profiles include settings that are unavailable on this laptop."));
             }
         }
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade profile import failed: {0}", exception);
             await ShowMessageDialogAsync(
-                "Profiles could not be imported",
-                exception.Message);
+                LocalizedResources.Get("MainWindow_ProfileImport_FailedTitle", "Profiles could not be imported"),
+                LocalizedResources.Format("Common_ErrorWithDetails", "{0}", exception.Message));
         }
     }
 
@@ -4718,7 +4902,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             var picker = new FileOpenPicker(AppWindow.Id)
             {
-                Title = "Import OpenBlade keyboard lighting",
+                Title = LocalizedResources.Get(
+                    "MainWindow_LightingImport_PickerTitle",
+                    "Import OpenBlade keyboard lighting"),
             };
             picker.FileTypeFilter.Add(".oblight");
             picker.FileTypeFilter.Add(".chroma");
@@ -4749,24 +4935,43 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             if (!ViewModel.CanImportKeyboardLighting(preset))
             {
                 throw new InvalidDataException(
-                    $"The {preset.Lighting.Effect} effect is unavailable on this laptop right now.");
+                    LocalizedResources.Format(
+                        "MainWindow_LightingImport_EffectUnavailable",
+                        "The {0} effect is unavailable on this laptop right now.",
+                        preset.Lighting.Effect));
             }
 
+            string effect = ViewModel.AvailableLightingEffectOptions
+                .First(option => option.Effect == preset.Lighting.Effect)
+                .Label;
             string brightness = preset.Lighting.Effect == LightingEffect.Off
-                ? "off"
-                : $"{preset.Lighting.Brightness}% brightness";
+                ? LocalizedResources.Get("MainWindow_LightingImport_Off", "off")
+                : LocalizedResources.Format(
+                    "MainWindow_LightingImport_Brightness",
+                    "{0}% brightness",
+                    preset.Lighting.Brightness);
             var confirmation = new ContentDialog
             {
                 XamlRoot = Root.XamlRoot,
-                Title = "Import keyboard lighting?",
-                Content = $"{preset.Name} uses the {preset.Lighting.Effect} effect at "
-                    + $"{brightness}. Importing applies it through OpenBlade and keeps it "
-                    + "as an unsaved change for the active power profile."
+                Title = LocalizedResources.Get(
+                    "MainWindow_LightingImport_ConfirmTitle",
+                    "Import keyboard lighting?"),
+                Content = LocalizedResources.Format(
+                    "MainWindow_LightingImport_ConfirmBody",
+                    "{0} uses the {1} effect at {2}. Importing applies it through OpenBlade and keeps it as an unsaved change for the active power profile.",
+                    preset.Name,
+                    effect,
+                    brightness)
                     + (string.IsNullOrWhiteSpace(preset.ImportWarning)
                         ? string.Empty
-                        : $"\n\n{preset.ImportWarning}"),
-                PrimaryButtonText = "Import and apply",
-                CloseButtonText = "Cancel",
+                        : LocalizedResources.Format(
+                            "MainWindow_LightingImport_Warning",
+                            "\n\n{0}",
+                            preset.ImportWarning)),
+                PrimaryButtonText = LocalizedResources.Get(
+                    "MainWindow_LightingImport_ImportApplyButton",
+                    "Import and apply"),
+                CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
                 DefaultButton = ContentDialogButton.Primary,
             };
             if (await ShowContentDialogAsync(confirmation) != ContentDialogResult.Primary)
@@ -4777,7 +4982,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             if (!ViewModel.TryImportKeyboardLighting(preset))
             {
                 throw new InvalidDataException(
-                    "Lighting control became unavailable before the preset could be imported.");
+                    LocalizedResources.Get(
+                        "MainWindow_LightingImport_ControlUnavailable",
+                        "Lighting control became unavailable before the preset could be imported."));
             }
 
             // The imported draft raises LightingDraft and IsLightingApplyPending.
@@ -4788,8 +4995,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             Trace.TraceError("OpenBlade keyboard lighting import failed: {0}", exception);
             await ShowMessageDialogAsync(
-                "Keyboard lighting could not be imported",
-                exception.Message);
+                LocalizedResources.Get(
+                    "MainWindow_LightingImport_FailedTitle",
+                    "Keyboard lighting could not be imported"),
+                LocalizedResources.Format("Common_ErrorWithDetails", "{0}", exception.Message));
         }
     }
 
@@ -4808,7 +5017,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (stream.Length > maximum)
         {
             throw new InvalidDataException(
-                $"The selected lighting file cannot exceed {FormatFileSize(maximum)}.");
+                LocalizedResources.Format(
+                    "MainWindow_LightingImport_FileTooLarge",
+                    "The selected lighting file cannot exceed {0}.",
+                    FormatFileSize(maximum)));
         }
 
         byte[] buffer = new byte[maximum + 1];
@@ -4826,7 +5038,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (length > maximum)
         {
             throw new InvalidDataException(
-                $"The selected lighting file cannot exceed {FormatFileSize(maximum)}.");
+                LocalizedResources.Format(
+                    "MainWindow_LightingImport_FileTooLarge",
+                    "The selected lighting file cannot exceed {0}.",
+                    FormatFileSize(maximum)));
         }
         return buffer.AsSpan(0, length).ToArray();
     }

@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using WixToolset.BootstrapperApplicationApi;
 
@@ -16,6 +18,7 @@ internal partial class InstallerWindow : Window
     private readonly Queue<string> detailLines = new();
     private bool overwriteNewerVersion;
     private bool readyInstalled;
+    private IInputElement? focusBeforeCancel;
     private string? logPath;
 
     internal InstallerWindow(
@@ -47,10 +50,11 @@ internal partial class InstallerWindow : Window
             ? InstallerStrings.Get("Repair the installed files, or remove OpenBlade from this PC.")
             : InstallerStrings.Get("Install the OpenBlade service, Session Agent, and tray application for this PC.");
         InstallButton.Visibility = installed ? Visibility.Collapsed : Visibility.Visible;
-        InstallButton.Content = InstallerStrings.Get("Install");
+        InstallButton.Content = InstallerStrings.Get("_Install");
         RepairButton.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
         UninstallButton.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
         PurgeProfilesCheckBox.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
+        QueueFocus(installed ? RepairButton : InstallButton);
     }
 
     public void ShowSameVersionMaintenance(string installedVersion)
@@ -63,11 +67,12 @@ internal partial class InstallerWindow : Window
         ReadyMessage.Text = InstallerStrings.Get(
             "Repair overwrites the installed files with this installer, or uninstall OpenBlade while keeping saved profiles. To remove saved profiles too, close this installer and uninstall the registered OpenBlade entry from Windows Installed apps.");
         InstallButton.Visibility = Visibility.Collapsed;
-        InstallButton.Content = InstallerStrings.Get("Install");
+        InstallButton.Content = InstallerStrings.Get("_Install");
         RepairButton.Visibility = Visibility.Visible;
         UninstallButton.Visibility = Visibility.Visible;
         PurgeProfilesCheckBox.IsChecked = false;
         PurgeProfilesCheckBox.Visibility = Visibility.Collapsed;
+        QueueFocus(RepairButton);
     }
 
     public void ShowNewerVersionConfirmation(
@@ -84,11 +89,12 @@ internal partial class InstallerWindow : Window
             "OpenBlade {0} is installed. This installer contains version {1}. Do you want to overwrite the newer version?",
             installedVersion,
             installerVersion);
-        InstallButton.Content = InstallerStrings.Get("Overwrite");
+        InstallButton.Content = InstallerStrings.Get("_Overwrite");
         InstallButton.Visibility = Visibility.Visible;
         RepairButton.Visibility = Visibility.Collapsed;
         UninstallButton.Visibility = Visibility.Collapsed;
         PurgeProfilesCheckBox.Visibility = Visibility.Collapsed;
+        QueueFocus(InstallButton);
     }
 
     public void ShowRegistrationConflict(string message, bool canUninstall)
@@ -100,7 +106,7 @@ internal partial class InstallerWindow : Window
         ReadyHeading.Text = InstallerStrings.Get("Resolve existing OpenBlade installers");
         ReadyMessage.Text = message;
         InstallButton.Visibility = Visibility.Collapsed;
-        InstallButton.Content = InstallerStrings.Get("Install");
+        InstallButton.Content = InstallerStrings.Get("_Install");
         RepairButton.Visibility = Visibility.Collapsed;
         UninstallButton.Visibility = canUninstall
             ? Visibility.Visible
@@ -108,6 +114,7 @@ internal partial class InstallerWindow : Window
         PurgeProfilesCheckBox.Visibility = canUninstall
             ? Visibility.Visible
             : Visibility.Collapsed;
+        QueueFocus(canUninstall ? UninstallButton : ReadyCancelButton);
     }
 
     public void ShowProgress(LaunchAction action)
@@ -133,6 +140,7 @@ internal partial class InstallerWindow : Window
         DetailsToggle.IsChecked = false;
         detailLines.Clear();
         DetailsText.Clear();
+        QueueFocus(ProgressCancelButton);
     }
 
     public void SetProgress(int percentage, string? message = null)
@@ -141,6 +149,14 @@ internal partial class InstallerWindow : Window
         if (!string.IsNullOrWhiteSpace(message))
         {
             ProgressMessage.Text = message;
+        }
+    }
+
+    public void SetStatus(string message)
+    {
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            ProgressMessage.Text = message.Trim();
         }
     }
 
@@ -160,7 +176,6 @@ internal partial class InstallerWindow : Window
 
         DetailsText.Text = string.Join(Environment.NewLine, detailLines);
         DetailsText.ScrollToEnd();
-        ProgressMessage.Text = message.Trim();
     }
 
     public void ShowSuccess(LaunchAction action, bool purgeProfiles)
@@ -177,6 +192,7 @@ internal partial class InstallerWindow : Window
                 ? InstallerStrings.Get("Saved profiles and settings were also removed.")
                 : InstallerStrings.Get("Your saved profiles and settings were kept.")
             : InstallerStrings.Get("Setup completed successfully.");
+        QueueFocus(canLaunch ? LaunchButton : SuccessCloseButton);
     }
 
     public void ShowFailure(string message, string? bundleLogPath)
@@ -188,6 +204,7 @@ internal partial class InstallerWindow : Window
             : message;
         logPath = bundleLogPath;
         OpenLogButton.IsEnabled = !string.IsNullOrWhiteSpace(logPath);
+        QueueFocus(OpenLogButton.IsEnabled ? OpenLogButton : FailureCloseButton);
     }
 
     public void ShowHelp()
@@ -198,11 +215,14 @@ internal partial class InstallerWindow : Window
         SuccessHeading.Text = InstallerStrings.Get("OpenBlade Setup");
         SuccessMessage.Text = InstallerStrings.Get(
             "Run this installer normally to install, repair, or remove OpenBlade.");
+        QueueFocus(SuccessCloseButton);
     }
 
     public void MarkCancellationRequested()
     {
         CancelConfirmationPanel.Visibility = Visibility.Collapsed;
+        ProgressPanel.IsEnabled = true;
+        focusBeforeCancel = null;
         ProgressCancelButton.IsEnabled = false;
         ProgressMessage.Text = InstallerStrings.Get("Cancelling and restoring the previous state…");
         AddDetail(InstallerStrings.Get("Cancellation requested; waiting for safe rollback."));
@@ -216,6 +236,8 @@ internal partial class InstallerWindow : Window
         SuccessPanel.Visibility = Visibility.Collapsed;
         FailurePanel.Visibility = Visibility.Collapsed;
         CancelConfirmationPanel.Visibility = Visibility.Collapsed;
+        ProgressPanel.IsEnabled = true;
+        focusBeforeCancel = null;
         panel.Visibility = Visibility.Visible;
     }
 
@@ -233,15 +255,25 @@ internal partial class InstallerWindow : Window
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
+        focusBeforeCancel = Keyboard.FocusedElement;
+        ProgressPanel.IsEnabled = false;
         CancelConfirmationPanel.Visibility = Visibility.Visible;
+        QueueFocus(KeepWorkingButton);
     }
 
-    private void KeepWorkingButton_Click(object sender, RoutedEventArgs e) =>
+    private void KeepWorkingButton_Click(object sender, RoutedEventArgs e)
+    {
         CancelConfirmationPanel.Visibility = Visibility.Collapsed;
+        ProgressPanel.IsEnabled = true;
+        QueueFocus(focusBeforeCancel ?? ProgressCancelButton);
+        focusBeforeCancel = null;
+    }
 
     private void ConfirmCancelButton_Click(object sender, RoutedEventArgs e)
     {
         CancelConfirmationPanel.Visibility = Visibility.Collapsed;
+        ProgressPanel.IsEnabled = true;
+        focusBeforeCancel = null;
         bootstrapper.RequestCancel();
     }
 
@@ -272,9 +304,14 @@ internal partial class InstallerWindow : Window
     private void DetailsToggle_Changed(object sender, RoutedEventArgs e)
     {
         bool show = DetailsToggle.IsChecked == true;
-        DetailsToggle.Content = InstallerStrings.Get(show ? "Hide details" : "Show details");
+        DetailsToggle.Content = InstallerStrings.Get(show ? "Hide _details" : "Show _details");
         DetailsBorder.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    private void QueueFocus(IInputElement target) =>
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            new Action(() => Keyboard.Focus(target)));
 
     private void SystemEvents_UserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
     {

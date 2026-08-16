@@ -5,6 +5,32 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void LocalizedPageHeadersStackActionsBelowTitlesAtSnapshotWidth()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string profilesActions = SliceMethod(
+            xaml,
+            "x:Name=\"ProfilesHeaderActions\"",
+            "</StackPanel>");
+        string lightingActions = SliceMethod(
+            xaml,
+            "x:Name=\"LightingHeaderActions\"",
+            "</StackPanel>");
+        string aboutActions = SliceMethod(
+            xaml,
+            "x:Name=\"AboutHeaderActions\"",
+            "/>");
+
+        Assert.Contains("x:Name=\"LaptopHeaderCompact\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Grid.Row=\"1\"", profilesActions, StringComparison.Ordinal);
+        Assert.Contains("Grid.ColumnSpan=\"2\"", profilesActions, StringComparison.Ordinal);
+        Assert.Contains("Grid.Row=\"1\"", lightingActions, StringComparison.Ordinal);
+        Assert.Contains("Grid.ColumnSpan=\"2\"", lightingActions, StringComparison.Ordinal);
+        Assert.Contains("Grid.Row=\"1\"", aboutActions, StringComparison.Ordinal);
+        Assert.Contains("Grid.ColumnSpan=\"2\"", aboutActions, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DashboardCustomPerformanceRowsUseNeutralSubcardBackgrounds()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
@@ -249,7 +275,7 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
-        Assert.Equal(6, CountOccurrences(xaml, "HeaderActions.Margin\" Value=\"0,2,0,0\""));
+        Assert.Equal(4, CountOccurrences(xaml, "HeaderActions.Margin\" Value=\"0,2,0,0\""));
         Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("DisplayViewModel.ProfileRelationshipStatus", xaml, StringComparison.Ordinal);
@@ -442,7 +468,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("StartOpenBladeResult.AlreadyRunning", window, StringComparison.Ordinal);
         Assert.Contains("OpenBlade service is already running", window, StringComparison.Ordinal);
         Assert.Contains("StartOpenBladeProgressRing.IsActive", window, StringComparison.Ordinal);
-        Assert.Contains("isStarting ? \"Starting OpenBlade\" : \"Start OpenBlade\"", window, StringComparison.Ordinal);
+        Assert.Contains("MainWindow_Start_Starting", window, StringComparison.Ordinal);
+        Assert.Contains("MainWindow_Start_Button", window, StringComparison.Ordinal);
         Assert.Contains("SessionAgentLauncher.TryStopSibling()", app, StringComparison.Ordinal);
     }
 
@@ -571,7 +598,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("FileTypeFilter.Add(\".chroma\")", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".json\")", window, StringComparison.Ordinal);
         Assert.Contains("ReadBoundedKeyboardLightingFileAsync", window, StringComparison.Ordinal);
-        Assert.Contains("PrimaryButtonText = \"Import and apply\"", window, StringComparison.Ordinal);
+        Assert.Contains("MainWindow_LightingImport_ImportApplyButton", window, StringComparison.Ordinal);
         Assert.Contains("ViewModel.CanImportKeyboardLighting", window, StringComparison.Ordinal);
         Assert.Contains("ViewModel.TryImportKeyboardLighting", window, StringComparison.Ordinal);
         Assert.Contains(
@@ -684,8 +711,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ElevatedServiceControlOutcome.Canceled", window, StringComparison.Ordinal);
         Assert.Contains("OpenBlade did not retry any stop request", window, StringComparison.Ordinal);
         Assert.Contains("StopRazerServicesProgressRing.IsActive = isBusy", window, StringComparison.Ordinal);
-        Assert.Contains("busyLabel: \"Checking…\"", window, StringComparison.Ordinal);
-        Assert.Contains("busyLabel: \"Stopping…\"", window, StringComparison.Ordinal);
+        Assert.Contains("MainWindow_StopRazer_Checking", window, StringComparison.Ordinal);
+        Assert.Contains("MainWindow_StopRazer_Stopping", window, StringComparison.Ordinal);
         Assert.Contains("HandleStopRazerServicesAsync", window, StringComparison.Ordinal);
         Assert.Contains(
             "await RunHandlerAsync(\r\n            HandleStopRazerServicesAsync",
@@ -1295,8 +1322,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("completion.TrySetException(exception)", dispatcher, StringComparison.Ordinal);
 
         string trayHost = ReadRepositoryFile("src", "OpenBlade.Tray", "WinFormsTrayIconHost.cs");
-        Assert.Contains("new ToolStripMenuItem(\"Open\")", trayHost, StringComparison.Ordinal);
-        Assert.Contains("new ToolStripMenuItem(\"Exit\")", trayHost, StringComparison.Ordinal);
+        Assert.Contains("TrayIconMenu_Open", trayHost, StringComparison.Ordinal);
+        Assert.Contains("TrayIconMenu_Exit", trayHost, StringComparison.Ordinal);
         Assert.Contains("menu.Items.Add(new ToolStripSeparator())", trayHost, StringComparison.Ordinal);
         Assert.Contains(
             "trayIcon.MouseDoubleClick += OnTrayIconMouseDoubleClick",
@@ -2391,12 +2418,12 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("SystemInformation.DoubleClickTime", trayHost, StringComparison.Ordinal);
         Assert.Contains("System.Drawing.Point cursorPosition = Cursor.Position", trayHost, StringComparison.Ordinal);
-        Assert.Contains("new ToolStripMenuItem(\"Open\")", trayHost, StringComparison.Ordinal);
+        Assert.Contains("TrayIconMenu_Open", trayHost, StringComparison.Ordinal);
         Assert.Contains(
-            "ShortcutKeyDisplayString = \"Double-click\"",
+            "TrayIconMenu_DoubleClick",
             trayHost,
             StringComparison.Ordinal);
-        Assert.Contains("new ToolStripMenuItem(\"Exit\")", trayHost, StringComparison.Ordinal);
+        Assert.Contains("TrayIconMenu_Exit", trayHost, StringComparison.Ordinal);
         Assert.Contains("new TrayDashboardWindow(", app, StringComparison.Ordinal);
         Assert.Contains("WindowNative.GetWindowHandle(mainWindow)", app, StringComparison.Ordinal);
         Assert.Contains("mainWindow.SetTrayDashboardVisible(visible)", app, StringComparison.Ordinal);
@@ -2968,12 +2995,12 @@ public sealed class WinUiShellContractTests
         Assert.Contains("SuggestedFileName = suggestedBaseName", source, StringComparison.Ordinal);
         Assert.Contains("DefaultFileExtension = \".zip\"", source, StringComparison.Ordinal);
         Assert.Contains(
-            "FileTypeChoices.Add(\"ZIP archives\", [\".zip\"])",
+            "DiagnosticArchivePicker_ZipArchives",
             source,
             StringComparison.Ordinal);
         Assert.Contains("ShowOverwritePrompt = true", source, StringComparison.Ordinal);
         Assert.Contains(
-            "Title = \"Export OpenBlade diagnostics\"",
+            "DiagnosticArchivePicker_Title",
             source,
             StringComparison.Ordinal);
         Assert.Contains("PickSaveFileAsync().AsTask(token)", source, StringComparison.Ordinal);
@@ -2985,7 +3012,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("File.Write", source, StringComparison.Ordinal);
         Assert.DoesNotContain("File.Move", source, StringComparison.Ordinal);
         Assert.DoesNotContain("File.Delete", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("ZipArchive", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("new ZipArchive(", source, StringComparison.Ordinal);
         Assert.DoesNotContain(".tmp", source, StringComparison.Ordinal);
 
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");

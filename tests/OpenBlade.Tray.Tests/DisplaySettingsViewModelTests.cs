@@ -410,7 +410,7 @@ public sealed class DisplaySettingsViewModelTests
         Assert.Same(refreshOptions, viewModel.RefreshRateOptions);
         Assert.Same(colorOptions, viewModel.ColorProfileOptions);
         Assert.Equal(
-            "The display session agent is not responding.",
+            "Display settings could not be refreshed.",
             viewModel.StatusMessage);
     }
 
@@ -440,7 +440,37 @@ public sealed class DisplaySettingsViewModelTests
         Assert.Null(viewModel.SelectedColorProfile);
         Assert.Empty(viewModel.RefreshRateOptions);
         Assert.Empty(viewModel.ColorProfileOptions);
-        Assert.Equal("No built-in display is available.", viewModel.StatusMessage);
+        Assert.Equal("Display settings are unavailable.", viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public async Task FailedRefresh_UsesLocalizedSummaryWithoutPresentingRawDiagnostic()
+    {
+        using var culture = new CultureScope("qps-ploc");
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed240.Key, hdr: true, colorKey: Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+        await viewModel.RefreshAsync();
+        adapter.SetExternalState(new DisplaySettingsSnapshot(
+            IsAvailable: false,
+            RefreshRateOptions: [],
+            SelectedRefreshRateKey: null,
+            IsHdrSupported: false,
+            IsHdrEnabled: false,
+            ColorProfileOptions: [],
+            SelectedColorProfileKey: null,
+            StatusMessage: "Invariant backend diagnostic",
+            OperationSucceeded: false));
+
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(
+            TrayText.Get("Display settings could not be refreshed."),
+            viewModel.StatusMessage);
+        Assert.DoesNotContain(
+            "Invariant backend diagnostic",
+            viewModel.StatusMessage,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -512,6 +542,7 @@ public sealed class DisplaySettingsViewModelTests
 
         Assert.False(applied);
         Assert.Equal(Fixed60.Key, viewModel.SelectedRefreshRate?.Key);
+        Assert.Equal("Display setting failed.", viewModel.StatusMessage);
     }
 
     [Fact]

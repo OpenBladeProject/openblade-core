@@ -42,12 +42,22 @@ internal static class InstallerStrings
 
     internal static string Format(string englishFormat, params object[] arguments)
     {
-        string localized = Get(englishFormat);
+        return FormatLocalized(englishFormat, Get(englishFormat), arguments);
+    }
+
+    internal static string FormatLocalized(
+        string englishFormat,
+        string localizedFormat,
+        params object[] arguments)
+    {
         try
         {
-            return string.Format(CultureInfo.CurrentCulture, localized, arguments);
+            return string.Format(CultureInfo.CurrentCulture, localizedFormat, arguments);
         }
-        catch (FormatException) when (!string.Equals(localized, englishFormat, StringComparison.Ordinal))
+        catch (FormatException) when (!string.Equals(
+            localizedFormat,
+            englishFormat,
+            StringComparison.Ordinal))
         {
             return string.Format(CultureInfo.CurrentCulture, englishFormat, arguments);
         }
