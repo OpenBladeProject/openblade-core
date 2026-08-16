@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
@@ -9,7 +10,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using WixToolset.BootstrapperApplicationApi;
 using Xunit;
@@ -120,8 +120,8 @@ public sealed class InstallerWindowTests
             Assert.Contains("Copying OpenBlade.Tray.exe", window.DetailsText.Text);
             Assert.Equal(localizedStatus, window.ProgressMessage.Text);
             Assert.Equal(Visibility.Visible, window.DetailsBorder.Visibility);
-            Assert.Equal(430, window.Height);
-            Assert.Equal(430, window.MinHeight);
+            Assert.Equal(560, window.Height);
+            Assert.Equal(560, window.MinHeight);
             Assert.Equal(TextWrapping.Wrap, window.DetailsText.TextWrapping);
             Assert.Equal(
                 ScrollBarVisibility.Disabled,
@@ -177,6 +177,7 @@ public sealed class InstallerWindowTests
         Assert.False(
             string.IsNullOrWhiteSpace(snapshotState),
             "Set OPENBLADE_LOCALIZATION_SNAPSHOT_STATE so each state renders in a fresh testhost process.");
+        RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
         Directory.CreateDirectory(outputDirectory);
         switch (snapshotState)
         {
@@ -252,65 +253,78 @@ public sealed class InstallerWindowTests
             {
                 InstallerWindow window = new(
                     new OpenBladeBootstrapperApplication(),
-                    "0.10.0");
-                showState(window);
-                FrameworkElement[] activeActions = selectActiveActions(window);
-                FrameworkElement visual = (FrameworkElement)window.Content;
-                window.Content = null;
-                Thickness contentMargin = visual.Margin;
-                visual.Margin = new Thickness();
-                Border snapshot = new()
+                    "0.10.0")
                 {
-                    Width = window.Width,
-                    Height = window.Height,
-                    Background = window.Background,
-                    Padding = contentMargin,
-                    Child = visual,
+                    WindowStartupLocation = WindowStartupLocation.Manual,
+                    Left = 40,
+                    Top = 40,
+                    ShowInTaskbar = false,
+                    Topmost = true,
                 };
-                foreach (object key in window.Resources.Keys)
-                {
-                    snapshot.Resources[key] = window.Resources[key];
-                }
+                window.Show();
                 try
                 {
-                    snapshot.Measure(new Size(window.Width, window.Height));
-                    snapshot.Arrange(new Rect(0, 0, window.Width, window.Height));
-                    snapshot.UpdateLayout();
-                    snapshot.InvalidateMeasure();
-                    snapshot.InvalidateArrange();
-                    snapshot.Measure(new Size(window.Width, window.Height));
-                    snapshot.Arrange(new Rect(0, 0, window.Width, window.Height));
-                    snapshot.UpdateLayout();
-                    Assert.Equal(window.Width, snapshot.RenderSize.Width, precision: 3);
-                    Assert.Equal(window.Height, snapshot.RenderSize.Height, precision: 3);
-                    AssertWithinSnapshot(snapshot, window.HeaderPanel);
-                    AssertWithinSnapshot(snapshot, window.VersionText);
+                    showState(window);
+                    PumpDispatcher(window.Dispatcher);
+                    window.UpdateLayout();
+                    FrameworkElement visual = (FrameworkElement)window.Content;
+                    FrameworkElement[] activeActions = selectActiveActions(window);
+                    AssertWithinSnapshot(visual, window.HeaderPanel);
+                    AssertWithinSnapshot(visual, window.VersionText);
                     foreach (FrameworkElement action in activeActions)
                     {
-                        AssertWithinSnapshot(snapshot, action);
+                        AssertWithinSnapshot(visual, action);
                     }
-                    RenderTargetBitmap bitmap = new(
-                        (int)window.Width,
-                        (int)window.Height,
-                        96,
-                        96,
-                        PixelFormats.Pbgra32);
-                    bitmap.Render(snapshot);
-                    PngBitmapEncoder encoder = new();
-                    encoder.Frames.Add(BitmapFrame.Create(bitmap));
-                    using FileStream output = File.Create(
-                        Path.Combine(outputDirectory, name + ".png"));
-                    encoder.Save(output);
+                    _ = window.Activate();
+                    PumpDispatcher(window.Dispatcher);
+                    Thread.Sleep(250);
+                    PumpDispatcher(window.Dispatcher);
+                    IntPtr handle = new WindowInteropHelper(window).Handle;
+                    Assert.True(GetWindowRect(handle, out NativeRect windowBounds));
+                    int width = windowBounds.Right - windowBounds.Left;
+                    int height = windowBounds.Bottom - windowBounds.Top;
+                    Assert.True(width > 0 && height > 0);
+                    using var bitmap = new System.Drawing.Bitmap(width, height);
+                    using (System.Drawing.Graphics graphics =
+                           System.Drawing.Graphics.FromImage(bitmap))
+                    {
+                        IntPtr deviceContext = graphics.GetHdc();
+                        try
+                        {
+                            Assert.True(PrintWindow(handle, deviceContext, 2));
+                        }
+                        finally
+                        {
+                            graphics.ReleaseHdc(deviceContext);
+                        }
+                    }
+                    bitmap.Save(
+                        Path.Combine(outputDirectory, name + ".png"),
+                        System.Drawing.Imaging.ImageFormat.Png);
                 }
                 finally
                 {
-                    snapshot.Child = null;
-                    visual.Margin = contentMargin;
-                    window.Content = visual;
                     window.Close();
                 }
             });
         }
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr window, out NativeRect bounds);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PrintWindow(IntPtr window, IntPtr deviceContext, uint flags);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
     }
 
     private static void AssertWithinSnapshot(
@@ -869,6 +883,15 @@ public sealed class InstallerWindowTests
         owner.Dispatcher.Invoke(
             DispatcherPriority.ApplicationIdle,
             new Action(() => { }));
+
+    private static void PumpDispatcher(Dispatcher dispatcher)
+    {
+        var frame = new DispatcherFrame();
+        dispatcher.BeginInvoke(
+            DispatcherPriority.ApplicationIdle,
+            new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
+    }
 
     private static void AssertUniqueAccessKeys(params FrameworkElement[] elements)
     {

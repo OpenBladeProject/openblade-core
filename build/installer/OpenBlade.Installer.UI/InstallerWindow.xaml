@@ -4,9 +4,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="OpenBlade Setup"
         Width="560"
-        Height="430"
+        Height="560"
         MinWidth="560"
-        MinHeight="430"
+        MinHeight="560"
         MaxWidth="760"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanMinimize"
@@ -283,6 +283,7 @@
                           HorizontalAlignment="Left" Checked="DetailsToggle_Changed"
                           Unchecked="DetailsToggle_Changed" />
             <Border x:Name="DetailsBorder" Grid.Row="1" Margin="0,8,0,12"
+                    MaxHeight="96" VerticalAlignment="Top"
                     BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                     Background="{DynamicResource InputBrush}" Visibility="Collapsed">
               <TextBox x:Name="DetailsText" IsReadOnly="True" BorderThickness="0"
