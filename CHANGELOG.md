@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.8.4-nightly.20] - 2026-08-15
+
 ### Added
 
 - Added Windows-native display-brightness handling and flyout presentation for
@@ -79,7 +81,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   icon columns from a numeric XAML sizing resource.
 - Replaced the keyboard-brightness adjustment's generic sun icon with the
   Windows keyboard-brightness glyph.
-
 - Kept selected GPU clock adjustments visible in the tray dashboard when GPU
   tuning is temporarily unavailable, showing their disabled state instead of
   silently removing them.
@@ -1299,7 +1300,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.5.1-nightly.16...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.8.4-nightly.20...HEAD
+[0.8.4-nightly.20]: https://github.com/OSSBlade/openblade-core/compare/v0.5.1-nightly.16...v0.8.4-nightly.20
 [0.5.1-nightly.16]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.11...v0.5.1-nightly.16
 [0.1.0-nightly.11]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.10...v0.1.0-nightly.11
 [0.1.0-nightly.10]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.9...v0.1.0-nightly.10
