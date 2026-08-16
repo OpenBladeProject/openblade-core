@@ -445,6 +445,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             lighting.Capabilities.SupportsKeyboardBrightness,
                         SupportsPlaybackMuteIndicator =
                             lighting.Capabilities.SupportsPlaybackMuteIndicator,
+                        KeyboardLightingLayoutId =
+                            lighting.Capabilities.KeyboardLightingLayoutId,
                     };
             }
             finally
@@ -1494,7 +1496,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             if (!LightingSettingsValidation.IsWellFormed(value)
                 || !lightingFactory.Capabilities.LightingEffects.Contains(value.Effect)
                 || value.LogoMode is { } logoMode
-                    && !lightingFactory.Capabilities.LogoLightingModes.Contains(logoMode))
+                    && !lightingFactory.Capabilities.LogoLightingModes.Contains(logoMode)
+                || value.Parameters is SequenceLightingParameters sequence
+                    && !string.Equals(
+                        sequence.LayoutId,
+                        lightingFactory.Capabilities.KeyboardLightingLayoutId,
+                        StringComparison.Ordinal))
             {
                 return RejectProductionWrite("The requested lighting setting is not admitted.");
             }
@@ -1889,6 +1896,17 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
                         "The exact-device lighting session does not support the requested logo lighting mode.");
+                }
+
+                if (value.Parameters is SequenceLightingParameters sequence
+                    && !string.Equals(
+                        sequence.LayoutId,
+                        port.Capabilities.KeyboardLightingLayoutId,
+                        StringComparison.Ordinal))
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        "The exact-device lighting session does not support the requested keyboard layout.");
                 }
 
                 await port.SetLightingAsync(value, cancellationToken).ConfigureAwait(false);

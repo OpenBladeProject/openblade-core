@@ -66,7 +66,7 @@ public sealed class ProfileStoreTests : IDisposable
         await File.WriteAllBytesAsync(
             path,
             JsonSerializer.SerializeToUtf8Bytes(
-                new ProfileDocument(ProfileStore.PreviousSchemaVersion, mislabeledLegacy),
+                new ProfileDocument(ProfileStore.FormerSchemaVersion, mislabeledLegacy),
                 ProfileStore.SerializerOptions));
 
         ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
@@ -75,6 +75,49 @@ public sealed class ProfileStoreTests : IDisposable
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.Null(result.Profiles.PluggedIn.WindowsPowerMode);
         Assert.True(result.Profiles.PluggedIn.BatteryProtectionEnabled);
+        Assert.Contains(
+            $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
+            await File.ReadAllTextAsync(path),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Load_Schema12PreservesConfiguredWindowsPowerModes()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet configured = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                WindowsPowerMode = WindowsPowerMode.BestPerformance,
+            },
+            Battery = defaults.Battery with
+            {
+                WindowsPowerMode = WindowsPowerMode.BestPowerEfficiency,
+            },
+            UsbC = defaults.UsbC with
+            {
+                WindowsPowerMode = WindowsPowerMode.Balanced,
+            },
+        };
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(
+                new ProfileDocument(ProfileStore.PreviousSchemaVersion, configured),
+                ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Equal(WindowsPowerMode.BestPerformance,
+            result.Profiles.PluggedIn.WindowsPowerMode);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency,
+            result.Profiles.Battery.WindowsPowerMode);
+        Assert.Equal(WindowsPowerMode.Balanced,
+            result.Profiles.UsbC.WindowsPowerMode);
         Assert.Contains(
             $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
             await File.ReadAllTextAsync(path),

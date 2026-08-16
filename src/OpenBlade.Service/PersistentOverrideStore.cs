@@ -44,6 +44,8 @@ internal sealed record LegacyPersistentOverrideDocument(
 
 public sealed class PersistentOverrideStore
 {
+    // Sequence is an additive LightingSettings subtype, not an override-envelope change.
+    // Keeping schema 6 lets older builds retain documents that use known lighting kinds.
     private const int CurrentSchemaVersion = 6;
     private const int SchemaFiveVersion = 5;
     private const int SchemaFourVersion = 4;

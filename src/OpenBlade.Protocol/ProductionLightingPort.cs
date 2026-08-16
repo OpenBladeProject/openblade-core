@@ -26,6 +26,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             LightingEffect.Ripple,
             LightingEffect.AmbientAwareness,
             LightingEffect.AudioMeter,
+            LightingEffect.Sequence,
         ]);
 
     private readonly ValidationActor actor;
@@ -112,6 +113,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         LogoLightingModes = admitted
             ? new HashSet<LogoLightingMode>(Enum.GetValues<LogoLightingMode>())
             : new HashSet<LogoLightingMode>(),
+        KeyboardLightingLayoutId = admitted
+            ? KeyboardLightingLayoutIds.Rz09_0581
+            : null,
     };
 
     public async Task<LightingSettings?> ReadStateAsync(
@@ -1146,6 +1150,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             AudioMeterLightingParameters
                 when settings.Effect == LightingEffect.AudioMeter =>
                 new Pid02E0SessionFrameEffect(),
+            SequenceLightingParameters value
+                when settings.Effect == LightingEffect.Sequence =>
+                new Pid02E0ImportedSequenceEffect(value),
             TidalLightingParameters value => new Pid02E0TidalEffect(
                 Color(value.PrimaryColor),
                 Color(value.SecondaryColor),
@@ -1638,6 +1645,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
             LightingEffect.AmbientAwareness => LightingRendererOwnershipState.AmbientAwareness,
             LightingEffect.AudioMeter => LightingRendererOwnershipState.AudioMeter,
+            LightingEffect.Sequence => LightingRendererOwnershipState.Sequence,
             _ => throw new ArgumentOutOfRangeException(nameof(effect)),
         };
 

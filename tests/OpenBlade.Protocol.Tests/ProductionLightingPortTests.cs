@@ -56,6 +56,7 @@ public sealed class ProductionLightingPortTests
                 LightingEffect.Ripple,
                 LightingEffect.AmbientAwareness,
                 LightingEffect.AudioMeter,
+                LightingEffect.Sequence,
             }.Order(),
             factory.Capabilities.LightingEffects.Order());
         Assert.Equal(
@@ -66,6 +67,9 @@ public sealed class ProductionLightingPortTests
             factory.Capabilities.WritableSpecialKeySlots);
         Assert.True(factory.Capabilities.SupportsKeyboardBrightness);
         Assert.True(factory.Capabilities.SupportsPlaybackMuteIndicator);
+        Assert.Equal(
+            KeyboardLightingLayoutIds.Rz09_0581,
+            factory.Capabilities.KeyboardLightingLayoutId);
         Assert.Null(factory.Capabilities.LampArrayLightingAccess);
         Assert.Empty(factory.Capabilities.PerformancePresets);
         Assert.Empty(factory.Capabilities.FanModes);
@@ -280,6 +284,65 @@ public sealed class ProductionLightingPortTests
             session.SubmittedCommands,
             command => command.CommandId
                 == Rz090528MatrixRowProtocol.LatchCommandId);
+    }
+
+    [Fact]
+    public async Task Rz090528NonLoopingSequence_HoldsFinalFrameWithoutFaultingRenderer()
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 128);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            allSynapseEffectsAdmitted: true,
+            timeProvider: time);
+        var first = new RgbColor[AmbientLightingFrame.SlotCount];
+        first[59] = new RgbColor(1, 2, 3);
+        var second = new RgbColor[AmbientLightingFrame.SlotCount];
+        second[59] = new RgbColor(4, 5, 6);
+        LightingSettings settings = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0528,
+            KeyboardLightingSequenceCodec.Encode(
+            [
+                new KeyboardLightingSequenceFrame(100, first),
+                new KeyboardLightingSequenceFrame(200, second),
+            ]),
+            loop: false,
+            brightness: 50);
+
+        await port.SetLightingAsync(settings, default);
+        Task stream = Assert.IsAssignableFrom<Task>(
+            typeof(Rz090528BrightnessLightingPort)
+                .GetField("streamTask", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(port));
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        for (int attempt = 0;
+            attempt < 100 && session.SubmittedBatchCount < 1;
+            attempt++)
+        {
+            await Task.Delay(10);
+        }
+        time.Advance(TimeSpan.FromMilliseconds(200));
+
+        await stream.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(LightingRendererOwnershipState.Sequence, port.OwnershipState);
+        Assert.Equal(settings, typeof(Rz090528BrightnessLightingPort)
+            .GetField("lastDeliveredState", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
+        Assert.NotNull(typeof(Rz090528BrightnessLightingPort)
+            .GetField("activeEffect", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
+        RazerCommandSpec finalRow = session.SubmittedCommands.Last(command =>
+            command.CommandId == Rz090528MatrixRowProtocol.RowCommandId
+            && command.Arguments.Span[1] == 3);
+        int colorOffset = 4 + ((59 % Rz090528MatrixFrame.ColumnCount) * 3);
+        Assert.Equal([4, 5, 6], finalRow.Arguments.Span
+            .Slice(colorOffset, 3)
+            .ToArray());
     }
 
     [Fact]
@@ -1853,7 +1916,7 @@ public sealed class ProductionLightingPortTests
     {
         var effect = new Rz090528SpectrumEffect();
 
-        TimeSpan next = Rz090528BrightnessLightingPort.AdvanceFrameDeadline(
+        TimeSpan? next = Rz090528BrightnessLightingPort.AdvanceFrameDeadline(
             effect,
             currentDeadline: Rz090528LightingTiming.AnimatedFrameInterval,
             observedAfterWrite: TimeSpan.FromMilliseconds(82));
@@ -2480,7 +2543,7 @@ public sealed class ProductionLightingPortTests
     {
         public bool RequiresContinuousRendering => true;
 
-        public TimeSpan GetNextFrameDelay(TimeSpan elapsed) => TimeSpan.Zero;
+        public TimeSpan? GetNextFrameDelay(TimeSpan elapsed) => TimeSpan.Zero;
 
         public Rz090528MatrixFrame RenderFrame(TimeSpan elapsed) =>
             Rz090528MatrixFrame.Uniform(default);

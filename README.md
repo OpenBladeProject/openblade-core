@@ -186,6 +186,18 @@ time. Do not commit raw PCAP files, serial numbers, user paths, or unsanitized
 payloads. Capture procedures and restoration requirements are documented in
 the separate capture and documentation repositories.
 
+## Keyboard lighting files
+
+Users can write and share data-only `.oblight` presets for effects already
+supported by their laptop. The same importer accepts Razer `.chroma` version 1
+keyboard files. Uniform files convert losslessly; classic Keyboard per-key
+animations use a bounded, exact-model logical-key projection on the verified
+RZ09-0581 and RZ09-0528 layouts. Unsupported colored cells are reported, and
+per-key KeyboardExtended files are rejected instead of cropped. Enable **Lab
+features** in Settings to show the importer. The versioned format, schema,
+compatibility rules, and example are in
+[`docs/keyboard-lighting-file-format.md`](docs/keyboard-lighting-file-format.md).
+
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) before changing hardware, IPC, setup, or process

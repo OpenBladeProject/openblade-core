@@ -12,7 +12,8 @@ public sealed class ProfileValidationPolicy
         IReadOnlySet<PerformanceFanCombination> supportedPerformanceFanCombinations,
         IReadOnlySet<LightingEffect> supportedLightingEffects,
         CustomPerformanceCapabilities? customPerformance = null,
-        FanSpeedRange? fanSpeedRange = null)
+        FanSpeedRange? fanSpeedRange = null,
+        string? keyboardLightingLayoutId = null)
     {
         ArgumentNullException.ThrowIfNull(supportedPerformanceFanCombinations);
         ArgumentNullException.ThrowIfNull(supportedLightingEffects);
@@ -25,6 +26,7 @@ public sealed class ProfileValidationPolicy
                 new HashSet<CustomPerformanceCombination>(
                     customPerformance.AllowedCombinations));
         FanSpeedRange = fanSpeedRange;
+        KeyboardLightingLayoutId = keyboardLightingLayoutId;
     }
 
     public IReadOnlySet<PerformanceFanCombination> SupportedPerformanceFanCombinations { get; }
@@ -34,6 +36,8 @@ public sealed class ProfileValidationPolicy
     public CustomPerformanceCapabilities? CustomPerformance { get; }
 
     public FanSpeedRange? FanSpeedRange { get; }
+
+    public string? KeyboardLightingLayoutId { get; }
 
     public static ProfileValidationPolicy CreateUnverifiedSafeDefaults() => new(
         new HashSet<PerformanceFanCombination>
@@ -76,7 +80,8 @@ public sealed class ProfileValidationPolicy
             safeDefaults.SupportedPerformanceFanCombinations,
             supportedLightingEffects,
             batteryCapabilities.CustomPerformance,
-            batteryCapabilities.FanSpeedRange);
+            batteryCapabilities.FanSpeedRange,
+            lightingCapabilities.KeyboardLightingLayoutId);
     }
 }
 
@@ -347,6 +352,16 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         if (!LightingSettingsValidation.IsWellFormed(lighting))
         {
             throw Invalid($"The {name} lighting effect parameters are invalid.");
+        }
+
+        if (lighting.Parameters is SequenceLightingParameters sequence
+            && !string.Equals(
+                sequence.LayoutId,
+                validationPolicy.KeyboardLightingLayoutId,
+                StringComparison.Ordinal))
+        {
+            throw Invalid(
+                $"The {name} imported animation targets a different keyboard layout.");
         }
     }
 

@@ -163,7 +163,7 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
         }
 
         LightingEffect[] cycle = Enum.GetValues<LightingEffect>()
-            .Where(supported.Contains)
+            .Where(effect => effect != LightingEffect.Sequence && supported.Contains(effect))
             .ToArray();
         LightingSettings current = status.DesiredState.Lighting.Value;
         int currentIndex = Array.IndexOf(cycle, current.Effect);
