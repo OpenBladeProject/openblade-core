@@ -615,6 +615,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         NotificationPreferences initialNotifications = NotificationPreferences.Default;
         string? initialLastNotifiedReleaseTag = null;
         string? initialLastNotifiedFirmwareSignature = null;
+        bool initialLabFeaturesEnabled = false;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -674,6 +675,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialLastNotifiedReleaseTag = preferences.LastNotifiedReleaseTag;
             initialLastNotifiedFirmwareSignature =
                 preferences.LastNotifiedFirmwareSignature;
+            initialLabFeaturesEnabled = preferences.LabFeaturesEnabled;
         }
         catch (Exception exception)
         {
@@ -703,6 +705,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         changingAccentColor = false;
         NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
+        ViewModel.LabFeaturesEnabled = initialLabFeaturesEnabled;
+        LabFeaturesToggle.IsOn = ViewModel.LabFeaturesEnabled;
         ApplyNotificationPreferences(initialNotifications);
         lastNotifiedReleaseTag = initialLastNotifiedReleaseTag;
         lastNotifiedFirmwareSignature = initialLastNotifiedFirmwareSignature;
@@ -1022,7 +1026,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 Notifications: notificationPreferences,
                 LastNotifiedReleaseTag: lastNotifiedReleaseTag,
                 LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature,
-                TrayDashboard: trayDashboardPreference));
+                TrayDashboard: trayDashboardPreference,
+                LabFeaturesEnabled: ViewModel.LabFeaturesEnabled));
         }
         catch (ObjectDisposedException)
         {
@@ -1180,6 +1185,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         StartMinimized = toggle.IsOn;
+        QueuePreferenceSave();
+    }
+
+    private void OnLabFeaturesToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is not ToggleSwitch toggle
+            || Volatile.Read(ref disposed) != 0
+            || toggle.IsOn == ViewModel.LabFeaturesEnabled)
+        {
+            return;
+        }
+
+        ViewModel.LabFeaturesEnabled = toggle.IsOn;
         QueuePreferenceSave();
     }
 
@@ -4688,6 +4706,134 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 exception.Message);
         }
     }
+
+    private async void OnImportKeyboardLighting(object sender, RoutedEventArgs args)
+    {
+        if (!ViewModel.LabFeaturesEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            var picker = new FileOpenPicker(AppWindow.Id)
+            {
+                Title = "Import OpenBlade keyboard lighting",
+            };
+            picker.FileTypeFilter.Add(".oblight");
+            picker.FileTypeFilter.Add(".chroma");
+            picker.FileTypeFilter.Add(".json");
+
+            PickFileResult? result = await picker.PickSingleFileAsync();
+            if (result is null)
+            {
+                return;
+            }
+
+            bool isChroma = string.Equals(
+                Path.GetExtension(result.Path),
+                ".chroma",
+                StringComparison.OrdinalIgnoreCase);
+            int maximumFileSize = isChroma
+                ? RazerChromaFileAdapter.MaximumFileSizeBytes
+                : KeyboardLightingFileSerializer.MaximumFileSizeBytes;
+            byte[] content = await ReadBoundedKeyboardLightingFileAsync(
+                result.Path,
+                maximumFileSize);
+            KeyboardLightingPreset preset = isChroma
+                ? RazerChromaFileAdapter.Deserialize(
+                    content,
+                    Path.GetFileNameWithoutExtension(result.Path),
+                    ViewModel.Capabilities.KeyboardLightingLayoutId)
+                : KeyboardLightingFileSerializer.Deserialize(content);
+            if (!ViewModel.CanImportKeyboardLighting(preset))
+            {
+                throw new InvalidDataException(
+                    $"The {preset.Lighting.Effect} effect is unavailable on this laptop right now.");
+            }
+
+            string brightness = preset.Lighting.Effect == LightingEffect.Off
+                ? "off"
+                : $"{preset.Lighting.Brightness}% brightness";
+            var confirmation = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Import keyboard lighting?",
+                Content = $"{preset.Name} uses the {preset.Lighting.Effect} effect at "
+                    + $"{brightness}. Importing applies it through OpenBlade and keeps it "
+                    + "as an unsaved change for the active power profile."
+                    + (string.IsNullOrWhiteSpace(preset.ImportWarning)
+                        ? string.Empty
+                        : $"\n\n{preset.ImportWarning}"),
+                PrimaryButtonText = "Import and apply",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            if (await ShowContentDialogAsync(confirmation) != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            if (!ViewModel.TryImportKeyboardLighting(preset))
+            {
+                throw new InvalidDataException(
+                    "Lighting control became unavailable before the preset could be imported.");
+            }
+
+            // The imported draft raises LightingDraft and IsLightingApplyPending.
+            // The shared property-change handler schedules the same debounced
+            // hardware commit used by direct Lighting-page edits.
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade keyboard lighting import failed: {0}", exception);
+            await ShowMessageDialogAsync(
+                "Keyboard lighting could not be imported",
+                exception.Message);
+        }
+    }
+
+    private static async Task<byte[]> ReadBoundedKeyboardLightingFileAsync(
+        string path,
+        int maximum)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximum);
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            useAsync: true);
+        if (stream.Length > maximum)
+        {
+            throw new InvalidDataException(
+                $"The selected lighting file cannot exceed {FormatFileSize(maximum)}.");
+        }
+
+        byte[] buffer = new byte[maximum + 1];
+        int length = 0;
+        while (length < buffer.Length)
+        {
+            int read = await stream.ReadAsync(buffer.AsMemory(length));
+            if (read == 0)
+            {
+                break;
+            }
+            length += read;
+        }
+
+        if (length > maximum)
+        {
+            throw new InvalidDataException(
+                $"The selected lighting file cannot exceed {FormatFileSize(maximum)}.");
+        }
+        return buffer.AsSpan(0, length).ToArray();
+    }
+
+    private static string FormatFileSize(int bytes) => bytes >= 1024 * 1024
+        ? $"{bytes / (1024 * 1024)} MiB"
+        : $"{bytes / 1024} KiB";
 
     private void OnRootSizeChanged(object sender, SizeChangedEventArgs args)
     {

@@ -1126,6 +1126,73 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task LightingWrite_RejectsSequenceForDifferentLayoutBeforeOpeningPort()
+    {
+        var lightingPort = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+        [
+            new KeyboardLightingSequenceFrame(
+                100,
+                new RgbColor[AmbientLightingFrame.SlotCount]),
+        ]);
+
+        CapabilityUnavailableException exception =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+                device.SetLightingAsync(
+                    LightingSettingsFactory.Sequence(
+                        KeyboardLightingLayoutIds.Rz09_0528,
+                        timeline,
+                        loop: true,
+                        brightness: 75),
+                    CancellationToken.None));
+
+        Assert.Contains("not admitted", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, lightingFactory.OpenCount);
+        Assert.Empty(lightingPort.Writes);
+    }
+
+    [Fact]
+    public async Task LightingWrite_RejectsSequenceWhenExactSessionLayoutChanged()
+    {
+        var lightingPort = new FakeLightingPort(
+            keyboardLightingLayoutId: KeyboardLightingLayoutIds.Rz09_0528);
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+        [
+            new KeyboardLightingSequenceFrame(
+                100,
+                new RgbColor[AmbientLightingFrame.SlotCount]),
+        ]);
+
+        BladeWriteException exception = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            device.SetLightingAsync(
+                LightingSettingsFactory.Sequence(
+                    KeyboardLightingLayoutIds.Rz09_0581,
+                    timeline,
+                    loop: true,
+                    brightness: 75),
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, exception.SubmissionState);
+        Assert.Contains("keyboard layout", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, lightingFactory.OpenCount);
+        Assert.Empty(lightingPort.Writes);
+    }
+
+    [Fact]
     public async Task LightingWriter_IsOpenedOnceKeptAliveAndDisposedWithProvider()
     {
         var lightingPort = new FakeLightingPort
@@ -1963,6 +2030,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             LampArrayLightingAccess = DeviceFeatureAccess.ReadOnly,
             ObservedLightingEffects =
                 new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
+            KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581,
         };
 
         public int OpenCount { get; private set; }
@@ -2011,7 +2079,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
     private sealed class FakeLightingPort : IProductionLightingPort
     {
-        public FakeLightingPort(bool supportsKeyboardBrightness = true)
+        public FakeLightingPort(
+            bool supportsKeyboardBrightness = true,
+            string keyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581)
         {
             Capabilities = new DeviceCapabilities(
                 new HashSet<PerformancePreset>(),
@@ -2029,6 +2099,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                     | SpecialKeySlotSet.M4
                     | SpecialKeySlotSet.M5,
                 LampArrayLightingAccess = DeviceFeatureAccess.ReadOnly,
+                KeyboardLightingLayoutId = keyboardLightingLayoutId,
                 ObservedLightingEffects =
                     new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
             };
@@ -2132,6 +2203,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
                 LightingEffect.AmbientAwareness =>
                     LightingRendererOwnershipState.AmbientAwareness,
+                LightingEffect.Sequence => LightingRendererOwnershipState.Sequence,
                 _ => throw new ArgumentOutOfRangeException(),
             };
             return Task.CompletedTask;

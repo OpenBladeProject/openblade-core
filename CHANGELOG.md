@@ -9,6 +9,18 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added an importable example of a cyan sweep that moves from left to right
+  with a dim blue wake.
+- Added a versioned, data-only `.oblight` keyboard lighting preset format and
+  a Lighting-page importer available when Lab features are enabled in Settings.
+  Its bounded Razer `.chroma` version 1 adapter
+  converts uniform Keyboard and KeyboardExtended files losslessly, and plays
+  classic Keyboard per-key animations through separate verified RZ09-0581 and
+  RZ09-0528 logical-key projections. Imported animations persist with the power
+  profile and keep running when the tray exits. Colored source cells without an
+  admitted binding are reported, while per-key KeyboardExtended files are
+  rejected instead of cropped. Imported effects remain limited to capabilities
+  already admitted for the exact connected Blade.
 - Added Windows-native display-brightness handling and flyout presentation for
   the reconstructed function row, using the exact admitted Razer virtual
   Consumer Control path already present on the RZ09-0581. The existing WMI
@@ -28,6 +40,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Moved the Lab keyboard preset importer into the Keyboard section and replaced
+  the long Lab features description with an on-demand list of current features.
 - Replaced common dropdown-only settings with responsive Windows selectors.
   Performance, fan, function-row, lighting, display, and app settings use
   horizontal choices when their options fit on one line without squeezing
@@ -48,6 +62,20 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Advanced the combined service IPC contract to version 44 so incompatible
+  version-43 peers are no longer accepted as wire-compatible.
+- Rejected imported lighting sequences for a different keyboard layout before
+  opening the lighting device or changing its state.
+- Kept the Lab features row aligned with neighboring Settings rows when showing
+  its information button.
+- Validated imported lighting timelines without rebuilding their decoded frame
+  graph during each IPC status check.
+- Labeled imported animations consistently in profile details and summaries
+  instead of showing `Sequence` and `#000000`.
+- Preserved configured Windows power modes when migrating schema 12 profiles
+  to the keyboard-animation profile schema.
+- Kept a completed non-looping RZ09-0528 lighting sequence on its final frame
+  without faulting or surrendering the service-owned renderer.
 - Reduced excess vertical space in single-line Dashboard rows while preserving
   the original spacing for descriptions, editors, and titles that wrap at
   narrow widths without disrupting conditional-row animations.

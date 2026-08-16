@@ -51,7 +51,8 @@ public sealed record UiPreferences(
     NotificationPreferences? Notifications = null,
     string? LastNotifiedReleaseTag = null,
     string? LastNotifiedFirmwareSignature = null,
-    TrayDashboardPreference? TrayDashboard = null)
+    TrayDashboardPreference? TrayDashboard = null,
+    bool LabFeaturesEnabled = false)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -88,7 +89,8 @@ public sealed record UiPreferences(
         Notifications: NotificationPreferences.Default,
         LastNotifiedReleaseTag: null,
         LastNotifiedFirmwareSignature: null,
-        TrayDashboard: TrayDashboardPreferenceDefaults.Preference);
+        TrayDashboard: TrayDashboardPreferenceDefaults.Preference,
+        LabFeaturesEnabled: false);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled

@@ -252,6 +252,42 @@ public sealed class ProfileSetValidatorTests
     }
 
     [Fact]
+    public void Validate_AcceptsSequenceOnlyForTheActiveExactLayout()
+    {
+        var slots = new RgbColor[AmbientLightingFrame.SlotCount];
+        slots[59] = new RgbColor(1, 2, 3);
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+        [
+            new KeyboardLightingSequenceFrame(100, slots),
+        ]);
+        LightingSettings sequence = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0581,
+            timeline,
+            loop: true,
+            brightness: 100);
+
+        CreateValidator(
+            lightingEffects: new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Sequence,
+            },
+            keyboardLightingLayoutId: KeyboardLightingLayoutIds.Rz09_0581)
+            .Validate(WithPluggedInLighting(sequence));
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            CreateValidator(
+                lightingEffects: new HashSet<LightingEffect>
+                {
+                    LightingEffect.Off,
+                    LightingEffect.Sequence,
+                },
+                keyboardLightingLayoutId: KeyboardLightingLayoutIds.Rz09_0528)
+                .Validate(WithPluggedInLighting(sequence)));
+        Assert.Contains("different keyboard layout", exception.Message);
+    }
+
+    [Fact]
     public void Validate_AcceptsBatteryPolicyWithoutTransientState()
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
@@ -547,7 +583,8 @@ public sealed class ProfileSetValidatorTests
         IReadOnlySet<PerformanceFanCombination>? combinations = null,
         IReadOnlySet<LightingEffect>? lightingEffects = null,
         CustomPerformanceCapabilities? customPerformance = null,
-        FanSpeedRange? fanSpeedRange = null) => new(new ProfileValidationPolicy(
+        FanSpeedRange? fanSpeedRange = null,
+        string? keyboardLightingLayoutId = null) => new(new ProfileValidationPolicy(
             combinations ?? new HashSet<PerformanceFanCombination>
             {
                 new(PerformancePreset.Balanced, FanMode.Automatic),
@@ -559,5 +596,6 @@ public sealed class ProfileSetValidatorTests
             },
             lightingEffects ?? new HashSet<LightingEffect> { LightingEffect.Off },
             customPerformance,
-            fanSpeedRange));
+            fanSpeedRange,
+            keyboardLightingLayoutId));
 }

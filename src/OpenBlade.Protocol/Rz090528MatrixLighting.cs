@@ -145,7 +145,7 @@ internal interface IRz090528LightingEffect
 {
     bool RequiresContinuousRendering { get; }
 
-    TimeSpan GetNextFrameDelay(TimeSpan elapsed);
+    TimeSpan? GetNextFrameDelay(TimeSpan elapsed);
 
     Rz090528MatrixFrame RenderFrame(TimeSpan elapsed);
 }
@@ -172,7 +172,7 @@ internal sealed class Rz090528StaticEffect(RgbColor color) : IRz090528LightingEf
 
     public TimeSpan NextFrameDelay => Timeout.InfiniteTimeSpan;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         ThrowIfNegative(elapsed);
         return Timeout.InfiniteTimeSpan;
@@ -207,7 +207,7 @@ internal sealed class Rz090528SpectrumEffect : IRz090528LightingEffect
 
     public TimeSpan NextFrameDelay => FrameInterval;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         if (elapsed < TimeSpan.Zero)
         {

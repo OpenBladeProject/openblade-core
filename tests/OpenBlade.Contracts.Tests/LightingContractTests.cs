@@ -237,6 +237,65 @@ public sealed class LightingContractTests
     }
 
     [Fact]
+    public void SequenceFactoryProducesLayoutBoundValidatedParameters()
+    {
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+        [
+            new KeyboardLightingSequenceFrame(
+                100,
+                new RgbColor[AmbientLightingFrame.SlotCount]),
+        ]);
+
+        LightingSettings settings = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0581,
+            timeline,
+            loop: true,
+            brightness: 75);
+
+        Assert.True(LightingSettingsValidation.IsWellFormed(settings));
+        var parameters = Assert.IsType<SequenceLightingParameters>(settings.Parameters);
+        Assert.Equal(KeyboardLightingLayoutIds.Rz09_0581, parameters.LayoutId);
+        Assert.Equal(timeline, parameters.TimelineBase64);
+        Assert.True(parameters.Loop);
+    }
+
+    [Fact]
+    public void SequenceValidationRejectsUnknownLayoutMalformedTimelineAndWrongShape()
+    {
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+        [
+            new KeyboardLightingSequenceFrame(
+                100,
+                new RgbColor[AmbientLightingFrame.SlotCount]),
+        ]);
+        LightingSettings valid = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0528,
+            timeline,
+            loop: false,
+            brightness: 75);
+
+        LightingSettings[] invalid =
+        [
+            valid with
+            {
+                Parameters = new SequenceLightingParameters("rz09-0581", timeline, false),
+            },
+            valid with
+            {
+                Parameters = new SequenceLightingParameters(
+                    KeyboardLightingLayoutIds.Rz09_0528,
+                    "not-base64",
+                    false),
+            },
+            valid with { Color = new RgbColor(1, 2, 3) },
+            valid with { Effect = LightingEffect.Static },
+        ];
+
+        Assert.All(invalid, settings =>
+            Assert.False(LightingSettingsValidation.IsWellFormed(settings)));
+    }
+
+    [Fact]
     public void ValidationReservesZeroBrightnessForOff()
     {
         LightingSettings[] invisible =

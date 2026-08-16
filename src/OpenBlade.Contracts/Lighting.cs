@@ -44,6 +44,7 @@ public enum StarlightLightingDuration
 [JsonDerivedType(typeof(AmbientAwarenessLightingParameters), "ambientAwareness")]
 [JsonDerivedType(typeof(AudioMeterLightingParameters), "audioMeter")]
 [JsonDerivedType(typeof(FireLightingParameters), "fire")]
+[JsonDerivedType(typeof(SequenceLightingParameters), "sequence")]
 public abstract record LightingEffectParameters;
 
 public sealed record OffLightingParameters : LightingEffectParameters;
@@ -96,6 +97,12 @@ public sealed record AudioMeterLightingParameters(
     : LightingEffectParameters;
 
 public sealed record FireLightingParameters : LightingEffectParameters;
+
+public sealed record SequenceLightingParameters(
+    string LayoutId,
+    string TimelineBase64,
+    bool Loop)
+    : LightingEffectParameters;
 
 public static class LightingSettingsFactory
 {
@@ -300,6 +307,21 @@ public static class LightingSettingsFactory
         Parameters = new FireLightingParameters(),
     };
 
+    public static LightingSettings Sequence(
+        string layoutId,
+        string timelineBase64,
+        bool loop,
+        byte brightness) => new(
+            LightingEffect.Sequence,
+            default,
+            brightness)
+        {
+            Parameters = new SequenceLightingParameters(
+                layoutId,
+                timelineBase64,
+                loop),
+        };
+
     public static LightingSettings NormalizeLegacyOff(LightingSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -379,6 +401,11 @@ public static class LightingSettingsFactory
                 DefaultVisibleBrightness,
                 audioMeter.DecayMilliseconds),
             FireLightingParameters => Fire(DefaultVisibleBrightness),
+            SequenceLightingParameters sequence => Sequence(
+                sequence.LayoutId,
+                sequence.TimelineBase64,
+                sequence.Loop,
+                DefaultVisibleBrightness),
             StarlightLightingParameters
             {
                 ColorMode: StarlightColorMode.Dual,
@@ -504,6 +531,10 @@ public static class LightingSettingsValidation
                 && settings.Color == default,
             (LightingEffect.Fire, FireLightingParameters) =>
                 settings.Color == default,
+            (LightingEffect.Sequence, SequenceLightingParameters parameters) =>
+                settings.Color == default
+                && KeyboardLightingLayoutIds.IsKnown(parameters.LayoutId)
+                && KeyboardLightingSequenceCodec.IsWellFormed(parameters.TimelineBase64),
             _ => false,
         };
 

@@ -451,6 +451,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Collections.Generic.IReadOnlySet<System.Int32> get_ChargeLimits()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_LampArrayLightingAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_SpecialKeyBindingsAccess()
+  method System.String get_KeyboardLightingLayoutId()
   method System.Void Deconstruct(out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects, out System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits, out System.Boolean SupportsBatteryProtectionOff, out System.Boolean SupportsTemporaryFullCharge)
   method System.Void set_ChargeLimits(System.Collections.Generic.IReadOnlySet<System.Int32> value)
   method System.Void set_CpuPowerLimit(OpenBlade.Contracts.CpuPowerLimitCapabilities value)
@@ -459,6 +460,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_FanModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> value)
   method System.Void set_FanSpeedRange(OpenBlade.Contracts.FanSpeedRange value)
   method System.Void set_GpuOverclock(OpenBlade.Contracts.GpuOverclockCapabilities value)
+  method System.Void set_KeyboardLightingLayoutId(System.String value)
   method System.Void set_LampArrayLightingAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_LightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
   method System.Void set_LogoLightingModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> value)
@@ -500,6 +502,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> LampArrayLightingAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> SpecialKeyBindingsAccess { get; init; }
+  property System.String KeyboardLightingLayoutId { get; init; }
 type enum OpenBlade.Contracts.DeviceFeatureAccess
   field System.Int32 value__
   field const OpenBlade.Contracts.DeviceFeatureAccess ObservedOnly = 0
@@ -876,6 +879,52 @@ type enum OpenBlade.Contracts.KeyboardLightingControlMode
   field System.Int32 value__
   field const OpenBlade.Contracts.KeyboardLightingControlMode OpenBlade = 0
   field const OpenBlade.Contracts.KeyboardLightingControlMode WindowsDynamicLighting = 1
+type static class OpenBlade.Contracts.KeyboardLightingLayoutIds
+  field const System.String Rz09_0528 = "openblade.razer.rz09-0528.keyboard.6x17.v1"
+  field const System.String Rz09_0581 = "openblade.razer.rz09-0581.keyboard.6x17.v1"
+  method static System.Boolean IsKnown(System.String layoutId)
+type sealed class OpenBlade.Contracts.KeyboardLightingSequence
+  interface System.IEquatable<OpenBlade.Contracts.KeyboardLightingSequence>
+  ctor (System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.KeyboardLightingSequenceFrame> Frames)
+  method OpenBlade.Contracts.KeyboardLightingSequence <Clone>$()
+  method System.Boolean IsWellFormed()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.KeyboardLightingSequenceFrame> get_Frames()
+  method System.Void Deconstruct(out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.KeyboardLightingSequenceFrame> Frames)
+  method System.Void set_Frames(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.KeyboardLightingSequenceFrame> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.KeyboardLightingSequence left, OpenBlade.Contracts.KeyboardLightingSequence right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.KeyboardLightingSequence left, OpenBlade.Contracts.KeyboardLightingSequence right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.KeyboardLightingSequence other)
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.KeyboardLightingSequenceFrame> Frames { get; init; }
+type static class OpenBlade.Contracts.KeyboardLightingSequenceCodec
+  field const System.Int32 MaximumDecodedByteCount = 4096
+  field const System.Int32 MaximumFrameCount = 1800
+  field const System.Int32 MaximumFrameDurationMilliseconds = 60000
+  field const System.Int32 MaximumTotalDurationMilliseconds = 600000
+  field const System.Int32 MinimumFrameDurationMilliseconds = 1
+  method static OpenBlade.Contracts.KeyboardLightingSequence Decode(System.String timelineBase64)
+  method static System.Boolean IsWellFormed(OpenBlade.Contracts.KeyboardLightingSequence sequence)
+  method static System.Boolean IsWellFormed(System.String timelineBase64)
+  method static System.String Encode(System.Collections.Generic.IEnumerable<OpenBlade.Contracts.KeyboardLightingSequenceFrame> frames)
+type sealed class OpenBlade.Contracts.KeyboardLightingSequenceFrame
+  interface System.IEquatable<OpenBlade.Contracts.KeyboardLightingSequenceFrame>
+  ctor (System.Int32 DurationMilliseconds, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.RgbColor> Slots)
+  method OpenBlade.Contracts.KeyboardLightingSequenceFrame <Clone>$()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.RgbColor> get_Slots()
+  method System.Int32 get_DurationMilliseconds()
+  method System.Void Deconstruct(out System.Int32 DurationMilliseconds, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.RgbColor> Slots)
+  method System.Void set_DurationMilliseconds(System.Int32 value)
+  method System.Void set_Slots(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.RgbColor> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.KeyboardLightingSequenceFrame left, OpenBlade.Contracts.KeyboardLightingSequenceFrame right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.KeyboardLightingSequenceFrame left, OpenBlade.Contracts.KeyboardLightingSequenceFrame right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.KeyboardLightingSequenceFrame other)
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.RgbColor> Slots { get; init; }
+  property System.Int32 DurationMilliseconds { get; init; }
 type sealed class OpenBlade.Contracts.LaptopBehaviorProfileSettings
   interface System.IEquatable<OpenBlade.Contracts.LaptopBehaviorProfileSettings>
   ctor (System.Nullable<System.Boolean> StartupAnimationEnabled, System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyPrimary, System.Nullable<System.Boolean> GamingModeEnabled)
@@ -917,6 +966,7 @@ type enum OpenBlade.Contracts.LightingEffect
   field const OpenBlade.Contracts.LightingEffect Off = 0
   field const OpenBlade.Contracts.LightingEffect Reactive = 4
   field const OpenBlade.Contracts.LightingEffect Ripple = 9
+  field const OpenBlade.Contracts.LightingEffect Sequence = 13
   field const OpenBlade.Contracts.LightingEffect Spectrum = 2
   field const OpenBlade.Contracts.LightingEffect Starlight = 6
   field const OpenBlade.Contracts.LightingEffect Static = 1
@@ -958,6 +1008,7 @@ type enum OpenBlade.Contracts.LightingRendererOwnershipState
   field const OpenBlade.Contracts.LightingRendererOwnershipState None = 0
   field const OpenBlade.Contracts.LightingRendererOwnershipState Reactive = 4
   field const OpenBlade.Contracts.LightingRendererOwnershipState Ripple = 10
+  field const OpenBlade.Contracts.LightingRendererOwnershipState Sequence = 14
   field const OpenBlade.Contracts.LightingRendererOwnershipState Spectrum = 2
   field const OpenBlade.Contracts.LightingRendererOwnershipState Starlight = 6
   field const OpenBlade.Contracts.LightingRendererOwnershipState Static = 1
@@ -1012,6 +1063,7 @@ type static class OpenBlade.Contracts.LightingSettingsFactory
   method static OpenBlade.Contracts.LightingSettings Off()
   method static OpenBlade.Contracts.LightingSettings Reactive(OpenBlade.Contracts.RgbColor color, System.Byte brightness, OpenBlade.Contracts.ReactiveLightingDuration duration)
   method static OpenBlade.Contracts.LightingSettings Ripple(OpenBlade.Contracts.RgbColor color, System.Byte brightness)
+  method static OpenBlade.Contracts.LightingSettings Sequence(System.String layoutId, System.String timelineBase64, System.Boolean loop, System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings SpectrumCycling(System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings StarlightDual(OpenBlade.Contracts.RgbColor primaryColor, OpenBlade.Contracts.RgbColor secondaryColor, System.Byte brightness, OpenBlade.Contracts.StarlightLightingDuration duration)
   method static OpenBlade.Contracts.LightingSettings StarlightRandom(System.Byte brightness, OpenBlade.Contracts.StarlightLightingDuration duration)
@@ -1142,7 +1194,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 43
+  field const System.Int32 ProtocolVersion = 44
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1504,6 +1556,28 @@ type sealed class OpenBlade.Contracts.RippleLightingParameters
   method virtual OpenBlade.Contracts.RippleLightingParameters <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.RippleLightingParameters other)
   property OpenBlade.Contracts.RgbColor Color { get; init; }
+type sealed class OpenBlade.Contracts.SequenceLightingParameters
+  base OpenBlade.Contracts.LightingEffectParameters
+  interface System.IEquatable<OpenBlade.Contracts.SequenceLightingParameters>
+  ctor (System.String LayoutId, System.String TimelineBase64, System.Boolean Loop)
+  method System.Boolean get_Loop()
+  method System.String get_LayoutId()
+  method System.String get_TimelineBase64()
+  method System.Void Deconstruct(out System.String LayoutId, out System.String TimelineBase64, out System.Boolean Loop)
+  method System.Void set_LayoutId(System.String value)
+  method System.Void set_Loop(System.Boolean value)
+  method System.Void set_TimelineBase64(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.LightingEffectParameters other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SequenceLightingParameters left, OpenBlade.Contracts.SequenceLightingParameters right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SequenceLightingParameters left, OpenBlade.Contracts.SequenceLightingParameters right)
+  method virtual OpenBlade.Contracts.SequenceLightingParameters <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SequenceLightingParameters other)
+  property System.Boolean Loop { get; init; }
+  property System.String LayoutId { get; init; }
+  property System.String TimelineBase64 { get; init; }
 type abstract class OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.ServiceRequest>
   method System.Guid get_RequestId()

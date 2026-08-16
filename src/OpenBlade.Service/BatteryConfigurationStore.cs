@@ -189,6 +189,7 @@ public sealed class BatteryConfigurationStore
                 or ProfileStore.OldestSupportedSchemaVersion
                 or ProfileStore.OlderSchemaVersion
                 or ProfileStore.PreviousSchemaVersion
+                or ProfileStore.FormerSchemaVersion
                 or ProfileStore.AncientSupportedSchemaVersion
                 or ProfileStore.PrehistoricSupportedSchemaVersion
                 or ProfileStore.ArchaicSupportedSchemaVersion

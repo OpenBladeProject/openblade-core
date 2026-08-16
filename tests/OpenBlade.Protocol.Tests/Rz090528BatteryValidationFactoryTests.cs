@@ -26,6 +26,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
             LightingEffect.AmbientAwareness,
             LightingEffect.AudioMeter,
             LightingEffect.Fire,
+            LightingEffect.Sequence,
         ]));
         Assert.Empty(factory.Capabilities.ObservedLightingEffects);
     }
@@ -51,6 +52,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
             LightingEffect.AmbientAwareness,
             LightingEffect.AudioMeter,
             LightingEffect.Fire,
+            LightingEffect.Sequence,
         ]));
         Assert.Empty(factory.Capabilities.ObservedLightingEffects);
     }

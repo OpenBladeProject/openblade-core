@@ -152,7 +152,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static readonly IReadOnlyList<LightingEffect> KnownLightingEffects =
         Enum.GetValues<LightingEffect>()
-            .Where(Enum.IsDefined)
+            .Where(effect => Enum.IsDefined(effect) && effect != LightingEffect.Sequence)
             .Order()
             .ToArray();
 
@@ -326,6 +326,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         StarlightLightingDuration.Medium;
     private ReactiveLightingDuration lightingReactiveDurationEditor =
         ReactiveLightingDuration.Medium;
+    private SequenceLightingParameters? importedSequenceParameters;
     private bool lightingRandomColorsEditor;
     private LightingDirection lightingDirectionEditor = LightingDirection.Rightward;
     private LightingRotationDirection lightingRotationDirectionEditor =
@@ -359,6 +360,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private LaptopBehaviorProfileSettings? activeProfileOriginalLaptopBehavior;
     private DisplayProfileSettings? activeProfileOriginalDisplay;
     private ThemePreference theme = ThemePreference.FollowWindows;
+    private bool labFeaturesEnabled;
     private LiveReadingsCadence liveReadingsRefreshCadence =
         LiveReadingsCadence.EveryTwoSeconds;
     private TrayHoverLabelMode trayHoverLabelMode =
@@ -3607,6 +3609,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    public bool LabFeaturesEnabled
+    {
+        get => labFeaturesEnabled;
+        set => SetField(ref labFeaturesEnabled, value);
+    }
+
     public IReadOnlyList<ThemePreference> ThemeOptions { get; } =
         Enum.GetValues<ThemePreference>();
 
@@ -4661,7 +4669,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyActiveFanSelectionBinding();
         }
         LightingEffect[] lightingEffects = capabilities.LightingEffects
-            .Where(Enum.IsDefined)
+            .Where(effect => Enum.IsDefined(effect) && effect != LightingEffect.Sequence)
             .Order()
             .ToArray();
         if (!AvailableLightingEffects.SequenceEqual(lightingEffects))
@@ -4672,6 +4680,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             AvailableLightingEffects.Count > 0
                 ? AvailableLightingEffects
                 : KnownLightingEffects;
+        if (LightingEffectEditor == LightingEffect.Sequence
+            && !presentedLightingEffects.Contains(LightingEffect.Sequence))
+        {
+            presentedLightingEffects =
+            [
+                .. presentedLightingEffects,
+                LightingEffect.Sequence,
+            ];
+        }
         IReadOnlyList<LightingEffectOption> lightingEffectOptions =
             StableOptionCollection.ReuseEquivalent(
                 AvailableLightingEffectOptions,
@@ -4718,15 +4735,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     private static LightingEffectOption CreateLightingEffectOption(LightingEffect effect) =>
-        new(
-            effect,
-            effect switch
-            {
-                LightingEffect.Spectrum => "Spectrum Cycling",
-                LightingEffect.AmbientAwareness => "Ambient Awareness",
-                LightingEffect.AudioMeter => "Audio Meter",
-                _ => effect.ToString(),
-            });
+        new(effect, LightingEffectLabel(effect));
+
+    private static string LightingEffectLabel(LightingEffect effect) => effect switch
+    {
+        LightingEffect.Spectrum => "Spectrum Cycling",
+        LightingEffect.AmbientAwareness => "Ambient Awareness",
+        LightingEffect.AudioMeter => "Audio Meter",
+        LightingEffect.Sequence => "Imported animation",
+        _ => effect.ToString(),
+    };
 
     private void NotifyActiveFanSelectionBinding()
     {
@@ -4878,6 +4896,38 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 LoadProfileEditors(validated);
             },
             cancellationToken);
+        return true;
+    }
+
+    public bool CanImportKeyboardLighting(KeyboardLightingPreset preset)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        return LabFeaturesEnabled
+            && CanControlLighting
+            && LightingSettingsValidation.IsWellFormed(preset.Lighting)
+            && preset.Lighting.LogoMode is null
+            && Capabilities.LightingEffects.Contains(preset.Lighting.Effect)
+            && (preset.Lighting.Parameters is not SequenceLightingParameters sequence
+                || string.Equals(
+                    sequence.LayoutId,
+                    Capabilities.KeyboardLightingLayoutId,
+                    StringComparison.Ordinal));
+    }
+
+    public bool TryImportKeyboardLighting(KeyboardLightingPreset preset)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        if (!CanImportKeyboardLighting(preset))
+        {
+            return false;
+        }
+
+        SetKeyboardEffectUnconfirmed(false);
+        EnsureImportedSequenceOption(preset.Lighting);
+        LoadLightingEditor(preset.Lighting with { LogoMode = LogoLightingModeEditor });
+        SetLightingEditorDirty(true);
+        Notify(nameof(LightingDraft));
+        NotifyCommands();
         return true;
     }
 
@@ -6378,6 +6428,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void LoadLightingEditor(LightingSettings value)
     {
+        EnsureImportedSequenceOption(value);
+        if (value.Parameters is SequenceLightingParameters sequence)
+        {
+            importedSequenceParameters = sequence;
+        }
         int brightness = value.Effect == LightingEffect.Off
             ? 0
             : value.Brightness == 0
@@ -7395,13 +7450,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return "Off";
         }
 
-        string effect = lighting.Effect switch
-        {
-            LightingEffect.Spectrum => "Spectrum Cycling",
-            LightingEffect.AmbientAwareness => "Ambient Awareness",
-            LightingEffect.AudioMeter => "Audio Meter",
-            _ => lighting.Effect.ToString(),
-        };
+        string effect = LightingEffectLabel(lighting.Effect);
         string details = lighting.Parameters switch
         {
             BreathingLightingParameters
@@ -7735,7 +7784,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Effect: LightingEffect.Wheel,
             Parameters: WheelLightingParameters wheel,
         } => $"Wheel, {FormatRotationDirection(wheel.Direction)}",
-        _ => lighting.Effect.ToString(),
+        _ => LightingEffectLabel(lighting.Effect),
     };
 
     private static string FormatLightingColor(LightingSettings lighting) => lighting switch
@@ -7746,7 +7795,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Effect: LightingEffect.Wave or LightingEffect.Wheel
                 or LightingEffect.AmbientAwareness
                 or LightingEffect.AudioMeter
-                or LightingEffect.Fire,
+                or LightingEffect.Fire
+                or LightingEffect.Sequence,
         } => "Automatic",
         {
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
@@ -7904,9 +7954,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 brightness,
                 LightingAudioMeterDecayMillisecondsEditor),
             LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
+            LightingEffect.Sequence when importedSequenceParameters is not null =>
+                LightingSettingsFactory.Sequence(
+                    importedSequenceParameters.LayoutId,
+                    importedSequenceParameters.TimelineBase64,
+                    importedSequenceParameters.Loop,
+                    brightness),
             _ => new LightingSettings(LightingEffectEditor, default, brightness),
         };
         return keyboard with { LogoMode = LogoLightingModeEditor };
+    }
+
+    private void EnsureImportedSequenceOption(LightingSettings value)
+    {
+        if (value.Effect != LightingEffect.Sequence
+            || AvailableLightingEffectOptions.Any(
+                option => option.Effect == LightingEffect.Sequence))
+        {
+            return;
+        }
+
+        AvailableLightingEffectOptions =
+        [
+            .. AvailableLightingEffectOptions,
+            CreateLightingEffectOption(LightingEffect.Sequence),
+        ];
     }
 
     private void SeedVisibleLightingDefaults(
