@@ -92,12 +92,18 @@ switch ($Lane) {
             -AllowedExtension @('.csproj') `
             -AllowedPrefix @('tests/', 'build/installer/')
 
+        # Restore the complete selected set before any custom build target can
+        # consume another selected project's assets.
         foreach ($project in $qualityProjects) {
             Invoke-DotNetChecked -Operation "restore $project" -Arguments @(
                 'restore', $project, '-p:NuGetAudit=false')
+        }
+        foreach ($project in $qualityProjects) {
             Invoke-DotNetChecked -Operation "format $project" -Arguments @(
                 'format', $project, '--verify-no-changes', '--no-restore',
                 '--severity', 'error', '--verbosity', 'minimal')
+        }
+        foreach ($project in $qualityProjects) {
             Invoke-DotNetChecked -Operation "build $project" -Arguments @(
                 'build', $project, '--configuration', $Configuration,
                 '-p:NuGetAudit=false', '--no-restore', '-m:1', '--verbosity', 'minimal')

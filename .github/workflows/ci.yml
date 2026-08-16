@@ -54,6 +54,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           . ./build/CiBuildScope.ps1
+          Assert-OpenBladeCiSelectorHealthy
 
           $forceFull = $env:OPENBLADE_EVENT_NAME -ne 'pull_request' -or
             $env:OPENBLADE_PR_DRAFT -ne 'true'

@@ -50,7 +50,7 @@ function Get-OpenBladeCiManifest {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Repository)
 
-    $manifestPath = Join-Path $Repository 'build\CiImpactManifest.json'
+    $manifestPath = Join-Path $Repository 'build/CiImpactManifest.json'
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
         throw "The CI impact manifest is missing: $manifestPath"
     }
@@ -64,7 +64,7 @@ function Get-OpenBladeCiProjectCatalog {
 
     $repositoryPath = [IO.Path]::GetFullPath($Repository).TrimEnd('\', '/')
     $projectFiles = @()
-    foreach ($relativeRoot in @('src', 'tests', 'build\installer')) {
+    foreach ($relativeRoot in @('src', 'tests', 'build/installer')) {
         $root = Join-Path $repositoryPath $relativeRoot
         if (Test-Path -LiteralPath $root -PathType Container) {
             $projectFiles += Get-ChildItem -LiteralPath $root -Filter '*.csproj' -Recurse
@@ -83,7 +83,11 @@ function Get-OpenBladeCiProjectCatalog {
                 continue
             }
 
-            $referencePath = [IO.Path]::GetFullPath((Join-Path $projectFile.DirectoryName ([string]$reference.Include)))
+            $referenceInclude = ([string]$reference.Include).Replace(
+                '\',
+                [IO.Path]::DirectorySeparatorChar)
+            $referencePath = [IO.Path]::GetFullPath((
+                Join-Path $projectFile.DirectoryName $referenceInclude))
             if (-not $referencePath.StartsWith(
                     $repositoryPath + [IO.Path]::DirectorySeparatorChar,
                     [StringComparison]::OrdinalIgnoreCase)) {
@@ -196,14 +200,14 @@ function Get-OpenBladeCiPlan {
         $pathRecognized = $false
 
         foreach ($rule in @($manifest.contractRules)) {
-            $matches = $false
+            $ruleMatches = $false
             foreach ($pattern in @($rule.patterns)) {
                 if (Test-OpenBladeCiPattern -Path $path -Pattern ([string]$pattern)) {
-                    $matches = $true
+                    $ruleMatches = $true
                     break
                 }
             }
-            if (-not $matches) { continue }
+            if (-not $ruleMatches) { continue }
 
             [void]$contractTests.Add([string]$rule.test)
             $restoreProjects = if ($rule.PSObject.Properties.Name -contains 'restoreProjects') {
@@ -224,14 +228,14 @@ function Get-OpenBladeCiPlan {
         }
 
         foreach ($rule in @($manifest.testInputRules)) {
-            $matches = $false
+            $ruleMatches = $false
             foreach ($pattern in @($rule.patterns)) {
                 if (Test-OpenBladeCiPattern -Path $path -Pattern ([string]$pattern)) {
-                    $matches = $true
+                    $ruleMatches = $true
                     break
                 }
             }
-            if (-not $matches) { continue }
+            if (-not $ruleMatches) { continue }
 
             $ruleSeedProjects = if ($rule.PSObject.Properties.Name -contains 'seedProjects') {
                 @($rule.seedProjects)
@@ -460,6 +464,22 @@ function Format-OpenBladeCiPlan {
     $lines.Add('### Reasons')
     foreach ($reason in @($Plan.Reasons)) { $lines.Add("- $reason") }
     return $lines -join [Environment]::NewLine
+}
+
+function Assert-OpenBladeCiSelectorHealthy {
+    [CmdletBinding()]
+    param([string]$Repository = $script:OpenBladeCiRepository)
+
+    $probe = Get-OpenBladeCiPlan `
+        -Repository $Repository `
+        -ChangedPath @('src/OpenBlade.Tray/MainWindow.xaml')
+    if ($probe.Mode -ne 'affected' -or
+        $probe.QualityProjects -notcontains 'src/OpenBlade.Tray/OpenBlade.Tray.csproj' -or
+        $probe.TestProjects -notcontains 'tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj' -or
+        $probe.QualityProjects -contains 'src/OpenBlade.Service/OpenBlade.Service.csproj' -or
+        $probe.RunInstaller) {
+        throw "The CI selector portability probe failed: $($probe.Reasons -join ' ')"
+    }
 }
 
 function Test-OpenBladeCiBuildRequired {

@@ -44,6 +44,7 @@ function Assert-NotContains {
 
 $tray = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
     'src/OpenBlade.Tray/MainWindow.xaml')
+Assert-OpenBladeCiSelectorHealthy -Repository $repository
 Assert-Equal 'affected' $tray.Mode 'Tray UI changes must use affected validation.'
 Assert-Contains $tray.QualityProjects `
     'src/OpenBlade.Tray/OpenBlade.Tray.csproj' `
@@ -216,6 +217,7 @@ if ($contractDifference.Count -ne 0) {
 $ci = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\ci.yml') -Raw
 foreach ($requiredContract in @(
         'OPENBLADE_PR_DRAFT:',
+        'Assert-OpenBladeCiSelectorHealthy',
         'Get-OpenBladeCiPlan',
         'validation-plan-json:',
         'run-component-publish:',
@@ -228,6 +230,17 @@ foreach ($requiredContract in @(
 }
 if ($ci.Contains('if: ${{ needs.classify-changes.outputs.requires-build')) {
     throw 'The stable aggregate build check must not disappear for an empty plan.'
+}
+
+$selectorSource = Get-Content -LiteralPath (
+    Join-Path $repository 'build\CiBuildScope.ps1') -Raw
+foreach ($portablePathContract in @(
+        "'build/CiImpactManifest.json'",
+        "'build/installer'",
+        "[IO.Path]::DirectorySeparatorChar")) {
+    if (-not $selectorSource.Contains($portablePathContract)) {
+        throw "CI selector is missing portable path contract $portablePathContract."
+    }
 }
 
 $build = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\build.yml') -Raw
