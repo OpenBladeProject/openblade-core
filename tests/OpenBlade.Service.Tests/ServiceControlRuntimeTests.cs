@@ -5041,6 +5041,232 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, PowerSource.Battery)]
+    [InlineData(PowerSource.Battery, PowerSource.PluggedIn)]
+    public async Task PowerTransition_TransientOwnedLightingOff_ConfirmsBeforeClassifying(
+        PowerSource source,
+        PowerSource destination)
+    {
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static,
+            source);
+        PowerProfile destinationProfile = destination == PowerSource.PluggedIn
+            ? context.Runtime.GetStatus().Profiles.PluggedIn
+            : context.Runtime.GetStatus().Profiles.Battery;
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            context.Device.ConfirmedState with { Lighting = null },
+            LightingOffConfirmationUnavailable: false));
+        context.Device.PowerTransitionReadCalls.Clear();
+        context.Telemetry.Current = CreateTelemetry(destination);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.PowerTransitionStateReadCalls);
+        Assert.Equal("TransitionState", context.Device.PowerTransitionReadCalls[0]);
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(destinationProfile.Lighting, context.Device.ConfirmedState.Lighting);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, PowerSource.Battery)]
+    [InlineData(PowerSource.Battery, PowerSource.PluggedIn)]
+    public async Task PowerTransition_StableOwnedLightingOff_RemainsExternal(
+        PowerSource source,
+        PowerSource destination)
+    {
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static,
+            source);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.Off(),
+        };
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            context.Device.ConfirmedState,
+            LightingOffConfirmationUnavailable: false));
+        context.Telemetry.Current = CreateTelemetry(destination);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.PowerTransitionStateReadCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Contains(
+            "paused",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Fact]
+    public async Task PowerTransition_ConfirmedThirdLightingValue_RemainsExternal()
+    {
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.Static(
+                new RgbColor(4, 5, 6),
+                brightness: 30),
+        };
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingSettingsFactory.Static(new RgbColor(4, 5, 6), brightness: 30),
+            context.Device.ConfirmedState.Lighting);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, PowerSource.Battery)]
+    [InlineData(PowerSource.Battery, PowerSource.PluggedIn)]
+    public async Task PowerTransition_OffConfirmationUnavailable_SkipsOnlyLighting(
+        PowerSource source,
+        PowerSource destination)
+    {
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static,
+            source);
+        int performanceWrites = context.Device.PerformanceSetCalls;
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            context.Device.ConfirmedState with { Lighting = null },
+            LightingOffConfirmationUnavailable: true));
+        context.Telemetry.Current = CreateTelemetry(destination);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(performanceWrites + 1, context.Device.PerformanceSetCalls);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains(
+            "lighting profile application was skipped",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, PowerSource.Battery, false)]
+    [InlineData(PowerSource.PluggedIn, PowerSource.Battery, true)]
+    [InlineData(PowerSource.Battery, PowerSource.PluggedIn, false)]
+    [InlineData(PowerSource.Battery, PowerSource.PluggedIn, true)]
+    public async Task PowerTransition_FinalLightingReadUnavailableDoesNotBlockLaterTransition(
+        PowerSource source,
+        PowerSource destination,
+        bool configuredLogo)
+    {
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static,
+            source,
+            logoMode: configuredLogo ? LogoLightingMode.Static : null);
+        PowerProfile sourceProfile = source == PowerSource.PluggedIn
+            ? context.Runtime.GetStatus().Profiles.PluggedIn
+            : context.Runtime.GetStatus().Profiles.Battery;
+        PowerProfile destinationProfile = destination == PowerSource.PluggedIn
+            ? context.Runtime.GetStatus().Profiles.PluggedIn
+            : context.Runtime.GetStatus().Profiles.Battery;
+        ConfirmedDeviceState initial = context.Device.ConfirmedState;
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            initial,
+            LightingOffConfirmationUnavailable: false));
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            initial with
+            {
+                Performance = destinationProfile.Performance,
+                Fans = destinationProfile.Fans,
+                Lighting = null,
+                LogoLighting = null,
+            },
+            LightingOffConfirmationUnavailable: true));
+        context.Telemetry.Current = CreateTelemetry(destination);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(lightingWrites + 1, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+
+        context.Telemetry.Current = CreateTelemetry(source);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(lightingWrites + 2, context.Device.LightingSetCalls);
+        Assert.Equal(sourceProfile.Lighting, context.Device.ConfirmedState.Lighting);
+        Assert.Equal(sourceProfile.Lighting.LogoMode, context.Device.ConfirmedState.LogoLighting);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, PowerSource.Battery)]
+    [InlineData(PowerSource.Battery, PowerSource.PluggedIn)]
+    public async Task PowerTransition_ExplicitLogoMismatchBecomesExternalWithoutPending(
+        PowerSource source,
+        PowerSource destination)
+    {
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static,
+            source,
+            logoMode: LogoLightingMode.Static);
+        PowerProfile destinationProfile = destination == PowerSource.PluggedIn
+            ? context.Runtime.GetStatus().Profiles.PluggedIn
+            : context.Runtime.GetStatus().Profiles.Battery;
+        ConfirmedDeviceState initial = context.Device.ConfirmedState;
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            initial,
+            LightingOffConfirmationUnavailable: false));
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            initial with
+            {
+                Performance = destinationProfile.Performance,
+                Fans = destinationProfile.Fans,
+                Lighting = null,
+                LogoLighting = LogoLightingMode.Off,
+            },
+            LightingOffConfirmationUnavailable: true));
+        context.Telemetry.Current = CreateTelemetry(destination);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(lightingWrites + 1, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
     [Fact]
     public async Task FirstObservation_ProfileMismatchEstablishesBaselineWithoutSetters()
     {
@@ -9618,17 +9844,29 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     private async Task<TestContext> CreateLightingTransitionContextAsync(
-        LightingRendererOwnershipState ownership)
+        LightingRendererOwnershipState ownership,
+        PowerSource initialPowerSource = PowerSource.PluggedIn,
+        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null,
+        LogoLightingMode? logoMode = null)
     {
         LightingSettings pluggedInLighting = LightingSettingsFactory.Static(
             new RgbColor(255, 64, 0),
-            brightness: 60);
+            brightness: 60) with
+        {
+            LogoMode = logoMode,
+        };
         LightingSettings batteryLighting = LightingSettingsFactory.Static(
             new RgbColor(0, 96, 255),
-            brightness: 40);
+            brightness: 40) with
+        {
+            LogoMode = logoMode,
+        };
         LightingSettings usbCLighting = LightingSettingsFactory.Static(
             new RgbColor(128, 0, 255),
-            brightness: 30);
+            brightness: 30) with
+        {
+            LogoMode = logoMode,
+        };
         DeviceCapabilities lightingCapabilities = DeviceCapabilities.Unavailable() with
         {
             LightingEffects = new HashSet<LightingEffect>
@@ -9636,14 +9874,24 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 LightingEffect.Off,
                 LightingEffect.Static,
             },
+            LogoLightingModes = logoMode is { } configuredLogoMode
+                ? new HashSet<LogoLightingMode>
+                {
+                    configuredLogoMode,
+                    LogoLightingMode.Off,
+                }
+                : new HashSet<LogoLightingMode>(),
         };
         TestContext context = CreateContext(
             providerAvailable: true,
+            initialPowerSource: initialPowerSource,
+            transitionRetryDelay: transitionRetryDelay,
             profileValidator: ProfileSetValidator.CreateForLightingCapabilities(
                 lightingCapabilities));
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             LightingEffects = lightingCapabilities.LightingEffects,
+            LogoLightingModes = lightingCapabilities.LogoLightingModes,
         };
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
         profiles = profiles with
@@ -9653,13 +9901,28 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             UsbC = profiles.UsbC with { Lighting = usbCLighting },
         };
         await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        PowerProfile active = initialPowerSource == PowerSource.Battery
+            ? profiles.Battery
+            : profiles.PluggedIn;
         context.Device.ConfirmedState = new ConfirmedDeviceState(
-            profiles.PluggedIn.Performance,
-            profiles.PluggedIn.Fans,
+            active.Performance,
+            active.Fans,
             ConfirmedBattery(80),
-            pluggedInLighting);
+            active.Lighting)
+        {
+            LogoLighting = active.Lighting.LogoMode,
+        };
         context.Device.LightingRendererOwnership = ownership;
         await context.Runtime.ObserveAsync(CancellationToken.None);
+        if (ownership == LightingRendererOwnershipState.Static)
+        {
+            ControlOperationResult owned = await context.Runtime.SetLightingOverrideAsync(
+                new ManualOverride<LightingSettings>(
+                    active.Lighting,
+                    OverrideLifetime.UntilPowerSourceChange),
+                CancellationToken.None);
+            Assert.Equal(ControlOperationStatus.Applied, owned.Status);
+        }
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(ownership, context.Runtime.GetStatus().LightingRendererOwnership);
         return context;
@@ -10547,6 +10810,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Action<int>? AfterReadStateCall { get; set; }
 
+        public Queue<PowerTransitionDeviceStateReadResult> PowerTransitionStateReads
+        {
+            get;
+        } = new();
+
+        public int PowerTransitionStateReadCalls { get; private set; }
+
+        public List<string> PowerTransitionReadCalls { get; } = [];
+
         public ConfirmedDeviceState? ScopedLightingReadback { get; set; }
 
         public Action? BeforeReadLightingState { get; set; }
@@ -10568,6 +10840,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             TotalCalls++;
             StateReadCalls++;
+            PowerTransitionReadCalls.Add("State");
             if (ReadStateFailure is not null
                 || ReadStateFailureOnCall == StateReadCalls)
             {
@@ -10593,6 +10866,25 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             TotalCalls++;
             return Task.FromResult(ScopedLightingReadback);
+        }
+
+        public async Task<PowerTransitionDeviceStateReadResult>
+            ReadStateForPowerTransitionAsync(CancellationToken cancellationToken)
+        {
+            PowerTransitionStateReadCalls++;
+            if (PowerTransitionStateReads.TryDequeue(
+                out PowerTransitionDeviceStateReadResult scripted))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                TotalCalls++;
+                StateReadCalls++;
+                PowerTransitionReadCalls.Add("TransitionState");
+                return scripted;
+            }
+            ConfirmedDeviceState state = await ReadStateAsync(cancellationToken);
+            return new(
+                state,
+                LightingOffConfirmationUnavailable: false);
         }
 
         public Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken)
@@ -10939,7 +11231,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
             if (SuppressConfirmationFor != DeviceSubsystem.Lighting)
             {
-                ConfirmedState = ConfirmedState with { Lighting = value };
+                ConfirmedState = ConfirmedState with
+                {
+                    Lighting = value,
+                    LogoLighting = value.LogoMode ?? ConfirmedState.LogoLighting,
+                };
             }
 
             LightingRendererOwnership = LightingOwnershipAfterSet ?? value.Effect switch

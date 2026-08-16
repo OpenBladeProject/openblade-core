@@ -124,35 +124,59 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            byte raw = await QueryBrightnessRawCoreAsync(cancellationToken)
-                .ConfigureAwait(false);
-            // PID 02E0 exposes an independent brightness query but no matrix-effect
-            // query. Only zero brightness proves Off; returning cached renderer
-            // intent here would incorrectly place it in ConfirmedDeviceState.
-            if (raw != 0)
-            {
-                return null;
-            }
-
-            // An independently observed Off means OpenBlade no longer owns the
-            // visible effect. Stop its host renderer so a later brightness change
-            // by another controller cannot resurrect stale OpenBlade frames.
-            await StopStreamCoreAsync().ConfigureAwait(false);
-            lock (effectSync)
-            {
-                activeEffect = null;
-                activeKeyTriggeredEffect = null;
-                pendingKeyTriggeredPulses.Clear();
-                lastDeliveredState = LightingSettingsFactory.Off();
-            }
-            SetOwnership(LightingRendererOwnershipState.None);
-
-            return LightingSettingsFactory.Off();
+            return await ReadStateCoreAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             operationGate.Release();
         }
+    }
+
+    private async Task<LightingSettings?> ReadStateCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        byte raw = await QueryBrightnessRawCoreAsync(cancellationToken)
+            .ConfigureAwait(false);
+        // PID 02E0 exposes an independent brightness query but no matrix-effect
+        // query. Only zero brightness proves Off; returning cached renderer
+        // intent here would incorrectly place it in ConfirmedDeviceState.
+        if (raw != 0)
+        {
+            return null;
+        }
+
+        if (OwnedRendererOffObservation.RequiresOffConfirmation(OwnershipState))
+        {
+            // A failed or canceled confirmation must not leave the transient
+            // zero available to brightness-step code as a trusted baseline.
+            lastKnownBrightnessRaw = null;
+            await Task.Delay(
+                OwnedRendererOffObservation.OffConfirmationDelay,
+                timeProvider,
+                cancellationToken).ConfigureAwait(false);
+            raw = await QueryBrightnessRawCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (raw != 0)
+            {
+                return null;
+            }
+        }
+
+        // While OpenBlade owns the renderer, only the second zero sample reaches
+        // this destructive decision. Keeping the confirmation at the port
+        // boundary also protects ordinary observations that overlap a power
+        // transition before its lifecycle event is processed.
+        await StopStreamCoreAsync().ConfigureAwait(false);
+        lock (effectSync)
+        {
+            activeEffect = null;
+            activeKeyTriggeredEffect = null;
+            pendingKeyTriggeredPulses.Clear();
+            lastDeliveredState = LightingSettingsFactory.Off();
+        }
+        SetOwnership(LightingRendererOwnershipState.None);
+
+        return LightingSettingsFactory.Off();
     }
 
     public async Task<LogoLightingMode?> ReadLogoStateAsync(

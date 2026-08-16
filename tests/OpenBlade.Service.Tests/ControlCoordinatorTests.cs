@@ -780,6 +780,251 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task FullReconcile_UnavailableLightingConfirmationSkipsOnlyLighting()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var coordinator = new ControlCoordinator(device);
+        int transitionReads = 0;
+
+        FullTransitionApplyOutcome outcome =
+            await coordinator.ApplyDesiredStateOutcomeAsync(
+                CreateDesiredState(),
+                CancellationToken.None,
+                stateReader: _ =>
+                {
+                    transitionReads++;
+                    return Task.FromResult(new PowerTransitionDeviceStateReadResult(
+                        transitionReads == 1
+                            ? device.State with { Lighting = null }
+                            : device.State,
+                        LightingOffConfirmationUnavailable: transitionReads == 1));
+                });
+
+        Assert.Equal(2, transitionReads);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Fans.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Battery.Status);
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Results.Lighting.Status);
+        Assert.Contains(
+            "could not be confirmed during the power-source transition",
+            outcome.Results.Lighting.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, device.PerformanceSetCalls);
+        Assert.Equal(1, device.FanSetCalls);
+        Assert.Equal(1, device.BatterySetCalls);
+        Assert.Equal(0, device.LightingSetCalls);
+        Assert.False(outcome.DeviceAccessFailed);
+    }
+
+    [Fact]
+    public async Task FullReconcile_FinalLightingConfirmationUnavailableAcceptsCompletedWrite()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var coordinator = new ControlCoordinator(device);
+        int transitionReads = 0;
+
+        FullTransitionApplyOutcome outcome =
+            await coordinator.ApplyDesiredStateOutcomeAsync(
+                CreateDesiredState(),
+                CancellationToken.None,
+                stateReader: _ =>
+                {
+                    transitionReads++;
+                    return Task.FromResult(new PowerTransitionDeviceStateReadResult(
+                        transitionReads == 1
+                            ? device.State
+                            : device.State with { Lighting = null },
+                        LightingOffConfirmationUnavailable: transitionReads > 1));
+                });
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Fans.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Battery.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Lighting.Status);
+        Assert.Contains(
+            "does not report the resulting state",
+            outcome.Results.Lighting.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Null(outcome.ConfirmationUnavailable);
+        Assert.Null(outcome.PreWriteState);
+        Assert.False(outcome.DeviceAccessFailed);
+    }
+
+    [Fact]
+    public async Task FullReconcile_FinalLightingUnavailableTreatsLogoMismatchAsContradiction()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            LogoLightingModes = new HashSet<LogoLightingMode>
+            {
+                LogoLightingMode.Off,
+                LogoLightingMode.Static,
+            },
+        };
+        device.State = device.State with { LogoLighting = LogoLightingMode.Off };
+        DesiredDeviceState desired = CreateDesiredState() with
+        {
+            Lighting = new ResolvedSetting<LightingSettings>(
+                TargetLighting with { LogoMode = LogoLightingMode.Static },
+                SettingValueSource.PowerProfile),
+        };
+        var coordinator = new ControlCoordinator(device);
+        int transitionReads = 0;
+
+        FullTransitionApplyOutcome outcome =
+            await coordinator.ApplyDesiredStateOutcomeAsync(
+                desired,
+                CancellationToken.None,
+                stateReader: _ =>
+                {
+                    transitionReads++;
+                    return Task.FromResult(new PowerTransitionDeviceStateReadResult(
+                        transitionReads == 1
+                            ? device.State
+                            : device.State with { Lighting = null },
+                        LightingOffConfirmationUnavailable: transitionReads > 1));
+                });
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Results.Lighting.Status);
+        Assert.Null(outcome.ConfirmationUnavailable);
+        Assert.Null(outcome.PreWriteState);
+    }
+
+    [Fact]
+    public async Task FullReconcile_FinalLightingUnavailableAcceptsMissingLogoEvidence()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            LogoLightingModes = new HashSet<LogoLightingMode>
+            {
+                LogoLightingMode.Off,
+                LogoLightingMode.Static,
+            },
+        };
+        device.State = device.State with { LogoLighting = LogoLightingMode.Off };
+        DesiredDeviceState desired = CreateDesiredState() with
+        {
+            Lighting = new ResolvedSetting<LightingSettings>(
+                TargetLighting with { LogoMode = LogoLightingMode.Static },
+                SettingValueSource.PowerProfile),
+        };
+        var coordinator = new ControlCoordinator(device);
+        int transitionReads = 0;
+
+        FullTransitionApplyOutcome outcome =
+            await coordinator.ApplyDesiredStateOutcomeAsync(
+                desired,
+                CancellationToken.None,
+                stateReader: _ =>
+                {
+                    transitionReads++;
+                    return Task.FromResult(new PowerTransitionDeviceStateReadResult(
+                        transitionReads == 1
+                            ? device.State
+                            : device.State with
+                            {
+                                Lighting = null,
+                                LogoLighting = null,
+                            },
+                        LightingOffConfirmationUnavailable: transitionReads > 1));
+                });
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Lighting.Status);
+        Assert.Contains(
+            "does not report the resulting state",
+            outcome.Results.Lighting.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Null(outcome.ConfirmationUnavailable);
+        Assert.Null(outcome.PreWriteState);
+    }
+
+    [Fact]
+    public async Task FullReconcile_FinalLightingUnavailableDoesNotAcceptFailedSetter()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.LightingFailure = new IOException("lighting write failed");
+        var coordinator = new ControlCoordinator(device);
+        int transitionReads = 0;
+
+        FullTransitionApplyOutcome outcome =
+            await coordinator.ApplyDesiredStateOutcomeAsync(
+                CreateDesiredState(),
+                CancellationToken.None,
+                stateReader: _ =>
+                {
+                    transitionReads++;
+                    return Task.FromResult(new PowerTransitionDeviceStateReadResult(
+                        transitionReads == 1
+                            ? device.State
+                            : device.State with { Lighting = null },
+                        LightingOffConfirmationUnavailable: transitionReads > 1));
+                });
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Results.Lighting.Status);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            Assert.IsAssignableFrom<IReadOnlySet<DeviceSubsystem>>(
+                outcome.ConfirmationUnavailable));
+        Assert.NotNull(outcome.PreWriteState);
+    }
+
+    [Fact]
+    public async Task FullReconcile_FinalLightingConfirmationUnavailableDoesNotUndoOtherWrites()
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.State = device.State with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, false),
+        };
+        var coordinator = new ControlCoordinator(device);
+        int transitionReads = 0;
+
+        FullTransitionApplyOutcome outcome =
+            await coordinator.ApplyDesiredStateOutcomeAsync(
+                CreateDesiredState(),
+                CancellationToken.None,
+                stateReader: _ =>
+                {
+                    transitionReads++;
+                    return Task.FromResult(new PowerTransitionDeviceStateReadResult(
+                        transitionReads == 1
+                            ? device.State
+                            : device.State with { Lighting = null },
+                        LightingOffConfirmationUnavailable: transitionReads > 1));
+                });
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Battery.Status);
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Results.Lighting.Status);
+        Assert.Equal(1, device.BatterySetCalls);
+        Assert.Equal(0, device.LightingSetCalls);
+        Assert.Null(outcome.ConfirmationUnavailable);
+        Assert.False(outcome.DeviceAccessFailed);
+    }
+
+    [Fact]
+    public async Task FullReconcile_CanceledTransitionStateReadPropagatesBeforeWrites()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var coordinator = new ControlCoordinator(device);
+        using var cancellation = new CancellationTokenSource();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            coordinator.ApplyDesiredStateOutcomeAsync(
+                CreateDesiredState(),
+                cancellation.Token,
+                stateReader: _ =>
+                {
+                    cancellation.Cancel();
+                    return Task.FromCanceled<PowerTransitionDeviceStateReadResult>(
+                        cancellation.Token);
+                }));
+
+        Assert.Equal(0, device.TotalSetterCalls);
+    }
+
+    [Fact]
     public async Task FullReconcile_WritableGpuWithoutManagementContractFailsClosed()
     {
         var device = new NonManagingWritableGpuDevice();
@@ -1699,6 +1944,12 @@ public sealed class ControlCoordinatorTests
             return Task.FromResult(new ConfirmedDeviceState(null, null, null, null));
         }
 
+        public async Task<PowerTransitionDeviceStateReadResult>
+            ReadStateForPowerTransitionAsync(CancellationToken cancellationToken) =>
+            new(
+                await ReadStateAsync(cancellationToken),
+                LightingOffConfirmationUnavailable: false);
+
         public Task<FanRpmReadings?> ReadFanRpmAsync(
             CancellationToken cancellationToken) => Task.FromResult<FanRpmReadings?>(null);
 
@@ -1819,6 +2070,8 @@ public sealed class ControlCoordinatorTests
 
         public Exception? BatteryWriteFailure { get; set; }
 
+        public Exception? LightingFailure { get; set; }
+
         public Action<int>? AfterReadState { get; set; }
 
         public Action<DeviceSubsystem>? AfterSetter { get; set; }
@@ -1887,6 +2140,12 @@ public sealed class ControlCoordinatorTests
 
             return Task.FromResult(State);
         }
+
+        public async Task<PowerTransitionDeviceStateReadResult>
+            ReadStateForPowerTransitionAsync(CancellationToken cancellationToken) =>
+            new(
+                await ReadStateAsync(cancellationToken),
+                LightingOffConfirmationUnavailable: false);
 
         public Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken) =>
             Task.FromResult<FanRpmReadings?>(null);
@@ -2194,6 +2453,11 @@ public sealed class ControlCoordinatorTests
             cancellationToken.ThrowIfCancellationRequested();
             Calls.Add("SetLighting");
             LightingSetCalls++;
+            if (LightingFailure is not null)
+            {
+                throw LightingFailure;
+            }
+
             if (ShouldConfirm(DeviceSubsystem.Lighting))
             {
                 State = State with { Lighting = value };

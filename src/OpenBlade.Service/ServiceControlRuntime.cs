@@ -5827,6 +5827,26 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool preserveObservedExternalChanges,
         CancellationToken token)
     {
+        bool ShouldConfirmTransientLightingOff() =>
+            preserveObservedExternalChanges
+            && priorDesired is not null
+            && !preferences.AlwaysOverrideExternalLightingChanges
+            && !driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting)
+            && !ControllerMayOwnLighting(current)
+            && !IsKeyboardLightingDelegated
+            && IsExplicitLightingOwnership(current.LightingRendererOwnership)
+            && lastOwnedLightingSettings == priorDesired.Lighting.Value
+            && OwnershipMatches(
+                current.LightingRendererOwnership,
+                lastOwnedLightingSettings)
+            && priorDesired.Lighting.Value.Effect != LightingEffect.Off
+            && desired.Lighting.Value.Effect != LightingEffect.Off;
+
+        Func<CancellationToken, Task<PowerTransitionDeviceStateReadResult>>?
+            transitionStateReader = ShouldConfirmTransientLightingOff()
+                ? device.ReadStateForPowerTransitionAsync
+                : null;
+
         IReadOnlySet<DeviceSubsystem> ResolveAutomaticWriteExclusions(
             ConfirmedDeviceState confirmed)
         {
@@ -5860,7 +5880,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 .ApplyDesiredStateOutcomeAsync(
                     desired,
                     token,
-                    automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions);
+                    automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions,
+                    stateReader: transitionStateReader);
 
             if (ShouldRetryPowerTransitionAccess(outcome))
             {
@@ -5869,7 +5890,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .ApplyDesiredStateOutcomeAsync(
                         desired,
                         token,
-                        automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions);
+                        automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions,
+                        stateReader: transitionStateReader);
             }
 
             return outcome;
