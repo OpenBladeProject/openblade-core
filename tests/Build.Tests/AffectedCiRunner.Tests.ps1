@@ -65,19 +65,18 @@ function global:dotnet {
     $global:OpenBladeMockDotNetCalls.Add([string[]]$args)
     $global:LASTEXITCODE = 0
 }
-$serviceProtocol = Join-Path $repository `
-    'artifacts\ci-components\OpenBlade.Service\OpenBlade.Protocol.dll'
-$captureProtocol = Join-Path $repository `
-    'artifacts\ci-components\OpenBlade.Capture\OpenBlade.Protocol.dll'
-$originalProtocolFiles = @{}
-foreach ($protocolFile in @($serviceProtocol, $captureProtocol)) {
-    if ([IO.File]::Exists($protocolFile)) {
-        $originalProtocolFiles[$protocolFile] = [IO.File]::ReadAllBytes($protocolFile)
-    }
-    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($protocolFile)) | Out-Null
-    [IO.File]::WriteAllBytes($protocolFile, [byte[]](1, 2, 3))
-}
+$temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) (
+    'OpenBlade-AffectedCiRunner-' + [Guid]::NewGuid().ToString('N'))
+$serviceProtocol = Join-Path $temporaryRoot `
+    'OpenBlade.Service\OpenBlade.Protocol.dll'
+$captureProtocol = Join-Path $temporaryRoot `
+    'OpenBlade.Capture\OpenBlade.Protocol.dll'
 try {
+    foreach ($protocolFile in @($serviceProtocol, $captureProtocol)) {
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($protocolFile)) | Out-Null
+        [IO.File]::WriteAllBytes($protocolFile, [byte[]](1, 2, 3))
+    }
+
     $qualityPlan = [ordered]@{
         mode = 'affected'
         qualityProjects = @(
@@ -101,7 +100,10 @@ try {
         mode = 'affected'
         publishProjects = @('src/OpenBlade.Tray/OpenBlade.Tray.csproj')
     } | ConvertTo-Json -Compress
-    & $runner -Lane Publish -PlanJson $trayPublishPlan
+    & $runner `
+        -Lane Publish `
+        -PlanJson $trayPublishPlan `
+        -ComponentOutputRoot $temporaryRoot
     $publishCall = @($global:OpenBladeMockDotNetCalls | Where-Object {
         $_[0] -eq 'publish'
     })
@@ -116,25 +118,32 @@ try {
             'src/OpenBlade.Capture/OpenBlade.Capture.csproj',
             'src/OpenBlade.Service/OpenBlade.Service.csproj')
     } | ConvertTo-Json -Compress
-    & $runner -Lane Publish -PlanJson $protocolPublishPlan
+    & $runner `
+        -Lane Publish `
+        -PlanJson $protocolPublishPlan `
+        -ComponentOutputRoot $temporaryRoot
     [IO.File]::WriteAllBytes($captureProtocol, [byte[]](3, 2, 1))
     Assert-ThrowsLike -Pattern '*different Protocol assemblies*' -Message `
         'Protocol consumers must reject inconsistent published assemblies.' -Action {
-        & $runner -Lane Publish -PlanJson $protocolPublishPlan
+        & $runner `
+            -Lane Publish `
+            -PlanJson $protocolPublishPlan `
+            -ComponentOutputRoot $temporaryRoot
     }
 }
 finally {
     Remove-Item Function:\global:dotnet
     Remove-Variable OpenBladeMockDotNetCalls -Scope Global
-    foreach ($protocolFile in @($serviceProtocol, $captureProtocol)) {
-        if ($originalProtocolFiles.ContainsKey($protocolFile)) {
-            [IO.File]::WriteAllBytes(
-                $protocolFile,
-                [byte[]]$originalProtocolFiles[$protocolFile])
-        }
-        else {
-            [IO.File]::Delete($protocolFile)
-        }
+    $resolvedTemporaryRoot = [IO.Path]::GetFullPath($temporaryRoot)
+    $resolvedSystemTemporaryRoot = [IO.Path]::GetFullPath(
+        [IO.Path]::GetTempPath()).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    if (-not $resolvedTemporaryRoot.StartsWith(
+            $resolvedSystemTemporaryRoot,
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Unexpected affected-CI test cleanup target: $resolvedTemporaryRoot"
+    }
+    if ([IO.Directory]::Exists($resolvedTemporaryRoot)) {
+        [IO.Directory]::Delete($resolvedTemporaryRoot, $true)
     }
 }
 

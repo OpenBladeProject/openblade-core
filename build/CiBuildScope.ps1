@@ -470,15 +470,31 @@ function Assert-OpenBladeCiSelectorHealthy {
     [CmdletBinding()]
     param([string]$Repository = $script:OpenBladeCiRepository)
 
-    $probe = Get-OpenBladeCiPlan `
+    $trayProbe = Get-OpenBladeCiPlan `
         -Repository $Repository `
         -ChangedPath @('src/OpenBlade.Tray/MainWindow.xaml')
-    if ($probe.Mode -ne 'affected' -or
-        $probe.QualityProjects -notcontains 'src/OpenBlade.Tray/OpenBlade.Tray.csproj' -or
-        $probe.TestProjects -notcontains 'tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj' -or
-        $probe.QualityProjects -contains 'src/OpenBlade.Service/OpenBlade.Service.csproj' -or
-        $probe.RunInstaller) {
-        throw "The CI selector portability probe failed: $($probe.Reasons -join ' ')"
+    if ($trayProbe.Mode -ne 'affected' -or
+        $trayProbe.QualityProjects -notcontains 'src/OpenBlade.Tray/OpenBlade.Tray.csproj' -or
+        $trayProbe.TestProjects -notcontains 'tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj' -or
+        $trayProbe.QualityProjects -contains 'src/OpenBlade.Service/OpenBlade.Service.csproj' -or
+        $trayProbe.RunInstaller) {
+        throw "The CI selector Tray probe failed: $($trayProbe.Reasons -join ' ')"
+    }
+
+    $graphProbe = Get-OpenBladeCiPlan `
+        -Repository $Repository `
+        -ChangedPath @('src/OpenBlade.Tray.Core/MainViewModel.cs')
+    if ($graphProbe.TestProjects -notcontains `
+            'tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj') {
+        throw 'The CI selector reverse-dependency graph did not resolve project references.'
+    }
+
+    $installerProbe = Get-OpenBladeCiPlan `
+        -Repository $Repository `
+        -ChangedPath @('build/installer/OpenBlade.Installer.UI/Program.cs')
+    if ($installerProbe.QualityProjects -notcontains `
+            'build/installer/OpenBlade.Installer.UI/OpenBlade.Installer.UI.csproj') {
+        throw 'The CI selector did not discover installer projects.'
     }
 }
 

@@ -8,7 +8,9 @@ param(
     [string]$PlanJson,
 
     [ValidateSet('Debug', 'Release')]
-    [string]$Configuration = 'Debug'
+    [string]$Configuration = 'Debug',
+
+    [string]$ComponentOutputRoot
 )
 
 Set-StrictMode -Version 3.0
@@ -148,7 +150,12 @@ switch ($Lane) {
             -Property 'publishProjects' `
             -AllowedExtension @('.csproj') `
             -AllowedPrefix @('src/')
-        $outputRoot = Join-Path $repository 'artifacts\ci-components'
+        $outputRoot = if ([string]::IsNullOrWhiteSpace($ComponentOutputRoot)) {
+            Join-Path $repository 'artifacts\ci-components'
+        }
+        else {
+            [IO.Path]::GetFullPath($ComponentOutputRoot)
+        }
 
         foreach ($project in $publishProjects) {
             $projectName = [IO.Path]::GetFileNameWithoutExtension($project)

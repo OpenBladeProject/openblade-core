@@ -232,17 +232,6 @@ if ($ci.Contains('if: ${{ needs.classify-changes.outputs.requires-build')) {
     throw 'The stable aggregate build check must not disappear for an empty plan.'
 }
 
-$selectorSource = Get-Content -LiteralPath (
-    Join-Path $repository 'build\CiBuildScope.ps1') -Raw
-foreach ($portablePathContract in @(
-        "'build/CiImpactManifest.json'",
-        "'build/installer'",
-        "[IO.Path]::DirectorySeparatorChar")) {
-    if (-not $selectorSource.Contains($portablePathContract)) {
-        throw "CI selector is missing portable path contract $portablePathContract."
-    }
-}
-
 $build = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\build.yml') -Raw
 foreach ($requiredBuildContract in @(
         'validation-mode:',
