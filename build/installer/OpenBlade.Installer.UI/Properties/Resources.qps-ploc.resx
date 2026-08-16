@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Cancel" xml:space="preserve">
+    <value>[!! Cáncél ~~~ !!]</value>
+  </data>
+  <data name="Cancel setup" xml:space="preserve">
+    <value>[!! Cáncél sétúp ~~~~ !!]</value>
+  </data>
+  <data name="Cancel setup?" xml:space="preserve">
+    <value>[!! Cáncél sétúp? ~~~~ !!]</value>
+  </data>
+  <data name="Cancellation requested; waiting for safe rollback." xml:space="preserve">
+    <value>[!! Cáncéllátíón réqúéstéd; wáítíng fór sáfé róllbáck. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Cancelling and restoring the previous state…" xml:space="preserve">
+    <value>[!! Cáncéllíng ánd réstóríng thé prévíóús státé… ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Checking this PC…" xml:space="preserve">
+    <value>[!! Chéckíng thís PC… ~~~~~ !!]</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>[!! Clósé ~~ !!]</value>
+  </data>
+  <data name="Complete" xml:space="preserve">
+    <value>[!! Cómplété ~~~ !!]</value>
+  </data>
+  <data name="Help" xml:space="preserve">
+    <value>[!! Hélp ~~ !!]</value>
+  </data>
+  <data name="Hide details" xml:space="preserve">
+    <value>[!! Hídé détáíls ~~~~ !!]</value>
+  </data>
+  <data name="Install" xml:space="preserve">
+    <value>[!! Ínstáll ~~~ !!]</value>
+  </data>
+  <data name="Install OpenBlade" xml:space="preserve">
+    <value>[!! Ínstáll ÓpénBládé ~~~~~~ !!]</value>
+  </data>
+  <data name="Install the OpenBlade service, Session Agent, and tray application for this PC." xml:space="preserve">
+    <value>[!! Ínstáll thé ÓpénBládé sérvícé, Séssíón Ágént, ánd tráý ápplícátíón fór thís PC. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Installer cleanup required" xml:space="preserve">
+    <value>[!! Ínstállér cléánúp réqúíréd ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Installing OpenBlade" xml:space="preserve">
+    <value>[!! Ínstállíng ÓpénBládé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Keep working" xml:space="preserve">
+    <value>[!! Kéép wórkíng ~~~~ !!]</value>
+  </data>
+  <data name="Launch OpenBlade" xml:space="preserve">
+    <value>[!! Láúnch ÓpénBládé ~~~~~~ !!]</value>
+  </data>
+  <data name="Maintenance" xml:space="preserve">
+    <value>[!! Máínténáncé ~~~~ !!]</value>
+  </data>
+  <data name="Newer version installed" xml:space="preserve">
+    <value>[!! Néwér vérsíón ínstálléd ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Open log" xml:space="preserve">
+    <value>[!! Ópén lóg ~~~ !!]</value>
+  </data>
+  <data name="OpenBlade" xml:space="preserve">
+    <value>[!! ÓpénBládé ~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade {0} is installed" xml:space="preserve">
+    <value>[!! ÓpénBládé {0} ís ínstálléd ~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade {0} is installed. This installer contains version {1}. Do you want to overwrite the newer version?" xml:space="preserve">
+    <value>[!! ÓpénBládé {0} ís ínstálléd. Thís ínstállér cóntáíns vérsíón {1}. Dó ýóú wánt tó óvérwríté thé néwér vérsíón? ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade is installed" xml:space="preserve">
+    <value>[!! ÓpénBládé ís ínstálléd ~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade is ready" xml:space="preserve">
+    <value>[!! ÓpénBládé ís réádý ~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade Setup" xml:space="preserve">
+    <value>[!! ÓpénBládé Sétúp ~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade was removed" xml:space="preserve">
+    <value>[!! ÓpénBládé wás rémóvéd ~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade will stop safely and restore the previous installation state." xml:space="preserve">
+    <value>[!! ÓpénBládé wíll stóp sáfélý ánd réstóré thé prévíóús ínstállátíón státé. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Overwrite" xml:space="preserve">
+    <value>[!! Óvérwríté ~~~~ !!]</value>
+  </data>
+  <data name="Preparing…" xml:space="preserve">
+    <value>[!! Prépáríng… ~~~~ !!]</value>
+  </data>
+  <data name="Remove saved profiles and settings" xml:space="preserve">
+    <value>[!! Rémóvé sávéd prófílés ánd séttíngs ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Removing OpenBlade" xml:space="preserve">
+    <value>[!! Rémóvíng ÓpénBládé ~~~~~~ !!]</value>
+  </data>
+  <data name="Repair" xml:space="preserve">
+    <value>[!! Répáír ~~~ !!]</value>
+  </data>
+  <data name="Repair overwrites the installed files with this installer, or uninstall OpenBlade while keeping saved profiles. To remove saved profiles too, close this installer and uninstall the registered OpenBlade entry from Windows Installed apps." xml:space="preserve">
+    <value>[!! Répáír óvérwrítés thé ínstálléd fílés wíth thís ínstállér, ór únínstáll ÓpénBládé whílé kéépíng sávéd prófílés. Tó rémóvé sávéd prófílés tóó, clósé thís ínstállér ánd únínstáll thé régístéréd ÓpénBládé éntrý fróm Wíndóws Ínstálléd ápps. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Repair the installed files, or remove OpenBlade from this PC." xml:space="preserve">
+    <value>[!! Répáír thé ínstálléd fílés, ór rémóvé ÓpénBládé fróm thís PC. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Repairing OpenBlade" xml:space="preserve">
+    <value>[!! Répáíríng ÓpénBládé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Replace the newer OpenBlade version?" xml:space="preserve">
+    <value>[!! Réplácé thé néwér ÓpénBládé vérsíón? ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Resolve existing OpenBlade installers" xml:space="preserve">
+    <value>[!! Résólvé éxístíng ÓpénBládé ínstállérs ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Run this installer normally to install, repair, or remove OpenBlade." xml:space="preserve">
+    <value>[!! Rún thís ínstállér nórmállý tó ínstáll, répáír, ór rémóvé ÓpénBládé. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Saved profiles and settings were also removed." xml:space="preserve">
+    <value>[!! Sávéd prófílés ánd séttíngs wéré álsó rémóvéd. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="See the setup log for more information." xml:space="preserve">
+    <value>[!! Séé thé sétúp lóg fór móré ínfórmátíón. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Setup" xml:space="preserve">
+    <value>[!! Sétúp ~~ !!]</value>
+  </data>
+  <data name="Setup completed successfully." xml:space="preserve">
+    <value>[!! Sétúp cómplétéd súccéssfúllý. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Setup could not finish" xml:space="preserve">
+    <value>[!! Sétúp cóúld nót fínísh ~~~~~~~ !!]</value>
+  </data>
+  <data name="Setup failed" xml:space="preserve">
+    <value>[!! Sétúp fáíléd ~~~~ !!]</value>
+  </data>
+  <data name="Show details" xml:space="preserve">
+    <value>[!! Shów détáíls ~~~~ !!]</value>
+  </data>
+  <data name="Uninstall" xml:space="preserve">
+    <value>[!! Únínstáll ~~~~ !!]</value>
+  </data>
+  <data name="Version {0}" xml:space="preserve">
+    <value>[!! Vérsíón {0} ~~~ !!]</value>
+  </data>
+  <data name="Working" xml:space="preserve">
+    <value>[!! Wórkíng ~~~ !!]</value>
+  </data>
+  <data name="Your saved profiles and settings were kept." xml:space="preserve">
+    <value>[!! Ýóúr sávéd prófílés ánd séttíngs wéré képt. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+</root>

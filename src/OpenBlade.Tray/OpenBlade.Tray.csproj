@@ -13,6 +13,7 @@
     <Platforms>x64</Platforms>
     <PublishTrimmed>false</PublishTrimmed>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <DefaultLanguage>en-US</DefaultLanguage>
     <ApplicationIcon Condition="Exists('Assets\Brand\OpenBlade.ico')">Assets\Brand\OpenBlade.ico</ApplicationIcon>
     <!-- On .NET 10, this prevents the Windows Desktop SDK from sending WinUI XAML through the WPF compiler while WinForms supplies the tray icon. -->
     <ImportFrameworkWinFXTargets>true</ImportFrameworkWinFXTargets>

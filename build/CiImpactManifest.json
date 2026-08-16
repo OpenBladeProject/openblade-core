@@ -149,6 +149,10 @@
       "requiresCaptures": true
     },
     {
+      "test": "tests/Build.Tests/LocalizationResources.Tests.ps1",
+      "patterns": ["build/Extract-*Localization.ps1", "build/Update-PseudoLocalization.ps1", "build/Validate-LocalizationResources.ps1", "src/OpenBlade.Tray/*.xaml", "src/OpenBlade.Tray/Strings/*", "build/installer/OpenBlade.Installer.UI/*"]
+    },
+    {
       "test": "tests/Build.Tests/NightlyChangelog.Tests.ps1",
       "patterns": ["build/NightlyChangelog.ps1", "CHANGELOG.md"]
     },

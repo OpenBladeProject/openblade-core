@@ -14,12 +14,23 @@ public sealed class TrayXamlStartupSmokeTests
 
     [InteractiveDesktopFact]
     [Trait("Category", "InteractiveDesktop")]
+    public Task PseudoLocalizedDashboardCompiledXamlLoads() =>
+        RunTraySmokeAsync(
+            "--xaml-startup-smoke",
+            "OpenBlade-xaml-pseudo-smoke",
+            pseudoLocalized: true);
+
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
     public Task ResponsiveChoiceSelectorPreservesAuthoritativeSelection() =>
         RunTraySmokeAsync(
             "--responsive-choice-selector-smoke",
             "OpenBlade-responsive-selector-smoke");
 
-    private static async Task RunTraySmokeAsync(string argument, string reportPrefix)
+    private static async Task RunTraySmokeAsync(
+        string argument,
+        string reportPrefix,
+        bool pseudoLocalized = false)
     {
         string executable = GetTrayExecutablePath();
         Assert.True(File.Exists(executable), $"Tray executable not found: {executable}");
@@ -27,14 +38,19 @@ public sealed class TrayXamlStartupSmokeTests
             Path.GetTempPath(),
             $"{reportPrefix}-{Guid.NewGuid():N}.txt");
 
-        using var process = Process.Start(new ProcessStartInfo(
+        var startInfo = new ProcessStartInfo(
             executable,
             $"{argument} \"{reportPath}\"")
         {
             CreateNoWindow = true,
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(executable)!,
-        });
+        };
+        if (pseudoLocalized)
+        {
+            startInfo.Environment["OPENBLADE_PSEUDO_LOCALIZATION"] = "1";
+        }
+        using var process = Process.Start(startInfo);
         Assert.NotNull(process);
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));

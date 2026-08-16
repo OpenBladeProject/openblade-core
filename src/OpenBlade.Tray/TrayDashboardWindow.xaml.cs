@@ -93,6 +93,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         this.visibilityChanged = visibilityChanged
             ?? throw new ArgumentNullException(nameof(visibilityChanged));
         InitializeComponent();
+        Title = LocalizedResources.Get(
+            "TrayDashboardWindow_WindowTitle",
+            "OpenBlade quick controls");
         Root.DataContext = ViewModel;
         dispatcherQueue = Root.DispatcherQueue;
         foregroundTimer = dispatcherQueue.CreateTimer();

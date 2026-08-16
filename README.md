@@ -207,7 +207,9 @@ read/query, apply, readback, and restoration workflow has passed on the exact
 target.
 
 Commits follow Conventional Commits. Version and migration rules are in
-[VERSIONING.md](VERSIONING.md).
+[VERSIONING.md](VERSIONING.md). Resource keys, fallback behavior, and the
+pseudo-localization review workflow are in
+[docs/localization.md](docs/localization.md).
 
 ## License
 

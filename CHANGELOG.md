@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added en-US resource catalogs and qps-ploc validation for the tray and
+  graphical installer, including safe installer fallback and required-key,
+  placeholder, accessibility-name, and critical-page startup checks.
 - Added an importable example of a cyan sweep that moves from left to right
   with a dim blue wake.
 - Added a versioned, data-only `.oblight` keyboard lighting preset format and

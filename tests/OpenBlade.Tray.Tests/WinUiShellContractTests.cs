@@ -989,7 +989,7 @@ public sealed class WinUiShellContractTests
             "Style=\"{StaticResource StatusPillButtonStyle}\""));
         string warningBadge = SliceMethod(
             xaml,
-            "<Button x:Name=\"TestedPlatformWarningBadge\"",
+            "x:Name=\"TestedPlatformWarningBadge\"",
             ">");
         Assert.Contains(
             "Style=\"{StaticResource StatusPillButtonStyle}\"",
@@ -1103,7 +1103,7 @@ public sealed class WinUiShellContractTests
 
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillStyle}\""));
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
-        Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Laptop performance\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
@@ -1724,11 +1724,11 @@ public sealed class WinUiShellContractTests
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
-        Assert.Contains("<TitleBar x:Name=\"AppTitleBar\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"AppTitleBar\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Grid.Row=\"0\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Title=\"OpenBlade\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Background=\"Transparent\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("<NavigationView x:Name=\"MainNavigation\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"MainNavigation\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Grid.Row=\"1\"", xaml, StringComparison.Ordinal);
         Assert.Contains("IsTitleBarAutoPaddingEnabled=\"False\"", xaml, StringComparison.Ordinal);
 
@@ -1792,7 +1792,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("x:Name=\"LabFeaturesInfoButton\"", xaml, StringComparison.Ordinal);
         string labFeaturesInfoButton = SliceMethod(
             xaml,
-            "<Button x:Name=\"LabFeaturesInfoButton\"",
+            "x:Name=\"LabFeaturesInfoButton\"",
             "<Button.Flyout>");
         Assert.Contains("Width=\"20\"", labFeaturesInfoButton, StringComparison.Ordinal);
         Assert.Contains("Height=\"20\"", labFeaturesInfoButton, StringComparison.Ordinal);

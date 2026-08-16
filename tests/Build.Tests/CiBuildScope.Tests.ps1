@@ -188,6 +188,15 @@ Assert-Contains $installerUi.TestProjects `
     'Installer UI changes must run their non-solution tests.'
 Assert-Equal $true $installerUi.RunInstaller `
     'Installer UI changes must validate the complete bundle.'
+Assert-Contains $installerUi.ContractTests `
+    'tests/Build.Tests/LocalizationResources.Tests.ps1' `
+    'Installer UI changes must validate localization resources.'
+
+$trayLocalization = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'src/OpenBlade.Tray/Strings/en-US/Resources.resw')
+Assert-Contains $trayLocalization.ContractTests `
+    'tests/Build.Tests/LocalizationResources.Tests.ps1' `
+    'Tray resource changes must validate localization contracts.'
 
 foreach ($globalPath in @(
         'Directory.Build.props',

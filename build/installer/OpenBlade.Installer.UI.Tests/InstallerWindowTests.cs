@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Windows;
@@ -12,6 +13,42 @@ namespace OpenBlade.Installer.UI.Tests;
 
 public sealed class InstallerWindowTests
 {
+    [Fact]
+    public void MissingCultureFallsBackToAuthoritativeEnglishResources()
+    {
+        RunWithUiCulture("fr-FR", () =>
+        {
+            InstallerWindow window = new(new OpenBladeBootstrapperApplication(), "1.2.3");
+            window.ShowReady(installed: false);
+
+            Assert.Equal("OpenBlade Setup", window.Title);
+            Assert.Equal("Install OpenBlade", window.ReadyHeading.Text);
+            Assert.Equal("Version 1.2.3", window.VersionText.Text);
+        });
+    }
+
+    [Fact]
+    public void PseudoCultureLoadsExpandedResourcesForEveryInstallerState()
+    {
+        RunWithUiCulture("qps-ploc", () =>
+        {
+            InstallerWindow window = new(new OpenBladeBootstrapperApplication(), "1.2.3");
+            Assert.StartsWith("[!! ", window.Title, StringComparison.Ordinal);
+            Assert.Contains("1.2.3", window.VersionText.Text, StringComparison.Ordinal);
+
+            window.ShowReady(installed: false);
+            Assert.StartsWith("[!! ", window.ReadyHeading.Text, StringComparison.Ordinal);
+            window.ShowProgress(LaunchAction.Install);
+            Assert.StartsWith("[!! ", window.ProgressHeading.Text, StringComparison.Ordinal);
+            window.ShowSuccess(LaunchAction.Uninstall, purgeProfiles: true);
+            Assert.StartsWith("[!! ", window.SuccessMessage.Text, StringComparison.Ordinal);
+            window.ShowFailure(string.Empty, null);
+            Assert.StartsWith("[!! ", window.FailureMessage.Text, StringComparison.Ordinal);
+            window.ShowHelp();
+            Assert.StartsWith("[!! ", window.SuccessMessage.Text, StringComparison.Ordinal);
+        });
+    }
+
     [Fact]
     public void WindowLoadsResourcesAndRendersEveryInteractiveState()
     {
@@ -526,5 +563,23 @@ public sealed class InstallerWindowTests
         thread.Start();
         Assert.True(thread.Join(TimeSpan.FromSeconds(30)), "The installer UI test timed out.");
         failure?.Throw();
+    }
+
+    private static void RunWithUiCulture(string cultureName, Action action)
+    {
+        CultureInfo previousCulture = CultureInfo.CurrentCulture;
+        CultureInfo previousUiCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo culture = CultureInfo.GetCultureInfo(cultureName);
+            CultureInfo.CurrentCulture = culture;
+            CultureInfo.CurrentUICulture = culture;
+            RunInSta(action);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+            CultureInfo.CurrentUICulture = previousUiCulture;
+        }
     }
 }

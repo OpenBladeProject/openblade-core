@@ -1,4 +1,4 @@
-<Window
+<Window x:Uid="TrayDashboardWindow_WindowOpenBladeQuickControls"
     x:Class="OpenBlade.Tray.TrayDashboardWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -121,7 +121,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="36" />
                                 </Grid.ColumnDefinitions>
-                                <Button Style="{StaticResource QuickTileActionStyle}"
+                                <Button x:Uid="TrayDashboardWindow_ButtonCyclePerformanceMode" Style="{StaticResource QuickTileActionStyle}"
                                         CornerRadius="5,0,0,5"
                                         IsEnabled="{Binding CanEditPerformance, Mode=OneWay}"
                                         Click="OnPerformanceCycleClick"
@@ -132,7 +132,7 @@
                                 <Border Grid.Column="1"
                                         BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                                         BorderThickness="1,0,0,0">
-                                    <Button Style="{StaticResource QuickTileActionStyle}"
+                                    <Button x:Uid="TrayDashboardWindow_ButtonChoosePerformanceMode" Style="{StaticResource QuickTileActionStyle}"
                                             CornerRadius="0,5,5,0"
                                             IsEnabled="{Binding CanEditPerformance, Mode=OneWay}"
                                             Click="OnPerformanceDetailsClick"
@@ -143,7 +143,7 @@
                             </Grid>
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
-                            <TextBlock Text="Performance" Style="{StaticResource QuickTileTitleStyle}" />
+                            <TextBlock x:Uid="TrayDashboardWindow_TextBlockPerformance" Text="Performance" Style="{StaticResource QuickTileTitleStyle}" />
                             <TextBlock Text="{Binding SelectedPerformanceOption.Label, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
@@ -160,7 +160,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition x:Name="FansDetailsColumn" Width="36" />
                                 </Grid.ColumnDefinitions>
-                                <Button Style="{StaticResource QuickTileActionStyle}"
+                                <Button x:Uid="TrayDashboardWindow_ButtonCycleFanMode" Style="{StaticResource QuickTileActionStyle}"
                                         CornerRadius="5,0,0,5"
                                         IsEnabled="{Binding CanEditFanControl, Mode=OneWay}"
                                         Click="OnFansCycleClick"
@@ -173,7 +173,7 @@
                                         Grid.Column="1"
                                         BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                                         BorderThickness="1,0,0,0">
-                                    <Button Style="{StaticResource QuickTileActionStyle}"
+                                    <Button x:Uid="TrayDashboardWindow_ButtonChooseFanMode" Style="{StaticResource QuickTileActionStyle}"
                                             CornerRadius="0,5,5,0"
                                             IsEnabled="{Binding CanEditFanControl, Mode=OneWay}"
                                             Click="OnFansDetailsClick"
@@ -184,7 +184,7 @@
                             </Grid>
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
-                            <TextBlock Text="Fans" Style="{StaticResource QuickTileTitleStyle}" />
+                            <TextBlock x:Uid="TrayDashboardWindow_TextBlockFans" Text="Fans" Style="{StaticResource QuickTileTitleStyle}" />
                             <TextBlock Text="{Binding SelectedFanModeOption.Label, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
@@ -201,7 +201,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="36" />
                                 </Grid.ColumnDefinitions>
-                                <Button Style="{StaticResource QuickTileActionStyle}"
+                                <Button x:Uid="TrayDashboardWindow_ButtonCycleLightingEffect" Style="{StaticResource QuickTileActionStyle}"
                                         CornerRadius="5,0,0,5"
                                         IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
                                         Click="OnLightingCycleClick"
@@ -212,7 +212,7 @@
                                 <Border Grid.Column="1"
                                         BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                                         BorderThickness="1,0,0,0">
-                                    <Button Style="{StaticResource QuickTileActionStyle}"
+                                    <Button x:Uid="TrayDashboardWindow_ButtonChooseLightingEffect" Style="{StaticResource QuickTileActionStyle}"
                                             CornerRadius="0,5,5,0"
                                             IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
                                             Click="OnLightingDetailsClick"
@@ -223,7 +223,7 @@
                             </Grid>
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
-                            <TextBlock Text="Lighting" Style="{StaticResource QuickTileTitleStyle}" />
+                            <TextBlock x:Uid="TrayDashboardWindow_TextBlockLighting" Text="Lighting" Style="{StaticResource QuickTileTitleStyle}" />
                             <TextBlock Text="{Binding SelectedLightingEffectOption.Label, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
@@ -235,7 +235,7 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Border Style="{StaticResource QuickTileSurfaceStyle}">
-                            <Button Style="{StaticResource QuickTileActionStyle}"
+                            <Button x:Uid="TrayDashboardWindow_ButtonToggleBatteryProtection" Style="{StaticResource QuickTileActionStyle}"
                                     CornerRadius="5"
                                     IsEnabled="{Binding CanChangeBatteryProtection, Mode=OneWay}"
                                     Click="OnBatteryProtectionClick"
@@ -245,7 +245,7 @@
                             </Button>
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
-                            <TextBlock Text="Battery protection"
+                            <TextBlock x:Uid="TrayDashboardWindow_TextBlockBatteryProtection" Text="Battery protection"
                                        Style="{StaticResource QuickTileTitleStyle}" />
                             <TextBlock Text="{Binding TrayDashboardChargeLimitLabel, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
@@ -258,7 +258,7 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Border Style="{StaticResource QuickTileSurfaceStyle}">
-                            <Button Style="{StaticResource QuickTileActionStyle}"
+                            <Button x:Uid="TrayDashboardWindow_ButtonCycleFunctionRowMode" Style="{StaticResource QuickTileActionStyle}"
                                     CornerRadius="5"
                                     IsEnabled="{Binding CanEditFunctionKeyPrimary, Mode=OneWay}"
                                     Click="OnFunctionRowCycleClick"
@@ -268,7 +268,7 @@
                             </Button>
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
-                            <TextBlock Text="Function row"
+                            <TextBlock x:Uid="TrayDashboardWindow_TextBlockFunctionRow" Text="Function row"
                                        Style="{StaticResource QuickTileTitleStyle}" />
                             <TextBlock Text="{Binding FunctionKeyPrimaryStateLabel, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
@@ -286,7 +286,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="36" />
                                 </Grid.ColumnDefinitions>
-                                <Button Style="{StaticResource QuickTileActionStyle}"
+                                <Button x:Uid="TrayDashboardWindow_ButtonToggleGamingMode" Style="{StaticResource QuickTileActionStyle}"
                                         CornerRadius="5,0,0,5"
                                         IsEnabled="{Binding CanEditGamingMode, Mode=OneWay}"
                                         Click="OnGamingModeCycleClick"
@@ -297,7 +297,7 @@
                                 <Border Grid.Column="1"
                                         BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                                         BorderThickness="1,0,0,0">
-                                    <Button Style="{StaticResource QuickTileActionStyle}"
+                                    <Button x:Uid="TrayDashboardWindow_ButtonConfigureGamingModeKeys" Style="{StaticResource QuickTileActionStyle}"
                                             CornerRadius="0,5,5,0"
                                             IsEnabled="{Binding CanEditGamingModeKeyPolicy, Mode=OneWay}"
                                             Click="OnGamingModeDetailsClick"
@@ -308,7 +308,7 @@
                             </Grid>
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
-                            <TextBlock Text="Gaming mode"
+                            <TextBlock x:Uid="TrayDashboardWindow_TextBlockGamingMode" Text="Gaming mode"
                                        Style="{StaticResource QuickTileTitleStyle}" />
                             <TextBlock Text="{Binding TrayDashboardGamingModeLabel, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
@@ -321,7 +321,7 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Border Style="{StaticResource QuickTileSurfaceStyle}">
-                            <Button Style="{StaticResource QuickTileActionStyle}"
+                            <Button x:Uid="TrayDashboardWindow_ButtonToggleGPUTuning" Style="{StaticResource QuickTileActionStyle}"
                                     CornerRadius="5"
                                     IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
                                     Click="OnGpuClockTuningClick"
@@ -331,7 +331,7 @@
                             </Button>
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
-                            <TextBlock Text="GPU tuning"
+                            <TextBlock x:Uid="TrayDashboardWindow_TextBlockGPUTuning" Text="GPU tuning"
                                        Style="{StaticResource QuickTileTitleStyle}" />
                             <TextBlock Text="{Binding TrayDashboardGpuTuningLabel, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
@@ -355,7 +355,7 @@
                                 <ColumnDefinition Width="36" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Button Style="{StaticResource QuickSliderIconButtonStyle}"
+                            <Button x:Uid="TrayDashboardWindow_ButtonToggleChargeLimit" Style="{StaticResource QuickSliderIconButtonStyle}"
                                     IsEnabled="{Binding CanChangeBatteryProtection, Mode=OneWay}"
                                     Click="OnBatteryProtectionClick"
                                     ToolTipService.ToolTip="Toggle charge limit"
@@ -363,7 +363,7 @@
                                 <FontIcon Glyph="&#xE83F;"
                                           Style="{StaticResource QuickSliderIconStyle}" />
                             </Button>
-                            <Slider x:Name="ChargeLimitSlider"
+                            <Slider x:Uid="TrayDashboardWindow_ChargeLimitSliderText" x:Name="ChargeLimitSlider"
                                     Grid.Column="1"
                                     Margin="0,0,10,0"
                                     VerticalAlignment="Center"
@@ -395,7 +395,7 @@
                                       Style="{StaticResource QuickSliderIconStyle}"
                                       HorizontalAlignment="Center"
                                       VerticalAlignment="Center" />
-                            <Slider Grid.Column="1"
+                            <Slider x:Uid="TrayDashboardWindow_SliderKeyboardBrightness" Grid.Column="1"
                                     Margin="0,0,10,0"
                                     VerticalAlignment="Center"
                                     Minimum="0"
@@ -414,16 +414,16 @@
                                 <ColumnDefinition Width="36" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Button Style="{StaticResource QuickSliderIconButtonStyle}"
+                            <Button x:Uid="TrayDashboardWindow_ButtonToggleGPUClockTuning" Style="{StaticResource QuickSliderIconButtonStyle}"
                                     IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
                                     Click="OnGpuClockTuningClick"
                                     ToolTipService.ToolTip="Toggle GPU clock tuning"
                                     AutomationProperties.Name="Toggle GPU clock tuning">
-                                <TextBlock Text="C"
+                                <TextBlock x:Uid="TrayDashboardWindow_TextBlockC" Text="C"
                                            FontSize="14"
                                            FontWeight="SemiBold" />
                             </Button>
-                            <Slider x:Name="GpuCoreClockSlider"
+                            <Slider x:Uid="TrayDashboardWindow_GpuCoreClockSliderText" x:Name="GpuCoreClockSlider"
                                     Grid.Column="1"
                                     Margin="0,0,10,0"
                                     VerticalAlignment="Center"
@@ -446,16 +446,16 @@
                                 <ColumnDefinition Width="36" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Button Style="{StaticResource QuickSliderIconButtonStyle}"
+                            <Button x:Uid="TrayDashboardWindow_ButtonToggleGPUClockTuning2" Style="{StaticResource QuickSliderIconButtonStyle}"
                                     IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
                                     Click="OnGpuClockTuningClick"
                                     ToolTipService.ToolTip="Toggle GPU clock tuning"
                                     AutomationProperties.Name="Toggle GPU clock tuning">
-                                <TextBlock Text="M"
+                                <TextBlock x:Uid="TrayDashboardWindow_TextBlockM" Text="M"
                                            FontSize="14"
                                            FontWeight="SemiBold" />
                             </Button>
-                            <Slider x:Name="GpuMemoryClockSlider"
+                            <Slider x:Uid="TrayDashboardWindow_GpuMemoryClockSliderText" x:Name="GpuMemoryClockSlider"
                                     Grid.Column="1"
                                     Margin="0,0,10,0"
                                     VerticalAlignment="Center"
@@ -483,7 +483,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Button Width="38"
+                <Button x:Uid="TrayDashboardWindow_ButtonBackToQuickControls" Width="38"
                         Height="38"
                         Padding="0"
                         Click="OnDetailBackClick"
@@ -498,7 +498,7 @@
             </Grid>
 
             <Grid Grid.Row="1">
-                <ListView x:Name="PerformanceDetail"
+                <ListView x:Uid="TrayDashboardWindow_PerformanceDetailText" x:Name="PerformanceDetail"
                           Margin="14,2,14,10"
                           ItemsSource="{Binding AvailableActivePerformanceOptions, Mode=OneWay}"
                           DisplayMemberPath="Label"
@@ -506,7 +506,7 @@
                           SelectionMode="Single"
                           SelectionChanged="OnPerformanceChanged"
                           AutomationProperties.Name="Performance choices" />
-                <ListView x:Name="FansDetail"
+                <ListView x:Uid="TrayDashboardWindow_FansDetailText" x:Name="FansDetail"
                           Margin="14,2,14,10"
                           Visibility="Collapsed"
                           ItemsSource="{Binding AvailableActiveFanModeOptions, Mode=OneWay}"
@@ -515,7 +515,7 @@
                           SelectionMode="Single"
                           SelectionChanged="OnFanModeChanged"
                           AutomationProperties.Name="Fan choices" />
-                <ListView x:Name="LightingDetail"
+                <ListView x:Uid="TrayDashboardWindow_LightingDetailText" x:Name="LightingDetail"
                           Margin="14,2,14,10"
                           Visibility="Collapsed"
                           ItemsSource="{Binding AvailableLightingEffectOptions, Mode=OneWay}"
@@ -527,7 +527,7 @@
                             Margin="18,8,18,12"
                             Spacing="14"
                             Visibility="Collapsed">
-                    <TextBlock Text="Choose which keys Windows blocks while gaming mode is on."
+                    <TextBlock x:Uid="TrayDashboardWindow_TextBlockChooseWhichKeysWindowsBlocksWhileGaming" Text="Choose which keys Windows blocks while gaming mode is on."
                                Style="{StaticResource QuickTileValueStyle}"
                                TextWrapping="Wrap"
                                MaxLines="3" />
@@ -536,7 +536,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="Block Windows key"
+                        <TextBlock x:Uid="TrayDashboardWindow_TextBlockBlockWindowsKey" Text="Block Windows key"
                                    VerticalAlignment="Center" />
                         <ToggleSwitch x:Name="GamingModeWindowsKeyToggle"
                                       Grid.Column="1"
@@ -551,7 +551,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="Block Alt+Tab"
+                        <TextBlock x:Uid="TrayDashboardWindow_TextBlockBlockAltTab" Text="Block Alt+Tab"
                                    VerticalAlignment="Center" />
                         <ToggleSwitch x:Name="GamingModeAltTabToggle"
                                       Grid.Column="1"

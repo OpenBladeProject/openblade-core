@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Principal;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -49,8 +50,25 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        base.OnLaunched(args);
         string[] commandLineArguments = Environment.GetCommandLineArgs();
+        if (string.Equals(
+                Environment.GetEnvironmentVariable("OPENBLADE_PSEUDO_LOCALIZATION"),
+                "1",
+                StringComparison.Ordinal))
+        {
+            try
+            {
+                CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("qps-ploc");
+            }
+            catch (Exception exception) when (
+                commandLineArguments is [_, XamlStartupSmokeArgument, string])
+            {
+                File.WriteAllText(commandLineArguments[2], exception.ToString());
+                Environment.Exit(1);
+                return;
+            }
+        }
+        base.OnLaunched(args);
         if (commandLineArguments is
             [_, ResponsiveChoiceSelectorSmokeArgument, string selectorSmokeReportPath])
         {

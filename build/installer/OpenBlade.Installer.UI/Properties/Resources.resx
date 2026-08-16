@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Cancel setup" xml:space="preserve">
+    <value>Cancel setup</value>
+  </data>
+  <data name="Cancel setup?" xml:space="preserve">
+    <value>Cancel setup?</value>
+  </data>
+  <data name="Cancellation requested; waiting for safe rollback." xml:space="preserve">
+    <value>Cancellation requested; waiting for safe rollback.</value>
+  </data>
+  <data name="Cancelling and restoring the previous state…" xml:space="preserve">
+    <value>Cancelling and restoring the previous state…</value>
+  </data>
+  <data name="Checking this PC…" xml:space="preserve">
+    <value>Checking this PC…</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Complete" xml:space="preserve">
+    <value>Complete</value>
+  </data>
+  <data name="Help" xml:space="preserve">
+    <value>Help</value>
+  </data>
+  <data name="Hide details" xml:space="preserve">
+    <value>Hide details</value>
+  </data>
+  <data name="Install" xml:space="preserve">
+    <value>Install</value>
+  </data>
+  <data name="Install OpenBlade" xml:space="preserve">
+    <value>Install OpenBlade</value>
+  </data>
+  <data name="Install the OpenBlade service, Session Agent, and tray application for this PC." xml:space="preserve">
+    <value>Install the OpenBlade service, Session Agent, and tray application for this PC.</value>
+  </data>
+  <data name="Installer cleanup required" xml:space="preserve">
+    <value>Installer cleanup required</value>
+  </data>
+  <data name="Installing OpenBlade" xml:space="preserve">
+    <value>Installing OpenBlade</value>
+  </data>
+  <data name="Keep working" xml:space="preserve">
+    <value>Keep working</value>
+  </data>
+  <data name="Launch OpenBlade" xml:space="preserve">
+    <value>Launch OpenBlade</value>
+  </data>
+  <data name="Maintenance" xml:space="preserve">
+    <value>Maintenance</value>
+  </data>
+  <data name="Newer version installed" xml:space="preserve">
+    <value>Newer version installed</value>
+  </data>
+  <data name="Open log" xml:space="preserve">
+    <value>Open log</value>
+  </data>
+  <data name="OpenBlade" xml:space="preserve">
+    <value>OpenBlade</value>
+  </data>
+  <data name="OpenBlade {0} is installed" xml:space="preserve">
+    <value>OpenBlade {0} is installed</value>
+  </data>
+  <data name="OpenBlade {0} is installed. This installer contains version {1}. Do you want to overwrite the newer version?" xml:space="preserve">
+    <value>OpenBlade {0} is installed. This installer contains version {1}. Do you want to overwrite the newer version?</value>
+  </data>
+  <data name="OpenBlade is installed" xml:space="preserve">
+    <value>OpenBlade is installed</value>
+  </data>
+  <data name="OpenBlade is ready" xml:space="preserve">
+    <value>OpenBlade is ready</value>
+  </data>
+  <data name="OpenBlade Setup" xml:space="preserve">
+    <value>OpenBlade Setup</value>
+  </data>
+  <data name="OpenBlade was removed" xml:space="preserve">
+    <value>OpenBlade was removed</value>
+  </data>
+  <data name="OpenBlade will stop safely and restore the previous installation state." xml:space="preserve">
+    <value>OpenBlade will stop safely and restore the previous installation state.</value>
+  </data>
+  <data name="Overwrite" xml:space="preserve">
+    <value>Overwrite</value>
+  </data>
+  <data name="Preparing…" xml:space="preserve">
+    <value>Preparing…</value>
+  </data>
+  <data name="Remove saved profiles and settings" xml:space="preserve">
+    <value>Remove saved profiles and settings</value>
+  </data>
+  <data name="Removing OpenBlade" xml:space="preserve">
+    <value>Removing OpenBlade</value>
+  </data>
+  <data name="Repair" xml:space="preserve">
+    <value>Repair</value>
+  </data>
+  <data name="Repair overwrites the installed files with this installer, or uninstall OpenBlade while keeping saved profiles. To remove saved profiles too, close this installer and uninstall the registered OpenBlade entry from Windows Installed apps." xml:space="preserve">
+    <value>Repair overwrites the installed files with this installer, or uninstall OpenBlade while keeping saved profiles. To remove saved profiles too, close this installer and uninstall the registered OpenBlade entry from Windows Installed apps.</value>
+  </data>
+  <data name="Repair the installed files, or remove OpenBlade from this PC." xml:space="preserve">
+    <value>Repair the installed files, or remove OpenBlade from this PC.</value>
+  </data>
+  <data name="Repairing OpenBlade" xml:space="preserve">
+    <value>Repairing OpenBlade</value>
+  </data>
+  <data name="Replace the newer OpenBlade version?" xml:space="preserve">
+    <value>Replace the newer OpenBlade version?</value>
+  </data>
+  <data name="Resolve existing OpenBlade installers" xml:space="preserve">
+    <value>Resolve existing OpenBlade installers</value>
+  </data>
+  <data name="Run this installer normally to install, repair, or remove OpenBlade." xml:space="preserve">
+    <value>Run this installer normally to install, repair, or remove OpenBlade.</value>
+  </data>
+  <data name="Saved profiles and settings were also removed." xml:space="preserve">
+    <value>Saved profiles and settings were also removed.</value>
+  </data>
+  <data name="See the setup log for more information." xml:space="preserve">
+    <value>See the setup log for more information.</value>
+  </data>
+  <data name="Setup" xml:space="preserve">
+    <value>Setup</value>
+  </data>
+  <data name="Setup completed successfully." xml:space="preserve">
+    <value>Setup completed successfully.</value>
+  </data>
+  <data name="Setup could not finish" xml:space="preserve">
+    <value>Setup could not finish</value>
+  </data>
+  <data name="Setup failed" xml:space="preserve">
+    <value>Setup failed</value>
+  </data>
+  <data name="Show details" xml:space="preserve">
+    <value>Show details</value>
+  </data>
+  <data name="Uninstall" xml:space="preserve">
+    <value>Uninstall</value>
+  </data>
+  <data name="Version {0}" xml:space="preserve">
+    <value>Version {0}</value>
+  </data>
+  <data name="Working" xml:space="preserve">
+    <value>Working</value>
+  </data>
+  <data name="Your saved profiles and settings were kept." xml:space="preserve">
+    <value>Your saved profiles and settings were kept.</value>
+  </data>
+</root>
