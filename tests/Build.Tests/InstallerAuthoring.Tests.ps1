@@ -267,6 +267,12 @@ Assert-True (-not $bootstrapperSource.Contains(
     'Burn apply must not fall back to a null owner when no WPF window exists.'
 Assert-True ($bootstrapperSource.Contains('ShowNewerVersionConfirmation')) `
     'Interactive setup must ask before replacing a newer OpenBlade version.'
+Assert-True ($bootstrapperSource.Contains('ShowSameVersionMaintenance')) `
+    'Interactive setup must offer maintenance for one cached equal-version bundle.'
+Assert-True ($bootstrapperSource.Contains('PlanRelatedBundle += OnPlanRelatedBundle')) `
+    'Equal-version uninstall must target the installed related bundle.'
+Assert-True ($bootstrapperSource.Contains('SelectRelatedBundleRequestState')) `
+    'Equal-version uninstall must request the cached installed bundle absent.'
 Assert-True ($bootstrapperSource.Contains('PlanRelatedBundleType += OnPlanRelatedBundleType')) `
     'A confirmed overwrite must convert Burn downgrade planning into replacement planning.'
 Assert-True ($bootstrapperSource.Contains('RequestState.ForcePresent')) `

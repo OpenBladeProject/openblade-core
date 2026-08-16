@@ -41,6 +41,13 @@ public sealed class InstallerWindowTests
             Assert.Equal(Visibility.Visible, window.UninstallButton.Visibility);
             Assert.Equal(Visibility.Visible, window.PurgeProfilesCheckBox.Visibility);
 
+            window.ShowSameVersionMaintenance("1.2.3");
+            Assert.Equal("OpenBlade 1.2.3 is installed", window.ReadyHeading.Text);
+            Assert.Contains("overwrites", window.ReadyMessage.Text);
+            Assert.Equal(Visibility.Collapsed, window.InstallButton.Visibility);
+            Assert.Equal(Visibility.Visible, window.RepairButton.Visibility);
+            Assert.Equal(Visibility.Visible, window.UninstallButton.Visibility);
+
             window.ShowNewerVersionConfirmation(
                 "2.0.0",
                 "1.2.3",
@@ -140,13 +147,17 @@ public sealed class InstallerWindowTests
     }
 
     [Theory]
-    [InlineData(true, true, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Upgrade)]
-    [InlineData(false, true, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Downgrade)]
-    [InlineData(true, false, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Downgrade)]
-    [InlineData(true, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
-    [InlineData(false, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
+    [InlineData(true, false, false, true, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Upgrade)]
+    [InlineData(false, false, false, true, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Downgrade)]
+    [InlineData(true, false, false, false, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Downgrade)]
+    [InlineData(true, false, false, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
+    [InlineData(false, false, false, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
+    [InlineData(false, true, false, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.Upgrade)]
+    [InlineData(false, true, true, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
     public void RelatedBundlePlanProtectsVersionBoundaries(
         bool allowOverwrite,
+        bool allowSameVersionMaintenance,
+        bool relatedBundleInvocation,
         bool detectedNewerBundle,
         bool detectedSameVersionBundle,
         RelatedBundlePlanType recommendedType,
@@ -156,28 +167,79 @@ public sealed class InstallerWindowTests
             expected,
             OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
                 allowOverwrite,
+                allowSameVersionMaintenance,
+                relatedBundleInvocation,
                 detectedNewerBundle,
                 detectedSameVersionBundle,
                 recommendedType));
     }
 
     [Theory]
-    [InlineData(LaunchAction.Install, true, true)]
-    [InlineData(LaunchAction.Repair, true, true)]
-    [InlineData(LaunchAction.Uninstall, true, false)]
-    [InlineData(LaunchAction.Layout, true, false)]
-    [InlineData(LaunchAction.Unknown, true, false)]
-    [InlineData(LaunchAction.Install, false, false)]
-    public void SameVersionReplacementGateHonorsAction(
+    [InlineData(LaunchAction.Install, true, false, true)]
+    [InlineData(LaunchAction.Repair, true, false, false)]
+    [InlineData(LaunchAction.Repair, false, false, true)]
+    [InlineData(LaunchAction.Uninstall, true, false, false)]
+    [InlineData(LaunchAction.Uninstall, false, true, false)]
+    [InlineData(LaunchAction.Uninstall, false, false, true)]
+    [InlineData(LaunchAction.Layout, false, false, false)]
+    [InlineData(LaunchAction.Unknown, false, false, false)]
+    public void SameVersionReplacementGateHonorsMaintenanceOwnership(
         LaunchAction action,
-        bool detectedSameVersionBundle,
+        bool canOfferMaintenance,
+        bool runningBundleInstalled,
         bool expected)
     {
         Assert.Equal(
             expected,
-            OpenBladeBootstrapperApplication.ShouldBlockSameVersionReplacement(
+            OpenBladeBootstrapperApplication.ShouldRejectSameVersionAction(
                 action,
-                detectedSameVersionBundle));
+                canOfferMaintenance,
+                runningBundleInstalled));
+    }
+
+    [Theory]
+    [InlineData(false, false, true, true, 1, true)]
+    [InlineData(true, false, true, true, 1, false)]
+    [InlineData(false, true, true, true, 1, false)]
+    [InlineData(false, false, false, true, 1, false)]
+    [InlineData(false, false, true, false, 1, false)]
+    [InlineData(false, false, true, true, 2, false)]
+    public void SameVersionMaintenanceRequiresOneCachedPredecessorWithoutNewerOwnership(
+        bool runningBundleInstalled,
+        bool newerVersionDetected,
+        bool relatedBundleCached,
+        bool relatedBundleCodeDetected,
+        int relatedBundleCount,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.CanOfferSameVersionMaintenance(
+                runningBundleInstalled,
+                newerVersionDetected,
+                relatedBundleCached,
+                relatedBundleCodeDetected,
+                relatedBundleCount));
+    }
+
+    [Theory]
+    [InlineData(LaunchAction.Unknown, Display.Full, true, true)]
+    [InlineData(LaunchAction.Install, Display.Full, true, true)]
+    [InlineData(LaunchAction.Repair, Display.Full, true, false)]
+    [InlineData(LaunchAction.Unknown, Display.Passive, true, false)]
+    [InlineData(LaunchAction.Unknown, Display.Full, false, false)]
+    public void SameVersionMaintenanceRequiresAnInteractiveInstallEntryPoint(
+        LaunchAction action,
+        Display display,
+        bool canOfferMaintenance,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.ShouldOfferSameVersionMaintenance(
+                action,
+                display,
+                canOfferMaintenance));
     }
 
     [Theory]
@@ -229,12 +291,13 @@ public sealed class InstallerWindowTests
     }
 
     [Fact]
-    public void ConfirmedOverwriteOnlyForcesTheSetupPackageDuringInstall()
+    public void OverwriteAndSameVersionMaintenanceSelectTheSetupPackageState()
     {
         Assert.Equal(
             RequestState.ForcePresent,
             OpenBladeBootstrapperApplication.SelectPackageRequestState(
                 allowOverwrite: true,
+                sameVersionMaintenance: false,
                 LaunchAction.Install,
                 "OpenBladeSetup",
                 RequestState.Present));
@@ -242,6 +305,7 @@ public sealed class InstallerWindowTests
             RequestState.Present,
             OpenBladeBootstrapperApplication.SelectPackageRequestState(
                 allowOverwrite: false,
+                sameVersionMaintenance: false,
                 LaunchAction.Install,
                 "OpenBladeSetup",
                 RequestState.Present));
@@ -249,6 +313,7 @@ public sealed class InstallerWindowTests
             RequestState.Present,
             OpenBladeBootstrapperApplication.SelectPackageRequestState(
                 allowOverwrite: true,
+                sameVersionMaintenance: false,
                 LaunchAction.Repair,
                 "OpenBladeSetup",
                 RequestState.Present));
@@ -256,9 +321,61 @@ public sealed class InstallerWindowTests
             RequestState.Present,
             OpenBladeBootstrapperApplication.SelectPackageRequestState(
                 allowOverwrite: true,
+                sameVersionMaintenance: false,
                 LaunchAction.Install,
                 "OpenBladeVcRuntime",
                 RequestState.Present));
+        Assert.Equal(
+            RequestState.ForcePresent,
+            OpenBladeBootstrapperApplication.SelectPackageRequestState(
+                allowOverwrite: false,
+                sameVersionMaintenance: true,
+                LaunchAction.Repair,
+                "OpenBladeSetup",
+                RequestState.Repair));
+        Assert.Equal(
+            RequestState.Absent,
+            OpenBladeBootstrapperApplication.SelectPackageRequestState(
+                allowOverwrite: false,
+                sameVersionMaintenance: true,
+                LaunchAction.Uninstall,
+                "OpenBladeSetup",
+                RequestState.Absent));
+    }
+
+    [Fact]
+    public void SameVersionMaintenanceTargetsOnlyTheInstalledRelatedBundle()
+    {
+        Assert.Equal(
+            RequestState.Absent,
+            OpenBladeBootstrapperApplication.SelectRelatedBundleRequestState(
+                sameVersionMaintenance: true,
+                LaunchAction.Uninstall,
+                detectedSameVersionBundle: true,
+                RequestState.None));
+        Assert.Equal(
+            RequestState.None,
+            OpenBladeBootstrapperApplication.SelectRelatedBundleRequestState(
+                sameVersionMaintenance: true,
+                LaunchAction.Uninstall,
+                detectedSameVersionBundle: false,
+                RequestState.None));
+    }
+
+    [Theory]
+    [InlineData(LaunchAction.Repair, true, LaunchAction.Install)]
+    [InlineData(LaunchAction.Repair, false, LaunchAction.Repair)]
+    [InlineData(LaunchAction.Uninstall, true, LaunchAction.Uninstall)]
+    public void SameVersionRepairUsesAnInstallPlan(
+        LaunchAction action,
+        bool sameVersionMaintenance,
+        LaunchAction expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.SelectEngineAction(
+                action,
+                sameVersionMaintenance));
     }
 
     [Fact]

@@ -32,6 +32,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private bool applying;
     private bool cancellationRequested;
     private bool allowNewerVersionOverwrite;
+    private bool sameVersionRelatedBundleCached;
+    private bool sameVersionMaintenance;
     private int phaseCount = 2;
     private int cacheProgress;
     private int executeProgress;
@@ -39,6 +41,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private string? lastError;
     private string bundleVersion = "unknown";
     private string? newerRelatedBundleVersion;
+    private string? sameVersionRelatedBundleCode;
     private string? sameVersionRelatedBundleVersion;
     private readonly HashSet<string> newerRelatedBundleCodes =
         new(StringComparer.OrdinalIgnoreCase);
@@ -53,6 +56,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         DetectRelatedBundle += OnDetectRelatedBundle;
         DetectComplete += OnDetectComplete;
         PlanBegin += OnPlanBegin;
+        PlanRelatedBundle += OnPlanRelatedBundle;
         PlanRelatedBundleType += OnPlanRelatedBundleType;
         PlanPackageBegin += OnPlanPackageBegin;
         PlanComplete += OnPlanComplete;
@@ -89,9 +93,10 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
 
         if (sameVersionRelatedBundleVersion is string sameVersion
-            && ShouldBlockSameVersionReplacement(
+            && ShouldRejectSameVersionAction(
                 action,
-                detectedSameVersionBundle: true))
+                CanOfferSameVersionMaintenance(),
+                installed))
         {
             RejectSameVersionReplacement(sameVersion);
             return;
@@ -106,6 +111,9 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
 
         plannedAction = action;
+        sameVersionMaintenance = command.Relation == RelationType.None
+            && action is LaunchAction.Repair or LaunchAction.Uninstall
+            && CanOfferSameVersionMaintenance();
         allowNewerVersionOverwrite = overwriteNewerVersion
             && newerRelatedBundleVersion is not null
             && command.Display == Display.Full;
@@ -128,7 +136,9 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
         Ui(() => window?.ShowProgress(action));
         AddDetail($"Planning {DescribeAction(action).ToLowerInvariant()}.");
-        Engine.Plan(action, BundleScope.Default);
+        Engine.Plan(
+            SelectEngineAction(action, sameVersionMaintenance),
+            BundleScope.Default);
     }
 
     public void RequestCancel()
@@ -262,7 +272,10 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         newerRelatedBundleCodes.Clear();
         upgradeRelatedBundleVersions.Clear();
         newerRelatedBundleVersion = null;
+        sameVersionRelatedBundleCode = null;
         sameVersionRelatedBundleVersion = null;
+        sameVersionRelatedBundleCached = false;
+        sameVersionMaintenance = false;
         AddDetail("Checking the installed OpenBlade version.");
     }
 
@@ -286,7 +299,9 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             upgradeRelatedBundleVersions[e.ProductCode] = e.Version;
             if (IsSameVersion(bundleVersion, e.Version))
             {
+                sameVersionRelatedBundleCode = e.ProductCode;
                 sameVersionRelatedBundleVersion = e.Version;
+                sameVersionRelatedBundleCached = !e.MissingFromCache;
             }
             if (IsNewerVersion(bundleVersion, e.Version))
             {
@@ -349,19 +364,30 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             return;
         }
 
-        if (sameVersionRelatedBundleVersion is string sameVersion
-            && ShouldBlockSameVersionReplacement(
-                detectionAction,
-                detectedSameVersionBundle: true))
+        if (newerRelatedBundleVersion is not null
+            && detectionAction is LaunchAction.Install or LaunchAction.Repair)
         {
-            RejectSameVersionReplacement(sameVersion);
+            RequireNewerVersionOverwriteConfirmation();
             return;
         }
 
-        if (newerRelatedBundleVersion is not null
-            && command.Action is LaunchAction.Install or LaunchAction.Repair)
+        if (sameVersionRelatedBundleVersion is string maintenanceVersion
+            && ShouldOfferSameVersionMaintenance(
+                command.Action,
+                command.Display,
+                CanOfferSameVersionMaintenance()))
         {
-            RequireNewerVersionOverwriteConfirmation();
+            Ui(() => window?.ShowSameVersionMaintenance(maintenanceVersion));
+            return;
+        }
+
+        if (sameVersionRelatedBundleVersion is string sameVersion
+            && ShouldRejectSameVersionAction(
+                detectionAction,
+                CanOfferSameVersionMaintenance(),
+                installed))
+        {
+            RejectSameVersionReplacement(sameVersion);
             return;
         }
 
@@ -380,6 +406,23 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         e.Cancel = cancellationRequested;
     }
 
+    private void OnPlanRelatedBundle(object? sender, PlanRelatedBundleEventArgs e)
+    {
+        bool detectedSameVersionBundle = IsSameVersionRelatedBundle(e.BundleCode);
+        RequestState selected = SelectRelatedBundleRequestState(
+            sameVersionMaintenance,
+            plannedAction,
+            detectedSameVersionBundle,
+            e.RecommendedState);
+        if (selected != e.State)
+        {
+            e.State = selected;
+            AddDetail("Removing the installed equal-version OpenBlade bundle.");
+        }
+
+        e.Cancel = cancellationRequested;
+    }
+
     private void OnPlanRelatedBundleType(object? sender, PlanRelatedBundleTypeEventArgs e)
     {
         bool detectedNewerBundle = newerRelatedBundleCodes.Contains(e.BundleCode);
@@ -388,6 +431,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             && IsSameVersion(bundleVersion, relatedVersion);
         RelatedBundlePlanType selected = SelectRelatedBundlePlanType(
             allowNewerVersionOverwrite,
+            sameVersionMaintenance,
+            command?.Relation != RelationType.None,
             detectedNewerBundle,
             detectedSameVersionBundle,
             e.RecommendedType);
@@ -406,6 +451,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     {
         RequestState selected = SelectPackageRequestState(
             allowNewerVersionOverwrite,
+            sameVersionMaintenance,
             plannedAction,
             e.PackageId,
             e.RecommendedState);
@@ -589,8 +635,10 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     {
         string message =
             $"Another OpenBlade {installedVersion} installer build is already registered. "
-            + "Setup stopped before making changes to avoid an equal-version replacement cycle. "
-            + "Use an installer with a higher version or uninstall the existing OpenBlade bundle first.";
+            + (sameVersionRelatedBundleCached
+                ? "Run this installer interactively and choose Repair or Uninstall."
+                : "Its cached installer is unavailable, so setup cannot safely repair or remove it. "
+                    + "Use Windows installer recovery before trying again.");
         RejectRelatedBundleReplacement(
             SelectRelatedBundleConflictStatus(multipleRegistrations: false),
             message);
@@ -648,6 +696,21 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
         return packageId;
     }
+
+    private bool CanOfferSameVersionMaintenance() =>
+        CanOfferSameVersionMaintenance(
+            installed,
+            newerRelatedBundleVersion is not null,
+            sameVersionRelatedBundleCached,
+            sameVersionRelatedBundleCode is not null,
+            upgradeRelatedBundleVersions.Count);
+
+    private bool IsSameVersionRelatedBundle(string bundleCode) =>
+        sameVersionRelatedBundleCode is not null
+        && string.Equals(
+            bundleCode,
+            sameVersionRelatedBundleCode,
+            StringComparison.OrdinalIgnoreCase);
 
     private void AddDetail(string message)
     {
@@ -784,6 +847,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     internal static RelatedBundlePlanType SelectRelatedBundlePlanType(
         bool allowOverwrite,
+        bool allowSameVersionMaintenance,
+        bool relatedBundleInvocation,
         bool detectedNewerBundle,
         bool detectedSameVersionBundle,
         RelatedBundlePlanType recommendedType)
@@ -796,21 +861,48 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
 
         if (detectedSameVersionBundle
+            && (!allowSameVersionMaintenance || relatedBundleInvocation)
             && recommendedType == RelatedBundlePlanType.Upgrade)
         {
-            // Install and repair are rejected after detection. Keep this plan-time
-            // guard for other Burn actions and future call paths.
+            // Related bundles must never plan the top-level equal-version bundle
+            // that invoked them, or the cached installers can recurse.
             return RelatedBundlePlanType.None;
         }
 
         return recommendedType;
     }
 
-    internal static bool ShouldBlockSameVersionReplacement(
+    internal static bool ShouldRejectSameVersionAction(
         LaunchAction action,
-        bool detectedSameVersionBundle) =>
-        detectedSameVersionBundle
-        && action is LaunchAction.Install or LaunchAction.Repair;
+        bool canOfferMaintenance,
+        bool runningBundleInstalled) =>
+        action switch
+        {
+            LaunchAction.Install => true,
+            LaunchAction.Repair => !canOfferMaintenance,
+            LaunchAction.Uninstall => !canOfferMaintenance && !runningBundleInstalled,
+            _ => false,
+        };
+
+    internal static bool CanOfferSameVersionMaintenance(
+        bool runningBundleInstalled,
+        bool newerVersionDetected,
+        bool relatedBundleCached,
+        bool relatedBundleCodeDetected,
+        int relatedBundleCount) =>
+        !runningBundleInstalled
+        && !newerVersionDetected
+        && relatedBundleCached
+        && relatedBundleCodeDetected
+        && relatedBundleCount == 1;
+
+    internal static bool ShouldOfferSameVersionMaintenance(
+        LaunchAction action,
+        Display display,
+        bool canOfferMaintenance) =>
+        canOfferMaintenance
+        && display == Display.Full
+        && action is LaunchAction.Unknown or LaunchAction.Install;
 
     internal static bool ShouldBlockMultipleRelatedBundles(
         LaunchAction action,
@@ -830,14 +922,49 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     internal static RequestState SelectPackageRequestState(
         bool allowOverwrite,
+        bool sameVersionMaintenance,
         LaunchAction action,
         string packageId,
+        RequestState recommendedState)
+    {
+        if (!string.Equals(packageId, OpenBladeSetupPackage, StringComparison.Ordinal))
+        {
+            return recommendedState;
+        }
+
+        if (sameVersionMaintenance)
+        {
+            // Keep Burn's recommended Absent state for uninstall. The incoming setup is
+            // ownership-guarded and runs before the related bundle that owns the payload.
+            return action switch
+            {
+                LaunchAction.Repair => RequestState.ForcePresent,
+                _ => recommendedState,
+            };
+        }
+
+        return allowOverwrite && action == LaunchAction.Install
+            ? RequestState.ForcePresent
+            : recommendedState;
+    }
+
+    internal static RequestState SelectRelatedBundleRequestState(
+        bool sameVersionMaintenance,
+        LaunchAction action,
+        bool detectedSameVersionBundle,
         RequestState recommendedState) =>
-        allowOverwrite
-            && action == LaunchAction.Install
-            && string.Equals(packageId, OpenBladeSetupPackage, StringComparison.Ordinal)
-                ? RequestState.ForcePresent
-                : recommendedState;
+        sameVersionMaintenance
+        && action == LaunchAction.Uninstall
+        && detectedSameVersionBundle
+            ? RequestState.Absent
+            : recommendedState;
+
+    internal static LaunchAction SelectEngineAction(
+        LaunchAction action,
+        bool sameVersionMaintenance) =>
+        sameVersionMaintenance && action == LaunchAction.Repair
+            ? LaunchAction.Install
+            : action;
 
     internal static int SelectApplyDowngradeStatus(bool allowOverwrite, int status) =>
         allowOverwrite && status == ProductVersionConflict ? 0 : status;

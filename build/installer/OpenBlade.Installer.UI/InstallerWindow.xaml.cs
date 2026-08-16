@@ -52,6 +52,22 @@ internal partial class InstallerWindow : Window
         PurgeProfilesCheckBox.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    public void ShowSameVersionMaintenance(string installedVersion)
+    {
+        ShowOnly(ReadyPanel);
+        overwriteNewerVersion = false;
+        readyInstalled = true;
+        HeaderSubtitle.Text = "Maintenance";
+        ReadyHeading.Text = $"OpenBlade {installedVersion} is installed";
+        ReadyMessage.Text =
+            "Repair overwrites the installed files with this installer, or uninstall OpenBlade from this PC.";
+        InstallButton.Visibility = Visibility.Collapsed;
+        InstallButton.Content = "Install";
+        RepairButton.Visibility = Visibility.Visible;
+        UninstallButton.Visibility = Visibility.Visible;
+        PurgeProfilesCheckBox.Visibility = Visibility.Visible;
+    }
+
     public void ShowNewerVersionConfirmation(
         string installedVersion,
         string installerVersion,
