@@ -347,6 +347,112 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task PowerTransitionStateRead_UsesOwnedRendererStateRead()
+    {
+        var readOrder = new List<string>();
+        var batteryFactory = new FakeQueryFactory(
+            FakeQueryPort.Success(BatteryValidationSetting.Limit80, readOrder));
+        var lightingPort = new FakeLightingPort
+        {
+            StateReadResult = LightingSettingsFactory.Off(),
+            OwnershipState = LightingRendererOwnershipState.Static,
+            ReadOrder = readOrder,
+        };
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(batteryFactory),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        PowerTransitionDeviceStateReadResult result =
+            await device.ReadStateForPowerTransitionAsync(default);
+
+        Assert.Equal(LightingEffect.Off, result.State.Lighting?.Effect);
+        Assert.False(result.LightingOffConfirmationUnavailable);
+        Assert.Equal(1, lightingPort.ReadStateCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            lightingPort.OwnershipState);
+        Assert.Equal(1, batteryFactory.OpenCount);
+        Assert.Equal(["Lighting", "Battery"], readOrder);
+    }
+
+    [Fact]
+    public async Task PowerTransitionStateRead_LightingFailureIsScopedAndRetainsPort()
+    {
+        var batteryFactory = new FakeQueryFactory(
+            FakeQueryPort.Success(BatteryValidationSetting.Limit80),
+            FakeQueryPort.Success(BatteryValidationSetting.Limit80));
+        var lightingPort = new FakeLightingPort
+        {
+            ReadFailure = new IOException("brightness unavailable"),
+            OwnershipState = LightingRendererOwnershipState.Static,
+            LogoState = LogoLightingMode.Static,
+        };
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(batteryFactory),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        PowerTransitionDeviceStateReadResult result =
+            await device.ReadStateForPowerTransitionAsync(default);
+
+        Assert.Null(result.State.Lighting);
+        Assert.Equal(LogoLightingMode.Static, result.State.LogoLighting);
+        Assert.True(result.LightingOffConfirmationUnavailable);
+        Assert.NotNull(result.State.Battery);
+        Assert.Equal(1, lightingPort.ReadStateCalls);
+        Assert.Equal(1, lightingPort.ReadLogoStateCalls);
+        Assert.Equal(1, batteryFactory.OpenCount);
+        Assert.Equal(1, lightingFactory.OpenCount);
+
+        lightingPort.ReadFailure = null;
+        PowerTransitionDeviceStateReadResult recovered =
+            await device.ReadStateForPowerTransitionAsync(default);
+
+        Assert.False(recovered.LightingOffConfirmationUnavailable);
+        Assert.Equal(1, lightingFactory.OpenCount);
+        Assert.Equal(2, batteryFactory.OpenCount);
+    }
+
+    [Fact]
+    public async Task PowerTransitionStateRead_FaultedPortIsRetiredAndReopened()
+    {
+        var batteryFactory = new FakeQueryFactory(
+            FakeQueryPort.Success(BatteryValidationSetting.Limit80),
+            FakeQueryPort.Success(BatteryValidationSetting.Limit80));
+        var faultedPort = new FakeLightingPort
+        {
+            ReadFailure = new IOException("brightness unavailable"),
+            OwnershipState = LightingRendererOwnershipState.Faulted,
+        };
+        var recoveredPort = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(faultedPort, recoveredPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(batteryFactory),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        PowerTransitionDeviceStateReadResult failed =
+            await device.ReadStateForPowerTransitionAsync(default);
+        PowerTransitionDeviceStateReadResult recovered =
+            await device.ReadStateForPowerTransitionAsync(default);
+
+        Assert.True(failed.LightingOffConfirmationUnavailable);
+        Assert.False(recovered.LightingOffConfirmationUnavailable);
+        Assert.Equal(1, faultedPort.DisposeCount);
+        Assert.Equal(2, lightingFactory.OpenCount);
+        Assert.Equal(1, recoveredPort.ReadStateCalls);
+    }
+
+    [Fact]
     public async Task KeyboardBrightnessStep_UsesRecoveredSupportedPort()
     {
         var lightingPort = new FakeLightingPort
@@ -1965,7 +2071,17 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int DriverModeReleaseCount { get; private set; }
 
-        public Exception? ReadFailure { get; init; }
+        public Exception? ReadFailure { get; set; }
+
+        public LightingSettings? StateReadResult { get; init; }
+
+        public List<string>? ReadOrder { get; init; }
+
+        public int ReadStateCalls { get; private set; }
+
+        public LogoLightingMode? LogoState { get; init; }
+
+        public int ReadLogoStateCalls { get; private set; }
 
         public Task EnsureDriverModeAsync(CancellationToken cancellationToken)
         {
@@ -1985,10 +2101,22 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             return Task.FromResult<bool?>(false);
         }
 
-        public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken) =>
-            ReadFailure is null
-                ? Task.FromResult<LightingSettings?>(Writes.LastOrDefault())
+        public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken)
+        {
+            ReadStateCalls++;
+            ReadOrder?.Add("Lighting");
+            return ReadFailure is null
+                ? Task.FromResult<LightingSettings?>(
+                    StateReadResult ?? Writes.LastOrDefault())
                 : Task.FromException<LightingSettings?>(ReadFailure);
+        }
+
+        public Task<LogoLightingMode?> ReadLogoStateAsync(
+            CancellationToken cancellationToken)
+        {
+            ReadLogoStateCalls++;
+            return Task.FromResult(LogoState);
+        }
 
         public Task SetLightingAsync(
             LightingSettings settings,
@@ -2112,18 +2240,21 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         private readonly TaskCompletionSource? release;
         private readonly bool observeCancellation;
         private readonly Exception? queryException;
+        private readonly List<string>? readOrder;
 
         private FakeQueryPort(
             BatteryValidationSetting setting,
             HidSessionFailureKind? failure = null,
             bool blocked = false,
             bool observeCancellation = false,
-            Exception? queryException = null)
+            Exception? queryException = null,
+            List<string>? readOrder = null)
         {
             this.setting = setting;
             this.failure = failure;
             this.observeCancellation = observeCancellation;
             this.queryException = queryException;
+            this.readOrder = readOrder;
             release = blocked
                 ? new(TaskCreationOptions.RunContinuationsAsynchronously)
                 : null;
@@ -2136,7 +2267,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int DisposeCount { get; private set; }
 
-        public static FakeQueryPort Success(BatteryValidationSetting setting) => new(setting);
+        public static FakeQueryPort Success(
+            BatteryValidationSetting setting,
+            List<string>? readOrder = null) => new(setting, readOrder: readOrder);
 
         public static FakeQueryPort Failure(HidSessionFailureKind failure) =>
             new(default, failure);
@@ -2159,6 +2292,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         public async Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(
             CancellationToken cancellationToken)
         {
+            readOrder?.Add("Battery");
             QueryCount++;
             QueryStarted.TrySetResult();
             if (queryException is not null)
