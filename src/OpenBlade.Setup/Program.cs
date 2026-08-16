@@ -44,7 +44,8 @@ try
     int exitCode = await new SetupCommandRunner(
         new WindowsSetupPlatform(new WindowsSetupPlatformOptions(
             Paths: paths,
-            ProgressReporter: progress)),
+            ProgressReporter: progress,
+            BundleOwnerId: invocation.BundleOwnerId)),
         progress)
         .RunAsync(effectiveArguments, CancellationToken.None);
     if ((interactiveRequested || interactiveRelay) && exitCode == 0)

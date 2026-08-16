@@ -11,7 +11,8 @@ public readonly record struct SetupInvocation(
     SetupCommand Command,
     bool BundleManaged,
     bool RecoverOrphanedBundle = false,
-    string? ProgressPipeName = null);
+    string? ProgressPipeName = null,
+    string? BundleOwnerId = null);
 
 public static class SetupCommandParser
 {
@@ -31,12 +32,14 @@ public static class SetupCommandParser
                 "install",
                 allowPurge: false,
                 out _,
-                out string? installProgressPipe))
+                out string? installProgressPipe,
+                out string? installBundleOwnerId))
         {
             invocation = new(
                 SetupCommand.Install,
                 BundleManaged: true,
-                ProgressPipeName: installProgressPipe);
+                ProgressPipeName: installProgressPipe,
+                BundleOwnerId: installBundleOwnerId);
             return true;
         }
 
@@ -58,12 +61,14 @@ public static class SetupCommandParser
                 "uninstall",
                 allowPurge: true,
                 out bool purge,
-                out string? uninstallProgressPipe))
+                out string? uninstallProgressPipe,
+                out string? uninstallBundleOwnerId))
         {
             invocation = new(
                 purge ? SetupCommand.UninstallAndPurge : SetupCommand.Uninstall,
                 BundleManaged: true,
-                ProgressPipeName: uninstallProgressPipe);
+                ProgressPipeName: uninstallProgressPipe,
+                BundleOwnerId: uninstallBundleOwnerId);
             return true;
         }
 
@@ -103,10 +108,12 @@ public static class SetupCommandParser
         string command,
         bool allowPurge,
         out bool purge,
-        out string? progressPipeName)
+        out string? progressPipeName,
+        out string? bundleOwnerId)
     {
         purge = false;
         progressPipeName = null;
+        bundleOwnerId = null;
         if (arguments.Count < 2
             || !string.Equals(arguments[0], command, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(
@@ -141,9 +148,19 @@ public static class SetupCommandParser
                 continue;
             }
 
+            if (bundleOwnerId is null
+                && string.Equals(option, "--bundle-owner-id", StringComparison.OrdinalIgnoreCase)
+                && index + 1 < arguments.Count
+                && Guid.TryParseExact(arguments[index + 1], "D", out Guid parsedBundleOwnerId))
+            {
+                bundleOwnerId = parsedBundleOwnerId.ToString("D");
+                index += 2;
+                continue;
+            }
+
             return false;
         }
 
-        return true;
+        return bundleOwnerId is not null;
     }
 }

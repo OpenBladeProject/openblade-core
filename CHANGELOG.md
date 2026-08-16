@@ -62,6 +62,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Offered **Repair** and **Uninstall** when an interactive installer finds one
+  cached OpenBlade bundle with the same version. Repair overwrites the installed
+  files, records instance-specific ownership, and retires the old registration
+  without letting it remove the repaired payload. Uninstall keeps saved profiles
+  and removes through the cached installed bundle without registering the incoming
+  one, with guidance to use its Windows Installed apps entry when profile removal
+  is also wanted.
 - Advanced the combined service IPC contract to version 44 so incompatible
   version-43 peers are no longer accepted as wire-compatible.
 - Rejected imported lighting sequences for a different keyboard layout before

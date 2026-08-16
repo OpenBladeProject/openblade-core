@@ -52,6 +52,24 @@ internal partial class InstallerWindow : Window
         PurgeProfilesCheckBox.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    public void ShowSameVersionMaintenance(string installedVersion)
+    {
+        ShowOnly(ReadyPanel);
+        overwriteNewerVersion = false;
+        readyInstalled = true;
+        HeaderSubtitle.Text = "Maintenance";
+        ReadyHeading.Text = $"OpenBlade {installedVersion} is installed";
+        ReadyMessage.Text =
+            "Repair overwrites the installed files with this installer, or uninstall OpenBlade while keeping saved profiles. "
+            + "To remove saved profiles too, close this installer and uninstall the registered OpenBlade entry from Windows Installed apps.";
+        InstallButton.Visibility = Visibility.Collapsed;
+        InstallButton.Content = "Install";
+        RepairButton.Visibility = Visibility.Visible;
+        UninstallButton.Visibility = Visibility.Visible;
+        PurgeProfilesCheckBox.IsChecked = false;
+        PurgeProfilesCheckBox.Visibility = Visibility.Collapsed;
+    }
+
     public void ShowNewerVersionConfirmation(
         string installedVersion,
         string installerVersion,
@@ -144,7 +162,7 @@ internal partial class InstallerWindow : Window
         ProgressMessage.Text = message.Trim();
     }
 
-    public void ShowSuccess(LaunchAction action)
+    public void ShowSuccess(LaunchAction action, bool purgeProfiles)
     {
         ShowOnly(SuccessPanel);
         HeaderSubtitle.Text = "Complete";
@@ -154,7 +172,9 @@ internal partial class InstallerWindow : Window
             ? "OpenBlade was removed"
             : "OpenBlade is ready";
         SuccessMessage.Text = action == LaunchAction.Uninstall
-            ? "Your saved profiles were handled according to your selection."
+            ? purgeProfiles
+                ? "Saved profiles and settings were also removed."
+                : "Your saved profiles and settings were kept."
             : "Setup completed successfully.";
     }
 

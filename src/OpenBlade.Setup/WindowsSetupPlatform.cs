@@ -32,7 +32,8 @@ public sealed record WindowsSetupPlatformOptions(
     IInstalledUninstallerWriter? InstalledUninstallerWriter = null,
     IDynamicLightingIdentityRegistration? DynamicLightingIdentityRegistration = null,
     string? SetupExecutablePath = null,
-    ISetupProgressReporter? ProgressReporter = null);
+    ISetupProgressReporter? ProgressReporter = null,
+    string? BundleOwnerId = null);
 
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {
@@ -72,7 +73,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             ?? new WindowsMachineDataDirectorySecurity();
         uninstallRegistration = options.UninstallRegistration ?? new WindowsUninstallRegistration();
         bundleOwnershipRegistration = options.BundleOwnershipRegistration
-            ?? new WindowsBundleOwnershipRegistration();
+            ?? new WindowsBundleOwnershipRegistration(options.BundleOwnerId);
         installedUninstallerWriter = options.InstalledUninstallerWriter
             ?? new VerifiedInstalledUninstallerWriter();
         dynamicLightingIdentityRegistration = options.DynamicLightingIdentityRegistration
