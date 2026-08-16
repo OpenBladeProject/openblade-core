@@ -392,7 +392,10 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
         var cadence = new SessionLightingFrameCadence(
             timeProvider,
             configuration.RefreshRate);
-        var pacer = new SessionLightingFramePacer(timeProvider, delay);
+        var pacer = new SessionLightingFramePacer(
+            timeProvider,
+            delay,
+            configuration.RefreshRate);
         var smoother = new AudioMeterDecaySmoother();
         long? lastCaptureTimestamp = null;
         try

@@ -154,7 +154,10 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         var cadence = new SessionLightingFrameCadence(
             timeProvider,
             configuration.RefreshRate);
-        var pacer = new SessionLightingFramePacer(timeProvider, delay);
+        var pacer = new SessionLightingFramePacer(
+            timeProvider,
+            delay,
+            configuration.RefreshRate);
         // Keep sampler ownership parallel with ServiceAudioMeterLightingLoop:
         // native sampler failures recreate resources, while service failures retain them.
         try
@@ -260,12 +263,16 @@ internal readonly record struct SessionLightingFrameDecision(
 
 internal sealed class SessionLightingFramePacer(
     TimeProvider timeProvider,
-    Func<TimeSpan, CancellationToken, Task> delay)
+    Func<TimeSpan, CancellationToken, Task> delay,
+    LightingRefreshRate refreshRate)
 {
     private readonly TimeProvider timeProvider =
         timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     private readonly Func<TimeSpan, CancellationToken, Task> delay =
         delay ?? throw new ArgumentNullException(nameof(delay));
+    private readonly LightingRefreshRate refreshRate = Enum.IsDefined(refreshRate)
+        ? refreshRate
+        : throw new ArgumentOutOfRangeException(nameof(refreshRate));
     private long originTimestamp = timeProvider.GetTimestamp();
     private TimeSpan? nextDeadline;
     private TimeSpan? lastInterval;
@@ -277,6 +284,12 @@ internal sealed class SessionLightingFramePacer(
         if (interval <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(interval));
+        }
+
+        if (refreshRate == LightingRefreshRate.ThirtyHz)
+        {
+            await delay(interval, cancellationToken).ConfigureAwait(false);
+            return;
         }
 
         TimeSpan elapsed = timeProvider.GetElapsedTime(originTimestamp);

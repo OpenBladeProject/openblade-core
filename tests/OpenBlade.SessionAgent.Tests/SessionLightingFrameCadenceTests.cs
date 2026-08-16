@@ -56,7 +56,8 @@ public sealed class SessionLightingFrameCadenceTests
                 waits.Add(interval);
                 time.Advance(interval);
                 return Task.CompletedTask;
-            });
+            },
+            LightingRefreshRate.SixtyHz);
         TimeSpan interval = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 60);
 
         await pacer.WaitAsync(interval, CancellationToken.None);
@@ -71,6 +72,29 @@ public sealed class SessionLightingFrameCadenceTests
             waits[2],
             TimeSpan.FromMilliseconds(3.32),
             TimeSpan.FromMilliseconds(3.34));
+    }
+
+    [Fact]
+    public async Task ThirtyHzPacerPreservesRelativeDelayAfterProcessingTime()
+    {
+        var time = new ManualTimeProvider();
+        var waits = new List<TimeSpan>();
+        var pacer = new SessionLightingFramePacer(
+            time,
+            (interval, _) =>
+            {
+                waits.Add(interval);
+                time.Advance(interval);
+                return Task.CompletedTask;
+            },
+            LightingRefreshRate.ThirtyHz);
+        TimeSpan interval = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 30);
+
+        await pacer.WaitAsync(interval, CancellationToken.None);
+        time.Advance(TimeSpan.FromMilliseconds(10));
+        await pacer.WaitAsync(interval, CancellationToken.None);
+
+        Assert.Equal([interval, interval], waits);
     }
 
     [Fact]

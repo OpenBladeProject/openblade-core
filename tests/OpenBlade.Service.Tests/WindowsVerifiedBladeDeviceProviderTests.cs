@@ -800,6 +800,41 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task RetainedLightingPort_ReconcilesChangedRefreshRateBeforeReuse()
+    {
+        var port = new FakeLightingPort(
+            supportedLightingRefreshRates:
+            new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            });
+        var lightingFactory = new FakeLightingFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.ReadCapabilitiesAsync(CancellationToken.None);
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None);
+
+        provider.SetLightingRefreshRate(LightingRefreshRate.SixtyHz);
+        await provider.RelinquishLightingRendererAsync(CancellationToken.None);
+        await device.ReadCapabilitiesAsync(CancellationToken.None);
+        await device.ReadCapabilitiesAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [LightingRefreshRate.ThirtyHz, LightingRefreshRate.SixtyHz],
+            port.LightingRefreshRates);
+        Assert.Equal(1, port.RelinquishCount);
+        Assert.Equal(0, port.DisposeCount);
+        Assert.Equal(1, lightingFactory.OpenCount);
+    }
+
+    [Fact]
     public async Task DisposeWhileProbeIsBlocked_PreventsStaleDevicePublication()
     {
         var probeStarted = new TaskCompletionSource(
@@ -2081,7 +2116,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     {
         public FakeLightingPort(
             bool supportsKeyboardBrightness = true,
-            string keyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581)
+            string keyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581,
+            IReadOnlySet<LightingRefreshRate>? supportedLightingRefreshRates = null)
         {
             Capabilities = new DeviceCapabilities(
                 new HashSet<PerformancePreset>(),
@@ -2102,6 +2138,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 KeyboardLightingLayoutId = keyboardLightingLayoutId,
                 ObservedLightingEffects =
                     new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
+                SupportedLightingRefreshRates = supportedLightingRefreshRates
+                    ?? new HashSet<LightingRefreshRate>(),
             };
         }
 
@@ -2120,6 +2158,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         public List<bool> PlaybackMuteIndicatorStates { get; } = [];
 
         public List<KeyboardBrightnessDirection> BrightnessSteps { get; } = [];
+
+        public List<LightingRefreshRate> LightingRefreshRates { get; } = [];
 
         public byte BrightnessStepResult { get; init; } = 50;
 
@@ -2206,6 +2246,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 LightingEffect.Sequence => LightingRendererOwnershipState.Sequence,
                 _ => throw new ArgumentOutOfRangeException(),
             };
+            return Task.CompletedTask;
+        }
+
+        public Task SetLightingRefreshRateAsync(
+            LightingRefreshRate refreshRate,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LightingRefreshRates.Add(refreshRate);
             return Task.CompletedTask;
         }
 
