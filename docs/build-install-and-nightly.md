@@ -55,10 +55,17 @@ development builds without changing the base product version:
 .\build\Publish.ps1 -BuildChannel Nightly -BuildRevision 42 -SourceRevision (git rev-parse HEAD)
 ```
 
-- Burn cannot safely order different bundles with the same four-part version
-  during related-bundle removal.
-- OpenBlade stops before Apply when another installer build has the same
-  version.
+- When interactive setup finds exactly one cached bundle with the same version,
+  it offers **Repair** to overwrite the installed files with the incoming
+  payload or **Uninstall** to run the installed bundle's removal path while
+  keeping saved profiles. Repair records a persisted per-bundle ownership token
+  so even a predecessor built from the same revision cannot remove the new payload.
+  To remove saved profiles too, close the incoming installer, uninstall the
+  registered OpenBlade entry from Windows Installed apps, and select **Remove
+  saved profiles and settings** there.
+- Quiet `/install` keeps treating an equal version as a version conflict because
+  it cannot choose a maintenance action on the user's behalf. Use `/repair` or
+  `/uninstall` explicitly for unattended maintenance.
 - Use a higher Nightly revision for each exact-build validation. Do not install
   different Stable artifacts carrying the same product version.
 

@@ -9,12 +9,14 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.Windows.Storage.Pickers;
 using OpenBlade.Contracts;
 using OpenBlade.Platform;
 using OpenBlade.Session;
 using Windows.Graphics;
+using Windows.UI.ViewManagement;
 using WinRT.Interop;
 
 namespace OpenBlade.Tray;
@@ -42,6 +44,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly SemaphoreSlim contentDialogGate = new(1, 1);
     private readonly MicaBackdropHost micaBackdropHost;
     private readonly AccentColorManager accentColorManager;
+    private readonly UISettings dashboardTextSettings = new();
+    private readonly SingleLineTextMeasurementCache dashboardTitleHeightCache = new();
     private readonly UiPreferenceStore preferenceStore;
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
@@ -60,6 +64,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly CoalescingCommitState<GpuClockOffsetSettings> gpuClockOffsetCommits = new();
     private readonly object initializationSync = new();
     private Task? initializationTask;
+    private Task? displayRefreshTask;
     private bool initialPlacementAttempted;
     private bool changingPerformanceSelection;
     private bool changingWindowsPowerModeSelection;
@@ -70,10 +75,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingGamingMode;
     private bool changingGamingModeKeyPolicy;
     private bool changingStartupAnimation;
+    private bool changingFunctionKeySelection;
     private bool changingExternalLightingPolicy;
     private bool changingFirmwareCompatibilityOverride;
     private bool changingWindowsDynamicLighting;
-    private bool changingDisplaySettings;
     private bool changingDashboardCards;
     private bool trayDashboardCustomizationActive;
     private bool changingPageSections;
@@ -610,6 +615,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         NotificationPreferences initialNotifications = NotificationPreferences.Default;
         string? initialLastNotifiedReleaseTag = null;
         string? initialLastNotifiedFirmwareSignature = null;
+        bool initialLabFeaturesEnabled = false;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -669,6 +675,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialLastNotifiedReleaseTag = preferences.LastNotifiedReleaseTag;
             initialLastNotifiedFirmwareSignature =
                 preferences.LastNotifiedFirmwareSignature;
+            initialLabFeaturesEnabled = preferences.LabFeaturesEnabled;
         }
         catch (Exception exception)
         {
@@ -698,6 +705,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         changingAccentColor = false;
         NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
+        ViewModel.LabFeaturesEnabled = initialLabFeaturesEnabled;
+        LabFeaturesToggle.IsOn = ViewModel.LabFeaturesEnabled;
         ApplyNotificationPreferences(initialNotifications);
         lastNotifiedReleaseTag = initialLastNotifiedReleaseTag;
         lastNotifiedFirmwareSignature = initialLastNotifiedFirmwareSignature;
@@ -770,7 +779,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
         DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
         DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
-        await RefreshDisplaySettingsAsync();
+        _ = RefreshDisplaySettingsAsync();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
@@ -1017,7 +1026,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 Notifications: notificationPreferences,
                 LastNotifiedReleaseTag: lastNotifiedReleaseTag,
                 LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature,
-                TrayDashboard: trayDashboardPreference));
+                TrayDashboard: trayDashboardPreference,
+                LabFeaturesEnabled: ViewModel.LabFeaturesEnabled));
         }
         catch (ObjectDisposedException)
         {
@@ -1175,6 +1185,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         StartMinimized = toggle.IsOn;
+        QueuePreferenceSave();
+    }
+
+    private void OnLabFeaturesToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is not ToggleSwitch toggle
+            || Volatile.Read(ref disposed) != 0
+            || toggle.IsOn == ViewModel.LabFeaturesEnabled)
+        {
+            return;
+        }
+
+        ViewModel.LabFeaturesEnabled = toggle.IsOn;
         QueuePreferenceSave();
     }
 
@@ -1610,12 +1633,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDashboardPerformanceChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingPerformanceSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not PerformancePresetOption selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not PerformancePresetOption selected
             || selected.Value == ViewModel.SelectedPerformance)
         {
             return;
@@ -1645,12 +1668,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private void OnWindowsPowerModeChanged(object sender, SelectionChangedEventArgs args)
+    private void OnWindowsPowerModeChanged(
+        object sender,
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingWindowsPowerModeSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not WindowsPowerModeOption selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not WindowsPowerModeOption selected
             || selected == ViewModel.SelectedWindowsPowerModeOption)
         {
             return;
@@ -1668,14 +1693,53 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
+    private async void OnFunctionKeyPrimaryChanged(
+        object sender,
+        ResponsiveChoiceSelectionChangedEventArgs args)
+    {
+        if (changingFunctionKeySelection
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not FunctionKeyPrimaryOption selected
+            || selected.Value == ViewModel.FunctionKeyPrimary)
+        {
+            return;
+        }
+
+        changingFunctionKeySelection = true;
+        if (ViewModel.ApplyOneShotLaptopControlCommand is not AsyncRelayCommand command
+            || !command.CanExecute(selected.Action))
+        {
+            selector.SelectedItem = ViewModel.SelectedFunctionKeyPrimaryOption;
+            changingFunctionKeySelection = false;
+            return;
+        }
+
+        try
+        {
+            await command.ExecuteAsync(selected.Action);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade function key behavior selection failed: {0}",
+                exception);
+        }
+        finally
+        {
+            selector.SelectedItem = ViewModel.SelectedFunctionKeyPrimaryOption;
+            changingFunctionKeySelection = false;
+        }
+    }
+
     private async void OnDashboardCustomCpuChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingCustomPerformanceSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not CustomPerformanceLevel selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not CustomPerformanceLevel selected
             || selected == ViewModel.SelectedCustomCpuLevel)
         {
             return;
@@ -1690,12 +1754,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDashboardCustomGpuChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingCustomPerformanceSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not CustomPerformanceLevel selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not CustomPerformanceLevel selected
             || selected == ViewModel.SelectedCustomGpuLevel)
         {
             return;
@@ -2106,7 +2170,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async Task ApplyCustomPerformanceChangeAsync(
         CustomPerformanceSettings requested,
-        Microsoft.UI.Xaml.Controls.ComboBox selector)
+        ResponsiveChoiceSelector selector)
     {
         changingCustomPerformanceSelection = true;
         try
@@ -2132,12 +2196,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDashboardFanModeSelectionChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (changingFanSelection
             || Volatile.Read(ref disposed) != 0
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || args.AddedItems.FirstOrDefault() is not FanModeOption selected
+            || sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not FanModeOption selected
             || selected.Value == ViewModel.SelectedFanMode)
         {
             return;
@@ -2763,6 +2827,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             || (DisplayPage.Visibility != Visibility.Visible
                 && !(HomePage.Visibility == Visibility.Visible
                     && IsDashboardCardPinned(DashboardCardKind.Display)))
+            || IsDisplayRefreshInProgress
             || DisplayViewModel.IsBusy
             || openDisplayPickerCount > 0)
         {
@@ -2872,11 +2937,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnDisplayRefreshRateChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
-        if (sender is not Microsoft.UI.Xaml.Controls.ComboBox
-            { SelectedItem: DisplayRefreshRateOption option }
-            || changingDisplaySettings
+        if (sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not DisplayRefreshRateOption option
             || string.Equals(
                 option.Key,
                 DisplayViewModel.SelectedRefreshRate?.Key,
@@ -2885,8 +2949,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        await RunDisplayOperationAsync(
-            () => DisplayViewModel.SelectRefreshRateAsync(option));
+        await RunHandlerAsync(
+            () => DisplayViewModel.SelectRefreshRateAsync(option),
+            nameof(OnDisplayRefreshRateChanged));
+        selector.SelectedItem = DisplayViewModel.SelectedRefreshRate;
     }
 
     private void OnDisplayPickerOpened(object sender, object args) =>
@@ -2898,24 +2964,29 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private async void OnDisplayHdrToggled(object sender, RoutedEventArgs args)
     {
         if (sender is not ToggleSwitch toggle
-            || changingDisplaySettings
             || toggle.IsOn == DisplayViewModel.IsHdrEnabled)
         {
             return;
         }
 
-        await RunDisplayOperationAsync(
-            () => DisplayViewModel.SetHdrEnabledAsync(toggle.IsOn));
+        bool requested = toggle.IsOn;
+        await RunHandlerAsync(
+            () => DisplayViewModel.SetHdrEnabledAsync(requested),
+            nameof(OnDisplayHdrToggled));
+        toggle.IsOn = DisplayViewModel.IsHdrEnabled;
     }
 
     private async void OnDisplayColorProfileChanged(
         object sender,
-        SelectionChangedEventArgs args)
+        ResponsiveChoiceSelectionChangedEventArgs args)
     {
-        if (sender is not Microsoft.UI.Xaml.Controls.ComboBox
-            { SelectedItem: DisplayColorProfileOption option }
-            || changingDisplaySettings
-            || string.Equals(
+        if (sender is not ResponsiveChoiceSelector selector
+            || args.SelectedItem is not DisplayColorProfileOption option)
+        {
+            return;
+        }
+
+        if (string.Equals(
                 option.Key,
                 DisplayViewModel.SelectedColorProfile?.Key,
                 StringComparison.Ordinal))
@@ -2923,12 +2994,38 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        await RunDisplayOperationAsync(
-            () => DisplayViewModel.SelectColorProfileAsync(option));
+        await RunHandlerAsync(
+            () => DisplayViewModel.SelectColorProfileAsync(option),
+            nameof(OnDisplayColorProfileChanged));
+        selector.SelectedItem = DisplayViewModel.SelectedColorProfile;
     }
 
-    private Task RefreshDisplaySettingsAsync() =>
-        RunDisplayOperationAsync(() => DisplayViewModel.RefreshAsync());
+    private Task RefreshDisplaySettingsAsync()
+    {
+        if (displayRefreshTask is { IsCompleted: false } activeRefresh)
+        {
+            return activeRefresh;
+        }
+
+        displayRefreshTask = RunHandlerAsync(
+            () => DisplayViewModel.RefreshAsync(),
+            "display refresh");
+        return displayRefreshTask;
+    }
+
+    private bool IsDisplayRefreshInProgress =>
+        displayRefreshTask is { IsCompleted: false };
+
+    private async Task RefreshDisplaySettingsBeforeCaptureAsync()
+    {
+        Task? refreshAtRequest = displayRefreshTask;
+        if (refreshAtRequest is { IsCompleted: false })
+        {
+            await refreshAtRequest;
+        }
+
+        await RefreshDisplaySettingsAsync();
+    }
 
     private void OnDisplayUserSettingsChanged(
         object? sender,
@@ -2955,7 +3052,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        await RefreshDisplaySettingsAsync();
+        await RefreshDisplaySettingsBeforeCaptureAsync();
         if (sourceAtStart != ViewModel.ActivePowerSource
             || !DisplayViewModel.CanCaptureCurrentSettings)
         {
@@ -2997,49 +3094,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private async Task<bool> OnSavedDisplayProfileRestoreRequested(
+    private Task<bool> OnSavedDisplayProfileRestoreRequested(
         PowerSource expectedPowerSource,
         DisplayProfileSettings settings,
-        CancellationToken token)
-    {
-        bool wasChanging = changingDisplaySettings;
-        changingDisplaySettings = true;
-        try
-        {
-            return await DisplayViewModel.ApplyProfileAsync(
-                expectedPowerSource,
-                settings,
-                token);
-        }
-        finally
-        {
-            changingDisplaySettings = wasChanging;
-        }
-    }
-
-    private async Task RunDisplayOperationAsync(Func<Task> operation)
-    {
-        bool wasChanging = changingDisplaySettings;
-        changingDisplaySettings = true;
-        try
-        {
-            await operation();
-        }
-        catch (OperationCanceledException) when (Volatile.Read(ref disposed) != 0)
-        {
-        }
-        catch (ObjectDisposedException) when (Volatile.Read(ref disposed) != 0)
-        {
-        }
-        catch (Exception exception)
-        {
-            Trace.TraceError("OpenBlade display operation failed: {0}", exception);
-        }
-        finally
-        {
-            changingDisplaySettings = wasChanging;
-        }
-    }
+        CancellationToken token) =>
+        DisplayViewModel.ApplyProfileAsync(
+            expectedPowerSource,
+            settings,
+            token);
 
     private void OnProfileStateBadgeClick(object sender, RoutedEventArgs args)
     {
@@ -4645,10 +4707,197 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
+    private async void OnImportKeyboardLighting(object sender, RoutedEventArgs args)
+    {
+        if (!ViewModel.LabFeaturesEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            var picker = new FileOpenPicker(AppWindow.Id)
+            {
+                Title = "Import OpenBlade keyboard lighting",
+            };
+            picker.FileTypeFilter.Add(".oblight");
+            picker.FileTypeFilter.Add(".chroma");
+            picker.FileTypeFilter.Add(".json");
+
+            PickFileResult? result = await picker.PickSingleFileAsync();
+            if (result is null)
+            {
+                return;
+            }
+
+            bool isChroma = string.Equals(
+                Path.GetExtension(result.Path),
+                ".chroma",
+                StringComparison.OrdinalIgnoreCase);
+            int maximumFileSize = isChroma
+                ? RazerChromaFileAdapter.MaximumFileSizeBytes
+                : KeyboardLightingFileSerializer.MaximumFileSizeBytes;
+            byte[] content = await ReadBoundedKeyboardLightingFileAsync(
+                result.Path,
+                maximumFileSize);
+            KeyboardLightingPreset preset = isChroma
+                ? RazerChromaFileAdapter.Deserialize(
+                    content,
+                    Path.GetFileNameWithoutExtension(result.Path),
+                    ViewModel.Capabilities.KeyboardLightingLayoutId)
+                : KeyboardLightingFileSerializer.Deserialize(content);
+            if (!ViewModel.CanImportKeyboardLighting(preset))
+            {
+                throw new InvalidDataException(
+                    $"The {preset.Lighting.Effect} effect is unavailable on this laptop right now.");
+            }
+
+            string brightness = preset.Lighting.Effect == LightingEffect.Off
+                ? "off"
+                : $"{preset.Lighting.Brightness}% brightness";
+            var confirmation = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Import keyboard lighting?",
+                Content = $"{preset.Name} uses the {preset.Lighting.Effect} effect at "
+                    + $"{brightness}. Importing applies it through OpenBlade and keeps it "
+                    + "as an unsaved change for the active power profile."
+                    + (string.IsNullOrWhiteSpace(preset.ImportWarning)
+                        ? string.Empty
+                        : $"\n\n{preset.ImportWarning}"),
+                PrimaryButtonText = "Import and apply",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            if (await ShowContentDialogAsync(confirmation) != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            if (!ViewModel.TryImportKeyboardLighting(preset))
+            {
+                throw new InvalidDataException(
+                    "Lighting control became unavailable before the preset could be imported.");
+            }
+
+            // The imported draft raises LightingDraft and IsLightingApplyPending.
+            // The shared property-change handler schedules the same debounced
+            // hardware commit used by direct Lighting-page edits.
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade keyboard lighting import failed: {0}", exception);
+            await ShowMessageDialogAsync(
+                "Keyboard lighting could not be imported",
+                exception.Message);
+        }
+    }
+
+    private static async Task<byte[]> ReadBoundedKeyboardLightingFileAsync(
+        string path,
+        int maximum)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximum);
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            useAsync: true);
+        if (stream.Length > maximum)
+        {
+            throw new InvalidDataException(
+                $"The selected lighting file cannot exceed {FormatFileSize(maximum)}.");
+        }
+
+        byte[] buffer = new byte[maximum + 1];
+        int length = 0;
+        while (length < buffer.Length)
+        {
+            int read = await stream.ReadAsync(buffer.AsMemory(length));
+            if (read == 0)
+            {
+                break;
+            }
+            length += read;
+        }
+
+        if (length > maximum)
+        {
+            throw new InvalidDataException(
+                $"The selected lighting file cannot exceed {FormatFileSize(maximum)}.");
+        }
+        return buffer.AsSpan(0, length).ToArray();
+    }
+
+    private static string FormatFileSize(int bytes) => bytes >= 1024 * 1024
+        ? $"{bytes / (1024 * 1024)} MiB"
+        : $"{bytes / 1024} KiB";
+
     private void OnRootSizeChanged(object sender, SizeChangedEventArgs args)
     {
         UpdateDashboardLayout(args.NewSize.Width);
         UpdateProfilesLayout(args.NewSize.Width);
+    }
+
+    private void OnDashboardSingleLineTitleSizeChanged(
+        object sender,
+        SizeChangedEventArgs args)
+    {
+        if (sender is not TextBlock title
+            || FindVisualAncestor<Border>(title) is not Border row)
+        {
+            return;
+        }
+
+        double singleLineHeight = dashboardTitleHeightCache.GetOrMeasure(
+            dashboardTextSettings.TextScaleFactor,
+            () => MeasureSingleLineTitleHeight(title));
+        Thickness padding = SingleLineTextMeasurementCache.IsWrapped(
+            args.NewSize.Height,
+            singleLineHeight)
+            ? (Thickness)Root.Resources["DashboardWrappedTitleRowPadding"]
+            : (Thickness)Root.Resources["DashboardSingleLineRowPadding"];
+        if (!row.Padding.Equals(padding))
+        {
+            row.Padding = padding;
+        }
+    }
+
+    private static double MeasureSingleLineTitleHeight(TextBlock title)
+    {
+        var singleLineProbe = new TextBlock
+        {
+            Text = title.Text,
+            Style = title.Style,
+            TextWrapping = TextWrapping.NoWrap,
+            MaxLines = 1,
+            IsTextScaleFactorEnabled = title.IsTextScaleFactorEnabled,
+            Language = title.Language,
+            FlowDirection = title.FlowDirection,
+        };
+        singleLineProbe.Measure(new Windows.Foundation.Size(
+            double.PositiveInfinity,
+            double.PositiveInfinity));
+        return singleLineProbe.DesiredSize.Height;
+    }
+
+    private static T? FindVisualAncestor<T>(DependencyObject child)
+        where T : DependencyObject
+    {
+        DependencyObject current = child;
+        while (VisualTreeHelper.GetParent(current) is DependencyObject parent)
+        {
+            if (parent is T match)
+            {
+                return match;
+            }
+
+            current = parent;
+        }
+
+        return null;
     }
 
     private void UpdateDashboardLayout(double fallbackWidth = double.NaN)

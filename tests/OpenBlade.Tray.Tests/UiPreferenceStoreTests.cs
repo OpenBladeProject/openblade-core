@@ -72,6 +72,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
 
         Assert.Equal(ThemePreference.Dark, loaded.Theme);
         Assert.True(loaded.StartMinimized);
+        Assert.False(loaded.LabFeaturesEnabled);
         Assert.Equal(
             TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1,
             loaded.TrayDashboard?.SchemaVersion);
@@ -94,6 +95,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             TrayHoverLabelMode.ProfileAndPowerFlow,
             preferences.TrayHoverLabelMode);
         Assert.False(preferences.StartMinimized);
+        Assert.False(preferences.LabFeaturesEnabled);
         Assert.Equal(UpdateChannel.Stable, preferences.EffectiveUpdateChannel);
         Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
         Assert.Equal(
@@ -255,7 +257,8 @@ public sealed class UiPreferenceStoreTests : IDisposable
                     new(TrayDashboardSliderKind.GpuMemoryClock, true),
                     new(TrayDashboardSliderKind.ChargeLimit, true),
                 ],
-                SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion)));
+                SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion),
+            LabFeaturesEnabled: true));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -264,6 +267,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(LiveReadingsCadence.Off, reloaded.EffectiveLiveReadingsCadence);
         Assert.Equal(TrayHoverLabelMode.BatteryPowerFlow, reloaded.TrayHoverLabelMode);
         Assert.True(reloaded.StartMinimized);
+        Assert.True(reloaded.LabFeaturesEnabled);
         Assert.Equal(
             [LiveReadingItemKind.BatteryPower, LiveReadingItemKind.GpuTemperature],
             reloaded.EffectiveDashboardTelemetryItems);
@@ -373,6 +377,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             "EveryTenSeconds",
             document.RootElement.GetProperty("liveReadingsRefreshCadence").GetString());
         Assert.True(document.RootElement.GetProperty("startMinimized").GetBoolean());
+        Assert.True(document.RootElement.GetProperty("labFeaturesEnabled").GetBoolean());
         Assert.Equal(
             "GpuMemoryClock",
             document.RootElement

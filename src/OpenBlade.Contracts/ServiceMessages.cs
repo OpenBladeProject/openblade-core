@@ -24,6 +24,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
 [JsonDerivedType(typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness")]
+[JsonDerivedType(typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage")]
 [JsonDerivedType(typeof(SetKeyboardLightingControlModeRequest), "setKeyboardLightingControlMode")]
 [JsonDerivedType(typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy")]
 [JsonDerivedType(typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride")]
@@ -127,6 +128,19 @@ public sealed record StepKeyboardBrightnessRequest(
     OverrideLifetime Lifetime)
     : ServiceRequest(Version, RequestId);
 
+public enum DisplayBrightnessHidUsage : ushort
+{
+    Released = 0x0000,
+    Increment = 0x006F,
+    Decrement = 0x0070,
+}
+
+public sealed record SetDisplayBrightnessHidUsageRequest(
+    int Version,
+    Guid RequestId,
+    DisplayBrightnessHidUsage Usage)
+    : ServiceRequest(Version, RequestId);
+
 public enum KeyboardLightingControlMode
 {
     OpenBlade,
@@ -215,6 +229,13 @@ public enum FirmwareCompatibilityStatus
     UntestedAllowed,
 }
 
+public enum DisplayBrightnessHidAvailability
+{
+    Unknown,
+    Available,
+    Unavailable,
+}
+
 public sealed record ServiceStatusSnapshot(
     long Revision,
     bool DeviceVerified,
@@ -249,7 +270,9 @@ public sealed record ServiceStatusSnapshot(
     SessionControlAccess ControlAccess = SessionControlAccess.Active,
     bool AllowUntestedFirmware = false,
     FirmwareCompatibilityStatus FirmwareCompatibility =
-        FirmwareCompatibilityStatus.Unknown)
+        FirmwareCompatibilityStatus.Unknown,
+    DisplayBrightnessHidAvailability DisplayBrightnessHidAvailability =
+        DisplayBrightnessHidAvailability.Unknown)
 {
     public IReadOnlyList<DeviceSubsystem> UnconfirmedWrites { get; init; } = [];
 

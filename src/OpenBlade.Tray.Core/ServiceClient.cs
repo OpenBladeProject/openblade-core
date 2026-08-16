@@ -165,6 +165,15 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 lifetime),
             token);
 
+    public Task<ControlOperationResult> SetDisplayBrightnessHidUsageAsync(
+        DisplayBrightnessHidUsage usage,
+        CancellationToken token) => SendMutationAsync(
+            new SetDisplayBrightnessHidUsageRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                usage),
+            token);
+
     public Task<ControlOperationResult> SetKeyboardLightingControlModeAsync(
         KeyboardLightingControlMode mode,
         CancellationToken token) => SendMutationAsync(

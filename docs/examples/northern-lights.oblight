@@ -1,0 +1,17 @@
+{
+  "format": "openblade-keyboard-lighting",
+  "schemaVersion": 1,
+  "metadata": {
+    "name": "Northern lights",
+    "author": "OpenBlade",
+    "description": "A two-color breathing preset.",
+    "revision": 1
+  },
+  "effect": {
+    "kind": "breathing",
+    "brightnessPercent": 70,
+    "colorMode": "dual",
+    "primaryColor": "#47E10C",
+    "secondaryColor": "#8A2BE2"
+  }
+}

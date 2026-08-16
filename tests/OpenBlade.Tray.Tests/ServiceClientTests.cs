@@ -263,6 +263,9 @@ public sealed class ServiceClientTests
                 KeyboardBrightnessDirection.Increase,
                 OverrideLifetime.UntilPowerSourceChange,
                 timeout.Token),
+            await client.SetDisplayBrightnessHidUsageAsync(
+                DisplayBrightnessHidUsage.Decrement,
+                timeout.Token),
             await client.SetExternalLightingOverridePolicyAsync(true, timeout.Token),
             await client.SetFirmwareCompatibilityOverrideAsync(true, timeout.Token),
             await client.ReapplyChangedSettingsAsync(timeout.Token),
@@ -308,6 +311,9 @@ public sealed class ServiceClientTests
                 Assert.Equal(KeyboardBrightnessDirection.Increase, step.Direction);
                 Assert.Equal(OverrideLifetime.UntilPowerSourceChange, step.Lifetime);
             },
+            request => Assert.Equal(
+                DisplayBrightnessHidUsage.Decrement,
+                Assert.IsType<SetDisplayBrightnessHidUsageRequest>(request).Usage),
             request => Assert.True(
                 Assert.IsType<SetExternalLightingOverridePolicyRequest>(request).Enabled),
             request => Assert.True(
@@ -336,7 +342,7 @@ public sealed class ServiceClientTests
             },
             request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(17, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(18, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -1024,7 +1030,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 17; index++)
+        for (int index = 0; index < 18; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);

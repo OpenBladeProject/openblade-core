@@ -97,7 +97,13 @@ be copied to the other.
    restore lighting automatically.
 6. Keep queues bounded, cancellations observable, writes atomic, and native
    handles deterministically released. Do not add a kernel driver or depend on
-   Synapse components.
+   Synapse components. As an optional integration, the RZ09-0581 native-
+   brightness path may use only its exact admitted, signed Razer `02E0` driver
+   stack when that stack is already installed or separately provisioned. Keep
+   WMI fallback available and never generalize the stack to another model or
+   build. Developer export tooling does not authorize installer bundling or
+   publication without the corresponding redistribution authorization, notice,
+   hashes, and signature validation.
 7. Prefer one shared implementation or presentation primitive over
    page-specific fixes. When a bug can affect every picker, card, or firmware
    field, fix the shared layer and add a regression test there.

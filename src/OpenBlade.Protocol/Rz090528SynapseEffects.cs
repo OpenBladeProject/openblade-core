@@ -130,7 +130,7 @@ internal sealed class Rz090528StarlightEffect : IRz090528LightingEffect
 
     public bool RequiresContinuousRendering => true;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         return Rz090528LightingTiming.AnimatedFrameInterval;
@@ -210,7 +210,7 @@ internal sealed class Rz090528AmbientAwarenessEffect : IRz090528LightingEffect
 
     public bool RequiresContinuousRendering => false;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         return Timeout.InfiniteTimeSpan;
@@ -256,7 +256,7 @@ internal sealed class Rz090528AudioMeterEffect(double colorBoost)
 
     public bool RequiresContinuousRendering => false;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         return Timeout.InfiniteTimeSpan;
@@ -313,7 +313,7 @@ internal sealed class Rz090528BreathingEffect : IRz090528LightingEffect
 
     public bool RequiresContinuousRendering => true;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         return Rz090528LightingTiming.AnimatedFrameInterval;
@@ -371,7 +371,7 @@ internal sealed class Rz090528ReactiveEffect : IRz090528KeyTriggeredLightingEffe
 
     public bool RequiresContinuousRendering => true;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         return pulses.Any(value =>
@@ -424,7 +424,7 @@ internal sealed class Rz090528FireEffect : IRz090528LightingEffect
 {
     public bool RequiresContinuousRendering => true;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         return Rz090528LightingTiming.AnimatedFrameInterval;
@@ -562,7 +562,7 @@ internal sealed class Rz090528RippleEffect : IRz090528KeyTriggeredLightingEffect
 
     public bool RequiresContinuousRendering => true;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         return HasActivePulse(elapsed)
@@ -739,7 +739,7 @@ internal sealed class Rz090528TidalEffect : IRz090528LightingEffect
 
     public bool RequiresContinuousRendering => true;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         return Rz090528LightingTiming.AnimatedFrameInterval;
@@ -770,7 +770,7 @@ internal sealed class Rz090528WaveEffect(LightingDirection direction)
 {
     public bool RequiresContinuousRendering => true;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         return Rz090528LightingTiming.AnimatedFrameInterval;
@@ -785,7 +785,7 @@ internal sealed class Rz090528WheelEffect(LightingRotationDirection direction)
 {
     public bool RequiresContinuousRendering => true;
 
-    public TimeSpan GetNextFrameDelay(TimeSpan elapsed)
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Rz090528LightingMath.ThrowIfNegative(elapsed);
         return Rz090528LightingTiming.AnimatedFrameInterval;

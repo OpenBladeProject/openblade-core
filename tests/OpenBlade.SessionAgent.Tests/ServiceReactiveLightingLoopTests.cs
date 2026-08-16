@@ -662,14 +662,14 @@ public sealed class ServiceReactiveLightingLoopTests
     {
         var client = new WatchClient();
         var factory = new RecordingSourceFactory();
-        var delivered = new ConcurrentQueue<FunctionRowAction>();
+        var delivered = new ConcurrentQueue<FunctionRowInputEvent>();
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
             new ServiceReactiveLightingLoopOptions(
-                ExecuteFunctionRowActionAsync: (action, _) =>
+                ExecuteFunctionRowInputAsync: (inputEvent, _) =>
                 {
-                    delivered.Enqueue(action);
+                    delivered.Enqueue(inputEvent);
                     return Task.CompletedTask;
                 }));
         using var cancellation = new CancellationTokenSource();
@@ -689,9 +689,13 @@ public sealed class ServiceReactiveLightingLoopTests
                 == FunctionKeyPrimaryMode.MultimediaKeys
                 && factory.Last.IsDriverModeActive());
 
-        factory.Last.PublishFunctionRowAction(FunctionRowAction.VolumeMute);
+        var expected = new FunctionRowInputEvent(
+            0x3B,
+            FunctionRowAction.VolumeMute,
+            FunctionRowInputPhase.Down);
+        factory.Last.PublishFunctionRowInput(expected);
         await WaitUntilAsync(() => delivered.Count == 1);
-        Assert.Equal(FunctionRowAction.VolumeMute, Assert.Single(delivered));
+        Assert.Equal(expected, Assert.Single(delivered));
 
         client.Publish(Status(LightingRendererOwnershipState.Static) with
         {
@@ -1003,7 +1007,7 @@ public sealed class ServiceReactiveLightingLoopTests
         private readonly Action<SpecialKeySlot> publishSpecialKey;
         private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
         private readonly Action<SpecialKeySlot> publishDefaultLaptopKey;
-        private readonly Action<FunctionRowAction> publishFunctionRowAction;
+        private readonly Action<FunctionRowInputEvent> publishFunctionRowInput;
         private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
         private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
         private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
@@ -1017,7 +1021,7 @@ public sealed class ServiceReactiveLightingLoopTests
             publishSpecialKey = options.PublishSpecialKey;
             shouldOverrideSpecialKey = options.ShouldOverrideSpecialKey;
             publishDefaultLaptopKey = options.PublishDefaultLaptopKey;
-            publishFunctionRowAction = options.PublishFunctionRowAction;
+            publishFunctionRowInput = options.PublishFunctionRowInput;
             readFunctionKeyPrimaryMode = options.ReadFunctionKeyPrimaryMode;
             readDriverModeObservation = options.ReadDriverModeObservation;
             readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy;
@@ -1042,8 +1046,8 @@ public sealed class ServiceReactiveLightingLoopTests
         public bool ShouldOverrideSpecialKey(SpecialKeySlot slot) =>
             shouldOverrideSpecialKey(slot);
 
-        public void PublishFunctionRowAction(FunctionRowAction action) =>
-            publishFunctionRowAction(action);
+        public void PublishFunctionRowInput(FunctionRowInputEvent inputEvent) =>
+            publishFunctionRowInput(inputEvent);
 
         public FunctionKeyPrimaryMode? ReadFunctionKeyPrimaryMode() =>
             readFunctionKeyPrimaryMode();

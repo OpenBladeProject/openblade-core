@@ -178,6 +178,8 @@ public sealed record DeviceCapabilities(
 
     public DeviceFeatureAccess? LampArrayLightingAccess { get; init; }
 
+    public string? KeyboardLightingLayoutId { get; init; }
+
     public IReadOnlySet<LightingEffect> ObservedLightingEffects { get; init; } =
         new HashSet<LightingEffect>();
 
@@ -209,6 +211,10 @@ public sealed record DeviceCapabilities(
         && HasValidSpecialKeySlots()
         && (LampArrayLightingAccess is null
             || Enum.IsDefined(LampArrayLightingAccess.Value))
+        && (KeyboardLightingLayoutId is null
+            ? !LightingEffects.Contains(LightingEffect.Sequence)
+            : KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId)
+                && LightingEffects.Contains(LightingEffect.Sequence))
         && IsValidEnumSet(ObservedLightingEffects)
         && IsValidEnumSet(LogoLightingModes)
         && IsValidEnumSet(OneShotLaptopControls)

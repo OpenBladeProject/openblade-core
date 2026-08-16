@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/OSSBlade/openblade-core/main/docs/schemas/openblade-keyboard-lighting-v1.schema.json",
+  "title": "OpenBlade keyboard lighting file version 1",
+  "description": "A data-only OpenBlade keyboard lighting effect preset.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schemaVersion", "metadata", "effect"],
+  "properties": {
+    "format": { "const": "openblade-keyboard-lighting" },
+    "schemaVersion": { "const": 1 },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "effect": {
+      "oneOf": [
+        { "$ref": "#/$defs/off" },
+        { "$ref": "#/$defs/static" },
+        { "$ref": "#/$defs/spectrumCycling" },
+        { "$ref": "#/$defs/breathing" },
+        { "$ref": "#/$defs/reactive" },
+        { "$ref": "#/$defs/tidal" },
+        { "$ref": "#/$defs/starlight" },
+        { "$ref": "#/$defs/wave" },
+        { "$ref": "#/$defs/wheel" },
+        { "$ref": "#/$defs/ripple" },
+        { "$ref": "#/$defs/ambientAwareness" },
+        { "$ref": "#/$defs/audioMeter" },
+        { "$ref": "#/$defs/fire" }
+      ]
+    }
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "revision"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "author": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
+        "description": { "type": ["string", "null"], "minLength": 1, "maxLength": 500 },
+        "revision": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "brightnessPercent": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "nullableColor": {
+      "oneOf": [
+        { "$ref": "#/$defs/color" },
+        { "type": "null" }
+      ]
+    },
+    "direction": {
+      "enum": ["leftward", "rightward"]
+    },
+    "off": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "off" }
+      }
+    },
+    "static": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent", "color"],
+      "properties": {
+        "kind": { "const": "static" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" },
+        "color": { "$ref": "#/$defs/color" }
+      }
+    },
+    "spectrumCycling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent"],
+      "properties": {
+        "kind": { "const": "spectrumCycling" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" }
+      }
+    },
+    "breathing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent", "colorMode", "primaryColor", "secondaryColor"],
+      "properties": {
+        "kind": { "const": "breathing" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" },
+        "colorMode": { "enum": ["single", "dual", "random"] },
+        "primaryColor": { "$ref": "#/$defs/nullableColor" },
+        "secondaryColor": { "$ref": "#/$defs/nullableColor" }
+      }
+    },
+    "reactive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent", "color", "duration"],
+      "properties": {
+        "kind": { "const": "reactive" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" },
+        "color": { "$ref": "#/$defs/color" },
+        "duration": { "enum": ["short", "medium", "long"] }
+      }
+    },
+    "tidal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent", "primaryColor", "secondaryColor", "randomColors", "direction"],
+      "properties": {
+        "kind": { "const": "tidal" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" },
+        "primaryColor": { "$ref": "#/$defs/color" },
+        "secondaryColor": { "$ref": "#/$defs/color" },
+        "randomColors": { "type": "boolean" },
+        "direction": { "$ref": "#/$defs/direction" }
+      }
+    },
+    "starlight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent", "colorMode", "primaryColor", "secondaryColor", "duration"],
+      "properties": {
+        "kind": { "const": "starlight" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" },
+        "colorMode": { "enum": ["single", "dual", "random"] },
+        "primaryColor": { "$ref": "#/$defs/nullableColor" },
+        "secondaryColor": { "$ref": "#/$defs/nullableColor" },
+        "duration": { "enum": ["short", "medium", "long"] }
+      }
+    },
+    "wave": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent", "direction"],
+      "properties": {
+        "kind": { "const": "wave" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" },
+        "direction": { "$ref": "#/$defs/direction" }
+      }
+    },
+    "wheel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent", "direction"],
+      "properties": {
+        "kind": { "const": "wheel" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" },
+        "direction": { "enum": ["clockwise", "counterclockwise"] }
+      }
+    },
+    "ripple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent", "color"],
+      "properties": {
+        "kind": { "const": "ripple" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" },
+        "color": { "$ref": "#/$defs/color" }
+      }
+    },
+    "ambientAwareness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent", "region"],
+      "properties": {
+        "kind": { "const": "ambientAwareness" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" },
+        "region": { "enum": ["full", "left", "top", "right", "bottom"] }
+      }
+    },
+    "audioMeter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent", "colorBoost", "decayMilliseconds"],
+      "properties": {
+        "kind": { "const": "audioMeter" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" },
+        "colorBoost": { "type": "number", "minimum": 1, "maximum": 4, "multipleOf": 0.25 },
+        "decayMilliseconds": { "type": "integer", "minimum": 0, "maximum": 2000, "multipleOf": 250 }
+      }
+    },
+    "fire": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "brightnessPercent"],
+      "properties": {
+        "kind": { "const": "fire" },
+        "brightnessPercent": { "$ref": "#/$defs/brightnessPercent" }
+      }
+    }
+  }
+}

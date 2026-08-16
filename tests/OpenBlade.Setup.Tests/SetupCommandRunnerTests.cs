@@ -4,6 +4,25 @@ namespace OpenBlade.Setup.Tests;
 
 public sealed class SetupCommandRunnerTests
 {
+    private const string BundleOwnerId = "01234567-89ab-cdef-0123-456789abcdef";
+
+    private static string[] BundleManaged(string command, params string[] options) =>
+        [command, "--bundle-managed", "--bundle-owner-id", BundleOwnerId, .. options];
+
+    [Theory]
+    [InlineData("install")]
+    [InlineData("uninstall")]
+    public async Task BundleManagedCommandWithoutOwnerIdStopsBeforeMutation(string command)
+    {
+        RecordingSetupPlatform platform = new();
+
+        int exitCode = await new SetupCommandRunner(platform)
+            .RunAsync([command, "--bundle-managed"], CancellationToken.None);
+
+        Assert.Equal(2, exitCode);
+        Assert.Empty(platform.Operations);
+    }
+
     [Fact]
     public async Task Install_PayloadStagingFailure_HappensBeforeAnyInstalledStateMutation()
     {
@@ -54,7 +73,7 @@ public sealed class SetupCommandRunnerTests
         };
 
         int exitCode = await new SetupCommandRunner(platform)
-            .RunAsync(["install", "--bundle-managed"], CancellationToken.None);
+            .RunAsync(BundleManaged("install"), CancellationToken.None);
 
         Assert.Equal(0, exitCode);
         Assert.Contains("uninstall-shortcut-remove", platform.Operations);
@@ -66,10 +85,12 @@ public sealed class SetupCommandRunnerTests
         Assert.Equal("payload-commit", platform.Operations[^1]);
     }
 
-    [Fact]
-    public async Task Install_BundleManagedCancellationAfterOwnershipRegistration_RestoresOldBuildOwnership()
+    [Theory]
+    [InlineData("0.1.0+oldbuild")]
+    [InlineData("0.1.0+oldbuild|bundle:01234567-89ab-cdef-0123-456789abcdef")]
+    public async Task Install_BundleManagedCancellationAfterOwnershipRegistration_RestoresExactOwnership(
+        string oldBuild)
     {
-        const string oldBuild = "0.1.0+oldbuild";
         const string newBuild = "0.2.0+newbuild";
         var oldOwnership = new BundleOwnershipIdentity(
             "WiX Burn",
@@ -88,7 +109,7 @@ public sealed class SetupCommandRunnerTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => new SetupCommandRunner(platform).RunAsync(
-                ["install", "--bundle-managed"],
+                BundleManaged("install"),
                 cancellation.Token));
 
         Assert.Contains("bundle-ownership-install", platform.Operations);
@@ -100,7 +121,7 @@ public sealed class SetupCommandRunnerTests
 
         platform.CurrentBuildIdentity = oldBuild;
         int uninstallExitCode = await new SetupCommandRunner(platform).RunAsync(
-            ["uninstall", "--bundle-managed"],
+            BundleManaged("uninstall"),
             CancellationToken.None);
 
         Assert.Equal(0, uninstallExitCode);
@@ -122,7 +143,7 @@ public sealed class SetupCommandRunnerTests
         InvalidOperationException failure =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () => new SetupCommandRunner(platform).RunAsync(
-                    ["install", "--bundle-managed"],
+                    BundleManaged("install"),
                     CancellationToken.None));
 
         Assert.Contains(
@@ -167,7 +188,7 @@ public sealed class SetupCommandRunnerTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => new SetupCommandRunner(platform)
-                .RunAsync(["install", "--bundle-managed"], CancellationToken.None));
+                .RunAsync(BundleManaged("install"), CancellationToken.None));
 
         Assert.Contains("payload-rollback", platform.Operations);
         AssertEndsWith(
@@ -191,7 +212,7 @@ public sealed class SetupCommandRunnerTests
         };
 
         int exitCode = await new SetupCommandRunner(platform).RunAsync(
-            ["install", "--bundle-managed"],
+            BundleManaged("install"),
             CancellationToken.None);
 
         Assert.Equal(0, exitCode);
@@ -669,7 +690,7 @@ public sealed class SetupCommandRunnerTests
         RecordingSetupPlatform platform = new() { BundleOwnershipExisted = true };
 
         int exitCode = await new SetupCommandRunner(platform)
-            .RunAsync(["uninstall", "--bundle-managed"], CancellationToken.None);
+            .RunAsync(BundleManaged("uninstall"), CancellationToken.None);
 
         Assert.Equal(0, exitCode);
         AssertEndsWith(
@@ -680,8 +701,11 @@ public sealed class SetupCommandRunnerTests
             ]);
     }
 
-    [Fact]
-    public async Task Uninstall_SupersededBundleManagedCommandLeavesDifferentPayloadUntouched()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Uninstall_SupersededBundleManagedCommandLeavesDifferentPayloadUntouched(
+        bool purge)
     {
         RecordingSetupPlatform platform = new()
         {
@@ -689,8 +713,9 @@ public sealed class SetupCommandRunnerTests
             BundleOwnershipMatchesCurrentBuild = false,
         };
 
+        string[] options = purge ? ["--purge"] : [];
         int exitCode = await new SetupCommandRunner(platform)
-            .RunAsync(["uninstall", "--bundle-managed"], CancellationToken.None);
+            .RunAsync(BundleManaged("uninstall", options), CancellationToken.None);
 
         Assert.Equal(0, exitCode);
         Assert.Equal(["lifecycle-capture"], platform.Operations);
@@ -707,7 +732,7 @@ public sealed class SetupCommandRunnerTests
 
         InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
             () => new SetupCommandRunner(platform)
-                .RunAsync(["uninstall", "--bundle-managed"], CancellationToken.None));
+                .RunAsync(BundleManaged("uninstall"), CancellationToken.None));
 
         Assert.Equal("binaries-remove failed", failure.Message);
         AssertEndsWith(
@@ -803,7 +828,7 @@ public sealed class SetupCommandRunnerTests
         RecordingSetupProgressReporter progress = new();
 
         int exitCode = await new SetupCommandRunner(platform, progress)
-            .RunAsync(["install", "--bundle-managed"], CancellationToken.None);
+            .RunAsync(BundleManaged("install"), CancellationToken.None);
 
         Assert.Equal(0, exitCode);
         Assert.Equal("Inspecting and staging the OpenBlade payload", progress.Messages[0]);

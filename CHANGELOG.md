@@ -5,8 +5,27 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.8.4-nightly.20] - 2026-08-15
+
 ### Added
 
+- Added an importable example of a cyan sweep that moves from left to right
+  with a dim blue wake.
+- Added a versioned, data-only `.oblight` keyboard lighting preset format and
+  a Lighting-page importer available when Lab features are enabled in Settings.
+  Its bounded Razer `.chroma` version 1 adapter
+  converts uniform Keyboard and KeyboardExtended files losslessly, and plays
+  classic Keyboard per-key animations through separate verified RZ09-0581 and
+  RZ09-0528 logical-key projections. Imported animations persist with the power
+  profile and keep running when the tray exits. Colored source cells without an
+  admitted binding are reported, while per-key KeyboardExtended files are
+  rejected instead of cropped. Imported effects remain limited to capabilities
+  already admitted for the exact connected Blade.
+- Added Windows-native display-brightness handling and flyout presentation for
+  the reconstructed function row, using the exact admitted Razer virtual
+  Consumer Control path already present on the RZ09-0581. The existing WMI
+  brightness path and OpenBlade flyout remain available when that path is
+  unavailable. About shows which brightness path is currently available.
 - Added an optional Windows power mode to each AC, USB-C, and battery profile.
   The current-user Session Agent applies Best power efficiency, Balanced, or
   Best performance when the active power profile changes.
@@ -21,6 +40,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Moved the Lab keyboard preset importer into the Keyboard section and replaced
+  the long Lab features description with an on-demand list of current features.
+- Replaced common dropdown-only settings with responsive Windows selectors.
+  Performance, fan, function-row, lighting, display, and app settings use
+  horizontal choices when their options fit on one line without squeezing
+  adjacent labels, and retain a compact dropdown when the window or settings
+  row is too narrow.
 - Replaced the tray-dashboard customization dialog with a dedicated Settings
   page that shows only active controls and adjustments, keeps inactive choices
   in **Add** menus, exposes the two-adjustment limit, and updates the pinned tray
@@ -36,6 +62,46 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Offered **Repair** and **Uninstall** when an interactive installer finds one
+  cached OpenBlade bundle with the same version. Repair overwrites the installed
+  files, records instance-specific ownership, and retires the old registration
+  without letting it remove the repaired payload. Uninstall keeps saved profiles
+  and removes through the cached installed bundle without registering the incoming
+  one, with guidance to use its Windows Installed apps entry when profile removal
+  is also wanted.
+- Advanced the combined service IPC contract to version 44 so incompatible
+  version-43 peers are no longer accepted as wire-compatible.
+- Rejected imported lighting sequences for a different keyboard layout before
+  opening the lighting device or changing its state.
+- Kept the Lab features row aligned with neighboring Settings rows when showing
+  its information button.
+- Validated imported lighting timelines without rebuilding their decoded frame
+  graph during each IPC status check.
+- Labeled imported animations consistently in profile details and summaries
+  instead of showing `Sequence` and `#000000`.
+- Preserved configured Windows power modes when migrating schema 12 profiles
+  to the keyboard-animation profile schema.
+- Kept a completed non-looping RZ09-0528 lighting sequence on its final frame
+  without faulting or surrendering the service-owned renderer.
+- Reduced excess vertical space in single-line Dashboard rows while preserving
+  the original spacing for descriptions, editors, and titles that wrap at
+  narrow widths without disrupting conditional-row animations.
+- Kept HDR toggles made during a background display refresh from being dropped,
+  and restored the toggle from confirmed display state after the queued change.
+- Stopped the Fixed speed and Manual fan curve detail cards from appearing
+  highlighted while idle or when editing, and split shared nested-card styling
+  into explicit hover-free editor, neutral hover, and emphasized variants so
+  future editors cannot inherit an unintended full-card highlight.
+- Prevented brief firmware lighting-off readings during AC and battery
+  transitions from being mistaken for external changes. OpenBlade now confirms
+  a zero reading at the point where it would release the owned renderer, while
+  preserving a stable external lighting change without overwriting it. If that
+  confirmation is unavailable, only lighting is skipped; the remaining profile
+  controls still apply.
+- Made the main window and tray dashboard available before the initial display
+  query finishes, while coalescing display refreshes so a slow Session Agent
+  response cannot queue redundant follow-up queries. Profile capture still waits
+  for a display read that began after the save request.
 - Limited the tray-dashboard status row to three configurable readings so its
   icons and labels remain distinct instead of clipping in the fixed-width popup.
 - Reduced tray-dashboard background work by sharing one visible-surface
@@ -56,7 +122,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   icon columns from a numeric XAML sizing resource.
 - Replaced the keyboard-brightness adjustment's generic sun icon with the
   Windows keyboard-brightness glyph.
-
 - Kept selected GPU clock adjustments visible in the tray dashboard when GPU
   tuning is temporarily unavailable, showing their disabled state instead of
   silently removing them.
@@ -1276,7 +1341,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.5.1-nightly.16...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.8.4-nightly.20...HEAD
+[0.8.4-nightly.20]: https://github.com/OSSBlade/openblade-core/compare/v0.5.1-nightly.16...v0.8.4-nightly.20
 [0.5.1-nightly.16]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.11...v0.5.1-nightly.16
 [0.1.0-nightly.11]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.10...v0.1.0-nightly.11
 [0.1.0-nightly.10]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.9...v0.1.0-nightly.10

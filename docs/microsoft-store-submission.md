@@ -63,8 +63,11 @@ Use the following as the starting point for Notes for certification:
 > 1532:02E0 and the firmware combinations listed on the OpenBlade compatibility
 > page. The app installs its own LocalSystem service, which exclusively owns
 > the supported laptop-control HID handle and exposes typed local IPC to the
-> per-user tray and Session Agent. It does not install a kernel driver, depend
-> on Synapse, or download executable content. The per-user tray can request
+> per-user tray and Session Agent. It does not install a kernel driver, require
+> the Synapse application, or download executable content. The optional
+> Windows-native brightness flyout uses only an exact admitted Razer driver
+> stack when already present and otherwise falls back to Windows WMI.
+> The per-user tray can request
 > public release metadata from GitHub at a user-selected interval; Manual only
 > disables automatic checks. For supported models, the tray can also request
 > published updater versions from `mysupport.razer.com` at a separately selected

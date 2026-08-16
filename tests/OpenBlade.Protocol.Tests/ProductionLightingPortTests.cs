@@ -56,6 +56,7 @@ public sealed class ProductionLightingPortTests
                 LightingEffect.Ripple,
                 LightingEffect.AmbientAwareness,
                 LightingEffect.AudioMeter,
+                LightingEffect.Sequence,
             }.Order(),
             factory.Capabilities.LightingEffects.Order());
         Assert.Equal(
@@ -66,6 +67,9 @@ public sealed class ProductionLightingPortTests
             factory.Capabilities.WritableSpecialKeySlots);
         Assert.True(factory.Capabilities.SupportsKeyboardBrightness);
         Assert.True(factory.Capabilities.SupportsPlaybackMuteIndicator);
+        Assert.Equal(
+            KeyboardLightingLayoutIds.Rz09_0581,
+            factory.Capabilities.KeyboardLightingLayoutId);
         Assert.Null(factory.Capabilities.LampArrayLightingAccess);
         Assert.Empty(factory.Capabilities.PerformancePresets);
         Assert.Empty(factory.Capabilities.FanModes);
@@ -280,6 +284,65 @@ public sealed class ProductionLightingPortTests
             session.SubmittedCommands,
             command => command.CommandId
                 == Rz090528MatrixRowProtocol.LatchCommandId);
+    }
+
+    [Fact]
+    public async Task Rz090528NonLoopingSequence_HoldsFinalFrameWithoutFaultingRenderer()
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 128);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            allSynapseEffectsAdmitted: true,
+            timeProvider: time);
+        var first = new RgbColor[AmbientLightingFrame.SlotCount];
+        first[59] = new RgbColor(1, 2, 3);
+        var second = new RgbColor[AmbientLightingFrame.SlotCount];
+        second[59] = new RgbColor(4, 5, 6);
+        LightingSettings settings = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0528,
+            KeyboardLightingSequenceCodec.Encode(
+            [
+                new KeyboardLightingSequenceFrame(100, first),
+                new KeyboardLightingSequenceFrame(200, second),
+            ]),
+            loop: false,
+            brightness: 50);
+
+        await port.SetLightingAsync(settings, default);
+        Task stream = Assert.IsAssignableFrom<Task>(
+            typeof(Rz090528BrightnessLightingPort)
+                .GetField("streamTask", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(port));
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        for (int attempt = 0;
+            attempt < 100 && session.SubmittedBatchCount < 1;
+            attempt++)
+        {
+            await Task.Delay(10);
+        }
+        time.Advance(TimeSpan.FromMilliseconds(200));
+
+        await stream.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(LightingRendererOwnershipState.Sequence, port.OwnershipState);
+        Assert.Equal(settings, typeof(Rz090528BrightnessLightingPort)
+            .GetField("lastDeliveredState", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
+        Assert.NotNull(typeof(Rz090528BrightnessLightingPort)
+            .GetField("activeEffect", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
+        RazerCommandSpec finalRow = session.SubmittedCommands.Last(command =>
+            command.CommandId == Rz090528MatrixRowProtocol.RowCommandId
+            && command.Arguments.Span[1] == 3);
+        int colorOffset = 4 + ((59 % Rz090528MatrixFrame.ColumnCount) * 3);
+        Assert.Equal([4, 5, 6], finalRow.Arguments.Span
+            .Slice(colorOffset, 3)
+            .ToArray());
     }
 
     [Fact]
@@ -1402,24 +1465,170 @@ public sealed class ProductionLightingPortTests
         Assert.Null(await port.ReadStateAsync(default));
     }
 
-    [Fact]
-    public async Task ReadState_ExternalOffStopsAndRelinquishesOwnedRenderer()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadState_StableExternalOffStopsAndRelinquishesOwnedRenderer(
+        bool rz090528)
     {
+        var time = new ManualTimeProvider();
         var session = new LightingSession(initialBrightness: 0xFF);
-        var writer = new MatrixWriter();
-        await using var port = CreatePort(session, writer, admitted: true);
+        await using IProductionLightingPort port =
+            CreateOwnedRendererReadPort(session, time, rz090528);
         await port.SetLightingAsync(
-            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            LightingSettingsFactory.SpectrumCycling(100),
             default);
-        session.Brightness = 0;
+        session.BrightnessQueryOverrides.Enqueue(0);
+        session.BrightnessQueryOverrides.Enqueue(0);
 
-        LightingSettings? observed = await port.ReadStateAsync(default);
+        Task<LightingSettings?> read = port.ReadStateAsync(default);
+        Assert.False(read.IsCompleted);
+        time.Advance(OwnedRendererOffObservation.OffConfirmationDelay);
+        LightingSettings? observed = await read;
 
         Assert.Equal(LightingEffect.Off, observed?.Effect);
         Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
-        BladeWriteException exception = await Assert.ThrowsAsync<BladeWriteException>(() =>
+        Exception exception = await Assert.ThrowsAnyAsync<Exception>(() =>
             port.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), default));
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, exception.SubmissionState);
+        if (!rz090528)
+        {
+            Assert.Equal(
+                WriteSubmissionState.KnownNotApplied,
+                Assert.IsType<BladeWriteException>(exception).SubmissionState);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadState_TransientOffPreservesOwnedRenderer(bool rz090528)
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using IProductionLightingPort port =
+            CreateOwnedRendererReadPort(session, time, rz090528);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(100),
+            default);
+        session.BrightnessQueryOverrides.Enqueue(0);
+        session.BrightnessQueryOverrides.Enqueue(0xFF);
+
+        Task<LightingSettings?> read = port.ReadStateAsync(default);
+        Assert.False(read.IsCompleted);
+        time.Advance(OwnedRendererOffObservation.OffConfirmationDelay);
+        LightingSettings? result = await read;
+
+        Assert.Null(result);
+        Assert.Equal(LightingRendererOwnershipState.Spectrum, port.OwnershipState);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadState_AlreadyRelinquishedOffDoesNotReconfirm(
+        bool rz090528)
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using IProductionLightingPort port =
+            CreateOwnedRendererReadPort(session, time, rz090528);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+        session.BrightnessQueryOverrides.Enqueue(0);
+        session.BrightnessQueryOverrides.Enqueue(0);
+
+        Task<LightingSettings?> firstRead = port.ReadStateAsync(default);
+        Assert.False(firstRead.IsCompleted);
+        time.Advance(OwnedRendererOffObservation.OffConfirmationDelay);
+        LightingSettings? firstResult = await firstRead;
+        Assert.Equal(LightingEffect.Off, firstResult?.Effect);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        int queriesAfterRelinquish = session.BrightnessQueryCalls;
+        session.Brightness = 0;
+
+        Task<LightingSettings?> secondRead = port.ReadStateAsync(default);
+
+        Assert.True(secondRead.IsCompleted);
+        LightingSettings? secondResult = await secondRead;
+        Assert.Equal(LightingEffect.Off, secondResult?.Effect);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Equal(queriesAfterRelinquish + 1, session.BrightnessQueryCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadState_ConfirmationFailurePreservesOwnedRenderer(
+        bool rz090528)
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using IProductionLightingPort port =
+            CreateOwnedRendererReadPort(session, time, rz090528);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+        session.BrightnessQueryOverrides.Enqueue(0);
+        session.FailBrightnessQueryOnCall = session.BrightnessQueryCalls + 2;
+
+        Task<LightingSettings?> read = port.ReadStateAsync(default);
+        Assert.False(read.IsCompleted);
+        time.Advance(OwnedRendererOffObservation.OffConfirmationDelay);
+
+        _ = await Assert.ThrowsAnyAsync<Exception>(() => read);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        if (!rz090528)
+        {
+            int queriesBeforeStep = session.BrightnessQueryCalls;
+            session.FailBrightnessQueryOnCall = null;
+            session.Brightness = 0xFF;
+
+            _ = await port.StepBrightnessAsync(
+                KeyboardBrightnessDirection.Decrease,
+                default);
+
+            Assert.True(session.BrightnessQueryCalls > queriesBeforeStep);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadState_CancellationPreservesOwnershipAndReleasesGate(
+        bool rz090528)
+    {
+        var time = new ManualTimeProvider();
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using IProductionLightingPort port =
+            CreateOwnedRendererReadPort(session, time, rz090528);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+        session.BrightnessQueryOverrides.Enqueue(0);
+        using var cancellation = new CancellationTokenSource();
+
+        Task<LightingSettings?> read = port.ReadStateAsync(cancellation.Token);
+        Assert.False(read.IsCompleted);
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        session.Brightness = 0xFF;
+        if (!rz090528)
+        {
+            int queriesBeforeStep = session.BrightnessQueryCalls;
+
+            _ = await port.StepBrightnessAsync(
+                KeyboardBrightnessDirection.Decrease,
+                default);
+
+            Assert.True(session.BrightnessQueryCalls > queriesBeforeStep);
+        }
+        else
+        {
+            Assert.Null(await port.ReadStateAsync(default));
+        }
     }
 
     [Fact]
@@ -1707,7 +1916,7 @@ public sealed class ProductionLightingPortTests
     {
         var effect = new Rz090528SpectrumEffect();
 
-        TimeSpan next = Rz090528BrightnessLightingPort.AdvanceFrameDeadline(
+        TimeSpan? next = Rz090528BrightnessLightingPort.AdvanceFrameDeadline(
             effect,
             currentDeadline: Rz090528LightingTiming.AnimatedFrameInterval,
             observedAfterWrite: TimeSpan.FromMilliseconds(82));
@@ -2276,6 +2485,25 @@ public sealed class ProductionLightingPortTests
             cleanupDrainTimeout ?? TimeSpan.FromSeconds(1),
             pendingDisposals ?? new PendingDisposalRegistry());
 
+    private static IProductionLightingPort CreateOwnedRendererReadPort(
+        LightingSession session,
+        TimeProvider timeProvider,
+        bool rz090528) => rz090528
+        ? new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            staticEffectAdmitted: true,
+            spectrumEffectAdmitted: true,
+            timeProvider: timeProvider)
+        : CreatePort(
+            session,
+            new MatrixWriter(),
+            admitted: true,
+            timeProvider: timeProvider);
+
     private static SemaphoreSlim OperationGate(ProductionLightingPort port) =>
         Assert.IsType<SemaphoreSlim>(typeof(ProductionLightingPort)
             .GetField("operationGate", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -2315,7 +2543,7 @@ public sealed class ProductionLightingPortTests
     {
         public bool RequiresContinuousRendering => true;
 
-        public TimeSpan GetNextFrameDelay(TimeSpan elapsed) => TimeSpan.Zero;
+        public TimeSpan? GetNextFrameDelay(TimeSpan elapsed) => TimeSpan.Zero;
 
         public Rz090528MatrixFrame RenderFrame(TimeSpan elapsed) =>
             Rz090528MatrixFrame.Uniform(default);
@@ -2338,6 +2566,10 @@ public sealed class ProductionLightingPortTests
         internal int SubmittedBatchCount { get; private set; }
 
         internal Queue<byte> BrightnessQueryOverrides { get; } = [];
+
+        internal int BrightnessQueryCalls { get; private set; }
+
+        internal int? FailBrightnessQueryOnCall { get; set; }
 
         internal byte Brightness { get; set; } = initialBrightness;
 
@@ -2387,6 +2619,18 @@ public sealed class ProductionLightingPortTests
             {
                 BrightnessSetCalls++;
                 if (FailBrightnessSetOnCall == BrightnessSetCalls)
+                {
+                    return Task.FromResult(
+                        new HidSessionResult<ReadOnlyMemory<byte>>(
+                            default,
+                            HidSessionFailureKind.ProtocolFailure));
+                }
+            }
+
+            if ((command.ClassId, command.CommandId) == (0x03, 0x83))
+            {
+                BrightnessQueryCalls++;
+                if (FailBrightnessQueryOnCall == BrightnessQueryCalls)
                 {
                     return Task.FromResult(
                         new HidSessionResult<ReadOnlyMemory<byte>>(

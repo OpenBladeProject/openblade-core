@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 42;
+    public const int ProtocolVersion = 44;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -167,6 +167,8 @@ public static class IpcMessageCodec
             StepKeyboardBrightnessRequest step =>
                 Enum.IsDefined(step.Direction)
                 && Enum.IsDefined(step.Lifetime),
+            SetDisplayBrightnessHidUsageRequest set =>
+                Enum.IsDefined(set.Usage),
             SetKeyboardLightingControlModeRequest set => Enum.IsDefined(set.Mode),
             SetExternalLightingOverridePolicyRequest => true,
             SetFirmwareCompatibilityOverrideRequest => true,
@@ -357,6 +359,21 @@ public static class IpcMessageCodec
             throw InvalidStatus("desired state is missing");
         }
 
+        if (!ValidProfileLighting(status.Profiles)
+            || status.DesiredState.Lighting is null
+            || !Enum.IsDefined(status.DesiredState.Lighting.Source)
+            || !LightingSettingsValidation.IsWellFormed(
+                status.DesiredState.Lighting.Value)
+            || status.ConfirmedState?.Lighting is { } confirmedLighting
+                && !LightingSettingsValidation.IsWellFormed(confirmedLighting)
+            || status.LightingOverride is { } lightingOverride
+                && (!Enum.IsDefined(lightingOverride.Lifetime)
+                    || !LightingSettingsValidation.IsWellFormed(
+                        lightingOverride.Value)))
+        {
+            throw InvalidStatus("lighting state is malformed");
+        }
+
         if (!ValidPerformanceState(
                 status.DesiredState.Performance.Value,
                 status.DesiredState.CustomPerformance))
@@ -416,6 +433,11 @@ public static class IpcMessageCodec
         if (!Enum.IsDefined(status.ControlAccess))
         {
             throw InvalidStatus("session control access is unknown");
+        }
+
+        if (!Enum.IsDefined(status.DisplayBrightnessHidAvailability))
+        {
+            throw InvalidStatus("display-brightness HID availability is unknown");
         }
 
         if (status.FunctionKeyPrimary is { } functionKeyPrimary
@@ -488,6 +510,14 @@ public static class IpcMessageCodec
                 && (performance == PerformancePreset.Custom
                     ? CustomPerformanceSettings.IsWellFormed(customPerformance)
                     : customPerformance is null);
+
+    private static bool ValidProfileLighting(ProfileSet profiles) =>
+        profiles.PluggedIn is not null
+        && LightingSettingsValidation.IsWellFormed(profiles.PluggedIn.Lighting)
+        && profiles.Battery is not null
+        && LightingSettingsValidation.IsWellFormed(profiles.Battery.Lighting)
+        && profiles.UsbC is not null
+        && LightingSettingsValidation.IsWellFormed(profiles.UsbC.Lighting);
 
     private static bool ValidLiveReadings(LiveReadings readings) =>
         readings.BatteryPowerFlowMilliwatts is null

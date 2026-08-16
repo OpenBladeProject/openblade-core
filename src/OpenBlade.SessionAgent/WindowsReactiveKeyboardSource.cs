@@ -68,7 +68,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Action<SpecialKeySlot> publishSpecialKey;
     private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
     private readonly Action<SpecialKeySlot> publishDefaultLaptopKey;
-    private readonly Action<FunctionRowAction> publishFunctionRowAction;
+    private readonly Action<FunctionRowInputEvent> publishFunctionRowInput;
     private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
     private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
     private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
@@ -112,8 +112,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             ?? throw new ArgumentNullException(nameof(options.ShouldOverrideSpecialKey));
         publishDefaultLaptopKey = options.PublishDefaultLaptopKey
             ?? throw new ArgumentNullException(nameof(options.PublishDefaultLaptopKey));
-        publishFunctionRowAction = options.PublishFunctionRowAction
-            ?? throw new ArgumentNullException(nameof(options.PublishFunctionRowAction));
+        publishFunctionRowInput = options.PublishFunctionRowInput
+            ?? throw new ArgumentNullException(nameof(options.PublishFunctionRowInput));
         readFunctionKeyPrimaryMode = options.ReadFunctionKeyPrimaryMode
             ?? throw new ArgumentNullException(nameof(options.ReadFunctionKeyPrimaryMode));
         readDriverModeObservation = options.ReadDriverModeObservation
@@ -405,11 +405,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     owner.performanceFunctionKeyPressed,
                     owner.readFunctionKeyPrimaryMode(),
                     owner.readDriverModeObservation().AllowsFunctionRowInterception,
-                    out FunctionRowAction? action))
+                    out FunctionRowInputEvent? inputEvent))
                 {
-                    if (action is { } triggered)
+                    if (inputEvent is { } triggered)
                     {
-                        owner.publishFunctionRowAction(triggered);
+                        owner.publishFunctionRowInput(triggered);
                     }
                     return 1;
                 }
@@ -527,17 +527,17 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             HookObservationMaximumAge);
         if (RazerBladeFunctionRowMediaInput.SupportsDevice(deviceKind)
             && !observedByHook
-            && RazerBladeFunctionRowMediaInput.TryOverride(
+            && functionRowInput.Process(
                 keyboard.MakeCode,
                 keyDown,
                 performanceFunctionKeyPressed,
                 readFunctionKeyPrimaryMode(),
                 readDriverModeObservation().AllowsFunctionRowInterception,
-                out FunctionRowAction? recoveredAction))
+                out FunctionRowInputEvent? recoveredInput))
         {
-            if (recoveredAction is { } action)
+            if (recoveredInput is { } inputEvent)
             {
-                publishFunctionRowAction(action);
+                publishFunctionRowInput(inputEvent);
             }
 
             ReinstallKeyboardHook();

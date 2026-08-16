@@ -12,8 +12,12 @@
 </div>
 
 OpenBlade is a tray-first utility for performance, thermals, battery, display
-behavior, special keys, and lighting. It runs without Razer Synapse components
-and does not install a sensor or control kernel driver.
+behavior, special keys, and lighting. It runs without the Razer Synapse
+application and does not install a sensor or control kernel driver. When the
+exact admitted RZ09-0581 Razer driver stack is already present, OpenBlade can
+use it for the native Windows brightness flyout. WMI remains the fallback. See
+the [Razer driver package notes](docs/razer-brightness-driver-package.md) for
+the model, validation, and redistribution limits.
 
 Hardware support is evidence-based. OpenBlade is Razer-only, and a control is
 enabled only when its command has reviewed, sanitized capture evidence for the
@@ -215,6 +219,18 @@ Do not run USBPcap and OpenBlade control against the same interface at the same
 time. Do not commit raw PCAP files, serial numbers, user paths, or unsanitized
 payloads. Capture procedures and restoration requirements are documented in
 the separate capture and documentation repositories.
+
+## Keyboard lighting files
+
+Users can write and share data-only `.oblight` presets for effects already
+supported by their laptop. The same importer accepts Razer `.chroma` version 1
+keyboard files. Uniform files convert losslessly; classic Keyboard per-key
+animations use a bounded, exact-model logical-key projection on the verified
+RZ09-0581 and RZ09-0528 layouts. Unsupported colored cells are reported, and
+per-key KeyboardExtended files are rejected instead of cropped. Enable **Lab
+features** in Settings to show the importer. The versioned format, schema,
+compatibility rules, and example are in
+[`docs/keyboard-lighting-file-format.md`](docs/keyboard-lighting-file-format.md).
 
 ## Contributing
 

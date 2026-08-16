@@ -209,6 +209,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 allSynapseEffectsAdmitted),
             LogoLightingModes = new HashSet<LogoLightingMode>(
             Enum.GetValues<LogoLightingMode>()),
+            KeyboardLightingLayoutId = allSynapseEffectsAdmitted
+                ? KeyboardLightingLayoutIds.Rz09_0528
+                : null,
         };
 
     private static IReadOnlySet<LightingEffect> CreateAdmittedEffects(
@@ -219,7 +222,22 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         var effects = new HashSet<LightingEffect> { LightingEffect.Off };
         if (allSynapseEffectsAdmitted)
         {
-            effects.UnionWith(Enum.GetValues<LightingEffect>());
+            effects.UnionWith(
+            [
+                LightingEffect.Static,
+                LightingEffect.Spectrum,
+                LightingEffect.Breathing,
+                LightingEffect.Reactive,
+                LightingEffect.Tidal,
+                LightingEffect.Starlight,
+                LightingEffect.Wave,
+                LightingEffect.Wheel,
+                LightingEffect.Ripple,
+                LightingEffect.AmbientAwareness,
+                LightingEffect.AudioMeter,
+                LightingEffect.Fire,
+                LightingEffect.Sequence,
+            ]);
             return effects;
         }
 
@@ -365,20 +383,43 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            byte raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
-            if (raw != 0)
-            {
-                return null;
-            }
-
-            await StopStreamCoreAsync().ConfigureAwait(false);
-            ClearOwnedEffectCore(LightingSettingsFactory.Off());
-            return LightingSettingsFactory.Off();
+            return await ReadStateCoreAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             operationGate.Release();
         }
+    }
+
+    private async Task<LightingSettings?> ReadStateCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        byte raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
+        if (raw != 0)
+        {
+            return null;
+        }
+
+        if (OwnedRendererOffObservation.RequiresOffConfirmation(OwnershipState))
+        {
+            await Task.Delay(
+                OwnedRendererOffObservation.OffConfirmationDelay,
+                timeProvider,
+                cancellationToken).ConfigureAwait(false);
+            raw = await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false);
+            if (raw != 0)
+            {
+                return null;
+            }
+        }
+
+        // While OpenBlade owns the renderer, only the second zero sample reaches
+        // this destructive decision. Keeping the confirmation at the port
+        // boundary also protects ordinary observations that overlap a power
+        // transition before its lifecycle event is processed.
+        await StopStreamCoreAsync().ConfigureAwait(false);
+        ClearOwnedEffectCore(LightingSettingsFactory.Off());
+        return LightingSettingsFactory.Off();
     }
 
     public async Task<LogoLightingMode?> ReadLogoStateAsync(
@@ -866,6 +907,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             FireLightingParameters
                 when settings.Effect == LightingEffect.Fire =>
                 new Rz090528FireEffect(),
+            SequenceLightingParameters value
+                when settings.Effect == LightingEffect.Sequence =>
+                new Rz090528ImportedSequenceEffect(value),
             RippleLightingParameters value
                 when settings.Effect == LightingEffect.Ripple =>
                 new Rz090528RippleEffect(value.Color),
@@ -1035,7 +1079,13 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         try
         {
             TimeSpan elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
-            TimeSpan nextFrameAt = elapsed + effect.GetNextFrameDelay(elapsed);
+            TimeSpan? firstDelay = effect.GetNextFrameDelay(elapsed);
+            if (firstDelay is null)
+            {
+                return;
+            }
+
+            TimeSpan nextFrameAt = elapsed + firstDelay.Value;
             while (true)
             {
                 elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
@@ -1072,10 +1122,16 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
                 TimeSpan observedAfterWrite = timeProvider.GetElapsedTime(
                     effectStartedTimestamp);
-                nextFrameAt = AdvanceFrameDeadline(
+                TimeSpan? advanced = AdvanceFrameDeadline(
                     effect,
                     nextFrameAt,
                     observedAfterWrite);
+                if (advanced is null)
+                {
+                    return;
+                }
+
+                nextFrameAt = advanced.Value;
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1095,7 +1151,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         }
     }
 
-    internal static TimeSpan AdvanceFrameDeadline(
+    internal static TimeSpan? AdvanceFrameDeadline(
         IRz090528LightingEffect effect,
         TimeSpan currentDeadline,
         TimeSpan observedAfterWrite)
@@ -1113,13 +1169,17 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         TimeSpan cursor = currentDeadline;
         while (cursor <= observedAfterWrite)
         {
-            TimeSpan delay = effect.GetNextFrameDelay(cursor);
+            TimeSpan? delay = effect.GetNextFrameDelay(cursor);
+            if (delay is null)
+            {
+                return null;
+            }
             if (delay <= TimeSpan.Zero)
             {
                 throw new InvalidOperationException(
                     "A continuously rendered PID 02C6 lighting effect returned a non-positive frame delay.");
             }
-            cursor += delay;
+            cursor += delay.Value;
         }
 
         return cursor;
@@ -1262,6 +1322,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 LightingRendererOwnershipState.AmbientAwareness,
             LightingEffect.AudioMeter => LightingRendererOwnershipState.AudioMeter,
             LightingEffect.Fire => LightingRendererOwnershipState.Fire,
+            LightingEffect.Sequence => LightingRendererOwnershipState.Sequence,
             _ => LightingRendererOwnershipState.None,
         };
 

@@ -47,7 +47,11 @@ public sealed class Rz090528SynapseEffectsTests
             LightingEffect.AmbientAwareness,
             LightingEffect.AudioMeter,
             LightingEffect.Fire,
+            LightingEffect.Sequence,
         ]));
+        Assert.Equal(
+            KeyboardLightingLayoutIds.Rz09_0528,
+            capabilities.KeyboardLightingLayoutId);
         Assert.Empty(capabilities.ObservedLightingEffects);
     }
 

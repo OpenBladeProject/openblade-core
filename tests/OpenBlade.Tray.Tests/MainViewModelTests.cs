@@ -2590,6 +2590,10 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.SupportsFunctionKeyPrimary);
 
         Assert.Equal("Checking", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Null(viewModel.SelectedFunctionKeyPrimaryOption);
+        Assert.Equal(
+            ["Function keys", "Media keys"],
+            viewModel.AvailableFunctionKeyPrimaryOptions.Select(option => option.Label));
         Assert.DoesNotContain("â", viewModel.FunctionKeyPrimaryStateLabel, StringComparison.Ordinal);
         Assert.True(viewModel.IsFunctionKeyFieldLoading);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
@@ -2629,6 +2633,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.StartupAnimationEnabled);
         Assert.True(viewModel.StartupAnimationToggleIsOn);
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.FunctionKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.IsFunctionKeyFieldLoading);
         Assert.True(viewModel.CanEditFunctionKeyPrimary);
         Assert.False(viewModel.GamingModeToggleIsOn);
@@ -2670,6 +2677,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsGamingModeFieldLoading);
         Assert.False(viewModel.StartupAnimationToggleIsOn);
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.FunctionKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.GamingModeToggleIsOn);
         Assert.False(viewModel.CanEditStartupAnimation);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
@@ -2713,6 +2723,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsFunctionKeyFieldLoading);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
         Assert.Equal("Media keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.ApplyOneShotLaptopControlCommand.CanExecute(
             viewModel.FunctionKeysPrimaryAction));
 
@@ -2824,6 +2837,9 @@ public sealed class MainViewModelTests
             .ExecuteAsync(viewModel.MultimediaKeysPrimaryAction);
 
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.FunctionKeys,
+            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
         Assert.False(viewModel.IsFunctionKeyFieldLoading);
         Assert.True(viewModel.CanEditFunctionKeyPrimary);
     }
@@ -3447,8 +3463,10 @@ public sealed class MainViewModelTests
         await using var viewModel = new MainViewModel(client, dispatcher, time);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        int dispatchesBeforeBaseline = dispatcher.CompletedCalls;
         client.Publish(baseline);
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeBaseline);
+        Assert.True(viewModel.CanControlHardware);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
             .ExecuteAsync(PerformancePreset.Performance);
@@ -3470,14 +3488,16 @@ public sealed class MainViewModelTests
                     SettingValueSource.PowerProfile),
             },
         };
+        int dispatchesBeforeLaggingStatus = dispatcher.CompletedCalls;
         client.Publish(lagging);
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Lagging status");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeLaggingStatus);
+        Assert.Equal("Lagging status", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
 
         time.Advance(TimeSpan.FromSeconds(3));
-        int completedCalls = dispatcher.CompletedCalls;
+        int dispatchesBeforeExpiredStatus = dispatcher.CompletedCalls;
         client.Publish(lagging with { Revision = baseline.Revision + 2 });
-        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeExpiredStatus);
 
         Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
     }
@@ -4894,6 +4914,172 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ImportedSequenceUsesFriendlyProfilePresentation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+        [
+            new KeyboardLightingSequenceFrame(
+                50,
+                new RgbColor[AmbientLightingFrame.SlotCount]),
+        ]);
+        LightingSettings sequence = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0581,
+            timeline,
+            loop: true,
+            brightness: 73);
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>
+                {
+                    LightingEffect.Off,
+                    LightingEffect.Sequence,
+                },
+                KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581,
+            });
+        client.Publish(status with
+        {
+            Profiles = status.Profiles with
+            {
+                PluggedIn = status.Profiles.PluggedIn with { Lighting = sequence },
+            },
+            DesiredState = status.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    sequence,
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.Profiles.PluggedIn.Lighting == sequence);
+
+        Assert.Equal(
+            "Imported animation",
+            viewModel.PluggedInProfilePresentation.LightingEffect.Text);
+        Assert.Equal(
+            "Automatic",
+            viewModel.PluggedInProfilePresentation.LightingColor.Text);
+        Assert.Equal(
+            "Imported animation | 73%",
+            viewModel.PluggedInProfileLightingSummary);
+        Assert.Equal(
+            "Imported animation",
+            viewModel.SelectedProfilePresentation.LightingEffect.Text);
+    }
+
+    [Fact]
+    public async Task ImportKeyboardLighting_LoadsAnAdmittedPresetAsAnActiveDraft()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        viewModel.LabFeaturesEnabled = true;
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities));
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        var expected = LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 73);
+        var preset = new KeyboardLightingPreset(
+            "Imported green",
+            "User",
+            null,
+            1,
+            expected);
+        var changedProperties = new HashSet<string?>();
+        viewModel.PropertyChanged += (_, args) =>
+            changedProperties.Add(args.PropertyName);
+
+        bool imported = viewModel.TryImportKeyboardLighting(preset);
+
+        Assert.True(imported);
+        Assert.True(viewModel.IsLightingApplyPending);
+        Assert.Equal(expected, viewModel.LightingDraft with { LogoMode = null });
+        Assert.True(viewModel.HasLightingProfileDifference);
+        Assert.Equal(0, client.MutationCalls);
+        Assert.Contains(nameof(MainViewModel.LightingDraft), changedProperties);
+        Assert.Contains(nameof(MainViewModel.IsLightingApplyPending), changedProperties);
+    }
+
+    [Fact]
+    public async Task ImportKeyboardLighting_RejectsNewPresetsWhileLabFeaturesAreDisabled()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities));
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        var preset = new KeyboardLightingPreset(
+            "Imported green",
+            "User",
+            null,
+            1,
+            LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 73));
+
+        Assert.False(viewModel.LabFeaturesEnabled);
+        Assert.False(viewModel.CanImportKeyboardLighting(preset));
+        Assert.False(viewModel.TryImportKeyboardLighting(preset));
+        Assert.False(viewModel.IsLightingApplyPending);
+    }
+
+    [Fact]
+    public async Task ImportKeyboardLighting_RejectsAnEffectUnavailableOnTheLaptop()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        viewModel.LabFeaturesEnabled = true;
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities));
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        var preset = new KeyboardLightingPreset(
+            "Unavailable fire",
+            null,
+            null,
+            1,
+            LightingSettingsFactory.Fire(80));
+
+        bool imported = viewModel.TryImportKeyboardLighting(preset);
+
+        Assert.False(imported);
+        Assert.False(viewModel.IsLightingApplyPending);
+        Assert.NotEqual(LightingEffect.Fire, viewModel.LightingDraft.Effect);
+    }
+
+    [Fact]
     public async Task ImportProfiles_StoresAndLoadsEveryImportedEditor()
     {
         var client = new FakeServiceClient();
@@ -5941,6 +6127,24 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AboutDisplayBrightnessDriverStatus_DistinguishesUnknownInspection()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            DisplayBrightnessHidAvailability =
+                DisplayBrightnessHidAvailability.Unknown,
+        });
+
+        await WaitUntilAsync(() =>
+            viewModel.AboutDisplayBrightnessDriverStatus == "Unknown");
+
+        Assert.Equal("Unknown", viewModel.AboutDisplayBrightnessDriverStatus);
+    }
+
+    [Fact]
     public async Task ControlAccessStatus_DistinguishesEveryFailClosedState()
     {
         var client = new FakeServiceClient();
@@ -5958,11 +6162,16 @@ public sealed class MainViewModelTests
             viewModel.AboutUiVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal("Unavailable", viewModel.AboutDisplayBrightnessDriverStatus);
         Assert.Equal("Unavailable", viewModel.TroubleshootingUsbDeviceStatus);
         Assert.False(viewModel.HasTroubleshootingRecentError);
         Assert.Empty(viewModel.TroubleshootingRecentErrorStatus);
 
-        client.Publish(CreateStatus(verified: false, blocked: true));
+        client.Publish(CreateStatus(verified: false, blocked: true) with
+        {
+            DisplayBrightnessHidAvailability =
+                DisplayBrightnessHidAvailability.Unavailable,
+        });
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Laptop not found"
             && viewModel.PerformanceSourceLabel == "Laptop not found");
@@ -5972,6 +6181,9 @@ public sealed class MainViewModelTests
         Assert.Equal("Running", viewModel.TroubleshootingServiceStatus);
         Assert.Equal("0.1.0-test", viewModel.AboutServiceVersionStatus);
         Assert.Equal("Not detected", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal(
+            "Not available · OpenBlade OSD",
+            viewModel.AboutDisplayBrightnessDriverStatus);
         Assert.Equal("Laptop not found", viewModel.TroubleshootingControlsStatus);
         Assert.False(viewModel.HasAttention);
         Assert.Equal("Laptop not found", viewModel.PerformanceSourceLabel);
@@ -6021,6 +6233,8 @@ public sealed class MainViewModelTests
                 "98.3.5c.40.3d",
                 RazerBladeModelCatalog.OpenBladeTargetModelNumber),
             KeyboardDriverModeActive = true,
+            DisplayBrightnessHidAvailability =
+                DisplayBrightnessHidAvailability.Available,
         });
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Ready"
@@ -6037,6 +6251,13 @@ public sealed class MainViewModelTests
         Assert.Equal("1.04", viewModel.AboutEcVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutMcuVersionStatus);
         Assert.Equal("98.3.5c.40.3d", viewModel.AboutVbiosVersionStatus);
+        Assert.Equal(
+            "Available · Windows OSD",
+            viewModel.AboutDisplayBrightnessDriverStatus);
+        Assert.Contains(
+            "OpenBlade uses its own flyout",
+            viewModel.AboutDisplayBrightnessDriverToolTip,
+            StringComparison.Ordinal);
 
         var driverStatusChanges = new List<string?>();
         viewModel.PropertyChanged += (_, args) =>

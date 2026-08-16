@@ -42,6 +42,8 @@ public sealed partial class MainViewModel
             == right.AlwaysOverrideExternalLightingChanges
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
         && left.FirmwareCompatibility == right.FirmwareCompatibility
+        && left.DisplayBrightnessHidAvailability
+            == right.DisplayBrightnessHidAvailability
         && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
@@ -76,6 +78,10 @@ public sealed partial class MainViewModel
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
             && left.SupportsPlaybackMuteIndicator
                 == right.SupportsPlaybackMuteIndicator
+            && string.Equals(
+                left.KeyboardLightingLayoutId,
+                right.KeyboardLightingLayoutId,
+                StringComparison.Ordinal)
             && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
             && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
 

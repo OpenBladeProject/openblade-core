@@ -18,6 +18,18 @@ public enum FunctionRowAction
     PrintScreen,
 }
 
+public enum FunctionRowInputPhase
+{
+    Down,
+    Repeat,
+    Up,
+}
+
+public readonly record struct FunctionRowInputEvent(
+    uint ScanCode,
+    FunctionRowAction Action,
+    FunctionRowInputPhase Phase);
+
 /// <summary>
 /// Reconstructs function-row actions for exact devices that emit ordinary
 /// F-key scan codes for both layers in Driver mode and report Fn separately.
@@ -88,6 +100,8 @@ public static class RazerBladeFunctionRowMediaInput
 /// matching key-up. Fn, firmware mode, or service status can change while a
 /// key is held without leaking an orphaned F-key edge into the foreground app.
 /// One-shot actions ignore auto-repeat; volume and brightness actions repeat.
+/// Every suppressed key publishes its matching release so consumers can
+/// safely hold native input state across changes to Fn or service status.
 /// </summary>
 public sealed class RazerBladeFunctionRowInputState
 {
@@ -99,19 +113,25 @@ public sealed class RazerBladeFunctionRowInputState
         bool functionKeyPressed,
         FunctionKeyPrimaryMode? primaryMode,
         bool driverModeActive,
-        out FunctionRowAction? action)
+        out FunctionRowInputEvent? inputEvent)
     {
-        action = null;
+        inputEvent = null;
         if (!keyDown)
         {
-            return suppressedKeys.Remove(scanCode);
+            if (!suppressedKeys.Remove(scanCode, out FunctionRowAction released))
+            {
+                return false;
+            }
+
+            inputEvent = new(scanCode, released, FunctionRowInputPhase.Up);
+            return true;
         }
 
         if (suppressedKeys.TryGetValue(scanCode, out FunctionRowAction repeated))
         {
             if (IsRepeatable(repeated))
             {
-                action = repeated;
+                inputEvent = new(scanCode, repeated, FunctionRowInputPhase.Repeat);
             }
             return true;
         }
@@ -129,7 +149,7 @@ public sealed class RazerBladeFunctionRowInputState
         }
 
         suppressedKeys.Add(scanCode, first);
-        action = first;
+        inputEvent = new(scanCode, first, FunctionRowInputPhase.Down);
         return true;
     }
 

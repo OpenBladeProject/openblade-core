@@ -39,12 +39,14 @@ public sealed class SetupCommandParserTests
     }
 
     [Theory]
-    [InlineData(SetupCommand.Install, "INSTALL", "--BUNDLE-MANAGED")]
-    [InlineData(SetupCommand.Uninstall, "UNINSTALL", "--BUNDLE-MANAGED")]
+    [InlineData(SetupCommand.Install, "INSTALL", "--BUNDLE-MANAGED", "--BUNDLE-OWNER-ID", "01234567-89ab-cdef-0123-456789abcdef")]
+    [InlineData(SetupCommand.Uninstall, "UNINSTALL", "--BUNDLE-MANAGED", "--BUNDLE-OWNER-ID", "01234567-89ab-cdef-0123-456789abcdef")]
     [InlineData(
         SetupCommand.UninstallAndPurge,
         "UNINSTALL",
         "--BUNDLE-MANAGED",
+        "--BUNDLE-OWNER-ID",
+        "01234567-89ab-cdef-0123-456789abcdef",
         "--PURGE")]
     public void TryParseInvocation_RecognizesExactBundleManagedCommands(
         SetupCommand expected,
@@ -56,6 +58,7 @@ public sealed class SetupCommandParserTests
         Assert.Equal(expected, invocation.Command);
         Assert.True(invocation.BundleManaged);
         Assert.False(invocation.RecoverOrphanedBundle);
+        Assert.Equal("01234567-89ab-cdef-0123-456789abcdef", invocation.BundleOwnerId);
     }
 
     [Fact]
@@ -72,10 +75,10 @@ public sealed class SetupCommandParserTests
     }
 
     [Theory]
-    [InlineData(SetupCommand.Install, "install", "--bundle-managed", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef")]
-    [InlineData(SetupCommand.Uninstall, "uninstall", "--bundle-managed", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef")]
-    [InlineData(SetupCommand.UninstallAndPurge, "uninstall", "--bundle-managed", "--purge", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef")]
-    [InlineData(SetupCommand.UninstallAndPurge, "uninstall", "--bundle-managed", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef", "--purge")]
+    [InlineData(SetupCommand.Install, "install", "--bundle-managed", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef")]
+    [InlineData(SetupCommand.Uninstall, "uninstall", "--bundle-managed", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef")]
+    [InlineData(SetupCommand.UninstallAndPurge, "uninstall", "--bundle-managed", "--purge", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef")]
+    [InlineData(SetupCommand.UninstallAndPurge, "uninstall", "--bundle-managed", "--progress-pipe", "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef", "--purge")]
     public void TryParseInvocation_AllowsProgressPipeOnlyOnExactBundleManagedCommands(
         SetupCommand expected,
         params string[] arguments)
@@ -86,6 +89,7 @@ public sealed class SetupCommandParserTests
         Assert.Equal(
             "OpenBlade.Setup.Progress.0123456789abcdef0123456789abcdef",
             invocation.ProgressPipeName);
+        Assert.Equal("01234567-89ab-cdef-0123-456789abcdef", invocation.BundleOwnerId);
     }
 
     [Fact]
@@ -100,6 +104,11 @@ public sealed class SetupCommandParserTests
     [InlineData()]
     [InlineData("install", "--purge")]
     [InlineData("install", "--bundle-managed", "extra")]
+    [InlineData("install", "--bundle-managed")]
+    [InlineData("install", "--bundle-managed", "--bundle-owner-id")]
+    [InlineData("install", "--bundle-managed", "--bundle-owner-id", "")]
+    [InlineData("install", "--bundle-managed", "--bundle-owner-id", "not-a-guid")]
+    [InlineData("install", "--bundle-managed", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef", "--bundle-owner-id", "fedcba98-7654-3210-fedc-ba9876543210")]
     [InlineData("uninstall", "--purge", "--bundle-managed")]
     [InlineData("uninstall", "--bundle-managed", "--interactive")]
     [InlineData("uninstall", "--recover-orphaned-bundle", "extra")]
