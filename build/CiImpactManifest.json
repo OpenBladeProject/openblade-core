@@ -1,0 +1,194 @@
+{
+  "globalPatterns": [
+    ".editorconfig",
+    ".gitattributes",
+    "Directory.Build.props",
+    "Directory.Packages.props",
+    "OpenBlade.slnx",
+    "global.json",
+    "NuGet.config",
+    "src/Directory.Build.targets",
+    ".github/workflows/*",
+    "build/Assert-CiLaneResults.ps1",
+    "build/CiBuildScope.ps1",
+    "build/CiImpactManifest.json",
+    "build/Run-AffectedCi.ps1"
+  ],
+  "fullInstallerPatterns": [
+    "build/installer/*",
+    "build/BuildIdentity.ps1",
+    "build/identity/*",
+    "build/store/*",
+    "build/Installer*.ps1",
+    "build/Publish*.ps1",
+    "build/SparsePackageIdentity.ps1",
+    "build/StoreSubmissionValidation.ps1",
+    "build/Verify-Branding.ps1",
+    "build/WindowsAppRuntimeNotificationResource.ps1",
+    "src/OpenBlade.Setup/*",
+    "src/OpenBlade.Tray/Assets/Brand/OpenBlade.ico",
+    "src/OpenBlade.Tray/Assets/Brand/OpenBlade.Installer.ico",
+    "src/OpenBlade.Tray/Assets/Brand/OpenBlade.png"
+  ],
+  "publishableProjects": [
+    "src/OpenBlade.Capture/OpenBlade.Capture.csproj",
+    "src/OpenBlade.FirmwareSmoke/OpenBlade.FirmwareSmoke.csproj",
+    "src/OpenBlade.Service/OpenBlade.Service.csproj",
+    "src/OpenBlade.SessionAgent/OpenBlade.SessionAgent.csproj",
+    "src/OpenBlade.Setup/OpenBlade.Setup.csproj",
+    "src/OpenBlade.Tray/OpenBlade.Tray.csproj"
+  ],
+  "testInputRules": [
+    {
+      "patterns": ["src/*.cs"],
+      "testProjects": ["tests/OpenBlade.Architecture.Tests/OpenBlade.Architecture.Tests.csproj"],
+      "reason": "Production C# changes must satisfy repository-wide architecture contracts."
+    },
+    {
+      "patterns": ["src/OpenBlade.Setup/StartupShortcutWriter.cs"],
+      "seedProjects": ["src/OpenBlade.Tray/OpenBlade.Tray.csproj"],
+      "reason": "The Tray links StartupShortcutWriter directly."
+    },
+    {
+      "patterns": [
+        "src/OpenBlade.Tray/WindowsDisplayBrightnessOsd.cs",
+        "src/OpenBlade.Tray/WindowsRegistryReader.cs"
+      ],
+      "testProjects": ["tests/OpenBlade.SessionAgent.Tests/OpenBlade.SessionAgent.Tests.csproj"],
+      "reason": "Session Agent tests link these Tray sources directly."
+    },
+    {
+      "patterns": [
+        "src/OpenBlade.SessionAgent/Program.cs",
+        "src/OpenBlade.SessionAgent/WindowsReactiveKeyboardSource.cs",
+        "build/Publish.ps1",
+        "build/PublishPayloadValidation.ps1"
+      ],
+      "testProjects": ["tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj"],
+      "reason": "Tray architecture contracts inspect these Session Agent and publishing inputs directly."
+    },
+    {
+      "patterns": ["tests/OpenBlade.Testing/AsyncTest.cs"],
+      "testProjects": [
+        "tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj",
+        "tests/OpenBlade.SessionAgent.Tests/OpenBlade.SessionAgent.Tests.csproj",
+        "tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj"
+      ],
+      "reason": "These test projects link AsyncTest directly."
+    },
+    {
+      "patterns": ["tests/OpenBlade.Testing/UnavailableServiceClient.cs"],
+      "testProjects": [
+        "tests/OpenBlade.SessionAgent.Tests/OpenBlade.SessionAgent.Tests.csproj",
+        "tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj"
+      ],
+      "reason": "These test projects link UnavailableServiceClient directly."
+    },
+    {
+      "patterns": ["tests/OpenBlade.Testing/PublicApiSurface.cs"],
+      "testProjects": [
+        "tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj",
+        "tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj",
+        "tests/OpenBlade.Session.Tests/OpenBlade.Session.Tests.csproj"
+      ],
+      "reason": "These test projects link the public API surface helper directly."
+    },
+    {
+      "patterns": ["scripts/Test-FirmwareUpdate.ps1"],
+      "testProjects": ["tests/OpenBlade.FirmwareSmoke.Tests/OpenBlade.FirmwareSmoke.Tests.csproj"],
+      "reason": "FirmwareSmoke tests inspect the firmware-update script."
+    },
+    {
+      "patterns": ["captures"],
+      "testProjects": [
+        "tests/OpenBlade.Capture.Tests/OpenBlade.Capture.Tests.csproj",
+        "tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj"
+      ],
+      "requiresCaptures": true,
+      "reason": "Capture and Protocol tests consume the pinned capture evidence."
+    }
+  ],
+  "contractRules": [
+    {
+      "test": "tests/Build.Tests/AffectedCiRunner.Tests.ps1",
+      "patterns": ["build/Run-AffectedCi.ps1"]
+    },
+    {
+      "test": "tests/Build.Tests/BuildIdentity.Tests.ps1",
+      "patterns": ["build/BuildIdentity.ps1"]
+    },
+    {
+      "test": "tests/Build.Tests/CiBuildScope.Tests.ps1",
+      "patterns": ["build/CiBuildScope.ps1", "build/CiImpactManifest.json", ".github/workflows/ci.yml", ".github/workflows/build.yml"]
+    },
+    {
+      "test": "tests/Build.Tests/CiLaneResults.Tests.ps1",
+      "patterns": ["build/Assert-CiLaneResults.ps1", ".github/workflows/build.yml"]
+    },
+    {
+      "test": "tests/Build.Tests/InstallerAuthoring.Tests.ps1",
+      "patterns": ["build/installer/*", "build/InstallerValidation.ps1", "build/Publish.ps1", "build/store/OpenBlade.StoreSubmission.json", "Directory.Packages.props", "OpenBlade.slnx", "src/OpenBlade.Setup/OpenBlade.Setup.csproj", "src/OpenBlade.Setup/SetupPaths.cs", "src/OpenBlade.Tray/Assets/Brand/OpenBlade.Installer.ico"]
+    },
+    {
+      "test": "tests/Build.Tests/InteractiveUsbPcapCaptureRunner.Tests.ps1",
+      "patterns": ["captures"],
+      "requiresCaptures": true
+    },
+    {
+      "test": "tests/Build.Tests/LightingOracleCheckoutPolicy.Tests.ps1",
+      "patterns": [".gitattributes", "src/OpenBlade.Protocol/Fixtures/*TidalOracle.json", "src/OpenBlade.Protocol/Fixtures/*WaveWheelOracle.json"]
+    },
+    {
+      "test": "tests/Build.Tests/LightingSpectrumRandomCaptureWorkflow.Tests.ps1",
+      "patterns": ["captures"],
+      "requiresCaptures": true
+    },
+    {
+      "test": "tests/Build.Tests/LightingSpectrumRandomOracleAnalysis.Tests.ps1",
+      "patterns": ["captures"],
+      "requiresCaptures": true
+    },
+    {
+      "test": "tests/Build.Tests/NightlyChangelog.Tests.ps1",
+      "patterns": ["build/NightlyChangelog.ps1", "CHANGELOG.md"]
+    },
+    {
+      "test": "tests/Build.Tests/NightlyWorkflow.Tests.ps1",
+      "patterns": [".github/workflows/ci.yml", ".github/workflows/build.yml", ".github/workflows/nightly.yml"]
+    },
+    {
+      "test": "tests/Build.Tests/PublishPayloadValidation.Tests.ps1",
+      "patterns": ["build/PublishPayloadValidation.ps1"]
+    },
+    {
+      "test": "tests/Build.Tests/PullRequestVersion.Tests.ps1",
+      "patterns": ["build/PullRequestVersion.ps1", ".github/workflows/pr-version.yml", ".github/workflows/ci.yml", ".github/PULL_REQUEST_TEMPLATE.md"]
+    },
+    {
+      "test": "tests/Build.Tests/RazerBrightnessDriverPackage.Tests.ps1",
+      "patterns": ["build/Export-RazerBrightnessDriverPackage.ps1", "src/OpenBlade.Service/WindowsRazerDisplayBrightnessHidTransport.cs", "docs/razer-brightness-driver-package.md", ".gitattributes"]
+    },
+    {
+      "test": "tests/Build.Tests/ReadmeHardwareSupport.Tests.ps1",
+      "patterns": ["README.md"]
+    },
+    {
+      "test": "tests/Build.Tests/SparsePackageIdentity.Tests.ps1",
+      "patterns": ["build/SparsePackageIdentity.ps1", "build/PublishPayloadValidation.ps1", "build/identity/*", "build/Publish.ps1", "src/OpenBlade.SessionAgent/OpenBlade.SessionAgent.csproj"],
+      "restoreProjects": ["src/OpenBlade.SessionAgent/OpenBlade.SessionAgent.csproj"]
+    },
+    {
+      "test": "tests/Build.Tests/StoreSubmissionValidation.Tests.ps1",
+      "patterns": ["build/StoreSubmissionValidation.ps1", "build/store/OpenBlade.StoreSubmission.json"]
+    },
+    {
+      "test": "tests/Build.Tests/UsbPcapCaptureControl.Tests.ps1",
+      "patterns": ["captures"],
+      "requiresCaptures": true
+    },
+    {
+      "test": "tests/Build.Tests/WindowsAppRuntimeNotificationResource.Tests.ps1",
+      "patterns": ["build/WindowsAppRuntimeNotificationResource.ps1"]
+    }
+  ]
+}

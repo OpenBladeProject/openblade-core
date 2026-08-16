@@ -2058,35 +2058,6 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void EfficientProcessorPolicyIsLimitedToTheTray()
-    {
-        string policy = ReadRepositoryFile(
-            "src", "OpenBlade.Platform", "WindowsProcessorEfficiencyPolicy.cs");
-
-        foreach (string project in new[] { "OpenBlade.Service", "OpenBlade.SessionAgent" })
-        {
-            string projectDirectory = RepositoryPath("src", project);
-            foreach (string sourcePath in Directory.EnumerateFiles(
-                projectDirectory,
-                "*.cs",
-                SearchOption.AllDirectories).Where(path =>
-                    !path.Contains(
-                        $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
-                        StringComparison.OrdinalIgnoreCase)
-                    && !path.Contains(
-                        $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
-                        StringComparison.OrdinalIgnoreCase)))
-            {
-                Assert.DoesNotContain(
-                    "WindowsProcessorEfficiencyPolicy",
-                    File.ReadAllText(sourcePath),
-                    StringComparison.Ordinal);
-            }
-        }
-        Assert.DoesNotContain("SetProcessDefaultCpuSets", policy, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void ActivationAndSetupShutdownEndpointsExistWhileInitializationIsPending()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");

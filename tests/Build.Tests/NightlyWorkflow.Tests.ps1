@@ -43,6 +43,7 @@ foreach ($requiredBuildJob in @(
         'validate-request:',
         'quality-and-tests:',
         'build-contracts:',
+        'component-publish:',
         'installer-validation:',
         'build-and-test:')) {
     Assert-True ($build.Contains($requiredBuildJob)) `
@@ -50,9 +51,10 @@ foreach ($requiredBuildJob in @(
 }
 $qualityJob = Get-WorkflowJobBlock -Workflow $build -Job 'quality-and-tests'
 $contractJob = Get-WorkflowJobBlock -Workflow $build -Job 'build-contracts'
+$componentJob = Get-WorkflowJobBlock -Workflow $build -Job 'component-publish'
 $installerJob = Get-WorkflowJobBlock -Workflow $build -Job 'installer-validation'
 $gateJob = Get-WorkflowJobBlock -Workflow $build -Job 'build-and-test'
-foreach ($parallelJob in @($qualityJob, $contractJob, $installerJob)) {
+foreach ($parallelJob in @($qualityJob, $contractJob, $componentJob, $installerJob)) {
     Assert-True ($parallelJob.Contains('needs: validate-request')) `
         'Each validation lane must depend only on the shared input gate.'
 }
@@ -68,6 +70,10 @@ Assert-True ($contractJob.Contains('submodules: recursive')) `
     'The build-contract lane must check out capture tools used by contract tests.'
 Assert-True (-not $contractJob.Contains('.\build\Publish.ps1')) `
     'The build-contract lane must not serialize installer publication.'
+Assert-True ($componentJob.Contains('.\build\Run-AffectedCi.ps1')) `
+    'The component-publish lane must use the validated affected runner.'
+Assert-True ($componentJob.Contains('-Lane Publish')) `
+    'The component-publish lane must own affected executable publication.'
 Assert-True ($installerJob.Contains('.\build\Publish.ps1')) `
     'The installer lane must own production publication.'
 Assert-True ($installerJob.Contains('submodules: false')) `
@@ -76,6 +82,7 @@ foreach ($requiredGateDependency in @(
         '- validate-request',
         '- quality-and-tests',
         '- build-contracts',
+        '- component-publish',
         '- installer-validation')) {
     Assert-True ($gateJob.Contains($requiredGateDependency)) `
         "The final build gate is missing dependency '$requiredGateDependency'."
@@ -101,6 +108,8 @@ foreach ($requiredGateContract in @(
         'if: ${{ inputs.run-installer }}',
         'if: ${{ always() }}',
         'OPENBLADE_INSTALLER_RESULT: ${{ needs.installer-validation.result }}',
+        'OPENBLADE_COMPONENT_PUBLISH_RESULT: ${{ needs.component-publish.result }}',
+        'OPENBLADE_RUN_COMPONENT_PUBLISH: ${{ inputs.run-component-publish }}',
         'OPENBLADE_RUN_INSTALLER: ${{ inputs.run-installer }}',
         './build/Assert-CiLaneResults.ps1')) {
     Assert-True ($build.Contains($requiredGateContract)) `

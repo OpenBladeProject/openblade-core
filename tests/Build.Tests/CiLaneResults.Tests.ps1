@@ -17,58 +17,78 @@ function Assert-ThrowsLike {
         & $Action
     }
     catch {
-        if ($_.Exception.Message -like $Pattern) {
-            return
-        }
-
+        if ($_.Exception.Message -like $Pattern) { return }
         throw "$Message Unexpected error: $($_.Exception.Message)"
     }
 
     throw $Message
 }
 
-& $gateScript `
-    -ValidateResult success `
-    -QualityResult success `
-    -ContractResult success `
-    -InstallerResult success `
-    -RunInstaller true
+$full = @{
+    ValidateResult = 'success'
+    QualityResult = 'success'
+    ContractResult = 'success'
+    ComponentPublishResult = 'skipped'
+    InstallerResult = 'success'
+    RunQuality = 'true'
+    RunContracts = 'true'
+    RunComponentPublish = 'false'
+    RunInstaller = 'true'
+}
+& $gateScript @full
 
-& $gateScript `
-    -ValidateResult success `
-    -QualityResult success `
-    -ContractResult success `
-    -InstallerResult skipped `
-    -RunInstaller false
+$affected = @{
+    ValidateResult = 'success'
+    QualityResult = 'success'
+    ContractResult = 'skipped'
+    ComponentPublishResult = 'success'
+    InstallerResult = 'skipped'
+    RunQuality = 'true'
+    RunContracts = 'false'
+    RunComponentPublish = 'true'
+    RunInstaller = 'false'
+}
+& $gateScript @affected
+
+$none = @{
+    ValidateResult = 'success'
+    QualityResult = 'skipped'
+    ContractResult = 'skipped'
+    ComponentPublishResult = 'skipped'
+    InstallerResult = 'skipped'
+    RunQuality = 'false'
+    RunContracts = 'false'
+    RunComponentPublish = 'false'
+    RunInstaller = 'false'
+}
+& $gateScript @none
 
 Assert-ThrowsLike -Pattern "Quality and tests finished with 'cancelled'*" -Message `
-    'A cancelled required lane must fail the final gate.' -Action {
-    & $gateScript `
-        -ValidateResult success `
-        -QualityResult cancelled `
-        -ContractResult success `
-        -InstallerResult success `
-        -RunInstaller true
+    'A cancelled selected lane must fail the final gate.' -Action {
+    $failure = $affected.Clone()
+    $failure.QualityResult = 'cancelled'
+    & $gateScript @failure
 }
 
-Assert-ThrowsLike -Pattern "Installer validation finished with 'skipped'*" -Message `
-    'A skipped installer lane must fail when installer validation is required.' -Action {
-    & $gateScript `
-        -ValidateResult success `
-        -QualityResult success `
-        -ContractResult success `
-        -InstallerResult skipped `
-        -RunInstaller true
+Assert-ThrowsLike -Pattern "Build contracts finished with 'success'*expected 'skipped'*" -Message `
+    'An unexpected unselected lane must fail the final gate.' -Action {
+    $failure = $affected.Clone()
+    $failure.ContractResult = 'success'
+    & $gateScript @failure
 }
 
-Assert-ThrowsLike -Pattern "Installer validation finished with 'success'*" -Message `
-    'An unexpected installer run must fail when installer validation is disabled.' -Action {
-    & $gateScript `
-        -ValidateResult success `
-        -QualityResult success `
-        -ContractResult success `
-        -InstallerResult success `
-        -RunInstaller false
+Assert-ThrowsLike -Pattern "Component publish finished with 'skipped'*expected 'success'*" -Message `
+    'A skipped selected component publish must fail the final gate.' -Action {
+    $failure = $affected.Clone()
+    $failure.ComponentPublishResult = 'skipped'
+    & $gateScript @failure
+}
+
+Assert-ThrowsLike -Pattern "Installer validation finished with 'skipped'*expected 'success'*" -Message `
+    'A skipped required installer lane must fail the final gate.' -Action {
+    $failure = $full.Clone()
+    $failure.InstallerResult = 'skipped'
+    & $gateScript @failure
 }
 
 Write-Host 'CI lane result tests passed.'

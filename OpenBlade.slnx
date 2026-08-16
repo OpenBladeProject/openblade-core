@@ -14,6 +14,7 @@
     <Project Path="src/OpenBlade.Tray/OpenBlade.Tray.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/OpenBlade.Architecture.Tests/OpenBlade.Architecture.Tests.csproj" />
     <Project Path="tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj" />
     <Project Path="tests/OpenBlade.Display.Tests/OpenBlade.Display.Tests.csproj" />
     <Project Path="tests/OpenBlade.FirmwareSmoke.Tests/OpenBlade.FirmwareSmoke.Tests.csproj" />
