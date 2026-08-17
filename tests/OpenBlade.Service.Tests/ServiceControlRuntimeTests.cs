@@ -9520,14 +9520,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal("Failed", failedRecord.Status);
     }
 
-    [Fact]
-    public async Task Observation_ClassifiesUsbCPdOnlyAfterTwoAgreeingAdapterReads()
+    [Theory]
+    [InlineData(AdapterPowerState.UsbCPower45W)]
+    [InlineData(AdapterPowerState.UsbCPower60W)]
+    [InlineData(AdapterPowerState.UsbCPower65W)]
+    [InlineData(AdapterPowerState.UsbCPower80W)]
+    [InlineData(AdapterPowerState.UsbCPower90W)]
+    [InlineData(AdapterPowerState.UsbCPower100W)]
+    public async Task Observation_ClassifiesUsbCPdOnlyAfterTwoAgreeingAdapterReads(
+        AdapterPowerState usbCPowerState)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
             initialPowerSource: PowerSource.ExternalUnknown);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
-        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        context.Device.AdapterPowerState = usbCPowerState;
         context.Device.ConfirmedState = new ConfirmedDeviceState(
             PerformancePreset.Balanced,
             FanMode.Automatic,

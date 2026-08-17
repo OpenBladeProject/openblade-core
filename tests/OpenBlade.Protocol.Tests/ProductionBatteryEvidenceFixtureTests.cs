@@ -42,6 +42,78 @@ public sealed class ProductionBatteryEvidenceFixtureTests
     }
 
     [Fact]
+    public void UsbCAdapterClassEvidence_AdmitsOnlyReviewedBios400Levels()
+    {
+        using JsonDocument document = ReadFixture(
+            "rz09-0581-pid-02e0-bios-4.00-usb-c-power-classes.json");
+        JsonElement root = document.RootElement;
+
+        JsonElement device = root.GetProperty("device");
+        Assert.Equal("RZ09-0581", device.GetProperty("modelNumber").GetString());
+        Assert.Equal("1532", device.GetProperty("vendorId").GetString());
+        Assert.Equal("02E0", device.GetProperty("productId").GetString());
+        Assert.Equal("4.00", device.GetProperty("biosVersion").GetString());
+
+        JsonElement source = root.GetProperty("sourceEvidence");
+        Assert.True(source.GetProperty("readOnly").GetBoolean());
+        Assert.False(source.GetProperty("rawCapturesCommitted").GetBoolean());
+        Assert.Equal(
+            "3D9F4A0E4651FBA9EEEC4D1ACA8FFD8ADFAF82B396620028061666D11BD7454F",
+            source.GetProperty("annotationSha256").GetString());
+
+        JsonElement responseFormat = root.GetProperty("responseFormat");
+        Assert.Equal(
+            "CurrentAdapterWattageLevel",
+            responseFormat.GetProperty("byte0").GetString());
+        Assert.Equal(
+            "RecommendedAdapterWattageLevel",
+            responseFormat.GetProperty("byte1").GetString());
+        Assert.Equal(280, responseFormat.GetProperty("recommendedWatts").GetInt32());
+
+        JsonElement[] mappings = root.GetProperty("mappings").EnumerateArray().ToArray();
+        Assert.Equal(
+            ["0211", "0411"],
+            mappings.Select(mapping =>
+                mapping.GetProperty("responsePayloadHex").GetString()));
+        Assert.Equal(
+            [45, 65],
+            mappings.Select(mapping => mapping.GetProperty("currentWatts").GetInt32()));
+        Assert.Equal(
+            ["UsbCPower45W", "UsbCPower65W"],
+            mappings.Select(mapping => mapping.GetProperty("classification").GetString()));
+        Assert.Equal(
+            [2, 4],
+            mappings.Select(mapping =>
+                mapping.GetProperty("successfulReadOnlySamples").GetInt32()));
+
+        JsonElement[] synapseMappings = root.GetProperty("authoritativeSynapseMappings")
+            .EnumerateArray()
+            .ToArray();
+        Assert.Equal(
+            ["0311", "0511", "0611"],
+            synapseMappings.Select(mapping =>
+                mapping.GetProperty("responsePayloadHex").GetString()));
+        Assert.Equal(
+            [60, 80, 90],
+            synapseMappings.Select(mapping =>
+                mapping.GetProperty("currentWatts").GetInt32()));
+        Assert.Equal(
+            ["UsbCPower60W", "UsbCPower80W", "UsbCPower90W"],
+            synapseMappings.Select(mapping =>
+                mapping.GetProperty("classification").GetString()));
+        Assert.All(
+            synapseMappings,
+            mapping => Assert.False(
+                mapping.GetProperty("physicalSampleCaptured").GetBoolean()));
+
+        JsonElement admission = root.GetProperty("productionAdmission");
+        Assert.Equal("RZ09-0581", admission.GetProperty("modelNumber").GetString());
+        Assert.Equal("4.00", admission.GetProperty("biosVersion").GetString());
+        Assert.True(admission.GetProperty("otherValuesFailClosed").GetBoolean());
+        Assert.True(admission.GetProperty("notGeneralizedToOtherModels").GetBoolean());
+    }
+
+    [Fact]
     public void TemporaryFullChargeReadEvidence_ContainsFiveValidatedInactiveReplies()
     {
         using JsonDocument document = ReadFixture(

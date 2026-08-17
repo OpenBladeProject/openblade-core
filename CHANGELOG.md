@@ -37,9 +37,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Recovered USB-C power classification from bounded transient HID access
-  failures while preserving two-sample agreement and fail-closed writes, and
-  clarified the separate control-access and power-source troubleshooting rows.
+- Classified exact 45 W, 60 W, 65 W, 80 W, 90 W, and 100 W USB-C adapter
+  levels on the RZ09-0581 BIOS 4.00 baseline, recovered classification from
+  bounded transient HID access failures while preserving two-sample agreement
+  and fail-closed writes, and clarified the separate control-access and
+  power-source troubleshooting rows.
 - Kept page customization buttons aligned with their titles while allowing
   longer localized and profile actions to use a separate row.
 - Fixed the **Random colors** switch track alignment and made compact switch
