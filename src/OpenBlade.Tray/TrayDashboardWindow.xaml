@@ -541,6 +541,8 @@
                                    VerticalAlignment="Center" />
                         <ToggleSwitch x:Name="GamingModeWindowsKeyToggle"
                                       Grid.Column="1"
+                                      HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
                                       MinWidth="0"
                                       OffContent=""
                                       OnContent=""
@@ -556,6 +558,8 @@
                                    VerticalAlignment="Center" />
                         <ToggleSwitch x:Name="GamingModeAltTabToggle"
                                       Grid.Column="1"
+                                      HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
                                       MinWidth="0"
                                       OffContent=""
                                       OnContent=""
