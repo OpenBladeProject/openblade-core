@@ -30,6 +30,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept page customization buttons aligned with their titles while allowing
+  longer localized and profile actions to use a separate row.
 - Expanded the graphical installer's progress details pane to use the available
   window height instead of remaining limited to a few log lines.
 - Offered **Repair** and **Uninstall** when an interactive installer finds one

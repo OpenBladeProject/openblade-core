@@ -5,29 +5,50 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
-    public void LocalizedPageHeadersStackActionsBelowTitlesAtSnapshotWidth()
+    public void LocalizedPageHeadersKeepStableActionsInTitleRows()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
-        string profilesActions = SliceMethod(
-            xaml,
-            "x:Name=\"ProfilesHeaderActions\"",
-            "</StackPanel>");
-        string lightingActions = SliceMethod(
-            xaml,
-            "x:Name=\"LightingHeaderActions\"",
-            "</StackPanel>");
-        string aboutActions = SliceMethod(
-            xaml,
-            "x:Name=\"AboutHeaderActions\"",
-            "/>");
+        foreach (string actionName in new[]
+        {
+            "ProfilesHeaderActions",
+            "LaptopHeaderActions",
+            "LightingHeaderActions",
+            "DisplayHeaderActions",
+        })
+        {
+            string expandableActions = SliceMethod(
+                xaml,
+                $"x:Name=\"{actionName}\"",
+                "</StackPanel>");
+            Assert.Contains(
+                "Grid.Row=\"1\"",
+                expandableActions,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "Grid.ColumnSpan=\"2\"",
+                expandableActions,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "Margin=\"0,2,0,0\"",
+                expandableActions,
+                StringComparison.Ordinal);
+        }
 
-        Assert.Contains("x:Name=\"LaptopHeaderCompact\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Grid.Row=\"1\"", profilesActions, StringComparison.Ordinal);
-        Assert.Contains("Grid.ColumnSpan=\"2\"", profilesActions, StringComparison.Ordinal);
-        Assert.Contains("Grid.Row=\"1\"", lightingActions, StringComparison.Ordinal);
-        Assert.Contains("Grid.ColumnSpan=\"2\"", lightingActions, StringComparison.Ordinal);
-        Assert.Contains("Grid.Row=\"1\"", aboutActions, StringComparison.Ordinal);
-        Assert.Contains("Grid.ColumnSpan=\"2\"", aboutActions, StringComparison.Ordinal);
+        foreach (string customizeUid in new[]
+        {
+            "MainWindow_ButtonCustomize2",
+            "MainWindow_ButtonCustomize3",
+            "MainWindow_ButtonCustomize4",
+            "MainWindow_ButtonCustomize7",
+        })
+        {
+            string customizeButton = SliceMethod(
+                xaml,
+                $"x:Uid=\"{customizeUid}\"",
+                "/>");
+            Assert.Contains("Grid.Column=\"1\"", customizeButton, StringComparison.Ordinal);
+            Assert.DoesNotContain("Grid.Row=", customizeButton, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -275,7 +296,7 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
-        Assert.Equal(4, CountOccurrences(xaml, "HeaderActions.Margin\" Value=\"0,2,0,0\""));
+        Assert.DoesNotContain("HeaderActions.Margin", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("DisplayViewModel.ProfileRelationshipStatus", xaml, StringComparison.Ordinal);

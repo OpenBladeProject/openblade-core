@@ -2833,40 +2833,15 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <VisualStateManager.VisualStateGroups>
-                                <VisualStateGroup>
-                                    <VisualState x:Name="LaptopHeaderWide">
-                                        <VisualState.StateTriggers>
-                                            <AdaptiveTrigger MinWindowWidth="900" />
-                                        </VisualState.StateTriggers>
-                                        <VisualState.Setters>
-                                            <Setter Target="LaptopHeaderActions.(Grid.Row)" Value="0" />
-                                            <Setter Target="LaptopHeaderActions.(Grid.Column)" Value="1" />
-                                            <Setter Target="LaptopHeaderActions.(Grid.ColumnSpan)" Value="1" />
-                                            <Setter Target="LaptopHeaderActions.HorizontalAlignment" Value="Right" />
-                                            <Setter Target="LaptopHeaderActions.Margin" Value="0,2,0,0" />
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                    <VisualState x:Name="LaptopHeaderCompact">
-                                        <VisualState.StateTriggers>
-                                            <AdaptiveTrigger MinWindowWidth="0" />
-                                        </VisualState.StateTriggers>
-                                        <VisualState.Setters>
-                                            <Setter Target="LaptopHeaderActions.(Grid.Row)" Value="1" />
-                                            <Setter Target="LaptopHeaderActions.(Grid.Column)" Value="0" />
-                                            <Setter Target="LaptopHeaderActions.(Grid.ColumnSpan)" Value="2" />
-                                            <Setter Target="LaptopHeaderActions.HorizontalAlignment" Value="Left" />
-                                            <Setter Target="LaptopHeaderActions.Margin" Value="0,2,0,0" />
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                </VisualStateGroup>
-                            </VisualStateManager.VisualStateGroups>
                             <TextBlock x:Uid="MainWindow_TextBlockLaptop" Text="Laptop"
                                        Style="{StaticResource PageHeaderTitleStyle}" />
                             <StackPanel x:Name="LaptopHeaderActions"
-                                        Grid.Column="1"
+                                        Grid.Row="1"
+                                        Grid.ColumnSpan="2"
                                         Orientation="Horizontal"
                                         Spacing="12"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,2,0,0"
                                         VerticalAlignment="Center">
                             <StackPanel x:Name="LaptopProfileSaveActions"
                                         Orientation="Horizontal"
@@ -2881,12 +2856,13 @@
                                         Visibility="{x:Bind ViewModel.HasLaptopPageProfileDifference, Mode=OneWay}"
                                         Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
                             </StackPanel>
-                            <Button x:Uid="MainWindow_ButtonCustomize2" Content="Customize"
+                            </StackPanel>
+                            <Button x:Uid="MainWindow_ButtonCustomize2" Grid.Column="1"
+                                    Content="Customize"
                                     Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="Laptop"
                                     Click="OnCustomizePageSections"
                                     AutomationProperties.Name="Customize Laptop page" />
-                            </StackPanel>
                         </Grid>
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
@@ -3025,12 +3001,13 @@
                                         Command="{x:Bind ViewModel.DiscardLightingProfileDraftCommand}" />
                                 </StackPanel>
                             </ContentControl>
-                            <Button x:Uid="MainWindow_ButtonCustomize3" Content="Customize"
+                            </StackPanel>
+                            <Button x:Uid="MainWindow_ButtonCustomize3" Grid.Column="1"
+                                    Content="Customize"
                                     Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="Lighting"
                                     Click="OnCustomizePageSections"
                                     AutomationProperties.Name="Customize Lighting page" />
-                            </StackPanel>
                         </Grid>
                         <StackPanel x:Name="LightingCardsHost">
                         <ContentControl x:Name="LightingCard"
@@ -3069,34 +3046,6 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <VisualStateManager.VisualStateGroups>
-                                <VisualStateGroup>
-                                    <VisualState x:Name="DisplayHeaderWide">
-                                        <VisualState.StateTriggers>
-                                            <AdaptiveTrigger MinWindowWidth="900" />
-                                        </VisualState.StateTriggers>
-                                        <VisualState.Setters>
-                                            <Setter Target="DisplayHeaderActions.(Grid.Row)" Value="0" />
-                                            <Setter Target="DisplayHeaderActions.(Grid.Column)" Value="1" />
-                                            <Setter Target="DisplayHeaderActions.(Grid.ColumnSpan)" Value="1" />
-                                            <Setter Target="DisplayHeaderActions.HorizontalAlignment" Value="Right" />
-                                            <Setter Target="DisplayHeaderActions.Margin" Value="0,2,0,0" />
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                    <VisualState x:Name="DisplayHeaderCompact">
-                                        <VisualState.StateTriggers>
-                                            <AdaptiveTrigger MinWindowWidth="0" />
-                                        </VisualState.StateTriggers>
-                                        <VisualState.Setters>
-                                            <Setter Target="DisplayHeaderActions.(Grid.Row)" Value="1" />
-                                            <Setter Target="DisplayHeaderActions.(Grid.Column)" Value="0" />
-                                            <Setter Target="DisplayHeaderActions.(Grid.ColumnSpan)" Value="2" />
-                                            <Setter Target="DisplayHeaderActions.HorizontalAlignment" Value="Left" />
-                                            <Setter Target="DisplayHeaderActions.Margin" Value="0,2,0,0" />
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                </VisualStateGroup>
-                            </VisualStateManager.VisualStateGroups>
                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                 <TextBlock x:Uid="MainWindow_TextBlockDisplay2" Text="Display" Style="{StaticResource PageHeaderTitleStyle}" />
                                 <ProgressRing x:Uid="MainWindow_ProgressRingApplyingDisplaySetting" Style="{StaticResource FirmwareProgressRingStyle}"
@@ -3104,9 +3053,12 @@
                                               AutomationProperties.Name="Applying display setting" />
                             </StackPanel>
                             <StackPanel x:Name="DisplayHeaderActions"
-                                        Grid.Column="1"
+                                        Grid.Row="1"
+                                        Grid.ColumnSpan="2"
                                         Orientation="Horizontal"
                                         Spacing="12"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,2,0,0"
                                         VerticalAlignment="Center">
                             <StackPanel x:Name="DisplayProfileSaveActions"
                                         Orientation="Horizontal"
@@ -3121,12 +3073,13 @@
                                         Visibility="{x:Bind DisplayViewModel.HasProfileDifference, Mode=OneWay}"
                                         Click="OnUseDisplayProfileSettings" />
                             </StackPanel>
-                            <Button x:Uid="MainWindow_ButtonCustomize4" Content="Customize"
+                            </StackPanel>
+                            <Button x:Uid="MainWindow_ButtonCustomize4" Grid.Column="1"
+                                    Content="Customize"
                                     Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="Display"
                                     Click="OnCustomizePageSections"
                                     AutomationProperties.Name="Customize Display page" />
-                            </StackPanel>
                         </Grid>
                         <StackPanel x:Name="DisplayCardsHost">
                         <ContentControl x:Name="DisplayCard"
@@ -3985,22 +3938,15 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <Grid Margin="0,0,0,20" ColumnSpacing="16" RowSpacing="10">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                        <Grid Margin="0,0,0,20" ColumnSpacing="16">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock x:Uid="MainWindow_TextBlockAbout" Grid.ColumnSpan="2"
+                            <TextBlock x:Uid="MainWindow_TextBlockAbout"
                                        Text="About" Style="{StaticResource PageHeaderTitleStyle}" />
-                            <Button x:Name="AboutHeaderActions"
-                                    x:Uid="MainWindow_ButtonCustomize7"
-                                    Grid.Row="1"
-                                    Grid.ColumnSpan="2"
-                                    HorizontalAlignment="Left"
+                            <Button x:Uid="MainWindow_ButtonCustomize7"
+                                    Grid.Column="1"
                                     Content="Customize"
                                     Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="About"
