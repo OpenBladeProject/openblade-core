@@ -770,12 +770,20 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private void AddPipeDetail(InstallerSetupProgress progress)
     {
+        Engine.Log(LogLevel.Standard, progress.WireValue);
         Ui(() =>
         {
-            Engine.Log(LogLevel.Standard, progress.WireValue);
-            window?.AddDetail(progress.WireValue);
-            window?.SetStatus(LocalizeProgress(progress));
+            PresentPipeProgress(window, progress);
         });
+    }
+
+    internal static void PresentPipeProgress(
+        InstallerWindow? target,
+        InstallerSetupProgress progress)
+    {
+        string visibleProgress = LocalizeProgress(progress);
+        target?.AddDetail(visibleProgress);
+        target?.SetStatus(visibleProgress);
     }
 
     internal static string LocalizeProgress(InstallerSetupProgress progress) => progress.Code switch

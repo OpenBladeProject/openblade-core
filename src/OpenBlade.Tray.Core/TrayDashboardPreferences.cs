@@ -194,7 +194,7 @@ public static class TrayDashboardPreferenceDefaults
         string Description,
         bool IsVisible);
 
-    private static readonly ControlDefinition[] ControlDefinitions =
+    private static ControlDefinition[] ControlDefinitions =>
     [
         new(
             TrayDashboardControlKind.Performance,
@@ -241,8 +241,8 @@ public static class TrayDashboardPreferenceDefaults
         TrayDashboardStatusItemKind.FanSpeed,
     ];
 
-    private static readonly (TrayDashboardSliderKind Kind, string Label, bool IsVisible)[]
-        SliderDefinitions =
+    private static (TrayDashboardSliderKind Kind, string Label, bool IsVisible)[]
+        SliderDefinitions =>
         [
             (TrayDashboardSliderKind.LightingBrightness, TrayText.Get("Keyboard brightness"), true),
             (TrayDashboardSliderKind.ChargeLimit, TrayText.Get("Charge limit"), true),

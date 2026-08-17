@@ -276,7 +276,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
     IAsyncDisposable
 {
     internal static readonly TimeSpan FailureRetryDelay = TimeSpan.FromMinutes(5);
-    private static readonly string NotCheckedMessage =
+    private static string NotCheckedMessage =>
         TrayText.Get("Check Razer's official page for the latest firmware versions.");
     private readonly IRazerFirmwareUpdateClient client;
     private readonly TimeProvider timeProvider;
@@ -667,7 +667,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
         AddNewerComponent(
             newerComponents,
             "MCU",
-            McuFirmwareVersionPresentation.Format(installedFirmware?.McuVersion),
+            installedFirmware?.McuVersion,
             published.McuVersion);
 
         IsUpdateAvailable = newerComponents.Count > 0;

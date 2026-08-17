@@ -152,9 +152,8 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
         _ => string.Empty,
     };
 
-    public string ValidationMessage => LocalizeValidationMessage(
-        SpecialKeyBindingDefaults.GetValidationMessage(
-            new SpecialKeyAction(SelectedAction.Kind, Value)));
+    public string ValidationMessage => SpecialKeyBindingDefaults.GetValidationMessage(
+        new SpecialKeyAction(SelectedAction.Kind, Value));
 
     public Visibility ValidationMessageVisibility =>
         string.IsNullOrEmpty(ValidationMessage)
@@ -176,43 +175,4 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
         string englishLabel) =>
         new(kind, LocalizedResources.Get(resourceKey, englishLabel));
 
-    private static string LocalizeValidationMessage(string message)
-    {
-        if (string.IsNullOrEmpty(message))
-        {
-            return string.Empty;
-        }
-
-        if (message.StartsWith("Unknown modifier: ", StringComparison.Ordinal))
-        {
-            return LocalizedResources.Format(
-                "SpecialKey_Validation_UnknownModifier",
-                "Unknown modifier: {0}",
-                message["Unknown modifier: ".Length..]);
-        }
-        if (message.StartsWith("Unknown shortcut key: ", StringComparison.Ordinal))
-        {
-            return LocalizedResources.Format(
-                "SpecialKey_Validation_UnknownKey",
-                "Unknown shortcut key: {0}",
-                message["Unknown shortcut key: ".Length..]);
-        }
-
-        return message switch
-        {
-            "Enter a value for this action." => LocalizedResources.Get(
-                "SpecialKey_Validation_EnterValue",
-                message),
-            "Use a shortcut such as Ctrl+Shift+M." => LocalizedResources.Get(
-                "SpecialKey_Validation_UseShortcut",
-                message),
-            "A shortcut must include a non-modifier key." => LocalizedResources.Get(
-                "SpecialKey_Validation_NonModifierKey",
-                message),
-            "Enter a complete http or https address." => LocalizedResources.Get(
-                "SpecialKey_Validation_WebAddress",
-                message),
-            _ => message,
-        };
-    }
 }

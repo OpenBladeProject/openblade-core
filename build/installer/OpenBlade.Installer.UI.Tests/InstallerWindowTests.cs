@@ -277,7 +277,8 @@ public sealed class InstallerWindowTests
                     }
                     _ = window.Activate();
                     PumpDispatcher(window.Dispatcher);
-                    Thread.Sleep(250);
+                    // Let the focused button template finish drawing before PrintWindow.
+                    Thread.Sleep(500);
                     PumpDispatcher(window.Dispatcher);
                     IntPtr handle = new WindowInteropHelper(window).Handle;
                     Assert.True(GetWindowRect(handle, out NativeRect windowBounds));
@@ -435,7 +436,34 @@ public sealed class InstallerWindowTests
                 string status = OpenBladeBootstrapperApplication.LocalizeProgress(progress!);
 
                 Assert.StartsWith("[!! ", status, StringComparison.Ordinal);
+                Assert.False(status.StartsWith("v1|", StringComparison.Ordinal));
             }
+        });
+    }
+
+    [Fact]
+    public void PipeProgressKeepsWireEnvelopeOutOfVisibleDetails()
+    {
+        RunWithUiCulture("qps-ploc", () =>
+        {
+            const string wireValue = "v1|CopyFile|T3BlbkJsYWRlLlRyYXkuZXhl";
+            Assert.True(InstallerSetupProgress.TryParse(
+                wireValue,
+                out InstallerSetupProgress? progress));
+            var window = new InstallerWindow(new OpenBladeBootstrapperApplication(), "1.2.3");
+            window.ShowProgress(LaunchAction.Install);
+
+            OpenBladeBootstrapperApplication.PresentPipeProgress(window, progress!);
+
+            Assert.StartsWith("[!! ", window.ProgressMessage.Text, StringComparison.Ordinal);
+            Assert.Contains("OpenBlade.Tray.exe", window.ProgressMessage.Text, StringComparison.Ordinal);
+            Assert.Contains("OpenBlade.Tray.exe", window.DetailsText.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain(wireValue, window.DetailsText.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "T3BlbkJsYWRlLlRyYXkuZXhl",
+                window.DetailsText.Text,
+                StringComparison.Ordinal);
+            window.Close();
         });
     }
 

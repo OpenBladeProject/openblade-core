@@ -31,6 +31,7 @@ if ($LASTEXITCODE -ne 0) { throw 'The tray snapshot build failed.' }
 $previousSnapshotDirectory = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR
 $previousPseudo = $env:OPENBLADE_PSEUDO_LOCALIZATION
 $previousSnapshotState = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE
+$previousSnapshotPage = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE
 try {
     $env:OPENBLADE_PSEUDO_LOCALIZATION = '1'
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR = $installerOutput
@@ -59,26 +60,38 @@ try {
         throw "Tray executable not found: $trayExecutable"
     }
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR = $trayOutput
-    $process = Start-Process -FilePath $trayExecutable `
-        -WorkingDirectory ([IO.Path]::GetDirectoryName($trayExecutable)) `
-        -WindowStyle Hidden `
-        -PassThru
-    if (-not $process.WaitForExit(60000)) {
-        $process.Kill()
-        throw 'The tray snapshot render timed out.'
-    }
-    if ($process.ExitCode -ne 0) {
-        $report = Join-Path $trayOutput 'snapshot-report.txt'
-        $diagnostic = if (Test-Path -LiteralPath $report) {
-            [IO.File]::ReadAllText($report)
-        } else { 'No snapshot report was written.' }
-        throw "The tray snapshot render failed with $($process.ExitCode): $diagnostic"
+    foreach ($trayPage in @(
+            'home',
+            'profiles',
+            'laptop',
+            'lighting',
+            'display',
+            'settings',
+            'about',
+            'tray-dashboard')) {
+        $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $trayPage
+        $process = Start-Process -FilePath $trayExecutable `
+            -WorkingDirectory ([IO.Path]::GetDirectoryName($trayExecutable)) `
+            -WindowStyle Hidden `
+            -PassThru
+        if (-not $process.WaitForExit(60000)) {
+            $process.Kill()
+            throw "The tray '$trayPage' snapshot render timed out."
+        }
+        if ($process.ExitCode -ne 0) {
+            $report = Join-Path $trayOutput 'snapshot-report.txt'
+            $diagnostic = if (Test-Path -LiteralPath $report) {
+                [IO.File]::ReadAllText($report)
+            } else { 'No snapshot report was written.' }
+            throw "The tray '$trayPage' snapshot render failed with $($process.ExitCode): $diagnostic"
+        }
     }
 }
 finally {
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR = $previousSnapshotDirectory
     $env:OPENBLADE_PSEUDO_LOCALIZATION = $previousPseudo
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE = $previousSnapshotState
+    $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $previousSnapshotPage
 }
 
 $appliedDpi = try {

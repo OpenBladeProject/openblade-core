@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Resources;
+using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
 namespace OpenBlade.Tray.Tests;
@@ -74,6 +75,47 @@ public sealed class TrayTextTests
         Assert.NotEqual("Battery protection", value);
     }
 
+    [Fact]
+    public void PresentationDefaultsResolveTheCurrentCultureOnEveryRequest()
+    {
+        string englishCard;
+        string englishSection;
+        string englishControl;
+        string englishSlider;
+        string englishFan;
+        using (new CultureScope("en-US"))
+        {
+            englishCard = DashboardCardPreferenceDefaults.CreateOptions(null)[0].Label;
+            englishSection = PageLayoutPreferenceDefaults.CreateOptions(
+                CustomizablePageKind.Profiles,
+                null)[0].Label;
+            englishControl = TrayDashboardPreferenceDefaults.CreateControlOptions(null)[0].Label;
+            englishSlider = TrayDashboardPreferenceDefaults.CreateSliderOptions(null)[0].Label;
+            englishFan = FanModePresentation.CreateOptions(
+                new HashSet<FanMode> { FanMode.Automatic })[0].Label;
+        }
+
+        using var culture = new CultureScope("qps-ploc");
+        AssertPseudoAndChanged(
+            englishCard,
+            DashboardCardPreferenceDefaults.CreateOptions(null)[0].Label);
+        AssertPseudoAndChanged(
+            englishSection,
+            PageLayoutPreferenceDefaults.CreateOptions(
+                CustomizablePageKind.Profiles,
+                null)[0].Label);
+        AssertPseudoAndChanged(
+            englishControl,
+            TrayDashboardPreferenceDefaults.CreateControlOptions(null)[0].Label);
+        AssertPseudoAndChanged(
+            englishSlider,
+            TrayDashboardPreferenceDefaults.CreateSliderOptions(null)[0].Label);
+        AssertPseudoAndChanged(
+            englishFan,
+            FanModePresentation.CreateOptions(
+                new HashSet<FanMode> { FanMode.Automatic })[0].Label);
+    }
+
     private static Dictionary<string, string> ReadStrings(ResourceSet resources) =>
         resources.Cast<System.Collections.DictionaryEntry>()
             .ToDictionary(
@@ -86,5 +128,11 @@ public sealed class TrayTextTests
             .Select(match => match.Value)
             .Order(StringComparer.Ordinal)
             .ToArray();
+
+    private static void AssertPseudoAndChanged(string english, string pseudo)
+    {
+        Assert.StartsWith("[!! ", pseudo, StringComparison.Ordinal);
+        Assert.NotEqual(english, pseudo);
+    }
 
 }

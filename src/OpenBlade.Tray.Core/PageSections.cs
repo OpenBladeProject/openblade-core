@@ -95,7 +95,7 @@ public static class PageLayoutPreferenceDefaults
         string Label,
         string Description);
 
-    private static readonly SectionDefinition[] Definitions =
+    private static SectionDefinition[] Definitions =>
     [
         new(
             CustomizablePageKind.Profiles,

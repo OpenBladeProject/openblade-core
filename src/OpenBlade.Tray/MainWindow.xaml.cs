@@ -230,9 +230,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         micaBackdropHost = new MicaBackdropHost(this, Root);
         if (localizationSnapshotMode)
         {
-            Root.Background = (Microsoft.UI.Xaml.Media.Brush)
-                Microsoft.UI.Xaml.Application.Current.Resources[
-                "SolidBackgroundFillColorBaseBrush"];
+            LaptopPageContent.Transitions.Clear();
+            Root.Background = new SolidColorBrush(
+                Root.ActualTheme == ElementTheme.Dark
+                    ? Microsoft.UI.Colors.Black
+                    : Microsoft.UI.Colors.White);
         }
         Root.DataContext = ViewModel;
         Root.Loaded += OnRootLoaded;

@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
+using System.Globalization;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
@@ -55,9 +57,14 @@ public static class FanModePresentation
         FanMode.ManualCurve,
     ];
 
-    private static readonly FanModeOption[] Options = Order
-        .Select(value => new FanModeOption(value, Label(value)))
-        .ToArray();
+    private static readonly ConcurrentDictionary<string, FanModeOption[]> OptionsByCulture =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private static FanModeOption[] Options => OptionsByCulture.GetOrAdd(
+        CultureInfo.CurrentUICulture.Name,
+        _ => Order
+            .Select(value => new FanModeOption(value, Label(value)))
+            .ToArray());
 
     public static string Label(FanMode value) => value switch
     {

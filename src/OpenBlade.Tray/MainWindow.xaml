@@ -2811,7 +2811,8 @@
                             HorizontalScrollBarVisibility="Hidden"
                             VerticalScrollMode="Enabled"
                             VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28"
+                    <StackPanel x:Name="LaptopPageContent"
+                                Padding="28,20,28,28"
                                 Width="{Binding ElementName=LaptopPage, Path=ViewportWidth, Mode=OneWay}"
                                 HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>

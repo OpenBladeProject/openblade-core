@@ -66,7 +66,7 @@ public static class DashboardCardPreferenceDefaults
         string Description,
         bool IsPinnedByDefault);
 
-    private static readonly CardDefinition[] Definitions =
+    private static CardDefinition[] Definitions =>
     [
         new(
             DashboardCardKind.DeviceStatus,

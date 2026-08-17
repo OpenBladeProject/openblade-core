@@ -53,6 +53,13 @@ if ($parseErrors.Count -ne 0) {
 
 & $validator -Repository $repository
 
+$mainViewModelSource = [IO.File]::ReadAllText(
+    (Join-Path $repository 'src\OpenBlade.Tray.Core\MainViewModel.cs'),
+    [Text.UTF8Encoding]::new($false, $true))
+if ($mainViewModelSource -match 'ToLower\(CultureInfo\.CurrentUICulture\)') {
+    throw 'Localized presentation fragments must preserve translator-owned casing.'
+}
+
 $utf8 = [Text.UTF8Encoding]::new($false, $true)
 $trayEnglish = [xml][IO.File]::ReadAllText((
     Join-Path $repository 'src\OpenBlade.Tray\Strings\en-US\Resources.resw'), $utf8)
@@ -159,6 +166,21 @@ Assert-ValidatorFails -Expected 'missing en-US resource' -Mutate {
     [void]$pseudoDocument.root.RemoveChild($pseudoNode)
     $pseudoDocument.Save($pseudoPath)
 }
+Assert-ValidatorFails -Expected 'missing en-US resource' -Mutate {
+    param($fixture)
+    $path = Join-Path $fixture 'src\OpenBlade.Tray\VariableFallbackFixture.cs'
+    [IO.File]::WriteAllText(
+        $path,
+        @'
+namespace OpenBlade.Tray;
+internal static class VariableFallbackFixture
+{
+    public static string Get(string fallback) =>
+        LocalizedResources.Get("Missing.VariableFallback", fallback);
+}
+'@,
+        [Text.UTF8Encoding]::new($false))
+}
 Assert-ValidatorFails -Expected 'duplicate key' -Mutate {
     param($fixture)
     $path = Join-Path $fixture 'build\installer\OpenBlade.Installer.UI\Properties\Resources.resx'
@@ -178,6 +200,36 @@ Assert-ValidatorFails -Expected 'missing managed resource' -Mutate {
         [void]$document.root.RemoveChild($entry)
         $document.Save($path)
     }
+}
+Assert-ValidatorFails -Expected 'missing managed resource' -Mutate {
+    param($fixture)
+    $path = Join-Path $fixture 'src\OpenBlade.Tray.Core\ManagedVariableFallbackFixture.cs'
+    [IO.File]::WriteAllText(
+        $path,
+        @'
+namespace OpenBlade.Tray;
+internal static class ManagedVariableFallbackFixture
+{
+    public static string Get(string fallback) =>
+        TrayText.Get("Missing.Managed.VariableFallback", fallback);
+}
+'@,
+        [Text.UTF8Encoding]::new($false))
+}
+Assert-ValidatorFails -Expected 'authoritative en-US value' -Mutate {
+    param($fixture)
+    $path = Join-Path $fixture 'src\OpenBlade.Tray.Core\ManagedLiteralFallbackFixture.cs'
+    [IO.File]::WriteAllText(
+        $path,
+        @'
+namespace OpenBlade.Tray;
+internal static class ManagedLiteralFallbackFixture
+{
+    public static string Get() =>
+        TrayText.Get("Fragment.Fans", "wrong fallback");
+}
+'@,
+        [Text.UTF8Encoding]::new($false))
 }
 Assert-ValidatorFails -Expected 'invalid format string' -Mutate {
     param($fixture)

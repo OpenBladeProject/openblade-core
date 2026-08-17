@@ -1712,12 +1712,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="Navigation_Settings" xml:space="preserve">
     <value>[!! Séttíngs ~~~ !!]</value>
   </data>
-  <data name="SpecialKey_Validation_UnknownKey" xml:space="preserve">
-    <value>[!! Únknówn shórtcút kéý: {0} ~~~~~~~ !!]</value>
-  </data>
-  <data name="SpecialKey_Validation_UnknownModifier" xml:space="preserve">
-    <value>[!! Únknówn módífíér: {0} ~~~~~~ !!]</value>
-  </data>
   <data name="SpecialKey_ValueLabel_AppPath" xml:space="preserve">
     <value>[!! Ápp ór fílé páth ~~~~~ !!]</value>
   </data>

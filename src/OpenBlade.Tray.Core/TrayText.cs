@@ -11,12 +11,15 @@ internal static class TrayText
         "OpenBlade.Tray.Core.Properties.Resources",
         typeof(TrayText).Assembly);
 
-    public static string Get(string key)
+    public static string Get(string key) => Get(key, key);
+
+    public static string Get(string key, string english)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(english);
         return TryGet(key, CultureInfo.CurrentUICulture)
             ?? TryGet(key, EnglishCulture)
-            ?? key;
+            ?? english;
     }
 
     public static string Format(string key, params object?[] arguments)

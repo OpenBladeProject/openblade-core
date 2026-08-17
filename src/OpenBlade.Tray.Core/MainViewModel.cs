@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -88,7 +89,7 @@ public sealed record ProfilePresentation(
 
 public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
-    private static readonly string UnavailableLabel = TrayText.Get("Unavailable");
+    private static string UnavailableLabel => TrayText.Get("Unavailable");
     private const byte DefaultLightingBrightness = 50;
     private static readonly TimeSpan ReconnectVisualGracePeriod =
         TimeSpan.FromMilliseconds(750);
@@ -111,49 +112,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         PowerSource PowerSource,
         DateTimeOffset? ExpiresAt);
 
-    private static readonly IReadOnlyList<ProfileComparisonOption> ComparisonOptions =
-    [
-        new(PowerSource.PluggedIn, "AC"),
-        new(PowerSource.UsbC, "USB-C"),
-        new(PowerSource.Battery, TrayText.Get("On battery")),
-    ];
+    private sealed record LocalizedOptionCatalog(
+        IReadOnlyList<ProfileComparisonOption> Comparison,
+        IReadOnlyList<WindowsPowerModeOption> WindowsPowerModes,
+        IReadOnlyList<FunctionKeyPrimaryOption> FunctionKeyPrimaryModes,
+        IReadOnlyList<LightingEffectOption> LightingEffects,
+        IReadOnlyList<LogoLightingModeOption> LogoLightingModes,
+        IReadOnlyList<LightingDirectionOption> StandardLightingDirections,
+        IReadOnlyList<LightingDirectionOption> TidalLightingDirections);
 
-    private static readonly IReadOnlyList<WindowsPowerModeOption> WindowsPowerModeOptions =
-    [
-        new(
-            null,
-            TrayText.Get("Leave unchanged"),
-            TrayText.Get("Keeps the current Windows setting.")),
-        new(
-            WindowsPowerMode.BestPowerEfficiency,
-            TrayText.Get("Best power efficiency"),
-            TrayText.Get("Favors lower energy use.")),
-        new(
-            WindowsPowerMode.Balanced,
-            TrayText.Get("Balanced"),
-            TrayText.Get("Balances performance and energy use.")),
-        new(
-            WindowsPowerMode.BestPerformance,
-            TrayText.Get("Best performance"),
-            TrayText.Get("Favors responsiveness over energy use.")),
-    ];
+    private static readonly ConcurrentDictionary<string, LocalizedOptionCatalog>
+        LocalizedOptionCatalogs = new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly IReadOnlyList<FunctionKeyPrimaryOption>
-        FunctionKeyPrimaryOptions =
-        [
-            new(
-                FunctionKeyPrimaryMode.FunctionKeys,
-                TrayText.Get("Function keys"),
-                new ApplyOneShotLaptopControl(
-                    OneShotLaptopControl.FunctionKeyPrimary,
-                    FunctionKeyMode: FunctionKeyPrimaryMode.FunctionKeys)),
-            new(
-                FunctionKeyPrimaryMode.MultimediaKeys,
-                TrayText.Get("Media keys"),
-                new ApplyOneShotLaptopControl(
-                    OneShotLaptopControl.FunctionKeyPrimary,
-                    FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys)),
-        ];
+    private static LocalizedOptionCatalog CurrentLocalizedOptions =>
+        LocalizedOptionCatalogs.GetOrAdd(
+            CultureInfo.CurrentUICulture.Name,
+            _ => CreateLocalizedOptionCatalog());
+
+    private static IReadOnlyList<ProfileComparisonOption> ComparisonOptions =>
+        CurrentLocalizedOptions.Comparison;
+
+    private static IReadOnlyList<WindowsPowerModeOption> WindowsPowerModeOptions =>
+        CurrentLocalizedOptions.WindowsPowerModes;
+
+    private static IReadOnlyList<FunctionKeyPrimaryOption> FunctionKeyPrimaryOptions =>
+        CurrentLocalizedOptions.FunctionKeyPrimaryModes;
 
     private static readonly IReadOnlyList<LightingEffect> KnownLightingEffects =
         Enum.GetValues<LightingEffect>()
@@ -167,34 +150,82 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             .Order()
             .ToArray();
 
-    private static readonly IReadOnlyList<LightingEffectOption> KnownLightingEffectOptions =
-        KnownLightingEffects
-            .Select(CreateLightingEffectOption)
-            .OrderBy(option => option.Effect == LightingEffect.Off ? 0 : 1)
-            .ThenBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+    private static IReadOnlyList<LightingEffectOption> KnownLightingEffectOptions =>
+        CurrentLocalizedOptions.LightingEffects;
 
-    private static readonly IReadOnlyList<LogoLightingModeOption> KnownLogoLightingModeOptions =
-        KnownLogoLightingModes
-            .Select(mode => new LogoLightingModeOption(
-                mode,
-                LogoLightingModeLabel(mode)))
-            .ToArray();
+    private static IReadOnlyList<LogoLightingModeOption> KnownLogoLightingModeOptions =>
+        CurrentLocalizedOptions.LogoLightingModes;
 
     private static readonly IReadOnlyList<CustomPerformanceLevel> AllCustomPerformanceLevels =
         Enum.GetValues<CustomPerformanceLevel>();
 
-    private static readonly IReadOnlyList<LightingDirectionOption> StandardLightingDirectionOptions =
-    [
-        new(LightingDirection.Leftward, TrayText.Get("Leftward")),
-        new(LightingDirection.Rightward, TrayText.Get("Rightward")),
-    ];
+    private static IReadOnlyList<LightingDirectionOption> StandardLightingDirectionOptions =>
+        CurrentLocalizedOptions.StandardLightingDirections;
 
-    private static readonly IReadOnlyList<LightingDirectionOption> TidalLightingDirectionOptions =
-    [
-        new(LightingDirection.Leftward, TrayText.Get("Outward")),
-        new(LightingDirection.Rightward, TrayText.Get("Inward")),
-    ];
+    private static IReadOnlyList<LightingDirectionOption> TidalLightingDirectionOptions =>
+        CurrentLocalizedOptions.TidalLightingDirections;
+
+    private static LocalizedOptionCatalog CreateLocalizedOptionCatalog() => new(
+        Comparison:
+        [
+            new(PowerSource.PluggedIn, "AC"),
+            new(PowerSource.UsbC, "USB-C"),
+            new(PowerSource.Battery, TrayText.Get("On battery")),
+        ],
+        WindowsPowerModes:
+        [
+            new(
+                null,
+                TrayText.Get("Leave unchanged"),
+                TrayText.Get("Keeps the current Windows setting.")),
+            new(
+                WindowsPowerMode.BestPowerEfficiency,
+                TrayText.Get("Best power efficiency"),
+                TrayText.Get("Favors lower energy use.")),
+            new(
+                WindowsPowerMode.Balanced,
+                TrayText.Get("Balanced"),
+                TrayText.Get("Balances performance and energy use.")),
+            new(
+                WindowsPowerMode.BestPerformance,
+                TrayText.Get("Best performance"),
+                TrayText.Get("Favors responsiveness over energy use.")),
+        ],
+        FunctionKeyPrimaryModes:
+        [
+            new(
+                FunctionKeyPrimaryMode.FunctionKeys,
+                TrayText.Get("Function keys"),
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: FunctionKeyPrimaryMode.FunctionKeys)),
+            new(
+                FunctionKeyPrimaryMode.MultimediaKeys,
+                TrayText.Get("Media keys"),
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys)),
+        ],
+        LightingEffects: KnownLightingEffects
+            .Select(CreateLightingEffectOption)
+            .OrderBy(option => option.Effect == LightingEffect.Off ? 0 : 1)
+            .ThenBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
+            .ToArray(),
+        LogoLightingModes: KnownLogoLightingModes
+            .Select(mode => new LogoLightingModeOption(
+                mode,
+                LogoLightingModeLabel(mode)))
+            .ToArray(),
+        StandardLightingDirections:
+        [
+            new(LightingDirection.Leftward, TrayText.Get("Leftward")),
+            new(LightingDirection.Rightward, TrayText.Get("Rightward")),
+        ],
+        TidalLightingDirections:
+        [
+            new(LightingDirection.Leftward, TrayText.Get("Outward")),
+            new(LightingDirection.Rightward, TrayText.Get("Inward")),
+        ]);
 
     private readonly IServiceClient serviceClient;
     private readonly IUiDispatcher dispatcher;
@@ -790,10 +821,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             string temperatureValue = FormatDashboardTemperatures(
                 DashboardTelemetryEnabled(LiveReadingItemKind.CpuTemperature),
-                CpuTemperatureValue,
+                LiveReadings?.CpuTemperatureCelsius,
                 DashboardTelemetryEnabled(LiveReadingItemKind.GpuTemperature)
                     && LiveReadings?.GpuTemperatureCelsius is not null,
-                GpuTemperatureValue);
+                LiveReadings?.GpuTemperatureCelsius);
             if (temperatureValue.Length > 0)
             {
                 groups.Add(new LiveReadingGroupDisplayItem(
@@ -4820,11 +4851,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             _ => region.ToString(),
         };
 
+    private static string AmbientAwarenessRegionFragment(
+        AmbientAwarenessRegion region) => region switch
+        {
+            AmbientAwarenessRegion.Full => TrayText.Get("Fragment.FullScreen", "full screen"),
+            AmbientAwarenessRegion.Left => TrayText.Get("Fragment.Left", "left"),
+            AmbientAwarenessRegion.Top => TrayText.Get("Fragment.Top", "top"),
+            AmbientAwarenessRegion.Right => TrayText.Get("Fragment.Right", "right"),
+            AmbientAwarenessRegion.Bottom => TrayText.Get("Fragment.Bottom", "bottom"),
+            _ => region.ToString(),
+        };
+
     private static string LightingDirectionLabel(LightingDirection direction) =>
         direction switch
         {
             LightingDirection.Leftward => TrayText.Get("Leftward"),
             LightingDirection.Rightward => TrayText.Get("Rightward"),
+            _ => direction.ToString(),
+        };
+
+    private static string LightingDirectionFragment(LightingDirection direction) =>
+        direction switch
+        {
+            LightingDirection.Leftward => TrayText.Get("Fragment.Leftward", "leftward"),
+            LightingDirection.Rightward => TrayText.Get("Fragment.Rightward", "rightward"),
             _ => direction.ToString(),
         };
 
@@ -4837,12 +4887,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             _ => duration.ToString(),
         };
 
+    private static string ReactiveLightingDurationFragment(
+        ReactiveLightingDuration duration) => duration switch
+        {
+            ReactiveLightingDuration.Short => TrayText.Get("Fragment.Short", "short"),
+            ReactiveLightingDuration.Medium => TrayText.Get("Fragment.Medium", "medium"),
+            ReactiveLightingDuration.Long => TrayText.Get("Fragment.Long", "long"),
+            _ => duration.ToString(),
+        };
+
     private static string StarlightLightingDurationLabel(
         StarlightLightingDuration duration) => duration switch
         {
             StarlightLightingDuration.Short => TrayText.Get("Short"),
             StarlightLightingDuration.Medium => TrayText.Get("Medium"),
             StarlightLightingDuration.Long => TrayText.Get("Long"),
+            _ => duration.ToString(),
+        };
+
+    private static string StarlightLightingDurationFragment(
+        StarlightLightingDuration duration) => duration switch
+        {
+            StarlightLightingDuration.Short => TrayText.Get("Fragment.Short", "short"),
+            StarlightLightingDuration.Medium => TrayText.Get("Fragment.Medium", "medium"),
+            StarlightLightingDuration.Long => TrayText.Get("Fragment.Long", "long"),
             _ => duration.ToString(),
         };
 
@@ -5642,7 +5710,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (FanOverride is not null)
         {
             await ClearOverrideAsync(
-                LowerText(TrayText.Get("Fans")),
+                TrayText.Get("Fragment.Fans", "fans"),
                 cancellationToken => serviceClient.SetFanOverrideAsync(null, cancellationToken),
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
@@ -5650,7 +5718,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (PerformanceOverride is not null)
         {
             await ClearOverrideAsync(
-                LowerText(TrayText.Get("Performance")),
+                TrayText.Get("Fragment.Performance", "performance"),
                 cancellationToken => serviceClient.SetPerformanceOverrideAsync(null, cancellationToken),
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
@@ -5658,7 +5726,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (LightingOverride is not null)
         {
             await ClearOverrideAsync(
-                LowerText(TrayText.Get("Lighting")),
+                TrayText.Get("Fragment.Lighting", "lighting"),
                 cancellationToken => serviceClient.SetLightingOverrideAsync(null, cancellationToken),
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
@@ -5666,7 +5734,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (BatteryProtectionOverride is not null && HasConfirmedPowerSource)
         {
             await ClearOverrideAsync(
-                LowerText(TrayText.Get("Battery protection")),
+                TrayText.Get("Fragment.BatteryProtection", "battery protection"),
                 cancellationToken => serviceClient.SetBatteryProtectionAsync(
                     GetProfile(ActivePowerSource).EffectiveBatteryProtectionEnabled,
                     cancellationToken),
@@ -5676,7 +5744,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (BatteryPolicyOverride is not null)
         {
             await ClearOverrideAsync(
-                LowerText(TrayText.Get("Charge limit")),
+                TrayText.Get("Fragment.ChargeLimit", "charge limit"),
                 cancellationToken => serviceClient.SetBatteryPolicyAsync(
                     Profiles.BatteryPolicy,
                     cancellationToken),
@@ -5693,23 +5761,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             List<string> notCleared = [];
             if (status.PerformanceOverride is not null)
             {
-                notCleared.Add(LowerText(TrayText.Get("Performance")));
+                notCleared.Add(TrayText.Get("Fragment.Performance", "performance"));
             }
             if (status.FanOverride is not null)
             {
-                notCleared.Add(LowerText(TrayText.Get("Fans")));
+                notCleared.Add(TrayText.Get("Fragment.Fans", "fans"));
             }
             if (status.LightingOverride is not null)
             {
-                notCleared.Add(LowerText(TrayText.Get("Lighting")));
+                notCleared.Add(TrayText.Get("Fragment.Lighting", "lighting"));
             }
             if (status.BatteryProtectionOverride is not null)
             {
-                notCleared.Add(LowerText(TrayText.Get("Battery protection")));
+                notCleared.Add(TrayText.Get("Fragment.BatteryProtection", "battery protection"));
             }
             if (status.BatteryPolicyOverride is not null)
             {
-                notCleared.Add(LowerText(TrayText.Get("Charge limit")));
+                notCleared.Add(TrayText.Get("Fragment.ChargeLimit", "charge limit"));
             }
 
             message = notCleared.Count > 0
@@ -7598,26 +7666,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ReactiveLightingParameters reactive =>
                 TrayText.Format(
                     "{0}, {1}",
-                    LowerText(ReactiveLightingDurationLabel(reactive.Duration)),
+                    ReactiveLightingDurationFragment(reactive.Duration),
                     FormatColor(lighting.Color)),
             RippleLightingParameters => FormatColor(lighting.Color),
             TidalLightingParameters { RandomColors: true } tidal =>
                 TrayText.Format(
                     "random colors, {0}",
-                    LowerText(LightingDirectionLabel(tidal.Direction))),
+                    LightingDirectionFragment(tidal.Direction)),
             TidalLightingParameters tidal =>
                 TrayText.Format(
                     "{0} and {1}, {2}",
                     FormatColor(tidal.PrimaryColor),
                     FormatColor(tidal.SecondaryColor),
-                    LowerText(LightingDirectionLabel(tidal.Direction))),
+                    LightingDirectionFragment(tidal.Direction)),
             StarlightLightingParameters
             {
                 ColorMode: StarlightColorMode.Random,
             } starlight =>
                 TrayText.Format(
                     "random colors, {0}",
-                    LowerText(StarlightLightingDurationLabel(starlight.Duration))),
+                    StarlightLightingDurationFragment(starlight.Duration)),
             StarlightLightingParameters
             {
                 ColorMode: StarlightColorMode.Dual,
@@ -7627,20 +7695,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     "{0} and {1}, {2}",
                     FormatColor(lighting.Color),
                     FormatColor(secondary),
-                    LowerText(StarlightLightingDurationLabel(starlight.Duration))),
+                    StarlightLightingDurationFragment(starlight.Duration)),
             StarlightLightingParameters starlight =>
                 TrayText.Format(
                     "{0}, {1}",
                     FormatColor(lighting.Color),
-                    LowerText(StarlightLightingDurationLabel(starlight.Duration))),
+                    StarlightLightingDurationFragment(starlight.Duration)),
             WaveLightingParameters wave =>
-                LowerText(LightingDirectionLabel(wave.Direction)),
+                LightingDirectionFragment(wave.Direction),
             WheelLightingParameters wheel =>
                 FormatRotationDirection(wheel.Direction),
             AmbientAwarenessLightingParameters ambient =>
                 ambient.Region == AmbientAwarenessRegion.Full
-                    ? LowerText(TrayText.Get("Full screen"))
-                    : LowerText(AmbientAwarenessRegionLabel(ambient.Region)),
+                    ? TrayText.Get("Fragment.FullScreen", "full screen")
+                    : AmbientAwarenessRegionFragment(ambient.Region),
             AudioMeterLightingParameters audioMeter =>
                 TrayText.Format(
                     "color boost {0}, smoothing: {1}",
@@ -7656,9 +7724,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static string FormatColor(RgbColor color) =>
         $"#{color.Red:X2}{color.Green:X2}{color.Blue:X2}";
-
-    private static string LowerText(string value) =>
-        value.ToLower(CultureInfo.CurrentUICulture);
 
     private static string FormatAudioMeterDecay(int milliseconds) => milliseconds switch
     {
@@ -7901,7 +7966,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ? TrayText.Get("Ambient Awareness, full screen")
             : TrayText.Format(
                 "Ambient Awareness, {0}",
-                LowerText(AmbientAwarenessRegionLabel(ambient.Region))),
+                AmbientAwarenessRegionFragment(ambient.Region)),
         {
             Effect: LightingEffect.Breathing,
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Dual },
@@ -7916,7 +7981,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Parameters: ReactiveLightingParameters reactive,
         } => TrayText.Format(
             "Reactive, {0}",
-            LowerText(ReactiveLightingDurationLabel(reactive.Duration))),
+            ReactiveLightingDurationFragment(reactive.Duration)),
         { Effect: LightingEffect.Ripple } => TrayText.Get("Ripple"),
         {
             Effect: LightingEffect.Tidal,
@@ -7932,7 +7997,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             } starlight,
         } => TrayText.Format(
             "Starlight, two colors, {0}",
-            LowerText(StarlightLightingDurationLabel(starlight.Duration))),
+            StarlightLightingDurationFragment(starlight.Duration)),
         {
             Effect: LightingEffect.Starlight,
             Parameters: StarlightLightingParameters
@@ -7941,19 +8006,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             } starlight,
         } => TrayText.Format(
             "Starlight, random colors, {0}",
-            LowerText(StarlightLightingDurationLabel(starlight.Duration))),
+            StarlightLightingDurationFragment(starlight.Duration)),
         {
             Effect: LightingEffect.Starlight,
             Parameters: StarlightLightingParameters starlight,
         } => TrayText.Format(
             "Starlight, one color, {0}",
-            LowerText(StarlightLightingDurationLabel(starlight.Duration))),
+            StarlightLightingDurationFragment(starlight.Duration)),
         {
             Effect: LightingEffect.Wave,
             Parameters: WaveLightingParameters wave,
         } => TrayText.Format(
             "Wave, {0}",
-            LowerText(LightingDirectionLabel(wave.Direction))),
+            LightingDirectionFragment(wave.Direction)),
         {
             Effect: LightingEffect.Wheel,
             Parameters: WheelLightingParameters wheel,
@@ -8458,9 +8523,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static string FormatDashboardTemperatures(
         bool showCpu,
-        string cpuValue,
+        int? cpuCelsius,
         bool showGpu,
-        string gpuValue)
+        int? gpuCelsius)
     {
         if (!showCpu && !showGpu)
         {
@@ -8469,16 +8534,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         if (showCpu
             && showGpu
-            && string.Equals(cpuValue, UnavailableLabel, StringComparison.Ordinal)
-            && string.Equals(gpuValue, UnavailableLabel, StringComparison.Ordinal))
+            && cpuCelsius is null
+            && gpuCelsius is null)
         {
             return UnavailableLabel;
         }
 
         string[] values =
         [
-            showCpu ? TrayText.Format("CPU {0}", cpuValue) : string.Empty,
-            showGpu ? TrayText.Format("GPU {0}", gpuValue) : string.Empty,
+            showCpu ? TrayText.Format("CPU {0}", FormatTemperatureValue(cpuCelsius)) : string.Empty,
+            showGpu ? TrayText.Format("GPU {0}", FormatTemperatureValue(gpuCelsius)) : string.Empty,
         ];
         return string.Join(
             TrayText.Get(" / "),

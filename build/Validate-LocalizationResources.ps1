@@ -183,18 +183,31 @@ function Assert-ManagedResourceCalls {
     $catalog = Read-ResourceCatalog $CatalogPath
     $pattern = [regex]::Escape($Accessor) +
         '\.(?:Get|Format)\(\s*"(?<key>(?:[^"\\]|\\.)*)"'
+    $literalFallbackPattern = [regex]::Escape($Accessor) +
+        '\.Get\(\s*"(?<key>(?:[^"\\]|\\.)*)"\s*,\s*"(?<value>(?:[^"\\]|\\.)*)"'
     foreach ($codePath in @(Get-ChildItem $SourceRoot -Filter '*.cs' -File -Recurse |
             Where-Object FullName -notmatch '\\(?:bin|obj)\\')) {
         $code = [IO.File]::ReadAllText(
             $codePath.FullName,
             [Text.UTF8Encoding]::new($false, $true))
+        $literalFallbacks = @{}
+        foreach ($match in [regex]::Matches($code, $literalFallbackPattern)) {
+            $key = [Text.RegularExpressions.Regex]::Unescape($match.Groups['key'].Value)
+            $value = [Text.RegularExpressions.Regex]::Unescape($match.Groups['value'].Value)
+            $literalFallbacks[$key] = $value
+        }
         foreach ($match in [regex]::Matches($code, $pattern)) {
             $key = [Text.RegularExpressions.Regex]::Unescape($match.Groups['key'].Value)
             if (-not $catalog.Contains($key)) {
                 throw "$($codePath.FullName) requires missing managed resource '$key'."
             }
-            if ($catalog[$key] -ne $key) {
-                throw "$CatalogPath must use authoritative en-US value '$key'."
+            $authoritativeValue = if ($literalFallbacks.ContainsKey($key)) {
+                $literalFallbacks[$key]
+            } else {
+                $key
+            }
+            if ($catalog[$key] -ne $authoritativeValue) {
+                throw "$CatalogPath must use authoritative en-US value '$authoritativeValue' for '$key'."
             }
         }
     }
@@ -363,20 +376,24 @@ foreach ($match in [regex]::Matches(
     }
 }
 
-$trayCodePattern = 'LocalizedResources\.(?:Get|Format)\(\s*"(?<key>(?:[^"\\]|\\.)*)"\s*,\s*"(?<value>(?:[^"\\]|\\.)*)"'
+$trayKeyPattern = 'LocalizedResources\.(?:Get|Format)\(\s*"(?<key>(?:[^"\\]|\\.)*)"\s*,'
+$trayLiteralFallbackPattern = $trayKeyPattern + '\s*"(?<value>(?:[^"\\]|\\.)*)"'
 foreach ($codePath in @(Get-ChildItem (Join-Path $Repository 'src\OpenBlade.Tray') `
         -Filter '*.cs' -File -Recurse | Where-Object FullName -notmatch '\\(?:bin|obj)\\')) {
     $code = [IO.File]::ReadAllText($codePath.FullName, [Text.UTF8Encoding]::new($false, $true))
-    foreach ($match in [regex]::Matches($code, $trayCodePattern)) {
+    foreach ($match in [regex]::Matches($code, $trayKeyPattern)) {
         $key = [Text.RegularExpressions.Regex]::Unescape($match.Groups['key'].Value)
-        $fallback = [Text.RegularExpressions.Regex]::Unescape($match.Groups['value'].Value)
         if (-not $trayEnglish.Contains($key)) {
             throw "$($codePath.FullName) requires missing en-US resource '$key'."
         }
+        [void]$requiredTrayKeys.Add($key)
+    }
+    foreach ($match in [regex]::Matches($code, $trayLiteralFallbackPattern)) {
+        $key = [Text.RegularExpressions.Regex]::Unescape($match.Groups['key'].Value)
+        $fallback = [Text.RegularExpressions.Regex]::Unescape($match.Groups['value'].Value)
         if ($trayEnglish[$key] -ne $fallback) {
             throw "$($codePath.FullName) fallback does not match en-US resource '$key'."
         }
-        [void]$requiredTrayKeys.Add($key)
     }
 }
 foreach ($key in $trayEnglish.Keys) {
@@ -385,4 +402,4 @@ foreach ($key in $trayEnglish.Keys) {
     }
 }
 
-Write-Host "Localization resources passed: $($trayEnglish.Count) tray properties and $($installerEnglish.Count) installer strings."
+Write-Host "Localization resources passed: $($trayEnglish.Count) tray resources and $($installerEnglish.Count) installer strings."

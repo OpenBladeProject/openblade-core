@@ -1776,6 +1776,48 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void LocalizationSnapshotsDoNotActivateDormantApplicationResources()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string capture = ReadRepositoryFile("build", "Capture-LocalizationSnapshots.ps1");
+
+        Assert.DoesNotContain("InitializeComponent()", app, StringComparison.Ordinal);
+        Assert.Contains(
+            "Root.ActualTheme == ElementTheme.Dark",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "LaptopPageContent.Transitions.Clear()",
+            window,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Application.Current.Resources[",
+            window,
+            StringComparison.Ordinal);
+        int activate = app.IndexOf("snapshotMainWindow.Activate()", StringComparison.Ordinal);
+        int initialLayoutDrain = app.IndexOf(
+            "await WaitForSnapshotLayoutAsync()",
+            activate,
+            StringComparison.Ordinal);
+        int pageLoop = app.IndexOf(
+            "foreach (string destination",
+            activate,
+            StringComparison.Ordinal);
+        Assert.True(activate >= 0 && activate < initialLayoutDrain);
+        Assert.True(initialLayoutDrain < pageLoop);
+        Assert.Contains(
+            "OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains("foreach ($trayPage", capture, StringComparison.Ordinal);
+        Assert.Contains(
+            "$env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $trayPage",
+            capture,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MainWindowLoadsThemeBeforeWatchingAndOwnsPreferenceSaveLifetime()
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");

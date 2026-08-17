@@ -29,6 +29,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         "--responsive-choice-selector-smoke";
     private const string LocalizationSnapshotDirectoryVariable =
         "OPENBLADE_LOCALIZATION_SNAPSHOT_DIR";
+    private const string LocalizationSnapshotPageVariable =
+        "OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE";
     private const string LocalizationLanguageVariable =
         "OPENBLADE_LOCALIZATION_LANGUAGE";
     private const string PerformanceNotificationReplacementTag = "performance";
@@ -58,12 +60,6 @@ public partial class App : Microsoft.UI.Xaml.Application
     static App()
     {
         ApplyLocalizationEnvironmentOverride();
-    }
-
-    public App()
-    {
-        ApplyLocalizationEnvironmentOverride();
-        InitializeComponent();
     }
 
     public bool ExitRequested => exitLifecycle?.ExitRequested == true;
@@ -380,7 +376,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             snapshotMainWindow = MainWindow.CreateLocalizationSnapshot();
             snapshotMainWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 820));
             snapshotMainWindow.Activate();
-            foreach (string destination in new[]
+            await WaitForSnapshotLayoutAsync();
+            string[] mainDestinations =
             {
                 "home",
                 "profiles",
@@ -389,7 +386,26 @@ public partial class App : Microsoft.UI.Xaml.Application
                 "display",
                 "settings",
                 "about",
-            })
+            };
+            string? requestedPage = Environment.GetEnvironmentVariable(
+                LocalizationSnapshotPageVariable);
+            if (!string.IsNullOrWhiteSpace(requestedPage)
+                && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
+                && !string.Equals(
+                    requestedPage,
+                    "tray-dashboard",
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Unknown localization snapshot page '{requestedPage}'.");
+            }
+            IEnumerable<string> destinations = string.IsNullOrWhiteSpace(requestedPage)
+                ? mainDestinations
+                : mainDestinations.Where(destination => string.Equals(
+                    destination,
+                    requestedPage,
+                    StringComparison.Ordinal));
+            foreach (string destination in destinations)
             {
                 snapshotMainWindow.SelectLocalizationSnapshotPage(destination);
                 await WaitForSnapshotLayoutAsync();
@@ -398,30 +414,37 @@ public partial class App : Microsoft.UI.Xaml.Application
                     Path.Combine(resolvedDirectory, $"main-{destination}.png"));
             }
 
-            snapshotDashboardWindow = new TrayDashboardWindow(
-                snapshotMainWindow.ViewModel,
-                WindowNative.GetWindowHandle(snapshotMainWindow),
-                _ => { });
-            TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
-            snapshotDashboardWindow.ApplyPreferences(defaults with
+            if (string.IsNullOrWhiteSpace(requestedPage)
+                || string.Equals(
+                    requestedPage,
+                    "tray-dashboard",
+                    StringComparison.Ordinal))
             {
-                Controls = defaults.Controls!
-                    .Select(control => control with { IsVisible = true })
-                    .ToArray(),
-                StatusItems = defaults.StatusItems!
-                    .Select(status => status with { IsVisible = true })
-                    .ToArray(),
-                Sliders = defaults.Sliders!
-                    .Select(slider => slider with { IsVisible = true })
-                    .ToArray(),
-            });
-            snapshotDashboardWindow.AppWindow.Resize(
-                new Windows.Graphics.SizeInt32(430, 760));
-            snapshotDashboardWindow.Activate();
-            await WaitForSnapshotLayoutAsync();
-            await SaveSnapshotAsync(
-                snapshotDashboardWindow.Content,
-                Path.Combine(resolvedDirectory, "tray-dashboard.png"));
+                snapshotDashboardWindow = new TrayDashboardWindow(
+                    snapshotMainWindow.ViewModel,
+                    WindowNative.GetWindowHandle(snapshotMainWindow),
+                    _ => { });
+                TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
+                snapshotDashboardWindow.ApplyPreferences(defaults with
+                {
+                    Controls = defaults.Controls!
+                        .Select(control => control with { IsVisible = true })
+                        .ToArray(),
+                    StatusItems = defaults.StatusItems!
+                        .Select(status => status with { IsVisible = true })
+                        .ToArray(),
+                    Sliders = defaults.Sliders!
+                        .Select(slider => slider with { IsVisible = true })
+                        .ToArray(),
+                });
+                snapshotDashboardWindow.AppWindow.Resize(
+                    new Windows.Graphics.SizeInt32(430, 760));
+                snapshotDashboardWindow.Activate();
+                await WaitForSnapshotLayoutAsync();
+                await SaveSnapshotAsync(
+                    snapshotDashboardWindow.Content,
+                    Path.Combine(resolvedDirectory, "tray-dashboard.png"));
+            }
 
             await File.WriteAllTextAsync(
                 reportPath,
@@ -463,7 +486,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private static async Task WaitForSnapshotLayoutAsync()
     {
         // Let the built-in navigation transition finish before capturing geometry.
-        await Task.Delay(750);
+        await Task.Delay(1500);
         await Task.Yield();
     }
 

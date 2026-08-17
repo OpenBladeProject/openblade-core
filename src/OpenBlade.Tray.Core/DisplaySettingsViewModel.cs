@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using OpenBlade.Contracts;
 
@@ -13,6 +14,13 @@ public sealed record DisplayColorProfileOption(
     string Key,
     string Label);
 
+public enum DisplaySettingsFailureKind
+{
+    None,
+    SessionAgentUnavailable,
+    ControlsUnavailable,
+}
+
 public sealed record DisplaySettingsSnapshot(
     bool IsAvailable,
     IReadOnlyList<DisplayRefreshRateOption> RefreshRateOptions,
@@ -26,7 +34,8 @@ public sealed record DisplaySettingsSnapshot(
     string? DisplayName = null,
     int Width = 0,
     int Height = 0,
-    int? BitsPerColorChannel = null);
+    int? BitsPerColorChannel = null,
+    DisplaySettingsFailureKind FailureKind = DisplaySettingsFailureKind.None);
 
 public sealed class DisplayProfileSettingsChangedEventArgs(
     PowerSource powerSource,
@@ -70,7 +79,7 @@ public sealed class UnavailableDisplaySettingsAdapter : IDisplaySettingsAdapter
 {
     public static UnavailableDisplaySettingsAdapter Instance { get; } = new();
 
-    private static readonly DisplaySettingsSnapshot UnavailableState = new(
+    private static DisplaySettingsSnapshot UnavailableState => new(
         IsAvailable: false,
         RefreshRateOptions: [],
         SelectedRefreshRateKey: null,
@@ -110,9 +119,9 @@ public sealed class UnavailableDisplaySettingsAdapter : IDisplaySettingsAdapter
 
 public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
-    private static readonly string HdrColorProfileMessage =
+    private static string HdrColorProfileMessage =>
         TrayText.Get("Turn off HDR to change color profiles.");
-    private static readonly string DefaultColorProfileMessage =
+    private static string DefaultColorProfileMessage =>
         TrayText.Get("Choose the color profile used by the built-in display.");
 
     private readonly IDisplaySettingsAdapter adapter;
@@ -385,10 +394,15 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         string? previousColorProfile = SelectedColorProfile?.Key;
         bool previousHdr = IsHdrEnabled;
         bool hadPriorState = IsAvailable;
+        bool refreshSucceeded = false;
 
-        await RunSerializedAsync(adapter.GetStateAsync, token, showBusy: false);
+        await RunSerializedAsync(
+            adapter.GetStateAsync,
+            token,
+            state => refreshSucceeded = state.OperationSucceeded,
+            showBusy: false);
 
-        if (!IsAvailable)
+        if (!refreshSucceeded || !IsAvailable)
         {
             return;
         }
@@ -569,7 +583,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             await operationGate.WaitAsync(linkedCancellation.Token);
             enteredGate = true;
             DisplaySettingsSnapshot state = await operation(linkedCancellation.Token);
-            Apply(state);
+            Apply(state, isRefresh: !showBusy);
             applied?.Invoke(state);
         }
         catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
@@ -642,12 +656,18 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                     state.SelectedColorProfileKey,
                     StringComparison.Ordinal)));
 
-    private void Apply(DisplaySettingsSnapshot state)
+    private void Apply(DisplaySettingsSnapshot state, bool isRefresh)
     {
         ArgumentNullException.ThrowIfNull(state);
+        if (!state.OperationSucceeded && !string.IsNullOrWhiteSpace(state.StatusMessage))
+        {
+            Trace.TraceInformation(
+                "Display settings operation reported: {0}",
+                state.StatusMessage);
+        }
         if (IsAvailable && !state.OperationSucceeded && !state.IsAvailable)
         {
-            StatusMessage = TrayText.Get("Display settings could not be refreshed.");
+            StatusMessage = FailureMessage(state.FailureKind, isRefresh);
             return;
         }
 
@@ -671,11 +691,23 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         IsHdrSupported = state.IsHdrSupported;
         IsHdrEnabled = state.IsHdrEnabled;
         StatusMessage = !state.OperationSucceeded
-            ? TrayText.Get("Display setting failed.")
+            ? FailureMessage(state.FailureKind, isRefresh)
             : state.IsAvailable
                 ? FormatDisplayDetails(state)
                 : TrayText.Get("Display settings are unavailable.");
     }
+
+    private static string FailureMessage(
+        DisplaySettingsFailureKind failureKind,
+        bool isRefresh) => failureKind switch
+        {
+            DisplaySettingsFailureKind.SessionAgentUnavailable =>
+                TrayText.Get("The display session agent is not responding."),
+            DisplaySettingsFailureKind.ControlsUnavailable =>
+                TrayText.Get("Display controls are unavailable."),
+            _ when isRefresh => TrayText.Get("Display settings could not be refreshed."),
+            _ => TrayText.Get("Display setting failed."),
+        };
 
     private static string FormatDisplayDetails(DisplaySettingsSnapshot state)
     {

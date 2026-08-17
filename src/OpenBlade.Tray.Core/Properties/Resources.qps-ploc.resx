@@ -501,6 +501,9 @@
   <data name="Display available" xml:space="preserve">
     <value>[!! Díspláý áváíláblé ~~~~~~ !!]</value>
   </data>
+  <data name="Display controls are unavailable." xml:space="preserve">
+    <value>[!! Díspláý cóntróls áré únáváíláblé. ~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="Display setting failed." xml:space="preserve">
     <value>[!! Díspláý séttíng fáíléd. ~~~~~~~ !!]</value>
   </data>
@@ -1089,6 +1092,9 @@
   <data name="The active effect was set outside OpenBlade and cannot be read from firmware." xml:space="preserve">
     <value>[!! Thé áctívé éfféct wás sét óútsídé OpenBlade ánd cánnót bé réád fróm fírmwáré. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="The display session agent is not responding." xml:space="preserve">
+    <value>[!! Thé díspláý séssíón ágént ís nót réspóndíng. ~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
     <value>[!! Thé díágnóstíc sávér rétúrnéd án ínválíd résúlt. ~~~~~~~~~~~~~~~ !!]</value>
   </data>
@@ -1223,5 +1229,50 @@
   </data>
   <data name="Windows power mode" xml:space="preserve">
     <value>[!! Windows pówér módé ~~~~ !!]</value>
+  </data>
+  <data name="Fragment.BatteryProtection" xml:space="preserve">
+    <value>[!! báttérý prótéctíón ~~~~~~ !!]</value>
+  </data>
+  <data name="Fragment.Bottom" xml:space="preserve">
+    <value>[!! bóttóm ~~~ !!]</value>
+  </data>
+  <data name="Fragment.ChargeLimit" xml:space="preserve">
+    <value>[!! chárgé límít ~~~~ !!]</value>
+  </data>
+  <data name="Fragment.Fans" xml:space="preserve">
+    <value>[!! fáns ~~ !!]</value>
+  </data>
+  <data name="Fragment.FullScreen" xml:space="preserve">
+    <value>[!! fúll scréén ~~~~ !!]</value>
+  </data>
+  <data name="Fragment.Left" xml:space="preserve">
+    <value>[!! léft ~~ !!]</value>
+  </data>
+  <data name="Fragment.Leftward" xml:space="preserve">
+    <value>[!! léftwárd ~~~ !!]</value>
+  </data>
+  <data name="Fragment.Lighting" xml:space="preserve">
+    <value>[!! líghtíng ~~~ !!]</value>
+  </data>
+  <data name="Fragment.Long" xml:space="preserve">
+    <value>[!! lóng ~~ !!]</value>
+  </data>
+  <data name="Fragment.Medium" xml:space="preserve">
+    <value>[!! médíúm ~~~ !!]</value>
+  </data>
+  <data name="Fragment.Performance" xml:space="preserve">
+    <value>[!! pérfórmáncé ~~~~ !!]</value>
+  </data>
+  <data name="Fragment.Right" xml:space="preserve">
+    <value>[!! ríght ~~ !!]</value>
+  </data>
+  <data name="Fragment.Rightward" xml:space="preserve">
+    <value>[!! ríghtwárd ~~~~ !!]</value>
+  </data>
+  <data name="Fragment.Short" xml:space="preserve">
+    <value>[!! shórt ~~ !!]</value>
+  </data>
+  <data name="Fragment.Top" xml:space="preserve">
+    <value>[!! tóp ~~ !!]</value>
   </data>
 </root>

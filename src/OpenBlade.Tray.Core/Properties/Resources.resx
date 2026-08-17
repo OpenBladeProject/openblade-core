@@ -501,6 +501,9 @@
   <data name="Display available" xml:space="preserve">
     <value>Display available</value>
   </data>
+  <data name="Display controls are unavailable." xml:space="preserve">
+    <value>Display controls are unavailable.</value>
+  </data>
   <data name="Display setting failed." xml:space="preserve">
     <value>Display setting failed.</value>
   </data>
@@ -1089,6 +1092,9 @@
   <data name="The active effect was set outside OpenBlade and cannot be read from firmware." xml:space="preserve">
     <value>The active effect was set outside OpenBlade and cannot be read from firmware.</value>
   </data>
+  <data name="The display session agent is not responding." xml:space="preserve">
+    <value>The display session agent is not responding.</value>
+  </data>
   <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
     <value>The diagnostic saver returned an invalid result.</value>
   </data>
@@ -1223,5 +1229,50 @@
   </data>
   <data name="Windows power mode" xml:space="preserve">
     <value>Windows power mode</value>
+  </data>
+  <data name="Fragment.BatteryProtection" xml:space="preserve">
+    <value>battery protection</value>
+  </data>
+  <data name="Fragment.Bottom" xml:space="preserve">
+    <value>bottom</value>
+  </data>
+  <data name="Fragment.ChargeLimit" xml:space="preserve">
+    <value>charge limit</value>
+  </data>
+  <data name="Fragment.Fans" xml:space="preserve">
+    <value>fans</value>
+  </data>
+  <data name="Fragment.FullScreen" xml:space="preserve">
+    <value>full screen</value>
+  </data>
+  <data name="Fragment.Left" xml:space="preserve">
+    <value>left</value>
+  </data>
+  <data name="Fragment.Leftward" xml:space="preserve">
+    <value>leftward</value>
+  </data>
+  <data name="Fragment.Lighting" xml:space="preserve">
+    <value>lighting</value>
+  </data>
+  <data name="Fragment.Long" xml:space="preserve">
+    <value>long</value>
+  </data>
+  <data name="Fragment.Medium" xml:space="preserve">
+    <value>medium</value>
+  </data>
+  <data name="Fragment.Performance" xml:space="preserve">
+    <value>performance</value>
+  </data>
+  <data name="Fragment.Right" xml:space="preserve">
+    <value>right</value>
+  </data>
+  <data name="Fragment.Rightward" xml:space="preserve">
+    <value>rightward</value>
+  </data>
+  <data name="Fragment.Short" xml:space="preserve">
+    <value>short</value>
+  </data>
+  <data name="Fragment.Top" xml:space="preserve">
+    <value>top</value>
   </data>
 </root>

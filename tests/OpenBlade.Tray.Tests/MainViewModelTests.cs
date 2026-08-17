@@ -10,6 +10,35 @@ namespace OpenBlade.Tray.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public async Task LocalizedInstanceDefaultsFollowTheCurrentCulture()
+    {
+        string englishUnavailable;
+        string englishBatteryOption;
+        using (new CultureScope("en-US"))
+        {
+            await using var english = new MainViewModel(
+                new FakeServiceClient(),
+                new RecordingDispatcher());
+            englishUnavailable = english.CurrentBatterySettingLabel;
+            englishBatteryOption = english.ProfileComparisonOptions
+                .Single(option => option.Source == PowerSource.Battery)
+                .Label;
+        }
+
+        using var culture = new CultureScope("qps-ploc");
+        await using var pseudo = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+        Assert.StartsWith("[!! ", pseudo.CurrentBatterySettingLabel, StringComparison.Ordinal);
+        Assert.NotEqual(englishUnavailable, pseudo.CurrentBatterySettingLabel);
+        string pseudoBatteryOption = pseudo.ProfileComparisonOptions
+            .Single(option => option.Source == PowerSource.Battery)
+            .Label;
+        Assert.StartsWith("[!! ", pseudoBatteryOption, StringComparison.Ordinal);
+        Assert.NotEqual(englishBatteryOption, pseudoBatteryOption);
+    }
+
+    [Fact]
     public async Task ProfileRelationshipStatus_UsesTypedExternalChangesUnderPseudoCulture()
     {
         using var culture = new CultureScope("qps-ploc");

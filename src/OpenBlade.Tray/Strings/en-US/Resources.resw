@@ -1712,12 +1712,6 @@ OpenBlade did not retry any stop request.</value>
   <data name="Navigation_Settings" xml:space="preserve">
     <value>Settings</value>
   </data>
-  <data name="SpecialKey_Validation_UnknownKey" xml:space="preserve">
-    <value>Unknown shortcut key: {0}</value>
-  </data>
-  <data name="SpecialKey_Validation_UnknownModifier" xml:space="preserve">
-    <value>Unknown modifier: {0}</value>
-  </data>
   <data name="SpecialKey_ValueLabel_AppPath" xml:space="preserve">
     <value>App or file path</value>
   </data>
