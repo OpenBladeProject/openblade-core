@@ -30,8 +30,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Aligned compact switches across the main window and quick controls so their
-  tracks stay on the same right-hand axis.
+- Fixed the **Random colors** switch track alignment and made compact switch
+  alignment explicit across the main window and quick controls.
 - Expanded the graphical installer's progress details pane to use the available
   window height instead of remaining limited to a few log lines.
 - Offered **Repair** and **Uninstall** when an interactive installer finds one
