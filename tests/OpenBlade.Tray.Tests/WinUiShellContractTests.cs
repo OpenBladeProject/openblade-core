@@ -634,6 +634,35 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void TrayCardSwitchesUseCompactRightAlignedPresentation()
+    {
+        foreach (string file in new[] { "MainWindow.xaml", "TrayDashboardWindow.xaml" })
+        {
+            string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", file);
+            System.Text.RegularExpressions.MatchCollection switches =
+                System.Text.RegularExpressions.Regex.Matches(
+                    xaml,
+                    @"<ToggleSwitch\b[^>]*?/?>");
+
+            Assert.NotEmpty(switches);
+            foreach (System.Text.RegularExpressions.Match toggle in switches)
+            {
+                Assert.Contains(
+                    "HorizontalAlignment=\"Right\"",
+                    toggle.Value,
+                    StringComparison.Ordinal);
+                Assert.Contains(
+                    "VerticalAlignment=\"Center\"",
+                    toggle.Value,
+                    StringComparison.Ordinal);
+                Assert.Contains("MinWidth=\"0\"", toggle.Value, StringComparison.Ordinal);
+                Assert.Contains("OffContent=\"\"", toggle.Value, StringComparison.Ordinal);
+                Assert.Contains("OnContent=\"\"", toggle.Value, StringComparison.Ordinal);
+            }
+        }
+    }
+
+    [Fact]
     public void WindowsLightingOwnershipUsesCompactSettingsRow()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");

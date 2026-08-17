@@ -465,6 +465,8 @@
                                    Style="{StaticResource CardTitleStyle}"
                                    VerticalAlignment="Center" />
                         <ToggleSwitch Grid.Column="1"
+                                      HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
                                       IsOn="{x:Bind IsVisible, Mode=TwoWay}"
                                       IsEnabled="{x:Bind IsEnabled, Mode=OneWay}"
                                       MinWidth="0"
@@ -911,6 +913,7 @@
                                                    Style="{StaticResource CardTitleStyle}" />
                                     </StackPanel>
                                         <ToggleSwitch Grid.Column="1"
+                                                      VerticalAlignment="Center"
                                                       MinWidth="0"
                                                       OffContent=""
                                                       OnContent=""
@@ -1031,6 +1034,7 @@
                                                       AutomationProperties.Name="Applying battery protection" />
                                         <ToggleSwitch x:Uid="MainWindow_BatteryProtectionToggleText" x:Name="BatteryProtectionToggle"
                                                       HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
                                                       MinWidth="0"
                                                       AutomationProperties.Name="Battery protection"
                                                       OffContent=""
@@ -1339,6 +1343,7 @@
                                     </StackPanel>
                                     <ToggleSwitch x:Uid="MainWindow_WindowsDynamicLightingToggleText" x:Name="WindowsDynamicLightingToggle"
                                                   Grid.Column="1"
+                                                  HorizontalAlignment="Right"
                                                   MinWidth="0"
                                                   VerticalAlignment="Center"
                                                   AutomationProperties.Name="Let Windows Dynamic Lighting control the keyboard"
@@ -1580,7 +1585,11 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_ToggleSwitchRandomTidalColors" Grid.Column="1"
+                                                      HorizontalAlignment="Right"
                                                       VerticalAlignment="Center"
+                                                      MinWidth="0"
+                                                      OffContent=""
+                                                      OnContent=""
                                                       AutomationProperties.Name="Random Tidal colors"
                                                       IsOn="{x:Bind LightingRandomColorsEditor, Mode=TwoWay}" />
                                     </Grid>
@@ -3244,6 +3253,7 @@
                                     </StackPanel>
                                     <ToggleSwitch x:Uid="MainWindow_ToggleSwitchStartOpenBladeWhenISignIn" Grid.Column="1"
                                                   HorizontalAlignment="Right"
+                                                  VerticalAlignment="Center"
                                                   MinWidth="0"
                                                   AutomationProperties.Name="Start OpenBlade when I sign in"
                                                   OffContent=""
