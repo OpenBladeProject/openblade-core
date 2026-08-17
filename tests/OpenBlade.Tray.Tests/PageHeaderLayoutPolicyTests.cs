@@ -57,6 +57,19 @@ public sealed class PageHeaderLayoutPolicyTests
     }
 
     [Fact]
+    public void OverwideSingleActionUsesVerticalLowerRow()
+    {
+        PageHeaderProfileActionPlacement placement = PageHeaderLayoutPolicy.Resolve(
+            availableWidth: 360,
+            titleWidth: 120,
+            profileActionsWidth: 540,
+            customizeWidth: 110,
+            profileActionsVisible: true);
+
+        Assert.Equal(PageHeaderProfileActionPlacement.LowerRowVertical, placement);
+    }
+
+    [Fact]
     public void HiddenActionsDoNotReserveAHeaderRow()
     {
         PageHeaderProfileActionPlacement placement = PageHeaderLayoutPolicy.Resolve(
@@ -71,7 +84,6 @@ public sealed class PageHeaderLayoutPolicyTests
 
     [Theory]
     [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
     [InlineData(0)]
     public void InvalidMeasurementsFailToVerticalLowerRow(double invalidWidth)
     {
@@ -83,5 +95,18 @@ public sealed class PageHeaderLayoutPolicyTests
             profileActionsVisible: true);
 
         Assert.Equal(PageHeaderProfileActionPlacement.LowerRowVertical, placement);
+    }
+
+    [Fact]
+    public void UnconstrainedMeasureUsesTitleRow()
+    {
+        PageHeaderProfileActionPlacement placement = PageHeaderLayoutPolicy.Resolve(
+            availableWidth: double.PositiveInfinity,
+            titleWidth: 140,
+            profileActionsWidth: 310,
+            customizeWidth: 110,
+            profileActionsVisible: true);
+
+        Assert.Equal(PageHeaderProfileActionPlacement.TitleRow, placement);
     }
 }

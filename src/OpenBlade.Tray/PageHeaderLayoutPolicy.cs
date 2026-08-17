@@ -25,10 +25,19 @@ internal static class PageHeaderLayoutPolicy
             return PageHeaderProfileActionPlacement.Hidden;
         }
 
-        if (!IsUsableWidth(availableWidth)
-            || !IsUsableWidth(titleWidth)
+        if (!IsUsableWidth(titleWidth)
             || !IsUsableWidth(profileActionsWidth)
             || !IsUsableWidth(customizeWidth))
+        {
+            return PageHeaderProfileActionPlacement.LowerRowVertical;
+        }
+
+        if (double.IsPositiveInfinity(availableWidth))
+        {
+            return PageHeaderProfileActionPlacement.TitleRow;
+        }
+
+        if (!IsUsableWidth(availableWidth))
         {
             return PageHeaderProfileActionPlacement.LowerRowVertical;
         }

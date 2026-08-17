@@ -12,6 +12,13 @@ using OpenBlade.Session;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 using WinRT.Interop;
+using XamlButton = Microsoft.UI.Xaml.Controls.Button;
+using XamlColumnDefinition = Microsoft.UI.Xaml.Controls.ColumnDefinition;
+using XamlGrid = Microsoft.UI.Xaml.Controls.Grid;
+using XamlOrientation = Microsoft.UI.Xaml.Controls.Orientation;
+using XamlRowDefinition = Microsoft.UI.Xaml.Controls.RowDefinition;
+using XamlStackPanel = Microsoft.UI.Xaml.Controls.StackPanel;
+using XamlTextBlock = Microsoft.UI.Xaml.Controls.TextBlock;
 
 namespace OpenBlade.Tray;
 
@@ -25,6 +32,8 @@ internal enum StartOpenBladeResult
 public partial class App : Microsoft.UI.Xaml.Application
 {
     private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
+    private const string ResponsivePageHeaderSmokeArgument =
+        "--responsive-page-header-smoke";
     private const string ResponsiveChoiceSelectorSmokeArgument =
         "--responsive-choice-selector-smoke";
     private const string LocalizationSnapshotDirectoryVariable =
@@ -82,6 +91,12 @@ public partial class App : Microsoft.UI.Xaml.Application
                 localizationSnapshotDirectory,
                 pseudoLocalizationRequested,
                 localizationLanguage);
+            return;
+        }
+        if (commandLineArguments is
+            [_, ResponsivePageHeaderSmokeArgument, string headerSmokeReportPath])
+        {
+            _ = RunResponsivePageHeaderSmokeAsync(headerSmokeReportPath);
             return;
         }
         if (commandLineArguments is
@@ -585,6 +600,244 @@ public partial class App : Microsoft.UI.Xaml.Application
         byte[] encoded = new byte[checked((int)stream.Size)];
         reader.ReadBytes(encoded);
         await File.WriteAllBytesAsync(path, encoded);
+    }
+
+    private static async Task RunResponsivePageHeaderSmokeAsync(string smokeReportPath)
+    {
+        try
+        {
+            File.WriteAllText(smokeReportPath, "construct responsive page header");
+            var smokeWindow = new MainWindow();
+            FrameworkElement root = smokeWindow.Content as FrameworkElement
+                ?? throw new InvalidOperationException("The main window root was not created.");
+            Style titleStyle = (Style)root.Resources["PageHeaderTitleStyle"];
+            Style saveStyle = (Style)root.Resources["ProfileSaveButtonStyle"];
+            Style secondaryStyle = (Style)root.Resources["PageHeaderSecondaryButtonStyle"];
+
+            var header = new ResponsivePageHeader
+            {
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
+                Width = 420,
+            };
+            header.RowDefinitions.Add(new XamlRowDefinition { Height = GridLength.Auto });
+            header.RowDefinitions.Add(new XamlRowDefinition { Height = GridLength.Auto });
+            header.ColumnDefinitions.Add(new XamlColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star),
+            });
+            header.ColumnDefinitions.Add(new XamlColumnDefinition { Width = GridLength.Auto });
+            header.ColumnDefinitions.Add(new XamlColumnDefinition { Width = GridLength.Auto });
+
+            var title = new XamlTextBlock
+            {
+                Style = titleStyle,
+                Text = "Display",
+            };
+            ResponsivePageHeader.SetRole(title, ResponsivePageHeaderElementRole.Title);
+            header.Children.Add(title);
+
+            var save = new XamlButton
+            {
+                Content = "Save these current settings to an extraordinarily long USB-C power profile with additional localized wording",
+                Style = saveStyle,
+                Visibility = Visibility.Visible,
+                Width = 300,
+            };
+            var restore = new XamlButton
+            {
+                Content = "Restore this extraordinarily long localized profile configuration and discard the current settings",
+                Style = secondaryStyle,
+                Visibility = Visibility.Collapsed,
+                Width = 300,
+            };
+            var actions = new XamlStackPanel
+            {
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right,
+                Orientation = XamlOrientation.Horizontal,
+                Spacing = 8,
+                VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
+                Visibility = Visibility.Visible,
+            };
+            actions.Children.Add(save);
+            actions.Children.Add(restore);
+            XamlGrid.SetColumn(actions, 1);
+            ResponsivePageHeader.SetRole(
+                actions,
+                ResponsivePageHeaderElementRole.ProfileActions);
+            header.Children.Add(actions);
+
+            var customize = new XamlButton
+            {
+                Content = "Customize",
+                Style = secondaryStyle,
+            };
+            XamlGrid.SetColumn(customize, 2);
+            ResponsivePageHeader.SetRole(
+                customize,
+                ResponsivePageHeaderElementRole.Customize);
+            header.Children.Add(customize);
+
+            var host = new XamlGrid
+            {
+                Padding = new Thickness(24),
+            };
+            host.Children.Add(header);
+            smokeWindow.Content = host;
+            smokeWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1400, 600));
+            var loaded = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            header.Loaded += (_, _) => loaded.TrySetResult(true);
+            smokeWindow.Activate();
+            await loaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            File.WriteAllText(smokeReportPath, "verify save-only horizontal layout");
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHorizontalLowerRow(actions),
+                "The Save-only action counted its collapsed Restore sibling.");
+            RequireResponsivePageHeader(
+                actions.ActualWidth <= header.ActualWidth + 0.5
+                    && save.ActualWidth <= header.ActualWidth + 0.5
+                    && save.ActualHeight > 32,
+                "The long Save-only action did not wrap within the header width.");
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHorizontalLowerRow(actions),
+                "The long Save-only action changed placement after a repeated layout pass.");
+
+            File.WriteAllText(smokeReportPath, "verify wide and narrow round trip");
+            header.Width = 1300;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsTitleRow(actions),
+                "The Save-only action did not return to the title row when it fit.");
+            save.Width = double.NaN;
+            header.Width = 360;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsVerticalLowerRow(actions, header.ActualWidth),
+                "The Save-only action did not return to the vertical lower row.");
+
+            File.WriteAllText(smokeReportPath, "verify long restore-only layout");
+            save.Visibility = Visibility.Collapsed;
+            restore.Visibility = Visibility.Visible;
+            restore.Width = double.NaN;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsVerticalLowerRow(actions, header.ActualWidth),
+                "A long Restore-only action did not use the vertical lower row.");
+            RequireResponsivePageHeader(
+                actions.ActualWidth <= header.ActualWidth + 0.5
+                    && restore.ActualWidth <= header.ActualWidth + 0.5
+                    && restore.ActualHeight > 32,
+                "The long Restore-only action did not wrap within the header width.");
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsVerticalLowerRow(actions, header.ActualWidth),
+                "The long Restore-only action changed placement after a repeated layout pass.");
+
+            File.WriteAllText(smokeReportPath, "verify empty transition layout");
+            restore.Visibility = Visibility.Collapsed;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHiddenProfileActionSlot(actions),
+                "An action group with no visible Save or Restore action reserved a lower row.");
+
+            File.WriteAllText(smokeReportPath, "verify restore-only sibling exclusion");
+            header.Width = 420;
+            restore.Width = 300;
+            restore.Visibility = Visibility.Visible;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHorizontalLowerRow(actions),
+                "The Restore-only action counted its collapsed Save sibling.");
+
+            File.WriteAllText(smokeReportPath, "verify both actions move together");
+            save.Width = 300;
+            save.Visibility = Visibility.Visible;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsVerticalLowerRow(actions, header.ActualWidth),
+                "Visible Save and Restore actions did not move together to the vertical lower row.");
+
+            File.WriteAllText(smokeReportPath, "verify complete state round trip");
+            restore.Visibility = Visibility.Collapsed;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHorizontalLowerRow(actions),
+                "The header did not restore its original Save-only horizontal layout.");
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHorizontalLowerRow(actions),
+                "The restored Save-only layout changed after a repeated layout pass.");
+
+            smokeWindow.Close();
+            File.WriteAllText(smokeReportPath, "completed");
+            Environment.Exit(0);
+        }
+        catch (Exception exception)
+        {
+            File.WriteAllText(smokeReportPath, exception.ToString());
+            Environment.Exit(1);
+        }
+    }
+
+    private static async Task DrainResponsiveHeaderLayoutAsync(
+        ResponsivePageHeader header)
+    {
+        header.UpdateLayout();
+        await DrainDispatcherAsync(header.DispatcherQueue);
+        header.UpdateLayout();
+        await DrainDispatcherAsync(header.DispatcherQueue);
+    }
+
+    private static bool IsTitleRow(XamlStackPanel actions) =>
+        XamlGrid.GetRow(actions) == 0
+        && XamlGrid.GetColumn(actions) == 1
+        && XamlGrid.GetColumnSpan(actions) == 1
+        && actions.Orientation == XamlOrientation.Horizontal
+        && actions.HorizontalAlignment == Microsoft.UI.Xaml.HorizontalAlignment.Right
+        && actions.Margin.Top == 0
+        && actions.Margin.Right == PageHeaderLayoutPolicy.InterActionGroupGapDip
+        && double.IsPositiveInfinity(actions.MaxWidth);
+
+    private static bool IsHorizontalLowerRow(XamlStackPanel actions) =>
+        XamlGrid.GetRow(actions) == 1
+        && XamlGrid.GetColumn(actions) == 0
+        && XamlGrid.GetColumnSpan(actions) == 3
+        && actions.Orientation == XamlOrientation.Horizontal
+        && actions.HorizontalAlignment == Microsoft.UI.Xaml.HorizontalAlignment.Stretch
+        && actions.Margin.Top == 12
+        && actions.Margin.Right == 0
+        && double.IsPositiveInfinity(actions.MaxWidth);
+
+    private static bool IsVerticalLowerRow(
+        XamlStackPanel actions,
+        double availableWidth) =>
+        XamlGrid.GetRow(actions) == 1
+        && XamlGrid.GetColumn(actions) == 0
+        && XamlGrid.GetColumnSpan(actions) == 3
+        && actions.Orientation == XamlOrientation.Vertical
+        && actions.HorizontalAlignment == Microsoft.UI.Xaml.HorizontalAlignment.Stretch
+        && actions.Margin.Top == 12
+        && actions.Margin.Right == 0
+        && Math.Abs(actions.MaxWidth - availableWidth) < 0.5;
+
+    private static bool IsHiddenProfileActionSlot(XamlStackPanel actions) =>
+        XamlGrid.GetRow(actions) == 0
+        && XamlGrid.GetColumn(actions) == 1
+        && XamlGrid.GetColumnSpan(actions) == 1
+        && actions.Orientation == XamlOrientation.Horizontal
+        && actions.HorizontalAlignment == Microsoft.UI.Xaml.HorizontalAlignment.Right
+        && actions.Margin == new Thickness(0)
+        && double.IsPositiveInfinity(actions.MaxWidth);
+
+    private static void RequireResponsivePageHeader(bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw new InvalidOperationException(message);
+        }
     }
 
     private static async Task RunResponsiveChoiceSelectorSmokeAsync(string smokeReportPath)

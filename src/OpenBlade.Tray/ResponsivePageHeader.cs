@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using WinSize = Windows.Foundation.Size;
 
 namespace OpenBlade.Tray;
 
@@ -20,17 +21,15 @@ public sealed class ResponsivePageHeader : Grid
             typeof(ResponsivePageHeader),
             new PropertyMetadata(ResponsivePageHeaderElementRole.None));
 
+    private static readonly WinSize NaturalMeasureSize = new(
+        double.PositiveInfinity,
+        double.PositiveInfinity);
+
     private FrameworkElement? titleElement;
     private StackPanel? profileActions;
     private FrameworkElement? customizeAction;
-    private PageHeaderProfileActionPlacement placement =
-        PageHeaderProfileActionPlacement.Hidden;
-
-    public ResponsivePageHeader()
-    {
-        Loaded += OnLoaded;
-        Unloaded += OnUnloaded;
-    }
+    private PageHeaderProfileActionPlacement? placement;
+    private double constrainedProfileActionsWidth = double.PositiveInfinity;
 
     public static ResponsivePageHeaderElementRole GetRole(DependencyObject element) =>
         (ResponsivePageHeaderElementRole)element.GetValue(RoleProperty);
@@ -39,95 +38,127 @@ public sealed class ResponsivePageHeader : Grid
         DependencyObject element,
         ResponsivePageHeaderElementRole value) => element.SetValue(RoleProperty, value);
 
-    private void OnLoaded(object sender, RoutedEventArgs args)
+    protected override WinSize MeasureOverride(WinSize availableSize)
     {
-        titleElement = FindRole(ResponsivePageHeaderElementRole.Title);
-        profileActions = FindRole(ResponsivePageHeaderElementRole.ProfileActions) as StackPanel;
-        customizeAction = FindRole(ResponsivePageHeaderElementRole.Customize);
-
-        SizeChanged += OnLayoutInputChanged;
-        LayoutUpdated += OnLayoutUpdated;
-        UpdateProfileActionPlacement();
-    }
-
-    private void OnUnloaded(object sender, RoutedEventArgs args)
-    {
-        SizeChanged -= OnLayoutInputChanged;
-        LayoutUpdated -= OnLayoutUpdated;
-        titleElement = null;
-        profileActions = null;
-        customizeAction = null;
-    }
-
-    private FrameworkElement? FindRole(ResponsivePageHeaderElementRole role) =>
-        Children
-            .OfType<FrameworkElement>()
-            .SingleOrDefault(element => GetRole(element) == role);
-
-    private void OnLayoutInputChanged(object sender, SizeChangedEventArgs args) =>
-        UpdateProfileActionPlacement();
-
-    private void OnLayoutUpdated(object? sender, object args) =>
-        UpdateProfileActionPlacement();
-
-    private void UpdateProfileActionPlacement()
-    {
+        ResolveRoleElements();
         if (titleElement is null
             || profileActions is null
             || customizeAction is null)
         {
-            return;
+            return base.MeasureOverride(availableSize);
         }
 
-        double profileActionsWidth = MeasureHorizontalProfileActions(profileActions);
+        titleElement.Measure(NaturalMeasureSize);
+        customizeAction.Measure(NaturalMeasureSize);
+        double profileActionsWidth = MeasureNaturalProfileActions(
+            profileActions,
+            out bool hasVisibleProfileAction);
         PageHeaderProfileActionPlacement resolved = PageHeaderLayoutPolicy.Resolve(
-            ActualWidth,
-            MeasureDesiredWidth(titleElement),
+            availableSize.Width,
+            titleElement.DesiredSize.Width,
             profileActionsWidth,
-            MeasureDesiredWidth(customizeAction),
-            profileActions.Visibility == Visibility.Visible);
-        if (placement == resolved)
+            customizeAction.DesiredSize.Width,
+            profileActions.Visibility == Visibility.Visible && hasVisibleProfileAction);
+
+        ApplyProfileActionPlacement(resolved, availableSize.Width);
+        return base.MeasureOverride(availableSize);
+    }
+
+    private void ResolveRoleElements()
+    {
+        titleElement ??= FindRole(ResponsivePageHeaderElementRole.Title);
+        profileActions ??=
+            FindRole(ResponsivePageHeaderElementRole.ProfileActions) as StackPanel;
+        customizeAction ??= FindRole(ResponsivePageHeaderElementRole.Customize);
+    }
+
+    private FrameworkElement? FindRole(ResponsivePageHeaderElementRole role)
+    {
+        foreach (UIElement child in Children)
+        {
+            if (child is FrameworkElement element && GetRole(element) == role)
+            {
+                return element;
+            }
+        }
+
+        return null;
+    }
+
+    private void ApplyProfileActionPlacement(
+        PageHeaderProfileActionPlacement resolved,
+        double availableWidth)
+    {
+        if (profileActions is null)
         {
             return;
         }
 
-        placement = resolved;
-        bool useTitleRow = resolved == PageHeaderProfileActionPlacement.TitleRow;
-        bool stackVertically = resolved == PageHeaderProfileActionPlacement.LowerRowVertical;
+        bool useTitleRow = resolved is PageHeaderProfileActionPlacement.Hidden
+            or PageHeaderProfileActionPlacement.TitleRow;
+        bool stackVertically = resolved ==
+            PageHeaderProfileActionPlacement.LowerRowVertical;
+        double widthLimit = stackVertically && IsFinitePositive(availableWidth)
+            ? availableWidth
+            : double.PositiveInfinity;
 
-        SetRow(profileActions, useTitleRow ? 0 : 1);
-        SetColumn(profileActions, useTitleRow ? 1 : 0);
-        SetColumnSpan(profileActions, useTitleRow ? 1 : 3);
-        profileActions.HorizontalAlignment = useTitleRow
-            ? Microsoft.UI.Xaml.HorizontalAlignment.Right
-            : Microsoft.UI.Xaml.HorizontalAlignment.Left;
-        profileActions.Orientation = stackVertically
-            ? Microsoft.UI.Xaml.Controls.Orientation.Vertical
-            : Microsoft.UI.Xaml.Controls.Orientation.Horizontal;
-        profileActions.Margin = useTitleRow
-            ? new Thickness(
-                0,
-                0,
-                PageHeaderLayoutPolicy.InterActionGroupGapDip,
-                0)
-            : new Thickness(0, 12, 0, 0);
-    }
-
-    private static double MeasureHorizontalProfileActions(StackPanel actions)
-    {
-        FrameworkElement[] visibleActions = actions.Children
-            .OfType<FrameworkElement>()
-            .Where(action => action.Visibility == Visibility.Visible)
-            .ToArray();
-        if (visibleActions.Length == 0)
+        if (placement != resolved)
         {
-            return 0;
+            placement = resolved;
+            SetRow(profileActions, useTitleRow ? 0 : 1);
+            SetColumn(profileActions, useTitleRow ? 1 : 0);
+            SetColumnSpan(profileActions, useTitleRow ? 1 : 3);
+            profileActions.HorizontalAlignment = useTitleRow
+                ? Microsoft.UI.Xaml.HorizontalAlignment.Right
+                : Microsoft.UI.Xaml.HorizontalAlignment.Stretch;
+            profileActions.Orientation = stackVertically
+                ? Microsoft.UI.Xaml.Controls.Orientation.Vertical
+                : Microsoft.UI.Xaml.Controls.Orientation.Horizontal;
+            profileActions.Margin = resolved switch
+            {
+                PageHeaderProfileActionPlacement.Hidden => new Thickness(0),
+                PageHeaderProfileActionPlacement.TitleRow => new Thickness(
+                    0,
+                    0,
+                    PageHeaderLayoutPolicy.InterActionGroupGapDip,
+                    0),
+                _ => new Thickness(0, 12, 0, 0),
+            };
         }
 
-        return visibleActions.Sum(MeasureDesiredWidth)
-            + Math.Max(0, visibleActions.Length - 1) * actions.Spacing;
+        if (!AreClose(constrainedProfileActionsWidth, widthLimit))
+        {
+            constrainedProfileActionsWidth = widthLimit;
+            profileActions.MaxWidth = widthLimit;
+        }
     }
 
-    private static double MeasureDesiredWidth(FrameworkElement element) =>
-        element.DesiredSize.Width;
+    private static double MeasureNaturalProfileActions(
+        StackPanel actions,
+        out bool hasVisibleAction)
+    {
+        double width = 0;
+        int visibleCount = 0;
+        foreach (UIElement child in actions.Children)
+        {
+            if (child is not FrameworkElement action
+                || action.Visibility != Visibility.Visible)
+            {
+                continue;
+            }
+
+            action.Measure(NaturalMeasureSize);
+            width += action.DesiredSize.Width;
+            visibleCount++;
+        }
+
+        hasVisibleAction = visibleCount > 0;
+        return width + Math.Max(0, visibleCount - 1) * actions.Spacing;
+    }
+
+    private static bool IsFinitePositive(double value) =>
+        double.IsFinite(value) && value > 0;
+
+    private static bool AreClose(double left, double right) =>
+        left == right || Math.Abs(left - right) < 0.5;
 }

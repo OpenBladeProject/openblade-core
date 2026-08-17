@@ -89,22 +89,6 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void ResponsivePageHeaderMovesAndStacksTheCompleteProfileActionGroup()
-    {
-        string header = ReadRepositoryFile(
-            "src",
-            "OpenBlade.Tray",
-            "ResponsivePageHeader.cs");
-
-        Assert.Contains("MeasureHorizontalProfileActions(profileActions)", header, StringComparison.Ordinal);
-        Assert.Contains("PageHeaderLayoutPolicy.Resolve(", header, StringComparison.Ordinal);
-        Assert.Contains("SetRow(profileActions, useTitleRow ? 0 : 1)", header, StringComparison.Ordinal);
-        Assert.Contains("SetColumn(profileActions, useTitleRow ? 1 : 0)", header, StringComparison.Ordinal);
-        Assert.Contains("SetColumnSpan(profileActions, useTitleRow ? 1 : 3)", header, StringComparison.Ordinal);
-        Assert.Contains("Orientation.Vertical", header, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void DashboardCustomPerformanceRowsUseNeutralSubcardBackgrounds()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
@@ -348,7 +332,12 @@ public sealed class WinUiShellContractTests
             "Fill=\"{ThemeResource SystemFillColorSuccessBrush}\" Visibility=\"{x:Bind ViewModel.IsReadinessReady, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.Contains("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(
+            xaml,
+            "Property=\"ContentTemplate\" Value=\"{StaticResource PageHeaderButtonContentTemplate}\""));
+        Assert.Contains("x:Key=\"PageHeaderButtonContentTemplate\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("TextWrapping=\"Wrap\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("HeaderActions.Margin", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
