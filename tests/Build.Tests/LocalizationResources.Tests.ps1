@@ -6,6 +6,32 @@ $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $validator = Join-Path $repository 'build\Validate-LocalizationResources.ps1'
 
+foreach ($project in @(
+        'src\OpenBlade.Tray.Core\OpenBlade.Tray.Core.csproj',
+        'src\OpenBlade.Setup\OpenBlade.Setup.csproj',
+        'build\installer\OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj')) {
+    [xml]$projectDocument = Get-Content (Join-Path $repository $project) -Raw
+    $pseudoRemoval = @($projectDocument.Project.ItemGroup |
+        Where-Object {
+            $_.GetAttribute('Condition') -eq
+                "'`$(OpenBladeIncludePseudoLocalization)' == 'false'"
+        } |
+        ForEach-Object EmbeddedResource |
+        Where-Object {
+            $_.GetAttribute('Remove') -eq 'Properties\Resources.qps-ploc.resx'
+        })
+    if ($pseudoRemoval.Count -ne 1) {
+        throw "$project must exclude its qps-ploc satellite from production publishing."
+    }
+}
+
+$publishSource = [IO.File]::ReadAllText((Join-Path $repository 'build\Publish.ps1'))
+if ([regex]::Matches(
+        $publishSource,
+        '--property:OpenBladeIncludePseudoLocalization=false').Count -ne 2) {
+    throw 'Production publish must suppress pseudo localization for product and installer UI payloads.'
+}
+
 function Get-FixtureRelativePath {
     param([string]$Root, [string]$Path)
     $prefix = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'

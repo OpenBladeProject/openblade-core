@@ -27,4 +27,8 @@
               Link="Assets\OpenBlade.png" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(OpenBladeIncludePseudoLocalization)' == 'false'">
+    <EmbeddedResource Remove="Properties\Resources.qps-ploc.resx" />
+  </ItemGroup>
+
 </Project>
