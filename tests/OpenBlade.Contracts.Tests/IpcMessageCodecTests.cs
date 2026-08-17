@@ -125,6 +125,10 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             Enabled: true),
+        new SetLightingRefreshRateRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            LightingRefreshRate.SixtyHz),
         new SetFirmwareCompatibilityOverrideRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -375,7 +379,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFortyFourBatteryContracts_RoundTripExactShape()
+    public async Task VersionFortyFiveBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
@@ -440,7 +444,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(44, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(45, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -713,7 +717,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFortyFourStatus_AcceptsCompleteCapabilityCollections()
+    public async Task VersionFortyFiveStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -722,7 +726,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(44, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(45, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -922,6 +926,24 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
         Assert.Equal(
             "IPC server status is invalid: lighting-renderer ownership is unknown.",
+            exception.Message);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownLightingRefreshRate()
+    {
+        using MemoryStream stream = new();
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                LightingRefreshRate = (LightingRefreshRate)999,
+            });
+
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
+        Assert.Equal(
+            "IPC server status is invalid: lighting refresh rate is unknown.",
             exception.Message);
     }
 
@@ -1850,6 +1872,8 @@ public sealed class IpcMessageCodecTests
         Assert.True(expected.Capabilities.PerformancePresets.SetEquals(actual.Capabilities.PerformancePresets));
         Assert.True(expected.Capabilities.FanModes.SetEquals(actual.Capabilities.FanModes));
         Assert.True(expected.Capabilities.LightingEffects.SetEquals(actual.Capabilities.LightingEffects));
+        Assert.True(expected.Capabilities.SupportedLightingRefreshRates.SetEquals(
+            actual.Capabilities.SupportedLightingRefreshRates));
         Assert.True(expected.Capabilities.ObservedLightingEffects.SetEquals(
             actual.Capabilities.ObservedLightingEffects));
         Assert.Equal(
@@ -1878,5 +1902,6 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(
             expected.AlwaysOverrideExternalLightingChanges,
             actual.AlwaysOverrideExternalLightingChanges);
+        Assert.Equal(expected.LightingRefreshRate, actual.LightingRefreshRate);
     }
 }

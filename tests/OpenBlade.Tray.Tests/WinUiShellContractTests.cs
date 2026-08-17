@@ -595,6 +595,29 @@ public sealed class WinUiShellContractTests
             "IsEnabled=\"{x:Bind CanControlLighting, Mode=OneWay}\"",
             keyboardSection,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Name=\"LightingRefreshRateCard\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Uid=\"MainWindow_TextBlockSixtyHzLighting\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Uid=\"MainWindow_LightingRefreshRateToggleText\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Toggled=\"OnLightingRefreshRateToggled\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.True(
+            keyboardSection.IndexOf(
+                "x:Name=\"ImportKeyboardLightingPresetCard\"",
+                StringComparison.Ordinal)
+            < keyboardSection.IndexOf(
+                "x:Name=\"LightingRefreshRateCard\"",
+                StringComparison.Ordinal));
         Assert.Contains("FileTypeFilter.Add(\".oblight\")", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".chroma\")", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".json\")", window, StringComparison.Ordinal);
@@ -1945,6 +1968,14 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "Text=\"Import .oblight and Razer .chroma files.\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Uid=\"MainWindow_TextBlockSixtyHzKeyboardLighting\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Uid=\"MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(

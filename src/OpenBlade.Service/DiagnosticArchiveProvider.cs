@@ -389,6 +389,12 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.ObservedLightingEffects.Contains(value);
         }
 
+        foreach (LightingRefreshRate value in Enum.GetValues<LightingRefreshRate>())
+        {
+            result[$"lighting.refreshRate.{value}"] =
+                capabilities.SupportedLightingRefreshRates.Contains(value);
+        }
+
         result["battery.chargeLimit"] = capabilities.ChargeLimits.Count > 0;
         result["battery.protectionOff"] = capabilities.SupportsBatteryProtectionOff;
         result["battery.temporaryFullCharge"] = capabilities.SupportsTemporaryFullCharge;
@@ -496,6 +502,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 status.LightingRendererOwnership.ToString(),
             ["lighting.alwaysOverrideExternalChanges"] =
                 status.AlwaysOverrideExternalLightingChanges.ToString(),
+            ["lighting.refreshRate"] = status.LightingRefreshRate.ToString(),
             ["firmware.allowUntested"] = status.AllowUntestedFirmware.ToString(),
             ["firmware.compatibility"] = status.FirmwareCompatibility.ToString(),
             ["confirmed.performance"] = EnumOrUnavailable(confirmed?.Performance),

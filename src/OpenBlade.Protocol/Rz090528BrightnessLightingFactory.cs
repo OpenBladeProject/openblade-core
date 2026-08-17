@@ -212,6 +212,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             KeyboardLightingLayoutId = allSynapseEffectsAdmitted
                 ? KeyboardLightingLayoutIds.Rz09_0528
                 : null,
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+            },
         };
 
     private static IReadOnlySet<LightingEffect> CreateAdmittedEffects(
@@ -608,6 +612,20 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         {
             operationGate.Release();
         }
+    }
+
+    public Task SetLightingRefreshRateAsync(
+        LightingRefreshRate value,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (value != LightingRefreshRate.ThirtyHz)
+        {
+            throw new CapabilityUnavailableException(
+                "PID 02C6 admits only the fixed 30 Hz lighting cadence.");
+        }
+
+        return Task.CompletedTask;
     }
 
     public async Task<byte> StepBrightnessAsync(

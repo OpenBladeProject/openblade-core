@@ -130,6 +130,11 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid("The keyboard lighting control mode is undefined.");
         }
 
+        if (!Enum.IsDefined(preferences.LightingRefreshRate))
+        {
+            throw Invalid("The lighting refresh rate is undefined.");
+        }
+
         if (preferences.LastKnownLighting is { } lighting)
         {
             ValidateLighting(lighting, "last-known");

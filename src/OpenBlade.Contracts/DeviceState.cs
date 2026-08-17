@@ -150,6 +150,12 @@ public sealed record PowerSourceBehaviorObservation(
         && Enum.IsDefined(SelectedFans);
 }
 
+public enum LightingRefreshRate
+{
+    ThirtyHz,
+    SixtyHz,
+}
+
 public sealed record DeviceCapabilities(
     IReadOnlySet<PerformancePreset> PerformancePresets,
     IReadOnlySet<FanMode> FanModes,
@@ -179,6 +185,9 @@ public sealed record DeviceCapabilities(
     public DeviceFeatureAccess? LampArrayLightingAccess { get; init; }
 
     public string? KeyboardLightingLayoutId { get; init; }
+
+    public IReadOnlySet<LightingRefreshRate> SupportedLightingRefreshRates { get; init; } =
+        new HashSet<LightingRefreshRate>();
 
     public IReadOnlySet<LightingEffect> ObservedLightingEffects { get; init; } =
         new HashSet<LightingEffect>();
@@ -215,6 +224,7 @@ public sealed record DeviceCapabilities(
             ? !LightingEffects.Contains(LightingEffect.Sequence)
             : KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId)
                 && LightingEffects.Contains(LightingEffect.Sequence))
+        && IsValidEnumSet(SupportedLightingRefreshRates)
         && IsValidEnumSet(ObservedLightingEffects)
         && IsValidEnumSet(LogoLightingModes)
         && IsValidEnumSet(OneShotLaptopControls)

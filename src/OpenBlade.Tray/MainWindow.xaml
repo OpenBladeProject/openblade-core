@@ -1776,6 +1776,35 @@
                                 </Button>
                             </Border>
                         </Border>
+                        <Border x:Name="LightingRefreshRateCard"
+                                Style="{StaticResource SettingsGroupStyle}"
+                                Margin="0,10,0,0"
+                                Visibility="{x:Bind LabFeaturesEnabled, Mode=OneWay}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3"
+                                                VerticalAlignment="Center">
+                                        <TextBlock x:Uid="MainWindow_TextBlockSixtyHzLighting"
+                                                   Text="60 Hz lighting"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{x:Bind LightingRefreshRateAvailabilityText, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <ToggleSwitch x:Uid="MainWindow_LightingRefreshRateToggleText"
+                                                  Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                  Grid.Column="1"
+                                                  IsOn="{x:Bind IsSixtyHzLightingEnabled, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind CanSetLightingRefreshRate, Mode=OneWay}"
+                                                  Toggled="OnLightingRefreshRateToggled"
+                                                  AutomationProperties.Name="Use 60 Hz keyboard lighting" />
+                                </Grid>
+                            </Border>
+                        </Border>
                         </StackPanel>
 
                         <StackPanel x:Name="LightingLogoSection"
@@ -3307,6 +3336,15 @@
                                                                     <TextBlock x:Uid="MainWindow_TextBlockKeyboardLightingPresetImport" Text="Keyboard lighting preset import"
                                                                                FontWeight="SemiBold" />
                                                                     <TextBlock x:Uid="MainWindow_TextBlockImportOblightAndRazerChromaFiles" Text="Import .oblight and Razer .chroma files."
+                                                                               Style="{StaticResource SecondaryTextStyle}"
+                                                                               TextWrapping="Wrap" />
+                                                                </StackPanel>
+                                                                <StackPanel Spacing="3">
+                                                                    <TextBlock x:Uid="MainWindow_TextBlockSixtyHzKeyboardLighting"
+                                                                               Text="60 Hz keyboard lighting"
+                                                                               FontWeight="SemiBold" />
+                                                                    <TextBlock x:Uid="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly"
+                                                                               Text="Render supported effects more smoothly on admitted keyboards."
                                                                                Style="{StaticResource SecondaryTextStyle}"
                                                                                TextWrapping="Wrap" />
                                                                 </StackPanel>

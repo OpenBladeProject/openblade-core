@@ -70,6 +70,11 @@ public sealed class ProductionLightingPortTests
         Assert.Equal(
             KeyboardLightingLayoutIds.Rz09_0581,
             factory.Capabilities.KeyboardLightingLayoutId);
+        Assert.True(factory.Capabilities.SupportedLightingRefreshRates.SetEquals(
+        [
+            LightingRefreshRate.ThirtyHz,
+            LightingRefreshRate.SixtyHz,
+        ]));
         Assert.Null(factory.Capabilities.LampArrayLightingAccess);
         Assert.Empty(factory.Capabilities.PerformancePresets);
         Assert.Empty(factory.Capabilities.FanModes);
@@ -130,6 +135,9 @@ public sealed class ProductionLightingPortTests
         Assert.Empty(capabilities.ChargeLimits);
         Assert.False(capabilities.SupportsBatteryProtectionOff);
         Assert.False(capabilities.SupportsTemporaryFullCharge);
+        Assert.Equal(
+            [LightingRefreshRate.ThirtyHz],
+            capabilities.SupportedLightingRefreshRates);
     }
 
     [Fact]
@@ -1134,6 +1142,9 @@ public sealed class ProductionLightingPortTests
         Assert.True(
             ProductionLightingEvidenceSource.IsProductionLightingImplementationApproved(),
             "Current lighting wire semantics must match reviewed evidence.");
+        Assert.Equal(
+            [LightingRefreshRate.ThirtyHz, LightingRefreshRate.SixtyHz],
+            approved.SupportedRefreshRates);
         Assert.False(
             ProductionLightingEvidenceSource.SemanticAdmissionMatches(
                 approved,
@@ -1797,6 +1808,34 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task ReactivePulse_QueuedDuringCadenceRestartWakesReplacementStream()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0x12, 0x34, 0x56),
+                100,
+                ReactiveLightingDuration.Medium),
+            default);
+        writer.BlockNextWrite();
+
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), default);
+        await writer.WaitForWriteCountAsync(2, TimeSpan.FromSeconds(2));
+        Task switchCadence = port.SetLightingRefreshRateAsync(
+            LightingRefreshRate.SixtyHz,
+            default);
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(53), default);
+
+        writer.ReleaseBlockedWrite();
+        await switchCadence.WaitAsync(TimeSpan.FromSeconds(2));
+        await writer.WaitForWriteCountAsync(3, TimeSpan.FromSeconds(2));
+
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[53]);
+    }
+
+    [Fact]
     public async Task ReactivePulse_DoesNotWaitBehindFirmwareOperationGate()
     {
         var session = new LightingSession(initialBrightness: 0xFF);
@@ -1909,6 +1948,124 @@ public sealed class ProductionLightingPortTests
             observedAfterWrite: TimeSpan.FromMilliseconds(82));
 
         Assert.Equal(Pid02E0LightingTiming.AnimatedFrameInterval * 3, next);
+    }
+
+    [Fact]
+    public void SixtyHzFrameDeadline_UsesSelectedCadenceAndSkipsMissedFrames()
+    {
+        var effect = new Pid02E0SpectrumEffect(
+            cycleDuration: TimeSpan.FromSeconds(1));
+        TimeSpan interval = ProductionLightingPort.RefreshInterval(
+            LightingRefreshRate.SixtyHz);
+
+        TimeSpan? next = ProductionLightingPort.AdvanceFrameDeadline(
+            effect,
+            currentDeadline: interval,
+            observedAfterWrite: TimeSpan.FromMilliseconds(42),
+            selectedRefreshRate: LightingRefreshRate.SixtyHz);
+
+        Assert.Equal(interval * 3, next);
+        Assert.Equal(
+            TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 30),
+            ProductionLightingPort.RefreshInterval(LightingRefreshRate.ThirtyHz));
+    }
+
+    [Fact]
+    public void SelectableCadence_PreservesIdleAndBreathingPlateauSuppression()
+    {
+        var reactive = new Pid02E0ReactiveEffect(
+            new MatrixRgb(0x10, 0x20, 0x30),
+            TimeSpan.FromMilliseconds(500));
+        TimeSpan idle = reactive.GetNextFrameDelay(TimeSpan.Zero)!.Value;
+
+        Assert.Equal(
+            idle,
+            ProductionLightingPort.ApplyRefreshRateToDelay(
+                reactive,
+                idle,
+                LightingRefreshRate.SixtyHz));
+
+        var breathing = Pid02E0BreathingEffect.Single(
+            new MatrixRgb(0x10, 0x20, 0x30));
+        TimeSpan plateau = breathing.GetNextFrameDelay(
+            TimeSpan.FromMilliseconds(1200))!.Value;
+        TimeSpan selected = ProductionLightingPort.ApplyRefreshRateToDelay(
+            breathing,
+            plateau,
+            LightingRefreshRate.SixtyHz);
+
+        Assert.True(plateau > Pid02E0LightingTiming.AnimatedFrameInterval);
+        Assert.Equal(
+            plateau - Pid02E0LightingTiming.AnimatedFrameInterval
+                + ProductionLightingPort.RefreshInterval(LightingRefreshRate.SixtyHz),
+            selected);
+        Assert.Equal(
+            plateau,
+            ProductionLightingPort.ApplyRefreshRateToDelay(
+                breathing,
+                plateau,
+                LightingRefreshRate.ThirtyHz));
+    }
+
+    [Fact]
+    public void SixtyHzFrameDeadline_PreservesReactiveAndRippleIdleKeepalive()
+    {
+        IPid02E0LightingEffect[] effects =
+        [
+            new Pid02E0ReactiveEffect(
+                new MatrixRgb(0x10, 0x20, 0x30),
+                TimeSpan.FromMilliseconds(500)),
+            new Pid02E0RippleEffect(new MatrixRgb(0x10, 0x20, 0x30)),
+        ];
+
+        foreach (IPid02E0LightingEffect effect in effects)
+        {
+            Assert.Equal(
+                Pid02E0LightingTiming.IdleKeepaliveInterval,
+                ProductionLightingPort.AdvanceFrameDeadline(
+                    effect,
+                    currentDeadline: TimeSpan.Zero,
+                    observedAfterWrite: TimeSpan.Zero,
+                    selectedRefreshRate: LightingRefreshRate.SixtyHz));
+        }
+    }
+
+    [Fact]
+    public void SixtyHzFrameDeadline_PreservesBreathingPlateauSuppression()
+    {
+        var effect = Pid02E0BreathingEffect.Single(
+            new MatrixRgb(0x10, 0x20, 0x30));
+        TimeSpan current = TimeSpan.FromMilliseconds(1200);
+        TimeSpan delay = effect.GetNextFrameDelay(current)!.Value;
+
+        Assert.Equal(
+            current - Pid02E0LightingTiming.AnimatedFrameInterval
+                + delay
+                + ProductionLightingPort.RefreshInterval(LightingRefreshRate.SixtyHz),
+            ProductionLightingPort.AdvanceFrameDeadline(
+                effect,
+                currentDeadline: current,
+                observedAfterWrite: current,
+                selectedRefreshRate: LightingRefreshRate.SixtyHz));
+    }
+
+    [Fact]
+    public async Task Rz090528RefreshRate_AcceptsOnlyFixedThirtyHz()
+    {
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                new LightingSession(initialBrightness: 49),
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        await port.SetLightingRefreshRateAsync(
+            LightingRefreshRate.ThirtyHz,
+            CancellationToken.None);
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(
+            () => port.SetLightingRefreshRateAsync(
+                LightingRefreshRate.SixtyHz,
+                CancellationToken.None));
     }
 
     [Fact]

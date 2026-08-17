@@ -24,6 +24,80 @@ public sealed class SessionLightingFrameCadenceTests
     }
 
     [Fact]
+    public void SixtyHzModeDoublesActiveCadenceAndPreservesHalfSecondBackoff()
+    {
+        var time = new ManualTimeProvider();
+        var cadence = new SessionLightingFrameCadence(
+            time,
+            LightingRefreshRate.SixtyHz);
+        AmbientLightingFrame frame = Frame(1);
+        cadence.RecordSent(frame);
+        TimeSpan interval = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 60);
+
+        for (int index = 1; index < 30; index++)
+        {
+            Assert.Equal(interval, cadence.Evaluate(frame).NextInterval);
+        }
+
+        Assert.Equal(
+            SessionLightingFrameCadence.StaticInterval,
+            cadence.Evaluate(frame).NextInterval);
+    }
+
+    [Fact]
+    public async Task PacerUsesAbsoluteDeadlinesAndSkipsMissedFrames()
+    {
+        var time = new ManualTimeProvider();
+        var waits = new List<TimeSpan>();
+        var pacer = new SessionLightingFramePacer(
+            time,
+            (interval, _) =>
+            {
+                waits.Add(interval);
+                time.Advance(interval);
+                return Task.CompletedTask;
+            },
+            LightingRefreshRate.SixtyHz);
+        TimeSpan interval = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 60);
+
+        await pacer.WaitAsync(interval, CancellationToken.None);
+        time.Advance(TimeSpan.FromMilliseconds(10));
+        await pacer.WaitAsync(interval, CancellationToken.None);
+        time.Advance(TimeSpan.FromMilliseconds(30));
+        await pacer.WaitAsync(interval, CancellationToken.None);
+
+        Assert.Equal(interval, waits[0]);
+        Assert.Equal(interval - TimeSpan.FromMilliseconds(10), waits[1]);
+        Assert.InRange(
+            waits[2],
+            TimeSpan.FromMilliseconds(3.32),
+            TimeSpan.FromMilliseconds(3.34));
+    }
+
+    [Fact]
+    public async Task ThirtyHzPacerPreservesRelativeDelayAfterProcessingTime()
+    {
+        var time = new ManualTimeProvider();
+        var waits = new List<TimeSpan>();
+        var pacer = new SessionLightingFramePacer(
+            time,
+            (interval, _) =>
+            {
+                waits.Add(interval);
+                time.Advance(interval);
+                return Task.CompletedTask;
+            },
+            LightingRefreshRate.ThirtyHz);
+        TimeSpan interval = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 30);
+
+        await pacer.WaitAsync(interval, CancellationToken.None);
+        time.Advance(TimeSpan.FromMilliseconds(10));
+        await pacer.WaitAsync(interval, CancellationToken.None);
+
+        Assert.Equal([interval, interval], waits);
+    }
+
+    [Fact]
     public void StaticContentSlowsToFiveFramesPerSecondAfterHalfASecond()
     {
         var time = new ManualTimeProvider();
@@ -108,9 +182,18 @@ public sealed class SessionLightingFrameCadenceTests
     private sealed class ManualTimeProvider : TimeProvider
     {
         private DateTimeOffset now = DateTimeOffset.UnixEpoch;
+        private long timestamp;
 
         public override DateTimeOffset GetUtcNow() => now;
 
-        internal void Advance(TimeSpan elapsed) => now += elapsed;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => timestamp;
+
+        internal void Advance(TimeSpan elapsed)
+        {
+            now += elapsed;
+            timestamp += elapsed.Ticks;
+        }
     }
 }
