@@ -9807,10 +9807,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 StringComparison.OrdinalIgnoreCase) == true);
         Assert.Contains("1 device-access failures", diagnostic.Detail);
         Assert.Contains("1 unknown replies", diagnostic.Detail);
+        Assert.Equal("Stored", diagnostic.Status);
     }
 
     [Fact]
-    public async Task ExternalPower_AccessFailuresRemainBlockedAndDeduplicateDiagnostics()
+    public async Task ExternalPower_UnavailableRepliesRemainBlockedAndDeduplicateDiagnostics()
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -9820,6 +9821,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.RefreshPowerSourceClassificationAsync(
             CancellationToken.None);
+        context.Device.AdapterPowerFailure = null;
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
         await context.Runtime.RefreshPowerSourceClassificationAsync(
             CancellationToken.None);
 

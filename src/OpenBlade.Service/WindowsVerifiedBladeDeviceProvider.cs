@@ -798,10 +798,6 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 throw new OperationCanceledException(cancellationToken);
             }
-            catch (ObjectDisposedException)
-            {
-                throw;
-            }
             finally
             {
                 hardwareOperationGate.Release();

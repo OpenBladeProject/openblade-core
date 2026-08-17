@@ -254,6 +254,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static readonly TimeSpan FullObservationInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan FastPathControllerPresenceInterval =
         TimeSpan.FromSeconds(15);
+    // Five full open/query/close HID sessions permit two agreeing known replies
+    // despite up to three transient failures, while bounding every classification
+    // path, including the read-before-write paths used by control commands.
     private const int MaximumAdapterPowerClassificationSamples = 5;
     private const int RequiredAgreeingAdapterPowerSamples = 2;
     // Allow slow HID re-enumeration without carrying resume attribution into a
@@ -335,7 +338,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private DisplayBrightnessHidUsage assertedDisplayBrightnessUsage;
     private bool displayBrightnessReleaseRequired;
     private bool displayBrightnessNeutralizationPending = true;
-    private string? lastAdapterPowerClassificationDiagnostic;
+    private AdapterPowerClassificationDiagnosticKind?
+        lastAdapterPowerClassificationDiagnosticKind;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -6374,7 +6378,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (windowsSource == PowerSource.Battery)
         {
-            lastAdapterPowerClassificationDiagnostic = null;
+            lastAdapterPowerClassificationDiagnosticKind = null;
             return PowerSource.Battery;
         }
 
@@ -6445,6 +6449,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 if (sample != classified)
                 {
                     RecordAdapterPowerClassificationDiagnostic(
+                        AdapterPowerClassificationDiagnosticKind.ConflictingKnownReplies,
                         ControlOperationStatus.Blocked,
                         "Power adapter classification observed conflicting known read-only replies; control writes remain blocked.");
                     return PowerSource.ExternalUnknown;
@@ -6463,6 +6468,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ? $"Power adapter classification remained unavailable after {attempts} read-only samples ({accessFailures} device-access failures, {unknownSamples} unknown replies; last failure {lastFailureKind})."
                     : $"Power adapter classification remained unknown after {attempts} read-only samples.";
                 RecordAdapterPowerClassificationDiagnostic(
+                    AdapterPowerClassificationDiagnosticKind.Unavailable,
                     ControlOperationStatus.Blocked,
                     detail);
                 return PowerSource.ExternalUnknown;
@@ -6471,14 +6477,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (accessFailures > 0 || unknownSamples > 0)
             {
                 RecordAdapterPowerClassificationDiagnostic(
-                    ControlOperationStatus.Applied,
+                    AdapterPowerClassificationDiagnosticKind.Recovered,
+                    ControlOperationStatus.Stored,
                     $"Power adapter classification recovered after {attempts + 1} "
                     + $"read-only samples ({accessFailures} device-access failures, "
                     + $"{unknownSamples} unknown replies).");
             }
             else
             {
-                lastAdapterPowerClassificationDiagnostic = null;
+                lastAdapterPowerClassificationDiagnosticKind = null;
             }
 
             return classified switch
@@ -6505,19 +6512,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private void RecordAdapterPowerClassificationDiagnostic(
+        AdapterPowerClassificationDiagnosticKind kind,
         ControlOperationStatus status,
         string detail)
     {
-        if (string.Equals(
-            lastAdapterPowerClassificationDiagnostic,
-            detail,
-            StringComparison.Ordinal))
+        if (lastAdapterPowerClassificationDiagnosticKind == kind)
         {
             return;
         }
 
-        lastAdapterPowerClassificationDiagnostic = detail;
+        lastAdapterPowerClassificationDiagnosticKind = kind;
         history.RecordSummary(status, detail);
+    }
+
+    private enum AdapterPowerClassificationDiagnosticKind
+    {
+        ConflictingKnownReplies,
+        Unavailable,
+        Recovered,
     }
 
     private async Task ObserveCoreAsync(

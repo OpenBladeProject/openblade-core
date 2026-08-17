@@ -41,7 +41,10 @@ public sealed class TrayHoverLabelTests
 
     [Theory]
     [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, "OpenBlade · USB-C · Balanced")]
-    [InlineData(PowerSource.ExternalUnknown, PerformancePreset.Balanced, "OpenBlade · Checking power source")]
+    [InlineData(
+        PowerSource.ExternalUnknown,
+        PerformancePreset.Balanced,
+        "OpenBlade · External power (unclassified)")]
     public void Format_DistinguishesUsbCFromUnresolvedExternalPower(
         PowerSource source,
         PerformancePreset performance,
