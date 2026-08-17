@@ -2367,6 +2367,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         cancellationToken).ConfigureAwait(false);
                     return retainedPort;
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch
                 {
                     await ResetLightingPortCoreAsync(retainedPort).ConfigureAwait(false);

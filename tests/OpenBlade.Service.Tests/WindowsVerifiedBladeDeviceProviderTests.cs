@@ -835,6 +835,52 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task RetainedLightingPort_CanceledReconcileRemainsRetryable()
+    {
+        var port = new FakeLightingPort(
+            supportedLightingRefreshRates:
+            new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            });
+        var lightingFactory = new FakeLightingFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.ReadCapabilitiesAsync(CancellationToken.None);
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        port.BlockNextLightingRefreshRate();
+        provider.SetLightingRefreshRate(LightingRefreshRate.SixtyHz);
+
+        Task<DeviceCapabilities> reconcile = device.ReadCapabilitiesAsync(
+            cancellation.Token);
+        await port.LightingRefreshRateStarted.Task.WaitAsync(TestDeadlockGuard);
+        await cancellation.CancelAsync();
+        OperationCanceledException error = await Assert.ThrowsAnyAsync<
+            OperationCanceledException>(() => reconcile);
+
+        Assert.Equal(cancellation.Token, error.CancellationToken);
+        Assert.Equal(0, port.DisposeCount);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        Assert.Equal(1, lightingFactory.OpenCount);
+
+        await device.ReadCapabilitiesAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [LightingRefreshRate.ThirtyHz, LightingRefreshRate.SixtyHz],
+            port.LightingRefreshRates);
+        Assert.Equal(0, port.DisposeCount);
+        Assert.Equal(1, lightingFactory.OpenCount);
+    }
+
+    [Fact]
     public async Task DisposeWhileProbeIsBlocked_PreventsStaleDevicePublication()
     {
         var probeStarted = new TaskCompletionSource(
@@ -2182,6 +2228,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int DriverModeReleaseCount { get; private set; }
 
+        public TaskCompletionSource LightingRefreshRateStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private TaskCompletionSource? lightingRefreshRateRelease;
+        private int blockNextLightingRefreshRate;
+
         public Exception? ReadFailure { get; set; }
 
         public LightingSettings? StateReadResult { get; init; }
@@ -2249,13 +2301,25 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             return Task.CompletedTask;
         }
 
-        public Task SetLightingRefreshRateAsync(
+        public void BlockNextLightingRefreshRate()
+        {
+            lightingRefreshRateRelease = new(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref blockNextLightingRefreshRate, 1);
+        }
+
+        public async Task SetLightingRefreshRateAsync(
             LightingRefreshRate refreshRate,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (Interlocked.Exchange(ref blockNextLightingRefreshRate, 0) != 0)
+            {
+                LightingRefreshRateStarted.TrySetResult();
+                await lightingRefreshRateRelease!.Task.WaitAsync(cancellationToken);
+            }
+
             LightingRefreshRates.Add(refreshRate);
-            return Task.CompletedTask;
         }
 
         public Task<byte> StepBrightnessAsync(
