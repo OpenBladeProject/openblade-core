@@ -6,7 +6,7 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
-    public void LocalizedPageHeadersKeepStableActionsInTitleRows()
+    public void LocalizedPageHeadersKeepProfileActionsResponsiveAndOrdered()
     {
         XDocument document = XDocument.Parse(
             ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
@@ -34,23 +34,44 @@ public sealed class WinUiShellContractTests
                 "{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"),
         })
         {
-            XElement header = NamedElement(document, "Grid", headerName);
-            XElement expandableActions = NamedElement(document, "StackPanel", actionName);
+            XElement header = NamedElement(document, "ResponsivePageHeader", headerName);
+            XElement profileActions = NamedElement(document, "StackPanel", actionName);
             XElement customizeButton = UidElement(document, "Button", customizeUid);
 
-            Assert.Same(header, expandableActions.Parent);
-            Assert.Equal("1", Attribute(expandableActions, "Grid.Row"));
-            Assert.Equal("2", Attribute(expandableActions, "Grid.ColumnSpan"));
-            Assert.Equal("0,12,0,0", Attribute(expandableActions, "Margin"));
-            Assert.Equal(visibilityBinding, Attribute(expandableActions, "Visibility"));
+            Assert.Same(header, profileActions.Parent);
+            Assert.Equal("1", Attribute(profileActions, "Grid.Column"));
+            Assert.Null(Attribute(profileActions, "Grid.Row"));
+            Assert.Null(Attribute(profileActions, "Grid.ColumnSpan"));
+            Assert.Null(Attribute(profileActions, "Margin"));
+            Assert.Equal("Right", Attribute(profileActions, "HorizontalAlignment"));
+            Assert.Equal(
+                "ProfileActions",
+                Attribute(profileActions, "ResponsivePageHeader.Role"));
+            Assert.Equal(visibilityBinding, Attribute(profileActions, "Visibility"));
             Assert.Null(Attribute(header, "RowSpacing"));
+            Assert.Null(Attribute(header, "ColumnSpacing"));
+
+            XElement[] profileButtons = profileActions.Elements()
+                .Where(element => element.Name.LocalName == "Button")
+                .ToArray();
+            Assert.Equal(2, profileButtons.Length);
+            Assert.Equal(
+                "{StaticResource ProfileSaveButtonStyle}",
+                Attribute(profileButtons[0], "Style"));
+            Assert.Equal("Use profile settings", Attribute(profileButtons[1], "Content"));
+            Assert.Equal(
+                "{StaticResource PageHeaderSecondaryButtonStyle}",
+                Attribute(profileButtons[1], "Style"));
 
             Assert.Same(header, customizeButton.Parent);
-            Assert.Equal("1", Attribute(customizeButton, "Grid.Column"));
+            Assert.Equal("2", Attribute(customizeButton, "Grid.Column"));
             Assert.Null(Attribute(customizeButton, "Grid.Row"));
+            Assert.Equal(
+                "Customize",
+                Attribute(customizeButton, "ResponsivePageHeader.Role"));
 
             List<XElement> children = header.Elements().ToList();
-            Assert.True(children.IndexOf(customizeButton) < children.IndexOf(expandableActions));
+            Assert.True(children.IndexOf(profileActions) < children.IndexOf(customizeButton));
         }
 
         XElement profilesHeader = NamedElement(document, "Grid", "ProfilesPageHeader");
@@ -65,6 +86,22 @@ public sealed class WinUiShellContractTests
         Assert.Equal("Grid", aboutCustomize.Parent?.Name.LocalName);
         Assert.Equal("1", Attribute(aboutCustomize, "Grid.Column"));
         Assert.Null(Attribute(aboutCustomize, "Grid.Row"));
+    }
+
+    [Fact]
+    public void ResponsivePageHeaderMovesAndStacksTheCompleteProfileActionGroup()
+    {
+        string header = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "ResponsivePageHeader.cs");
+
+        Assert.Contains("MeasureHorizontalProfileActions(profileActions)", header, StringComparison.Ordinal);
+        Assert.Contains("PageHeaderLayoutPolicy.Resolve(", header, StringComparison.Ordinal);
+        Assert.Contains("SetRow(profileActions, useTitleRow ? 0 : 1)", header, StringComparison.Ordinal);
+        Assert.Contains("SetColumn(profileActions, useTitleRow ? 1 : 0)", header, StringComparison.Ordinal);
+        Assert.Contains("SetColumnSpan(profileActions, useTitleRow ? 1 : 3)", header, StringComparison.Ordinal);
+        Assert.Contains("Orientation.Vertical", header, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -591,7 +628,7 @@ public sealed class WinUiShellContractTests
             "<ScrollViewer x:Name=\"DisplayPage\"");
         string lightingHeader = SliceMethod(
             lightingPage,
-            "<Grid x:Name=\"LightingPageHeader\"",
+            "<local:ResponsivePageHeader x:Name=\"LightingPageHeader\"",
             "<StackPanel x:Name=\"LightingCardsHost\"");
         string lightingTemplate = SliceMethod(
             xaml,
