@@ -37,6 +37,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept page customization buttons aligned with their titles while allowing
+  longer localized and profile actions to use a separate row.
 - Fixed the **Random colors** switch track alignment and made compact switch
   alignment explicit across the main window and quick controls.
 - Expanded the graphical installer's progress details pane to use the available
