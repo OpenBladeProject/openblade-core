@@ -17,7 +17,12 @@ public sealed class DiagnosticBundleExporterTests
                 $"3.01-{secret}",
                 "1.04",
                 "1.5.0.0",
-                "98.3.5c.40.3d"),
+                "98.3.5c.40.3d",
+                "NVIDIA GeForce RTX 5090 Laptop GPU",
+                "Unavailable",
+                "Unavailable",
+                "ObservedOnly",
+                "ObservedOnly"),
             new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", secret),
             new Dictionary<string, bool> { [$"fan-{secret}"] = true },
             new Dictionary<string, string> { ["profile"] = $"Balanced {secret}" },
@@ -57,6 +62,15 @@ public sealed class DiagnosticBundleExporterTests
         Assert.Equal("1.04", versions.RootElement.GetProperty("ecVersion").GetString());
         Assert.Equal("1.5.0.0", versions.RootElement.GetProperty("mcuVersion").GetString());
         Assert.Equal("98.3.5c.40.3d", versions.RootElement.GetProperty("vbiosVersion").GetString());
+        Assert.Equal(
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            versions.RootElement.GetProperty("vbiosGpuName").GetString());
+        Assert.Equal(
+            "ObservedOnly",
+            versions.RootElement.GetProperty("thunderboltFirmwareAccess").GetString());
+        Assert.Equal(
+            "ObservedOnly",
+            versions.RootElement.GetProperty("touchpadFirmwareAccess").GetString());
         string formerVersionProperty = "open" + "SynapseVersion";
         Assert.False(versions.RootElement.TryGetProperty(formerVersionProperty, out _));
 

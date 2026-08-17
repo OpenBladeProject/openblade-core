@@ -70,7 +70,15 @@ public sealed class WindowsDiagnosticMetadataSourceTests
     [Fact]
     public void MetadataSource_IncludesAllCapturedFirmwareVersions()
     {
-        var firmware = new FirmwareVersions("3.01", "1.04", "1.5.0.0", "98.3.5c.40.3d");
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "1.5.0.0",
+            "98.3.5c.40.3d",
+            "RZ09-0581",
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            ThunderboltFirmwareAccess: DeviceFeatureAccess.ObservedOnly,
+            TouchpadFirmwareAccess: DeviceFeatureAccess.ObservedOnly);
         var source = new WindowsDiagnosticMetadataSource(
             new FixedAuthorizedUserTokenSource(),
             new FixedFirmwareVersionSource(firmware));
@@ -81,6 +89,13 @@ public sealed class WindowsDiagnosticMetadataSourceTests
         Assert.Equal(firmware.EcVersion, versions.EcVersion);
         Assert.Equal(firmware.McuVersion, versions.McuVersion);
         Assert.Equal(firmware.VbiosVersion, versions.VbiosVersion);
+        Assert.Equal(firmware.VbiosGpuName, versions.VbiosGpuName);
+        Assert.Equal(
+            firmware.ThunderboltFirmwareAccess?.ToString(),
+            versions.ThunderboltFirmwareAccess);
+        Assert.Equal(
+            firmware.TouchpadFirmwareAccess?.ToString(),
+            versions.TouchpadFirmwareAccess);
     }
 
     [Theory]

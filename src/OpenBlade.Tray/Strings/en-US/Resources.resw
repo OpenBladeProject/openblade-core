@@ -1562,6 +1562,12 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockTheseAreTheSettingsSavedInEach.Text" xml:space="preserve">
     <value>These are the settings saved in each profile. A dot marks a value with a pending change; point to it to preview the new value.</value>
   </data>
+  <data name="MainWindow_TextBlockThunderboltFirmware.Text" xml:space="preserve">
+    <value>Thunderbolt 5</value>
+  </data>
+  <data name="MainWindow_TextBlockTouchpadFirmware.Text" xml:space="preserve">
+    <value>Touchpad</value>
+  </data>
   <data name="MainWindow_TextBlockTrayDashboard.Text" xml:space="preserve">
     <value>Tray dashboard</value>
   </data>

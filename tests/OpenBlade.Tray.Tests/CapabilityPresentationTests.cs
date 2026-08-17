@@ -121,7 +121,7 @@ public sealed class CapabilityPresentationTests
         XElement[] valueGrids = versionsGrid.Elements()
             .Where(element => element.Name.LocalName == "Grid")
             .ToArray();
-        Assert.Equal(4, valueGrids.Length);
+        Assert.Equal(7, valueGrids.Length);
         Assert.All(valueGrids, grid => Assert.Equal(
             2,
             grid.Elements()
@@ -145,9 +145,21 @@ public sealed class CapabilityPresentationTests
                         "FirmwareUpdateViewModel.Published",
                         StringComparison.Ordinal)))
             .ToArray();
-        Assert.Equal(6, versionValues.Length);
+        Assert.Equal(12, versionValues.Length);
         Assert.All(versionValues, value =>
             Assert.Equal("Wrap", Attribute(value, "TextWrapping")));
+        Assert.Equal(
+            2,
+            versionsSection.Descendants()
+                .Count(element => Attribute(element, "Visibility")?.Contains(
+                    "ShowsThunderboltFirmware",
+                    StringComparison.Ordinal) == true));
+        Assert.Equal(
+            2,
+            versionsSection.Descendants()
+                .Count(element => Attribute(element, "Visibility")?.Contains(
+                    "ShowsTouchpadFirmware",
+                    StringComparison.Ordinal) == true));
     }
 
     [Fact]

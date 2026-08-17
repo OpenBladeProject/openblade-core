@@ -398,8 +398,13 @@ public static class FirmwareSmokeAssessment
     private static string FirmwareInventory(FirmwareIdentity firmware) =>
         string.Join(
             "; ",
-            FirmwareVersions(firmware).Select(version =>
-                $"{FirmwareComponentName(version.Key)}={version.Value}"));
+            FirmwareVersions(firmware)
+                .Select(version => $"{FirmwareComponentName(version.Key)}={version.Value}")
+                .Concat(
+                [
+                    $"Thunderbolt={firmware.Thunderbolt} ({firmware.ThunderboltAccess ?? "Unavailable"})",
+                    $"Touchpad={firmware.Touchpad} ({firmware.TouchpadAccess ?? "Unavailable"})",
+                ]));
 
     private static string FirmwareComponentName(FirmwareComponent component) =>
         component switch

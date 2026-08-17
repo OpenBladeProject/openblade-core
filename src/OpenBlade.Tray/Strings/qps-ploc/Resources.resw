@@ -1562,6 +1562,12 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockTheseAreTheSettingsSavedInEach.Text" xml:space="preserve">
     <value>[!! Thésé áré thé séttíngs sávéd ín éách prófílé. Á dót márks á válúé wíth á péndíng chángé; póínt tó ít tó prévíéw thé néw válúé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_TextBlockThunderboltFirmware.Text" xml:space="preserve">
+    <value>[!! Thúndérbólt 5 ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockTouchpadFirmware.Text" xml:space="preserve">
+    <value>[!! Tóúchpád ~~~ !!]</value>
+  </data>
   <data name="MainWindow_TextBlockTrayDashboard.Text" xml:space="preserve">
     <value>[!! Tráý dáshbóárd ~~~~~ !!]</value>
   </data>

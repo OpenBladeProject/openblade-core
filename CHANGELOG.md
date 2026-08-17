@@ -7,6 +7,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added GPU-specific VBIOS update comparison for exact supported Blade models.
+  OpenBlade now carries the installed NVIDIA adapter identity through service
+  status and diagnostics, selects only the matching official Razer VBIOS
+  release, and declines comparison when either side cannot be identified.
+- Added exact-RZ09-0581 published Thunderbolt 5 and touchpad versions to the
+  firmware inventory as observed-only fields. Their installed versions remain
+  unavailable, so they never produce an update comparison or notification.
 - Added an opt-in **60 Hz lighting** Lab mode for the admitted RZ09-0581
   keyboard transport. The service keeps 30 Hz as the default, persists the
   selection after the tray exits, and applies it to supported built-in,
@@ -30,6 +37,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Advanced the firmware-smoke snapshot schema from 7 to 8 for observed-only
+  Thunderbolt and touchpad inventory metadata.
 - Moved the Lab keyboard preset importer into the Keyboard section and replaced
   the long Lab features description with an on-demand list of current features.
 - Advanced the profile/configuration schema from 13 to 14 for the persisted

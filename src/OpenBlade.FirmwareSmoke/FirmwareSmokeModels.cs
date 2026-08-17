@@ -24,7 +24,11 @@ public sealed record FirmwareIdentity(
     string Bios,
     string Ec,
     string Mcu,
-    string Vbios);
+    string Vbios,
+    string Thunderbolt = "Unavailable",
+    string Touchpad = "Unavailable",
+    string? ThunderboltAccess = null,
+    string? TouchpadAccess = null);
 
 public sealed record FirmwareSmokeCapabilities(
     IReadOnlyList<string> PerformancePresets,

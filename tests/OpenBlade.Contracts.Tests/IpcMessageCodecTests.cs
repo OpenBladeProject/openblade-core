@@ -814,7 +814,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task FirmwareMetadata_RoundTripsModelAndDefaultsOlderFrames()
+    public async Task FirmwareMetadata_RoundTripsGpuAndDefaultsOlderFrames()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -823,7 +823,10 @@ public sealed class IpcMessageCodecTests
                 "1.04",
                 "1.6.0.0",
                 "98.3.5c.40.3d",
-                "RZ09-0581"),
+                "RZ09-0581",
+                "NVIDIA GeForce RTX 5090 Laptop GPU",
+                ThunderboltFirmwareAccess: DeviceFeatureAccess.ObservedOnly,
+                TouchpadFirmwareAccess: DeviceFeatureAccess.ObservedOnly),
         };
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
         Assert.Equal(expected.Firmware, actual.Firmware);
@@ -848,6 +851,11 @@ public sealed class IpcMessageCodecTests
         JsonObject firmware = Assert.IsType<JsonObject>(
             status["firmware"]);
         firmware.Remove("modelNumber");
+        firmware.Remove("vbiosGpuName");
+        firmware.Remove("thunderboltFirmwareVersion");
+        firmware.Remove("touchpadFirmwareVersion");
+        firmware.Remove("thunderboltFirmwareAccess");
+        firmware.Remove("touchpadFirmwareAccess");
         using MemoryStream stream = FrameJson(root.ToJsonString());
 
         ServiceStatusEvent olderFrame = Assert.IsType<ServiceStatusEvent>(
@@ -855,6 +863,13 @@ public sealed class IpcMessageCodecTests
                 stream,
                 CancellationToken.None));
         Assert.Equal("Unavailable", olderFrame.Status.Firmware?.ModelNumber);
+        Assert.Equal("Unavailable", olderFrame.Status.Firmware?.VbiosGpuName);
+        Assert.Equal(
+            "Unavailable",
+            olderFrame.Status.Firmware?.ThunderboltFirmwareVersion);
+        Assert.Equal("Unavailable", olderFrame.Status.Firmware?.TouchpadFirmwareVersion);
+        Assert.Null(olderFrame.Status.Firmware?.ThunderboltFirmwareAccess);
+        Assert.Null(olderFrame.Status.Firmware?.TouchpadFirmwareAccess);
     }
 
     [Fact]

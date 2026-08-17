@@ -20,6 +20,11 @@ public sealed class FirmwareSmokeAssessmentTests
         Assert.Equal(
             FirmwareSmokeOutcome.Passed,
             Assert.Single(report.Checks, check => check.Id == "capabilities.lighting").Outcome);
+        string inventory = Assert.Single(
+            report.Checks,
+            check => check.Id == "firmware.inventory.available").Actual;
+        Assert.Contains("Thunderbolt=Unavailable (ObservedOnly)", inventory);
+        Assert.Contains("Touchpad=Unavailable (ObservedOnly)", inventory);
     }
 
     [Fact]
@@ -582,7 +587,13 @@ public sealed class FirmwareSmokeAssessmentTests
         ExternalChanges: [],
         UnconfirmedWrites: [],
         Message: "Verified device state observed.",
-        new FirmwareIdentity("3.01", "1.04", mcu, "98.3.5c.40.3d"),
+        new FirmwareIdentity(
+            "3.01",
+            "1.04",
+            mcu,
+            "98.3.5c.40.3d",
+            ThunderboltAccess: DeviceFeatureAccess.ObservedOnly.ToString(),
+            TouchpadAccess: DeviceFeatureAccess.ObservedOnly.ToString()),
         new FirmwareSmokeCapabilities(
             [
                 "Balanced",
