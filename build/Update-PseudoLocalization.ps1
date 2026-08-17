@@ -65,7 +65,10 @@ function Write-PseudoResource {
     $settings.NewLineChars = "`r`n"
     $settings.NewLineHandling = [Xml.NewLineHandling]::Replace
     $writer = [Xml.XmlWriter]::Create($Destination, $settings)
-    try { $document.Save($writer) }
+    try {
+        $document.Save($writer)
+        $writer.WriteWhitespace("`r`n")
+    }
     finally { $writer.Dispose() }
 }
 

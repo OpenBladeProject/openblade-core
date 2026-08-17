@@ -142,6 +142,13 @@ $settings.Encoding = [Text.UTF8Encoding]::new($false)
 $settings.Indent = $true
 $settings.NewLineChars = "`r`n"
 $settings.NewLineHandling = [Xml.NewLineHandling]::Replace
+$existingKeys = @()
+if (Test-Path -LiteralPath $resourcePath -PathType Leaf) {
+    [xml]$existingDocument = [IO.File]::ReadAllText(
+        $resourcePath,
+        [Text.UTF8Encoding]::new($false, $true))
+    $existingKeys = @($existingDocument.root.data | ForEach-Object { [string]$_.name })
+}
 $writer = [Xml.XmlWriter]::Create($resourcePath, $settings)
 try {
     $writer.WriteStartDocument()
@@ -156,14 +163,30 @@ try {
         $writer.WriteElementString('value', $header[1])
         $writer.WriteEndElement()
     }
-    foreach ($entry in $resources.GetEnumerator() | Sort-Object Key) {
+    $keys = [Collections.Generic.List[string]]::new()
+    $seenKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($key in $existingKeys) {
+        if ($resources.Contains($key) -and $seenKeys.Add($key)) {
+            $keys.Add($key)
+        }
+    }
+    $newKeys = [Collections.Generic.List[string]]::new()
+    foreach ($key in $resources.Keys) {
+        if ($seenKeys.Add([string]$key)) {
+            $newKeys.Add([string]$key)
+        }
+    }
+    $newKeys.Sort([StringComparer]::Ordinal)
+    $keys.AddRange($newKeys)
+    foreach ($key in $keys) {
         $writer.WriteStartElement('data')
-        $writer.WriteAttributeString('name', $entry.Key)
+        $writer.WriteAttributeString('name', $key)
         $writer.WriteAttributeString('xml', 'space', $null, 'preserve')
-        $writer.WriteElementString('value', [string]$entry.Value)
+        $writer.WriteElementString('value', [string]$resources[$key])
         $writer.WriteEndElement()
     }
     $writer.WriteEndElement()
+    $writer.WriteWhitespace("`r`n")
     $writer.WriteEndDocument()
 }
 finally {

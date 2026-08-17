@@ -20,19 +20,23 @@ localization validator checks that copy so the two cannot drift.
 
 ## Adding or changing text
 
-Edit the en-US resource first. Give WinUI elements a stable `x:Uid`; do not use
-the displayed sentence as the identifier. Attached properties use their full
-WinUI resource name. For example:
+For WinUI and graphical installer text, edit the localizable XAML or code
+fallback first. The extraction scripts rebuild those en-US catalogs from their
+source files, so do not hand-edit the generated catalog value. Give WinUI
+elements a stable `x:Uid`; do not use the displayed sentence as the identifier.
+Attached properties use their full WinUI resource name. For example:
 
 ```text
 DashboardRefreshButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name
 ```
 
-The managed catalogs use the English sentence as the resource key and safe
-runtime fallback. Add Tray.Core text through `TrayText.Get` or
-`TrayText.Format`, installer text through `InstallerStrings.Get` or
-`InstallerStrings.Format`, and native setup text through `SetupStrings`.
-Keep numbered format placeholders unchanged across translations.
+The managed Tray.Core and Setup catalogs use the English sentence as the
+resource key and safe runtime fallback. Edit their authoritative en-US entry
+alongside the matching `TrayText.Get`, `TrayText.Format`, or `SetupStrings`
+call. Add installer text through `InstallerStrings.Get` or
+`InstallerStrings.Format`; its extractor copies those fallbacks into the
+installer catalog. Keep numbered format placeholders unchanged across
+translations.
 
 After editing localizable source text, regenerate the authoritative English
 catalogs and pseudo locale in one PowerShell process, then run the validator:

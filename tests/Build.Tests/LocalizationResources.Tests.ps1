@@ -42,6 +42,19 @@ function Get-FixtureRelativePath {
     return $fullPath.Substring($prefix.Length)
 }
 
+function Get-FileSha256 {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        return [BitConverter]::ToString(
+            $algorithm.ComputeHash([IO.File]::ReadAllBytes($Path))).Replace('-', '')
+    }
+    finally {
+        $algorithm.Dispose()
+    }
+}
+
 $parseErrors = $null
 [void][Management.Automation.Language.Parser]::ParseFile(
     $validator,
@@ -276,20 +289,26 @@ try {
           'src\OpenBlade.Tray.Core\Properties\Resources.qps-ploc.resx'),
         @('src\OpenBlade.Setup\Properties\Resources.resx',
           'src\OpenBlade.Setup\Properties\Resources.qps-ploc.resx'))
-    $expectedPseudoValues = @{}
-    foreach ($catalog in $catalogs) {
-        [xml]$pseudoDocument = [IO.File]::ReadAllText(
-            (Join-Path $pseudoFixture $catalog[1]),
-            $utf8)
-        $values = [Collections.Generic.Dictionary[string, string]]::new(
-            [StringComparer]::Ordinal)
-        foreach ($entry in @($pseudoDocument.root.data)) {
-            $values.Add([string]$entry.name, [string]$entry.value)
-        }
-        $expectedPseudoValues[$catalog[1]] = $values
+    $generatedCatalogs = @(
+        $catalogs[0][0],
+        $catalogs[1][0],
+        $catalogs[0][1],
+        $catalogs[1][1],
+        $catalogs[2][1],
+        $catalogs[3][1])
+    $expectedHashes = @{}
+    foreach ($relativePath in $generatedCatalogs) {
+        $expectedHashes[$relativePath] = Get-FileSha256 (
+            Join-Path $pseudoFixture $relativePath)
     }
 
     & (Join-Path $pseudoFixture 'build\Update-LocalizationResources.ps1')
+    foreach ($relativePath in $generatedCatalogs) {
+        $actualHash = Get-FileSha256 (Join-Path $pseudoFixture $relativePath)
+        if ($actualHash -cne $expectedHashes[$relativePath]) {
+            throw "Regenerated catalog '$relativePath' changed bytes unexpectedly."
+        }
+    }
     & $validator -Repository $pseudoFixture
     foreach ($catalog in $catalogs) {
         [xml]$englishDocument = [IO.File]::ReadAllText(
@@ -298,19 +317,6 @@ try {
         [xml]$pseudoDocument = [IO.File]::ReadAllText(
             (Join-Path $pseudoFixture $catalog[1]),
             $utf8)
-        $expectedValues = $expectedPseudoValues[$catalog[1]]
-        if (@($pseudoDocument.root.data).Count -ne $expectedValues.Count) {
-            throw "Regenerated pseudo catalog '$($catalog[1])' changed its resource count."
-        }
-        foreach ($pseudoEntry in @($pseudoDocument.root.data)) {
-            $expectedValue = $null
-            if (-not $expectedValues.TryGetValue(
-                    [string]$pseudoEntry.name,
-                    [ref]$expectedValue) -or
-                [string]$pseudoEntry.value -cne $expectedValue) {
-                throw "Regenerated pseudo resource '$($pseudoEntry.name)' changed unexpectedly."
-            }
-        }
         foreach ($englishEntry in @($englishDocument.root.data)) {
             $englishValue = [string]$englishEntry.value
             if ($englishValue -match '\p{L}') { continue }
