@@ -18,20 +18,55 @@ public sealed class SetupProgressReporterTests
     }
 
     [Fact]
-    public void TextWriterReporter_EmitsOneBoundedLinePerAction()
+    public void TextWriterReporter_EmitsVersionedCodeAndBase64Argument()
     {
         StringWriter writer = new();
         using TextWriterSetupProgressReporter reporter = new(writer);
 
-        reporter.Report("Copying payload\r\nwith forged line");
-        reporter.Report(new string('x', 600));
+        reporter.Report(SetupProgressCode.InspectPayload);
+        reporter.Report(SetupProgressCode.CopyFile, "payload\r\nwith forged line");
 
         string[] lines = writer.ToString().Split(
             Environment.NewLine,
             StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal(2, lines.Length);
-        Assert.Equal("Copying payload  with forged line", lines[0]);
-        Assert.Equal(512, lines[1].Length);
+        Assert.Equal("v1|InspectPayload", lines[0]);
+        Assert.Equal(
+            "v1|CopyFile|cGF5bG9hZA0Kd2l0aCBmb3JnZWQgbGluZQ==",
+            lines[1]);
+    }
+
+    [Fact]
+    public void ProgressEvent_BoundsTheOnlyDynamicArgument()
+    {
+        SetupProgressEvent progress = SetupProgressEvent.Create(
+            SetupProgressCode.CopyFile,
+            new string('x', 600));
+
+        Assert.Equal(512, Assert.Single(progress.Arguments).Length);
+        Assert.Equal($"Copying {new string('x', 512)}", progress.ToInvariantDiagnostic());
+    }
+
+    [Theory]
+    [InlineData(SetupProgressCode.CopyFile)]
+    [InlineData(SetupProgressCode.InstallService, "unexpected")]
+    public void ProgressEvent_RejectsTheWrongArgumentCount(
+        SetupProgressCode code,
+        params string[] arguments)
+    {
+        Assert.Throws<ArgumentException>(() => SetupProgressEvent.Create(code, arguments));
+    }
+
+    [Fact]
+    public void InvariantDiagnostic_DoesNotDependOnCurrentCulture()
+    {
+        using CultureScope culture = new("fr-FR");
+
+        SetupProgressEvent progress = SetupProgressEvent.Create(
+            SetupProgressCode.CopyFile,
+            "OpenBlade.Tray.exe");
+
+        Assert.Equal("Copying OpenBlade.Tray.exe", progress.ToInvariantDiagnostic());
     }
 
     [Fact]

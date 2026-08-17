@@ -276,8 +276,8 @@ public sealed class FirmwareUpdateAssistantViewModel :
     IAsyncDisposable
 {
     internal static readonly TimeSpan FailureRetryDelay = TimeSpan.FromMinutes(5);
-    private const string NotCheckedMessage =
-        "Check Razer's official page for the latest firmware versions.";
+    private static string NotCheckedMessage =>
+        TrayText.Get("Check Razer's official page for the latest firmware versions.");
     private readonly IRazerFirmwareUpdateClient client;
     private readonly TimeProvider timeProvider;
     private readonly CancellationTokenSource lifetime = new();
@@ -296,9 +296,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
     private RazerPublishedFirmwareVersionStatus? cachedEcStatus;
     private RazerPublishedFirmwareVersionStatus? cachedMcuStatus;
     private string statusText = NotCheckedMessage;
-    private string publishedBiosVersion = "Not checked";
-    private string publishedEcVersion = "Not checked";
-    private string publishedMcuVersion = "Not checked";
+    private string publishedBiosVersion = TrayText.Get("Not checked");
+    private string publishedEcVersion = TrayText.Get("Not checked");
+    private string publishedMcuVersion = TrayText.Get("Not checked");
     private bool isChecking;
     private bool isUpdateAvailable;
     private string updateAvailableSummary = string.Empty;
@@ -326,11 +326,11 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     public IReadOnlyList<UpdateCheckIntervalOption> IntervalOptions { get; } =
     [
-        new(UpdateCheckInterval.EveryStartup, "Every startup"),
-        new(UpdateCheckInterval.Daily, "Daily"),
-        new(UpdateCheckInterval.Weekly, "Weekly"),
-        new(UpdateCheckInterval.Monthly, "Monthly"),
-        new(UpdateCheckInterval.ManualOnly, "Manual only"),
+        new(UpdateCheckInterval.EveryStartup, TrayText.Get("Every startup")),
+        new(UpdateCheckInterval.Daily, TrayText.Get("Daily")),
+        new(UpdateCheckInterval.Weekly, TrayText.Get("Weekly")),
+        new(UpdateCheckInterval.Monthly, TrayText.Get("Monthly")),
+        new(UpdateCheckInterval.ManualOnly, TrayText.Get("Manual only")),
     ];
 
     public UpdateCheckInterval Interval
@@ -579,7 +579,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
         }
 
         IsChecking = true;
-        StatusText = "Checking Razer's official support page...";
+        StatusText = TrayText.Get("Checking Razer's official support page...");
         try
         {
             RazerPublishedFirmwareVersions versions =
@@ -610,7 +610,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
             StatusText = IsUpdateAvailable
                 ? UpdateAvailableSummary
-                : "Latest firmware versions loaded from Razer.";
+                : TrayText.Get("Latest firmware versions loaded from Razer.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -622,7 +622,8 @@ public sealed class FirmwareUpdateAssistantViewModel :
                 "OpenBlade firmware update check failed: {0}",
                 exception);
             RecordFailureRetry(page.ModelNumber);
-            StatusText = "Couldn't read Razer's page. The official link is still available.";
+            StatusText = TrayText.Get(
+                "Couldn't read Razer's page. The official link is still available.");
         }
         catch (Exception exception)
         {
@@ -630,7 +631,8 @@ public sealed class FirmwareUpdateAssistantViewModel :
                 "OpenBlade firmware update check failed unexpectedly: {0}",
                 exception);
             RecordFailureRetry(page.ModelNumber);
-            StatusText = "Couldn't read Razer's page. The official link is still available.";
+            StatusText = TrayText.Get(
+                "Couldn't read Razer's page. The official link is still available.");
         }
         finally
         {
@@ -665,12 +667,14 @@ public sealed class FirmwareUpdateAssistantViewModel :
         AddNewerComponent(
             newerComponents,
             "MCU",
-            McuFirmwareVersionPresentation.Format(installedFirmware?.McuVersion),
+            installedFirmware?.McuVersion,
             published.McuVersion);
 
         IsUpdateAvailable = newerComponents.Count > 0;
         UpdateAvailableSummary = IsUpdateAvailable
-            ? $"Newer {string.Join(", ", newerComponents)} firmware is available from Razer."
+            ? TrayText.Format(
+                "Newer {0} firmware is available from Razer.",
+                string.Join(", ", newerComponents))
             : string.Empty;
         if (!IsUpdateAvailable)
         {
@@ -715,7 +719,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
         if (publishedVersion > installedVersion)
         {
-            newerComponents.Add($"{label} {published!.Trim()}");
+            newerComponents.Add(TrayText.Format("{0} {1}", label, published!.Trim()));
         }
     }
 
@@ -741,7 +745,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     private string CreateNotCheckedMessage() =>
         lastSuccessfulCheckAt is DateTimeOffset checkedAt
-            ? $"Last checked {checkedAt.ToLocalTime():g}. Check again to load published versions."
+            ? TrayText.Format(
+                "Last checked {0:g}. Check again to load published versions.",
+                checkedAt.ToLocalTime())
             : NotCheckedMessage;
 
     private void RestoreCachedVersionsForCurrentModel()
@@ -776,15 +782,17 @@ public sealed class FirmwareUpdateAssistantViewModel :
             PresentUpdateAvailability(supportPage!, published);
             StatusText = IsUpdateAvailable
                 ? UpdateAvailableSummary
-                : $"Latest firmware versions last loaded {lastSuccessfulCheckAt.Value.ToLocalTime():g}.";
+                : TrayText.Format(
+                    "Latest firmware versions last loaded {0:g}.",
+                    lastSuccessfulCheckAt.Value.ToLocalTime());
             return;
         }
 
         IsUpdateAvailable = false;
         UpdateAvailableSummary = string.Empty;
-        PublishedBiosVersion = "Not checked";
-        PublishedEcVersion = "Not checked";
-        PublishedMcuVersion = "Not checked";
+        PublishedBiosVersion = TrayText.Get("Not checked");
+        PublishedEcVersion = TrayText.Get("Not checked");
+        PublishedMcuVersion = TrayText.Get("Not checked");
         StatusText = CreateNotCheckedMessage();
 
         bool successfulCacheIsInvalid = lastSuccessfulCheckAt is not null
@@ -811,7 +819,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
     private static string FirmwareValue(string? value) =>
         string.IsNullOrWhiteSpace(value)
             || string.Equals(value.Trim(), "Unavailable", StringComparison.OrdinalIgnoreCase)
-            ? "Unavailable"
+            ? TrayText.Get("Unavailable")
             : value.Trim();
 
     private static string PublishedValue(
@@ -820,8 +828,8 @@ public sealed class FirmwareUpdateAssistantViewModel :
         !string.IsNullOrWhiteSpace(value)
             ? value.Trim()
             : status == RazerPublishedFirmwareVersionStatus.NotListed
-                ? "Not listed"
-                : "Couldn't read";
+                ? TrayText.Get("Not listed")
+                : TrayText.Get("Couldn't read");
 
     private static string? NormalizeCachedVersion(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

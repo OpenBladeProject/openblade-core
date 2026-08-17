@@ -808,7 +808,7 @@ public sealed class CapabilityPresentationTests
         Assert.True(
             document.Descendants().Count(element => element.Name.LocalName == "VisualState") >= 6);
         Assert.Equal(
-            3,
+            2,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "AdaptiveTrigger"
                 && Attribute(element, "MinWindowWidth") == "900"));

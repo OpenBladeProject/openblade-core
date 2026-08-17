@@ -4,6 +4,7 @@
     <OutputType>Bundle</OutputType>
     <InstallerPlatform>x64</InstallerPlatform>
     <OutputName>OpenBlade-Setup</OutputName>
+    <Cultures>en-US</Cultures>
     <AcceptEula>wix7</AcceptEula>
     <DefineConstants>OpenBladeVersion=$(OpenBladeVersion)</DefineConstants>
   </PropertyGroup>

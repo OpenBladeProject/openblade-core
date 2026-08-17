@@ -831,18 +831,15 @@ public sealed class SetupCommandRunnerTests
             .RunAsync(BundleManaged("install"), CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal("Inspecting and staging the OpenBlade payload", progress.Messages[0]);
-        Assert.Contains("Stopping Windows service OpenBlade for replacement", progress.Messages);
+        Assert.Equal(SetupProgressCode.InspectPayload, progress.Events[0].Code);
         Assert.Contains(
-            "Creating and starting Windows service OpenBlade as LocalSystem",
-            progress.Messages);
-        Assert.Contains(
-            @"Writing HKLM\SOFTWARE\OSSBlade\OpenBlade\Installer registry values",
-            progress.Messages);
+            progress.Events,
+            item => item.Code == SetupProgressCode.StopServiceForReplacement);
+        Assert.Contains(progress.Events, item => item.Code == SetupProgressCode.InstallService);
+        Assert.Contains(progress.Events, item => item.Code == SetupProgressCode.WriteBundleOwnership);
         Assert.True(
-            progress.Messages.IndexOf("Stopping Windows service OpenBlade for replacement")
-            < progress.Messages.IndexOf(
-                "Creating and starting Windows service OpenBlade as LocalSystem"));
+            progress.Events.FindIndex(item => item.Code == SetupProgressCode.StopServiceForReplacement)
+            < progress.Events.FindIndex(item => item.Code == SetupProgressCode.InstallService));
     }
 
     private static void AssertEndsWith(IReadOnlyList<string> actual, IReadOnlyList<string> expected)

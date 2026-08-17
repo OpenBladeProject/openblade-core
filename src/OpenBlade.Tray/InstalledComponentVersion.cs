@@ -13,7 +13,7 @@ internal static class InstalledComponentVersion
             string path = Path.Combine(AppContext.BaseDirectory, fileName);
             if (!File.Exists(path))
             {
-                return "Unavailable";
+                return Unavailable();
             }
 
             return Format(FileVersionInfo.GetVersionInfo(path).ProductVersion);
@@ -23,7 +23,7 @@ internal static class InstalledComponentVersion
             or UnauthorizedAccessException
             or ArgumentException)
         {
-            return "Unavailable";
+            return Unavailable();
         }
     }
 
@@ -31,7 +31,7 @@ internal static class InstalledComponentVersion
     {
         if (string.IsNullOrWhiteSpace(productVersion))
         {
-            return "Unavailable";
+            return Unavailable();
         }
 
         string value = productVersion.Trim();
@@ -46,4 +46,8 @@ internal static class InstalledComponentVersion
             ? $"{value[..metadataSeparator]}+{metadata[..8].ToLowerInvariant()}"
             : value;
     }
+
+    private static string Unavailable() => LocalizedResources.Get(
+        "InstalledComponentVersion_Unavailable",
+        "Unavailable");
 }

@@ -12,6 +12,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   selection after the tray exits, and applies it to supported built-in,
   Ambient Awareness, and Audio Meter animation while RZ09-0528 remains at
   30 Hz.
+- Added en-US resource catalogs and qps-ploc validation for the tray and
+  graphical installer, including safe installer fallback and required-key,
+  placeholder, accessibility-name, and critical-page startup checks.
 - Added an importable example of a cyan sweep that moves from left to right
   with a dim blue wake.
 - Added a versioned, data-only `.oblight` keyboard lighting preset format and
@@ -34,6 +37,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Expanded the graphical installer's progress details pane to use the available
+  window height instead of remaining limited to a few log lines.
 - Offered **Repair** and **Uninstall** when an interactive installer finds one
   cached OpenBlade bundle with the same version. Repair overwrites the installed
   files, records instance-specific ownership, and retires the old registration

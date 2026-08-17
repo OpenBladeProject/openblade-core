@@ -116,13 +116,17 @@ internal sealed class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
         catch (OperationCanceledException) when (
             !cancellationToken.IsCancellationRequested)
         {
-            return Unavailable("The display session agent is not responding.");
+            return Unavailable(
+                "The display session agent is not responding.",
+                DisplaySettingsFailureKind.SessionAgentUnavailable);
         }
         catch (Exception exception) when (
             !cancellationToken.IsCancellationRequested
             && exception is IOException or InvalidDataException or UnauthorizedAccessException)
         {
-            return Unavailable($"Display controls are unavailable: {exception.Message}");
+            return Unavailable(
+                $"Display controls are unavailable: {exception.Message}",
+                DisplaySettingsFailureKind.ControlsUnavailable);
         }
     }
 
@@ -155,7 +159,9 @@ internal sealed class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
         state.Height,
         state.BitsPerColorChannel);
 
-    private static DisplaySettingsSnapshot Unavailable(string message) => new(
+    private static DisplaySettingsSnapshot Unavailable(
+        string message,
+        DisplaySettingsFailureKind failureKind) => new(
         IsAvailable: false,
         RefreshRateOptions: [],
         SelectedRefreshRateKey: null,
@@ -164,5 +170,6 @@ internal sealed class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
         ColorProfileOptions: [],
         SelectedColorProfileKey: null,
         StatusMessage: message,
-        OperationSucceeded: false);
+        OperationSucceeded: false,
+        FailureKind: failureKind);
 }

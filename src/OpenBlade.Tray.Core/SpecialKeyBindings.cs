@@ -122,7 +122,7 @@ public static class SpecialKeyBindingDefaults
         if (RequiresValue(normalized.Kind)
             && string.IsNullOrWhiteSpace(normalized.Value))
         {
-            return "Enter a value for this action.";
+            return TrayText.Get("Enter a value for this action.");
         }
 
         if (normalized.Kind == SpecialKeyActionKind.KeyboardShortcut
@@ -137,7 +137,7 @@ public static class SpecialKeyBindingDefaults
             && (!Uri.TryCreate(normalized.Value, UriKind.Absolute, out Uri? uri)
                 || uri.Scheme is not ("http" or "https")))
         {
-            return "Enter a complete http or https address.";
+            return TrayText.Get("Enter a complete http or https address.");
         }
 
         return string.Empty;

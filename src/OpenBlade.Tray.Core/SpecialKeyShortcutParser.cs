@@ -32,7 +32,8 @@ public static class SpecialKeyShortcutParser
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (tokens.Length == 0 || tokens.Length > 5)
         {
-            throw new FormatException("Use a shortcut such as Ctrl+Shift+M.");
+            throw ShortcutFormatException.Create(
+                "Use a shortcut such as Ctrl+Shift+M.");
         }
 
         var modifiers = new List<ushort>(4);
@@ -44,7 +45,9 @@ public static class SpecialKeyShortcutParser
                 "SHIFT" => 0x10,
                 "ALT" => 0x12,
                 "WIN" or "WINDOWS" => 0x5B,
-                _ => throw new FormatException($"Unknown modifier: {tokens[index]}"),
+                _ => throw ShortcutFormatException.Create(
+                    "Unknown modifier: {0}",
+                    tokens[index]),
             };
             if (!modifiers.Contains(modifier))
             {
@@ -55,7 +58,8 @@ public static class SpecialKeyShortcutParser
         ushort key = ParseKey(tokens[^1]);
         if (modifiers.Contains(key))
         {
-            throw new FormatException("A shortcut must include a non-modifier key.");
+            throw ShortcutFormatException.Create(
+                "A shortcut must include a non-modifier key.");
         }
         return (key, modifiers.ToArray());
     }
@@ -68,9 +72,11 @@ public static class SpecialKeyShortcutParser
             validationMessage = string.Empty;
             return true;
         }
-        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        catch (ShortcutFormatException exception)
         {
-            validationMessage = exception.Message;
+            validationMessage = TrayText.Format(
+                exception.ResourceKey,
+                exception.Arguments);
             return false;
         }
     }
@@ -97,6 +103,29 @@ public static class SpecialKeyShortcutParser
             return key;
         }
 
-        throw new FormatException($"Unknown shortcut key: {token}");
+        throw ShortcutFormatException.Create("Unknown shortcut key: {0}", token);
+    }
+
+    private sealed class ShortcutFormatException : FormatException
+    {
+        private ShortcutFormatException(
+            string resourceKey,
+            object?[] arguments)
+            : base(string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                resourceKey,
+                arguments))
+        {
+            ResourceKey = resourceKey;
+            Arguments = arguments;
+        }
+
+        public string ResourceKey { get; }
+
+        public object?[] Arguments { get; }
+
+        public static ShortcutFormatException Create(
+            string resourceKey,
+            params object?[] arguments) => new(resourceKey, arguments);
     }
 }

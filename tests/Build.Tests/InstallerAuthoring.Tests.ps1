@@ -13,6 +13,9 @@ $bundleSource = Join-Path $repository 'build\installer\Bundle.wxs'
 $setupProject = Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj'
 $installerIcon = Join-Path $repository 'src\OpenBlade.Tray\Assets\Brand\OpenBlade.Installer.ico'
 $setupPathsSource = Join-Path $repository 'src\OpenBlade.Setup\SetupPaths.cs'
+$setupProgressSource = Join-Path $repository 'src\OpenBlade.Setup\SetupProgressReporter.cs'
+$installerProgressSource = Join-Path $repository (
+    'build\installer\OpenBlade.Installer.UI\InstallerProgressPipe.cs')
 
 function Assert-True {
     param(
@@ -32,6 +35,13 @@ Assert-True ($project.Project.PropertyGroup.OutputType -eq 'Bundle') `
     'The graphical installer must build a Burn bundle.'
 Assert-True ($project.Project.PropertyGroup.AcceptEula -eq 'wix7') `
     'WiX 7 OSMF acceptance must remain explicit in the installer project.'
+Assert-True ($project.Project.PropertyGroup.Cultures -eq 'en-US') `
+    'The graphical installer must compile its authoritative en-US localization.'
+$explicitWxlItems = @($project.SelectNodes(
+        "/*[local-name()='Project']/*[local-name()='ItemGroup']/*[local-name()='EmbeddedResource']") |
+    Where-Object { $_.GetAttribute('Include').EndsWith('.wxl') })
+Assert-True ($explicitWxlItems.Count -eq 0) `
+    'WiX SDK default items must discover bundle localization exactly once.'
 
 $packageReferences = @($project.SelectNodes(
         "/*[local-name()='Project']/*[local-name()='ItemGroup']/*[local-name()='PackageReference']") |
@@ -241,12 +251,43 @@ $detailsToggle = $window.SelectSingleNode(
     "/*[local-name()='Window']//*[local-name()='ToggleButton'][@*[local-name()='Name']='DetailsToggle']")
 Assert-True ($null -ne $detailsToggle) `
     'The progress page must expose a Show details toggle.'
-Assert-True ($detailsToggle.GetAttribute('Content') -eq 'Show details') `
-    'The collapsed progress action must be labeled Show details.'
+Assert-True ($detailsToggle.GetAttribute('Content') -eq 'Show _details') `
+    'The collapsed progress action must expose a localized WPF access key.'
 $detailsText = $window.SelectSingleNode(
     "/*[local-name()='Window']//*[local-name()='TextBox'][@*[local-name()='Name']='DetailsText']")
 Assert-True (($null -ne $detailsText) -and ($detailsText.GetAttribute('IsReadOnly') -eq 'True')) `
     'Expanded progress details must be read-only and scrollable.'
+Assert-True ($detailsText.GetAttribute('AutomationProperties.Name') -eq 'Setup details') `
+    'Expanded progress details must expose a screen-reader name.'
+$cancelPanel = $window.SelectSingleNode(
+    "/*[local-name()='Window']//*[local-name()='Grid'][@*[local-name()='Name']='CancelConfirmationPanel']")
+Assert-True ($cancelPanel.GetAttribute('KeyboardNavigation.TabNavigation') -eq 'Cycle') `
+    'The modal cancellation surface must trap keyboard focus.'
+
+$bundleSource = Get-Content -LiteralPath (
+    Join-Path $repository 'build\installer\Bundle.wxs') -Raw
+foreach ($resourceReference in @(
+        '!(loc.VcRuntimeDisplayName)',
+        '!(loc.VcRuntimeDescription)',
+        '!(loc.OpenBladeSetupDisplayName)',
+        '!(loc.OpenBladeSetupDescription)')) {
+    Assert-True ($bundleSource.Contains($resourceReference)) `
+        "Bundle metadata must use localization resource $resourceReference."
+}
+[xml]$bundleLocalization = Get-Content -LiteralPath (
+    Join-Path $repository 'build\installer\Bundle.en-US.wxl')
+Assert-True ($bundleLocalization.DocumentElement.GetAttribute('Culture') -eq 'en-US') `
+    'The bundle must declare en-US as its authoritative localization.'
+$bundleStrings = @($bundleLocalization.DocumentElement.ChildNodes |
+    Where-Object LocalName -eq 'String')
+Assert-True ($bundleStrings.Count -eq 4) `
+    'The bundle must retain its four localized package metadata strings.'
+foreach ($bundleString in $bundleStrings) {
+    Assert-True (-not [string]::IsNullOrWhiteSpace($bundleString.GetAttribute('Value'))) `
+        "Bundle localization '$($bundleString.Id)' must use the WiX Value attribute."
+    Assert-True ([string]::IsNullOrWhiteSpace([string]$bundleString.InnerText)) `
+        "Bundle localization '$($bundleString.Id)' must not use obsolete inner text."
+}
 
 $themeSource = Get-Content -LiteralPath (
     Join-Path $repository 'build\installer\OpenBlade.Installer.UI\InstallerTheme.cs') -Raw
@@ -315,8 +356,10 @@ Assert-True ($progressPipeSource.Contains('BuiltinAdministratorsSid')) `
     'The elevated setup package must be able to write to the private progress channel.'
 Assert-True ($progressPipeSource.Contains('PipeAccessRights.ReadWrite')) `
     'Over-the-shoulder elevated setup must receive sufficient progress-pipe access.'
-Assert-True ($progressPipeSource.Contains('MaximumMessageLength = 512')) `
-    'Progress-pipe messages must remain bounded before reaching the UI.'
+Assert-True ($progressPipeSource.Contains('MaximumMessageLength = 4096')) `
+    'Versioned progress-pipe messages must remain bounded while accepting maximum UTF-8 arguments.'
+Assert-True ($progressPipeSource.Contains('argument.Length > 512')) `
+    'Dynamic setup progress arguments must remain bounded before reaching the UI.'
 
 $payloads = $package.SelectSingleNode("*[local-name()='Payloads']")
 Assert-True ($null -ne $payloads) 'The OpenBlade payload group is missing.'
@@ -473,5 +516,28 @@ Assert-True (
     $storeContract.minimumOperatingSystem -eq
         'Windows 11 version 24H2 x64 (build 26100 or later)') `
     'The Store submission must match the tray and installer OS floor.'
+
+function Get-ProgressCodeNames {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$EnumName
+    )
+
+    $source = Get-Content -LiteralPath $Path -Raw
+    $match = [regex]::Match(
+        $source,
+        "(?s)enum\s+$([regex]::Escape($EnumName))\s*\{(?<Body>.*?)\}")
+    Assert-True $match.Success "Could not find progress enum '$EnumName' in '$Path'."
+    return @($match.Groups['Body'].Value -split ',' |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_.Length -gt 0 })
+}
+
+$setupProgressCodes = @(Get-ProgressCodeNames $setupProgressSource 'SetupProgressCode')
+$installerProgressCodes = @(
+    Get-ProgressCodeNames $installerProgressSource 'InstallerSetupProgressCode')
+Assert-True (
+    ($setupProgressCodes -join '|') -ceq ($installerProgressCodes -join '|')) `
+    'The setup producer and installer consumer progress-code contracts differ.'
 
 Write-Host 'Installer authoring tests passed.'
