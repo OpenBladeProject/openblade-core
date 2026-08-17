@@ -501,11 +501,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{StaticResource SettingsNeutralSubcardStyle}",
             Attribute(toggleRow, "Style"));
-        Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));
-        Assert.Equal("Center", Attribute(toggle, "VerticalAlignment"));
-        Assert.Equal("0", Attribute(toggle, "MinWidth"));
-        Assert.Equal(string.Empty, Attribute(toggle, "OffContent"));
-        Assert.Equal(string.Empty, Attribute(toggle, "OnContent"));
+        Assert.Equal(
+            "{StaticResource CompactCardToggleSwitchStyle}",
+            Attribute(toggle, "Style"));
         Assert.Equal(
             [coreRow, memoryRow],
             toggleRow.ElementsAfterSelf()
@@ -1035,8 +1033,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("OnDisplayRefreshRateChanged", Attribute(refresh, "SelectionChanged"));
 
         XElement hdr = NamedElement(document, "ToggleSwitch", "DisplayHdrToggle");
-        Assert.Equal("Right", Attribute(hdr, "HorizontalAlignment"));
-        Assert.Equal("Center", Attribute(hdr, "VerticalAlignment"));
+        Assert.Equal(
+            "{StaticResource CompactCardToggleSwitchStyle}",
+            Attribute(hdr, "Style"));
         Assert.Equal("OnDisplayHdrToggled", Attribute(hdr, "Toggled"));
 
         XElement color = NamedElement(
@@ -1080,10 +1079,9 @@ public sealed class CapabilityPresentationTests
         foreach (XElement toggle in settings.Descendants()
                      .Where(element => element.Name.LocalName == "ToggleSwitch"))
         {
-            Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));
-            Assert.Equal("0", Attribute(toggle, "MinWidth"));
-            Assert.Equal(string.Empty, Attribute(toggle, "OffContent"));
-            Assert.Equal(string.Empty, Attribute(toggle, "OnContent"));
+            Assert.Equal(
+                "{StaticResource CompactCardToggleSwitchStyle}",
+                Attribute(toggle, "Style"));
         }
 
         Assert.Contains(about.Descendants(), element =>
@@ -1169,15 +1167,17 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("OnStartMinimizedToggled", Attribute(startMinimized, "Toggled"));
         XElement gamingMode = NamedElement(document, "ToggleSwitch", "GamingModeToggle");
         Assert.Equal("OnGamingModeToggled", Attribute(gamingMode, "Toggled"));
-        Assert.Equal("Right", Attribute(gamingMode, "HorizontalAlignment"));
-        Assert.Equal("Center", Attribute(gamingMode, "VerticalAlignment"));
+        Assert.Equal(
+            "{StaticResource CompactCardToggleSwitchStyle}",
+            Attribute(gamingMode, "Style"));
         XElement startupAnimation = NamedElement(
             document,
             "ToggleSwitch",
             "StartupAnimationToggle");
         Assert.Equal("OnStartupAnimationToggled", Attribute(startupAnimation, "Toggled"));
-        Assert.Equal("Right", Attribute(startupAnimation, "HorizontalAlignment"));
-        Assert.Equal("Center", Attribute(startupAnimation, "VerticalAlignment"));
+        Assert.Equal(
+            "{StaticResource CompactCardToggleSwitchStyle}",
+            Attribute(startupAnimation, "Style"));
         Assert.Contains(
             "Open in the notification area without showing the window.",
             xaml,
@@ -2737,11 +2737,9 @@ public sealed class CapabilityPresentationTests
         });
         Assert.All([displayOffToggle, idleTimeoutToggle], toggle =>
         {
-            Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));
-            Assert.Equal("Center", Attribute(toggle, "VerticalAlignment"));
-            Assert.Equal("0", Attribute(toggle, "MinWidth"));
-            Assert.Equal(string.Empty, Attribute(toggle, "OffContent"));
-            Assert.Equal(string.Empty, Attribute(toggle, "OnContent"));
+            Assert.Equal(
+                "{StaticResource CompactCardToggleSwitchStyle}",
+                Attribute(toggle, "Style"));
         });
         Assert.Equal("Right", Attribute(idleTimeoutNumberBox, "HorizontalAlignment"));
         Assert.Equal("Center", Attribute(idleTimeoutNumberBox, "VerticalAlignment"));

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Xml.Linq;
 
 namespace OpenBlade.Tray.Tests;
 
@@ -657,19 +658,68 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void LightingRefreshRateSwitchUsesCompactRightAlignedPresentation()
+    public void TrayCardSwitchesUseCompactRightAlignedPresentation()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
-        string toggle = SliceMethod(
-            xaml,
-            "<ToggleSwitch x:Uid=\"MainWindow_LightingRefreshRateToggleText\"",
-            ">");
+        string trayRoot = Path.GetDirectoryName(ProjectPath)!;
+        string[] xamlFiles = Directory
+            .EnumerateFiles(trayRoot, "*.xaml", SearchOption.AllDirectories)
+            .Where(path => !path.Contains(
+                    $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase)
+                && !path.Contains(
+                    $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase))
+            .ToArray();
 
-        Assert.Contains("HorizontalAlignment=\"Right\"", toggle, StringComparison.Ordinal);
-        Assert.Contains("VerticalAlignment=\"Center\"", toggle, StringComparison.Ordinal);
-        Assert.Contains("MinWidth=\"0\"", toggle, StringComparison.Ordinal);
-        Assert.Contains("OffContent=\"\"", toggle, StringComparison.Ordinal);
-        Assert.Contains("OnContent=\"\"", toggle, StringComparison.Ordinal);
+        Assert.NotEmpty(xamlFiles);
+        List<(string Path, XElement Toggle)> switches = [];
+        foreach (string path in xamlFiles)
+        {
+            XDocument document = XDocument.Load(path);
+            XElement[] fileSwitches = document
+                .Descendants()
+                .Where(element => element.Name.LocalName == "ToggleSwitch")
+                .ToArray();
+            if (fileSwitches.Length == 0)
+            {
+                continue;
+            }
+
+            XElement style = Assert.Single(document.Descendants(), element =>
+                element.Name.LocalName == "Style"
+                && element.Attributes().Any(attribute =>
+                    attribute.Name.LocalName == "Key"
+                    && attribute.Value == "CompactCardToggleSwitchStyle"));
+            Assert.Equal("ToggleSwitch", style.Attribute("TargetType")?.Value);
+            Assert.Equal(
+                "{StaticResource DefaultToggleSwitchStyle}",
+                style.Attribute("BasedOn")?.Value);
+
+            Dictionary<string, string> setters = style
+                .Elements()
+                .Where(element => element.Name.LocalName == "Setter")
+                .ToDictionary(
+                    element => element.Attribute("Property")!.Value,
+                    element => element.Attribute("Value")!.Value,
+                    StringComparer.Ordinal);
+            Assert.Equal("Right", setters["HorizontalAlignment"]);
+            Assert.Equal("Center", setters["VerticalAlignment"]);
+            Assert.Equal("0", setters["MinWidth"]);
+            Assert.Equal(string.Empty, setters["OffContent"]);
+            Assert.Equal(string.Empty, setters["OnContent"]);
+
+            switches.AddRange(fileSwitches.Select(element => (path, element)));
+        }
+
+        Assert.NotEmpty(switches);
+        foreach ((string path, XElement toggle) in switches)
+        {
+            XAttribute? style = toggle.Attribute("Style");
+            Assert.True(
+                style is not null,
+                $"{Path.GetRelativePath(trayRoot, path)} contains an unstyled ToggleSwitch.");
+            Assert.Equal("{StaticResource CompactCardToggleSwitchStyle}", style.Value);
+        }
     }
 
     [Fact]
