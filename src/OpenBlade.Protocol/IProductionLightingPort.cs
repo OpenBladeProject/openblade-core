@@ -76,6 +76,12 @@ public interface IProductionLightingPort : IAsyncDisposable
         LightingSettings settings,
         CancellationToken cancellationToken);
 
+    Task SetLightingRefreshRateAsync(
+        LightingRefreshRate refreshRate,
+        CancellationToken cancellationToken) =>
+        Task.FromException(new NotSupportedException(
+            "Selectable lighting refresh rates are unavailable."));
+
     /// <summary>
     /// Changes brightness by the firmware-native step and returns the resulting
     /// UI percentage. Implementations may use a cached raw level, but must

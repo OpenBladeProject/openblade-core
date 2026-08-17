@@ -559,6 +559,9 @@ Not closeable:
   <data name="MainWindow_LightingNavigationItemText.Content" xml:space="preserve">
     <value>Lighting</value>
   </data>
+  <data name="MainWindow_LightingRefreshRateToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Use 60 Hz keyboard lighting</value>
+  </data>
   <data name="MainWindow_LightingUnavailableInfoBarText.Title" xml:space="preserve">
     <value>Lighting controls unavailable</value>
   </data>
@@ -1433,6 +1436,9 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockReleaseNotes.Text" xml:space="preserve">
     <value>Release notes</value>
   </data>
+  <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
+    <value>Render supported effects more smoothly on admitted keyboards.</value>
+  </data>
   <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
     <value>Report a problem</value>
   </data>
@@ -1483,6 +1489,12 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_TextBlockShutDownOpenBlade.Text" xml:space="preserve">
     <value>Shut down OpenBlade</value>
+  </data>
+  <data name="MainWindow_TextBlockSixtyHzKeyboardLighting.Text" xml:space="preserve">
+    <value>60 Hz keyboard lighting</value>
+  </data>
+  <data name="MainWindow_TextBlockSixtyHzLighting.Text" xml:space="preserve">
+    <value>60 Hz lighting</value>
   </data>
   <data name="MainWindow_TextBlockSmoothQuietChanges.Text" xml:space="preserve">
     <value>Smooth quiet changes</value>

@@ -147,6 +147,9 @@
   <data name="+{0} W" xml:space="preserve">
     <value>[!! +{0} W ~~ !!]</value>
   </data>
+  <data name="60 Hz lighting is not available for this keyboard." xml:space="preserve">
+    <value>[!! 60 Hz líghtíng ís nót áváíláblé fór thís kéýbóárd. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="A shortcut must include a non-modifier key." xml:space="preserve">
     <value>[!! Á shórtcút múst ínclúdé á nón-módífíér kéý. ~~~~~~~~~~~~~ !!]</value>
   </data>
@@ -971,6 +974,9 @@
   </data>
   <data name="Refresh rate changed outside OpenBlade." xml:space="preserve">
     <value>[!! Réfrésh ráté chángéd óútsídé OpenBlade. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Render supported animated effects at 60 Hz. Uses more CPU and power." xml:space="preserve">
+    <value>[!! Réndér súppórtéd ánímátéd éffécts át 60 Hz. Úsés móré CPÚ ánd pówér. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Restore charge limit" xml:space="preserve">
     <value>[!! Réstóré chárgé límít ~~~~~~~ !!]</value>

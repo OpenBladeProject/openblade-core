@@ -66,7 +66,8 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         var preferences = new BatteryAutomationPreferences(
             AlwaysOverrideExternalLightingChanges: true,
             LastKnownLighting: lastKnown,
-            AllowUntestedFirmware: true);
+            AllowUntestedFirmware: true,
+            LightingRefreshRate: LightingRefreshRate.SixtyHz);
 
         await store.SaveConfigurationAsync(
             initial.Profiles,
@@ -89,11 +90,82 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
                 .GetProperty("allowUntestedFirmware")
                 .GetBoolean());
         Assert.Equal(
+            (int)LightingRefreshRate.SixtyHz,
+            persisted.RootElement.GetProperty("preferences")
+                .GetProperty("lightingRefreshRate")
+                .GetInt32());
+        Assert.Equal(
             (int)LightingEffect.Off,
             persisted.RootElement.GetProperty("preferences")
                 .GetProperty("lastKnownLighting")
                 .GetProperty("effect")
                 .GetInt32());
+    }
+
+    [Fact]
+    public async Task LoadAsync_MigratesSchema13WithoutLightingRefreshRateToThirtyHz()
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(
+                ProfileStore.LatestSupportedSchemaVersion,
+                ProfileDefaults.CreateSafeDefaults()),
+            options);
+        byte[] preferences = Encoding.UTF8.GetBytes(
+            $$"""
+              {
+                "schemaVersion": {{ProfileStore.LatestSupportedSchemaVersion}},
+                "preferences": {}
+              }
+              """);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(
+                ProfileStore.LatestSupportedSchemaVersion,
+                Hash(profiles),
+                Hash(preferences)),
+            options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(loaded.Recovered);
+        Assert.Equal(
+            LightingRefreshRate.ThirtyHz,
+            loaded.Preferences.LightingRefreshRate);
+        using JsonDocument persistedProfiles = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(paths.Profiles));
+        using JsonDocument persistedPreferences = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(paths.Preferences));
+        using JsonDocument persistedMarker = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(paths.Marker));
+        Assert.Equal(
+            ProfileStore.CurrentSchemaVersion,
+            persistedProfiles.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(
+            ProfileStore.CurrentSchemaVersion,
+            persistedPreferences.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(
+            (int)LightingRefreshRate.ThirtyHz,
+            persistedPreferences.RootElement.GetProperty("preferences")
+                .GetProperty("lightingRefreshRate")
+                .GetInt32());
+        Assert.Equal(
+            ProfileStore.CurrentSchemaVersion,
+            persistedMarker.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(
+            Hash(await File.ReadAllBytesAsync(paths.Profiles)),
+            persistedMarker.RootElement.GetProperty("profileSha256").GetString());
+        Assert.Equal(
+            Hash(await File.ReadAllBytesAsync(paths.Preferences)),
+            persistedMarker.RootElement.GetProperty("preferencesSha256").GetString());
     }
 
     [Theory]

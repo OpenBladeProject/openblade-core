@@ -115,6 +115,13 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "External lighting override policy is unavailable."));
 
+    Task<ControlOperationResult> SetLightingRefreshRateAsync(
+        LightingRefreshRate refreshRate,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Selectable lighting refresh rates are unavailable."));
+
     Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
         bool enabled,
         CancellationToken token) => Task.FromResult(
@@ -608,6 +615,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             preferences = configuration.Preferences;
             deviceProvider.SetAllowUntestedFirmware(
                 configuration.Preferences.AllowUntestedFirmware);
+            deviceProvider.SetLightingRefreshRate(
+                configuration.Preferences.LightingRefreshRate);
             this.persistentOverrides = persistentOverrides;
             startupProfileReconciliationPending = true;
             startupProfileReconciliationRequested = false;
@@ -771,6 +780,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             preferences = context.Configuration.Preferences;
             deviceProvider.SetAllowUntestedFirmware(
                 context.Configuration.Preferences.AllowUntestedFirmware);
+            deviceProvider.SetLightingRefreshRate(
+                context.Configuration.Preferences.LightingRefreshRate);
             persistentOverrides = overrides;
             lightingSuppressions.Clear();
             lightingSuppressionWritePending = false;
@@ -819,6 +830,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 AlwaysOverrideExternalLightingChanges =
                     context.Configuration.Preferences
                         .AlwaysOverrideExternalLightingChanges,
+                LightingRefreshRate =
+                    EffectiveLightingRefreshRate(current.Capabilities),
                 KeyboardLightingControlMode =
                     context.Configuration.Preferences.KeyboardLightingControlMode,
                 AllowUntestedFirmware =
@@ -2043,6 +2056,144 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         + result.Message,
                 }
                 : result;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult> SetLightingRefreshRateAsync(
+        LightingRefreshRate refreshRate,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        if (!Enum.IsDefined(refreshRate))
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The requested lighting refresh rate is invalid.");
+        }
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            ServiceStatusSnapshot current = GetStatus();
+            if (IsKeyboardLightingDelegated)
+            {
+                return WindowsDynamicLightingOwnsKeyboard();
+            }
+
+            if (!current.DeviceVerified
+                || current.WritesBlocked
+                || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "The lighting refresh rate cannot change while laptop controls are unavailable.");
+            }
+
+            if (current.Capabilities?.SupportedLightingRefreshRates.Contains(refreshRate)
+                != true)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "The requested lighting refresh rate is not supported by this keyboard.");
+            }
+
+            BatteryAutomationPreferences previousPreferences = preferences;
+            bool preferenceChanged = previousPreferences.LightingRefreshRate != refreshRate;
+            if (preferenceChanged)
+            {
+                BatteryAutomationPreferences staged = preferences with
+                {
+                    LightingRefreshRate = refreshRate,
+                };
+                await ConfigurationStore.SaveConfigurationAsync(Automation.Profiles, staged, token)
+                    .ConfigureAwait(false);
+                preferences = staged;
+            }
+
+            deviceProvider.SetLightingRefreshRate(refreshRate);
+
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    preferenceChanged
+                        ? "The lighting refresh rate was saved and will apply when the keyboard reconnects."
+                        : $"Keyboard lighting is already set to {RefreshRateLabel(refreshRate)}.");
+            }
+
+            async Task<Exception?> TryRollbackPreferenceAsync()
+            {
+                if (!preferenceChanged)
+                {
+                    return null;
+                }
+
+                try
+                {
+                    await ConfigurationStore.SaveConfigurationAsync(
+                        Automation.Profiles,
+                        previousPreferences,
+                        CancellationToken.None).ConfigureAwait(false);
+                    preferences = previousPreferences;
+                    deviceProvider.SetLightingRefreshRate(
+                        previousPreferences.LightingRefreshRate);
+                    return null;
+                }
+                catch (Exception rollbackException)
+                {
+                    return rollbackException;
+                }
+            }
+
+            try
+            {
+                await device.SetLightingRefreshRateAsync(refreshRate, token)
+                    .ConfigureAwait(false);
+                PublishIfChanged(current with
+                {
+                    LightingRefreshRate = refreshRate,
+                    Message = $"Keyboard lighting refresh rate is set to {RefreshRateLabel(refreshRate)}.",
+                });
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    $"Keyboard lighting is running at {RefreshRateLabel(refreshRate)}.");
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                Exception? rollbackException = await TryRollbackPreferenceAsync()
+                    .ConfigureAwait(false);
+                if (rollbackException is not null)
+                {
+                    throw new InvalidOperationException(
+                        "The lighting refresh-rate change was canceled after persistence, and the saved selection could not be rolled back.",
+                        rollbackException);
+                }
+
+                throw;
+            }
+            catch (Exception exception)
+            {
+                Exception? rollbackException = await TryRollbackPreferenceAsync()
+                    .ConfigureAwait(false);
+                if (rollbackException is not null)
+                {
+                    return new ControlOperationResult(
+                        ControlOperationStatus.Failed,
+                        "The active lighting renderer could not be updated, and the saved refresh-rate selection could not be rolled back. Retry the selection. "
+                        + exception.Message
+                        + " Rollback: "
+                        + rollbackException.Message);
+                }
+
+                return new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "The active lighting renderer could not be updated, so the refresh-rate selection was rolled back. "
+                    + exception.Message);
+            }
         }
         finally
         {
@@ -6880,6 +7031,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     : TransientExternalPowerMessage
                 : "Verified device state observed.",
             Capabilities = observation.Capabilities,
+            LightingRefreshRate = EffectiveLightingRefreshRate(
+                observation.Capabilities),
             ConfirmedState = observation.Confirmed,
             Profiles = Automation.Profiles,
             DesiredState = Automation.Resolve(observation.Confirmed),
@@ -7839,6 +7992,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingSuppressions: [],
             AlwaysOverrideExternalLightingChanges:
                 preferences.AlwaysOverrideExternalLightingChanges,
+            LightingRefreshRate: LightingRefreshRate.ThirtyHz,
             BatteryHealth: batteryHealth,
             KeyboardLightingControlMode:
                 preferences.KeyboardLightingControlMode,
@@ -7856,6 +8010,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool IsKeyboardLightingDelegated =>
         preferences.KeyboardLightingControlMode
             == KeyboardLightingControlMode.WindowsDynamicLighting;
+
+    private LightingRefreshRate EffectiveLightingRefreshRate(
+        DeviceCapabilities? capabilities) =>
+        capabilities?.SupportedLightingRefreshRates.Contains(
+            preferences.LightingRefreshRate) == true
+            ? preferences.LightingRefreshRate
+            : LightingRefreshRate.ThirtyHz;
 
     private static ControlOperationResult WindowsDynamicLightingOwnsKeyboard() => new(
         ControlOperationStatus.Blocked,
@@ -7949,6 +8110,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ExternalChanges = driftTracker.ExternalChanges,
             Message = message,
             Capabilities = capabilities ?? UnavailableCapabilities,
+            LightingRefreshRate = EffectiveLightingRefreshRate(capabilities),
             ConfirmedState = confirmed,
             Profiles = Automation.Profiles,
             DesiredState = Automation.Resolve(confirmed ?? UnknownConfirmedState),
@@ -8227,6 +8389,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.KeyboardDriverModeActive == right.KeyboardDriverModeActive
         && left.AlwaysOverrideExternalLightingChanges
             == right.AlwaysOverrideExternalLightingChanges
+        && left.LightingRefreshRate == right.LightingRefreshRate
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
         && left.FirmwareCompatibility == right.FirmwareCompatibility
         && left.DisplayBrightnessHidAvailability
@@ -8238,6 +8401,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.Firmware == right.Firmware
         && left.BatteryHealth == right.BatteryHealth
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
+
+    private static string RefreshRateLabel(LightingRefreshRate value) => value switch
+    {
+        LightingRefreshRate.ThirtyHz => "30 Hz",
+        LightingRefreshRate.SixtyHz => "60 Hz",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
 
     private static async Task<LightingRendererOwnershipState> ReadLightingOwnershipAsync(
         IBladeDevice device,
@@ -8669,6 +8839,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && left.FanSpeedRange == right.FanSpeedRange
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
+            && left.SupportedLightingRefreshRates.SetEquals(
+                right.SupportedLightingRefreshRates)
             && left.LogoLightingModes.SetEquals(right.LogoLightingModes)
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)

@@ -130,6 +130,45 @@ public sealed class ServiceAmbientLightingLoopTests
         Assert.True(sampler.Disposed);
     }
 
+    [Fact]
+    public async Task RefreshRateStatusChangeRestartsRendererAtSixtyHzCadence()
+    {
+        var delays = new ControlledDelay();
+        var first = new ConstantSampler(Frame(1));
+        var replacement = new ConstantSampler(Frame(2));
+        var factory = new SequenceSamplerFactory(() => first, () => replacement);
+        var client = new WatchClient();
+        await using var loop = new ServiceAmbientLightingLoop(
+            client,
+            factory,
+            delay: delays.DelayAsync,
+            statusWatcher: client);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.PublishConnected(LightingRefreshRate.ThirtyHz);
+        _ = await client.ReadRequestAsync(cancellation.Token);
+        DelayRequest thirtyHz = await delays.ReadAsync(cancellation.Token);
+        Assert.Equal(
+            TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 30),
+            thirtyHz.Interval);
+
+        client.PublishConnected(LightingRefreshRate.SixtyHz);
+        AmbientLightingFrame sixtyHzFrame = await client.ReadRequestAsync(
+            cancellation.Token);
+        DelayRequest sixtyHz = await delays.ReadAsync(cancellation.Token);
+
+        Assert.Equal(Frame(2).Slots, sixtyHzFrame.Slots);
+        Assert.Equal(
+            TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 60),
+            sixtyHz.Interval);
+        Assert.True(first.Disposed);
+        Assert.Equal(2, factory.CreateCount);
+
+        await CancelAndAwaitAsync(cancellation, running);
+        Assert.True(replacement.Disposed);
+    }
+
     private static async Task CancelAndAwaitAsync(
         CancellationTokenSource cancellation,
         Task running)
@@ -168,8 +207,9 @@ public sealed class ServiceAmbientLightingLoopTests
         internal TaskCompletionSource RequestCancellationObserved { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        internal void PublishConnected() =>
-            updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(Status()));
+        internal void PublishConnected(
+            LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz) =>
+            updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(Status(refreshRate)));
 
         internal void PublishReconnecting() =>
             updates.Writer.TryWrite(new ServiceWatchUpdate.Reconnecting());
@@ -299,7 +339,8 @@ public sealed class ServiceAmbientLightingLoopTests
         internal void Release() => completion.TrySetResult(true);
     }
 
-    private static ServiceStatusSnapshot Status()
+    private static ServiceStatusSnapshot Status(
+        LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         LightingSettings lighting = LightingSettingsFactory.AmbientAwareness(
@@ -337,6 +378,7 @@ public sealed class ServiceAmbientLightingLoopTests
             null,
             FullChargeOverride: false,
             LightingRendererOwnership:
-                LightingRendererOwnershipState.AmbientAwareness);
+                LightingRendererOwnershipState.AmbientAwareness,
+            LightingRefreshRate: refreshRate);
     }
 }

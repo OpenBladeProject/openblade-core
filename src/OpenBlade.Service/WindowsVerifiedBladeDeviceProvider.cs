@@ -93,6 +93,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         }
     }
 
+    public void SetLightingRefreshRate(LightingRefreshRate refreshRate) =>
+        device.SetDesiredLightingRefreshRate(refreshRate);
+
     public FirmwareCompatibilityStatus FirmwareCompatibility =>
         (FirmwareCompatibilityStatus)Volatile.Read(ref firmwareCompatibility);
 
@@ -342,9 +345,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         private GpuClockOffsetManagementState gpuClockOffsetManagementState;
         private GpuClockOffsetCapabilities? confirmedManagedGpuClockOffsets;
         private IProductionLightingPort? lightingPort;
+        private IProductionLightingPort? lightingRefreshRateReconciledPort;
+        private int reconciledLightingRefreshRate = -1;
         // Desired Windows playback state, retained independently of any one
         // renderer port so a recycled exact-device session can reapply it.
         private int desiredPlaybackMuteState = -1;
+        private int desiredLightingRefreshRate = (int)LightingRefreshRate.ThirtyHz;
 
         internal bool HasOwnedKeyTriggeredRenderer
         {
@@ -447,6 +453,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             lighting.Capabilities.SupportsPlaybackMuteIndicator,
                         KeyboardLightingLayoutId =
                             lighting.Capabilities.KeyboardLightingLayoutId,
+                        SupportedLightingRefreshRates =
+                            lighting.Capabilities.SupportedLightingRefreshRates,
                     };
             }
             finally
@@ -1505,6 +1513,47 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             return ExecuteProductionLightingWriteAsync(value, cancellationToken);
         }
 
+        internal void SetDesiredLightingRefreshRate(LightingRefreshRate refreshRate)
+        {
+            if (!Enum.IsDefined(refreshRate))
+            {
+                throw new ArgumentOutOfRangeException(nameof(refreshRate));
+            }
+
+            Volatile.Write(ref desiredLightingRefreshRate, (int)refreshRate);
+        }
+
+        public async Task SetLightingRefreshRateAsync(
+            LightingRefreshRate refreshRate,
+            CancellationToken cancellationToken)
+        {
+            if (!lightingFactory.Capabilities.SupportedLightingRefreshRates.Contains(
+                    refreshRate))
+            {
+                await RejectProductionWrite(
+                    "The requested lighting refresh rate is not admitted.")
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                IProductionLightingPort port = await GetLightingPortForWriteCoreAsync(
+                    LightingPortOperation.LightingChange,
+                    cancellationToken).ConfigureAwait(false);
+                await port.SetLightingRefreshRateAsync(refreshRate, cancellationToken)
+                    .ConfigureAwait(false);
+                SetDesiredLightingRefreshRate(refreshRate);
+                lightingRefreshRateReconciledPort = port;
+                reconciledLightingRefreshRate = (int)refreshRate;
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         public Task<byte> StepKeyboardBrightnessAsync(
             KeyboardBrightnessDirection direction,
             CancellationToken cancellationToken)
@@ -1672,6 +1721,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
 
                 lightingPort = null;
+                ClearLightingRefreshRateReconciliation(current);
                 LightingRendererOwnershipState ownership;
                 try
                 {
@@ -2267,6 +2317,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         {
             IProductionLightingPort? currentLighting = lightingPort;
             lightingPort = null;
+            ClearLightingRefreshRateReconciliation(currentLighting);
             if (currentLighting is null)
             {
                 return;
@@ -2303,9 +2354,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             LightingPortOperation operation,
             CancellationToken cancellationToken)
         {
-            if (lightingPort is not null)
+            if (lightingPort is { } retainedPort)
             {
-                return lightingPort;
+                try
+                {
+                    await ReconcileLightingRefreshRateCoreAsync(
+                        retainedPort,
+                        cancellationToken).ConfigureAwait(false);
+                    return retainedPort;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    await ResetLightingPortCoreAsync(retainedPort).ConfigureAwait(false);
+                    throw;
+                }
             }
 
             HidSessionResult<IProductionLightingPort> opened;
@@ -2347,6 +2413,18 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 return null;
             }
 
+            try
+            {
+                await ReconcileLightingRefreshRateCoreAsync(port, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                ClearLightingRefreshRateReconciliation(port);
+                await port.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+
             int muted = Volatile.Read(ref desiredPlaybackMuteState);
             if (muted >= 0)
             {
@@ -2358,6 +2436,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
                 catch
                 {
+                    ClearLightingRefreshRateReconciliation(port);
                     await port.DisposeAsync().ConfigureAwait(false);
                     throw;
                 }
@@ -2366,6 +2445,40 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             lightingPort = port;
             ClearLightingPortOpenDiagnostics();
             return port;
+        }
+
+        private async Task ReconcileLightingRefreshRateCoreAsync(
+            IProductionLightingPort port,
+            CancellationToken cancellationToken)
+        {
+            LightingRefreshRate refreshRate = (LightingRefreshRate)Volatile.Read(
+                ref desiredLightingRefreshRate);
+            if (ReferenceEquals(lightingRefreshRateReconciledPort, port)
+                && reconciledLightingRefreshRate == (int)refreshRate)
+            {
+                return;
+            }
+
+            if (port.Capabilities.SupportedLightingRefreshRates.Contains(refreshRate))
+            {
+                await port.SetLightingRefreshRateAsync(refreshRate, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            lightingRefreshRateReconciledPort = port;
+            reconciledLightingRefreshRate = (int)refreshRate;
+        }
+
+        private void ClearLightingRefreshRateReconciliation(
+            IProductionLightingPort? port)
+        {
+            if (!ReferenceEquals(lightingRefreshRateReconciledPort, port))
+            {
+                return;
+            }
+
+            lightingRefreshRateReconciledPort = null;
+            reconciledLightingRefreshRate = -1;
         }
 
         private async Task<IProductionLightingPort> GetLightingPortForWriteCoreAsync(
@@ -2635,6 +2748,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
 
             lightingPort = null;
+            ClearLightingRefreshRateReconciliation(port);
             try
             {
                 await port.DisposeAsync().ConfigureAwait(false);

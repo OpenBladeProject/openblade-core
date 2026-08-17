@@ -264,6 +264,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool hasUnconfirmedWrites;
     private string unconfirmedWritesText = string.Empty;
     private bool alwaysOverrideExternalLightingChanges;
+    private LightingRefreshRate lightingRefreshRate = LightingRefreshRate.ThirtyHz;
     private bool allowUntestedFirmware;
     private KeyboardLightingControlMode keyboardLightingControlMode;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
@@ -1226,6 +1227,35 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         private set => SetField(ref alwaysOverrideExternalLightingChanges, value);
     }
 
+    public LightingRefreshRate LightingRefreshRate
+    {
+        get => lightingRefreshRate;
+        private set
+        {
+            if (lightingRefreshRate != value)
+            {
+                SetField(ref lightingRefreshRate, value);
+                Notify(nameof(IsSixtyHzLightingEnabled));
+            }
+        }
+    }
+
+    public bool IsSixtyHzLightingEnabled =>
+        LightingRefreshRate == LightingRefreshRate.SixtyHz;
+
+    public bool SupportsSixtyHzLighting =>
+        Capabilities.SupportedLightingRefreshRates.Contains(
+            LightingRefreshRate.SixtyHz);
+
+    public bool CanSetLightingRefreshRate =>
+        SupportsSixtyHzLighting
+        && CanControlLighting
+        && !UseWindowsDynamicLighting;
+
+    public string LightingRefreshRateAvailabilityText => SupportsSixtyHzLighting
+        ? TrayText.Get("Render supported animated effects at 60 Hz. Uses more CPU and power.")
+        : TrayText.Get("60 Hz lighting is not available for this keyboard.");
+
     public bool AllowUntestedFirmware
     {
         get => allowUntestedFirmware;
@@ -1246,6 +1276,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Notify(nameof(IsLightingControlUnavailableNoticeVisible));
                 Notify(nameof(LightingControlUnavailableMessage));
                 Notify(nameof(ShowOpenBladeKeyboardLightingControls));
+                Notify(nameof(CanSetLightingRefreshRate));
                 Notify(nameof(CanReapplyChangedSettings));
             }
         }
@@ -1288,6 +1319,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             await dispatcher.InvokeAsync(
                 () => AlwaysOverrideExternalLightingChanges = enabled,
+                cancellationToken);
+        }
+
+        return accepted;
+    }
+
+    public async Task<bool> SetLightingRefreshRateAsync(
+        LightingRefreshRate refreshRate,
+        CancellationToken cancellationToken)
+    {
+        if (!LabFeaturesEnabled
+            || !Capabilities.SupportedLightingRefreshRates.Contains(refreshRate)
+            || !CanControlLighting
+            || UseWindowsDynamicLighting)
+        {
+            return false;
+        }
+
+        bool accepted = await RunOperationAsync(
+            token => serviceClient.SetLightingRefreshRateAsync(refreshRate, token),
+            cancellationToken);
+        if (accepted)
+        {
+            await dispatcher.InvokeAsync(
+                () => LightingRefreshRate = refreshRate,
                 cancellationToken);
         }
 
@@ -2403,6 +2459,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
             Notify(nameof(CanControlLighting));
+            Notify(nameof(SupportsSixtyHzLighting));
+            Notify(nameof(CanSetLightingRefreshRate));
+            Notify(nameof(LightingRefreshRateAvailabilityText));
             NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();
         }
@@ -4608,6 +4667,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : string.Empty;
         AlwaysOverrideExternalLightingChanges =
             status.AlwaysOverrideExternalLightingChanges;
+        LightingRefreshRate = status.LightingRefreshRate;
         AllowUntestedFirmware = status.AllowUntestedFirmware;
         KeyboardLightingControlMode = status.KeyboardLightingControlMode;
         Profiles = status.Profiles;
@@ -9010,6 +9070,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(IsReadinessError));
         Notify(nameof(HasLightingCapability));
         Notify(nameof(CanControlLighting));
+        Notify(nameof(CanSetLightingRefreshRate));
         Notify(nameof(IsLightingControlUnavailable));
         Notify(nameof(IsLightingControlUnavailableNoticeVisible));
         Notify(nameof(LightingControlUnavailableMessage));

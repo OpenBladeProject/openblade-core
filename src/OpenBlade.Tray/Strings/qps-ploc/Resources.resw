@@ -559,6 +559,9 @@ Nót clóséáblé:
   <data name="MainWindow_LightingNavigationItemText.Content" xml:space="preserve">
     <value>[!! Líghtíng ~~~ !!]</value>
   </data>
+  <data name="MainWindow_LightingRefreshRateToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Úsé 60 Hz kéýbóárd líghtíng ~~~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_LightingUnavailableInfoBarText.Title" xml:space="preserve">
     <value>[!! Líghtíng cóntróls únáváíláblé ~~~~~~~~~~ !!]</value>
   </data>
@@ -1433,6 +1436,9 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockReleaseNotes.Text" xml:space="preserve">
     <value>[!! Réléásé nótés ~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
+    <value>[!! Réndér súppórtéd éffécts móré smóóthlý ón ádmíttéd kéýbóárds. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
     <value>[!! Répórt á próblém ~~~~~ !!]</value>
   </data>
@@ -1483,6 +1489,12 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockShutDownOpenBlade.Text" xml:space="preserve">
     <value>[!! Shút dówn OpenBlade ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockSixtyHzKeyboardLighting.Text" xml:space="preserve">
+    <value>[!! 60 Hz kéýbóárd líghtíng ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockSixtyHzLighting.Text" xml:space="preserve">
+    <value>[!! 60 Hz líghtíng ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockSmoothQuietChanges.Text" xml:space="preserve">
     <value>[!! Smóóth qúíét chángés ~~~~~~~ !!]</value>

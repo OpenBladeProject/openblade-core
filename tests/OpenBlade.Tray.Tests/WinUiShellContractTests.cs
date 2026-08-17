@@ -1,33 +1,70 @@
 using System.Runtime.CompilerServices;
+using System.Xml.Linq;
 
 namespace OpenBlade.Tray.Tests;
 
 public sealed class WinUiShellContractTests
 {
     [Fact]
-    public void LocalizedPageHeadersStackActionsBelowTitlesAtSnapshotWidth()
+    public void LocalizedPageHeadersKeepStableActionsInTitleRows()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
-        string profilesActions = SliceMethod(
-            xaml,
-            "x:Name=\"ProfilesHeaderActions\"",
-            "</StackPanel>");
-        string lightingActions = SliceMethod(
-            xaml,
-            "x:Name=\"LightingHeaderActions\"",
-            "</StackPanel>");
-        string aboutActions = SliceMethod(
-            xaml,
-            "x:Name=\"AboutHeaderActions\"",
-            "/>");
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        foreach ((string headerName, string actionName, string customizeUid, string visibilityBinding) in new[]
+        {
+            (
+                "DashboardPageHeader",
+                "DashboardProfileSaveActions",
+                "MainWindow_ButtonCustomize",
+                "{x:Bind ViewModel.HasDashboardProfileActionOpportunity, Mode=OneWay}"),
+            (
+                "LaptopPageHeader",
+                "LaptopHeaderActions",
+                "MainWindow_ButtonCustomize2",
+                "{x:Bind ViewModel.HasLaptopPageProfileActionOpportunity, Mode=OneWay}"),
+            (
+                "LightingPageHeader",
+                "LightingHeaderActions",
+                "MainWindow_ButtonCustomize3",
+                "{x:Bind ViewModel.HasLightingProfileActionOpportunity, Mode=OneWay}"),
+            (
+                "DisplayPageHeader",
+                "DisplayHeaderActions",
+                "MainWindow_ButtonCustomize4",
+                "{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"),
+        })
+        {
+            XElement header = NamedElement(document, "Grid", headerName);
+            XElement expandableActions = NamedElement(document, "StackPanel", actionName);
+            XElement customizeButton = UidElement(document, "Button", customizeUid);
 
-        Assert.Contains("x:Name=\"LaptopHeaderCompact\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Grid.Row=\"1\"", profilesActions, StringComparison.Ordinal);
-        Assert.Contains("Grid.ColumnSpan=\"2\"", profilesActions, StringComparison.Ordinal);
-        Assert.Contains("Grid.Row=\"1\"", lightingActions, StringComparison.Ordinal);
-        Assert.Contains("Grid.ColumnSpan=\"2\"", lightingActions, StringComparison.Ordinal);
-        Assert.Contains("Grid.Row=\"1\"", aboutActions, StringComparison.Ordinal);
-        Assert.Contains("Grid.ColumnSpan=\"2\"", aboutActions, StringComparison.Ordinal);
+            Assert.Same(header, expandableActions.Parent);
+            Assert.Equal("1", Attribute(expandableActions, "Grid.Row"));
+            Assert.Equal("2", Attribute(expandableActions, "Grid.ColumnSpan"));
+            Assert.Equal("0,12,0,0", Attribute(expandableActions, "Margin"));
+            Assert.Equal(visibilityBinding, Attribute(expandableActions, "Visibility"));
+            Assert.Null(Attribute(header, "RowSpacing"));
+
+            Assert.Same(header, customizeButton.Parent);
+            Assert.Equal("1", Attribute(customizeButton, "Grid.Column"));
+            Assert.Null(Attribute(customizeButton, "Grid.Row"));
+
+            List<XElement> children = header.Elements().ToList();
+            Assert.True(children.IndexOf(customizeButton) < children.IndexOf(expandableActions));
+        }
+
+        XElement profilesHeader = NamedElement(document, "Grid", "ProfilesPageHeader");
+        XElement profilesActions = NamedElement(document, "StackPanel", "ProfilesHeaderActions");
+        Assert.Same(profilesHeader, profilesActions.Parent);
+        Assert.Equal("1", Attribute(profilesActions, "Grid.Row"));
+        Assert.Equal("2", Attribute(profilesActions, "Grid.ColumnSpan"));
+        Assert.Equal("0,2,0,0", Attribute(profilesActions, "Margin"));
+        Assert.Equal("10", Attribute(profilesHeader, "RowSpacing"));
+
+        XElement aboutCustomize = UidElement(document, "Button", "MainWindow_ButtonCustomize7");
+        Assert.Equal("Grid", aboutCustomize.Parent?.Name.LocalName);
+        Assert.Equal("1", Attribute(aboutCustomize, "Grid.Column"));
+        Assert.Null(Attribute(aboutCustomize, "Grid.Row"));
     }
 
     [Fact]
@@ -275,7 +312,7 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
-        Assert.Equal(4, CountOccurrences(xaml, "HeaderActions.Margin\" Value=\"0,2,0,0\""));
+        Assert.DoesNotContain("HeaderActions.Margin", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("DisplayViewModel.ProfileRelationshipStatus", xaml, StringComparison.Ordinal);
@@ -594,6 +631,29 @@ public sealed class WinUiShellContractTests
             "IsEnabled=\"{x:Bind CanControlLighting, Mode=OneWay}\"",
             keyboardSection,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Name=\"LightingRefreshRateCard\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Uid=\"MainWindow_TextBlockSixtyHzLighting\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Uid=\"MainWindow_LightingRefreshRateToggleText\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Toggled=\"OnLightingRefreshRateToggled\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.True(
+            keyboardSection.IndexOf(
+                "x:Name=\"ImportKeyboardLightingPresetCard\"",
+                StringComparison.Ordinal)
+            < keyboardSection.IndexOf(
+                "x:Name=\"LightingRefreshRateCard\"",
+                StringComparison.Ordinal));
         Assert.Contains("FileTypeFilter.Add(\".oblight\")", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".chroma\")", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".json\")", window, StringComparison.Ordinal);
@@ -631,6 +691,71 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("gpuClockOffsetCommitInProgress", window, StringComparison.Ordinal);
         Assert.DoesNotContain("pendingChargeLimitPercent", window, StringComparison.Ordinal);
         Assert.DoesNotContain("pendingGpuClockOffsets", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TrayCardSwitchesUseCompactRightAlignedPresentation()
+    {
+        string trayRoot = Path.GetDirectoryName(ProjectPath)!;
+        string[] xamlFiles = Directory
+            .EnumerateFiles(trayRoot, "*.xaml", SearchOption.AllDirectories)
+            .Where(path => !path.Contains(
+                    $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase)
+                && !path.Contains(
+                    $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        Assert.NotEmpty(xamlFiles);
+        List<(string Path, XElement Toggle)> switches = [];
+        foreach (string path in xamlFiles)
+        {
+            XDocument document = XDocument.Load(path);
+            XElement[] fileSwitches = document
+                .Descendants()
+                .Where(element => element.Name.LocalName == "ToggleSwitch")
+                .ToArray();
+            if (fileSwitches.Length == 0)
+            {
+                continue;
+            }
+
+            XElement style = Assert.Single(document.Descendants(), element =>
+                element.Name.LocalName == "Style"
+                && element.Attributes().Any(attribute =>
+                    attribute.Name.LocalName == "Key"
+                    && attribute.Value == "CompactCardToggleSwitchStyle"));
+            Assert.Equal("ToggleSwitch", style.Attribute("TargetType")?.Value);
+            Assert.Equal(
+                "{StaticResource DefaultToggleSwitchStyle}",
+                style.Attribute("BasedOn")?.Value);
+
+            Dictionary<string, string> setters = style
+                .Elements()
+                .Where(element => element.Name.LocalName == "Setter")
+                .ToDictionary(
+                    element => element.Attribute("Property")!.Value,
+                    element => element.Attribute("Value")!.Value,
+                    StringComparer.Ordinal);
+            Assert.Equal("Right", setters["HorizontalAlignment"]);
+            Assert.Equal("Center", setters["VerticalAlignment"]);
+            Assert.Equal("0", setters["MinWidth"]);
+            Assert.Equal(string.Empty, setters["OffContent"]);
+            Assert.Equal(string.Empty, setters["OnContent"]);
+
+            switches.AddRange(fileSwitches.Select(element => (path, element)));
+        }
+
+        Assert.NotEmpty(switches);
+        foreach ((string path, XElement toggle) in switches)
+        {
+            XAttribute? style = toggle.Attribute("Style");
+            Assert.True(
+                style is not null,
+                $"{Path.GetRelativePath(trayRoot, path)} contains an unstyled ToggleSwitch.");
+            Assert.Equal("{StaticResource CompactCardToggleSwitchStyle}", style.Value);
+        }
     }
 
     [Fact]
@@ -1882,6 +2007,14 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
+            "x:Uid=\"MainWindow_TextBlockSixtyHzKeyboardLighting\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Uid=\"MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "Text=\"Lab features may change or be removed.\"",
             xaml,
             StringComparison.Ordinal);
@@ -3099,4 +3232,23 @@ public sealed class WinUiShellContractTests
 
     private static int CountOccurrences(string value, string token) =>
         value.Split(token, StringSplitOptions.None).Length - 1;
+
+    private static string? Attribute(XElement element, string localName) =>
+        element.Attributes()
+            .SingleOrDefault(attribute => attribute.Name.LocalName == localName)
+            ?.Value;
+
+    private static XElement NamedElement(
+        XDocument document,
+        string elementName,
+        string name) => Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == elementName
+            && Attribute(element, "Name") == name);
+
+    private static XElement UidElement(
+        XDocument document,
+        string elementName,
+        string uid) => Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == elementName
+            && Attribute(element, "Uid") == uid);
 }
