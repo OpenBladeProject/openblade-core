@@ -30,6 +30,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Recovered USB-C power classification from bounded transient HID access
+  failures while preserving two-sample agreement and fail-closed writes, and
+  clarified the separate control-access and power-source troubleshooting rows.
 - Expanded the graphical installer's progress details pane to use the available
   window height instead of remaining limited to a few log lines.
 - Offered **Repair** and **Uninstall** when an interactive installer finds one

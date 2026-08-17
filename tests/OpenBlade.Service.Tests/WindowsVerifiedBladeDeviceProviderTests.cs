@@ -66,6 +66,25 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task ReadAdapterPowerState_PropagatesTransientQueryFailureAndDisposes()
+    {
+        FakeQueryPort port = FakeQueryPort.Success(BatteryValidationSetting.Limit80);
+        var factory = new FakeQueryFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(factory, new IOException("temporary adapter access failure")),
+            UnavailableFanRpmFactory());
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        IOException failure = await Assert.ThrowsAsync<IOException>(
+            () => device.ReadAdapterPowerStateAsync(CancellationToken.None));
+
+        Assert.Contains("temporary adapter access failure", failure.Message);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, port.DisposeCount);
+    }
+
+    [Fact]
     public async Task ReadFanRpm_SharesExistingSerializedHardwareGateWithBatteryRead()
     {
         var batteryPort = FakeQueryPort.Blocked(BatteryValidationSetting.Limit80);
@@ -1770,7 +1789,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         new FakeFanRpmFactory(new(null, HidSessionFailureKind.NativeIoFailure));
 
     private static IProductionBatteryPortFactory Adapt(
-        IBatteryQuerySequenceRunFactory factory) => new QueryFactoryAdapter(factory);
+        IBatteryQuerySequenceRunFactory factory,
+        Exception? adapterPowerFailure = null) =>
+        new QueryFactoryAdapter(factory, adapterPowerFailure);
 
     private static BatteryValidationProbeResult Probe(
         BatteryValidationProbeClassification classification,
@@ -1794,7 +1815,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             ExactMatchCount: 1,
             FirmwareCompatibility: firmwareCompatibility);
 
-    private sealed class QueryFactoryAdapter(IBatteryQuerySequenceRunFactory inner)
+    private sealed class QueryFactoryAdapter(
+        IBatteryQuerySequenceRunFactory inner,
+        Exception? adapterPowerFailure)
         : IProductionBatteryPortFactory
     {
         public DeviceCapabilities Capabilities { get; } = DeviceCapabilities.Unavailable();
@@ -1806,14 +1829,18 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 await inner.OpenAsync(cancellationToken);
             return opened.Value is null
                 ? new(null, opened.Failure) { Diagnostic = opened.Diagnostic }
-                : new(new QueryPortAdapter(opened.Value), opened.Failure)
+                : new(
+                    new QueryPortAdapter(opened.Value, adapterPowerFailure),
+                    opened.Failure)
                 {
                     Diagnostic = opened.Diagnostic,
                 };
         }
     }
 
-    private sealed class QueryPortAdapter(IBatteryQuerySequencePort inner)
+    private sealed class QueryPortAdapter(
+        IBatteryQuerySequencePort inner,
+        Exception? adapterPowerFailure)
         : IProductionBatteryPort
     {
         public DeviceCapabilities Capabilities { get; } = DeviceCapabilities.Unavailable();
@@ -1868,8 +1895,13 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 new ProductionPerformanceFanState(null, null));
 
         public Task<AdapterPowerState> QueryAdapterPowerStateAsync(
-            CancellationToken cancellationToken) =>
-            Task.FromResult(AdapterPowerState.FullPower280W);
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return adapterPowerFailure is null
+                ? Task.FromResult(AdapterPowerState.FullPower280W)
+                : Task.FromException<AdapterPowerState>(adapterPowerFailure);
+        }
 
         public Task SetPerformanceAsync(
             PerformancePreset value,

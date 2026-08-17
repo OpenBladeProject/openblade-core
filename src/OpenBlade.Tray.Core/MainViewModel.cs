@@ -1595,7 +1595,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             PowerSource.PluggedIn => "AC",
             PowerSource.UsbC => "USB-C",
             PowerSource.Battery => TrayText.Get("Battery"),
-            PowerSource.ExternalUnknown => TrayText.Get("Checking power source"),
+            PowerSource.ExternalUnknown => TrayText.Get("External power (unclassified)"),
             _ => TrayText.Get("Unavailable"),
         };
 

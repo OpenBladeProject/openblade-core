@@ -9650,6 +9650,66 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task UsbCPd_TransientAccessFailureAndUnknownReplyRecoverWithinBound()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            context.Runtime.GetStatus().Profiles.UsbC.Lighting);
+        context.Device.AdapterPowerFailures.Enqueue(
+            new IOException("temporary adapter access failure"));
+        context.Device.AdapterPowerStates.Enqueue(AdapterPowerState.UsbCPower100W);
+        context.Device.AdapterPowerStates.Enqueue(AdapterPowerState.Unknown);
+        context.Device.AdapterPowerStates.Enqueue(AdapterPowerState.UsbCPower100W);
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.UsbC, status.ActivePowerSource);
+        Assert.False(status.WritesBlocked);
+        Assert.Equal(4, context.Device.AdapterPowerReadCalls);
+        DiagnosticCommandResult diagnostic = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(
+                "classification recovered",
+                StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains("1 device-access failures", diagnostic.Detail);
+        Assert.Contains("1 unknown replies", diagnostic.Detail);
+    }
+
+    [Fact]
+    public async Task ExternalPower_AccessFailuresRemainBlockedAndDeduplicateDiagnostics()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerFailure = new IOException(
+            "persistent adapter access failure");
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.ExternalUnknown, status.ActivePowerSource);
+        Assert.True(status.WritesBlocked);
+        Assert.Equal(10, context.Device.AdapterPowerReadCalls);
+        DiagnosticCommandResult diagnostic = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(
+                "5 device-access failures",
+                StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal("Blocked", diagnostic.Status);
+    }
+
+    [Fact]
     public async Task UnstableAdapterClassification_BlocksWritesAndPreservesTemporaryOverride()
     {
         TestContext context = CreateWritableContext();
@@ -10750,6 +10810,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Queue<AdapterPowerState> AdapterPowerStates { get; } = new();
 
+        public Queue<Exception?> AdapterPowerFailures { get; } = new();
+
         public Exception? AdapterPowerFailure { get; set; }
 
         public string? McuVersion { get; set; }
@@ -10904,6 +10966,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             TotalCalls++;
             AdapterPowerReadCalls++;
+            if (AdapterPowerFailures.TryDequeue(out Exception? scriptedFailure)
+                && scriptedFailure is not null)
+            {
+                return Task.FromException<AdapterPowerState>(scriptedFailure);
+            }
+
             if (AdapterPowerFailure is not null)
             {
                 return Task.FromException<AdapterPowerState>(AdapterPowerFailure);

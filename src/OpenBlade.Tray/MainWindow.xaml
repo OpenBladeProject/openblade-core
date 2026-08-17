@@ -4505,7 +4505,7 @@
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                            <TextBlock x:Uid="MainWindow_TextBlockLaptopBehavior2" Text="Laptop behavior" Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <TextBlock x:Uid="MainWindow_TextBlockLaptopBehavior2" Text="Control access" Style="{StaticResource TroubleshootingLabelStyle}" />
                                             <Grid Grid.Column="1">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                                 <Grid VerticalAlignment="Center">

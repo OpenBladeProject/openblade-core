@@ -794,10 +794,6 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 throw;
             }
-            catch
-            {
-                return AdapterPowerState.Unknown;
-            }
             finally
             {
                 hardwareOperationGate.Release();

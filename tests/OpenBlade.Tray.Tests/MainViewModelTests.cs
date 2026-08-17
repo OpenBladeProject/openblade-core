@@ -6347,7 +6347,9 @@ public sealed class MainViewModelTests
         Assert.Equal("Checking power source", viewModel.ProfileStateLabel);
         Assert.True(viewModel.IsReadinessChecking);
         Assert.False(viewModel.IsReadinessReady);
-        Assert.Equal("Checking power source", viewModel.TroubleshootingPowerSourceStatus);
+        Assert.Equal(
+            "External power (unclassified)",
+            viewModel.TroubleshootingPowerSourceStatus);
         Assert.False(viewModel.CanControlHardware);
 
         client.PublishReconnecting();

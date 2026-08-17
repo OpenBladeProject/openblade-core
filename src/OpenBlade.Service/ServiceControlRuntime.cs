@@ -247,6 +247,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static readonly TimeSpan FullObservationInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan FastPathControllerPresenceInterval =
         TimeSpan.FromSeconds(15);
+    private const int MaximumAdapterPowerClassificationSamples = 5;
+    private const int RequiredAgreeingAdapterPowerSamples = 2;
     // Allow slow HID re-enumeration without carrying resume attribution into a
     // later, unrelated device or power lifecycle.
     internal static readonly TimeSpan ResumeValidationObservationWindow =
@@ -326,6 +328,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private DisplayBrightnessHidUsage assertedDisplayBrightnessUsage;
     private bool displayBrightnessReleaseRequired;
     private bool displayBrightnessNeutralizationPending = true;
+    private string? lastAdapterPowerClassificationDiagnostic;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -6220,6 +6223,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (windowsSource == PowerSource.Battery)
         {
+            lastAdapterPowerClassificationDiagnostic = null;
             return PowerSource.Battery;
         }
 
@@ -6246,41 +6250,84 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return PowerSource.ExternalUnknown;
             }
 
-            AdapterPowerState first =
-                await device.ReadAdapterPowerStateAsync(cancellationToken);
-            AdapterPowerState second =
-                await device.ReadAdapterPowerStateAsync(cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-
-            AdapterPowerState classified = first;
-            if (first != second)
+            AdapterPowerState classified = AdapterPowerState.Unknown;
+            int agreeingSamples = 0;
+            int unknownSamples = 0;
+            int accessFailures = 0;
+            string? lastFailureKind = null;
+            int attempts = 0;
+            for (;
+                attempts < MaximumAdapterPowerClassificationSamples;
+                attempts++)
             {
-                // A single adapter query can transiently return Unknown while USB-C PD
-                // remains connected. Retry only when the other sample is known. Two
-                // different known values still indicate a real/unstable transition and
-                // must remain unresolved so no control write uses ambiguous evidence.
-                if (first == AdapterPowerState.Unknown
-                    ^ second == AdapterPowerState.Unknown)
+                AdapterPowerState sample;
+                try
                 {
-                    AdapterPowerState known = first == AdapterPowerState.Unknown
-                        ? second
-                        : first;
-                    AdapterPowerState retry =
-                        await device.ReadAdapterPowerStateAsync(cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (retry == known)
-                    {
-                        classified = known;
-                    }
-                    else
-                    {
-                        return PowerSource.ExternalUnknown;
-                    }
+                    sample = await device.ReadAdapterPowerStateAsync(cancellationToken);
                 }
-                else
+                catch (OperationCanceledException) when (
+                    cancellationToken.IsCancellationRequested)
                 {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    accessFailures++;
+                    lastFailureKind = exception.GetType().Name;
+                    continue;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                if (sample == AdapterPowerState.Unknown)
+                {
+                    unknownSamples++;
+                    continue;
+                }
+
+                if (classified == AdapterPowerState.Unknown)
+                {
+                    classified = sample;
+                    agreeingSamples = 1;
+                    continue;
+                }
+
+                if (sample != classified)
+                {
+                    RecordAdapterPowerClassificationDiagnostic(
+                        ControlOperationStatus.Blocked,
+                        "Power adapter classification observed conflicting known read-only replies; control writes remain blocked.");
                     return PowerSource.ExternalUnknown;
                 }
+
+                agreeingSamples++;
+                if (agreeingSamples >= RequiredAgreeingAdapterPowerSamples)
+                {
+                    break;
+                }
+            }
+
+            if (agreeingSamples < RequiredAgreeingAdapterPowerSamples)
+            {
+                string detail = accessFailures > 0
+                    ? $"Power adapter classification remained unavailable after {attempts} read-only samples ({accessFailures} device-access failures, {unknownSamples} unknown replies; last failure {lastFailureKind})."
+                    : $"Power adapter classification remained unknown after {attempts} read-only samples.";
+                RecordAdapterPowerClassificationDiagnostic(
+                    ControlOperationStatus.Blocked,
+                    detail);
+                return PowerSource.ExternalUnknown;
+            }
+
+            if (accessFailures > 0 || unknownSamples > 0)
+            {
+                RecordAdapterPowerClassificationDiagnostic(
+                    ControlOperationStatus.Applied,
+                    $"Power adapter classification recovered after {attempts + 1} "
+                    + $"read-only samples ({accessFailures} device-access failures, "
+                    + $"{unknownSamples} unknown replies).");
+            }
+            else
+            {
+                lastAdapterPowerClassificationDiagnostic = null;
             }
 
             return classified switch
@@ -6299,6 +6346,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             return PowerSource.ExternalUnknown;
         }
+    }
+
+    private void RecordAdapterPowerClassificationDiagnostic(
+        ControlOperationStatus status,
+        string detail)
+    {
+        if (string.Equals(
+            lastAdapterPowerClassificationDiagnostic,
+            detail,
+            StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        lastAdapterPowerClassificationDiagnostic = detail;
+        history.RecordSummary(status, detail);
     }
 
     private async Task ObserveCoreAsync(

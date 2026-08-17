@@ -927,6 +927,9 @@
   <data name="Power source unavailable" xml:space="preserve">
     <value>[!! Pówér sóúrcé únáváíláblé ~~~~~~~~ !!]</value>
   </data>
+  <data name="External power (unclassified)" xml:space="preserve">
+    <value>[!! Éxtérnál pówér (únclássífíéd) ~~~~~~~~~ !!]</value>
+  </data>
   <data name="Preparing diagnostic export..." xml:space="preserve">
     <value>[!! Prépáríng díágnóstíc éxpórt... ~~~~~~~~~ !!]</value>
   </data>
