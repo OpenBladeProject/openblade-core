@@ -69,7 +69,7 @@ public sealed class ServiceMessageContractTests
             "LightingRefreshRate",
             "PerformanceShortcutPreview", "BatteryHealth", "KeyboardLightingControlMode",
             "ControlAccess", "AllowUntestedFirmware", "FirmwareCompatibility",
-            "DisplayBrightnessHidAvailability",
+            "DisplayBrightnessHidAvailability", "Rz090581CapabilityDiagnostics",
         ];
 
         Assert.Equal(
@@ -95,6 +95,7 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(DisplayBrightnessHidAvailability), typeof(ServiceStatusSnapshot).GetProperty("DisplayBrightnessHidAvailability")!.PropertyType);
         Assert.Equal(typeof(BatteryPolicy), typeof(ServiceStatusSnapshot).GetProperty("BatteryPolicyOverride")!.PropertyType);
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("BatteryProtectionOverride")!.PropertyType);
+        Assert.Equal(typeof(Rz090581CapabilityDiagnostics), typeof(ServiceStatusSnapshot).GetProperty("Rz090581CapabilityDiagnostics")!.PropertyType);
     }
 
     [Fact]

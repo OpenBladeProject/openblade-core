@@ -23,6 +23,8 @@ public interface IProductionBatteryPort : IAsyncDisposable
 
     bool SupportsGamingModeQuery => false;
 
+    bool SupportsRz090581CapabilityDiagnosticsQuery => false;
+
     Task<ConfirmedBatteryState> QueryProtectionAsync(CancellationToken cancellationToken);
 
     Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken);
@@ -45,6 +47,10 @@ public interface IProductionBatteryPort : IAsyncDisposable
 
     Task<bool?> QueryGamingModeAsync(CancellationToken cancellationToken) =>
         Task.FromResult<bool?>(null);
+
+    Task<Rz090581CapabilityDiagnostics?> QueryRz090581CapabilityDiagnosticsAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult<Rz090581CapabilityDiagnostics?>(null);
 
     Task SetPerformanceAsync(
         PerformancePreset value,

@@ -291,6 +291,8 @@ public sealed record ServiceStatusSnapshot(
     public BatteryPolicy? BatteryPolicyOverride { get; init; }
 
     public bool? BatteryProtectionOverride { get; init; }
+
+    public Rz090581CapabilityDiagnostics? Rz090581CapabilityDiagnostics { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

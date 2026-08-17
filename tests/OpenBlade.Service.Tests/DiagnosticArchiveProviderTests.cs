@@ -283,6 +283,51 @@ public sealed class DiagnosticArchiveProviderTests
     }
 
     [Fact]
+    public async Task CreateAsync_ExportsRawRz090581CapabilityDiagnosticsFromSnapshot()
+    {
+        var runtime = new SnapshotOnlyRuntime(CreateStatus() with
+        {
+            Firmware = FirmwareVersions.Unavailable() with
+            {
+                ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            },
+            Rz090581CapabilityDiagnostics = new Rz090581CapabilityDiagnostics(
+                0x01,
+                0x00,
+                [0x01, 0x02]),
+        });
+        var provider = new DiagnosticArchiveProvider(
+            runtime,
+            new DiagnosticHistory(),
+            new FixedMetadataSource());
+
+        DiagnosticArchive result = await provider.CreateAsync(
+            liveReadingsEnabled: false,
+            CancellationToken.None);
+
+        using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
+        using JsonDocument configuration = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "configuration.json"));
+        Assert.Equal(
+            "0x01",
+            configuration.RootElement
+                .GetProperty("capability.rz09-0581.skuHardwareConfigurationRaw")
+                .GetString());
+        Assert.Equal(
+            "0x00",
+            configuration.RootElement
+                .GetProperty("capability.rz09-0581.miniLedPanelResolutionRaw")
+                .GetString());
+        Assert.Equal(
+            "0x01, 0x02",
+            configuration.RootElement
+                .GetProperty("capability.rz09-0581.thermalFanIds")
+                .GetString());
+        Assert.Equal(1, runtime.StatusReads);
+        Assert.Equal(0, runtime.HardwareOrMutationCalls);
+    }
+
+    [Fact]
     public async Task CreateAsync_RejectsArchiveLargerThanThirtyTwoKiB()
     {
         byte[] randomBytes = new byte[50_000];

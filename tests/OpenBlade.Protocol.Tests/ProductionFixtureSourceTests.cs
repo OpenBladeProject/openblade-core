@@ -165,6 +165,9 @@ public sealed class ProductionFixtureSourceTests
         Assert.True(ProductionBatteryReadEvidence.Production.SupportsAdapterPowerQuery);
         Assert.True(ProductionBatteryReadEvidence.Production.SupportsMcuVersionQuery);
         Assert.True(ProductionBatteryReadEvidence.Production.SupportsStartupAnimationQuery);
+        Assert.True(
+            ProductionBatteryReadEvidence.Production
+                .SupportsRz090581CapabilityDiagnosticsQuery);
         Assert.Empty(typeof(ProductionBatteryReadEvidence).GetConstructors());
         Assert.DoesNotContain(
             typeof(ProductionBatteryReadEvidence).GetMethods(),

@@ -1336,6 +1336,48 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task FirstVerifiedObservation_ReadsRz090581CapabilityDiagnosticsOnce()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: FirmwareVersions.Unavailable() with
+            {
+                ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            });
+        var expected = new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+        context.Device.Rz090581CapabilityDiagnostics = expected;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Rz090581CapabilityDiagnostics? actual =
+            context.Runtime.GetStatus().Rz090581CapabilityDiagnostics;
+        Assert.NotNull(actual);
+        Assert.Equal(expected.SkuHardwareConfigurationRaw, actual.SkuHardwareConfigurationRaw);
+        Assert.Equal(expected.MiniLedPanelResolutionRaw, actual.MiniLedPanelResolutionRaw);
+        Assert.Equal(expected.ThermalFanIds, actual.ThermalFanIds);
+        Assert.Equal(1, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_SkipsRz090581DiagnosticsForOtherModel()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: FirmwareVersions.Unavailable() with
+            {
+                ModelNumber = RazerBladeModelCatalog.Rz090528ModelNumber,
+            });
+        context.Device.Rz090581CapabilityDiagnostics =
+            new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Null(context.Runtime.GetStatus().Rz090581CapabilityDiagnostics);
+        Assert.Equal(0, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
     public async Task Initialize_DisabledProtectionSurvivesObservationAndProfileSaveWithoutSetters()
     {
         TestContext context = CreateContext(
@@ -10866,6 +10908,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int McuVersionReadCalls { get; private set; }
 
+        public int Rz090581CapabilityDiagnosticsReadCalls { get; private set; }
+
         public AdapterPowerState AdapterPowerState { get; set; } =
             AdapterPowerState.FullPower280W;
 
@@ -10874,6 +10918,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Exception? AdapterPowerFailure { get; set; }
 
         public string? McuVersion { get; set; }
+
+        public Rz090581CapabilityDiagnostics? Rz090581CapabilityDiagnostics { get; set; }
 
         public int TotalSetterCalls => PerformanceSetCalls
             + FanSetCalls
@@ -11051,6 +11097,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             TotalCalls++;
             McuVersionReadCalls++;
             return Task.FromResult<string?>(McuVersion);
+        }
+
+        public Task<Rz090581CapabilityDiagnostics?>
+            ReadRz090581CapabilityDiagnosticsAsync(
+                CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Rz090581CapabilityDiagnosticsReadCalls++;
+            return Task.FromResult(Rz090581CapabilityDiagnostics);
         }
 
         public Task EnsureDriverModeAsync(CancellationToken cancellationToken)

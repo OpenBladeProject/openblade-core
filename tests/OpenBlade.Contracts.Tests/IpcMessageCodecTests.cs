@@ -858,6 +858,65 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task Rz090581CapabilityDiagnostics_RoundTripAndDefaultOlderFramesToNull()
+    {
+        ServiceStatusSnapshot expected = CreateStatus() with
+        {
+            Rz090581CapabilityDiagnostics = new Rz090581CapabilityDiagnostics(
+                0x01,
+                0x00,
+                [0x01, 0x02]),
+        };
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+        Assert.NotNull(actual.Rz090581CapabilityDiagnostics);
+        Assert.Equal(
+            expected.Rz090581CapabilityDiagnostics.SkuHardwareConfigurationRaw,
+            actual.Rz090581CapabilityDiagnostics.SkuHardwareConfigurationRaw);
+        Assert.Equal(
+            expected.Rz090581CapabilityDiagnostics.MiniLedPanelResolutionRaw,
+            actual.Rz090581CapabilityDiagnostics.MiniLedPanelResolutionRaw);
+        Assert.Equal(
+            expected.Rz090581CapabilityDiagnostics.ThermalFanIds,
+            actual.Rz090581CapabilityDiagnostics.ThermalFanIds);
+
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            expected);
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        byte[] framedBytes = encoded.ToArray();
+        int payloadLength = BinaryPrimitives.ReadInt32LittleEndian(framedBytes);
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(Encoding.UTF8.GetString(
+                framedBytes,
+                sizeof(int),
+                payloadLength)));
+        JsonObject status = Assert.IsType<JsonObject>(root["status"]);
+        Assert.True(status.Remove("rz090581CapabilityDiagnostics"));
+
+        ServiceStatusEvent olderFrame = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+        Assert.Null(olderFrame.Status.Rz090581CapabilityDiagnostics);
+    }
+
+    [Fact]
+    public async Task Rz090581CapabilityDiagnostics_RejectsOversizedFanIdList()
+    {
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            Rz090581CapabilityDiagnostics = new Rz090581CapabilityDiagnostics(
+                0x01,
+                0x00,
+                new byte[80]),
+        });
+    }
+
+    [Fact]
     public async Task BatteryHealth_RoundTripsAndDefaultsOlderFramesToUnavailable()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
@@ -1896,6 +1955,15 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.FullChargeOverride, actual.FullChargeOverride);
         Assert.Equal(expected.ServiceVersion, actual.ServiceVersion);
         Assert.Equal(expected.BatteryHealth, actual.BatteryHealth);
+        Assert.Equal(
+            expected.Rz090581CapabilityDiagnostics?.SkuHardwareConfigurationRaw,
+            actual.Rz090581CapabilityDiagnostics?.SkuHardwareConfigurationRaw);
+        Assert.Equal(
+            expected.Rz090581CapabilityDiagnostics?.MiniLedPanelResolutionRaw,
+            actual.Rz090581CapabilityDiagnostics?.MiniLedPanelResolutionRaw);
+        Assert.Equal(
+            expected.Rz090581CapabilityDiagnostics?.ThermalFanIds,
+            actual.Rz090581CapabilityDiagnostics?.ThermalFanIds);
         Assert.Equal(
             expected.KeyboardDriverModeActive,
             actual.KeyboardDriverModeActive);

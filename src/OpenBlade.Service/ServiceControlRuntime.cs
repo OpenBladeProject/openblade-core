@@ -299,6 +299,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         pendingWriteConfirmations = [];
     private ServiceStatusSnapshot? status;
     private bool mcuVersionReadAttempted;
+    private bool rz090581CapabilityDiagnosticsReadAttempted;
     private LightingSettings? lastOwnedLightingSettings;
     private FanControlSettings? lastOwnedFanControlSettings;
     private LightingSettings? pendingLightingRestore;
@@ -6891,6 +6892,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FirmwareVersions? firmware = await ReadFirmwareVersionsAsync(
             device,
             cancellationToken);
+        Rz090581CapabilityDiagnostics? capabilityDiagnostics =
+            await ReadRz090581CapabilityDiagnosticsAsync(
+                device,
+                firmware,
+                cancellationToken).ConfigureAwait(false);
         FanRpmReadings? fans = null;
         FanTemperatureReadings temperatures = default;
         if (includeLiveReadings)
@@ -6945,6 +6951,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             gamingModeEnabled,
             lightingOwnership,
             firmware,
+            capabilityDiagnostics,
             fans,
             temperatures);
     }
@@ -6988,6 +6995,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingOverride = Automation.LightingOverride,
             FullChargeOverride = ResolveFullChargeOverride(observation.Confirmed),
             Firmware = observation.Firmware,
+            Rz090581CapabilityDiagnostics = observation.CapabilityDiagnostics,
             LightingRendererOwnership = observation.LightingOwnership,
             StartupAnimationEnabled = observation.StartupAnimation,
             FunctionKeyPrimary = observation.FunctionKeyPrimary,
@@ -7326,6 +7334,43 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return string.IsNullOrWhiteSpace(mcuVersion)
                 ? current
                 : current with { McuVersion = mcuVersion.Trim() };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return current;
+        }
+    }
+
+    private async Task<Rz090581CapabilityDiagnostics?>
+        ReadRz090581CapabilityDiagnosticsAsync(
+            IBladeDevice device,
+            FirmwareVersions? firmware,
+            CancellationToken cancellationToken)
+    {
+        Rz090581CapabilityDiagnostics? current =
+            GetStatus().Rz090581CapabilityDiagnostics;
+        if (!string.Equals(
+                firmware?.ModelNumber,
+                RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return current;
+        }
+
+        if (rz090581CapabilityDiagnosticsReadAttempted || current is not null)
+        {
+            return current;
+        }
+
+        rz090581CapabilityDiagnosticsReadAttempted = true;
+        try
+        {
+            return await device.ReadRz090581CapabilityDiagnosticsAsync(cancellationToken)
+                .ConfigureAwait(false) ?? current;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -8336,8 +8381,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware
+        && CapabilityDiagnosticsEqual(
+            left.Rz090581CapabilityDiagnostics,
+            right.Rz090581CapabilityDiagnostics)
         && left.BatteryHealth == right.BatteryHealth
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
+
+    private static bool CapabilityDiagnosticsEqual(
+        Rz090581CapabilityDiagnostics? left,
+        Rz090581CapabilityDiagnostics? right) =>
+        ReferenceEquals(left, right)
+        || (left is not null
+            && right is not null
+            && left.SkuHardwareConfigurationRaw == right.SkuHardwareConfigurationRaw
+            && left.MiniLedPanelResolutionRaw == right.MiniLedPanelResolutionRaw
+            && left.ThermalFanIds.SequenceEqual(right.ThermalFanIds));
 
     private static string RefreshRateLabel(LightingRefreshRate value) => value switch
     {
@@ -8752,6 +8810,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool? GamingModeEnabled,
         LightingRendererOwnershipState LightingOwnership,
         FirmwareVersions? Firmware,
+        Rz090581CapabilityDiagnostics? CapabilityDiagnostics,
         FanRpmReadings? Fans,
         FanTemperatureReadings Temperatures);
 

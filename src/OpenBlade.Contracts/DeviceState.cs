@@ -354,6 +354,14 @@ public sealed record FirmwareVersions(
         "Unavailable");
 }
 
+public sealed record Rz090581CapabilityDiagnostics(
+    byte SkuHardwareConfigurationRaw,
+    byte MiniLedPanelResolutionRaw,
+    IReadOnlyList<byte> ThermalFanIds)
+{
+    public bool IsWellFormed => ThermalFanIds is { Count: <= 79 };
+}
+
 public sealed record BatteryHealthStatus(
     int DesignCapacityMilliwattHours,
     int FullChargeCapacityMilliwattHours);

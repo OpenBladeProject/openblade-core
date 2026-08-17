@@ -544,6 +544,20 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.FanSpeedRange?.MaximumRpm),
             ["capability.fanSpeedStepRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.StepRpm),
+            ["capability.rz09-0581.skuHardwareConfigurationRaw"] =
+                HexByteOrUnavailable(
+                    status.Rz090581CapabilityDiagnostics?
+                        .SkuHardwareConfigurationRaw),
+            ["capability.rz09-0581.miniLedPanelResolutionRaw"] =
+                HexByteOrUnavailable(
+                    status.Rz090581CapabilityDiagnostics?
+                        .MiniLedPanelResolutionRaw),
+            ["capability.rz09-0581.thermalFanIds"] =
+                status.Rz090581CapabilityDiagnostics is { } diagnostics
+                    ? string.Join(
+                        ", ",
+                        diagnostics.ThermalFanIds.Select(value => $"0x{value:X2}"))
+                    : "Unavailable",
             ["override.performance"] = status.PerformanceOverride is null
                 ? "None"
                 : $"{status.PerformanceOverride.Value} ({status.PerformanceOverride.Lifetime})",
@@ -587,6 +601,9 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
 
     private static string BoolOrUnavailable(bool? value) =>
         value?.ToString() ?? "Unavailable";
+
+    private static string HexByteOrUnavailable(byte? value) =>
+        value is { } raw ? $"0x{raw:X2}" : "Unavailable";
 
     private static string EnumOrUnavailable<T>(T? value)
         where T : struct, Enum => value?.ToString() ?? "Unavailable";
