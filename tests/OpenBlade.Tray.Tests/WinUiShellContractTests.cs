@@ -10,26 +10,40 @@ public sealed class WinUiShellContractTests
     {
         XDocument document = XDocument.Parse(
             ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
-        foreach ((string headerName, string actionName, string customizeUid) in new[]
+        foreach ((string headerName, string actionName, string customizeUid, string visibilityBinding) in new[]
         {
-            ("DashboardPageHeader", "DashboardProfileSaveActions", "MainWindow_ButtonCustomize"),
-            ("LaptopPageHeader", "LaptopHeaderActions", "MainWindow_ButtonCustomize2"),
-            ("LightingPageHeader", "LightingHeaderActions", "MainWindow_ButtonCustomize3"),
-            ("DisplayPageHeader", "DisplayHeaderActions", "MainWindow_ButtonCustomize4"),
+            (
+                "DashboardPageHeader",
+                "DashboardProfileSaveActions",
+                "MainWindow_ButtonCustomize",
+                "{x:Bind ViewModel.HasDashboardProfileActionOpportunity, Mode=OneWay}"),
+            (
+                "LaptopPageHeader",
+                "LaptopHeaderActions",
+                "MainWindow_ButtonCustomize2",
+                "{x:Bind ViewModel.HasLaptopPageProfileActionOpportunity, Mode=OneWay}"),
+            (
+                "LightingPageHeader",
+                "LightingHeaderActions",
+                "MainWindow_ButtonCustomize3",
+                "{x:Bind ViewModel.HasLightingProfileActionOpportunity, Mode=OneWay}"),
+            (
+                "DisplayPageHeader",
+                "DisplayHeaderActions",
+                "MainWindow_ButtonCustomize4",
+                "{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"),
         })
         {
             XElement header = NamedElement(document, "Grid", headerName);
             XElement expandableActions = NamedElement(document, "StackPanel", actionName);
             XElement customizeButton = UidElement(document, "Button", customizeUid);
-            bool isDashboard = headerName == "DashboardPageHeader";
 
             Assert.Same(header, expandableActions.Parent);
             Assert.Equal("1", Attribute(expandableActions, "Grid.Row"));
             Assert.Equal("2", Attribute(expandableActions, "Grid.ColumnSpan"));
-            Assert.Equal(
-                isDashboard ? "0,12,0,0" : "0,2,0,0",
-                Attribute(expandableActions, "Margin"));
-            Assert.Equal(isDashboard ? null : "10", Attribute(header, "RowSpacing"));
+            Assert.Equal("0,12,0,0", Attribute(expandableActions, "Margin"));
+            Assert.Equal(visibilityBinding, Attribute(expandableActions, "Visibility"));
+            Assert.Null(Attribute(header, "RowSpacing"));
 
             Assert.Same(header, customizeButton.Parent);
             Assert.Equal("1", Attribute(customizeButton, "Grid.Column"));
@@ -45,6 +59,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal("1", Attribute(profilesActions, "Grid.Row"));
         Assert.Equal("2", Attribute(profilesActions, "Grid.ColumnSpan"));
         Assert.Equal("0,2,0,0", Attribute(profilesActions, "Margin"));
+        Assert.Equal("10", Attribute(profilesHeader, "RowSpacing"));
 
         XElement aboutCustomize = UidElement(document, "Button", "MainWindow_ButtonCustomize7");
         Assert.Equal("Grid", aboutCustomize.Parent?.Name.LocalName);
