@@ -9,6 +9,61 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class MainViewModelTests
 {
+    [Fact]
+    public async Task LocalizedInstanceDefaultsFollowTheCurrentCulture()
+    {
+        string englishUnavailable;
+        string englishBatteryOption;
+        using (new CultureScope("en-US"))
+        {
+            await using var english = new MainViewModel(
+                new FakeServiceClient(),
+                new RecordingDispatcher());
+            englishUnavailable = english.CurrentBatterySettingLabel;
+            englishBatteryOption = english.ProfileComparisonOptions
+                .Single(option => option.Source == PowerSource.Battery)
+                .Label;
+        }
+
+        using var culture = new CultureScope("qps-ploc");
+        await using var pseudo = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+        Assert.StartsWith("[!! ", pseudo.CurrentBatterySettingLabel, StringComparison.Ordinal);
+        Assert.NotEqual(englishUnavailable, pseudo.CurrentBatterySettingLabel);
+        string pseudoBatteryOption = pseudo.ProfileComparisonOptions
+            .Single(option => option.Source == PowerSource.Battery)
+            .Label;
+        Assert.StartsWith("[!! ", pseudoBatteryOption, StringComparison.Ordinal);
+        Assert.NotEqual(englishBatteryOption, pseudoBatteryOption);
+    }
+
+    [Fact]
+    public async Task ProfileRelationshipStatus_UsesTypedExternalChangesUnderPseudoCulture()
+    {
+        using var culture = new CultureScope("qps-ploc");
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ExternalChanges =
+            [
+                DeviceSubsystem.Performance,
+                DeviceSubsystem.Fans,
+                DeviceSubsystem.Lighting,
+            ],
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        string changedOutside = TrayText.Get("Changed outside OpenBlade");
+        string matchesProfile = TrayText.Get("Matches saved profile");
+        Assert.Equal(changedOutside, viewModel.ThermalProfileRelationshipStatus);
+        Assert.Equal(changedOutside, viewModel.LightingProfileRelationshipStatus);
+        Assert.NotEqual(matchesProfile, viewModel.ThermalProfileRelationshipStatus);
+        Assert.NotEqual(matchesProfile, viewModel.LightingProfileRelationshipStatus);
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, true)]

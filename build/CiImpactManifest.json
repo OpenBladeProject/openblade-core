@@ -149,6 +149,10 @@
       "requiresCaptures": true
     },
     {
+      "test": "tests/Build.Tests/LocalizationResources.Tests.ps1",
+      "patterns": ["build/*Localization*.ps1", "src/OpenBlade.Tray/*.xaml", "src/OpenBlade.Tray/*.cs", "src/OpenBlade.Tray/Strings/*", "src/OpenBlade.Tray.Core/*.cs", "src/OpenBlade.Tray.Core/Properties/*", "src/OpenBlade.Setup/*.cs", "src/OpenBlade.Setup/Properties/*", "build/installer/OpenBlade.Installer.UI/*", "build/installer/*.wxl", "build/installer/Bundle.wxs"]
+    },
+    {
       "test": "tests/Build.Tests/NightlyChangelog.Tests.ps1",
       "patterns": ["build/NightlyChangelog.ps1", "CHANGELOG.md"]
     },

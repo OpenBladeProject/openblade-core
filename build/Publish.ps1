@@ -140,7 +140,8 @@ $productionPublishArguments = @(
     '--property:DebugSymbols=false',
     # OpenBlade currently ships English UI strings. Keep native WinUI MUI
     # resources, but do not deploy unused managed satellite assemblies.
-    '--property:SatelliteResourceLanguages=en-US'
+    '--property:SatelliteResourceLanguages=en-US',
+    '--property:OpenBladeIncludePseudoLocalization=false'
 )
 $setupPublishArguments = @(
     '--property:PublishSingleFile=true',
@@ -205,6 +206,7 @@ try {
         --property:NuGetAudit=false `
         --property:DebugType=None `
         --property:DebugSymbols=false `
+        --property:OpenBladeIncludePseudoLocalization=false `
         --output $stagingInstallerUi
     if ($LASTEXITCODE -ne 0) {
         throw "OpenBlade installer UI publish failed with exit code $LASTEXITCODE"

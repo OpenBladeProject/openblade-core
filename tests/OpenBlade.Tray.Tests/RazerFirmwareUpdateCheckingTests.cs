@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
@@ -266,6 +267,38 @@ public sealed class RazerFirmwareUpdateCheckingTests
             RazerBladeModelCatalog.OpenBladeTargetModelNumber));
 
         Assert.Equal(expectedPresentation, viewModel.InstalledMcuVersion);
+    }
+
+    [Fact]
+    public async Task ViewModel_DoesNotTraceLocalizedUnavailableMcuPresentation()
+    {
+        using var culture = new CultureScope("qps-ploc");
+        using var output = new StringWriter();
+        using var listener = new TextWriterTraceListener(output);
+        Trace.Listeners.Add(listener);
+        try
+        {
+            await using var viewModel = new FirmwareUpdateAssistantViewModel(
+                new StubClient(new("3.01", "1.04", "1.07")));
+            viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+                "3.01",
+                "1.04",
+                "Unavailable",
+                "95.04.5C.40.A9",
+                RazerBladeModelCatalog.OpenBladeTargetModelNumber));
+
+            await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
+            Trace.Flush();
+
+            Assert.DoesNotContain(
+                "could not compare MCU firmware versions",
+                output.ToString(),
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            Trace.Listeners.Remove(listener);
+        }
     }
 
     [Fact]

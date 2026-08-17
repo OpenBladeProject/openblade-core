@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -52,12 +53,17 @@ public sealed record ProfileValuePresentation(
     string PendingText = "")
 {
     public string? PendingDescription => IsPending
-        ? $"Pending: {PendingText}"
+        ? TrayText.Format("Pending: {0}", PendingText)
         : null;
 
     public string AccessibilityDescription => IsPending
-        ? $"{ProfileName} {SettingName}: {Text}. Pending: {PendingText}"
-        : $"{ProfileName} {SettingName}: {Text}";
+        ? TrayText.Format(
+            "{0} {1}: {2}. Pending: {3}",
+            ProfileName,
+            SettingName,
+            Text,
+            PendingText)
+        : TrayText.Format("{0} {1}: {2}", ProfileName, SettingName, Text);
 }
 
 public sealed record ProfilePresentation(
@@ -83,7 +89,7 @@ public sealed record ProfilePresentation(
 
 public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
-    private const string UnavailableLabel = "Unavailable";
+    private static string UnavailableLabel => TrayText.Get("Unavailable");
     private const byte DefaultLightingBrightness = 50;
     private static readonly TimeSpan ReconnectVisualGracePeriod =
         TimeSpan.FromMilliseconds(750);
@@ -106,49 +112,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         PowerSource PowerSource,
         DateTimeOffset? ExpiresAt);
 
-    private static readonly IReadOnlyList<ProfileComparisonOption> ComparisonOptions =
-    [
-        new(PowerSource.PluggedIn, "AC"),
-        new(PowerSource.UsbC, "USB-C"),
-        new(PowerSource.Battery, "On battery"),
-    ];
+    private sealed record LocalizedOptionCatalog(
+        IReadOnlyList<ProfileComparisonOption> Comparison,
+        IReadOnlyList<WindowsPowerModeOption> WindowsPowerModes,
+        IReadOnlyList<FunctionKeyPrimaryOption> FunctionKeyPrimaryModes,
+        IReadOnlyList<LightingEffectOption> LightingEffects,
+        IReadOnlyList<LogoLightingModeOption> LogoLightingModes,
+        IReadOnlyList<LightingDirectionOption> StandardLightingDirections,
+        IReadOnlyList<LightingDirectionOption> TidalLightingDirections);
 
-    private static readonly IReadOnlyList<WindowsPowerModeOption> WindowsPowerModeOptions =
-    [
-        new(
-            null,
-            "Leave unchanged",
-            "Keeps the current Windows setting."),
-        new(
-            WindowsPowerMode.BestPowerEfficiency,
-            "Best power efficiency",
-            "Favors lower energy use."),
-        new(
-            WindowsPowerMode.Balanced,
-            "Balanced",
-            "Balances performance and energy use."),
-        new(
-            WindowsPowerMode.BestPerformance,
-            "Best performance",
-            "Favors responsiveness over energy use."),
-    ];
+    private static readonly ConcurrentDictionary<string, LocalizedOptionCatalog>
+        LocalizedOptionCatalogs = new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly IReadOnlyList<FunctionKeyPrimaryOption>
-        FunctionKeyPrimaryOptions =
-        [
-            new(
-                FunctionKeyPrimaryMode.FunctionKeys,
-                "Function keys",
-                new ApplyOneShotLaptopControl(
-                    OneShotLaptopControl.FunctionKeyPrimary,
-                    FunctionKeyMode: FunctionKeyPrimaryMode.FunctionKeys)),
-            new(
-                FunctionKeyPrimaryMode.MultimediaKeys,
-                "Media keys",
-                new ApplyOneShotLaptopControl(
-                    OneShotLaptopControl.FunctionKeyPrimary,
-                    FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys)),
-        ];
+    private static LocalizedOptionCatalog CurrentLocalizedOptions =>
+        LocalizedOptionCatalogs.GetOrAdd(
+            CultureInfo.CurrentUICulture.Name,
+            _ => CreateLocalizedOptionCatalog());
+
+    private static IReadOnlyList<ProfileComparisonOption> ComparisonOptions =>
+        CurrentLocalizedOptions.Comparison;
+
+    private static IReadOnlyList<WindowsPowerModeOption> WindowsPowerModeOptions =>
+        CurrentLocalizedOptions.WindowsPowerModes;
+
+    private static IReadOnlyList<FunctionKeyPrimaryOption> FunctionKeyPrimaryOptions =>
+        CurrentLocalizedOptions.FunctionKeyPrimaryModes;
 
     private static readonly IReadOnlyList<LightingEffect> KnownLightingEffects =
         Enum.GetValues<LightingEffect>()
@@ -162,32 +150,82 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             .Order()
             .ToArray();
 
-    private static readonly IReadOnlyList<LightingEffectOption> KnownLightingEffectOptions =
-        KnownLightingEffects
-            .Select(CreateLightingEffectOption)
-            .OrderBy(option => option.Effect == LightingEffect.Off ? 0 : 1)
-            .ThenBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+    private static IReadOnlyList<LightingEffectOption> KnownLightingEffectOptions =>
+        CurrentLocalizedOptions.LightingEffects;
 
-    private static readonly IReadOnlyList<LogoLightingModeOption> KnownLogoLightingModeOptions =
-        KnownLogoLightingModes
-            .Select(mode => new LogoLightingModeOption(mode, mode.ToString()))
-            .ToArray();
+    private static IReadOnlyList<LogoLightingModeOption> KnownLogoLightingModeOptions =>
+        CurrentLocalizedOptions.LogoLightingModes;
 
     private static readonly IReadOnlyList<CustomPerformanceLevel> AllCustomPerformanceLevels =
         Enum.GetValues<CustomPerformanceLevel>();
 
-    private static readonly IReadOnlyList<LightingDirectionOption> StandardLightingDirectionOptions =
-    [
-        new(LightingDirection.Leftward, "Leftward"),
-        new(LightingDirection.Rightward, "Rightward"),
-    ];
+    private static IReadOnlyList<LightingDirectionOption> StandardLightingDirectionOptions =>
+        CurrentLocalizedOptions.StandardLightingDirections;
 
-    private static readonly IReadOnlyList<LightingDirectionOption> TidalLightingDirectionOptions =
-    [
-        new(LightingDirection.Leftward, "Outward"),
-        new(LightingDirection.Rightward, "Inward"),
-    ];
+    private static IReadOnlyList<LightingDirectionOption> TidalLightingDirectionOptions =>
+        CurrentLocalizedOptions.TidalLightingDirections;
+
+    private static LocalizedOptionCatalog CreateLocalizedOptionCatalog() => new(
+        Comparison:
+        [
+            new(PowerSource.PluggedIn, "AC"),
+            new(PowerSource.UsbC, "USB-C"),
+            new(PowerSource.Battery, TrayText.Get("On battery")),
+        ],
+        WindowsPowerModes:
+        [
+            new(
+                null,
+                TrayText.Get("Leave unchanged"),
+                TrayText.Get("Keeps the current Windows setting.")),
+            new(
+                WindowsPowerMode.BestPowerEfficiency,
+                TrayText.Get("Best power efficiency"),
+                TrayText.Get("Favors lower energy use.")),
+            new(
+                WindowsPowerMode.Balanced,
+                TrayText.Get("Balanced"),
+                TrayText.Get("Balances performance and energy use.")),
+            new(
+                WindowsPowerMode.BestPerformance,
+                TrayText.Get("Best performance"),
+                TrayText.Get("Favors responsiveness over energy use.")),
+        ],
+        FunctionKeyPrimaryModes:
+        [
+            new(
+                FunctionKeyPrimaryMode.FunctionKeys,
+                TrayText.Get("Function keys"),
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: FunctionKeyPrimaryMode.FunctionKeys)),
+            new(
+                FunctionKeyPrimaryMode.MultimediaKeys,
+                TrayText.Get("Media keys"),
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys)),
+        ],
+        LightingEffects: KnownLightingEffects
+            .Select(CreateLightingEffectOption)
+            .OrderBy(option => option.Effect == LightingEffect.Off ? 0 : 1)
+            .ThenBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
+            .ToArray(),
+        LogoLightingModes: KnownLogoLightingModes
+            .Select(mode => new LogoLightingModeOption(
+                mode,
+                LogoLightingModeLabel(mode)))
+            .ToArray(),
+        StandardLightingDirections:
+        [
+            new(LightingDirection.Leftward, TrayText.Get("Leftward")),
+            new(LightingDirection.Rightward, TrayText.Get("Rightward")),
+        ],
+        TidalLightingDirections:
+        [
+            new(LightingDirection.Leftward, TrayText.Get("Outward")),
+            new(LightingDirection.Rightward, TrayText.Get("Inward")),
+        ]);
 
     private readonly IServiceClient serviceClient;
     private readonly IUiDispatcher dispatcher;
@@ -207,11 +245,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isConnected;
     private bool isReadOnly = true;
     private bool canControlHardware;
-    private string connectionStatus = "Service unavailable";
+    private string connectionStatus = TrayText.Get("Service unavailable");
     private string operationStatusMessage = string.Empty;
     private string operationFeedbackMessage = string.Empty;
     private string troubleshootingRecentErrorStatus = string.Empty;
-    private string controlAccessStatus = "OpenBlade service isn’t running";
+    private string controlAccessStatus = TrayText.Get("OpenBlade service isn’t running");
     private string activePowerSourceLabel = UnavailableLabel;
     private string performanceSourceLabel = UnavailableLabel;
     private string fanSourceLabel = UnavailableLabel;
@@ -716,11 +754,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         : UnavailableLabel;
 
     public string Fan1RpmLabel => IsConnected
-        ? FormatFanRpm("Fan 1", LiveReadings?.Fan1Rpm)
+        ? FormatFanRpm(TrayText.Get("Fan 1"), LiveReadings?.Fan1Rpm)
         : UnavailableLabel;
 
     public string Fan2RpmLabel => IsConnected
-        ? FormatFanRpm("Fan 2", LiveReadings?.Fan2Rpm)
+        ? FormatFanRpm(TrayText.Get("Fan 2"), LiveReadings?.Fan2Rpm)
         : UnavailableLabel;
 
     public string Fan1RpmValue => FormatFanRpmValue(LiveReadings?.Fan1Rpm);
@@ -755,7 +793,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             LiveReadings?.Fan2Rpm);
 
     public string TrayDashboardFanSpeedToolTip =>
-        IsConnected ? $"{Fan1RpmLabel}; {Fan2RpmLabel}" : UnavailableLabel;
+        IsConnected
+            ? TrayText.Format("{0}; {1}", Fan1RpmLabel, Fan2RpmLabel)
+            : UnavailableLabel;
 
     public ObservableCollection<LiveReadingVisibilityOption> DashboardTelemetryItems
     {
@@ -775,20 +815,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (DashboardTelemetryEnabled(LiveReadingItemKind.BatteryPower))
             {
                 groups.Add(new LiveReadingGroupDisplayItem(
-                    "Battery",
+                    TrayText.Get("Battery"),
                     BatteryPowerFlowLabel));
             }
 
             string temperatureValue = FormatDashboardTemperatures(
                 DashboardTelemetryEnabled(LiveReadingItemKind.CpuTemperature),
-                CpuTemperatureValue,
+                LiveReadings?.CpuTemperatureCelsius,
                 DashboardTelemetryEnabled(LiveReadingItemKind.GpuTemperature)
                     && LiveReadings?.GpuTemperatureCelsius is not null,
-                GpuTemperatureValue);
+                LiveReadings?.GpuTemperatureCelsius);
             if (temperatureValue.Length > 0)
             {
                 groups.Add(new LiveReadingGroupDisplayItem(
-                    "Temperatures",
+                    TrayText.Get("Temperatures"),
                     temperatureValue));
             }
 
@@ -799,7 +839,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 (true, true) when LiveReadings?.Fan1Rpm is null
                     && LiveReadings?.Fan2Rpm is null => UnavailableLabel,
                 (true, true) =>
-                    $"{Fan1RpmValue} / {Fan2RpmValue}",
+                    TrayText.Format("{0} / {1}", Fan1RpmValue, Fan2RpmValue),
                 (true, false) => Fan1RpmValue,
                 (false, true) => Fan2RpmValue,
                 _ => string.Empty,
@@ -808,9 +848,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 string label = (showFan1, showFan2) switch
                 {
-                    (true, true) => "Fans",
-                    (true, false) => "Fan 1",
-                    _ => "Fan 2",
+                    (true, true) => TrayText.Get("Fans"),
+                    (true, false) => TrayText.Get("Fan 1"),
+                    _ => TrayText.Get("Fan 2"),
                 };
                 groups.Add(new LiveReadingGroupDisplayItem(label, fanValue));
             }
@@ -879,10 +919,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public string LiveReadingsRefreshToolTip => !IsConnected
-        ? "Live readings are unavailable while the OpenBlade service is not running."
+        ? TrayText.Get(
+            "Live readings are unavailable while the OpenBlade service is not running.")
         : lastLiveReadingsRefreshAt is { } refreshedAt
-            ? $"Last checked at {refreshedAt.ToLocalTime().ToString("T", CultureInfo.CurrentCulture)}.{Environment.NewLine}Values change only when Windows or firmware reports new data."
-            : "Waiting for the first live-reading check.";
+            ? TrayText.Format(
+                "Last checked at {0:T}.{1}Values change only when Windows or firmware reports new data.",
+                refreshedAt.ToLocalTime(),
+                Environment.NewLine)
+            : TrayText.Get("Waiting for the first live-reading check.");
 
     public string ActivePowerSourceLabel
     {
@@ -947,15 +991,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string SaveToActiveProfileLabel => ActivePowerSource switch
     {
-        PowerSource.PluggedIn => "Save to AC profile",
-        PowerSource.Battery => "Save to battery profile",
-        PowerSource.UsbC => "Save to USB-C profile",
-        _ => "Save to profile",
+        PowerSource.PluggedIn => TrayText.Get("Save to AC profile"),
+        PowerSource.Battery => TrayText.Get("Save to battery profile"),
+        PowerSource.UsbC => TrayText.Get("Save to USB-C profile"),
+        _ => TrayText.Get("Save to profile"),
     };
 
     public string DashboardProfileSaveLabel => HasActiveProfileDraft
         ? SaveToActiveProfileLabel
-        : "Save profile changes";
+        : TrayText.Get("Save profile changes");
 
     public IReadOnlyList<ProfileComparisonOption> ProfileComparisonOptions => ComparisonOptions;
 
@@ -979,20 +1023,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         : UnavailableLabel;
 
     public string ActiveFanModeLabel => IsConnected
-        ? $"{FanModePresentation.Label(SelectedFanMode)} fans"
+        ? TrayText.Format("{0} fans", FanModePresentation.Label(SelectedFanMode))
         : UnavailableLabel;
 
     public string ProfileStateLabel => !IsConnected
-        ? "Service unavailable"
+        ? TrayText.Get("Service unavailable")
         : IsCheckingLaptopConnection(latestStatus)
-            ? "Checking laptop"
+            ? TrayText.Get("Checking laptop")
             : latestStatus?.DeviceVerified == false
                 ? UnavailableLaptopReason
                 : ActivePowerSource == PowerSource.ExternalUnknown
-                    ? "Checking power source"
+                    ? TrayText.Get("Checking power source")
                     : CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus)
-                        ? "Ready"
-                        : "Controls unavailable";
+                        ? TrayText.Get("Ready")
+                        : TrayText.Get("Controls unavailable");
 
     public bool IsReadinessReady => IsConnected
         && latestStatus?.DeviceVerified == true
@@ -1331,29 +1375,29 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
             if (HasUnconfirmedWrites)
             {
-                return "State not confirmed";
+                return TrayText.Get("State not confirmed");
             }
             if (HasExternalChanges)
             {
-                return "Laptop controls changed outside OpenBlade";
+                return TrayText.Get("Laptop controls changed outside OpenBlade");
             }
             if (HasControllerDetectionWarning)
             {
-                return "Controller detection needs attention";
+                return TrayText.Get("Controller detection needs attention");
             }
-            return "Another Razer app is running";
+            return TrayText.Get("Another Razer app is running");
         }
     }
 
     public string AttentionBadgeLabel => !HasAttention
         ? string.Empty
         : HasUnconfirmedWrites
-            ? "State not confirmed"
+            ? TrayText.Get("State not confirmed")
             : HasExternalChanges
-            ? "Changed outside OpenBlade"
+            ? TrayText.Get("Changed outside OpenBlade")
             : HasControllerDetectionWarning
-                ? "Check status"
-                : "Razer app active";
+                ? TrayText.Get("Check status")
+                : TrayText.Get("Razer app active");
 
     public string AttentionDetails
     {
@@ -1374,19 +1418,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
             if (HasControllerAdvisory)
             {
-                details.Add("Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back.");
+                details.Add(TrayText.Get(
+                    "Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back."));
             }
             if (HasControllerDetectionWarning)
             {
-                details.Add("OpenBlade could not check every Razer controller. Controls remain available only when the laptop is verified.");
+                details.Add(TrayText.Get(
+                    "OpenBlade could not check every Razer controller. Controls remain available only when the laptop is verified."));
             }
             return string.Join("\n", details);
         }
     }
 
     public string TroubleshootingServiceStatus => IsConnected
-        ? "Running"
-        : "Unavailable";
+        ? TrayText.Get("Running")
+        : TrayText.Get("Unavailable");
 
     public string AboutUiVersionStatus => uiVersion;
 
@@ -1403,7 +1449,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             if (!IsConnected)
             {
-                return "Unavailable";
+                return TrayText.Get("Unavailable");
             }
 
             string? modelNumber = latestStatus?.Firmware?.ModelNumber;
@@ -1412,12 +1458,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 RazerBladeModelInfo? model = RazerBladeModelCatalog.Find(modelNumber);
                 return model is null
                     ? FirmwareValue(modelNumber)
-                    : $"{model.DisplayName}, {model.ModelNumber}";
+                    : TrayText.Format("{0}, {1}", model.DisplayName, model.ModelNumber);
             }
 
             return latestStatus?.DeviceVerified == true
-                ? "Verified Razer Blade"
-                : "Not detected";
+                ? TrayText.Get("Verified Razer Blade")
+                : TrayText.Get("Not detected");
         }
     }
 
@@ -1431,7 +1477,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 latestStatus?.Firmware?.ModelNumber);
             return model is null
                 ? UnavailableLabel
-                : $"VID {model.UsbVendorId} · PID {model.UsbProductId}";
+                : TrayText.Format(
+                    "VID {0} · PID {1}",
+                    model.UsbVendorId,
+                    model.UsbProductId);
         }
     }
 
@@ -1452,16 +1501,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ? UnavailableLabel
         : latestStatus?.DisplayBrightnessHidAvailability switch
         {
-            DisplayBrightnessHidAvailability.Available => "Available · Windows OSD",
+            DisplayBrightnessHidAvailability.Available =>
+                TrayText.Get("Available · Windows OSD"),
             DisplayBrightnessHidAvailability.Unavailable =>
-                "Not available · OpenBlade OSD",
-            _ => "Unknown",
+                TrayText.Get("Not available · OpenBlade OSD"),
+            _ => TrayText.Get("Unknown"),
         };
 
     public string AboutDisplayBrightnessDriverToolTip =>
-        "The exact admitted Razer driver lets Windows show its native brightness flyout. "
-        + "OpenBlade revalidates the exact device path for every key press. When the native path is "
-        + "unavailable, OpenBlade uses its own flyout.";
+        TrayText.Get(
+            "The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout.");
 
     public bool HasUntestedPlatformVersion =>
         CurrentTestedPlatformAssessment is
@@ -1475,8 +1524,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         or FirmwareCompatibilityStatus.UntestedAllowed;
 
     private string UnavailableLaptopReason => IsFirmwareAdmissionBlocked
-        ? "Incompatible firmware"
-        : "Laptop not found";
+        ? TrayText.Get("Incompatible firmware")
+        : TrayText.Get("Laptop not found");
 
     private bool IsFirmwareAdmissionBlocked =>
         latestStatus?.FirmwareCompatibility
@@ -1488,10 +1537,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 mismatch.Component,
                 "Model",
                 StringComparison.OrdinalIgnoreCase))
-            ? "Incompatible hardware"
+            ? TrayText.Get("Incompatible hardware")
             : HasIncompatibleFirmware
-                ? "Incompatible firmware"
-                : "Untested platform configuration";
+                ? TrayText.Get("Incompatible firmware")
+                : TrayText.Get("Untested platform configuration");
 
     public string DashboardTestedPlatformWarningMessage =>
         FormatTestedPlatformWarning(CurrentTestedPlatformAssessment);
@@ -1504,12 +1553,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return string.IsNullOrEmpty(warning)
                 ? string.Empty
                 : HasIncompatibleFirmware && latestStatus?.DeviceVerified != true
-                    ? $"{warning} This is a compatibility notice, not a hardware failure. "
-                        + (AllowUntestedFirmware
-                            ? "The firmware override is enabled, and OpenBlade is checking control access."
-                            : "Controls remain blocked unless you explicitly enable the firmware override.")
-                    : $"{warning} This is a compatibility notice, not a hardware failure. "
-                        + "Controls remain available, but behavior may differ.";
+                    ? TrayText.Format(
+                        AllowUntestedFirmware
+                            ? "{0} This is a compatibility notice, not a hardware failure. The firmware override is enabled, and OpenBlade is checking control access."
+                            : "{0} This is a compatibility notice, not a hardware failure. Controls remain blocked unless you explicitly enable the firmware override.",
+                        warning)
+                    : TrayText.Format(
+                        "{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ.",
+                        warning);
         }
     }
 
@@ -1535,30 +1586,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     private static string ComponentVersionValue(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? "Unavailable" : value.Trim();
+        string.IsNullOrWhiteSpace(value) ? TrayText.Get("Unavailable") : value.Trim();
 
     public string TroubleshootingPowerSourceStatus => !IsConnected
-        ? "Unavailable"
+        ? TrayText.Get("Unavailable")
         : ActivePowerSource switch
         {
             PowerSource.PluggedIn => "AC",
             PowerSource.UsbC => "USB-C",
-            PowerSource.Battery => "Battery",
-            PowerSource.ExternalUnknown => "Checking power source",
-            _ => "Unavailable",
+            PowerSource.Battery => TrayText.Get("Battery"),
+            PowerSource.ExternalUnknown => TrayText.Get("Checking power source"),
+            _ => TrayText.Get("Unavailable"),
         };
 
     public string TroubleshootingControlsStatus => IsConnected
         ? ControlAccessStatus
-        : "Unavailable";
+        : TrayText.Get("Unavailable");
 
     public string TroubleshootingKeyboardDriverModeStatus => !IsConnected
-        ? "Unavailable"
+        ? TrayText.Get("Unavailable")
         : latestStatus?.KeyboardDriverModeActive switch
         {
-            true => "Loaded",
-            false => "Not loaded",
-            _ => "Unknown",
+            true => TrayText.Get("Loaded"),
+            false => TrayText.Get("Not loaded"),
+            _ => TrayText.Get("Unknown"),
         };
 
     public string TroubleshootingOtherRazerSoftwareStatus
@@ -1568,13 +1619,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             string running = string.Join(", ", latestStatus?.PotentialControllers ?? []);
             if (!HasControllerDetectionWarning)
             {
-                return string.IsNullOrWhiteSpace(running) ? "None" : running;
+                return string.IsNullOrWhiteSpace(running)
+                    ? TrayText.Get("None")
+                    : running;
             }
 
             string warning = FormatTroubleshootingValue(ControllerDetectionWarningText);
             return string.IsNullOrWhiteSpace(running)
-                ? $"Could not check: {warning}"
-                : $"{running}; check incomplete: {warning}";
+                ? TrayText.Format("Could not check: {0}", warning)
+                : TrayText.Format("{0}; check incomplete: {1}", running, warning);
         }
     }
 
@@ -1735,42 +1788,42 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             if (UseWindowsDynamicLighting)
             {
-                return "Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies.";
+                return TrayText.Get("Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies.");
             }
 
             if (!IsConnected)
             {
-                return "OpenBlade can’t connect to its service, so lighting controls are unavailable.";
+                return TrayText.Get("OpenBlade can’t connect to its service, so lighting controls are unavailable.");
             }
 
             if (latestStatus?.DeviceVerified != true)
             {
                 return IsFirmwareAdmissionBlocked
-                    ? "OpenBlade found a supported laptop with incompatible firmware, so lighting controls are unavailable unless you enable the firmware override."
-                    : "OpenBlade can’t find a supported laptop, so lighting controls are unavailable.";
+                    ? TrayText.Get("OpenBlade found a supported laptop with incompatible firmware, so lighting controls are unavailable unless you enable the firmware override.")
+                    : TrayText.Get("OpenBlade can’t find a supported laptop, so lighting controls are unavailable.");
             }
 
             if (!HasLightingCapability && latestStatus.PotentialControllers.Count > 0)
             {
-                return "Another Razer app may be using the laptop’s lighting interface. OpenBlade will enable these controls when it becomes available.";
+                return TrayText.Get("Another Razer app may be using the laptop’s lighting interface. OpenBlade will enable these controls when it becomes available.");
             }
 
             if (!HasLightingCapability && HasControllerDetectionWarning)
             {
-                return "OpenBlade couldn’t confirm whether another Razer app is using the laptop’s lighting interface. Controls will remain disabled until access is available.";
+                return TrayText.Get("OpenBlade couldn’t confirm whether another Razer app is using the laptop’s lighting interface. Controls will remain disabled until access is available.");
             }
 
             if (!HasLightingCapability)
             {
-                return "OpenBlade couldn’t access the laptop’s lighting interface. Another lighting app may be using it.";
+                return TrayText.Get("OpenBlade couldn’t access the laptop’s lighting interface. Another lighting app may be using it.");
             }
 
             if (ActivePowerSource == PowerSource.ExternalUnknown)
             {
-                return "OpenBlade is checking the laptop before enabling lighting controls.";
+                return TrayText.Get("OpenBlade is checking the laptop before enabling lighting controls.");
             }
 
-            return "Laptop controls are currently unavailable. Check Troubleshooting for details.";
+            return TrayText.Get("Laptop controls are currently unavailable. Check Troubleshooting for details.");
         }
     }
 
@@ -1843,8 +1896,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string TrayDashboardGpuTuningLabel => !IsGpuClockTuningVisible
         ? UnavailableLabel
         : IsGpuClockTuningEnabled
-            ? "On"
-            : "Off";
+            ? TrayText.Get("On")
+            : TrayText.Get("Off");
 
     public bool IsSpecialKeyBindingsEditable =>
         Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
@@ -2282,12 +2335,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public string BatteryProtectionActionLabel => BatteryProtectionEnabled
-        ? "Turn off battery protection"
-        : "Restore charge limit";
+        ? TrayText.Get("Turn off battery protection")
+        : TrayText.Get("Restore charge limit");
 
     public string TrayDashboardChargeLimitLabel => BatteryProtectionEnabled
-        ? $"{ChargeLimitPercent} %"
-        : "Off";
+        ? TrayText.Format("{0} %", ChargeLimitPercent)
+        : TrayText.Get("Off");
 
     public bool FullChargeOverride
     {
@@ -2310,10 +2363,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string FullChargeActionLabel => !temporaryFullChargeStateKnown
         || !Capabilities.SupportsTemporaryFullCharge
-            ? "Unavailable"
+            ? TrayText.Get("Unavailable")
             : FullChargeOverride
-                ? "Cancel charge to 100%"
-                : "Charge to 100% until unplugged";
+                ? TrayText.Get("Cancel charge to 100%")
+                : TrayText.Get("Charge to 100% until unplugged");
 
     public DeviceCapabilities Capabilities
     {
@@ -2407,10 +2460,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string FunctionKeyPrimaryStateLabel => FunctionKeyPrimary switch
     {
-        FunctionKeyPrimaryMode.FunctionKeys => "Function keys",
-        FunctionKeyPrimaryMode.MultimediaKeys => "Media keys",
-        null => "Checking",
-        _ => "Checking",
+        FunctionKeyPrimaryMode.FunctionKeys => TrayText.Get("Function keys"),
+        FunctionKeyPrimaryMode.MultimediaKeys => TrayText.Get("Media keys"),
+        null => TrayText.Get("Checking"),
+        _ => TrayText.Get("Checking"),
     };
 
     public IReadOnlyList<FunctionKeyPrimaryOption> AvailableFunctionKeyPrimaryOptions =>
@@ -2445,9 +2498,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string TrayDashboardGamingModeLabel => GamingModeEnabled switch
     {
-        true => "On",
-        false => "Off",
-        null => "Checking",
+        true => TrayText.Get("On"),
+        false => TrayText.Get("Off"),
+        null => TrayText.Get("Checking"),
     };
 
     public bool BlockWindowsKeyInGamingMode =>
@@ -2619,19 +2672,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             List<string> active = [];
             AddOverrideStatus(
                 active,
-                "Power mode",
+                TrayText.Get("Power mode"),
                 PerformanceOverride,
                 PerformancePresetPresentation.Label);
-            AddOverrideStatus(active, "Fans", FanOverride);
+            AddOverrideStatus(active, TrayText.Get("Fans"), FanOverride);
             AddOverrideStatus(
                 active,
-                "Lighting",
+                TrayText.Get("Lighting"),
                 LightingOverride,
                 FormatLightingProfile);
             AddBatteryOverrideStatus(active);
             return active.Count == 0
-                ? "No manual overrides active."
-                : string.Join(" | ", active);
+                ? TrayText.Get("No manual overrides active.")
+                : string.Join(TrayText.Get(" | "), active);
         }
     }
 
@@ -2648,20 +2701,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             List<string> active = [];
             AddOverrideStatus(
                 active,
-                "Power mode",
+                TrayText.Get("Power mode"),
                 PerformanceOverride,
                 PerformancePresetPresentation.Label);
-            AddOverrideStatus(active, "Fans", FanOverride);
+            AddOverrideStatus(active, TrayText.Get("Fans"), FanOverride);
             if (HasLightingCapability)
             {
                 AddOverrideStatus(
                     active,
-                    "Keyboard lighting",
+                    TrayText.Get("Keyboard lighting"),
                     LightingOverride,
                     FormatLightingProfile);
             }
             AddBatteryOverrideStatus(active);
-            return string.Join(" · ", active);
+            return string.Join(TrayText.Get(" · "), active);
         }
     }
 
@@ -2669,11 +2722,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         if (BatteryProtectionOverride is { } protectionEnabled)
         {
-            active.Add($"Battery protection: {(protectionEnabled ? "On" : "Off")} (not saved to profile)");
+            active.Add(TrayText.Format(
+                "Battery protection: {0} (not saved to profile)",
+                protectionEnabled ? TrayText.Get("On") : TrayText.Get("Off")));
         }
         if (BatteryPolicyOverride is { } policy)
         {
-            active.Add($"Charge limit: {policy.ChargeLimitPercent}% not saved to profile");
+            active.Add(TrayText.Format(
+                "Charge limit: {0}% not saved to profile",
+                policy.ChargeLimitPercent));
         }
     }
 
@@ -2930,12 +2987,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string ThermalProfileRelationshipStatus => ProfileRelationshipStatus(
         HasThermalProfileDraft,
-        PerformanceSourceLabel == "Changed outside OpenBlade"
-            || FanSourceLabel == "Changed outside OpenBlade");
+        latestStatus?.ExternalChanges.Contains(DeviceSubsystem.Performance) == true
+            || latestStatus?.ExternalChanges.Contains(DeviceSubsystem.Fans) == true);
 
     public string LightingProfileRelationshipStatus => ProfileRelationshipStatus(
         HasLightingProfileDraft,
-        LightingSourceLabel == "Changed outside OpenBlade");
+        latestStatus?.ExternalChanges.Contains(DeviceSubsystem.Lighting) == true);
 
     public bool IsPluggedInProfileDraft =>
         activeProfileDraftSource == PowerSource.PluggedIn;
@@ -2990,13 +3047,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         get
         {
             var saved = new ProfileValuePresentation(
-                $"{Profiles.BatteryPolicy.ChargeLimitPercent}%",
-                "Charge limit",
-                "All profiles");
+                TrayText.Format("{0}%", Profiles.BatteryPolicy.ChargeLimitPercent),
+                TrayText.Get("Charge limit"),
+                TrayText.Get("All profiles"));
             return pendingBatteryPolicy is { } pending
                 ? MarkPending(
                     saved,
-                    saved with { Text = $"{pending.ChargeLimitPercent}%" })
+                    saved with { Text = TrayText.Format("{0}%", pending.ChargeLimitPercent) })
                 : saved;
         }
     }
@@ -3004,14 +3061,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string LightingDisplayOffPolicyPresentation =>
         GetProfile(SelectedProfileComparisonOption.Source)
             .EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
-            ? "Turn lighting off"
-            : "Keep lighting on";
+            ? TrayText.Get("Turn lighting off")
+            : TrayText.Get("Keep lighting on");
 
     public string LightingIdlePolicyPresentation =>
         GetProfile(SelectedProfileComparisonOption.Source)
             .EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
-            ? $"{minutes.ToString(CultureInfo.CurrentCulture)} minutes"
-            : "Never";
+            ? TrayText.Format("{0} minutes", minutes)
+            : TrayText.Get("Never");
 
     public bool IsSelectedProfileActive =>
         SelectedProfileComparisonOption.Source == ActivePowerSource;
@@ -3032,9 +3089,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string ActiveProfileDraftName => activeProfileDraftSource switch
     {
         PowerSource.PluggedIn => "AC",
-        PowerSource.Battery => "On battery",
+        PowerSource.Battery => TrayText.Get("On battery"),
         PowerSource.UsbC => "USB-C",
-        _ => "Current profile",
+        _ => TrayText.Get("Current profile"),
     };
 
     public string SavedActiveProfileSummary => activeProfileDraftSource is { } source
@@ -3140,8 +3197,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool IsKeyboardEffectUnconfirmed => keyboardEffectUnconfirmed;
 
     public string KeyboardEffectDescription => keyboardEffectUnconfirmed
-        ? "The active effect was set outside OpenBlade and cannot be read from firmware."
-        : "Choose a supported keyboard lighting effect.";
+        ? TrayText.Get("The active effect was set outside OpenBlade and cannot be read from firmware.")
+        : TrayText.Get("Choose a supported keyboard lighting effect.");
 
     public int LightingBrightnessEditor
     {
@@ -3391,7 +3448,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Enum.GetValues<AmbientAwarenessRegion>()
             .Select(region => new AmbientAwarenessRegionOption(
                 region,
-                region == AmbientAwarenessRegion.Full ? "Full screen" : region.ToString()))
+                AmbientAwarenessRegionLabel(region)))
             .ToArray();
 
     public AmbientAwarenessRegion LightingAmbientAwarenessRegionEditor
@@ -3523,12 +3580,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && LightingStarlightColorModeEditor == StarlightColorMode.Dual;
 
     public string LightingPrimaryColorLabel =>
-        LightingShowsSecondaryColor ? "Primary color" : "Color";
+        LightingShowsSecondaryColor
+            ? TrayText.Get("Primary color")
+            : TrayText.Get("Color");
 
     public string LightingPrimaryColorDescription =>
         LightingShowsSecondaryColor
-            ? "Choose the effect's first color."
-            : "Choose the keyboard color.";
+            ? TrayText.Get("Choose the effect's first color.")
+            : TrayText.Get("Choose the keyboard color.");
 
     public bool LightingShowsReactiveDuration =>
         LightingEffectEditor == LightingEffect.Reactive;
@@ -3620,9 +3679,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public IReadOnlyList<ThemePreferenceOption> ThemeSelectionOptions { get; } =
     [
-        new(ThemePreference.FollowWindows, "Follow Windows"),
-        new(ThemePreference.Light, "Light"),
-        new(ThemePreference.Dark, "Dark"),
+        new(ThemePreference.FollowWindows, TrayText.Get("Follow Windows")),
+        new(ThemePreference.Light, TrayText.Get("Light")),
+        new(ThemePreference.Dark, TrayText.Get("Dark")),
     ];
 
     public ThemePreferenceOption SelectedThemeOption
@@ -3637,11 +3696,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public IReadOnlyList<LiveReadingsRefreshOption> LiveReadingsRefreshOptions { get; } =
     [
-        new(LiveReadingsCadence.Off, "Off"),
-        new(LiveReadingsCadence.EverySecond, "Every second"),
-        new(LiveReadingsCadence.EveryTwoSeconds, "Every 2 seconds"),
-        new(LiveReadingsCadence.EveryFiveSeconds, "Every 5 seconds"),
-        new(LiveReadingsCadence.EveryTenSeconds, "Every 10 seconds"),
+        new(LiveReadingsCadence.Off, TrayText.Get("Off")),
+        new(LiveReadingsCadence.EverySecond, TrayText.Get("Every second")),
+        new(LiveReadingsCadence.EveryTwoSeconds, TrayText.Get("Every 2 seconds")),
+        new(LiveReadingsCadence.EveryFiveSeconds, TrayText.Get("Every 5 seconds")),
+        new(LiveReadingsCadence.EveryTenSeconds, TrayText.Get("Every 10 seconds")),
     ];
 
     public LiveReadingsCadence LiveReadingsRefreshCadence
@@ -3706,10 +3765,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public IReadOnlyList<TrayHoverLabelOption> TrayHoverLabelOptions { get; } =
     [
-        new(TrayHoverLabelMode.OpenBlade, "OpenBlade only"),
-        new(TrayHoverLabelMode.ActiveProfile, "Active profile"),
-        new(TrayHoverLabelMode.BatteryPowerFlow, "Battery power flow"),
-        new(TrayHoverLabelMode.ProfileAndPowerFlow, "Profile and battery power"),
+        new(TrayHoverLabelMode.OpenBlade, TrayText.Get("OpenBlade only")),
+        new(TrayHoverLabelMode.ActiveProfile, TrayText.Get("Active profile")),
+        new(TrayHoverLabelMode.BatteryPowerFlow, TrayText.Get("Battery power flow")),
+        new(TrayHoverLabelMode.ProfileAndPowerFlow, TrayText.Get("Profile and battery power")),
     ];
 
     public TrayHoverLabelMode TrayHoverLabelMode
@@ -3760,7 +3819,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             string omitted = string.Join(", ", result.OmittedItems.Select(kind =>
                 TrayHoverLabelItems.FirstOrDefault(option => option.Kind == kind)?.Label
                     ?? kind.ToString()));
-            return $"Not shown: {omitted}. Windows limits tray hover text to {TrayHoverLabelFormatter.MaximumLength} characters.";
+            return TrayText.Format(
+                "Not shown: {0}. Windows limits tray hover text to {1} characters.",
+                omitted,
+                TrayHoverLabelFormatter.MaximumLength);
         }
     }
 
@@ -3807,7 +3869,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public string StartupDescription => string.IsNullOrWhiteSpace(StartupStatusMessage)
-        ? "Launch OpenBlade automatically when you sign in."
+        ? TrayText.Get("Launch OpenBlade automatically when you sign in.")
         : StartupStatusMessage;
 
     public ICommand SetPerformanceCommand { get; }
@@ -3931,19 +3993,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return UnavailableLabel;
         }
 
-        string suffix = string.IsNullOrEmpty(unit) ? string.Empty : $" {unit}";
+        string suffix = string.IsNullOrEmpty(unit)
+            ? string.Empty
+            : TrayText.Format(" {0}", unit);
         string step = range.Step.HasValue
-            ? $", {range.Step.Value}{suffix} steps"
-            : ", step not yet validated";
-        return $"{range.Minimum}–{range.Maximum}{suffix}{step}";
+            ? TrayText.Format(", {0}{1} steps", range.Step.Value, suffix)
+            : TrayText.Get(", step not yet validated");
+        return TrayText.Format(
+            "{0}–{1}{2}{3}",
+            range.Minimum,
+            range.Maximum,
+            suffix,
+            step);
     }
 
     private static string FormatFeatureAccess(
         DeviceFeatureAccess? access,
         string observedOnlyText) => access switch
         {
-            DeviceFeatureAccess.ReadWrite => "Available",
-            DeviceFeatureAccess.ReadOnly => "Read-only",
+            DeviceFeatureAccess.ReadWrite => TrayText.Get("Available"),
+            DeviceFeatureAccess.ReadOnly => TrayText.Get("Read-only"),
             DeviceFeatureAccess.ObservedOnly => observedOnlyText,
             _ => UnavailableLabel,
         };
@@ -4100,8 +4169,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             await dispatcher.InvokeAsync(
                 () =>
                 {
-                    StartupStatusMessage =
-                        $"Start at sign-in is unavailable: {exception.Message}";
+                    StartupStatusMessage = TrayText.Format(
+                        "Start at sign-in is unavailable: {0}",
+                        exception.Message);
                     StartupStateKnown = false;
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -4271,7 +4341,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                                 ApplyStatus(connected.Status);
                                 break;
                             case ServiceWatchUpdate.Reconnecting:
-                                MarkReconnecting("Reconnecting to service");
+                                MarkReconnecting(TrayText.Get("Reconnecting to service"));
                                 break;
                         }
                     },
@@ -4455,11 +4525,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingOverride = status.LightingOverride;
         ActivePowerSourceLabel = status.ActivePowerSource switch
         {
-            PowerSource.PluggedIn => "AC profile",
-            PowerSource.Battery => "Battery profile",
-            PowerSource.UsbC => "USB-C profile",
-            PowerSource.ExternalUnknown => "Checking power source",
-            _ => "Power source unavailable",
+            PowerSource.PluggedIn => TrayText.Get("AC profile"),
+            PowerSource.Battery => TrayText.Get("Battery profile"),
+            PowerSource.UsbC => TrayText.Get("USB-C profile"),
+            PowerSource.ExternalUnknown => TrayText.Get("Checking power source"),
+            _ => TrayText.Get("Power source unavailable"),
         };
     }
 
@@ -4507,11 +4577,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool competingLightingController = status.PotentialControllers.Any(
             CompetingLightingControllers.Contains);
         ControllerAdvisoryText = HasControllerAdvisory
-            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. "
-                + (competingLightingController
-                    ? "OpenBlade yields automatic keyboard lighting to Synapse while external lighting override is off. "
-                    : string.Empty)
-                + "Confirmed external changes pause automatic profile updates; manual actions still apply."
+            ? TrayText.Format(
+                competingLightingController
+                    ? "Another controller may change laptop settings: {0}. OpenBlade yields automatic keyboard lighting to Synapse while external lighting override is off. Confirmed external changes pause automatic profile updates; manual actions still apply."
+                    : "Another controller may change laptop settings: {0}. Confirmed external changes pause automatic profile updates; manual actions still apply.",
+                string.Join(", ", status.PotentialControllers))
             : string.Empty;
         HasControllerDetectionWarning = !string.IsNullOrWhiteSpace(
             status.ControllerDetectionWarning);
@@ -4522,7 +4592,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             .ToArray();
         HasExternalChanges = externalChanges.Length > 0;
         ExternalChangesText = HasExternalChanges
-            ? $"Changed outside OpenBlade: {string.Join(", ", externalChanges.Select(SubsystemLabel))}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade."
+            ? TrayText.Format(
+                "Changed outside OpenBlade: {0}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade.",
+                string.Join(", ", externalChanges.Select(SubsystemLabel)))
             : string.Empty;
         DeviceSubsystem[] unconfirmedWrites = status.UnconfirmedWrites
             .Distinct()
@@ -4530,7 +4602,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             .ToArray();
         HasUnconfirmedWrites = unconfirmedWrites.Length > 0;
         UnconfirmedWritesText = HasUnconfirmedWrites
-            ? $"OpenBlade could not confirm {string.Join(", ", unconfirmedWrites.Select(SubsystemLabel))} after a write. The last confirmed values remain shown. Checking the current state is read-only; OpenBlade will not retry the write automatically."
+            ? TrayText.Format(
+                "OpenBlade could not confirm {0} after a write. The last confirmed values remain shown. Checking the current state is read-only; OpenBlade will not retry the write automatically.",
+                string.Join(", ", unconfirmedWrites.Select(SubsystemLabel)))
             : string.Empty;
         AlwaysOverrideExternalLightingChanges =
             status.AlwaysOverrideExternalLightingChanges;
@@ -4721,7 +4795,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             StableOptionCollection.ReuseEquivalent(
                 AvailableLogoLightingModeOptions,
                 presentedLogoLightingModes
-                    .Select(mode => new LogoLightingModeOption(mode, mode.ToString()))
+                    .Select(mode => new LogoLightingModeOption(
+                        mode,
+                        LogoLightingModeLabel(mode)))
                     .ToArray());
         if (!ReferenceEquals(AvailableLogoLightingModeOptions, logoLightingModeOptions))
         {
@@ -4739,12 +4815,113 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static string LightingEffectLabel(LightingEffect effect) => effect switch
     {
-        LightingEffect.Spectrum => "Spectrum Cycling",
-        LightingEffect.AmbientAwareness => "Ambient Awareness",
-        LightingEffect.AudioMeter => "Audio Meter",
-        LightingEffect.Sequence => "Imported animation",
+        LightingEffect.Off => TrayText.Get("Off"),
+        LightingEffect.Static => TrayText.Get("Static"),
+        LightingEffect.Spectrum => TrayText.Get("Spectrum Cycling"),
+        LightingEffect.Breathing => TrayText.Get("Breathing"),
+        LightingEffect.Reactive => TrayText.Get("Reactive"),
+        LightingEffect.Tidal => TrayText.Get("Tidal"),
+        LightingEffect.Starlight => TrayText.Get("Starlight"),
+        LightingEffect.Wave => TrayText.Get("Wave"),
+        LightingEffect.Wheel => TrayText.Get("Wheel"),
+        LightingEffect.Ripple => TrayText.Get("Ripple"),
+        LightingEffect.AmbientAwareness => TrayText.Get("Ambient Awareness"),
+        LightingEffect.AudioMeter => TrayText.Get("Audio Meter"),
+        LightingEffect.Fire => TrayText.Get("Fire"),
+        LightingEffect.Sequence => TrayText.Get("Imported animation"),
         _ => effect.ToString(),
     };
+
+    private static string LogoLightingModeLabel(LogoLightingMode mode) => mode switch
+    {
+        LogoLightingMode.Static => TrayText.Get("Static"),
+        LogoLightingMode.Breathing => TrayText.Get("Breathing"),
+        LogoLightingMode.Off => TrayText.Get("Off"),
+        _ => mode.ToString(),
+    };
+
+    private static string AmbientAwarenessRegionLabel(
+        AmbientAwarenessRegion region) => region switch
+        {
+            AmbientAwarenessRegion.Full => TrayText.Get("Full screen"),
+            AmbientAwarenessRegion.Left => TrayText.Get("Left"),
+            AmbientAwarenessRegion.Top => TrayText.Get("Top"),
+            AmbientAwarenessRegion.Right => TrayText.Get("Right"),
+            AmbientAwarenessRegion.Bottom => TrayText.Get("Bottom"),
+            _ => region.ToString(),
+        };
+
+    private static string AmbientAwarenessRegionFragment(
+        AmbientAwarenessRegion region) => region switch
+        {
+            AmbientAwarenessRegion.Full => TrayText.Get("Fragment.FullScreen", "full screen"),
+            AmbientAwarenessRegion.Left => TrayText.Get("Fragment.Left", "left"),
+            AmbientAwarenessRegion.Top => TrayText.Get("Fragment.Top", "top"),
+            AmbientAwarenessRegion.Right => TrayText.Get("Fragment.Right", "right"),
+            AmbientAwarenessRegion.Bottom => TrayText.Get("Fragment.Bottom", "bottom"),
+            _ => region.ToString(),
+        };
+
+    private static string LightingDirectionLabel(LightingDirection direction) =>
+        direction switch
+        {
+            LightingDirection.Leftward => TrayText.Get("Leftward"),
+            LightingDirection.Rightward => TrayText.Get("Rightward"),
+            _ => direction.ToString(),
+        };
+
+    private static string LightingDirectionFragment(LightingDirection direction) =>
+        direction switch
+        {
+            LightingDirection.Leftward => TrayText.Get("Fragment.Leftward", "leftward"),
+            LightingDirection.Rightward => TrayText.Get("Fragment.Rightward", "rightward"),
+            _ => direction.ToString(),
+        };
+
+    private static string ReactiveLightingDurationLabel(
+        ReactiveLightingDuration duration) => duration switch
+        {
+            ReactiveLightingDuration.Short => TrayText.Get("Short"),
+            ReactiveLightingDuration.Medium => TrayText.Get("Medium"),
+            ReactiveLightingDuration.Long => TrayText.Get("Long"),
+            _ => duration.ToString(),
+        };
+
+    private static string ReactiveLightingDurationFragment(
+        ReactiveLightingDuration duration) => duration switch
+        {
+            ReactiveLightingDuration.Short => TrayText.Get("Fragment.Short", "short"),
+            ReactiveLightingDuration.Medium => TrayText.Get("Fragment.Medium", "medium"),
+            ReactiveLightingDuration.Long => TrayText.Get("Fragment.Long", "long"),
+            _ => duration.ToString(),
+        };
+
+    private static string StarlightLightingDurationLabel(
+        StarlightLightingDuration duration) => duration switch
+        {
+            StarlightLightingDuration.Short => TrayText.Get("Short"),
+            StarlightLightingDuration.Medium => TrayText.Get("Medium"),
+            StarlightLightingDuration.Long => TrayText.Get("Long"),
+            _ => duration.ToString(),
+        };
+
+    private static string StarlightLightingDurationFragment(
+        StarlightLightingDuration duration) => duration switch
+        {
+            StarlightLightingDuration.Short => TrayText.Get("Fragment.Short", "short"),
+            StarlightLightingDuration.Medium => TrayText.Get("Fragment.Medium", "medium"),
+            StarlightLightingDuration.Long => TrayText.Get("Fragment.Long", "long"),
+            _ => duration.ToString(),
+        };
+
+    private static string CustomPerformanceLevelLabel(
+        CustomPerformanceLevel level) => level switch
+        {
+            CustomPerformanceLevel.Low => TrayText.Get("Low"),
+            CustomPerformanceLevel.Medium => TrayText.Get("Medium"),
+            CustomPerformanceLevel.High => TrayText.Get("High"),
+            _ => level.ToString(),
+        };
 
     private void NotifyActiveFanSelectionBinding()
     {
@@ -4757,7 +4934,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(CanChangeFanMode));
     }
 
-    private void MarkDisconnected() => MarkDisconnected("Service disconnected");
+    private void MarkDisconnected() =>
+        MarkDisconnected(TrayText.Get("Service disconnected"));
 
     private void MarkReconnecting(string message)
     {
@@ -4950,7 +5128,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         BatterySourceLabel = UnavailableLabel;
         LiveReadings = null;
         ClearLiveReadingsRefreshTime();
-        ControlAccessStatus = "OpenBlade service isn’t running";
+        ControlAccessStatus = TrayText.Get("OpenBlade service isn’t running");
         NotifyCommands();
         NotifyPresentationState();
     }
@@ -5532,7 +5710,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (FanOverride is not null)
         {
             await ClearOverrideAsync(
-                "fans",
+                TrayText.Get("Fragment.Fans", "fans"),
                 cancellationToken => serviceClient.SetFanOverrideAsync(null, cancellationToken),
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
@@ -5540,7 +5718,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (PerformanceOverride is not null)
         {
             await ClearOverrideAsync(
-                "performance",
+                TrayText.Get("Fragment.Performance", "performance"),
                 cancellationToken => serviceClient.SetPerformanceOverrideAsync(null, cancellationToken),
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
@@ -5548,7 +5726,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (LightingOverride is not null)
         {
             await ClearOverrideAsync(
-                "lighting",
+                TrayText.Get("Fragment.Lighting", "lighting"),
                 cancellationToken => serviceClient.SetLightingOverrideAsync(null, cancellationToken),
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
@@ -5556,7 +5734,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (BatteryProtectionOverride is not null && HasConfirmedPowerSource)
         {
             await ClearOverrideAsync(
-                "battery protection",
+                TrayText.Get("Fragment.BatteryProtection", "battery protection"),
                 cancellationToken => serviceClient.SetBatteryProtectionAsync(
                     GetProfile(ActivePowerSource).EffectiveBatteryProtectionEnabled,
                     cancellationToken),
@@ -5566,7 +5744,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (BatteryPolicyOverride is not null)
         {
             await ClearOverrideAsync(
-                "charge limit",
+                TrayText.Get("Fragment.ChargeLimit", "charge limit"),
                 cancellationToken => serviceClient.SetBatteryPolicyAsync(
                     Profiles.BatteryPolicy,
                     cancellationToken),
@@ -5583,30 +5761,34 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             List<string> notCleared = [];
             if (status.PerformanceOverride is not null)
             {
-                notCleared.Add("performance");
+                notCleared.Add(TrayText.Get("Fragment.Performance", "performance"));
             }
             if (status.FanOverride is not null)
             {
-                notCleared.Add("fans");
+                notCleared.Add(TrayText.Get("Fragment.Fans", "fans"));
             }
             if (status.LightingOverride is not null)
             {
-                notCleared.Add("lighting");
+                notCleared.Add(TrayText.Get("Fragment.Lighting", "lighting"));
             }
             if (status.BatteryProtectionOverride is not null)
             {
-                notCleared.Add("battery protection");
+                notCleared.Add(TrayText.Get("Fragment.BatteryProtection", "battery protection"));
             }
             if (status.BatteryPolicyOverride is not null)
             {
-                notCleared.Add("charge limit");
+                notCleared.Add(TrayText.Get("Fragment.ChargeLimit", "charge limit"));
             }
 
             message = notCleared.Count > 0
-                ? $"Could not clear {string.Join(", ", notCleared)} overrides."
+                ? TrayText.Format(
+                    "Could not clear {0} overrides.",
+                    string.Join(", ", notCleared))
                 : hardwareNotApplied.Count == 0
-                    ? "Manual overrides cleared."
-                    : $"Manual overrides cleared; hardware restoration was not applied for {string.Join(", ", hardwareNotApplied)}.";
+                    ? TrayText.Get("Manual overrides cleared.")
+                    : TrayText.Format(
+                        "Manual overrides cleared; hardware restoration was not applied for {0}.",
+                        string.Join(", ", hardwareNotApplied));
             failed = notCleared.Count > 0;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -5615,7 +5797,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch
         {
-            message = "Manual override clear requests completed; service confirmation is unavailable.";
+            message = TrayText.Get(
+                "Manual override clear requests completed; service confirmation is unavailable.");
             failed = true;
         }
 
@@ -5669,9 +5852,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     StartAtSignIn = confirmed;
                     StartupStatusMessage = confirmed == requested
                         ? requested
-                            ? "OpenBlade will start when you sign in."
-                            : "OpenBlade will not start when you sign in."
-                        : "Windows did not confirm the requested start-at-sign-in setting.";
+                            ? TrayText.Get("OpenBlade will start when you sign in.")
+                            : TrayText.Get("OpenBlade will not start when you sign in.")
+                        : TrayText.Get(
+                            "Windows did not confirm the requested start-at-sign-in setting.");
                     NotifyCommands();
                 },
                 token).ConfigureAwait(false);
@@ -5685,8 +5869,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             await dispatcher.InvokeAsync(
                 () =>
                 {
-                    StartupStatusMessage =
-                        $"Could not change start at sign-in: {exception.Message}";
+                    StartupStatusMessage = TrayText.Format(
+                        "Could not change start at sign-in: {0}",
+                        exception.Message);
                     NotifyCommands();
                 },
                 token).ConfigureAwait(false);
@@ -6183,7 +6368,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             await dispatcher.InvokeAsync(
                 () => OperationStatusMessage =
-                    "Could not restore the saved display profile because the display controller is unavailable.",
+                    TrayText.Get("Could not restore the saved display profile because the display controller is unavailable."),
                 token);
             return false;
         }
@@ -6206,7 +6391,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 {
                     await dispatcher.InvokeAsync(
                         () => OperationStatusMessage =
-                            "Could not restore the saved display profile because Windows did not confirm every setting.",
+                            TrayText.Get("Could not restore the saved display profile because Windows did not confirm every setting."),
                         token);
                     return false;
                 }
@@ -6219,7 +6404,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
-            string message = $"Could not restore the saved display profile: {exception.Message}";
+            string message = TrayText.Format(
+                "Could not restore the saved display profile: {0}",
+                exception.Message);
             await dispatcher.InvokeAsync(
                 () =>
                 {
@@ -6234,7 +6421,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private Task ReportProfileRestoreSourceChangedAsync(CancellationToken token) =>
         dispatcher.InvokeAsync(
             () => OperationStatusMessage =
-                "Could not restore the saved profile settings because the power source changed.",
+                TrayText.Get("Could not restore the saved profile settings because the power source changed."),
             token);
 
     private bool TryGetSupportedProfileDraft(object? parameter, out ProfileSet draft)
@@ -6364,7 +6551,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
-            string message = $"Operation failed: {exception.Message}";
+            string message = TrayText.Format("Operation failed: {0}", exception.Message);
             await dispatcher.InvokeAsync(
                 () =>
                 {
@@ -6383,7 +6570,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             await dispatcher.InvokeAsync(
                 () =>
                 {
-                    OperationStatusMessage = "Preparing diagnostic export...";
+                    OperationStatusMessage = TrayText.Get("Preparing diagnostic export...");
                     TroubleshootingRecentErrorStatus = string.Empty;
                 },
                 token);
@@ -6398,12 +6585,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 {
                     OperationStatusMessage = result.Status switch
                     {
-                        DiagnosticArchiveSaveStatus.Canceled => "Diagnostic export canceled.",
+                        DiagnosticArchiveSaveStatus.Canceled =>
+                            TrayText.Get("Diagnostic export canceled."),
                         DiagnosticArchiveSaveStatus.Saved
                             when !string.IsNullOrWhiteSpace(result.DestinationPath) =>
-                            $"Diagnostics exported to {result.DestinationPath}.",
+                            TrayText.Format(
+                                "Diagnostics exported to {0}.",
+                                result.DestinationPath),
                         _ => throw new InvalidDataException(
-                            "The diagnostic saver returned an invalid result."),
+                            TrayText.Get("The diagnostic saver returned an invalid result.")),
                     };
                     TroubleshootingRecentErrorStatus = string.Empty;
                 },
@@ -6415,7 +6605,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
-            string message = $"Diagnostic export failed: {exception.Message}";
+            string message = TrayText.Format(
+                "Diagnostic export failed: {0}",
+                exception.Message);
             await dispatcher.InvokeAsync(
                 () =>
                 {
@@ -7405,49 +7597,55 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     private static string FormatThermalProfile(PowerProfile profile) =>
-        $"{FormatPerformanceProfile(profile)} | {FanModePresentation.Label(profile.Fans)} fans";
+        TrayText.Format(
+            "{0} | {1} fans",
+            FormatPerformanceProfile(profile),
+            FanModePresentation.Label(profile.Fans));
 
     private static string FormatPowerProfile(PowerProfile profile) =>
-        $"Laptop performance: {FormatPerformanceProfile(profile)}{Environment.NewLine}"
-        + $"Windows power mode: {FormatWindowsPowerMode(profile.WindowsPowerMode)}{Environment.NewLine}"
-        + $"Fans: {FanModePresentation.Label(profile.Fans)}{Environment.NewLine}"
-        + $"Lighting: {FormatLightingProfile(profile.Lighting)}{Environment.NewLine}"
-        + $"Display: {FormatDisplayProfile(profile.Display)}";
+        TrayText.Format(
+            "Laptop performance: {0}{5}Windows power mode: {1}{5}Fans: {2}{5}Lighting: {3}{5}Display: {4}",
+            FormatPerformanceProfile(profile),
+            FormatWindowsPowerMode(profile.WindowsPowerMode),
+            FanModePresentation.Label(profile.Fans),
+            FormatLightingProfile(profile.Lighting),
+            FormatDisplayProfile(profile.Display),
+            Environment.NewLine);
 
     private static string FormatWindowsPowerMode(WindowsPowerMode? mode) => mode switch
     {
-        WindowsPowerMode.BestPowerEfficiency => "Best power efficiency",
-        WindowsPowerMode.Balanced => "Balanced",
-        WindowsPowerMode.BestPerformance => "Best performance",
-        null => "Leave unchanged",
-        _ => "Unknown",
+        WindowsPowerMode.BestPowerEfficiency => TrayText.Get("Best power efficiency"),
+        WindowsPowerMode.Balanced => TrayText.Get("Balanced"),
+        WindowsPowerMode.BestPerformance => TrayText.Get("Best performance"),
+        null => TrayText.Get("Leave unchanged"),
+        _ => TrayText.Get("Unknown"),
     };
 
     private static string SubsystemLabel(DeviceSubsystem subsystem) => subsystem switch
     {
-        DeviceSubsystem.Performance => "Power mode",
-        DeviceSubsystem.Fans => "Fans",
-        DeviceSubsystem.Battery => "Battery protection",
-        DeviceSubsystem.Lighting => "Keyboard lighting",
-        _ => subsystem.ToString(),
+        DeviceSubsystem.Performance => TrayText.Get("Power mode"),
+        DeviceSubsystem.Fans => TrayText.Get("Fans"),
+        DeviceSubsystem.Battery => TrayText.Get("Battery protection"),
+        DeviceSubsystem.Lighting => TrayText.Get("Keyboard lighting"),
+        _ => TrayText.Get(subsystem.ToString()),
     };
 
     private string ProfileRelationshipStatus(bool hasDraft, bool changedOutside) =>
         !IsConnected || latestStatus?.DeviceVerified != true
             ? UnavailableLabel
             : !HasConfirmedPowerSource
-                ? "Waiting for power source"
+                ? TrayText.Get("Waiting for power source")
                 : hasDraft
-                    ? "Temporary change not saved to this profile"
+                    ? TrayText.Get("Temporary change not saved to this profile")
                     : changedOutside
-                        ? "Changed outside OpenBlade"
-                        : "Matches saved profile";
+                        ? TrayText.Get("Changed outside OpenBlade")
+                        : TrayText.Get("Matches saved profile");
 
     private static string FormatLightingProfile(LightingSettings lighting)
     {
         if (lighting.Effect == LightingEffect.Off)
         {
-            return "Off";
+            return TrayText.Get("Off");
         }
 
         string effect = LightingEffectLabel(lighting.Effect);
@@ -7458,50 +7656,70 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ColorMode: BreathingColorMode.Dual,
                 SecondaryColor: { } secondary,
             } =>
-                $"two colors, {FormatColor(lighting.Color)} and "
-                + FormatColor(secondary),
-            BreathingLightingParameters { ColorMode: BreathingColorMode.Random } => "random colors",
+                TrayText.Format(
+                    "two colors, {0} and {1}",
+                    FormatColor(lighting.Color),
+                    FormatColor(secondary)),
+            BreathingLightingParameters { ColorMode: BreathingColorMode.Random } =>
+                TrayText.Get("random colors"),
             BreathingLightingParameters => FormatColor(lighting.Color),
             ReactiveLightingParameters reactive =>
-                $"{reactive.Duration.ToString().ToLowerInvariant()}, {FormatColor(lighting.Color)}",
+                TrayText.Format(
+                    "{0}, {1}",
+                    ReactiveLightingDurationFragment(reactive.Duration),
+                    FormatColor(lighting.Color)),
             RippleLightingParameters => FormatColor(lighting.Color),
             TidalLightingParameters { RandomColors: true } tidal =>
-                $"random colors, {tidal.Direction.ToString().ToLowerInvariant()}",
+                TrayText.Format(
+                    "random colors, {0}",
+                    LightingDirectionFragment(tidal.Direction)),
             TidalLightingParameters tidal =>
-                $"{FormatColor(tidal.PrimaryColor)} and {FormatColor(tidal.SecondaryColor)}, "
-                + tidal.Direction.ToString().ToLowerInvariant(),
+                TrayText.Format(
+                    "{0} and {1}, {2}",
+                    FormatColor(tidal.PrimaryColor),
+                    FormatColor(tidal.SecondaryColor),
+                    LightingDirectionFragment(tidal.Direction)),
             StarlightLightingParameters
             {
                 ColorMode: StarlightColorMode.Random,
             } starlight =>
-                $"random colors, {starlight.Duration.ToString().ToLowerInvariant()}",
+                TrayText.Format(
+                    "random colors, {0}",
+                    StarlightLightingDurationFragment(starlight.Duration)),
             StarlightLightingParameters
             {
                 ColorMode: StarlightColorMode.Dual,
                 SecondaryColor: { } secondary,
             } starlight =>
-                $"{FormatColor(lighting.Color)} and {FormatColor(secondary)}, "
-                + starlight.Duration.ToString().ToLowerInvariant(),
+                TrayText.Format(
+                    "{0} and {1}, {2}",
+                    FormatColor(lighting.Color),
+                    FormatColor(secondary),
+                    StarlightLightingDurationFragment(starlight.Duration)),
             StarlightLightingParameters starlight =>
-                $"{FormatColor(lighting.Color)}, "
-                + starlight.Duration.ToString().ToLowerInvariant(),
+                TrayText.Format(
+                    "{0}, {1}",
+                    FormatColor(lighting.Color),
+                    StarlightLightingDurationFragment(starlight.Duration)),
             WaveLightingParameters wave =>
-                wave.Direction.ToString().ToLowerInvariant(),
+                LightingDirectionFragment(wave.Direction),
             WheelLightingParameters wheel =>
                 FormatRotationDirection(wheel.Direction),
             AmbientAwarenessLightingParameters ambient =>
                 ambient.Region == AmbientAwarenessRegion.Full
-                    ? "full screen"
-                    : ambient.Region.ToString().ToLowerInvariant(),
+                    ? TrayText.Get("Fragment.FullScreen", "full screen")
+                    : AmbientAwarenessRegionFragment(ambient.Region),
             AudioMeterLightingParameters audioMeter =>
-                $"color boost {audioMeter.ColorBoost}, smoothing: "
-                    + FormatAudioMeterDecay(audioMeter.DecayMilliseconds),
+                TrayText.Format(
+                    "color boost {0}, smoothing: {1}",
+                    audioMeter.ColorBoost,
+                    FormatAudioMeterDecay(audioMeter.DecayMilliseconds)),
             _ when lighting.Effect == LightingEffect.Static => FormatColor(lighting.Color),
             _ => string.Empty,
         };
         return string.IsNullOrEmpty(details)
-            ? $"{effect} | {lighting.Brightness}%"
-            : $"{effect} | {lighting.Brightness}% | {details}";
+            ? TrayText.Format("{0} | {1}%", effect, lighting.Brightness)
+            : TrayText.Format("{0} | {1}% | {2}", effect, lighting.Brightness, details);
     }
 
     private static string FormatColor(RgbColor color) =>
@@ -7509,9 +7727,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static string FormatAudioMeterDecay(int milliseconds) => milliseconds switch
     {
-        0 => "Off",
-        1000 => "Up to 1 second",
-        _ => $"Up to {milliseconds / 1000d:0.##} seconds",
+        0 => TrayText.Get("Off"),
+        1000 => TrayText.Get("Up to 1 second"),
+        _ => TrayText.Format("Up to {0:0.##} seconds", milliseconds / 1000d),
     };
 
     private static string FormatDisplayProfile(DisplayProfileSettings? display)
@@ -7524,13 +7742,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         if (value.HdrEnabled is bool hdrEnabled)
         {
-            settings.Add(hdrEnabled ? "HDR on" : "HDR off");
+            settings.Add(hdrEnabled ? TrayText.Get("HDR on") : TrayText.Get("HDR off"));
         }
         if (!string.IsNullOrWhiteSpace(value.ColorProfileKey))
         {
             settings.Add(value.ColorProfileKey);
         }
-        return settings.Count == 0 ? "Not set" : string.Join(" | ", settings);
+        return settings.Count == 0
+            ? TrayText.Get("Not set")
+            : string.Join(TrayText.Get(" | "), settings);
     }
 
     private ProfilePresentation CreateProfilePresentation(PowerSource source)
@@ -7618,65 +7838,65 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool? presentedGamingMode = savedLaptopBehavior.GamingModeEnabled
             ?? laptopBehaviorFallback.GamingModeEnabled;
         return new ProfilePresentation(
-            Value("Laptop performance", FormatPerformanceProfile(profile)),
-            Value("Windows power mode", FormatWindowsPowerMode(profile.WindowsPowerMode)),
-            Value("GPU tuning", FormatGpuClockOffsets(profile)),
-            Value("Fans", FormatFanControl(profile)),
+            Value(TrayText.Get("Laptop performance"), FormatPerformanceProfile(profile)),
+            Value(TrayText.Get("Windows power mode"), FormatWindowsPowerMode(profile.WindowsPowerMode)),
+            Value(TrayText.Get("GPU tuning"), FormatGpuClockOffsets(profile)),
+            Value(TrayText.Get("Fans"), FormatFanControl(profile)),
             Value(
-                "Battery protection",
+                TrayText.Get("Battery protection"),
                 FormatOptionalToggle(profile.BatteryProtectionEnabled)),
-            Value("Lighting effect", FormatLightingEffect(profile.Lighting)),
-            Value("Lighting brightness", profile.Lighting.Effect == LightingEffect.Off
-                ? "Not applicable"
-                : $"{profile.Lighting.Brightness}%"),
-            Value("Lighting color", FormatLightingColor(profile.Lighting)),
-            Value("Laptop lid logo", profile.Lighting.LogoMode switch
+            Value(TrayText.Get("Lighting effect"), FormatLightingEffect(profile.Lighting)),
+            Value(TrayText.Get("Lighting brightness"), profile.Lighting.Effect == LightingEffect.Off
+                ? TrayText.Get("Not applicable")
+                : TrayText.Format("{0}%", profile.Lighting.Brightness)),
+            Value(TrayText.Get("Lighting color"), FormatLightingColor(profile.Lighting)),
+            Value(TrayText.Get("Laptop lid logo"), profile.Lighting.LogoMode switch
             {
-                LogoLightingMode.Static => "Static",
-                LogoLightingMode.Breathing => "Breathing",
-                LogoLightingMode.Off => "Off",
-                null => "Not set",
-                _ => "Not set",
+                LogoLightingMode.Static => TrayText.Get("Static"),
+                LogoLightingMode.Breathing => TrayText.Get("Breathing"),
+                LogoLightingMode.Off => TrayText.Get("Off"),
+                null => TrayText.Get("Not set"),
+                _ => TrayText.Get("Not set"),
             }),
-            Value("Display turns off", profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
-                ? "Turn lighting off"
-                : "Keep lighting on"),
-            Value("Inactivity timeout", profile.EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
-                ? $"{minutes.ToString(CultureInfo.CurrentCulture)} minutes"
-                : "Never"),
-            Value("Refresh rate", FormatDisplayRefreshRate(display.RefreshRateKey)),
-            Value("HDR", display.HdrEnabled switch
+            Value(TrayText.Get("Display turns off"), profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
+                ? TrayText.Get("Turn lighting off")
+                : TrayText.Get("Keep lighting on")),
+            Value(TrayText.Get("Inactivity timeout"), profile.EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
+                ? TrayText.Format("{0} minutes", minutes)
+                : TrayText.Get("Never")),
+            Value(TrayText.Get("Refresh rate"), FormatDisplayRefreshRate(display.RefreshRateKey)),
+            Value(TrayText.Get("HDR"), display.HdrEnabled switch
             {
-                true => "On",
-                false => "Off",
-                null => "Not set",
+                true => TrayText.Get("On"),
+                false => TrayText.Get("Off"),
+                null => TrayText.Get("Not set"),
             }),
-            Value("Color profile", FormatDisplayColorProfile(display.ColorProfileKey)),
-            Value("Function keys", presentedFunctionKeyPrimary switch
+            Value(TrayText.Get("Color profile"), FormatDisplayColorProfile(display.ColorProfileKey)),
+            Value(TrayText.Get("Function keys"), presentedFunctionKeyPrimary switch
             {
-                FunctionKeyPrimaryMode.FunctionKeys => "Function keys",
-                FunctionKeyPrimaryMode.MultimediaKeys => "Media keys",
-                _ => "Not set",
+                FunctionKeyPrimaryMode.FunctionKeys => TrayText.Get("Function keys"),
+                FunctionKeyPrimaryMode.MultimediaKeys => TrayText.Get("Media keys"),
+                _ => TrayText.Get("Not set"),
             }),
-            Value("Gaming mode", FormatOptionalToggle(presentedGamingMode)),
-            Value("Block Windows key", FormatOptionalToggle(
+            Value(TrayText.Get("Gaming mode"), FormatOptionalToggle(presentedGamingMode)),
+            Value(TrayText.Get("Block Windows key"), FormatOptionalToggle(
                 profile.EffectiveLaptopBehavior
                     .EffectiveGamingModeKeyPolicy
                     .BlockWindowsKey)),
-            Value("Block Alt+Tab", FormatOptionalToggle(
+            Value(TrayText.Get("Block Alt+Tab"), FormatOptionalToggle(
                 profile.EffectiveLaptopBehavior
                     .EffectiveGamingModeKeyPolicy
                     .BlockAltTab)),
             Value(
-                "Startup animation",
+                TrayText.Get("Startup animation"),
                 FormatOptionalToggle(presentedStartupAnimation)));
     }
 
     private static string FormatOptionalToggle(bool? value) => value switch
     {
-        true => "On",
-        false => "Off",
-        null => "Not set",
+        true => TrayText.Get("On"),
+        false => TrayText.Get("Off"),
+        null => TrayText.Get("Not set"),
     };
 
     private static string FormatFanControl(PowerProfile profile)
@@ -7685,12 +7905,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? FanControlSettings.FromLegacy(profile.Fans);
         return settings.Mode switch
         {
-            FanMode.Automatic => "Automatic",
+            FanMode.Automatic => TrayText.Get("Automatic"),
             FanMode.Fixed =>
-                $"Fixed, {settings.FixedSpeedRpm.ToString("N0", CultureInfo.CurrentCulture)} RPM",
-            FanMode.ManualCurve => "Manual fan curve",
-            FanMode.Maximum => "Maximum",
-            _ => settings.Mode.ToString(),
+                TrayText.Format("Fixed, {0:N0} RPM", settings.FixedSpeedRpm),
+            FanMode.ManualCurve => TrayText.Get("Manual fan curve"),
+            FanMode.Maximum => TrayText.Get("Maximum"),
+            _ => TrayText.Get(settings.Mode.ToString()),
         };
     }
 
@@ -7700,17 +7920,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Performance: PerformancePreset.Custom,
             CustomPerformance: { } custom,
         }
-            ? $"Custom, CPU {custom.Cpu}, GPU {custom.Gpu}"
+            ? TrayText.Format(
+                "Custom, CPU {0}, GPU {1}",
+                CustomPerformanceLevelLabel(custom.Cpu),
+                CustomPerformanceLevelLabel(custom.Gpu))
             : PerformancePresetPresentation.Label(profile.Performance);
 
     private static string FormatGpuClockOffsets(PowerProfile profile) =>
         ResolveProfileGpuClockTuning(profile) switch
         {
             { Enabled: true, Offsets: { } offsets } =>
-                $"Core {FormatSignedMegahertz(offsets.CoreMegahertz)}, "
-                + $"memory {FormatSignedMegahertz(offsets.MemoryMegahertz)}",
-            { Enabled: false } => "Off",
-            _ => "Not set",
+                TrayText.Format(
+                    "Core {0}, memory {1}",
+                    FormatSignedMegahertz(offsets.CoreMegahertz),
+                    FormatSignedMegahertz(offsets.MemoryMegahertz)),
+            { Enabled: false } => TrayText.Get("Off"),
+            _ => TrayText.Get("Not set"),
         };
 
     private static GpuClockTuningSettings? ResolveProfileGpuClockTuning(
@@ -7721,122 +7946,145 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 : null);
 
     private static string FormatSignedMegahertz(int value) =>
-        $"{value.ToString("+0;-0;0", CultureInfo.CurrentCulture)} MHz";
+        TrayText.Format("{0} MHz", value.ToString("+0;-0;0", CultureInfo.CurrentCulture));
 
     private static string FormatLightingEffect(LightingSettings lighting) => lighting switch
     {
-        { Effect: LightingEffect.Off } => "Off",
-        { Effect: LightingEffect.Spectrum } => "Spectrum Cycling",
+        { Effect: LightingEffect.Off } => TrayText.Get("Off"),
+        { Effect: LightingEffect.Spectrum } => TrayText.Get("Spectrum Cycling"),
         {
             Effect: LightingEffect.AudioMeter,
             Parameters: AudioMeterLightingParameters audioMeter,
-        } => $"Audio Meter, color boost {audioMeter.ColorBoost}, smoothing: "
-            + FormatAudioMeterDecay(audioMeter.DecayMilliseconds),
+        } => TrayText.Format(
+            "Audio Meter, color boost {0}, smoothing: {1}",
+            audioMeter.ColorBoost,
+            FormatAudioMeterDecay(audioMeter.DecayMilliseconds)),
         {
             Effect: LightingEffect.AmbientAwareness,
             Parameters: AmbientAwarenessLightingParameters ambient,
         } => ambient.Region == AmbientAwarenessRegion.Full
-            ? "Ambient Awareness, full screen"
-            : $"Ambient Awareness, {ambient.Region.ToString().ToLowerInvariant()}",
+            ? TrayText.Get("Ambient Awareness, full screen")
+            : TrayText.Format(
+                "Ambient Awareness, {0}",
+                AmbientAwarenessRegionFragment(ambient.Region)),
         {
             Effect: LightingEffect.Breathing,
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Dual },
-        } => "Breathing, two colors",
+        } => TrayText.Get("Breathing, two colors"),
         {
             Effect: LightingEffect.Breathing,
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
-        } => "Breathing, random colors",
-        { Effect: LightingEffect.Breathing } => "Breathing, one color",
+        } => TrayText.Get("Breathing, random colors"),
+        { Effect: LightingEffect.Breathing } => TrayText.Get("Breathing, one color"),
         {
             Effect: LightingEffect.Reactive,
             Parameters: ReactiveLightingParameters reactive,
-        } => $"Reactive, {reactive.Duration.ToString().ToLowerInvariant()}",
-        { Effect: LightingEffect.Ripple } => "Ripple",
+        } => TrayText.Format(
+            "Reactive, {0}",
+            ReactiveLightingDurationFragment(reactive.Duration)),
+        { Effect: LightingEffect.Ripple } => TrayText.Get("Ripple"),
         {
             Effect: LightingEffect.Tidal,
             Parameters: TidalLightingParameters tidal,
         } => tidal.Direction == LightingDirection.Leftward
-            ? "Tidal, outward"
-            : "Tidal, inward",
+            ? TrayText.Get("Tidal, outward")
+            : TrayText.Get("Tidal, inward"),
         {
             Effect: LightingEffect.Starlight,
             Parameters: StarlightLightingParameters
             {
                 ColorMode: StarlightColorMode.Dual,
             } starlight,
-        } => $"Starlight, two colors, {starlight.Duration.ToString().ToLowerInvariant()}",
+        } => TrayText.Format(
+            "Starlight, two colors, {0}",
+            StarlightLightingDurationFragment(starlight.Duration)),
         {
             Effect: LightingEffect.Starlight,
             Parameters: StarlightLightingParameters
             {
                 ColorMode: StarlightColorMode.Random,
             } starlight,
-        } => $"Starlight, random colors, {starlight.Duration.ToString().ToLowerInvariant()}",
+        } => TrayText.Format(
+            "Starlight, random colors, {0}",
+            StarlightLightingDurationFragment(starlight.Duration)),
         {
             Effect: LightingEffect.Starlight,
             Parameters: StarlightLightingParameters starlight,
-        } => $"Starlight, one color, {starlight.Duration.ToString().ToLowerInvariant()}",
+        } => TrayText.Format(
+            "Starlight, one color, {0}",
+            StarlightLightingDurationFragment(starlight.Duration)),
         {
             Effect: LightingEffect.Wave,
             Parameters: WaveLightingParameters wave,
-        } => $"Wave, {wave.Direction.ToString().ToLowerInvariant()}",
+        } => TrayText.Format(
+            "Wave, {0}",
+            LightingDirectionFragment(wave.Direction)),
         {
             Effect: LightingEffect.Wheel,
             Parameters: WheelLightingParameters wheel,
-        } => $"Wheel, {FormatRotationDirection(wheel.Direction)}",
+        } => TrayText.Format("Wheel, {0}", FormatRotationDirection(wheel.Direction)),
         _ => LightingEffectLabel(lighting.Effect),
     };
 
     private static string FormatLightingColor(LightingSettings lighting) => lighting switch
     {
-        { Effect: LightingEffect.Off } => "Not applicable",
-        { Effect: LightingEffect.Spectrum } => "Automatic",
+        { Effect: LightingEffect.Off } => TrayText.Get("Not applicable"),
+        { Effect: LightingEffect.Spectrum } => TrayText.Get("Automatic"),
         {
             Effect: LightingEffect.Wave or LightingEffect.Wheel
                 or LightingEffect.AmbientAwareness
                 or LightingEffect.AudioMeter
                 or LightingEffect.Fire
                 or LightingEffect.Sequence,
-        } => "Automatic",
+        } => TrayText.Get("Automatic"),
         {
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
-        } => "Random",
+        } => TrayText.Get("Random"),
         {
             Parameters: TidalLightingParameters { RandomColors: true },
-        } => "Random",
+        } => TrayText.Get("Random"),
         {
             Parameters: TidalLightingParameters tidal,
-        } => $"{FormatColor(tidal.PrimaryColor)} and {FormatColor(tidal.SecondaryColor)}",
+        } => TrayText.Format(
+            "{0} and {1}",
+            FormatColor(tidal.PrimaryColor),
+            FormatColor(tidal.SecondaryColor)),
         {
             Parameters: StarlightLightingParameters { ColorMode: StarlightColorMode.Random },
-        } => "Random",
+        } => TrayText.Get("Random"),
         {
             Parameters: StarlightLightingParameters
             {
                 ColorMode: StarlightColorMode.Dual,
                 SecondaryColor: { } secondary,
             },
-        } => $"{FormatColor(lighting.Color)} and {FormatColor(secondary)}",
+        } => TrayText.Format(
+            "{0} and {1}",
+            FormatColor(lighting.Color),
+            FormatColor(secondary)),
         {
             Parameters: BreathingLightingParameters
             {
                 ColorMode: BreathingColorMode.Dual,
                 SecondaryColor: { } secondary,
             },
-        } => $"{FormatColor(lighting.Color)} and {FormatColor(secondary)}",
+        } => TrayText.Format(
+            "{0} and {1}",
+            FormatColor(lighting.Color),
+            FormatColor(secondary)),
         _ => FormatColor(lighting.Color),
     };
 
     private static string FormatRotationDirection(LightingRotationDirection direction) =>
         direction == LightingRotationDirection.Counterclockwise
-            ? "counterclockwise"
-            : "clockwise";
+            ? TrayText.Get("counterclockwise")
+            : TrayText.Get("clockwise");
 
     private static string FormatDisplayRefreshRate(string? key)
     {
         if (string.IsNullOrWhiteSpace(key))
         {
-            return "Not set";
+            return TrayText.Get("Not set");
         }
 
         string[] parts = key.Split('-', StringSplitOptions.RemoveEmptyEntries);
@@ -7844,7 +8092,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && string.Equals(parts[0], "fixed", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(parts[1], CultureInfo.InvariantCulture, out int fixedHertz))
         {
-            return $"{fixedHertz} Hz";
+            return TrayText.Format("{0} Hz", fixedHertz);
         }
         if (parts.Length == 3
             && (string.Equals(parts[0], "dynamic", StringComparison.OrdinalIgnoreCase)
@@ -7852,7 +8100,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && int.TryParse(parts[1], CultureInfo.InvariantCulture, out int minimumHertz)
             && int.TryParse(parts[2], CultureInfo.InvariantCulture, out int maximumHertz))
         {
-            return $"Dynamic {minimumHertz}–{maximumHertz} Hz";
+            return TrayText.Format(
+                "Dynamic {0}–{1} Hz",
+                minimumHertz,
+                maximumHertz);
         }
 
         return key;
@@ -7862,7 +8113,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         if (string.IsNullOrWhiteSpace(key))
         {
-            return "Not set";
+            return TrayText.Get("Not set");
         }
 
         string fileName = Path.GetFileNameWithoutExtension(key);
@@ -7875,7 +8126,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             "dci p3" or "dcip3" => "DCI-P3",
             "adobe rgb" or "adobergb" => "Adobe RGB",
             "rec 709" or "rec709" => "Rec. 709",
-            "native" => "Native",
+            "native" => TrayText.Get("Native"),
             _ => string.IsNullOrWhiteSpace(normalized) ? key : normalized,
         };
     }
@@ -8165,20 +8416,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot status,
         IReadOnlyCollection<DeviceSubsystem> externalChanges) =>
         IsCheckingLaptopConnection(status)
-            ? "Checking laptop"
+            ? TrayText.Get("Checking laptop")
             : !status.DeviceVerified
             ? UnavailableLaptopReason
             : externalChanges.Contains(subsystem)
-            ? "Changed outside OpenBlade"
+            ? TrayText.Get("Changed outside OpenBlade")
             : subsystem == DeviceSubsystem.Lighting
                 && !confirmed
                 && !status.AlwaysOverrideExternalLightingChanges
                 && status.PotentialControllers.Any(
                     CompetingLightingControllers.Contains)
-            ? "Other controller may be active"
+            ? TrayText.Get("Other controller may be active")
             : confirmed
-                ? "Current setting"
-                : "Controls unavailable";
+                ? TrayText.Get("Current setting")
+                : TrayText.Get("Controls unavailable");
 
     private string FormatBatterySource(
         ConfirmedBatteryState? battery,
@@ -8187,7 +8438,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         if (IsCheckingLaptopConnection(status))
         {
-            return "Checking laptop";
+            return TrayText.Get("Checking laptop");
         }
         if (!status.DeviceVerified)
         {
@@ -8195,29 +8446,29 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         if (battery is null)
         {
-            return "Controls unavailable";
+            return TrayText.Get("Controls unavailable");
         }
 
         string state = battery.TemporaryFullCharge switch
         {
-            null => "Temporary full charge state unavailable",
-            true => "Temporary full charge active",
-            false when !battery.ProtectionEnabled => "Battery protection off",
-            _ => $"Charge limit {battery.ChargeLimitPercent}%",
+            null => TrayText.Get("Temporary full charge state unavailable"),
+            true => TrayText.Get("Temporary full charge active"),
+            false when !battery.ProtectionEnabled => TrayText.Get("Battery protection off"),
+            _ => TrayText.Format("Charge limit {0}%", battery.ChargeLimitPercent),
         };
         string source = changedOutside
-            ? "Changed outside OpenBlade"
-            : "Current setting";
-        return $"{source} · {state}";
+            ? TrayText.Get("Changed outside OpenBlade")
+            : TrayText.Get("Current setting");
+        return TrayText.Format("{0} · {1}", source, state);
     }
 
     private static string FormatCurrentBatterySetting(ConfirmedBatteryState? battery) =>
         battery switch
         {
-            null => "Battery setting unavailable",
-            { TemporaryFullCharge: true } => "Charging to 100%",
-            { ProtectionEnabled: false } => "Battery protection off",
-            _ => $"Charge limit {battery.ChargeLimitPercent}%",
+            null => TrayText.Get("Battery setting unavailable"),
+            { TemporaryFullCharge: true } => TrayText.Get("Charging to 100%"),
+            { ProtectionEnabled: false } => TrayText.Get("Battery protection off"),
+            _ => TrayText.Format("Charge limit {0}%", battery.ChargeLimitPercent),
         };
 
     private static string FormatBatteryPowerFlow(
@@ -8226,36 +8477,36 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         if (readings?.BatteryPowerFlowMilliwatts is not int milliwatts)
         {
-            return "Battery power unavailable";
+            return TrayText.Get("Battery power unavailable");
         }
         if (milliwatts == 0)
         {
             return powerSource switch
             {
-                PowerSource.PluggedIn or PowerSource.UsbC => "Not charging",
+                PowerSource.PluggedIn or PowerSource.UsbC => TrayText.Get("Not charging"),
                 PowerSource.Battery or PowerSource.ExternalUnknown =>
-                    "Battery power unavailable",
-                _ => "Battery power unavailable",
+                    TrayText.Get("Battery power unavailable"),
+                _ => TrayText.Get("Battery power unavailable"),
             };
         }
         double watts = Math.Abs((long)milliwatts) / 1000d;
-        string value = watts.ToString("0.0", CultureInfo.InvariantCulture);
+        string value = watts.ToString("0.0", CultureInfo.CurrentCulture);
         return milliwatts > 0
-            ? $"Charging at {value} W"
-            : $"Using {value} W";
+            ? TrayText.Format("Charging at {0} W", value)
+            : TrayText.Format("Using {0} W", value);
     }
 
     private static string FormatFanRpm(string label, int? rpm) => rpm is int value
-        ? $"{label}: {value.ToString("N0", CultureInfo.CurrentCulture)} RPM"
-        : $"{label}: unavailable";
+        ? TrayText.Format("{0}: {1:N0} RPM", label, value)
+        : TrayText.Format("{0}: unavailable", label);
 
     private static string FormatFanRpmValue(int? rpm) => rpm is int value
-        ? $"{value.ToString("N0", CultureInfo.CurrentCulture)} RPM"
-        : "Unavailable";
+        ? TrayText.Format("{0:N0} RPM", value)
+        : TrayText.Get("Unavailable");
 
     private static string FormatTemperatureValue(int? celsius) => celsius is int value
-        ? $"{value.ToString(CultureInfo.CurrentCulture)} °C"
-        : "Unavailable";
+        ? TrayText.Format("{0} °C", value)
+        : TrayText.Get("Unavailable");
 
     private string LiveReadingValue(LiveReadingItemKind kind) => kind switch
     {
@@ -8272,9 +8523,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static string FormatDashboardTemperatures(
         bool showCpu,
-        string cpuValue,
+        int? cpuCelsius,
         bool showGpu,
-        string gpuValue)
+        int? gpuCelsius)
     {
         if (!showCpu && !showGpu)
         {
@@ -8283,18 +8534,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         if (showCpu
             && showGpu
-            && string.Equals(cpuValue, UnavailableLabel, StringComparison.Ordinal)
-            && string.Equals(gpuValue, UnavailableLabel, StringComparison.Ordinal))
+            && cpuCelsius is null
+            && gpuCelsius is null)
         {
             return UnavailableLabel;
         }
 
         string[] values =
         [
-            showCpu ? $"CPU {cpuValue}" : string.Empty,
-            showGpu ? $"GPU {gpuValue}" : string.Empty,
+            showCpu ? TrayText.Format("CPU {0}", FormatTemperatureValue(cpuCelsius)) : string.Empty,
+            showGpu ? TrayText.Format("GPU {0}", FormatTemperatureValue(gpuCelsius)) : string.Empty,
         ];
-        return string.Join(" / ", values.Where(value => !string.IsNullOrWhiteSpace(value)));
+        return string.Join(
+            TrayText.Get(" / "),
+            values.Where(value => !string.IsNullOrWhiteSpace(value)));
     }
 
     private async Task<bool> RestoreSavedLaptopBehaviorAsync(
@@ -8346,25 +8599,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static string LiveReadingLabel(LiveReadingItemKind kind) => kind switch
     {
-        LiveReadingItemKind.BatteryPower => "Battery",
-        LiveReadingItemKind.CpuTemperature => "CPU temperature",
-        LiveReadingItemKind.GpuTemperature => "GPU temperature",
-        LiveReadingItemKind.Fan1Speed => "Fan 1",
-        LiveReadingItemKind.Fan2Speed => "Fan 2",
+        LiveReadingItemKind.BatteryPower => TrayText.Get("Battery"),
+        LiveReadingItemKind.CpuTemperature => TrayText.Get("CPU temperature"),
+        LiveReadingItemKind.GpuTemperature => TrayText.Get("GPU temperature"),
+        LiveReadingItemKind.Fan1Speed => TrayText.Get("Fan 1"),
+        LiveReadingItemKind.Fan2Speed => TrayText.Get("Fan 2"),
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
     private static string TrayHoverLabelItemLabel(TrayHoverLabelItemKind kind) => kind switch
     {
-        TrayHoverLabelItemKind.ActiveProfile => "Active profile",
-        TrayHoverLabelItemKind.AppName => "OpenBlade app name",
-        TrayHoverLabelItemKind.PowerSource => "Power source",
-        TrayHoverLabelItemKind.PowerMode => "Power mode",
-        TrayHoverLabelItemKind.BatteryPower => "Battery power",
-        TrayHoverLabelItemKind.CpuTemperature => "CPU temperature",
-        TrayHoverLabelItemKind.GpuTemperature => "GPU temperature",
-        TrayHoverLabelItemKind.Fan1Speed => "Fan 1 speed",
-        TrayHoverLabelItemKind.Fan2Speed => "Fan 2 speed",
+        TrayHoverLabelItemKind.ActiveProfile => TrayText.Get("Active profile"),
+        TrayHoverLabelItemKind.AppName => TrayText.Get("OpenBlade app name"),
+        TrayHoverLabelItemKind.PowerSource => TrayText.Get("Power source"),
+        TrayHoverLabelItemKind.PowerMode => TrayText.Get("Power mode"),
+        TrayHoverLabelItemKind.BatteryPower => TrayText.Get("Battery power"),
+        TrayHoverLabelItemKind.CpuTemperature => TrayText.Get("CPU temperature"),
+        TrayHoverLabelItemKind.GpuTemperature => TrayText.Get("GPU temperature"),
+        TrayHoverLabelItemKind.Fan1Speed => TrayText.Get("Fan 1 speed"),
+        TrayHoverLabelItemKind.Fan2Speed => TrayText.Get("Fan 2 speed"),
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -8514,13 +8767,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (status.ControlAccess != SessionControlAccess.Active)
         {
             return status.ControlAccess == SessionControlAccess.InactiveSession
-                ? "Another user is controlling OpenBlade"
-                : "Interactive session required";
+                ? TrayText.Get("Another user is controlling OpenBlade")
+                : TrayText.Get("Interactive session required");
         }
 
         if (IsCheckingLaptopConnection(status))
         {
-            return "Checking laptop";
+            return TrayText.Get("Checking laptop");
         }
 
         if (!status.DeviceVerified)
@@ -8530,17 +8783,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         if (status.ActivePowerSource == PowerSource.ExternalUnknown)
         {
-            return "Checking power source";
+            return TrayText.Get("Checking power source");
         }
 
         if (IsRetainedPowerSourceRecheck(status))
         {
-            return "Ready";
+            return TrayText.Get("Ready");
         }
 
         return status.WritesBlocked
-            ? "Controls unavailable"
-            : "Ready";
+            ? TrayText.Get("Controls unavailable")
+            : TrayText.Get("Ready");
     }
 
     private static bool IsRetainedPowerSourceRecheck(ServiceStatusSnapshot? status) =>
@@ -8574,13 +8827,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (message.Contains("without hardware", StringComparison.OrdinalIgnoreCase)
             || message.Contains("not applied", StringComparison.OrdinalIgnoreCase))
         {
-            return "OpenBlade saved the change, but the laptop has not applied it.";
+            return TrayText.Get(
+                "OpenBlade saved the change, but the laptop has not applied it.");
         }
         if (message.Contains("failed", StringComparison.OrdinalIgnoreCase)
             || message.Contains("could not", StringComparison.OrdinalIgnoreCase)
             || message.Contains("unavailable", StringComparison.OrdinalIgnoreCase))
         {
-            return "OpenBlade couldn’t complete that action. Check Troubleshooting for details.";
+            return TrayText.Get(
+                "OpenBlade couldn’t complete that action. Check Troubleshooting for details.");
         }
         return string.Empty;
     }
@@ -8589,7 +8844,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         value.Trim().TrimEnd('.');
 
     private static string FirmwareValue(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? "Unavailable" : value.Trim();
+        string.IsNullOrWhiteSpace(value) ? TrayText.Get("Unavailable") : value.Trim();
 
     private static string FormatBatteryHealth(BatteryHealthStatus? health)
     {
@@ -8609,14 +8864,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         string designCapacity = (
             health.DesignCapacityMilliwattHours / 1000d)
             .ToString("0.#", CultureInfo.CurrentCulture);
-        return $"{percentage}% ({fullChargeCapacity} Wh of {designCapacity} Wh)";
+        return TrayText.Format(
+            "{0}% ({1} Wh of {2} Wh)",
+            percentage,
+            fullChargeCapacity,
+            designCapacity);
     }
 
     private static bool HasConcreteFirmwareValue(string? value) =>
         !string.IsNullOrWhiteSpace(value)
         && !string.Equals(
             value.Trim(),
-            UnavailableLabel,
+            "Unavailable",
             StringComparison.OrdinalIgnoreCase);
 
     private static string FormatTestedPlatformWarning(
@@ -8633,11 +8892,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool hasUnavailableValue = assessment.Mismatches.Any(mismatch =>
             string.Equals(
                 mismatch.CurrentValue,
-                UnavailableLabel,
+                "Unavailable",
                 StringComparison.OrdinalIgnoreCase));
         return hasUnavailableValue
-            ? $"OpenBlade could not verify this configuration: {versions}."
-            : $"OpenBlade has not tested this configuration: {versions}.";
+            ? TrayText.Format(
+                "OpenBlade could not verify this configuration: {0}.",
+                versions)
+            : TrayText.Format(
+                "OpenBlade has not tested this configuration: {0}.",
+                versions);
     }
 
     private static string FormatTestedPlatformMismatch(
@@ -8649,14 +8912,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             StringComparison.OrdinalIgnoreCase)
             ? McuFirmwareVersionPresentation.Format(mismatch.CurrentValue)
             : mismatch.CurrentValue;
-        return $"{mismatch.Component} {currentValue}";
+        return TrayText.Format("{0} {1}", mismatch.Component, currentValue);
     }
 
     private static string FormatOperationResult(ControlOperationResult result) => result.Status switch
     {
         ControlOperationStatus.Applied or ControlOperationStatus.Stored => string.Empty,
-        ControlOperationStatus.Blocked => "OpenBlade saved the change, but the laptop has not applied it.",
-        _ => "OpenBlade couldn’t complete that action. Check Troubleshooting for details.",
+        ControlOperationStatus.Blocked => TrayText.Get(
+            "OpenBlade saved the change, but the laptop has not applied it."),
+        _ => TrayText.Get(
+            "OpenBlade couldn’t complete that action. Check Troubleshooting for details."),
     };
 
     private void UpdateOneShotReadbacks(ServiceStatusSnapshot status)
@@ -8877,12 +9142,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         string lifetime = value.Lifetime == OverrideLifetime.Persistent
-            ? "until reset"
-            : "until the power source changes";
+            ? TrayText.Get("until reset")
+            : TrayText.Get("until the power source changes");
         string displayValue = formatValue?.Invoke(value.Value)
             ?? (value.Value is null ? string.Empty : value.Value.ToString())
             ?? string.Empty;
-        status.Add($"{subsystem}: {displayValue} {lifetime}");
+        status.Add(TrayText.Format("{0}: {1} {2}", subsystem, displayValue, lifetime));
     }
 
     private static void AddOverrideStatus(
@@ -8897,14 +9162,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         string lifetime = value.Lifetime == OverrideLifetime.Persistent
-            ? "until reset"
-            : "until the power source changes";
+            ? TrayText.Get("until reset")
+            : TrayText.Get("until the power source changes");
         string displayValue = formatValue?.Invoke(value.Value) ?? value.Value.ToString();
         if (value.CustomPerformance is { } custom)
         {
-            displayValue += $" (CPU {custom.Cpu}, GPU {custom.Gpu})";
+            displayValue += TrayText.Format(
+                " (CPU {0}, GPU {1})",
+                CustomPerformanceLevelLabel(custom.Cpu),
+                CustomPerformanceLevelLabel(custom.Gpu));
         }
-        status.Add($"{subsystem}: {displayValue} {lifetime}");
+        status.Add(TrayText.Format("{0}: {1} {2}", subsystem, displayValue, lifetime));
     }
 
     private static PerformancePresetOption? FindPerformanceOption(

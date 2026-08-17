@@ -77,6 +77,25 @@ public sealed class SpecialKeyBindingTests
     }
 
     [Fact]
+    public void ShortcutValidation_LocalizesUiMessageWithoutLocalizingParserException()
+    {
+        using var culture = new CultureScope("qps-ploc");
+
+        FormatException exception = Assert.ThrowsAny<FormatException>(
+            () => SpecialKeyShortcutParser.Parse("Ctrl+NoSuchKey"));
+        string validationMessage = SpecialKeyBindingDefaults.GetValidationMessage(
+            new SpecialKeyAction(
+                SpecialKeyActionKind.KeyboardShortcut,
+                "Ctrl+NoSuchKey"));
+
+        Assert.Equal("Unknown shortcut key: NoSuchKey", exception.Message);
+        Assert.Equal(
+            TrayText.Format("Unknown shortcut key: {0}", "NoSuchKey"),
+            validationMessage);
+        Assert.NotEqual(exception.Message, validationMessage);
+    }
+
+    [Fact]
     public void RawHidInput_RecognizesEachCapturedFnLayerKeyOncePerPress()
     {
         bool functionPressed = false;

@@ -4,9 +4,9 @@ namespace OpenBlade.Setup.Tests;
 
 internal sealed class RecordingSetupProgressReporter : ISetupProgressReporter
 {
-    public List<string> Messages { get; } = [];
+    public List<SetupProgressEvent> Events { get; } = [];
 
-    public void Report(string message) => Messages.Add(message);
+    public void Report(SetupProgressEvent progress) => Events.Add(progress);
 
     public void Dispose()
     {
