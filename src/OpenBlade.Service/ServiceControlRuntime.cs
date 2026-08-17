@@ -259,6 +259,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     internal static readonly TimeSpan ResumeValidationObservationWindow =
         TimeSpan.FromMinutes(1);
     private const int ObservationFailureThreshold = 3;
+    private const int MaximumMcuVersionReadAttempts = 3;
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
         new(null, null, null, null);
     private static readonly DeviceCapabilities UnavailableCapabilities =
@@ -298,7 +299,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly Dictionary<DeviceSubsystem, PendingWriteConfirmation>
         pendingWriteConfirmations = [];
     private ServiceStatusSnapshot? status;
-    private bool mcuVersionReadAttempted;
+    private int mcuVersionReadAttempts;
     private LightingSettings? lastOwnedLightingSettings;
     private FanControlSettings? lastOwnedFanControlSettings;
     private LightingSettings? pendingLightingRestore;
@@ -7308,7 +7309,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         FirmwareVersions? current = GetStatus().Firmware;
-        if (mcuVersionReadAttempted
+        if (mcuVersionReadAttempts >= MaximumMcuVersionReadAttempts
             || current is null
             || !string.Equals(
                 current.McuVersion,
@@ -7318,7 +7319,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return current;
         }
 
-        mcuVersionReadAttempted = true;
+        mcuVersionReadAttempts++;
         try
         {
             string? mcuVersion = await device.ReadMcuVersionAsync(cancellationToken)
@@ -7329,6 +7330,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            mcuVersionReadAttempts--;
             throw;
         }
         catch

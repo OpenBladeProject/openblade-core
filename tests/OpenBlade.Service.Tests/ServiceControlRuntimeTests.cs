@@ -1314,7 +1314,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task FirstVerifiedObservation_ReadsMcuVersionOnceAndPreservesOtherFirmware()
+    public async Task FirstVerifiedObservation_StopsMcuReadsAfterSuccessAndPreservesOtherFirmware()
     {
         var firmware = new FirmwareVersions(
             "3.01",
@@ -1333,6 +1333,56 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             firmware with { McuVersion = "1.5.0.0" },
             context.Runtime.GetStatus().Firmware);
         Assert.Equal(1, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task VerifiedObservation_RetriesMcuReadAfterTransientFailure()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+        context.Device.McuVersionFailures.Enqueue(
+            new TimeoutException("firmware query timed out"));
+        context.Device.McuVersion = " 1.5.0.0 ";
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(firmware, context.Runtime.GetStatus().Firmware);
+        Assert.Equal(1, context.Device.McuVersionReadCalls);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(2, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task VerifiedObservation_StopsMcuReadsAfterBoundedFailures()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(firmware, context.Runtime.GetStatus().Firmware);
+        Assert.Equal(3, context.Device.McuVersionReadCalls);
     }
 
     [Fact]
@@ -10875,6 +10925,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public string? McuVersion { get; set; }
 
+        public Queue<Exception> McuVersionFailures { get; } = new();
+
         public int TotalSetterCalls => PerformanceSetCalls
             + FanSetCalls
             + BatterySetCalls
@@ -11043,14 +11095,20 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Task<string?> ReadMcuVersionAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (McuVersion is null)
+            McuVersionReadCalls++;
+            if (McuVersionFailures.TryDequeue(out Exception? failure))
+            {
+                return Task.FromException<string?>(failure);
+            }
+
+            string? version = McuVersion;
+            if (version is null)
             {
                 return Task.FromResult<string?>(null);
             }
 
             TotalCalls++;
-            McuVersionReadCalls++;
-            return Task.FromResult<string?>(McuVersion);
+            return Task.FromResult<string?>(version);
         }
 
         public Task EnsureDriverModeAsync(CancellationToken cancellationToken)
