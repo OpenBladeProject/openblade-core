@@ -21,11 +21,15 @@ public sealed class WinUiShellContractTests
             XElement header = NamedElement(document, "Grid", headerName);
             XElement expandableActions = NamedElement(document, "StackPanel", actionName);
             XElement customizeButton = UidElement(document, "Button", customizeUid);
+            bool isDashboard = headerName == "DashboardPageHeader";
 
             Assert.Same(header, expandableActions.Parent);
             Assert.Equal("1", Attribute(expandableActions, "Grid.Row"));
             Assert.Equal("2", Attribute(expandableActions, "Grid.ColumnSpan"));
-            Assert.Equal("0,2,0,0", Attribute(expandableActions, "Margin"));
+            Assert.Equal(
+                isDashboard ? "0,12,0,0" : "0,2,0,0",
+                Attribute(expandableActions, "Margin"));
+            Assert.Equal(isDashboard ? null : "10", Attribute(header, "RowSpacing"));
 
             Assert.Same(header, customizeButton.Parent);
             Assert.Equal("1", Attribute(customizeButton, "Grid.Column"));
