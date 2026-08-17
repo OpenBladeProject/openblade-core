@@ -52,6 +52,9 @@ public sealed class Rz090528SynapseEffectsTests
         Assert.Equal(
             KeyboardLightingLayoutIds.Rz09_0528,
             capabilities.KeyboardLightingLayoutId);
+        Assert.Equal(
+            [LightingRefreshRate.ThirtyHz],
+            capabilities.SupportedLightingRefreshRates);
         Assert.Empty(capabilities.ObservedLightingEffects);
     }
 

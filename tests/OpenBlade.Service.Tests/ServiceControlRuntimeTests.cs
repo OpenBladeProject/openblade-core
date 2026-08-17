@@ -2940,6 +2940,114 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task LightingRefreshRate_PersistsAndAppliesOnlyAdvertisedRate()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            },
+        };
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: false,
+            CancellationToken.None);
+
+        ControlOperationResult applied = await context.Runtime
+            .SetLightingRefreshRateAsync(
+                LightingRefreshRate.SixtyHz,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        Assert.Equal(
+            LightingRefreshRate.SixtyHz,
+            context.Runtime.GetStatus().LightingRefreshRate);
+        Assert.Equal(
+            [LightingRefreshRate.SixtyHz],
+            context.Device.LightingRefreshRates);
+        BatteryConfiguration saved = await context.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.Equal(
+            LightingRefreshRate.SixtyHz,
+            saved.Preferences.LightingRefreshRate);
+
+        ControlOperationResult reapplied = await context.Runtime
+            .SetLightingRefreshRateAsync(
+                LightingRefreshRate.SixtyHz,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, reapplied.Status);
+        Assert.Equal(
+            [LightingRefreshRate.SixtyHz, LightingRefreshRate.SixtyHz],
+            context.Device.LightingRefreshRates);
+
+        context.Device.LightingRefreshRateFailure = new IOException("renderer unavailable");
+        ControlOperationResult savedButNotApplied = await context.Runtime
+            .SetLightingRefreshRateAsync(
+                LightingRefreshRate.ThirtyHz,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, savedButNotApplied.Status);
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: false,
+            CancellationToken.None);
+        Assert.Equal(
+            LightingRefreshRate.SixtyHz,
+            context.Runtime.GetStatus().LightingRefreshRate);
+        saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(
+            LightingRefreshRate.SixtyHz,
+            saved.Preferences.LightingRefreshRate);
+
+        context.Device.LightingRefreshRateFailure = null;
+        ControlOperationResult retried = await context.Runtime
+            .SetLightingRefreshRateAsync(
+                LightingRefreshRate.ThirtyHz,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, retried.Status);
+        Assert.Equal(
+            LightingRefreshRate.ThirtyHz,
+            context.Runtime.GetStatus().LightingRefreshRate);
+
+        using var cancellation = new CancellationTokenSource();
+        context.Device.BeforeLightingRefreshRateSet = cancellation.Cancel;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.SetLightingRefreshRateAsync(
+                LightingRefreshRate.SixtyHz,
+                cancellation.Token));
+        saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(
+            LightingRefreshRate.ThirtyHz,
+            saved.Preferences.LightingRefreshRate);
+        Assert.Equal(
+            LightingRefreshRate.ThirtyHz,
+            context.Runtime.GetStatus().LightingRefreshRate);
+        context.Device.BeforeLightingRefreshRateSet = null;
+
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+            },
+        };
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: false,
+            CancellationToken.None);
+        int appliedRateCount = context.Device.LightingRefreshRates.Count;
+        ControlOperationResult blocked = await context.Runtime
+            .SetLightingRefreshRateAsync(
+                LightingRefreshRate.SixtyHz,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, blocked.Status);
+        Assert.Equal(appliedRateCount, context.Device.LightingRefreshRates.Count);
+    }
+
+    [Fact]
     public async Task FirmwareCompatibilityOverride_PersistsAndRefreshesDeviceAdmission()
     {
         TestContext context = CreateContext(providerAvailable: false);
@@ -3000,6 +3108,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            },
         };
         context.Device.ConfirmedState = new ConfirmedDeviceState(
             PerformancePreset.Balanced,
@@ -3035,13 +3148,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 LightingSuppressionReason.DisplayOff,
                 suppressed: true,
                 CancellationToken.None);
+        ControlOperationResult refreshRate =
+            await context.Runtime.SetLightingRefreshRateAsync(
+                LightingRefreshRate.SixtyHz,
+                CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Blocked, effect.Status);
         Assert.Equal(ControlOperationStatus.Blocked, brightness.Status);
         Assert.Equal(ControlOperationStatus.Blocked, suppression.Status);
+        Assert.Equal(ControlOperationStatus.Blocked, refreshRate.Status);
         Assert.Equal(writesBeforeDelegation, context.Device.LightingSetCalls);
+        Assert.Empty(context.Device.LightingRefreshRates);
         Assert.All(
-            new[] { effect, brightness, suppression },
+            new[] { effect, brightness, suppression, refreshRate },
             result => Assert.Contains("Windows Dynamic Lighting", result.Message));
 
         BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
@@ -10720,6 +10839,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int LightingSetCalls { get; private set; }
 
+        public List<LightingRefreshRate> LightingRefreshRates { get; } = [];
+
         public List<KeyboardBrightnessDirection> KeyboardBrightnessSteps { get; } = [];
 
         public byte NextKeyboardBrightness { get; set; } = 50;
@@ -10775,6 +10896,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Exception? FanFailure { get; set; }
 
         public Exception? LightingFailure { get; set; }
+
+        public Exception? LightingRefreshRateFailure { get; set; }
+
+        public Action? BeforeLightingRefreshRateSet { get; set; }
 
         public Exception? OneShotFailure { get; set; }
 
@@ -11252,6 +11377,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             };
 
             AfterSetter?.Invoke(DeviceSubsystem.Lighting);
+            return Task.CompletedTask;
+        }
+
+        public Task SetLightingRefreshRateAsync(
+            LightingRefreshRate refreshRate,
+            CancellationToken cancellationToken)
+        {
+            LightingRefreshRates.Add(refreshRate);
+            BeforeLightingRefreshRateSet?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (LightingRefreshRateFailure is not null)
+            {
+                throw LightingRefreshRateFailure;
+            }
+
             return Task.CompletedTask;
         }
 

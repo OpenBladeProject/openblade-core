@@ -7,6 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added an opt-in **60 Hz lighting** Lab mode for the admitted RZ09-0581
+  keyboard transport. The service keeps 30 Hz as the default, persists the
+  selection after the tray exits, and applies it to supported built-in,
+  Ambient Awareness, and Audio Meter animation while RZ09-0528 remains at
+  30 Hz.
 - Added en-US resource catalogs and qps-ploc validation for the tray and
   graphical installer, including safe installer fallback and required-key,
   placeholder, accessibility-name, and critical-page startup checks.
@@ -27,11 +32,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Moved the Lab keyboard preset importer into the Keyboard section and replaced
   the long Lab features description with an on-demand list of current features.
+- Advanced the profile/configuration schema from 13 to 14 for the persisted
+  lighting refresh-rate preference. Migrated configurations default to 30 Hz.
 
 ### Fixed
 
 - Kept page customization buttons aligned with their titles while allowing
   longer localized and profile actions to use a separate row.
+- Fixed the **Random colors** switch track alignment and made compact switch
+  alignment explicit across the main window and quick controls.
 - Expanded the graphical installer's progress details pane to use the available
   window height instead of remaining limited to a few log lines.
 - Offered **Repair** and **Uninstall** when an interactive installer finds one
@@ -41,8 +50,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   and removes through the cached installed bundle without registering the incoming
   one, with guidance to use its Windows Installed apps entry when profile removal
   is also wanted.
-- Advanced the combined service IPC contract to version 44 so incompatible
-  version-43 peers are no longer accepted as wire-compatible.
+- Advanced the combined service IPC contract to version 45 so incompatible
+  version-44 peers are no longer accepted as wire-compatible.
 - Rejected imported lighting sequences for a different keyboard layout before
   opening the lighting device or changing its state.
 - Kept the Lab features row aligned with neighboring Settings rows when showing

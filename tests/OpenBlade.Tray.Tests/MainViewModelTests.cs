@@ -5216,6 +5216,55 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task LightingRefreshRate_RequiresLabsAndAdvertisedCapability()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            },
+        };
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities));
+        await WaitUntilAsync(() => viewModel.SupportsSixtyHzLighting);
+
+        Assert.False(await viewModel.SetLightingRefreshRateAsync(
+            LightingRefreshRate.SixtyHz,
+            CancellationToken.None));
+        viewModel.LabFeaturesEnabled = true;
+
+        Assert.True(await viewModel.SetLightingRefreshRateAsync(
+            LightingRefreshRate.SixtyHz,
+            CancellationToken.None));
+        Assert.True(viewModel.IsSixtyHzLightingEnabled);
+        Assert.Equal(LightingRefreshRate.SixtyHz, client.LightingRefreshRate);
+
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities) with
+        {
+            LightingRefreshRate = LightingRefreshRate.SixtyHz,
+        });
+        await WaitUntilAsync(() => viewModel.IsSixtyHzLightingEnabled);
+        client.MutationResults.Enqueue(new ControlOperationResult(
+            ControlOperationStatus.Failed,
+            "Renderer restart failed."));
+
+        Assert.False(await viewModel.SetLightingRefreshRateAsync(
+            LightingRefreshRate.ThirtyHz,
+            CancellationToken.None));
+        Assert.True(viewModel.IsSixtyHzLightingEnabled);
+    }
+
+    [Fact]
     public async Task FirmwareCompatibilityOverride_ReflectsStatusAndSendsMutation()
     {
         var client = new FakeServiceClient();
@@ -7876,6 +7925,7 @@ public sealed class MainViewModelTests
         public FanControlSettings? LastFanControlSettings { get; private set; }
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
         public bool? ExternalLightingOverridePolicy { get; private set; }
+        public LightingRefreshRate? LightingRefreshRate { get; private set; }
         public bool? FirmwareCompatibilityOverride { get; private set; }
         public int ReapplyChangedSettingsCalls { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
@@ -8056,6 +8106,14 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             ExternalLightingOverridePolicy = enabled;
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> SetLightingRefreshRateAsync(
+            LightingRefreshRate refreshRate,
+            CancellationToken token)
+        {
+            LightingRefreshRate = refreshRate;
             return MutateAsync(token);
         }
 

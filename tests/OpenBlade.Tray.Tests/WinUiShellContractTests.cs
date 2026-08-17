@@ -631,6 +631,29 @@ public sealed class WinUiShellContractTests
             "IsEnabled=\"{x:Bind CanControlLighting, Mode=OneWay}\"",
             keyboardSection,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Name=\"LightingRefreshRateCard\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Uid=\"MainWindow_TextBlockSixtyHzLighting\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Uid=\"MainWindow_LightingRefreshRateToggleText\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Toggled=\"OnLightingRefreshRateToggled\"",
+            keyboardSection,
+            StringComparison.Ordinal);
+        Assert.True(
+            keyboardSection.IndexOf(
+                "x:Name=\"ImportKeyboardLightingPresetCard\"",
+                StringComparison.Ordinal)
+            < keyboardSection.IndexOf(
+                "x:Name=\"LightingRefreshRateCard\"",
+                StringComparison.Ordinal));
         Assert.Contains("FileTypeFilter.Add(\".oblight\")", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".chroma\")", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".json\")", window, StringComparison.Ordinal);
@@ -668,6 +691,71 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("gpuClockOffsetCommitInProgress", window, StringComparison.Ordinal);
         Assert.DoesNotContain("pendingChargeLimitPercent", window, StringComparison.Ordinal);
         Assert.DoesNotContain("pendingGpuClockOffsets", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TrayCardSwitchesUseCompactRightAlignedPresentation()
+    {
+        string trayRoot = Path.GetDirectoryName(ProjectPath)!;
+        string[] xamlFiles = Directory
+            .EnumerateFiles(trayRoot, "*.xaml", SearchOption.AllDirectories)
+            .Where(path => !path.Contains(
+                    $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase)
+                && !path.Contains(
+                    $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        Assert.NotEmpty(xamlFiles);
+        List<(string Path, XElement Toggle)> switches = [];
+        foreach (string path in xamlFiles)
+        {
+            XDocument document = XDocument.Load(path);
+            XElement[] fileSwitches = document
+                .Descendants()
+                .Where(element => element.Name.LocalName == "ToggleSwitch")
+                .ToArray();
+            if (fileSwitches.Length == 0)
+            {
+                continue;
+            }
+
+            XElement style = Assert.Single(document.Descendants(), element =>
+                element.Name.LocalName == "Style"
+                && element.Attributes().Any(attribute =>
+                    attribute.Name.LocalName == "Key"
+                    && attribute.Value == "CompactCardToggleSwitchStyle"));
+            Assert.Equal("ToggleSwitch", style.Attribute("TargetType")?.Value);
+            Assert.Equal(
+                "{StaticResource DefaultToggleSwitchStyle}",
+                style.Attribute("BasedOn")?.Value);
+
+            Dictionary<string, string> setters = style
+                .Elements()
+                .Where(element => element.Name.LocalName == "Setter")
+                .ToDictionary(
+                    element => element.Attribute("Property")!.Value,
+                    element => element.Attribute("Value")!.Value,
+                    StringComparer.Ordinal);
+            Assert.Equal("Right", setters["HorizontalAlignment"]);
+            Assert.Equal("Center", setters["VerticalAlignment"]);
+            Assert.Equal("0", setters["MinWidth"]);
+            Assert.Equal(string.Empty, setters["OffContent"]);
+            Assert.Equal(string.Empty, setters["OnContent"]);
+
+            switches.AddRange(fileSwitches.Select(element => (path, element)));
+        }
+
+        Assert.NotEmpty(switches);
+        foreach ((string path, XElement toggle) in switches)
+        {
+            XAttribute? style = toggle.Attribute("Style");
+            Assert.True(
+                style is not null,
+                $"{Path.GetRelativePath(trayRoot, path)} contains an unstyled ToggleSwitch.");
+            Assert.Equal("{StaticResource CompactCardToggleSwitchStyle}", style.Value);
+        }
     }
 
     [Fact]
@@ -1916,6 +2004,14 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "Text=\"Import .oblight and Razer .chroma files.\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Uid=\"MainWindow_TextBlockSixtyHzKeyboardLighting\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Uid=\"MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(

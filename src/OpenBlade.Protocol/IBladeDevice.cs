@@ -88,6 +88,12 @@ public interface IBladeDevice
 
     Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken);
 
+    Task SetLightingRefreshRateAsync(
+        LightingRefreshRate refreshRate,
+        CancellationToken cancellationToken) =>
+        Task.FromException(new NotSupportedException(
+            "Selectable lighting refresh rates are unavailable."));
+
     Task<byte> StepKeyboardBrightnessAsync(
         KeyboardBrightnessDirection direction,
         CancellationToken cancellationToken);

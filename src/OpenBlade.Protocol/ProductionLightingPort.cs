@@ -45,6 +45,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private Task? streamTask;
     private IPid02E0LightingEffect? activeEffect;
     private IPid02E0KeyTriggeredLightingEffect? activeKeyTriggeredEffect;
+    private bool activeUsesSelectableCadence;
+    private LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz;
     private readonly Queue<ReactiveKeyPulse> pendingKeyTriggeredPulses = [];
     private long effectStartedTimestamp;
     private LightingSettings? lastDeliveredState;
@@ -116,7 +118,44 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         KeyboardLightingLayoutId = admitted
             ? KeyboardLightingLayoutIds.Rz09_0581
             : null,
+        SupportedLightingRefreshRates = admitted
+            ? new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            }
+            : new HashSet<LightingRefreshRate>(),
     };
+
+    public async Task SetLightingRefreshRateAsync(
+        LightingRefreshRate value,
+        CancellationToken cancellationToken)
+    {
+        if (!Capabilities.SupportedLightingRefreshRates.Contains(value))
+        {
+            throw Unavailable("The requested lighting refresh rate is not admitted.");
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (refreshRate == value)
+            {
+                return;
+            }
+
+            await StopStreamCoreAsync().ConfigureAwait(false);
+            refreshRate = value;
+            if (activeEffect is { } effect)
+            {
+                StartStreamCore(effect);
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
 
     public async Task<LightingSettings?> ReadStateAsync(
         CancellationToken cancellationToken)
@@ -171,6 +210,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         {
             activeEffect = null;
             activeKeyTriggeredEffect = null;
+            activeUsesSelectableCadence = false;
             pendingKeyTriggeredPulses.Clear();
             lastDeliveredState = LightingSettingsFactory.Off();
         }
@@ -287,6 +327,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     {
                         activeEffect = null;
                         activeKeyTriggeredEffect = null;
+                        activeUsesSelectableCadence = false;
                         pendingKeyTriggeredPulses.Clear();
                         lastDeliveredState = settings;
                     }
@@ -312,6 +353,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     {
                         activeEffect = effect;
                         activeKeyTriggeredEffect = effect as IPid02E0KeyTriggeredLightingEffect;
+                        activeUsesSelectableCadence = UsesSelectableCadence(settings.Effect);
                         pendingKeyTriggeredPulses.Clear();
                         lastDeliveredState = settings;
                     }
@@ -344,6 +386,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     {
                         activeEffect = null;
                         activeKeyTriggeredEffect = null;
+                        activeUsesSelectableCadence = false;
                         pendingKeyTriggeredPulses.Clear();
                         lastDeliveredState = null;
                     }
@@ -402,6 +445,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 {
                     activeEffect = null;
                     activeKeyTriggeredEffect = null;
+                    activeUsesSelectableCadence = false;
                     pendingKeyTriggeredPulses.Clear();
                     lastDeliveredState = LightingSettingsFactory.Off();
                 }
@@ -509,6 +553,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 {
                     activeEffect = null;
                     activeKeyTriggeredEffect = null;
+                    activeUsesSelectableCadence = false;
                     pendingKeyTriggeredPulses.Clear();
                     lastDeliveredState = null;
                 }
@@ -563,6 +608,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     renderPlaybackMuted = previousMuted;
                     activeEffect = null;
                     activeKeyTriggeredEffect = null;
+                    activeUsesSelectableCadence = false;
                     pendingKeyTriggeredPulses.Clear();
                     lastDeliveredState = null;
                 }
@@ -588,6 +634,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             {
                 activeEffect = null;
                 activeKeyTriggeredEffect = null;
+                activeUsesSelectableCadence = false;
                 pendingKeyTriggeredPulses.Clear();
                 lastDeliveredState = null;
             }
@@ -1227,7 +1274,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
 
     private void StartStreamCore(IPid02E0LightingEffect effect)
     {
-        if (effect.GetNextFrameDelay(TimeSpan.Zero) is null)
+        if (NextFrameDelay(effect, TimeSpan.Zero) is null)
         {
             return;
         }
@@ -1236,6 +1283,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         lock (effectSync)
         {
             streamWake = NewStreamWake();
+            if (pendingKeyTriggeredPulses.Count > 0)
+            {
+                streamWake.TrySetResult(true);
+            }
         }
         streamCancellation = cancellation;
         streamTask = RunStreamAsync(effect, cancellation.Token);
@@ -1248,7 +1299,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         try
         {
             TimeSpan elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
-            TimeSpan? firstDelay = effect.GetNextFrameDelay(elapsed);
+            TimeSpan? firstDelay = NextFrameDelay(effect, elapsed);
             if (firstDelay is null)
             {
                 return;
@@ -1268,7 +1319,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     // it now rather than enqueueing a competing write from the IPC
                     // request path.
                     elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
-                    TimeSpan? wakeDelay = effect.GetNextFrameDelay(elapsed);
+                    TimeSpan? wakeDelay = NextFrameDelay(effect, elapsed);
                     if (wakeDelay is null)
                     {
                         return;
@@ -1306,7 +1357,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 TimeSpan? advanced = AdvanceFrameDeadline(
                     effect,
                     nextFrameAt,
-                    observedAfterWrite);
+                    observedAfterWrite,
+                    activeUsesSelectableCadence
+                        ? refreshRate
+                        : null);
                 if (advanced is null)
                 {
                     return;
@@ -1326,6 +1380,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 {
                     activeEffect = null;
                     activeKeyTriggeredEffect = null;
+                    activeUsesSelectableCadence = false;
                     pendingKeyTriggeredPulses.Clear();
                     lastDeliveredState = null;
                     SetOwnership(LightingRendererOwnershipState.Faulted);
@@ -1337,11 +1392,16 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     internal static TimeSpan? AdvanceFrameDeadline(
         IPid02E0LightingEffect effect,
         TimeSpan currentDeadline,
-        TimeSpan observedAfterWrite)
+        TimeSpan observedAfterWrite,
+        LightingRefreshRate? selectedRefreshRate = null)
     {
         ArgumentNullException.ThrowIfNull(effect);
         Pid02E0LightingMath.ThrowIfNegative(currentDeadline);
         Pid02E0LightingMath.ThrowIfNegative(observedAfterWrite);
+        if (selectedRefreshRate is { } refreshRate && !Enum.IsDefined(refreshRate))
+        {
+            throw new ArgumentOutOfRangeException(nameof(selectedRefreshRate));
+        }
         TimeSpan cursor = currentDeadline;
         while (cursor <= observedAfterWrite)
         {
@@ -1351,7 +1411,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 return null;
             }
 
-            cursor += delay.Value;
+            cursor += selectedRefreshRate is { } selected
+                ? ApplyRefreshRateToDelay(effect, delay.Value, selected)
+                : delay.Value;
         }
 
         return cursor;
@@ -1514,6 +1576,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 : new OwnedEffectSnapshot(
                     activeEffect,
                     activeKeyTriggeredEffect,
+                    activeUsesSelectableCadence,
                     effectStartedTimestamp,
                     lastDeliveredState,
                     OwnershipState);
@@ -1551,6 +1614,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             {
                 activeEffect = previous.Effect;
                 activeKeyTriggeredEffect = previous.KeyTriggeredEffect;
+                activeUsesSelectableCadence = previous.UsesSelectableCadence;
                 pendingKeyTriggeredPulses.Clear();
                 effectStartedTimestamp = previous.StartedTimestamp;
                 lastDeliveredState = previous.Settings;
@@ -1649,9 +1713,72 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             _ => throw new ArgumentOutOfRangeException(nameof(effect)),
         };
 
+    private TimeSpan? NextFrameDelay(IPid02E0LightingEffect effect, TimeSpan elapsed)
+    {
+        TimeSpan? delay = effect.GetNextFrameDelay(elapsed);
+        if (!activeUsesSelectableCadence
+            || delay is null)
+        {
+            return delay;
+        }
+
+        return ApplyRefreshRateToDelay(effect, delay.Value, refreshRate);
+    }
+
+    internal static TimeSpan ApplyRefreshRateToDelay(
+        IPid02E0LightingEffect effect,
+        TimeSpan delay,
+        LightingRefreshRate refreshRate)
+    {
+        ArgumentNullException.ThrowIfNull(effect);
+        Pid02E0LightingMath.ThrowIfNotPositive(delay, nameof(delay));
+        if (refreshRate == LightingRefreshRate.ThirtyHz)
+        {
+            return delay;
+        }
+
+        TimeSpan selectedInterval = RefreshInterval(refreshRate);
+        if (delay == Pid02E0LightingTiming.AnimatedFrameInterval)
+        {
+            return selectedInterval;
+        }
+
+        // Breathing intentionally suppresses unchanged plateau reports. Its
+        // long delay includes one animated interval so rendering resumes just
+        // inside the next ramp; preserve the plateau and replace only that
+        // trailing interval at the selected cadence.
+        if (effect is Pid02E0BreathingEffect
+            && delay > Pid02E0LightingTiming.AnimatedFrameInterval)
+        {
+            return delay - Pid02E0LightingTiming.AnimatedFrameInterval
+                + selectedInterval;
+        }
+
+        // Reactive and Ripple return the five-second idle keepalive here.
+        return delay;
+    }
+
+    internal static TimeSpan RefreshInterval(LightingRefreshRate value) => value switch
+    {
+        LightingRefreshRate.ThirtyHz => Pid02E0LightingTiming.AnimatedFrameInterval,
+        LightingRefreshRate.SixtyHz => TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 60),
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private static bool UsesSelectableCadence(LightingEffect effect) => effect is
+        LightingEffect.Spectrum
+        or LightingEffect.Breathing
+        or LightingEffect.Reactive
+        or LightingEffect.Tidal
+        or LightingEffect.Starlight
+        or LightingEffect.Wave
+        or LightingEffect.Wheel
+        or LightingEffect.Ripple;
+
     private sealed record OwnedEffectSnapshot(
         IPid02E0LightingEffect Effect,
         IPid02E0KeyTriggeredLightingEffect? KeyTriggeredEffect,
+        bool UsesSelectableCadence,
         long StartedTimestamp,
         LightingSettings Settings,
         LightingRendererOwnershipState Ownership);

@@ -44,6 +44,12 @@ $settings.Encoding = [Text.UTF8Encoding]::new($false)
 $settings.Indent = $true
 $settings.NewLineChars = "`r`n"
 $settings.NewLineHandling = [Xml.NewLineHandling]::Replace
+$existingValues = @()
+if (Test-Path -LiteralPath $resourcePath -PathType Leaf) {
+    [xml]$existingDocument = [IO.File]::ReadAllText($resourcePath, $utf8)
+    $existingValues = @($existingDocument.root.data |
+        ForEach-Object { [string]$_.name })
+}
 $writer = [Xml.XmlWriter]::Create($resourcePath, $settings)
 try {
     $writer.WriteStartDocument()
@@ -58,7 +64,16 @@ try {
         $writer.WriteElementString('value', $header[1])
         $writer.WriteEndElement()
     }
-    foreach ($value in $values | Sort-Object) {
+    $sortedValues = [Collections.Generic.List[string]]::new()
+    foreach ($value in $existingValues) {
+        if ($values.Remove($value)) {
+            $sortedValues.Add($value)
+        }
+    }
+    $newValues = [string[]]@($values)
+    [Array]::Sort($newValues, [StringComparer]::Ordinal)
+    $sortedValues.AddRange($newValues)
+    foreach ($value in $sortedValues) {
         $writer.WriteStartElement('data')
         $writer.WriteAttributeString('name', $value)
         $writer.WriteAttributeString('xml', 'space', $null, 'preserve')
@@ -66,10 +81,11 @@ try {
         $writer.WriteEndElement()
     }
     $writer.WriteEndElement()
+    $writer.WriteWhitespace("`r`n")
     $writer.WriteEndDocument()
 }
 finally {
     $writer.Dispose()
 }
 
-Write-Host "Extracted $($values.Count) installer resource strings."
+Write-Host "Extracted $($sortedValues.Count) installer resource strings."

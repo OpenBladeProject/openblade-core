@@ -106,6 +106,15 @@
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
+            <Style x:Key="CompactCardToggleSwitchStyle"
+                   TargetType="ToggleSwitch"
+                   BasedOn="{StaticResource DefaultToggleSwitchStyle}">
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="OffContent" Value="" />
+                <Setter Property="OnContent" Value="" />
+            </Style>
             <Style x:Key="InlineCardSliderValueStyle"
                    TargetType="TextBlock"
                    BasedOn="{StaticResource CardTitleStyle}">
@@ -465,11 +474,9 @@
                                    Style="{StaticResource CardTitleStyle}"
                                    VerticalAlignment="Center" />
                         <ToggleSwitch Grid.Column="1"
+                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                       IsOn="{x:Bind IsVisible, Mode=TwoWay}"
                                       IsEnabled="{x:Bind IsEnabled, Mode=OneWay}"
-                                      MinWidth="0"
-                                      OffContent=""
-                                      OnContent=""
                                       AutomationProperties.Name="{x:Bind Label, Mode=OneTime}" />
                     </Grid>
                 </Border>
@@ -633,12 +640,8 @@
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
                                     <ToggleSwitch x:Uid="MainWindow_GpuClockTuningToggleText" x:Name="GpuClockTuningToggle"
+                                                  Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                   Grid.Column="1"
-                                                  HorizontalAlignment="Right"
-                                                  VerticalAlignment="Center"
-                                                  MinWidth="0"
-                                                  OffContent=""
-                                                  OnContent=""
                                                   IsOn="{Binding IsGpuClockTuningEnabled, Mode=OneWay}"
                                                   IsEnabled="{Binding CanToggleGpuClockTuning}"
                                                   AutomationProperties.Name="GPU tuning"
@@ -911,10 +914,7 @@
                                                    Style="{StaticResource CardTitleStyle}" />
                                     </StackPanel>
                                         <ToggleSwitch Grid.Column="1"
-                                                      MinWidth="0"
-                                                      OffContent=""
-                                                      OnContent=""
-                                                      HorizontalAlignment="Right"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       IsEnabled="{Binding CanEditFanControl}"
                                                       IsOn="{Binding UseHigherFanTemperature, Mode=TwoWay}"
                                                       Toggled="OnManualFanCurveSettingChanged" />
@@ -1030,11 +1030,8 @@
                                                       IsActive="{Binding IsBatteryProtectionOperationInProgress}"
                                                       AutomationProperties.Name="Applying battery protection" />
                                         <ToggleSwitch x:Uid="MainWindow_BatteryProtectionToggleText" x:Name="BatteryProtectionToggle"
-                                                      HorizontalAlignment="Right"
-                                                      MinWidth="0"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Battery protection"
-                                                      OffContent=""
-                                                      OnContent=""
                                                       IsEnabled="{x:Bind CanChangeBatteryProtection, Mode=OneWay}"
                                                       IsOn="{x:Bind BatteryProtectionEnabled, Mode=OneWay}"
                                                       Toggled="OnBatteryProtectionToggled" />
@@ -1192,13 +1189,9 @@
                                                               AutomationProperties.Name="Reading or applying Gaming mode" />
                                             </Border>
                                             <ToggleSwitch x:Uid="MainWindow_GamingModeToggleText" x:Name="GamingModeToggle"
-                                                          HorizontalAlignment="Right"
-                                                          VerticalAlignment="Center"
-                                                          MinWidth="0"
+                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                           IsEnabled="{x:Bind CanEditGamingMode, Mode=OneWay}"
                                                           AutomationProperties.Name="Gaming mode"
-                                                          OffContent=""
-                                                          OnContent=""
                                                           IsOn="{x:Bind GamingModeToggleIsOn, Mode=OneWay}"
                                                           Toggled="OnGamingModeToggled" />
                                         </StackPanel>
@@ -1220,13 +1213,9 @@
                                                        SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_ToggleSwitchBlockTheWindowsKeyInGamingMode" Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       IsEnabled="{x:Bind CanEditGamingModeKeyPolicy, Mode=OneWay}"
                                                       AutomationProperties.Name="Block the Windows key in Gaming mode"
-                                                      OffContent=""
-                                                      OnContent=""
                                                       IsOn="{x:Bind BlockWindowsKeyInGamingMode, Mode=OneWay}"
                                                       Toggled="OnBlockWindowsKeyInGamingModeToggled" />
                                     </Grid>
@@ -1247,13 +1236,9 @@
                                                        SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_ToggleSwitchBlockAltTabInGamingMode" Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       IsEnabled="{x:Bind CanEditGamingModeKeyPolicy, Mode=OneWay}"
                                                       AutomationProperties.Name="Block Alt+Tab in Gaming mode"
-                                                      OffContent=""
-                                                      OnContent=""
                                                       IsOn="{x:Bind BlockAltTabInGamingMode, Mode=OneWay}"
                                                       Toggled="OnBlockAltTabInGamingModeToggled" />
                                     </Grid>
@@ -1294,13 +1279,9 @@
                                                           AutomationProperties.Name="Reading or applying startup animation" />
                                         </Border>
                                         <ToggleSwitch x:Uid="MainWindow_StartupAnimationToggleText" x:Name="StartupAnimationToggle"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       IsEnabled="{x:Bind CanEditStartupAnimation, Mode=OneWay}"
                                                       AutomationProperties.Name="Startup animation"
-                                                      OffContent=""
-                                                      OnContent=""
                                                       IsOn="{x:Bind StartupAnimationToggleIsOn, Mode=OneWay}"
                                                       Toggled="OnStartupAnimationToggled" />
                                     </StackPanel>
@@ -1338,12 +1319,9 @@
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <ToggleSwitch x:Uid="MainWindow_WindowsDynamicLightingToggleText" x:Name="WindowsDynamicLightingToggle"
+                                                  Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                   Grid.Column="1"
-                                                  MinWidth="0"
-                                                  VerticalAlignment="Center"
                                                   AutomationProperties.Name="Let Windows Dynamic Lighting control the keyboard"
-                                                  OffContent=""
-                                                  OnContent=""
                                                   IsOn="{x:Bind UseWindowsDynamicLighting, Mode=OneWay}"
                                                   Toggled="OnWindowsDynamicLightingToggled" />
                                 </Grid>
@@ -1580,7 +1558,7 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_ToggleSwitchRandomTidalColors" Grid.Column="1"
-                                                      VerticalAlignment="Center"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Random Tidal colors"
                                                       IsOn="{x:Bind LightingRandomColorsEditor, Mode=TwoWay}" />
                                     </Grid>
@@ -1798,6 +1776,35 @@
                                 </Button>
                             </Border>
                         </Border>
+                        <Border x:Name="LightingRefreshRateCard"
+                                Style="{StaticResource SettingsGroupStyle}"
+                                Margin="0,10,0,0"
+                                Visibility="{x:Bind LabFeaturesEnabled, Mode=OneWay}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3"
+                                                VerticalAlignment="Center">
+                                        <TextBlock x:Uid="MainWindow_TextBlockSixtyHzLighting"
+                                                   Text="60 Hz lighting"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{x:Bind LightingRefreshRateAvailabilityText, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <ToggleSwitch x:Uid="MainWindow_LightingRefreshRateToggleText"
+                                                  Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                  Grid.Column="1"
+                                                  IsOn="{x:Bind IsSixtyHzLightingEnabled, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind CanSetLightingRefreshRate, Mode=OneWay}"
+                                                  Toggled="OnLightingRefreshRateToggled"
+                                                  AutomationProperties.Name="Use 60 Hz keyboard lighting" />
+                                </Grid>
+                            </Border>
+                        </Border>
                         </StackPanel>
 
                         <StackPanel x:Name="LightingLogoSection"
@@ -1853,13 +1860,9 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_LightingDisplayOffToggleText" x:Name="LightingDisplayOffToggle"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
                                                       AutomationProperties.Name="Turn off keyboard lighting with the display"
-                                                      OffContent=""
-                                                      OnContent=""
                                                       IsOn="{x:Bind LightingTurnOffWithDisplayEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -1876,13 +1879,9 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_LightingIdleTimeoutToggleText" x:Name="LightingIdleTimeoutToggle"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
                                                       AutomationProperties.Name="Turn off keyboard lighting after inactivity"
-                                                      OffContent=""
-                                                      OnContent=""
                                                       IsOn="{x:Bind LightingIdleTimeoutEnabledEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -1967,13 +1966,9 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_DisplayHdrToggleText" x:Name="DisplayHdrToggle"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
                                                       AutomationProperties.Name="Use HDR"
-                                                      OffContent=""
-                                                      OnContent=""
                                                       IsOn="{x:Bind IsHdrEnabled, Mode=OneWay}"
                                                       IsEnabled="{x:Bind CanChangeHdr, Mode=OneWay}"
                                                       Toggled="OnDisplayHdrToggled" />
@@ -3197,11 +3192,8 @@
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <ToggleSwitch x:Uid="MainWindow_ToggleSwitchStartOpenBladeWhenISignIn" Grid.Column="1"
-                                                  HorizontalAlignment="Right"
-                                                  MinWidth="0"
+                                                  Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                   AutomationProperties.Name="Start OpenBlade when I sign in"
-                                                  OffContent=""
-                                                  OnContent=""
                                                   IsOn="{x:Bind ViewModel.StartAtSignIn, Mode=OneWay}"
                                                   Toggled="OnStartAtSignInToggled" />
                                     </Grid>
@@ -3219,13 +3211,9 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_StartMinimizedToggleText" x:Name="StartMinimizedToggle"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
                                                       AutomationProperties.Name="Start OpenBlade minimized"
-                                                      OffContent=""
-                                                      OnContent=""
                                                       Toggled="OnStartMinimizedToggled" />
                                     </Grid>
                                 </Border>
@@ -3243,12 +3231,8 @@
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_ToggleSwitchForceRunOnIncompatibleFirmware" Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Force run on incompatible firmware"
-                                                      OffContent=""
-                                                      OnContent=""
                                                       IsOn="{x:Bind ViewModel.AllowUntestedFirmware, Mode=OneWay}"
                                                       Toggled="OnFirmwareCompatibilityOverrideToggled" />
                                     </Grid>
@@ -3267,12 +3251,8 @@
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_ToggleSwitchAlwaysOverrideExternalLightingChanges" Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Always override external lighting changes"
-                                                      OffContent=""
-                                                      OnContent=""
                                                       IsOn="{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}"
                                                       Toggled="OnExternalLightingOverridePolicyToggled" />
                                     </Grid>
@@ -3313,6 +3293,15 @@
                                                                                Style="{StaticResource SecondaryTextStyle}"
                                                                                TextWrapping="Wrap" />
                                                                 </StackPanel>
+                                                                <StackPanel Spacing="3">
+                                                                    <TextBlock x:Uid="MainWindow_TextBlockSixtyHzKeyboardLighting"
+                                                                               Text="60 Hz keyboard lighting"
+                                                                               FontWeight="SemiBold" />
+                                                                    <TextBlock x:Uid="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly"
+                                                                               Text="Render supported effects more smoothly on admitted keyboards."
+                                                                               Style="{StaticResource SecondaryTextStyle}"
+                                                                               TextWrapping="Wrap" />
+                                                                </StackPanel>
                                                                 <TextBlock x:Uid="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved" Text="Lab features may change or be removed."
                                                                            Style="{StaticResource SecondaryTextStyle}"
                                                                            TextWrapping="Wrap" />
@@ -3328,13 +3317,9 @@
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_LabFeaturesToggleText" x:Name="LabFeaturesToggle"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
                                                       AutomationProperties.Name="Enable Lab experimental features"
-                                                      OffContent=""
-                                                      OnContent=""
                                                       IsOn="{x:Bind ViewModel.LabFeaturesEnabled, Mode=OneWay}"
                                                       Toggled="OnLabFeaturesToggled" />
                                     </Grid>
@@ -3355,11 +3340,9 @@
                                             <TextBlock x:Uid="MainWindow_TextBlockConfirmedFnPResults" Text="Confirmed Fn+P results."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenThePerformanceModeChanges" Grid.Column="1" MinWidth="0"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
+                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenThePerformanceModeChanges" Grid.Column="1"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Notify when the performance mode changes"
-                                                      OffContent="" OnContent=""
                                                       IsOn="{x:Bind PerformanceNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -3371,11 +3354,9 @@
                                             <TextBlock x:Uid="MainWindow_TextBlockActiveACUSBCOrBatteryProfile" Text="Active AC, USB-C, or Battery profile."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenTheActivePowerProfileChanges" Grid.Column="1" MinWidth="0"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
+                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenTheActivePowerProfileChanges" Grid.Column="1"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Notify when the active power profile changes"
-                                                      OffContent="" OnContent=""
                                                       IsOn="{x:Bind ProfileAndPowerSourceNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -3387,11 +3368,9 @@
                                             <TextBlock x:Uid="MainWindow_TextBlockNewOpenBladeReleases" Text="New OpenBlade releases."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeUpdateIsAvailable" Grid.Column="1" MinWidth="0"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
+                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeUpdateIsAvailable" Grid.Column="1"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Notify when an OpenBlade update is available"
-                                                      OffContent="" OnContent=""
                                                       IsOn="{x:Bind AppUpdateNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -3403,11 +3382,9 @@
                                             <TextBlock x:Uid="MainWindow_TextBlockNewRazerBIOSECOrMCUFirmware" Text="New Razer BIOS, EC, or MCU firmware."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenARazerFirmwareUpdateIs" Grid.Column="1" MinWidth="0"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
+                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenARazerFirmwareUpdateIs" Grid.Column="1"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Notify when a Razer firmware update is available"
-                                                      OffContent="" OnContent=""
                                                       IsOn="{x:Bind FirmwareUpdateNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -3419,11 +3396,9 @@
                                             <TextBlock x:Uid="MainWindow_TextBlockNewRazerControllersAdvisoriesStayVisible" Text="New Razer controllers. Advisories stay visible."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenAnotherRazerControllerIsDetected" Grid.Column="1" MinWidth="0"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
+                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenAnotherRazerControllerIsDetected" Grid.Column="1"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Notify when another Razer controller is detected"
-                                                      OffContent="" OnContent=""
                                                       IsOn="{x:Bind ControllerAdvisoryNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -3435,11 +3410,9 @@
                                             <TextBlock x:Uid="MainWindow_TextBlockFailedControlOperationsDetailsStayVisible" Text="Failed control operations. Details stay visible."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeOperationFails" Grid.Column="1" MinWidth="0"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
+                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeOperationFails" Grid.Column="1"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Notify when an OpenBlade operation fails"
-                                                      OffContent="" OnContent=""
                                                       IsOn="{x:Bind OperationFailureNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
