@@ -119,11 +119,19 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
     {
         try
         {
-            VideoFirmwareCandidate? nvidia = readVideoFirmwareCandidates()
-                .FirstOrDefault(candidate =>
-                    candidate.AdapterName.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase)
-                    && !string.IsNullOrWhiteSpace(candidate.BiosVersion));
-            if (nvidia is null)
+            VideoFirmwareCandidate[] nvidiaCandidates = readVideoFirmwareCandidates()
+                .Where(candidate =>
+                    candidate.AdapterName.Contains(
+                        "NVIDIA",
+                        StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (nvidiaCandidates.Length != 1)
+            {
+                return null;
+            }
+
+            VideoFirmwareCandidate nvidia = nvidiaCandidates[0];
+            if (string.IsNullOrWhiteSpace(nvidia.BiosVersion))
             {
                 return null;
             }

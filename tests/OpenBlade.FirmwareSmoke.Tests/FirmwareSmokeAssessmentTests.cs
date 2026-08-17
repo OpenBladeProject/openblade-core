@@ -23,6 +23,9 @@ public sealed class FirmwareSmokeAssessmentTests
         string inventory = Assert.Single(
             report.Checks,
             check => check.Id == "firmware.inventory.available").Actual;
+        Assert.Contains(
+            "VBIOS=98.3.5c.40.3d (GPU=NVIDIA GeForce RTX 5090 Laptop GPU)",
+            inventory);
         Assert.Contains("Thunderbolt=Unavailable (ObservedOnly)", inventory);
         Assert.Contains("Touchpad=Unavailable (ObservedOnly)", inventory);
     }
@@ -274,6 +277,43 @@ public sealed class FirmwareSmokeAssessmentTests
                 report.Checks,
                 check => check.Id == $"firmware.{component.ToString().ToLowerInvariant()}")
                 .Outcome);
+        if (component == FirmwareComponent.Vbios)
+        {
+            Assert.Equal(
+                FirmwareSmokeOutcome.Passed,
+                Assert.Single(
+                    report.Checks,
+                    check => check.Id == "firmware.vbios-gpu").Outcome);
+        }
+    }
+
+    [Theory]
+    [InlineData("Unavailable")]
+    [InlineData("NVIDIA GeForce RTX 5080 Laptop GPU")]
+    public void PostUpdateRejectsUnreadableOrChangedVbiosGpuIdentity(
+        string currentGpuName)
+    {
+        FirmwareSmokeSnapshot baseline = CreateSnapshot("mcu-before");
+        FirmwareSmokeSnapshot current = baseline with
+        {
+            Firmware = baseline.Firmware with
+            {
+                Vbios = "vbios-after",
+                VbiosGpuName = currentGpuName,
+            },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
+            baseline,
+            current,
+            new HashSet<FirmwareComponent> { FirmwareComponent.Vbios });
+
+        Assert.False(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "firmware.vbios-gpu").Outcome);
     }
 
     [Fact]
@@ -593,7 +633,8 @@ public sealed class FirmwareSmokeAssessmentTests
             mcu,
             "98.3.5c.40.3d",
             ThunderboltAccess: DeviceFeatureAccess.ObservedOnly.ToString(),
-            TouchpadAccess: DeviceFeatureAccess.ObservedOnly.ToString()),
+            TouchpadAccess: DeviceFeatureAccess.ObservedOnly.ToString(),
+            VbiosGpuName: "NVIDIA GeForce RTX 5090 Laptop GPU"),
         new FirmwareSmokeCapabilities(
             [
                 "Balanced",

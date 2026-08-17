@@ -370,6 +370,26 @@ public static class FirmwareSmokeAssessment
                     : baselineVersion,
                 currentVersion));
         }
+
+        if (expectedChangedComponents.Contains(FirmwareComponent.Vbios)
+            || requiredReadableComponents.Contains(FirmwareComponent.Vbios))
+        {
+            bool baselineGpuReadable = !IsUnavailable(baseline.VbiosGpuName);
+            bool currentGpuReadable = !IsUnavailable(current.VbiosGpuName);
+            checks.Add(Check(
+                "firmware.vbios-gpu",
+                "VBIOS GPU identity remains readable and unchanged",
+                baselineGpuReadable
+                    && currentGpuReadable
+                    && string.Equals(
+                        baseline.VbiosGpuName,
+                        current.VbiosGpuName,
+                        StringComparison.Ordinal),
+                baselineGpuReadable
+                    ? baseline.VbiosGpuName
+                    : "The same readable GPU identity in both snapshots",
+                current.VbiosGpuName));
+        }
     }
 
     private static void RequireComponents(
@@ -399,7 +419,9 @@ public static class FirmwareSmokeAssessment
         string.Join(
             "; ",
             FirmwareVersions(firmware)
-                .Select(version => $"{FirmwareComponentName(version.Key)}={version.Value}")
+                .Select(version => version.Key == FirmwareComponent.Vbios
+                    ? $"VBIOS={version.Value} (GPU={firmware.VbiosGpuName})"
+                    : $"{FirmwareComponentName(version.Key)}={version.Value}")
                 .Concat(
                 [
                     $"Thunderbolt={firmware.Thunderbolt} ({firmware.ThunderboltAccess ?? "Unavailable"})",

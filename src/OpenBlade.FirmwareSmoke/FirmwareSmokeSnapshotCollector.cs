@@ -85,7 +85,8 @@ public sealed class FirmwareSmokeSnapshotCollector(IFirmwareSmokeClient client)
                 firmware.ThunderboltFirmwareVersion,
                 firmware.TouchpadFirmwareVersion,
                 firmware.ThunderboltFirmwareAccess?.ToString(),
-                firmware.TouchpadFirmwareAccess?.ToString()),
+                firmware.TouchpadFirmwareAccess?.ToString(),
+                firmware.VbiosGpuName),
             new FirmwareSmokeCapabilities(
                 Names(capabilities.PerformancePresets),
                 Names(capabilities.FanModes),

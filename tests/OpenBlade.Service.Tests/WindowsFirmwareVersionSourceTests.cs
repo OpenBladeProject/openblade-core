@@ -51,6 +51,27 @@ public sealed class WindowsFirmwareVersionSourceTests
     }
 
     [Fact]
+    public void Capture_RejectsDistinctNvidiaFirmwareCandidatesAsAmbiguous()
+    {
+        var source = new WindowsFirmwareVersionSource(
+            (_, _) => null,
+            () =>
+            [
+                new VideoFirmwareCandidate(
+                    "NVIDIA GeForce RTX 5080 Laptop GPU",
+                    "Version98.03.5C.40.26"),
+                new VideoFirmwareCandidate(
+                    "NVIDIA GeForce RTX 5090 Laptop GPU (stale eGPU registry entry)",
+                    "Version98.03.5C.40.25"),
+            ]);
+
+        FirmwareVersions result = source.Capture();
+
+        Assert.Equal("Unavailable", result.VbiosVersion);
+        Assert.Equal("Unavailable", result.VbiosGpuName);
+    }
+
+    [Fact]
     public void Capture_DoesNotPresentMissingEcComponentsAsZeroVersion()
     {
         var source = new WindowsFirmwareVersionSource((_, _) => null, () => []);
