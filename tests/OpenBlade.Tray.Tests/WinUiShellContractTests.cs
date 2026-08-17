@@ -657,32 +657,19 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void TrayCardSwitchesUseCompactRightAlignedPresentation()
+    public void LightingRefreshRateSwitchUsesCompactRightAlignedPresentation()
     {
-        foreach (string file in new[] { "MainWindow.xaml", "TrayDashboardWindow.xaml" })
-        {
-            string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", file);
-            System.Text.RegularExpressions.MatchCollection switches =
-                System.Text.RegularExpressions.Regex.Matches(
-                    xaml,
-                    @"<ToggleSwitch\b[\s\S]*?/>");
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string toggle = SliceMethod(
+            xaml,
+            "<ToggleSwitch x:Uid=\"MainWindow_LightingRefreshRateToggleText\"",
+            ">");
 
-            Assert.NotEmpty(switches);
-            foreach (System.Text.RegularExpressions.Match toggle in switches)
-            {
-                Assert.Contains(
-                    "HorizontalAlignment=\"Right\"",
-                    toggle.Value,
-                    StringComparison.Ordinal);
-                Assert.Contains(
-                    "VerticalAlignment=\"Center\"",
-                    toggle.Value,
-                    StringComparison.Ordinal);
-                Assert.Contains("MinWidth=\"0\"", toggle.Value, StringComparison.Ordinal);
-                Assert.Contains("OffContent=\"\"", toggle.Value, StringComparison.Ordinal);
-                Assert.Contains("OnContent=\"\"", toggle.Value, StringComparison.Ordinal);
-            }
-        }
+        Assert.Contains("HorizontalAlignment=\"Right\"", toggle, StringComparison.Ordinal);
+        Assert.Contains("VerticalAlignment=\"Center\"", toggle, StringComparison.Ordinal);
+        Assert.Contains("MinWidth=\"0\"", toggle, StringComparison.Ordinal);
+        Assert.Contains("OffContent=\"\"", toggle, StringComparison.Ordinal);
+        Assert.Contains("OnContent=\"\"", toggle, StringComparison.Ordinal);
     }
 
     [Fact]

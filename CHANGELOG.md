@@ -37,8 +37,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Aligned the Random colors and 60 Hz lighting switches with the other
-  right-aligned card controls.
 - Expanded the graphical installer's progress details pane to use the available
   window height instead of remaining limited to a few log lines.
 - Offered **Repair** and **Uninstall** when an interactive installer finds one
