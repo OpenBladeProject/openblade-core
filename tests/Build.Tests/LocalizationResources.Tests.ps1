@@ -42,6 +42,19 @@ function Get-FixtureRelativePath {
     return $fullPath.Substring($prefix.Length)
 }
 
+function Get-FileSha256 {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        return [BitConverter]::ToString(
+            $algorithm.ComputeHash([IO.File]::ReadAllBytes($Path))).Replace('-', '')
+    }
+    finally {
+        $algorithm.Dispose()
+    }
+}
+
 $parseErrors = $null
 [void][Management.Automation.Language.Parser]::ParseFile(
     $validator,
@@ -104,6 +117,9 @@ function New-LocalizationFixture {
             'build\installer\OpenBlade.Installer.UI\Properties\Resources.qps-ploc.resx',
             'build\installer\Bundle.en-US.wxl',
             'build\installer\Bundle.wxs',
+            'build\Extract-InstallerLocalization.ps1',
+            'build\Extract-WinUiLocalization.ps1',
+            'build\Update-LocalizationResources.ps1',
             'build\Update-PseudoLocalization.ps1',
             'src\OpenBlade.Tray.Core\DashboardCards.cs',
             'src\OpenBlade.Tray.Core\Properties\Resources.resx',
@@ -264,16 +280,37 @@ Assert-ValidatorFails -Expected 'changed its access key' -Mutate {
 
 $pseudoFixture = New-LocalizationFixture
 try {
-    & (Join-Path $pseudoFixture 'build\Update-PseudoLocalization.ps1')
-    foreach ($catalog in @(
-            @('src\OpenBlade.Tray\Strings\en-US\Resources.resw',
-              'src\OpenBlade.Tray\Strings\qps-ploc\Resources.resw'),
-            @('build\installer\OpenBlade.Installer.UI\Properties\Resources.resx',
-              'build\installer\OpenBlade.Installer.UI\Properties\Resources.qps-ploc.resx'),
-            @('src\OpenBlade.Tray.Core\Properties\Resources.resx',
-              'src\OpenBlade.Tray.Core\Properties\Resources.qps-ploc.resx'),
-            @('src\OpenBlade.Setup\Properties\Resources.resx',
-              'src\OpenBlade.Setup\Properties\Resources.qps-ploc.resx'))) {
+    $catalogs = @(
+        @('src\OpenBlade.Tray\Strings\en-US\Resources.resw',
+          'src\OpenBlade.Tray\Strings\qps-ploc\Resources.resw'),
+        @('build\installer\OpenBlade.Installer.UI\Properties\Resources.resx',
+          'build\installer\OpenBlade.Installer.UI\Properties\Resources.qps-ploc.resx'),
+        @('src\OpenBlade.Tray.Core\Properties\Resources.resx',
+          'src\OpenBlade.Tray.Core\Properties\Resources.qps-ploc.resx'),
+        @('src\OpenBlade.Setup\Properties\Resources.resx',
+          'src\OpenBlade.Setup\Properties\Resources.qps-ploc.resx'))
+    $generatedCatalogs = @(
+        $catalogs[0][0],
+        $catalogs[1][0],
+        $catalogs[0][1],
+        $catalogs[1][1],
+        $catalogs[2][1],
+        $catalogs[3][1])
+    $expectedHashes = @{}
+    foreach ($relativePath in $generatedCatalogs) {
+        $expectedHashes[$relativePath] = Get-FileSha256 (
+            Join-Path $pseudoFixture $relativePath)
+    }
+
+    & (Join-Path $pseudoFixture 'build\Update-LocalizationResources.ps1')
+    foreach ($relativePath in $generatedCatalogs) {
+        $actualHash = Get-FileSha256 (Join-Path $pseudoFixture $relativePath)
+        if ($actualHash -cne $expectedHashes[$relativePath]) {
+            throw "Regenerated catalog '$relativePath' changed bytes unexpectedly."
+        }
+    }
+    & $validator -Repository $pseudoFixture
+    foreach ($catalog in $catalogs) {
         [xml]$englishDocument = [IO.File]::ReadAllText(
             (Join-Path $pseudoFixture $catalog[0]),
             $utf8)
@@ -289,6 +326,36 @@ try {
                 throw "Pseudo-localization changed punctuation-only resource '$($englishEntry.name)'."
             }
         }
+    }
+
+    $caseRenameXamlPath = Join-Path $pseudoFixture `
+        'src\OpenBlade.Tray\MainWindow.xaml'
+    $oldUid = 'MainWindow_TextBlockPerformance'
+    $newUid = 'MainWindow_TextBlockPERFORMANCE'
+    $xaml = [IO.File]::ReadAllText($caseRenameXamlPath, $utf8)
+    $updatedXaml = $xaml.Replace(
+        "x:Uid=`"$oldUid`"",
+        "x:Uid=`"$newUid`"")
+    if ($updatedXaml -ceq $xaml) {
+        throw "Case-only x:Uid fixture could not find '$oldUid'."
+    }
+    [IO.File]::WriteAllText(
+        $caseRenameXamlPath,
+        $updatedXaml,
+        [Text.UTF8Encoding]::new($false))
+    & (Join-Path $pseudoFixture 'build\Extract-WinUiLocalization.ps1')
+
+    [xml]$renamedCatalog = [IO.File]::ReadAllText(
+        (Join-Path $pseudoFixture 'src\OpenBlade.Tray\Strings\en-US\Resources.resw'),
+        $utf8)
+    $oldKey = "$oldUid.Text"
+    $newKey = "$newUid.Text"
+    $oldEntries = @($renamedCatalog.root.data |
+        Where-Object { [string]$_.name -ceq $oldKey })
+    $newEntries = @($renamedCatalog.root.data |
+        Where-Object { [string]$_.name -ceq $newKey })
+    if ($oldEntries.Count -ne 0 -or $newEntries.Count -ne 1) {
+        throw 'Case-only x:Uid rename did not replace the preserved resource key casing.'
     }
 }
 finally {
