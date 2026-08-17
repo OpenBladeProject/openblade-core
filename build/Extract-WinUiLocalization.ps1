@@ -164,10 +164,18 @@ try {
         $writer.WriteEndElement()
     }
     $keys = [Collections.Generic.List[string]]::new()
-    $seenKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $resourceKeys = [Collections.Generic.Dictionary[string, string]]::new(
+        [StringComparer]::OrdinalIgnoreCase)
+    foreach ($key in $resources.Keys) {
+        $resourceKeys.Add([string]$key, [string]$key)
+    }
+    $seenKeys = [Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::OrdinalIgnoreCase)
     foreach ($key in $existingKeys) {
-        if ($resources.Contains($key) -and $seenKeys.Add($key)) {
-            $keys.Add($key)
+        $currentKey = $null
+        if ($resourceKeys.TryGetValue($key, [ref]$currentKey) -and
+            $seenKeys.Add($currentKey)) {
+            $keys.Add($currentKey)
         }
     }
     $newKeys = [Collections.Generic.List[string]]::new()

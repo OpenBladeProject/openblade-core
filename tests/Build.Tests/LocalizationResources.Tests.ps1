@@ -327,6 +327,36 @@ try {
             }
         }
     }
+
+    $caseRenameXamlPath = Join-Path $pseudoFixture `
+        'src\OpenBlade.Tray\MainWindow.xaml'
+    $oldUid = 'MainWindow_TextBlockPerformance'
+    $newUid = 'MainWindow_TextBlockPERFORMANCE'
+    $xaml = [IO.File]::ReadAllText($caseRenameXamlPath, $utf8)
+    $updatedXaml = $xaml.Replace(
+        "x:Uid=`"$oldUid`"",
+        "x:Uid=`"$newUid`"")
+    if ($updatedXaml -ceq $xaml) {
+        throw "Case-only x:Uid fixture could not find '$oldUid'."
+    }
+    [IO.File]::WriteAllText(
+        $caseRenameXamlPath,
+        $updatedXaml,
+        [Text.UTF8Encoding]::new($false))
+    & (Join-Path $pseudoFixture 'build\Extract-WinUiLocalization.ps1')
+
+    [xml]$renamedCatalog = [IO.File]::ReadAllText(
+        (Join-Path $pseudoFixture 'src\OpenBlade.Tray\Strings\en-US\Resources.resw'),
+        $utf8)
+    $oldKey = "$oldUid.Text"
+    $newKey = "$newUid.Text"
+    $oldEntries = @($renamedCatalog.root.data |
+        Where-Object { [string]$_.name -ceq $oldKey })
+    $newEntries = @($renamedCatalog.root.data |
+        Where-Object { [string]$_.name -ceq $newKey })
+    if ($oldEntries.Count -ne 0 -or $newEntries.Count -ne 1) {
+        throw 'Case-only x:Uid rename did not replace the preserved resource key casing.'
+    }
 }
 finally {
     $resolved = [IO.Path]::GetFullPath($pseudoFixture)
