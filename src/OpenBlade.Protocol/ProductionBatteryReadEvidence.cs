@@ -42,6 +42,17 @@ internal sealed class ProductionBatteryReadEvidence
             ProductionBatteryQueryCapability.StartupAnimation,
             ProductionBatteryQueryCapability.FunctionKeyPrimary,
             ProductionBatteryQueryCapability.GamingMode,
+        });
+
+    internal static ProductionBatteryReadEvidence Rz090581Bios301 { get; } = new(
+        new HashSet<ProductionBatteryQueryCapability>
+        {
+            ProductionBatteryQueryCapability.TemporaryFullCharge,
+            ProductionBatteryQueryCapability.AdapterPower,
+            ProductionBatteryQueryCapability.McuVersion,
+            ProductionBatteryQueryCapability.StartupAnimation,
+            ProductionBatteryQueryCapability.FunctionKeyPrimary,
+            ProductionBatteryQueryCapability.GamingMode,
             ProductionBatteryQueryCapability.Rz090581CapabilityDiagnostics,
         });
 

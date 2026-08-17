@@ -259,6 +259,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     internal static readonly TimeSpan ResumeValidationObservationWindow =
         TimeSpan.FromMinutes(1);
     private const int ObservationFailureThreshold = 3;
+    private const int Rz090581CapabilityDiagnosticsReadAttemptLimit = 3;
+    private const string Rz090581CapabilityDiagnosticsBiosVersion = "3.01";
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
         new(null, null, null, null);
     private static readonly DeviceCapabilities UnavailableCapabilities =
@@ -299,7 +301,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         pendingWriteConfirmations = [];
     private ServiceStatusSnapshot? status;
     private bool mcuVersionReadAttempted;
-    private bool rz090581CapabilityDiagnosticsReadAttempted;
+    private int rz090581CapabilityDiagnosticsReadAttempts;
+    private Rz090581CapabilityDiagnostics? rz090581CapabilityDiagnostics;
     private LightingSettings? lastOwnedLightingSettings;
     private FanControlSettings? lastOwnedFanControlSettings;
     private LightingSettings? pendingLightingRestore;
@@ -7352,28 +7355,46 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             CancellationToken cancellationToken)
     {
         Rz090581CapabilityDiagnostics? current =
-            GetStatus().Rz090581CapabilityDiagnostics;
+            rz090581CapabilityDiagnostics
+            ?? GetStatus().Rz090581CapabilityDiagnostics;
         if (!string.Equals(
                 firmware?.ModelNumber,
                 RazerBladeModelCatalog.OpenBladeTargetModelNumber,
-                StringComparison.OrdinalIgnoreCase))
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                firmware?.BiosVersion,
+                Rz090581CapabilityDiagnosticsBiosVersion,
+                StringComparison.Ordinal)
+            || GetStatus().FirmwareCompatibility
+                != FirmwareCompatibilityStatus.Tested)
         {
             return current;
         }
 
-        if (rz090581CapabilityDiagnosticsReadAttempted || current is not null)
+        if (current is not null
+            || rz090581CapabilityDiagnosticsReadAttempts
+                >= Rz090581CapabilityDiagnosticsReadAttemptLimit)
         {
             return current;
         }
 
-        rz090581CapabilityDiagnosticsReadAttempted = true;
+        rz090581CapabilityDiagnosticsReadAttempts++;
         try
         {
-            return await device.ReadRz090581CapabilityDiagnosticsAsync(cancellationToken)
-                .ConfigureAwait(false) ?? current;
+            Rz090581CapabilityDiagnostics? observed =
+                await device.ReadRz090581CapabilityDiagnosticsAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            if (observed is not null)
+            {
+                rz090581CapabilityDiagnostics = observed;
+                return observed;
+            }
+
+            return current;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            rz090581CapabilityDiagnosticsReadAttempts--;
             throw;
         }
         catch
