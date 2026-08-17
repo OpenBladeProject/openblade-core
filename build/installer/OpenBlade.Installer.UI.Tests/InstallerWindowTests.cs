@@ -127,6 +127,8 @@ public sealed class InstallerWindowTests
                 ScrollBarVisibility.Disabled,
                 window.DetailsText.HorizontalScrollBarVisibility);
             Assert.Equal(new Thickness(0, 8, 0, 12), window.DetailsBorder.Margin);
+            Assert.Equal(double.PositiveInfinity, window.DetailsBorder.MaxHeight);
+            Assert.Equal(VerticalAlignment.Stretch, window.DetailsBorder.VerticalAlignment);
 
             window.ProgressCancelButton.RaiseEvent(
                 new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
@@ -214,7 +216,12 @@ public sealed class InstallerWindowTests
                         window.AddDetail("Stable diagnostic detail: OpenBlade.Tray.exe");
                         window.DetailsToggle.IsChecked = true;
                     },
-                    window => [window.DetailsToggle, window.ProgressCancelButton]);
+                    window =>
+                    [
+                        window.DetailsToggle,
+                        window.DetailsBorder,
+                        window.ProgressCancelButton,
+                    ]);
                 break;
             case "cancel":
                 Capture(

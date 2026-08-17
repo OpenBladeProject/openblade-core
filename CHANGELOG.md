@@ -30,6 +30,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Expanded the graphical installer's progress details pane to use the available
+  window height instead of remaining limited to a few log lines.
 - Offered **Repair** and **Uninstall** when an interactive installer finds one
   cached OpenBlade bundle with the same version. Repair overwrites the installed
   files, records instance-specific ownership, and retires the old registration
