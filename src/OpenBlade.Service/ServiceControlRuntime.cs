@@ -7324,6 +7324,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             string? mcuVersion = await device.ReadMcuVersionAsync(cancellationToken)
                 .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             return string.IsNullOrWhiteSpace(mcuVersion)
                 ? current
                 : current with { McuVersion = mcuVersion.Trim() };
