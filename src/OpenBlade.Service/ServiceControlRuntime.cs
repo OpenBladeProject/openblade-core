@@ -7384,6 +7384,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             Rz090581CapabilityDiagnostics? observed =
                 await device.ReadRz090581CapabilityDiagnosticsAsync(cancellationToken)
                     .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             if (observed is not null)
             {
                 rz090581CapabilityDiagnostics = observed;

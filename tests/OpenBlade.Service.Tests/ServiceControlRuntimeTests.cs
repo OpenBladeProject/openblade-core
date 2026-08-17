@@ -1412,6 +1412,28 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task CanceledNullRz090581DiagnosticCompletion_PreservesAllLaterAttempts()
+    {
+        TestContext context = CreateRz090581Bios301Context();
+        using var cancellation = new CancellationTokenSource();
+        context.Device.AfterRz090581CapabilityDiagnosticsRead = cancellation.Cancel;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.ObserveAsync(cancellation.Token));
+
+        context.Device.AfterRz090581CapabilityDiagnosticsRead = null;
+        context.Device.Rz090581CapabilityDiagnosticsFailure =
+            new IOException("persistent synthetic diagnostic read failure");
+        for (int observation = 0; observation < 4; observation++)
+        {
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+
+        Assert.Null(context.Runtime.GetStatus().Rz090581CapabilityDiagnostics);
+        Assert.Equal(4, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
     public async Task FirstVerifiedObservation_SkipsRz090581DiagnosticsForBios400()
     {
         TestContext context = CreateContext(
@@ -11006,6 +11028,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Action? BeforeRz090581CapabilityDiagnosticsRead { get; set; }
 
+        public Action? AfterRz090581CapabilityDiagnosticsRead { get; set; }
+
         public int TotalSetterCalls => PerformanceSetCalls
             + FanSetCalls
             + BatterySetCalls
@@ -11197,6 +11221,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 return Task.FromException<Rz090581CapabilityDiagnostics?>(failure);
             }
 
+            AfterRz090581CapabilityDiagnosticsRead?.Invoke();
             return Task.FromResult(Rz090581CapabilityDiagnostics);
         }
 
