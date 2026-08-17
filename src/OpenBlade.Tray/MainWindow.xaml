@@ -2133,34 +2133,39 @@
 
                         <Grid x:Name="DashboardPageHeader"
                               Margin="0,0,0,20"
-                              ColumnSpacing="16">
+                              ColumnSpacing="16"
+                              RowSpacing="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Uid="MainWindow_TextBlockDashboard" Text="Dashboard" Style="{StaticResource PageHeaderTitleStyle}" />
-                            <StackPanel Grid.Column="1"
+                            <Button x:Uid="MainWindow_ButtonCustomize" Grid.Column="1"
+                                    Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    AutomationProperties.Name="Customize dashboard"
+                                    Click="OnCustomizeDashboard" />
+                            <StackPanel x:Name="DashboardProfileSaveActions"
+                                        Grid.Row="1"
+                                        Grid.ColumnSpan="2"
                                         Orientation="Horizontal"
-                                        Spacing="12"
+                                        Spacing="8"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,2,0,0"
+                                        Visibility="{x:Bind ViewModel.HasDashboardProfileActionOpportunity, Mode=OneWay}"
                                         VerticalAlignment="Center">
-                                <StackPanel x:Name="DashboardProfileSaveActions"
-                                            Orientation="Horizontal"
-                                            Spacing="8"
-                                            VerticalAlignment="Center"
-                                            Visibility="{x:Bind ViewModel.HasDashboardProfileActionOpportunity, Mode=OneWay}">
-                                    <Button Content="{x:Bind ViewModel.DashboardProfileSaveLabel, Mode=OneWay}"
-                                            Style="{StaticResource ProfileSaveButtonStyle}"
-                                            Visibility="{x:Bind ViewModel.HasDashboardProfileSaveOpportunity, Mode=OneWay}"
-                                            Command="{x:Bind ViewModel.SaveProfilesCommand}" />
-                                    <Button x:Uid="MainWindow_ButtonUseProfileSettings" Content="Use profile settings"
-                                            Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                            Visibility="{x:Bind ViewModel.HasDashboardProfileRestoreOpportunity, Mode=OneWay}"
-                                            Command="{x:Bind ViewModel.DiscardProfileDraftCommand}" />
-                                </StackPanel>
-                                <Button x:Uid="MainWindow_ButtonCustomize" Content="Customize"
+                                <Button Content="{x:Bind ViewModel.DashboardProfileSaveLabel, Mode=OneWay}"
+                                        Style="{StaticResource ProfileSaveButtonStyle}"
+                                        Visibility="{x:Bind ViewModel.HasDashboardProfileSaveOpportunity, Mode=OneWay}"
+                                        Command="{x:Bind ViewModel.SaveProfilesCommand}" />
+                                <Button x:Uid="MainWindow_ButtonUseProfileSettings" Content="Use profile settings"
                                         Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                        AutomationProperties.Name="Customize dashboard"
-                                        Click="OnCustomizeDashboard" />
+                                        Visibility="{x:Bind ViewModel.HasDashboardProfileRestoreOpportunity, Mode=OneWay}"
+                                        Command="{x:Bind ViewModel.DiscardProfileDraftCommand}" />
                             </StackPanel>
                         </Grid>
 
@@ -2835,6 +2840,12 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Uid="MainWindow_TextBlockLaptop" Text="Laptop"
                                        Style="{StaticResource PageHeaderTitleStyle}" />
+                            <Button x:Uid="MainWindow_ButtonCustomize2" Grid.Column="1"
+                                    Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    Tag="Laptop"
+                                    Click="OnCustomizePageSections"
+                                    AutomationProperties.Name="Customize Laptop page" />
                             <StackPanel x:Name="LaptopHeaderActions"
                                         Grid.Row="1"
                                         Grid.ColumnSpan="2"
@@ -2857,12 +2868,6 @@
                                         Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
                             </StackPanel>
                             </StackPanel>
-                            <Button x:Uid="MainWindow_ButtonCustomize2" Grid.Column="1"
-                                    Content="Customize"
-                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                    Tag="Laptop"
-                                    Click="OnCustomizePageSections"
-                                    AutomationProperties.Name="Customize Laptop page" />
                         </Grid>
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
@@ -2978,6 +2983,12 @@
                                               IsActive="{x:Bind ViewModel.IsLightingOperationInProgress, Mode=OneWay}"
                                               AutomationProperties.Name="Applying lighting" />
                             </StackPanel>
+                            <Button x:Uid="MainWindow_ButtonCustomize3" Grid.Column="1"
+                                    Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    Tag="Lighting"
+                                    Click="OnCustomizePageSections"
+                                    AutomationProperties.Name="Customize Lighting page" />
                             <StackPanel x:Name="LightingHeaderActions"
                                         Grid.Row="1"
                                         Grid.ColumnSpan="2"
@@ -3002,12 +3013,6 @@
                                 </StackPanel>
                             </ContentControl>
                             </StackPanel>
-                            <Button x:Uid="MainWindow_ButtonCustomize3" Grid.Column="1"
-                                    Content="Customize"
-                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                    Tag="Lighting"
-                                    Click="OnCustomizePageSections"
-                                    AutomationProperties.Name="Customize Lighting page" />
                         </Grid>
                         <StackPanel x:Name="LightingCardsHost">
                         <ContentControl x:Name="LightingCard"
@@ -3052,6 +3057,12 @@
                                               IsActive="{x:Bind DisplayViewModel.IsBusy, Mode=OneWay}"
                                               AutomationProperties.Name="Applying display setting" />
                             </StackPanel>
+                            <Button x:Uid="MainWindow_ButtonCustomize4" Grid.Column="1"
+                                    Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    Tag="Display"
+                                    Click="OnCustomizePageSections"
+                                    AutomationProperties.Name="Customize Display page" />
                             <StackPanel x:Name="DisplayHeaderActions"
                                         Grid.Row="1"
                                         Grid.ColumnSpan="2"
@@ -3074,12 +3085,6 @@
                                         Click="OnUseDisplayProfileSettings" />
                             </StackPanel>
                             </StackPanel>
-                            <Button x:Uid="MainWindow_ButtonCustomize4" Grid.Column="1"
-                                    Content="Customize"
-                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                    Tag="Display"
-                                    Click="OnCustomizePageSections"
-                                    AutomationProperties.Name="Customize Display page" />
                         </Grid>
                         <StackPanel x:Name="DisplayCardsHost">
                         <ContentControl x:Name="DisplayCard"

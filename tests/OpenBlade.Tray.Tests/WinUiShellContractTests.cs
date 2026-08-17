@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Xml.Linq;
 
 namespace OpenBlade.Tray.Tests;
 
@@ -7,48 +8,44 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void LocalizedPageHeadersKeepStableActionsInTitleRows()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
-        foreach (string actionName in new[]
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        foreach ((string headerName, string actionName, string customizeUid) in new[]
         {
-            "ProfilesHeaderActions",
-            "LaptopHeaderActions",
-            "LightingHeaderActions",
-            "DisplayHeaderActions",
+            ("DashboardPageHeader", "DashboardProfileSaveActions", "MainWindow_ButtonCustomize"),
+            ("LaptopPageHeader", "LaptopHeaderActions", "MainWindow_ButtonCustomize2"),
+            ("LightingPageHeader", "LightingHeaderActions", "MainWindow_ButtonCustomize3"),
+            ("DisplayPageHeader", "DisplayHeaderActions", "MainWindow_ButtonCustomize4"),
         })
         {
-            string expandableActions = SliceMethod(
-                xaml,
-                $"x:Name=\"{actionName}\"",
-                "</StackPanel>");
-            Assert.Contains(
-                "Grid.Row=\"1\"",
-                expandableActions,
-                StringComparison.Ordinal);
-            Assert.Contains(
-                "Grid.ColumnSpan=\"2\"",
-                expandableActions,
-                StringComparison.Ordinal);
-            Assert.Contains(
-                "Margin=\"0,2,0,0\"",
-                expandableActions,
-                StringComparison.Ordinal);
+            XElement header = NamedElement(document, "Grid", headerName);
+            XElement expandableActions = NamedElement(document, "StackPanel", actionName);
+            XElement customizeButton = UidElement(document, "Button", customizeUid);
+
+            Assert.Same(header, expandableActions.Parent);
+            Assert.Equal("1", Attribute(expandableActions, "Grid.Row"));
+            Assert.Equal("2", Attribute(expandableActions, "Grid.ColumnSpan"));
+            Assert.Equal("0,2,0,0", Attribute(expandableActions, "Margin"));
+
+            Assert.Same(header, customizeButton.Parent);
+            Assert.Equal("1", Attribute(customizeButton, "Grid.Column"));
+            Assert.Null(Attribute(customizeButton, "Grid.Row"));
+
+            List<XElement> children = header.Elements().ToList();
+            Assert.True(children.IndexOf(customizeButton) < children.IndexOf(expandableActions));
         }
 
-        foreach (string customizeUid in new[]
-        {
-            "MainWindow_ButtonCustomize2",
-            "MainWindow_ButtonCustomize3",
-            "MainWindow_ButtonCustomize4",
-            "MainWindow_ButtonCustomize7",
-        })
-        {
-            string customizeButton = SliceMethod(
-                xaml,
-                $"x:Uid=\"{customizeUid}\"",
-                "/>");
-            Assert.Contains("Grid.Column=\"1\"", customizeButton, StringComparison.Ordinal);
-            Assert.DoesNotContain("Grid.Row=", customizeButton, StringComparison.Ordinal);
-        }
+        XElement profilesHeader = NamedElement(document, "Grid", "ProfilesPageHeader");
+        XElement profilesActions = NamedElement(document, "StackPanel", "ProfilesHeaderActions");
+        Assert.Same(profilesHeader, profilesActions.Parent);
+        Assert.Equal("1", Attribute(profilesActions, "Grid.Row"));
+        Assert.Equal("2", Attribute(profilesActions, "Grid.ColumnSpan"));
+        Assert.Equal("0,2,0,0", Attribute(profilesActions, "Margin"));
+
+        XElement aboutCustomize = UidElement(document, "Button", "MainWindow_ButtonCustomize7");
+        Assert.Equal("Grid", aboutCustomize.Parent?.Name.LocalName);
+        Assert.Equal("1", Attribute(aboutCustomize, "Grid.Column"));
+        Assert.Null(Attribute(aboutCustomize, "Grid.Row"));
     }
 
     [Fact]
@@ -3120,4 +3117,23 @@ public sealed class WinUiShellContractTests
 
     private static int CountOccurrences(string value, string token) =>
         value.Split(token, StringSplitOptions.None).Length - 1;
+
+    private static string? Attribute(XElement element, string localName) =>
+        element.Attributes()
+            .SingleOrDefault(attribute => attribute.Name.LocalName == localName)
+            ?.Value;
+
+    private static XElement NamedElement(
+        XDocument document,
+        string elementName,
+        string name) => Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == elementName
+            && Attribute(element, "Name") == name);
+
+    private static XElement UidElement(
+        XDocument document,
+        string elementName,
+        string uid) => Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == elementName
+            && Attribute(element, "Uid") == uid);
 }
