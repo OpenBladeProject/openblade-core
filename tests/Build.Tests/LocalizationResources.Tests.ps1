@@ -104,6 +104,9 @@ function New-LocalizationFixture {
             'build\installer\OpenBlade.Installer.UI\Properties\Resources.qps-ploc.resx',
             'build\installer\Bundle.en-US.wxl',
             'build\installer\Bundle.wxs',
+            'build\Extract-InstallerLocalization.ps1',
+            'build\Extract-WinUiLocalization.ps1',
+            'build\Update-LocalizationResources.ps1',
             'build\Update-PseudoLocalization.ps1',
             'src\OpenBlade.Tray.Core\DashboardCards.cs',
             'src\OpenBlade.Tray.Core\Properties\Resources.resx',
@@ -264,22 +267,50 @@ Assert-ValidatorFails -Expected 'changed its access key' -Mutate {
 
 $pseudoFixture = New-LocalizationFixture
 try {
-    & (Join-Path $pseudoFixture 'build\Update-PseudoLocalization.ps1')
-    foreach ($catalog in @(
-            @('src\OpenBlade.Tray\Strings\en-US\Resources.resw',
-              'src\OpenBlade.Tray\Strings\qps-ploc\Resources.resw'),
-            @('build\installer\OpenBlade.Installer.UI\Properties\Resources.resx',
-              'build\installer\OpenBlade.Installer.UI\Properties\Resources.qps-ploc.resx'),
-            @('src\OpenBlade.Tray.Core\Properties\Resources.resx',
-              'src\OpenBlade.Tray.Core\Properties\Resources.qps-ploc.resx'),
-            @('src\OpenBlade.Setup\Properties\Resources.resx',
-              'src\OpenBlade.Setup\Properties\Resources.qps-ploc.resx'))) {
+    $catalogs = @(
+        @('src\OpenBlade.Tray\Strings\en-US\Resources.resw',
+          'src\OpenBlade.Tray\Strings\qps-ploc\Resources.resw'),
+        @('build\installer\OpenBlade.Installer.UI\Properties\Resources.resx',
+          'build\installer\OpenBlade.Installer.UI\Properties\Resources.qps-ploc.resx'),
+        @('src\OpenBlade.Tray.Core\Properties\Resources.resx',
+          'src\OpenBlade.Tray.Core\Properties\Resources.qps-ploc.resx'),
+        @('src\OpenBlade.Setup\Properties\Resources.resx',
+          'src\OpenBlade.Setup\Properties\Resources.qps-ploc.resx'))
+    $expectedPseudoValues = @{}
+    foreach ($catalog in $catalogs) {
+        [xml]$pseudoDocument = [IO.File]::ReadAllText(
+            (Join-Path $pseudoFixture $catalog[1]),
+            $utf8)
+        $values = [Collections.Generic.Dictionary[string, string]]::new(
+            [StringComparer]::Ordinal)
+        foreach ($entry in @($pseudoDocument.root.data)) {
+            $values.Add([string]$entry.name, [string]$entry.value)
+        }
+        $expectedPseudoValues[$catalog[1]] = $values
+    }
+
+    & (Join-Path $pseudoFixture 'build\Update-LocalizationResources.ps1')
+    & $validator -Repository $pseudoFixture
+    foreach ($catalog in $catalogs) {
         [xml]$englishDocument = [IO.File]::ReadAllText(
             (Join-Path $pseudoFixture $catalog[0]),
             $utf8)
         [xml]$pseudoDocument = [IO.File]::ReadAllText(
             (Join-Path $pseudoFixture $catalog[1]),
             $utf8)
+        $expectedValues = $expectedPseudoValues[$catalog[1]]
+        if (@($pseudoDocument.root.data).Count -ne $expectedValues.Count) {
+            throw "Regenerated pseudo catalog '$($catalog[1])' changed its resource count."
+        }
+        foreach ($pseudoEntry in @($pseudoDocument.root.data)) {
+            $expectedValue = $null
+            if (-not $expectedValues.TryGetValue(
+                    [string]$pseudoEntry.name,
+                    [ref]$expectedValue) -or
+                [string]$pseudoEntry.value -cne $expectedValue) {
+                throw "Regenerated pseudo resource '$($pseudoEntry.name)' changed unexpectedly."
+            }
+        }
         foreach ($englishEntry in @($englishDocument.root.data)) {
             $englishValue = [string]$englishEntry.value
             if ($englishValue -match '\p{L}') { continue }

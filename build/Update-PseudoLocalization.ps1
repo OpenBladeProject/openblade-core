@@ -4,6 +4,14 @@ param()
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
+$protectedPattern = '(?:\{[^{}]+\}|_[\p{L}]|https?://\S+|[A-Za-z]:\\\S+|OpenBlade(?:\.[A-Za-z0-9]+)*|Dynamic Lighting|Session Agent|Razer|NVIDIA|Windows|WinUI|WPF|GitHub)'
+$accentReplacements = @(
+    @('a', [string][char]0x00E1), @('e', [string][char]0x00E9),
+    @('i', [string][char]0x00ED), @('o', [string][char]0x00F3),
+    @('u', [string][char]0x00FA), @('y', [string][char]0x00FD),
+    @('A', [string][char]0x00C1), @('E', [string][char]0x00C9),
+    @('I', [string][char]0x00CD), @('O', [string][char]0x00D3),
+    @('U', [string][char]0x00DA), @('Y', [string][char]0x00DD))
 
 function ConvertTo-PseudoLocalizedText {
     param([Parameter(Mandatory)][string]$Text)
@@ -13,21 +21,20 @@ function ConvertTo-PseudoLocalizedText {
     }
 
     $protected = [Collections.Generic.List[string]]::new()
-    $protectedPattern = '(?:\{[^{}]+\}|_[\p{L}]|https?://\S+|[A-Za-z]:\\\S+|OpenBlade(?:\.[A-Za-z0-9]+)*|Dynamic Lighting|Session Agent|Razer|NVIDIA|Windows|WinUI|WPF|GitHub)'
-    $accented = [regex]::Replace($Text, $protectedPattern, {
-        param($match)
-        $index = $protected.Count
+    $builder = [Text.StringBuilder]::new($Text.Length)
+    $offset = 0
+    foreach ($match in [regex]::Matches($Text, $protectedPattern)) {
+        [void]$builder.Append($Text, $offset, $match.Index - $offset)
+        [void]$builder.Append("@@$($protected.Count)@@")
         $protected.Add($match.Value)
-        return "@@$index@@"
-    })
-    foreach ($replacement in @(
-            @('a', 0x00E1), @('e', 0x00E9), @('i', 0x00ED),
-            @('o', 0x00F3), @('u', 0x00FA), @('y', 0x00FD),
-            @('A', 0x00C1), @('E', 0x00C9), @('I', 0x00CD),
-            @('O', 0x00D3), @('U', 0x00DA), @('Y', 0x00DD))) {
+        $offset = $match.Index + $match.Length
+    }
+    [void]$builder.Append($Text, $offset, $Text.Length - $offset)
+    $accented = $builder.ToString()
+    foreach ($replacement in $accentReplacements) {
         $accented = $accented.Replace(
             [string]$replacement[0],
-            [string][char]$replacement[1])
+            $replacement[1])
     }
     $letterCount = ([regex]::Matches($accented, '[\p{L}]')).Count
     $expansion = '~' * [Math]::Max(2, [Math]::Ceiling($letterCount * 0.35))

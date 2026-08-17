@@ -34,19 +34,21 @@ runtime fallback. Add Tray.Core text through `TrayText.Get` or
 `InstallerStrings.Format`, and native setup text through `SetupStrings`.
 Keep numbered format placeholders unchanged across translations.
 
-After editing the source catalogs, regenerate the pseudo locale and run the
-validator:
+After editing localizable source text, regenerate the authoritative English
+catalogs and pseudo locale in one PowerShell process, then run the validator:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
-    -File build\Update-PseudoLocalization.ps1
+    -File build\Update-LocalizationResources.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
     -File build\Validate-LocalizationResources.ps1
 ```
 
-The extraction scripts are for maintainers. They add resource entries for new
-XAML or installer literals, but they do not replace review. Check every new key
-for useful context and a stable name.
+The combined update script runs the two maintainer extraction scripts before
+regenerating qps-ploc. They add resource entries for new XAML or installer
+literals, but they do not replace review. Check every new key for useful
+context and a stable name. The individual extraction and pseudo-localization
+scripts remain independently callable when only one stage needs investigation.
 
 ## Translation files and fallback
 

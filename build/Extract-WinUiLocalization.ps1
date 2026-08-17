@@ -131,7 +131,9 @@ foreach ($relativePath in $files) {
         }
         return $tagMatch.Value
     })
-    [IO.File]::WriteAllText($path, $updated, [Text.UTF8Encoding]::new($false))
+    if ($updated -cne $text) {
+        [IO.File]::WriteAllText($path, $updated, [Text.UTF8Encoding]::new($false))
+    }
 }
 
 [IO.Directory]::CreateDirectory($resourceDirectory) | Out-Null
