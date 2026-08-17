@@ -35,6 +35,13 @@ Assert-True ($project.Project.PropertyGroup.OutputType -eq 'Bundle') `
     'The graphical installer must build a Burn bundle.'
 Assert-True ($project.Project.PropertyGroup.AcceptEula -eq 'wix7') `
     'WiX 7 OSMF acceptance must remain explicit in the installer project.'
+Assert-True ($project.Project.PropertyGroup.Cultures -eq 'en-US') `
+    'The graphical installer must compile its authoritative en-US localization.'
+$explicitWxlItems = @($project.SelectNodes(
+        "/*[local-name()='Project']/*[local-name()='ItemGroup']/*[local-name()='EmbeddedResource']") |
+    Where-Object { $_.GetAttribute('Include').EndsWith('.wxl') })
+Assert-True ($explicitWxlItems.Count -eq 0) `
+    'WiX SDK default items must discover bundle localization exactly once.'
 
 $packageReferences = @($project.SelectNodes(
         "/*[local-name()='Project']/*[local-name()='ItemGroup']/*[local-name()='PackageReference']") |
