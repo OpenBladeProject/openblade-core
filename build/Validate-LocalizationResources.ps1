@@ -220,9 +220,12 @@ $bundleCatalog = @{}
 foreach ($entry in @($bundleLocalization.DocumentElement.ChildNodes |
         Where-Object LocalName -eq 'String')) {
     $key = [string]$entry.Id
-    $value = [string]$entry.InnerText
+    $value = [string]$entry.GetAttribute('Value')
     if ([string]::IsNullOrWhiteSpace($key) -or [string]::IsNullOrWhiteSpace($value)) {
         throw 'Bundle localization contains a blank key or value.'
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$entry.InnerText)) {
+        throw "Bundle localization '$key' must use the WiX Value attribute."
     }
     if ($bundleCatalog.ContainsKey($key)) {
         throw "Bundle localization contains duplicate key '$key'."

@@ -271,6 +271,16 @@ foreach ($resourceReference in @(
     Join-Path $repository 'build\installer\Bundle.en-US.wxl')
 Assert-True ($bundleLocalization.DocumentElement.GetAttribute('Culture') -eq 'en-US') `
     'The bundle must declare en-US as its authoritative localization.'
+$bundleStrings = @($bundleLocalization.DocumentElement.ChildNodes |
+    Where-Object LocalName -eq 'String')
+Assert-True ($bundleStrings.Count -eq 4) `
+    'The bundle must retain its four localized package metadata strings.'
+foreach ($bundleString in $bundleStrings) {
+    Assert-True (-not [string]::IsNullOrWhiteSpace($bundleString.GetAttribute('Value'))) `
+        "Bundle localization '$($bundleString.Id)' must use the WiX Value attribute."
+    Assert-True ([string]::IsNullOrWhiteSpace([string]$bundleString.InnerText)) `
+        "Bundle localization '$($bundleString.Id)' must not use obsolete inner text."
+}
 
 $themeSource = Get-Content -LiteralPath (
     Join-Path $repository 'build\installer\OpenBlade.Installer.UI\InstallerTheme.cs') -Raw
