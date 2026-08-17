@@ -18,9 +18,9 @@ public sealed class Rz090528PowerSourceMatrixEvidenceTests
     ];
 
     [Fact]
-    public void Evidence_RecordsCompleteExactDeviceTransitionMatrix()
+    public void HistoricalEvidence_RecordsCompleteExactDeviceTransitionMatrix()
     {
-        using JsonDocument document = LoadEvidence();
+        using JsonDocument document = LoadHistoricalEvidence();
         JsonElement root = document.RootElement;
         JsonElement sessions = root.GetProperty("sessions");
 
@@ -44,7 +44,7 @@ public sealed class Rz090528PowerSourceMatrixEvidenceTests
     [Fact]
     public void Evidence_RecordsExactOutgoingQueryAndSourceSpecificSetterPairs()
     {
-        using JsonDocument document = LoadEvidence();
+        using JsonDocument document = LoadHistoricalEvidence();
         JsonElement transport = document.RootElement.GetProperty("transport");
 
         Assert.Equal("07/8C:0000", transport.GetProperty("adapterPowerQuery").GetString());
@@ -67,12 +67,12 @@ public sealed class Rz090528PowerSourceMatrixEvidenceTests
     }
 
     [Fact]
-    public void Evidence_RecordsSourceAwareAvailabilityWithoutClaimingReadback()
+    public void CurrentEvidence_AdmitsExactAdapterAndBatteryReadback()
     {
-        using JsonDocument document = LoadEvidence();
-        JsonElement root = document.RootElement;
-        JsonElement visible = root.GetProperty("visibleCapabilities");
-        JsonElement negative = root.GetProperty("negativeEvidence");
+        using JsonDocument historicalDocument = LoadHistoricalEvidence();
+        JsonElement historical = historicalDocument.RootElement;
+        JsonElement visible = historical.GetProperty("visibleCapabilities");
+        JsonElement negative = historical.GetProperty("negativeEvidence");
 
         Assert.False(visible.GetProperty("usbCOnly").GetProperty("performanceAvailable").GetBoolean());
         Assert.False(visible.GetProperty("usbCOnly").GetProperty("customAvailable").GetBoolean());
@@ -85,13 +85,28 @@ public sealed class Rz090528PowerSourceMatrixEvidenceTests
         Assert.False(negative.GetProperty("independentThermalReadbackCaptured").GetBoolean());
         Assert.False(negative.GetProperty("openBladeTypedApplyPerformed").GetBoolean());
         Assert.False(negative.GetProperty("productionWired").GetBoolean());
+
+        using JsonDocument currentDocument = LoadCurrentEvidence();
+        JsonElement power = currentDocument.RootElement.GetProperty("power");
+        Assert.StartsWith(
+            "ProductionAdmitted: three identical exact-device 07/8C reads returned 0711",
+            power.GetProperty("usbC").GetString());
+        Assert.StartsWith(
+            "ProductionAdmitted: three identical exact-device 07/8C reads returned 0011",
+            power.GetProperty("battery").GetString());
     }
 
-    private static JsonDocument LoadEvidence() => JsonDocument.Parse(
+    private static JsonDocument LoadHistoricalEvidence() => JsonDocument.Parse(
         File.ReadAllText(RepositoryFile(
             "captures",
             "decoded",
             "rz09-0528-pid-02c6-bios-2.02-power-source-matrix.json")));
+
+    private static JsonDocument LoadCurrentEvidence() => JsonDocument.Parse(
+        File.ReadAllText(RepositoryFile(
+            "captures",
+            "decoded",
+            "rz09-0528-pid-02c6-bios-2.02-evidence.json")));
 
     private static JsonElement FindSession(JsonElement root, string transition) => root
         .GetProperty("sessions")

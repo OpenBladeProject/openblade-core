@@ -8,6 +8,7 @@ public sealed class AdapterPowerCommandClientTests
     private static readonly TimeSpan ExchangeTimeout = TimeSpan.FromSeconds(1);
 
     [Theory]
+    [InlineData("0011", AdapterPowerState.Battery)]
     [InlineData("0711", AdapterPowerState.UsbCPower100W)]
     [InlineData("1111", AdapterPowerState.FullPower280W)]
     [InlineData("1211", AdapterPowerState.FullPower330W)]

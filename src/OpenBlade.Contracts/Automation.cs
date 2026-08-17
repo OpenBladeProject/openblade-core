@@ -14,6 +14,7 @@ public enum AdapterPowerState
     UsbCPower100W = 1,
     FullPower280W = 2,
     FullPower330W = 3,
+    Battery = 9,
 }
 
 public sealed record DesiredDeviceState(

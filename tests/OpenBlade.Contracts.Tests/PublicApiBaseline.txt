@@ -1,6 +1,7 @@
 # Reviewed exported API baseline. Regenerate with build/Update-PublicApiBaselines.ps1 and review the diff.
 type enum OpenBlade.Contracts.AdapterPowerState
   field System.Int32 value__
+  field const OpenBlade.Contracts.AdapterPowerState Battery = 9
   field const OpenBlade.Contracts.AdapterPowerState FullPower280W = 2
   field const OpenBlade.Contracts.AdapterPowerState FullPower330W = 3
   field const OpenBlade.Contracts.AdapterPowerState Unknown = 0

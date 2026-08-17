@@ -9546,6 +9546,31 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Observation_ClassifiesCapturedBatteryResponseAfterTwoAgreeingReads()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.AdapterPowerState = AdapterPowerState.Battery;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.BatterySaver,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            context.Runtime.GetStatus().Profiles.Battery.Lighting);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.Battery, status.ActivePowerSource);
+        Assert.Equal(2, context.Device.AdapterPowerReadCalls);
+        Assert.Equal(PerformancePreset.BatterySaver, status.DesiredState.Performance.Value);
+        Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
+        Assert.False(status.WritesBlocked);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
     public async Task LiveTelemetry_ReusesKnownExternalClassificationBetweenPeriodicRefreshes()
     {
         TestContext context = CreateContext(
