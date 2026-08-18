@@ -1,0 +1,1892 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="App_ExitDialog_Heading" xml:space="preserve">
+    <value>Exit OpenBlade?</value>
+  </data>
+  <data name="App_ExitDialog_KeepRunning" xml:space="preserve">
+    <value>Keep background features running</value>
+  </data>
+  <data name="App_ExitDialog_ShutDown" xml:space="preserve">
+    <value>Shut down completely</value>
+  </data>
+  <data name="App_ExitDialog_Text" xml:space="preserve">
+    <value>Choose whether keyboard lighting, hotkeys, profiles, and automation </value>
+  </data>
+  <data name="App_ExitError_Heading" xml:space="preserve">
+    <value>OpenBlade could not shut down</value>
+  </data>
+  <data name="App_ExitError_Text" xml:space="preserve">
+    <value>OpenBlade could not shut down: {0}</value>
+  </data>
+  <data name="App_PerformanceNotification_ChangedBody" xml:space="preserve">
+    <value>The performance mode changed.</value>
+  </data>
+  <data name="App_PerformanceNotification_ChangedTitle" xml:space="preserve">
+    <value>Performance mode changed</value>
+  </data>
+  <data name="App_PerformanceNotification_CurrentMode" xml:space="preserve">
+    <value>Current mode: {0}</value>
+  </data>
+  <data name="App_PerformanceNotification_FailedBody" xml:space="preserve">
+    <value>OpenBlade could not apply the selected mode.</value>
+  </data>
+  <data name="App_PerformanceNotification_FailedTitle" xml:space="preserve">
+    <value>Performance mode could not be changed</value>
+  </data>
+  <data name="Common_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Common_Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Common_Done" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="Common_ErrorWithDetails" xml:space="preserve">
+    <value>{0}</value>
+  </data>
+  <data name="Common_Import" xml:space="preserve">
+    <value>Import</value>
+  </data>
+  <data name="Common_Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Common_Working" xml:space="preserve">
+    <value>Working…</value>
+  </data>
+  <data name="DiagnosticArchivePicker_Title" xml:space="preserve">
+    <value>Export OpenBlade diagnostics</value>
+  </data>
+  <data name="DiagnosticArchivePicker_ZipArchives" xml:space="preserve">
+    <value>ZIP archives</value>
+  </data>
+  <data name="DisplayBrightnessOsd_WindowTitle" xml:space="preserve">
+    <value>OpenBlade brightness</value>
+  </data>
+  <data name="InstalledComponentVersion_Unavailable" xml:space="preserve">
+    <value>Unavailable</value>
+  </data>
+  <data name="MainWindow_AboutNavigationItemText.Content" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="MainWindow_AboutTestedPlatformWarningText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>System version compatibility warning</value>
+  </data>
+  <data name="MainWindow_Accent_Custom" xml:space="preserve">
+    <value>Custom</value>
+  </data>
+  <data name="MainWindow_Accent_CustomSummary" xml:space="preserve">
+    <value>Custom ({0})</value>
+  </data>
+  <data name="MainWindow_Accent_OpenBladeGreen" xml:space="preserve">
+    <value>OpenBlade green</value>
+  </data>
+  <data name="MainWindow_Accent_OpenBladeGreenSummary" xml:space="preserve">
+    <value>OpenBlade green (#47E10C)</value>
+  </data>
+  <data name="MainWindow_Accent_Windows" xml:space="preserve">
+    <value>Windows accent</value>
+  </data>
+  <data name="MainWindow_AccentPicker_PrimaryButton" xml:space="preserve">
+    <value>Use color</value>
+  </data>
+  <data name="MainWindow_AccentPicker_Title" xml:space="preserve">
+    <value>Choose an accent color</value>
+  </data>
+  <data name="MainWindow_AddTrayDashboardControlButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Add tray dashboard control</value>
+  </data>
+  <data name="MainWindow_AddTrayDashboardSliderButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Add tray dashboard adjustment</value>
+  </data>
+  <data name="MainWindow_AttentionIndicatorText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show warning details</value>
+  </data>
+  <data name="MainWindow_BatteryProtectionToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Battery protection</value>
+  </data>
+  <data name="MainWindow_BorderNotificationPreferences.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Notification preferences</value>
+  </data>
+  <data name="MainWindow_ButtonBackToSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Back to Settings</value>
+  </data>
+  <data name="MainWindow_ButtonCheckCurrentState.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Check current state</value>
+  </data>
+  <data name="MainWindow_ButtonCheckForUpdates.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Check official Razer firmware versions</value>
+  </data>
+  <data name="MainWindow_ButtonCheckForUpdates.Content" xml:space="preserve">
+    <value>Check for updates</value>
+  </data>
+  <data name="MainWindow_ButtonCheckNow.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Check GitHub for OpenBlade updates</value>
+  </data>
+  <data name="MainWindow_ButtonCheckNow.Content" xml:space="preserve">
+    <value>Check now</value>
+  </data>
+  <data name="MainWindow_ButtonChooseColor.Content" xml:space="preserve">
+    <value>Choose color</value>
+  </data>
+  <data name="MainWindow_ButtonChooseKeyboardColor.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Choose keyboard color</value>
+  </data>
+  <data name="MainWindow_ButtonChooseSecondKeyboardColor.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Choose second keyboard color</value>
+  </data>
+  <data name="MainWindow_ButtonCloseGPUApps.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Close apps using the NVIDIA GPU</value>
+  </data>
+  <data name="MainWindow_ButtonCloseGPUApps.Content" xml:space="preserve">
+    <value>Close GPU apps</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Customize dashboard</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize.Content" xml:space="preserve">
+    <value>Customize</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize2.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Customize Laptop page</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize2.Content" xml:space="preserve">
+    <value>Customize</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize3.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Customize Lighting page</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize3.Content" xml:space="preserve">
+    <value>Customize</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize4.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Customize Display page</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize4.Content" xml:space="preserve">
+    <value>Customize</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize5.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Customize Settings page</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize5.Content" xml:space="preserve">
+    <value>Customize</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize6.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Customize tray dashboard</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize6.Content" xml:space="preserve">
+    <value>Customize</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize7.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Customize About page</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize7.Content" xml:space="preserve">
+    <value>Customize</value>
+  </data>
+  <data name="MainWindow_ButtonExportDiagnostics.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Export diagnostics</value>
+  </data>
+  <data name="MainWindow_ButtonExportDiagnostics.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Export diagnostics</value>
+  </data>
+  <data name="MainWindow_ButtonExportProfiles.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Export profiles to JSON</value>
+  </data>
+  <data name="MainWindow_ButtonExportProfiles.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Export saved profiles as JSON</value>
+  </data>
+  <data name="MainWindow_ButtonExportProfiles.Content" xml:space="preserve">
+    <value>Export profiles</value>
+  </data>
+  <data name="MainWindow_ButtonImportKeyboardLightingPreset.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Import keyboard lighting preset</value>
+  </data>
+  <data name="MainWindow_ButtonImportKeyboardLightingPreset.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Import keyboard lighting preset</value>
+  </data>
+  <data name="MainWindow_ButtonImportProfiles.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Import profiles from JSON</value>
+  </data>
+  <data name="MainWindow_ButtonImportProfiles.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Import saved profiles from JSON</value>
+  </data>
+  <data name="MainWindow_ButtonImportProfiles.Content" xml:space="preserve">
+    <value>Import profiles</value>
+  </data>
+  <data name="MainWindow_ButtonReapplyOpenBladeSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Reapply OpenBlade settings</value>
+  </data>
+  <data name="MainWindow_ButtonReset.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Reset tray dashboard</value>
+  </data>
+  <data name="MainWindow_ButtonReset.Content" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="MainWindow_ButtonResetToDefault.Content" xml:space="preserve">
+    <value>Reset to default</value>
+  </data>
+  <data name="MainWindow_ButtonShutDownOpenBlade.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Shut down OpenBlade</value>
+  </data>
+  <data name="MainWindow_ButtonUseProfileSettings.Content" xml:space="preserve">
+    <value>Use profile settings</value>
+  </data>
+  <data name="MainWindow_ButtonUseProfileSettings2.Content" xml:space="preserve">
+    <value>Use profile settings</value>
+  </data>
+  <data name="MainWindow_ButtonUseProfileSettings3.Content" xml:space="preserve">
+    <value>Use profile settings</value>
+  </data>
+  <data name="MainWindow_ButtonUseProfileSettings4.Content" xml:space="preserve">
+    <value>Use profile settings</value>
+  </data>
+  <data name="MainWindow_ComboBoxProfileToReview.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Profile to review</value>
+  </data>
+  <data name="MainWindow_CustomizeDashboard_AutomationName" xml:space="preserve">
+    <value>Dashboard cards</value>
+  </data>
+  <data name="MainWindow_CustomizeDashboard_Instructions" xml:space="preserve">
+    <value>Check cards to show. Drag them into the order you want.</value>
+  </data>
+  <data name="MainWindow_CustomizeDashboard_Title" xml:space="preserve">
+    <value>Customize Dashboard</value>
+  </data>
+  <data name="MainWindow_CustomizePage_AutomationName" xml:space="preserve">
+    <value>{0} page sections</value>
+  </data>
+  <data name="MainWindow_CustomizePage_Instructions" xml:space="preserve">
+    <value>Check sections to show. Drag them into the order you want.</value>
+  </data>
+  <data name="MainWindow_CustomizePage_Title" xml:space="preserve">
+    <value>Customize {0}</value>
+  </data>
+  <data name="MainWindow_DashboardAudioMeterColorBoostSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Audio Meter color boost</value>
+  </data>
+  <data name="MainWindow_DashboardAudioMeterDecaySliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Audio Meter quiet-change smoothing</value>
+  </data>
+  <data name="MainWindow_DashboardChargeLimitSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Charge limit</value>
+  </data>
+  <data name="MainWindow_DashboardCustomCpuSelectorText.AccessibleName" xml:space="preserve">
+    <value>Custom CPU level</value>
+  </data>
+  <data name="MainWindow_DashboardCustomGpuSelectorText.AccessibleName" xml:space="preserve">
+    <value>Custom GPU level</value>
+  </data>
+  <data name="MainWindow_DashboardFanModeSelectorText.AccessibleName" xml:space="preserve">
+    <value>Fan mode</value>
+  </data>
+  <data name="MainWindow_DashboardLightingBrightnessSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Keyboard lighting brightness</value>
+  </data>
+  <data name="MainWindow_DashboardPerformanceSelectorText.AccessibleName" xml:space="preserve">
+    <value>Laptop performance</value>
+  </data>
+  <data name="MainWindow_DisplayColorProfilePickerText.AccessibleName" xml:space="preserve">
+    <value>Display color profile</value>
+  </data>
+  <data name="MainWindow_DisplayHdrToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Use HDR</value>
+  </data>
+  <data name="MainWindow_DisplayNavigationItemText.Content" xml:space="preserve">
+    <value>Display</value>
+  </data>
+  <data name="MainWindow_DisplayRefreshRatePickerText.AccessibleName" xml:space="preserve">
+    <value>Display refresh rate</value>
+  </data>
+  <data name="MainWindow_ExpanderCPUCurve.Header" xml:space="preserve">
+    <value>CPU curve</value>
+  </data>
+  <data name="MainWindow_ExpanderGPUCurve.Header" xml:space="preserve">
+    <value>GPU curve</value>
+  </data>
+  <data name="MainWindow_FirmwareOverride_CheckBox" xml:space="preserve">
+    <value>Ignore this firmware mismatch and run anyway</value>
+  </data>
+  <data name="MainWindow_FirmwareOverride_Warning" xml:space="preserve">
+    <value>Forcing control may send captured commands to firmware they were not validated against. Exact laptop and USB identity checks remain required.</value>
+  </data>
+  <data name="MainWindow_FixedFanSpeedSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Fixed fan speed</value>
+  </data>
+  <data name="MainWindow_FunctionKeyPrimarySelectorText.AccessibleName" xml:space="preserve">
+    <value>Set function key behavior</value>
+  </data>
+  <data name="MainWindow_GamingModeToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Gaming mode</value>
+  </data>
+  <data name="MainWindow_GpuApps_AfterCloseUnavailable" xml:space="preserve">
+    <value>GPU activity could not be checked after closing apps.</value>
+  </data>
+  <data name="MainWindow_GpuApps_AfterForceUnavailable" xml:space="preserve">
+    <value>GPU activity could not be checked after force closing apps.</value>
+  </data>
+  <data name="MainWindow_GpuApps_AppItem" xml:space="preserve">
+    <value>- {0} (PID {1})</value>
+  </data>
+  <data name="MainWindow_GpuApps_AppItemWithReason" xml:space="preserve">
+    <value>- {0} (PID {1}): {2}</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseButton" xml:space="preserve">
+    <value>Close apps</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseConfirmationIntro" xml:space="preserve">
+    <value>OpenBlade will ask these apps to close. Save your work first.
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseConfirmationTitle" xml:space="preserve">
+    <value>Close apps using the NVIDIA GPU?</value>
+  </data>
+  <data name="MainWindow_GpuApps_ClosedBody" xml:space="preserve">
+    <value>The selected apps released their NVIDIA GPU engines. The GPU may take a moment to return to sleep.</value>
+  </data>
+  <data name="MainWindow_GpuApps_ClosedTitle" xml:space="preserve">
+    <value>GPU apps closed</value>
+  </data>
+  <data name="MainWindow_GpuApps_CountersUnavailable" xml:space="preserve">
+    <value>Windows GPU activity counters are unavailable.</value>
+  </data>
+  <data name="MainWindow_GpuApps_FailureItem" xml:space="preserve">
+    <value>- PID {0}: {1}</value>
+  </data>
+  <data name="MainWindow_GpuApps_FailuresHeading" xml:space="preserve">
+    <value>
+
+Reported failures:
+{0}</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceButton" xml:space="preserve">
+    <value>Force close</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceClosedBody" xml:space="preserve">
+    <value>The selected apps were force closed. The GPU may take a moment to return to sleep.</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceClosedTitle" xml:space="preserve">
+    <value>GPU apps force closed</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceConfirmationIntro" xml:space="preserve">
+    <value>These apps did not close. Force closing can discard unsaved work.
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceConfirmationTitle" xml:space="preserve">
+    <value>Force close remaining apps?</value>
+  </data>
+  <data name="MainWindow_GpuApps_KeepRunningButton" xml:space="preserve">
+    <value>Keep running</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneSafeToClose" xml:space="preserve">
+    <value>No GPU users can be closed safely.
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneToCloseTitle" xml:space="preserve">
+    <value>No GPU apps to close</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneUsingGpu" xml:space="preserve">
+    <value>No current-user apps are holding an NVIDIA GPU engine.</value>
+  </data>
+  <data name="MainWindow_GpuApps_NotCloseableHeading" xml:space="preserve">
+    <value>
+
+Not closeable:
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_SessionAgentFailure" xml:space="preserve">
+    <value>The Session Agent could not complete the GPU app operation: {0}</value>
+  </data>
+  <data name="MainWindow_GpuApps_StillRunningTitle" xml:space="preserve">
+    <value>GPU apps still running</value>
+  </data>
+  <data name="MainWindow_GpuApps_SurvivorsHeading" xml:space="preserve">
+    <value>Some apps could not be closed:
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_UnavailableTitle" xml:space="preserve">
+    <value>GPU activity unavailable</value>
+  </data>
+  <data name="MainWindow_GpuClockTuningToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU tuning</value>
+  </data>
+  <data name="MainWindow_GpuCoreClockOffsetSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU core clock offset</value>
+  </data>
+  <data name="MainWindow_GpuMemoryClockOffsetSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU memory clock offset</value>
+  </data>
+  <data name="MainWindow_HomeNavigationItemText.Content" xml:space="preserve">
+    <value>Dashboard</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenDocumentation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open documentation</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenDocumentation.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Open documentation</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenGitHubIssues.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open GitHub Issues</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenGitHubIssues.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Open GitHub Issues</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenOfficialRazerFirmwareSupportPage.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open official Razer firmware support page</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenOfficialRazerFirmwareSupportPage.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Open official Razer firmware support page</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenReleaseNotes.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open release notes</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenReleaseNotes.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Open release notes</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenSourceCode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open source code</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenSourceCode.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Open source code</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonViewRelease.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>View available OpenBlade release</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonViewRelease.Content" xml:space="preserve">
+    <value>View release</value>
+  </data>
+  <data name="MainWindow_ImageOpenBladeAppIcon.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>OpenBlade app icon</value>
+  </data>
+  <data name="MainWindow_InfoBadgeDashboardHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Dashboard has unsaved changes</value>
+  </data>
+  <data name="MainWindow_InfoBadgeDisplayHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Display has unsaved changes</value>
+  </data>
+  <data name="MainWindow_InfoBadgeLaptopHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Laptop has unsaved changes</value>
+  </data>
+  <data name="MainWindow_InfoBadgeLightingHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Lighting has unsaved changes</value>
+  </data>
+  <data name="MainWindow_InfoBadgeProfilesHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Profiles has unsaved changes</value>
+  </data>
+  <data name="MainWindow_ItemsControlTrayDashboardStatusItems.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Tray dashboard status items</value>
+  </data>
+  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>About Lab features</value>
+  </data>
+  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>About Lab features</value>
+  </data>
+  <data name="MainWindow_LabFeaturesToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Enable Lab experimental features</value>
+  </data>
+  <data name="MainWindow_LaptopLogoModeSelectorText.AccessibleName" xml:space="preserve">
+    <value>Laptop logo lighting</value>
+  </data>
+  <data name="MainWindow_LaptopNavigationItemText.Content" xml:space="preserve">
+    <value>Laptop</value>
+  </data>
+  <data name="MainWindow_LightingDisplayOffToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Turn off keyboard lighting with the display</value>
+  </data>
+  <data name="MainWindow_LightingEffectPickerText.AccessibleName" xml:space="preserve">
+    <value>Keyboard lighting effect</value>
+  </data>
+  <data name="MainWindow_LightingEffectPickerText.PlaceholderText" xml:space="preserve">
+    <value>Current effect unavailable</value>
+  </data>
+  <data name="MainWindow_LightingIdleTimeoutNumberBoxText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Keyboard lighting inactivity timeout in minutes</value>
+  </data>
+  <data name="MainWindow_LightingIdleTimeoutToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Turn off keyboard lighting after inactivity</value>
+  </data>
+  <data name="MainWindow_LightingImport_Brightness" xml:space="preserve">
+    <value>{0}% brightness</value>
+  </data>
+  <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
+    <value>{0} uses the {1} effect at {2}. Importing applies it through OpenBlade and keeps it as an unsaved change for the active power profile.</value>
+  </data>
+  <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
+    <value>Import keyboard lighting?</value>
+  </data>
+  <data name="MainWindow_LightingImport_ControlUnavailable" xml:space="preserve">
+    <value>Lighting control became unavailable before the preset could be imported.</value>
+  </data>
+  <data name="MainWindow_LightingImport_EffectUnavailable" xml:space="preserve">
+    <value>The {0} effect is unavailable on this laptop right now.</value>
+  </data>
+  <data name="MainWindow_LightingImport_FailedTitle" xml:space="preserve">
+    <value>Keyboard lighting could not be imported</value>
+  </data>
+  <data name="MainWindow_LightingImport_FileTooLarge" xml:space="preserve">
+    <value>The selected lighting file cannot exceed {0}.</value>
+  </data>
+  <data name="MainWindow_LightingImport_ImportApplyButton" xml:space="preserve">
+    <value>Import and apply</value>
+  </data>
+  <data name="MainWindow_LightingImport_Off" xml:space="preserve">
+    <value>off</value>
+  </data>
+  <data name="MainWindow_LightingImport_PickerTitle" xml:space="preserve">
+    <value>Import OpenBlade keyboard lighting</value>
+  </data>
+  <data name="MainWindow_LightingImport_Warning" xml:space="preserve">
+    <value>
+
+{0}</value>
+  </data>
+  <data name="MainWindow_LightingNavigationItemText.Content" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="MainWindow_LightingRefreshRateToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Use 60 Hz keyboard lighting</value>
+  </data>
+  <data name="MainWindow_LightingUnavailableInfoBarText.Title" xml:space="preserve">
+    <value>Lighting controls unavailable</value>
+  </data>
+  <data name="MainWindow_ListViewActiveTrayDashboardAdjustments.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Active tray dashboard adjustments</value>
+  </data>
+  <data name="MainWindow_ListViewActiveTrayDashboardControls.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Active tray dashboard controls</value>
+  </data>
+  <data name="MainWindow_ListViewNavigationMenuPages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Navigation menu pages</value>
+  </data>
+  <data name="MainWindow_ListViewTaskbarHoverLabelContents.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Taskbar hover label contents</value>
+  </data>
+  <data name="MainWindow_MainNavigationText.Header" xml:space="preserve">
+    <value>False</value>
+  </data>
+  <data name="MainWindow_NavigationMenuExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Navigation menu order</value>
+  </data>
+  <data name="MainWindow_Notification_AppUpdateBody" xml:space="preserve">
+    <value>OpenBlade {0} is ready to download.</value>
+  </data>
+  <data name="MainWindow_Notification_AppUpdateTitle" xml:space="preserve">
+    <value>OpenBlade update available</value>
+  </data>
+  <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
+    <value>Razer controller detected</value>
+  </data>
+  <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
+    <value>Razer firmware update available</value>
+  </data>
+  <data name="MainWindow_Notification_OperationFailedTitle" xml:space="preserve">
+    <value>OpenBlade operation failed</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileAc" xml:space="preserve">
+    <value>AC profile</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileActive" xml:space="preserve">
+    <value>active power profile</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileBattery" xml:space="preserve">
+    <value>Battery profile</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileChangedBody" xml:space="preserve">
+    <value>OpenBlade is now using the {0}.</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileChangedTitle" xml:space="preserve">
+    <value>Power profile changed</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileUsbC" xml:space="preserve">
+    <value>USB-C profile</value>
+  </data>
+  <data name="MainWindow_OfficialFirmwareUpdatesCardText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Official Razer firmware update assistant</value>
+  </data>
+  <data name="MainWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Operation error</value>
+  </data>
+  <data name="MainWindow_ProfileExport_FailedBody" xml:space="preserve">
+    <value>OpenBlade could not save the selected JSON file.</value>
+  </data>
+  <data name="MainWindow_ProfileExport_FailedTitle" xml:space="preserve">
+    <value>Profiles could not be exported</value>
+  </data>
+  <data name="MainWindow_ProfileExport_Title" xml:space="preserve">
+    <value>Export OpenBlade profiles</value>
+  </data>
+  <data name="MainWindow_ProfileImport_ConfirmBody" xml:space="preserve">
+    <value>This replaces the saved AC, USB-C, battery, and battery-protection profiles. Current hardware settings are not changed until you apply or switch profiles.</value>
+  </data>
+  <data name="MainWindow_ProfileImport_ConfirmTitle" xml:space="preserve">
+    <value>Import profiles?</value>
+  </data>
+  <data name="MainWindow_ProfileImport_FailedTitle" xml:space="preserve">
+    <value>Profiles could not be imported</value>
+  </data>
+  <data name="MainWindow_ProfileImport_PickerTitle" xml:space="preserve">
+    <value>Import OpenBlade profiles</value>
+  </data>
+  <data name="MainWindow_ProfileImport_UnavailableSettings" xml:space="preserve">
+    <value>The imported profiles include settings that are unavailable on this laptop.</value>
+  </data>
+  <data name="MainWindow_ProfilePicker_JsonFiles" xml:space="preserve">
+    <value>JSON files</value>
+  </data>
+  <data name="MainWindow_ProfileStateBadgeText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open troubleshooting details</value>
+  </data>
+  <data name="MainWindow_ProfileStateBadgeText.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>View device status</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingBatteryProtection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Applying battery protection</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingChargeLimit.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Applying charge limit</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingDisplaySetting.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Applying display setting</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingFanMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Applying fan mode</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingLighting.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Applying lighting</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingPowerMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Applying power mode</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingTemporaryFullCharge.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Applying temporary full charge</value>
+  </data>
+  <data name="MainWindow_ProgressRingCheckingGitHubForUpdates.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Checking GitHub for updates</value>
+  </data>
+  <data name="MainWindow_ProgressRingCheckingRazerForFirmwareVersions.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Checking Razer for firmware versions</value>
+  </data>
+  <data name="MainWindow_ProgressRingReadingOrApplyingFunctionKeyBehavior.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Reading or applying function key behavior</value>
+  </data>
+  <data name="MainWindow_ProgressRingReadingOrApplyingGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Reading or applying Gaming mode</value>
+  </data>
+  <data name="MainWindow_ProgressRingReadingOrApplyingStartupAnimation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Reading or applying startup animation</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorAmbientAwarenessScreenRegion.AccessibleName" xml:space="preserve">
+    <value>Ambient Awareness screen region</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorAppAccentColor.AccessibleName" xml:space="preserve">
+    <value>App accent color</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorAppTheme.AccessibleName" xml:space="preserve">
+    <value>App theme</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorBreathingColorMode.AccessibleName" xml:space="preserve">
+    <value>Breathing color mode</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorFirmwareUpdateCheckInterval.AccessibleName" xml:space="preserve">
+    <value>Firmware update check interval</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorLightingDirection.AccessibleName" xml:space="preserve">
+    <value>Lighting direction</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorLiveReadingsRefreshInterval.AccessibleName" xml:space="preserve">
+    <value>Live readings refresh interval</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorReactiveLightingDuration.AccessibleName" xml:space="preserve">
+    <value>Reactive lighting duration</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorStarlightColorMode.AccessibleName" xml:space="preserve">
+    <value>Starlight color mode</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorStarlightLightingDuration.AccessibleName" xml:space="preserve">
+    <value>Starlight lighting duration</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorUpdateChannel.AccessibleName" xml:space="preserve">
+    <value>Update channel</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorUpdateCheckInterval.AccessibleName" xml:space="preserve">
+    <value>Update check interval</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorWheelRotationDirection.AccessibleName" xml:space="preserve">
+    <value>Wheel rotation direction</value>
+  </data>
+  <data name="MainWindow_SettingsNavigationItemText.Content" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="MainWindow_Shutdown_Content" xml:space="preserve">
+    <value>This stops the app, display helper, and hardware service. </value>
+  </data>
+  <data name="MainWindow_Shutdown_FailedTitle" xml:space="preserve">
+    <value>OpenBlade could not shut down</value>
+  </data>
+  <data name="MainWindow_Shutdown_PrimaryButton" xml:space="preserve">
+    <value>Shut down</value>
+  </data>
+  <data name="MainWindow_Shutdown_Title" xml:space="preserve">
+    <value>Shut down OpenBlade?</value>
+  </data>
+  <data name="MainWindow_Start_AlreadyRunningBody" xml:space="preserve">
+    <value>The tray will reconnect automatically. This can take a few seconds.</value>
+  </data>
+  <data name="MainWindow_Start_AlreadyRunningTitle" xml:space="preserve">
+    <value>OpenBlade service is already running</value>
+  </data>
+  <data name="MainWindow_Start_Button" xml:space="preserve">
+    <value>Start OpenBlade</value>
+  </data>
+  <data name="MainWindow_Start_FailedTitle" xml:space="preserve">
+    <value>OpenBlade could not start</value>
+  </data>
+  <data name="MainWindow_Start_Starting" xml:space="preserve">
+    <value>Starting OpenBlade</value>
+  </data>
+  <data name="MainWindow_StartMinimizedToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Start OpenBlade minimized</value>
+  </data>
+  <data name="MainWindow_StartOpenBladeButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Start OpenBlade</value>
+  </data>
+  <data name="MainWindow_StartupAnimationToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Startup animation</value>
+  </data>
+  <data name="MainWindow_StopRazer_AutomationName" xml:space="preserve">
+    <value>Stop Razer services</value>
+  </data>
+  <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
+    <value>Windows did not grant administrator permission. OpenBlade did not retry the request.</value>
+  </data>
+  <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
+    <value>Razer service stop canceled</value>
+  </data>
+  <data name="MainWindow_StopRazer_Checking" xml:space="preserve">
+    <value>Checking…</value>
+  </data>
+  <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
+    <value>These known controller services are currently active:
+
+{0}
+
+After approval, OpenBlade will freshly check the same reviewed allowlist and stop any active matches. This does not uninstall Razer software or disable service startup. Razer software may start the services again, and features that depend on them may stop working until then.</value>
+  </data>
+  <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
+    <value>Stop Razer services?</value>
+  </data>
+  <data name="MainWindow_StopRazer_FailedTitle" xml:space="preserve">
+    <value>OpenBlade could not stop Razer services</value>
+  </data>
+  <data name="MainWindow_StopRazer_IndeterminateNote" xml:space="preserve">
+    <value>
+
+The helper result was indeterminate, but fresh readback confirms the services are stopped or no longer installed.</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoneBody" xml:space="preserve">
+    <value>OpenBlade found no active Synapse or Chroma controller services in its reviewed allowlist.</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoneTitle" xml:space="preserve">
+    <value>No known Razer controller services are running</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoRetryNote" xml:space="preserve">
+    <value>
+
+OpenBlade did not retry any stop request.</value>
+  </data>
+  <data name="MainWindow_StopRazer_PartialTitle" xml:space="preserve">
+    <value>Some Razer services could not be confirmed stopped</value>
+  </data>
+  <data name="MainWindow_StopRazer_RemainingHeading" xml:space="preserve">
+    <value>Still active or pending:
+</value>
+  </data>
+  <data name="MainWindow_StopRazer_StopButton" xml:space="preserve">
+    <value>Stop services</value>
+  </data>
+  <data name="MainWindow_StopRazer_StoppedHeading" xml:space="preserve">
+    <value>Stopped or no longer installed:
+</value>
+  </data>
+  <data name="MainWindow_StopRazer_Stopping" xml:space="preserve">
+    <value>Stopping…</value>
+  </data>
+  <data name="MainWindow_StopRazer_SucceededTitle" xml:space="preserve">
+    <value>Razer services stopped</value>
+  </data>
+  <data name="MainWindow_StopRazer_UnconfirmedBody" xml:space="preserve">
+    <value>The elevated request finished, but OpenBlade could not read the final service state. {0}</value>
+  </data>
+  <data name="MainWindow_StopRazer_UnconfirmedTitle" xml:space="preserve">
+    <value>Razer service status is unconfirmed</value>
+  </data>
+  <data name="MainWindow_StopRazer_WorkingAutomationName" xml:space="preserve">
+    <value>Working with Razer services</value>
+  </data>
+  <data name="MainWindow_StopRazerServicesButtonLabelText.Text" xml:space="preserve">
+    <value>Stop services</value>
+  </data>
+  <data name="MainWindow_StopRazerServicesButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Stop Razer services</value>
+  </data>
+  <data name="MainWindow_TaskbarHoverLabelExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Taskbar hover label settings</value>
+  </data>
+  <data name="MainWindow_TestedPlatformWarningBadgeText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Review untested system versions</value>
+  </data>
+  <data name="MainWindow_TextBlockAbout.Text" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="MainWindow_TextBlockAC.Text" xml:space="preserve">
+    <value>AC</value>
+  </data>
+  <data name="MainWindow_TextBlockActive.Text" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="MainWindow_TextBlockActive2.Text" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="MainWindow_TextBlockActive3.Text" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="MainWindow_TextBlockActive4.Text" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="MainWindow_TextBlockActiveACUSBCOrBatteryProfile.Text" xml:space="preserve">
+    <value>Active AC, USB-C, or Battery profile.</value>
+  </data>
+  <data name="MainWindow_TextBlockAddAdjustment.Text" xml:space="preserve">
+    <value>Add adjustment</value>
+  </data>
+  <data name="MainWindow_TextBlockAddControl.Text" xml:space="preserve">
+    <value>Add control</value>
+  </data>
+  <data name="MainWindow_TextBlockAdjustments.Text" xml:space="preserve">
+    <value>Adjustments</value>
+  </data>
+  <data name="MainWindow_TextBlockAdjustTheKeyboardLightingLevel.Text" xml:space="preserve">
+    <value>Adjust the keyboard lighting level.</value>
+  </data>
+  <data name="MainWindow_TextBlockAfterInactivity.Text" xml:space="preserve">
+    <value>After inactivity</value>
+  </data>
+  <data name="MainWindow_TextBlockAppAccentColor.Text" xml:space="preserve">
+    <value>App accent color</value>
+  </data>
+  <data name="MainWindow_TextBlockAppearance.Text" xml:space="preserve">
+    <value>Appearance</value>
+  </data>
+  <data name="MainWindow_TextBlockApplyNVIDIAClockOffsetsIndependentlyOfPower.Text" xml:space="preserve">
+    <value>Apply NVIDIA clock offsets independently of Power mode</value>
+  </data>
+  <data name="MainWindow_TextBlockAppsUsingTheNVIDIAGPU.Text" xml:space="preserve">
+    <value>Apps using the NVIDIA GPU</value>
+  </data>
+  <data name="MainWindow_TextBlockAppTheme.Text" xml:space="preserve">
+    <value>App theme</value>
+  </data>
+  <data name="MainWindow_TextBlockAppUpdates.Text" xml:space="preserve">
+    <value>App updates</value>
+  </data>
+  <data name="MainWindow_TextBlockBattery.Text" xml:space="preserve">
+    <value>Battery</value>
+  </data>
+  <data name="MainWindow_TextBlockBattery2.Text" xml:space="preserve">
+    <value>Battery</value>
+  </data>
+  <data name="MainWindow_TextBlockBattery3.Text" xml:space="preserve">
+    <value>Battery</value>
+  </data>
+  <data name="MainWindow_TextBlockBatteryHealth.Text" xml:space="preserve">
+    <value>Battery health</value>
+  </data>
+  <data name="MainWindow_TextBlockBatteryProtection.Text" xml:space="preserve">
+    <value>Battery protection</value>
+  </data>
+  <data name="MainWindow_TextBlockBatteryProtection2.Text" xml:space="preserve">
+    <value>Battery protection</value>
+  </data>
+  <data name="MainWindow_TextBlockBatteryProtection3.Text" xml:space="preserve">
+    <value>Battery protection</value>
+  </data>
+  <data name="MainWindow_TextBlockBehavior.Text" xml:space="preserve">
+    <value>Behavior</value>
+  </data>
+  <data name="MainWindow_TextBlockBIOS.Text" xml:space="preserve">
+    <value>BIOS</value>
+  </data>
+  <data name="MainWindow_TextBlockBIOS2.Text" xml:space="preserve">
+    <value>BIOS</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockAltTab.Text" xml:space="preserve">
+    <value>Block Alt+Tab</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockAltTab2.Text" xml:space="preserve">
+    <value>Block Alt+Tab</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockAltTab3.Text" xml:space="preserve">
+    <value>Block Alt+Tab</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockTheWindowsKey.Text" xml:space="preserve">
+    <value>Block the Windows key</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockWindowsKey.Text" xml:space="preserve">
+    <value>Block Windows key</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockWindowsKey2.Text" xml:space="preserve">
+    <value>Block Windows key</value>
+  </data>
+  <data name="MainWindow_TextBlockBreathingColors.Text" xml:space="preserve">
+    <value>Breathing colors</value>
+  </data>
+  <data name="MainWindow_TextBlockBrightness.Text" xml:space="preserve">
+    <value>Brightness</value>
+  </data>
+  <data name="MainWindow_TextBlockBrightness2.Text" xml:space="preserve">
+    <value>Brightness</value>
+  </data>
+  <data name="MainWindow_TextBlockBuiltInDisplay.Text" xml:space="preserve">
+    <value>Built-in display</value>
+  </data>
+  <data name="MainWindow_TextBlockBypassOnlyTheTestedFirmwareCheckFor.Text" xml:space="preserve">
+    <value>Bypass only the tested firmware check for an exact supported Razer Blade. Other hardware safety checks stay enabled.</value>
+  </data>
+  <data name="MainWindow_TextBlockChangesPending.Text" xml:space="preserve">
+    <value>Changes pending</value>
+  </data>
+  <data name="MainWindow_TextBlockChangesPending2.Text" xml:space="preserve">
+    <value>Changes pending</value>
+  </data>
+  <data name="MainWindow_TextBlockChangesPending3.Text" xml:space="preserve">
+    <value>Changes pending</value>
+  </data>
+  <data name="MainWindow_TextBlockChargeLimit.Text" xml:space="preserve">
+    <value>Charge limit</value>
+  </data>
+  <data name="MainWindow_TextBlockChargeLimit2.Text" xml:space="preserve">
+    <value>Charge limit</value>
+  </data>
+  <data name="MainWindow_TextBlockChargeLimit3.Text" xml:space="preserve">
+    <value>Charge limit</value>
+  </data>
+  <data name="MainWindow_TextBlockCheckCurrentState.Text" xml:space="preserve">
+    <value>Check current state</value>
+  </data>
+  <data name="MainWindow_TextBlockCheckInterval.Text" xml:space="preserve">
+    <value>Check interval</value>
+  </data>
+  <data name="MainWindow_TextBlockCheckInterval2.Text" xml:space="preserve">
+    <value>Check interval</value>
+  </data>
+  <data name="MainWindow_TextBlockCheckItemsToIncludeDragThemInto.Text" xml:space="preserve">
+    <value>Check items to include. Drag them into the order you want.</value>
+  </data>
+  <data name="MainWindow_TextBlockChecksAtStartupWhenDue.Text" xml:space="preserve">
+    <value>Checks at startup when due.</value>
+  </data>
+  <data name="MainWindow_TextBlockChecksAtStartupWhenDue2.Text" xml:space="preserve">
+    <value>Checks at startup when due.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseANewColorPairForEach.Text" xml:space="preserve">
+    <value>Choose a new color pair for each Tidal cycle.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseARefreshRateReportedByWindows.Text" xml:space="preserve">
+    <value>Choose a refresh rate reported by Windows or use dynamic refresh rate.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseFrom1To60Minutes.Text" xml:space="preserve">
+    <value>Choose from 1 to 60 minutes.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseHowLongEachRandomKeyFades.Text" xml:space="preserve">
+    <value>Choose how long each random key fades in and out.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseHowLongPressedKeysRemainLit.Text" xml:space="preserve">
+    <value>Choose how long pressed keys remain lit.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
+    <value>Choose how often OpenBlade refreshes temperatures, fan speed, and net battery power while the window is open or the tray icon is hovered.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
+    <value>Choose the controls and live details shown when you click the tray icon.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseTheEffectSSecondColor.Text" xml:space="preserve">
+    <value>Choose the effect's second color.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseTheLightingModeForTheRazer.Text" xml:space="preserve">
+    <value>Choose the lighting mode for the Razer logo on the lid.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseTheOrderOfPagesInThe.Text" xml:space="preserve">
+    <value>Choose the order of pages in the left menu.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseUpToThreeLiveReadingsShown.Text" xml:space="preserve">
+    <value>Choose up to three live readings shown along the bottom of the popup.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseUpToTwoSlidersForThe.Text" xml:space="preserve">
+    <value>Choose up to two sliders for the fixed middle section of the popup.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseWhetherToShowTheAppName.Text" xml:space="preserve">
+    <value>Choose whether to show the app name, profile, and live details when you point at the tray icon.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseWhichLiveReadingsAppearInThe.Text" xml:space="preserve">
+    <value>Choose which live readings appear in the Dashboard summary.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseWhichPartOfTheDisplayColors.Text" xml:space="preserve">
+    <value>Choose which part of the display colors the keyboard.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseWhichWayTheEffectMoves.Text" xml:space="preserve">
+    <value>Choose which way the effect moves.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseWhichWayTheWheelEffectRotates.Text" xml:space="preserve">
+    <value>Choose which way the Wheel effect rotates.</value>
+  </data>
+  <data name="MainWindow_TextBlockCloseCurrentUserAppsSoTheDiscrete.Text" xml:space="preserve">
+    <value>Close current-user apps so the discrete GPU can return to sleep.</value>
+  </data>
+  <data name="MainWindow_TextBlockColor.Text" xml:space="preserve">
+    <value>Color</value>
+  </data>
+  <data name="MainWindow_TextBlockColorBoost.Text" xml:space="preserve">
+    <value>Color boost</value>
+  </data>
+  <data name="MainWindow_TextBlockColorProfile.Text" xml:space="preserve">
+    <value>Color profile</value>
+  </data>
+  <data name="MainWindow_TextBlockColorProfile2.Text" xml:space="preserve">
+    <value>Color profile</value>
+  </data>
+  <data name="MainWindow_TextBlockColorProfile3.Text" xml:space="preserve">
+    <value>Color profile</value>
+  </data>
+  <data name="MainWindow_TextBlockConfirmedFnPResults.Text" xml:space="preserve">
+    <value>Confirmed Fn+P results.</value>
+  </data>
+  <data name="MainWindow_TextBlockControllerAdvisories.Text" xml:space="preserve">
+    <value>Controller advisories</value>
+  </data>
+  <data name="MainWindow_TextBlockCPU.Text" xml:space="preserve">
+    <value>CPU</value>
+  </data>
+  <data name="MainWindow_TextBlockCurrentLabFeatures.Text" xml:space="preserve">
+    <value>Current Lab features</value>
+  </data>
+  <data name="MainWindow_TextBlockCustomColor.Text" xml:space="preserve">
+    <value>Custom color</value>
+  </data>
+  <data name="MainWindow_TextBlockCustomizeTrayDashboard.Text" xml:space="preserve">
+    <value>Customize tray dashboard</value>
+  </data>
+  <data name="MainWindow_TextBlockDashboard.Text" xml:space="preserve">
+    <value>Dashboard</value>
+  </data>
+  <data name="MainWindow_TextBlockDetectedLaptop.Text" xml:space="preserve">
+    <value>Detected laptop</value>
+  </data>
+  <data name="MainWindow_TextBlockDeviceInformation.Text" xml:space="preserve">
+    <value>Device information</value>
+  </data>
+  <data name="MainWindow_TextBlockDirection.Text" xml:space="preserve">
+    <value>Direction</value>
+  </data>
+  <data name="MainWindow_TextBlockDisplay.Text" xml:space="preserve">
+    <value>Display</value>
+  </data>
+  <data name="MainWindow_TextBlockDisplay2.Text" xml:space="preserve">
+    <value>Display</value>
+  </data>
+  <data name="MainWindow_TextBlockDisplayBrightnessDriverStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Display brightness driver status</value>
+  </data>
+  <data name="MainWindow_TextBlockDisplayTurnsOff.Text" xml:space="preserve">
+    <value>Display turns off</value>
+  </data>
+  <data name="MainWindow_TextBlockDisplayTurnsOff2.Text" xml:space="preserve">
+    <value>Display turns off</value>
+  </data>
+  <data name="MainWindow_TextBlockDocumentation.Text" xml:space="preserve">
+    <value>Documentation</value>
+  </data>
+  <data name="MainWindow_TextBlockDragActiveItemsToReorderThemChanges.Text" xml:space="preserve">
+    <value>Drag active items to reorder them. Changes appear immediately in the tray popup beside this window.</value>
+  </data>
+  <data name="MainWindow_TextBlockDragPagesIntoTheOrderYouWant.Text" xml:space="preserve">
+    <value>Drag pages into the order you want. Dashboard stays first and About stays last.</value>
+  </data>
+  <data name="MainWindow_TextBlockEC.Text" xml:space="preserve">
+    <value>EC</value>
+  </data>
+  <data name="MainWindow_TextBlockEC2.Text" xml:space="preserve">
+    <value>EC</value>
+  </data>
+  <data name="MainWindow_TextBlockEffect.Text" xml:space="preserve">
+    <value>Effect</value>
+  </data>
+  <data name="MainWindow_TextBlockEffect2.Text" xml:space="preserve">
+    <value>Effect</value>
+  </data>
+  <data name="MainWindow_TextBlockExportDiagnostics.Text" xml:space="preserve">
+    <value>Export diagnostics</value>
+  </data>
+  <data name="MainWindow_TextBlockFailedControlOperationsDetailsStayVisible.Text" xml:space="preserve">
+    <value>Failed control operations. Details stay visible.</value>
+  </data>
+  <data name="MainWindow_TextBlockFans.Text" xml:space="preserve">
+    <value>Fans</value>
+  </data>
+  <data name="MainWindow_TextBlockFans2.Text" xml:space="preserve">
+    <value>Fans</value>
+  </data>
+  <data name="MainWindow_TextBlockFans3.Text" xml:space="preserve">
+    <value>Fans</value>
+  </data>
+  <data name="MainWindow_TextBlockFans4.Text" xml:space="preserve">
+    <value>Fans</value>
+  </data>
+  <data name="MainWindow_TextBlockFanSpeed.Text" xml:space="preserve">
+    <value>Fan speed</value>
+  </data>
+  <data name="MainWindow_TextBlockFirmware.Text" xml:space="preserve">
+    <value>Firmware</value>
+  </data>
+  <data name="MainWindow_TextBlockFirmwareUpdates.Text" xml:space="preserve">
+    <value>Firmware updates</value>
+  </data>
+  <data name="MainWindow_TextBlockFollowWindowsOrAlwaysUseLightOr.Text" xml:space="preserve">
+    <value>Follow Windows, or always use light or dark mode.</value>
+  </data>
+  <data name="MainWindow_TextBlockForceRunOnIncompatibleFirmware.Text" xml:space="preserve">
+    <value>Force run on incompatible firmware</value>
+  </data>
+  <data name="MainWindow_TextBlockFunctionKeyBehavior.Text" xml:space="preserve">
+    <value>Function key behavior</value>
+  </data>
+  <data name="MainWindow_TextBlockFunctionKeys.Text" xml:space="preserve">
+    <value>Function keys</value>
+  </data>
+  <data name="MainWindow_TextBlockFunctionKeys2.Text" xml:space="preserve">
+    <value>Function keys</value>
+  </data>
+  <data name="MainWindow_TextBlockGamingMode.Text" xml:space="preserve">
+    <value>Gaming mode</value>
+  </data>
+  <data name="MainWindow_TextBlockGamingMode2.Text" xml:space="preserve">
+    <value>Gaming mode</value>
+  </data>
+  <data name="MainWindow_TextBlockGamingMode3.Text" xml:space="preserve">
+    <value>Gaming mode</value>
+  </data>
+  <data name="MainWindow_TextBlockGPU.Text" xml:space="preserve">
+    <value>GPU</value>
+  </data>
+  <data name="MainWindow_TextBlockGPUCoreClockOffset.Text" xml:space="preserve">
+    <value>GPU core clock offset</value>
+  </data>
+  <data name="MainWindow_TextBlockGPUMemoryClockOffset.Text" xml:space="preserve">
+    <value>GPU memory clock offset</value>
+  </data>
+  <data name="MainWindow_TextBlockGPUTuning.Text" xml:space="preserve">
+    <value>GPU tuning</value>
+  </data>
+  <data name="MainWindow_TextBlockGPUTuning2.Text" xml:space="preserve">
+    <value>GPU tuning</value>
+  </data>
+  <data name="MainWindow_TextBlockGPUTuning3.Text" xml:space="preserve">
+    <value>GPU tuning</value>
+  </data>
+  <data name="MainWindow_TextBlockHDR.Text" xml:space="preserve">
+    <value>HDR</value>
+  </data>
+  <data name="MainWindow_TextBlockHDR2.Text" xml:space="preserve">
+    <value>HDR</value>
+  </data>
+  <data name="MainWindow_TextBlockImportOblightAndRazerChromaFiles.Text" xml:space="preserve">
+    <value>Import .oblight and Razer .chroma files.</value>
+  </data>
+  <data name="MainWindow_TextBlockImportPreset.Text" xml:space="preserve">
+    <value>Import preset</value>
+  </data>
+  <data name="MainWindow_TextBlockInactivityTimeout.Text" xml:space="preserve">
+    <value>Inactivity timeout</value>
+  </data>
+  <data name="MainWindow_TextBlockInactivityTimeout2.Text" xml:space="preserve">
+    <value>Inactivity timeout</value>
+  </data>
+  <data name="MainWindow_TextBlockInactivityTimeout3.Text" xml:space="preserve">
+    <value>Inactivity timeout</value>
+  </data>
+  <data name="MainWindow_TextBlockIncreaseHowStronglyAudioLevelsDriveThe.Text" xml:space="preserve">
+    <value>Increase how strongly audio levels drive the keyboard colors.</value>
+  </data>
+  <data name="MainWindow_TextBlockIndependentOpenSourceProjectNotAffiliatedWith.Text" xml:space="preserve">
+    <value>Independent open-source project; not affiliated with Razer.</value>
+  </data>
+  <data name="MainWindow_TextBlockInstalled.Text" xml:space="preserve">
+    <value>Installed</value>
+  </data>
+  <data name="MainWindow_TextBlockKeepsTheKeyboardLitForUpTo.Text" xml:space="preserve">
+    <value>Keeps the keyboard lit for up to the selected time when sound gets quieter or pauses. Louder sounds still respond immediately.</value>
+  </data>
+  <data name="MainWindow_TextBlockKeyboard.Text" xml:space="preserve">
+    <value>Keyboard</value>
+  </data>
+  <data name="MainWindow_TextBlockKeyboard2.Text" xml:space="preserve">
+    <value>Keyboard</value>
+  </data>
+  <data name="MainWindow_TextBlockKeyboardDriverMode.Text" xml:space="preserve">
+    <value>Keyboard driver mode</value>
+  </data>
+  <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
+    <value>Keyboard lighting</value>
+  </data>
+  <data name="MainWindow_TextBlockKeyboardLightingPresetImport.Text" xml:space="preserve">
+    <value>Keyboard lighting preset import</value>
+  </data>
+  <data name="MainWindow_TextBlockLabFeatures.Text" xml:space="preserve">
+    <value>Lab features</value>
+  </data>
+  <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
+    <value>Lab features may change or be removed.</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
+    <value>Laptop</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopBehavior.Text" xml:space="preserve">
+    <value>Laptop behavior</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopBehavior2.Text" xml:space="preserve">
+    <value>Control access</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopLidLogo.Text" xml:space="preserve">
+    <value>Laptop lid logo</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopLidLogo2.Text" xml:space="preserve">
+    <value>Laptop lid logo</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopLogo.Text" xml:space="preserve">
+    <value>Laptop logo</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopPerformance.Text" xml:space="preserve">
+    <value>Laptop performance</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopPerformance2.Text" xml:space="preserve">
+    <value>Laptop performance</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopPerformance3.Text" xml:space="preserve">
+    <value>Laptop performance</value>
+  </data>
+  <data name="MainWindow_TextBlockLatestRelease.Text" xml:space="preserve">
+    <value>Latest release</value>
+  </data>
+  <data name="MainWindow_TextBlockLighting.Text" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="MainWindow_TextBlockLightingBrightness.Text" xml:space="preserve">
+    <value>Lighting brightness</value>
+  </data>
+  <data name="MainWindow_TextBlockLightingColor.Text" xml:space="preserve">
+    <value>Lighting color</value>
+  </data>
+  <data name="MainWindow_TextBlockLightingEffect.Text" xml:space="preserve">
+    <value>Lighting effect</value>
+  </data>
+  <data name="MainWindow_TextBlockLightweightControlsForRazerBladeLaptops.Text" xml:space="preserve">
+    <value>Lightweight controls for Razer Blade laptops</value>
+  </data>
+  <data name="MainWindow_TextBlockLiveReadings.Text" xml:space="preserve">
+    <value>Live readings</value>
+  </data>
+  <data name="MainWindow_TextBlockLoadAnOpenBladeOrRazerChromaKeyboard.Text" xml:space="preserve">
+    <value>Load an OpenBlade or Razer Chroma keyboard lighting file.</value>
+  </data>
+  <data name="MainWindow_TextBlockMCU.Text" xml:space="preserve">
+    <value>MCU</value>
+  </data>
+  <data name="MainWindow_TextBlockMCU2.Text" xml:space="preserve">
+    <value>MCU</value>
+  </data>
+  <data name="MainWindow_TextBlockMode.Text" xml:space="preserve">
+    <value>Mode</value>
+  </data>
+  <data name="MainWindow_TextBlockNavigationMenu.Text" xml:space="preserve">
+    <value>Navigation menu</value>
+  </data>
+  <data name="MainWindow_TextBlockNewOpenBladeReleases.Text" xml:space="preserve">
+    <value>New OpenBlade releases.</value>
+  </data>
+  <data name="MainWindow_TextBlockNewRazerBIOSECOrMCUFirmware.Text" xml:space="preserve">
+    <value>New Razer BIOS, EC, or MCU firmware.</value>
+  </data>
+  <data name="MainWindow_TextBlockNewRazerControllersAdvisoriesStayVisible.Text" xml:space="preserve">
+    <value>New Razer controllers. Advisories stay visible.</value>
+  </data>
+  <data name="MainWindow_TextBlockNotifications.Text" xml:space="preserve">
+    <value>Notifications</value>
+  </data>
+  <data name="MainWindow_TextBlockOfficialFirmware.Text" xml:space="preserve">
+    <value>Official firmware</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenBladeApp.Text" xml:space="preserve">
+    <value>OpenBlade app</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenBladeService.Text" xml:space="preserve">
+    <value>OpenBlade service</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenBladeServiceVersion.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>OpenBlade service version</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenBladeSessionAgentVersion.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>OpenBlade session agent version</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenBladeUsesTheLaptopFirmwareTemperatureAnd.Text" xml:space="preserve">
+    <value>OpenBlade uses the laptop firmware temperature and NVIDIA GPU temperature. If either reading is unavailable, it uses maximum fan speed.</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenGitHubIssuesToReportABug.Text" xml:space="preserve">
+    <value>Open GitHub Issues to report a bug or request an improvement.</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenInTheNotificationAreaWithoutShowing.Text" xml:space="preserve">
+    <value>Open in the notification area without showing the window.</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenOfficialRazerPage.Text" xml:space="preserve">
+    <value>Open official Razer page</value>
+  </data>
+  <data name="MainWindow_TextBlockOperationFailures.Text" xml:space="preserve">
+    <value>Operation failures</value>
+  </data>
+  <data name="MainWindow_TextBlockOtherRazerSoftwareRunning.Text" xml:space="preserve">
+    <value>Other Razer software running</value>
+  </data>
+  <data name="MainWindow_TextBlockOverrideExternalLightingChanges.Text" xml:space="preserve">
+    <value>Override external lighting changes</value>
+  </data>
+  <data name="MainWindow_TextBlockPerformance.Text" xml:space="preserve">
+    <value>Performance</value>
+  </data>
+  <data name="MainWindow_TextBlockPerformanceChanges.Text" xml:space="preserve">
+    <value>Performance changes</value>
+  </data>
+  <data name="MainWindow_TextBlockPlatform.Text" xml:space="preserve">
+    <value>Platform</value>
+  </data>
+  <data name="MainWindow_TextBlockPowerAndCooling.Text" xml:space="preserve">
+    <value>Power and cooling</value>
+  </data>
+  <data name="MainWindow_TextBlockPowerProfileChanges.Text" xml:space="preserve">
+    <value>Power profile changes</value>
+  </data>
+  <data name="MainWindow_TextBlockPowerSource.Text" xml:space="preserve">
+    <value>Power source</value>
+  </data>
+  <data name="MainWindow_TextBlockPreview.Text" xml:space="preserve">
+    <value>Preview</value>
+  </data>
+  <data name="MainWindow_TextBlockProfiles.Text" xml:space="preserve">
+    <value>Profiles</value>
+  </data>
+  <data name="MainWindow_TextBlockProfiles2.Text" xml:space="preserve">
+    <value>Profiles</value>
+  </data>
+  <data name="MainWindow_TextBlockPublishedByRazer.Text" xml:space="preserve">
+    <value>Published by Razer</value>
+  </data>
+  <data name="MainWindow_TextBlockPublishedOnlyFirmwareNotice.Text" xml:space="preserve">
+    <value>Published only: OpenBlade cannot read the installed Thunderbolt 5 or touchpad firmware versions, so these values are not compared.</value>
+  </data>
+  <data name="MainWindow_TextBlockQuickControls.Text" xml:space="preserve">
+    <value>Quick controls</value>
+  </data>
+  <data name="MainWindow_TextBlockRandomColors.Text" xml:space="preserve">
+    <value>Random colors</value>
+  </data>
+  <data name="MainWindow_TextBlockRazerBrightnessDriver.Text" xml:space="preserve">
+    <value>Razer brightness driver</value>
+  </data>
+  <data name="MainWindow_TextBlockReactiveDuration.Text" xml:space="preserve">
+    <value>Reactive duration</value>
+  </data>
+  <data name="MainWindow_TextBlockReadSetupUsageAndCompatibilityInformation.Text" xml:space="preserve">
+    <value>Read setup, usage, and compatibility information.</value>
+  </data>
+  <data name="MainWindow_TextBlockReapplyOpenBladeSettings.Text" xml:space="preserve">
+    <value>Reapply OpenBlade settings</value>
+  </data>
+  <data name="MainWindow_TextBlockRecentError.Text" xml:space="preserve">
+    <value>Recent error</value>
+  </data>
+  <data name="MainWindow_TextBlockRefreshRate.Text" xml:space="preserve">
+    <value>Refresh rate</value>
+  </data>
+  <data name="MainWindow_TextBlockRefreshRate2.Text" xml:space="preserve">
+    <value>Refresh rate</value>
+  </data>
+  <data name="MainWindow_TextBlockRefreshRate3.Text" xml:space="preserve">
+    <value>Refresh rate</value>
+  </data>
+  <data name="MainWindow_TextBlockReleaseNotes.Text" xml:space="preserve">
+    <value>Release notes</value>
+  </data>
+  <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
+    <value>Render supported effects more smoothly on admitted keyboards.</value>
+  </data>
+  <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
+    <value>Report a problem</value>
+  </data>
+  <data name="MainWindow_TextBlockRotation.Text" xml:space="preserve">
+    <value>Rotation</value>
+  </data>
+  <data name="MainWindow_TextBlockSaveLogsAndSystemDetailsWithSensitive.Text" xml:space="preserve">
+    <value>Save logs and system details with sensitive information removed.</value>
+  </data>
+  <data name="MainWindow_TextBlockScreenRegion.Text" xml:space="preserve">
+    <value>Screen region</value>
+  </data>
+  <data name="MainWindow_TextBlockSecondColor.Text" xml:space="preserve">
+    <value>Second color</value>
+  </data>
+  <data name="MainWindow_TextBlockSeeWhatChangedInEachOpenBladeBuild.Text" xml:space="preserve">
+    <value>See what changed in each OpenBlade build.</value>
+  </data>
+  <data name="MainWindow_TextBlockService.Text" xml:space="preserve">
+    <value>Service</value>
+  </data>
+  <data name="MainWindow_TextBlockServiceAndDeviceStatus.Text" xml:space="preserve">
+    <value>Service and device status</value>
+  </data>
+  <data name="MainWindow_TextBlockSessionAgent.Text" xml:space="preserve">
+    <value>Session agent</value>
+  </data>
+  <data name="MainWindow_TextBlockSetting.Text" xml:space="preserve">
+    <value>Setting</value>
+  </data>
+  <data name="MainWindow_TextBlockSettings.Text" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="MainWindow_TextBlockShortcutKeys.Text" xml:space="preserve">
+    <value>Shortcut keys</value>
+  </data>
+  <data name="MainWindow_TextBlockShowAWiderRangeOfColorsAnd.Text" xml:space="preserve">
+    <value>Show a wider range of colors and brightness in supported content.</value>
+  </data>
+  <data name="MainWindow_TextBlockShownOnDashboard.Text" xml:space="preserve">
+    <value>Shown on Dashboard</value>
+  </data>
+  <data name="MainWindow_TextBlockShutdown.Text" xml:space="preserve">
+    <value>Shutdown</value>
+  </data>
+  <data name="MainWindow_TextBlockShutDown2.Text" xml:space="preserve">
+    <value>Shut down</value>
+  </data>
+  <data name="MainWindow_TextBlockShutDownOpenBlade.Text" xml:space="preserve">
+    <value>Shut down OpenBlade</value>
+  </data>
+  <data name="MainWindow_TextBlockSixtyHzKeyboardLighting.Text" xml:space="preserve">
+    <value>60 Hz keyboard lighting</value>
+  </data>
+  <data name="MainWindow_TextBlockSixtyHzLighting.Text" xml:space="preserve">
+    <value>60 Hz lighting</value>
+  </data>
+  <data name="MainWindow_TextBlockSmoothQuietChanges.Text" xml:space="preserve">
+    <value>Smooth quiet changes</value>
+  </data>
+  <data name="MainWindow_TextBlockSourceCode.Text" xml:space="preserve">
+    <value>Source code</value>
+  </data>
+  <data name="MainWindow_TextBlockStableOffersNormalReleasesNightlyOffersThe.Text" xml:space="preserve">
+    <value>Stable offers normal releases. Nightly offers the newest automated test build.</value>
+  </data>
+  <data name="MainWindow_TextBlockStarlightColors.Text" xml:space="preserve">
+    <value>Starlight colors</value>
+  </data>
+  <data name="MainWindow_TextBlockStarlightDuration.Text" xml:space="preserve">
+    <value>Starlight duration</value>
+  </data>
+  <data name="MainWindow_TextBlockStartAtSignIn.Text" xml:space="preserve">
+    <value>Start at sign-in</value>
+  </data>
+  <data name="MainWindow_TextBlockStartMinimized.Text" xml:space="preserve">
+    <value>Start minimized</value>
+  </data>
+  <data name="MainWindow_TextBlockStartOpenBlade.Text" xml:space="preserve">
+    <value>Start OpenBlade</value>
+  </data>
+  <data name="MainWindow_TextBlockStartup.Text" xml:space="preserve">
+    <value>Startup</value>
+  </data>
+  <data name="MainWindow_TextBlockStartupAnimation.Text" xml:space="preserve">
+    <value>Startup animation</value>
+  </data>
+  <data name="MainWindow_TextBlockStartupAnimation2.Text" xml:space="preserve">
+    <value>Startup animation</value>
+  </data>
+  <data name="MainWindow_TextBlockStartupAnimation3.Text" xml:space="preserve">
+    <value>Startup animation</value>
+  </data>
+  <data name="MainWindow_TextBlockStatusRow.Text" xml:space="preserve">
+    <value>Status row</value>
+  </data>
+  <data name="MainWindow_TextBlockStopTheAppDisplayHelperAndHardware.Text" xml:space="preserve">
+    <value>Stop the app, display helper, and hardware service. You can start OpenBlade again from troubleshooting.</value>
+  </data>
+  <data name="MainWindow_TextBlockSupport.Text" xml:space="preserve">
+    <value>Support</value>
+  </data>
+  <data name="MainWindow_TextBlockSwitchOffKeyboardLightingUntilTheDisplay.Text" xml:space="preserve">
+    <value>Switch off keyboard lighting until the display turns on again.</value>
+  </data>
+  <data name="MainWindow_TextBlockSwitchOffKeyboardLightingWhenYouHave.Text" xml:space="preserve">
+    <value>Switch off keyboard lighting when you have not used the laptop.</value>
+  </data>
+  <data name="MainWindow_TextBlockSwitchOffLighting.Text" xml:space="preserve">
+    <value>Switch off lighting</value>
+  </data>
+  <data name="MainWindow_TextBlockTaskbarHoverLabel.Text" xml:space="preserve">
+    <value>Taskbar hover label</value>
+  </data>
+  <data name="MainWindow_TextBlockTemporaryFullCharge.Text" xml:space="preserve">
+    <value>Temporary full charge</value>
+  </data>
+  <data name="MainWindow_TextBlockTheFirstSixControlsRemainVisibleAny.Text" xml:space="preserve">
+    <value>The first six controls remain visible. Any additional controls scroll in the popup.</value>
+  </data>
+  <data name="MainWindow_TextBlockTheseAreTheSettingsSavedInEach.Text" xml:space="preserve">
+    <value>These are the settings saved in each profile. A dot marks a value with a pending change; point to it to preview the new value.</value>
+  </data>
+  <data name="MainWindow_TextBlockThunderboltFirmware.Text" xml:space="preserve">
+    <value>Thunderbolt 5</value>
+  </data>
+  <data name="MainWindow_TextBlockTouchpadFirmware.Text" xml:space="preserve">
+    <value>Touchpad</value>
+  </data>
+  <data name="MainWindow_TextBlockTrayDashboard.Text" xml:space="preserve">
+    <value>Tray dashboard</value>
+  </data>
+  <data name="MainWindow_TextBlockTroubleshooting.Text" xml:space="preserve">
+    <value>Troubleshooting</value>
+  </data>
+  <data name="MainWindow_TextBlockTurnOnExperimentalFeatures.Text" xml:space="preserve">
+    <value>Turn on experimental features.</value>
+  </data>
+  <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
+    <value>Unsaved</value>
+  </data>
+  <data name="MainWindow_TextBlockUpdateChannel.Text" xml:space="preserve">
+    <value>Update channel</value>
+  </data>
+  <data name="MainWindow_TextBlockUpdates.Text" xml:space="preserve">
+    <value>Updates</value>
+  </data>
+  <data name="MainWindow_TextBlockUSBC.Text" xml:space="preserve">
+    <value>USB-C</value>
+  </data>
+  <data name="MainWindow_TextBlockUSBDevice.Text" xml:space="preserve">
+    <value>USB device</value>
+  </data>
+  <data name="MainWindow_TextBlockUseCustomizeToAddTheCardsYou.Text" xml:space="preserve">
+    <value>Use Customize to add the cards you want to see here.</value>
+  </data>
+  <data name="MainWindow_TextBlockUseHDR.Text" xml:space="preserve">
+    <value>Use HDR</value>
+  </data>
+  <data name="MainWindow_TextBlockUseOneColorAlternateBetweenTwoOr.Text" xml:space="preserve">
+    <value>Use one color, alternate between two, or choose random colors.</value>
+  </data>
+  <data name="MainWindow_TextBlockUseOneColorAlternateBetweenTwoOr2.Text" xml:space="preserve">
+    <value>Use one color, alternate between two, or choose random colors.</value>
+  </data>
+  <data name="MainWindow_TextBlockUseOpenBladeGreenTheWindowsAccentOr.Text" xml:space="preserve">
+    <value>Use OpenBlade green, the Windows accent, or a color you choose.</value>
+  </data>
+  <data name="MainWindow_TextBlockUseTheHotterSensorForBothFans.Text" xml:space="preserve">
+    <value>Use the hotter sensor for both fans</value>
+  </data>
+  <data name="MainWindow_TextBlockUseWindowsForKeyboardEffectsAndBrightness.Text" xml:space="preserve">
+    <value>Use Windows for keyboard effects and brightness.</value>
+  </data>
+  <data name="MainWindow_TextBlockVBIOS.Text" xml:space="preserve">
+    <value>VBIOS</value>
+  </data>
+  <data name="MainWindow_TextBlockVBIOS2.Text" xml:space="preserve">
+    <value>VBIOS</value>
+  </data>
+  <data name="MainWindow_TextBlockVersions.Text" xml:space="preserve">
+    <value>Versions</value>
+  </data>
+  <data name="MainWindow_TextBlockViewAndContributeToOpenBladeOnGitHub.Text" xml:space="preserve">
+    <value>View and contribute to OpenBlade on GitHub.</value>
+  </data>
+  <data name="MainWindow_TextBlockViewFirmwareDownloadsAndReleaseDetailsOn.Text" xml:space="preserve">
+    <value>View firmware downloads and release details on Razer's site.</value>
+  </data>
+  <data name="MainWindow_TextBlockViewLiveConnectionAndControlDetails.Text" xml:space="preserve">
+    <value>View live connection and control details.</value>
+  </data>
+  <data name="MainWindow_TextBlockWhenOffOpenBladeYieldsKeyboardLightingTo.Text" xml:space="preserve">
+    <value>When off, OpenBlade yields keyboard lighting to Synapse. Turn it on to reapply the last OpenBlade effect after an external change.</value>
+  </data>
+  <data name="MainWindow_TextBlockWhenTheDisplayTurnsOff.Text" xml:space="preserve">
+    <value>When the display turns off</value>
+  </data>
+  <data name="MainWindow_TextBlockWindows11X64.Text" xml:space="preserve">
+    <value>Windows 11 x64</value>
+  </data>
+  <data name="MainWindow_TextBlockWindowsDynamicLighting.Text" xml:space="preserve">
+    <value>Windows Dynamic Lighting</value>
+  </data>
+  <data name="MainWindow_TextBlockWindowsPowerMode.Text" xml:space="preserve">
+    <value>Windows power mode</value>
+  </data>
+  <data name="MainWindow_TextBlockWindowsPowerMode2.Text" xml:space="preserve">
+    <value>Windows power mode</value>
+  </data>
+  <data name="MainWindow_TextBlockWindowsPowerMode3.Text" xml:space="preserve">
+    <value>Windows power mode</value>
+  </data>
+  <data name="MainWindow_TextBlockYourDashboardIsEmpty.Text" xml:space="preserve">
+    <value>Your Dashboard is empty</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchAlwaysOverrideExternalLightingChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Always override external lighting changes</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchBlockAltTabInGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Block Alt+Tab in Gaming mode</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchBlockTheWindowsKeyInGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Block the Windows key in Gaming mode</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchForceRunOnIncompatibleFirmware.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Force run on incompatible firmware</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeOperationFails.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Notify when an OpenBlade operation fails</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeUpdateIsAvailable.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Notify when an OpenBlade update is available</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenAnotherRazerControllerIsDetected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Notify when another Razer controller is detected</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenARazerFirmwareUpdateIs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Notify when a Razer firmware update is available</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenTheActivePowerProfileChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Notify when the active power profile changes</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenThePerformanceModeChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Notify when the performance mode changes</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchRandomTidalColors.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Random Tidal colors</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchStartOpenBladeWhenISignIn.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Start OpenBlade when I sign in</value>
+  </data>
+  <data name="MainWindow_TrayDashboard_Count" xml:space="preserve">
+    <value>{0} of {1}</value>
+  </data>
+  <data name="MainWindow_TroubleshootingExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Troubleshooting details</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_CloseButton" xml:space="preserve">
+    <value>Manual only</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_Content" xml:space="preserve">
+    <value>OpenBlade can check GitHub for a new release once per day when </value>
+  </data>
+  <data name="MainWindow_UpdateConsent_PrimaryButton" xml:space="preserve">
+    <value>Use daily checks</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_Title" xml:space="preserve">
+    <value>Check for OpenBlade updates?</value>
+  </data>
+  <data name="MainWindow_WindowsDynamicLightingToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Let Windows Dynamic Lighting control the keyboard</value>
+  </data>
+  <data name="MainWindow_WindowsPowerModeSelectorText.AccessibleName" xml:space="preserve">
+    <value>Windows power mode</value>
+  </data>
+  <data name="Navigation_About" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="Navigation_Display" xml:space="preserve">
+    <value>Display</value>
+  </data>
+  <data name="Navigation_Laptop" xml:space="preserve">
+    <value>Laptop</value>
+  </data>
+  <data name="Navigation_Lighting" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="Navigation_Profiles" xml:space="preserve">
+    <value>Profiles</value>
+  </data>
+  <data name="Navigation_Settings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_AppPath" xml:space="preserve">
+    <value>App or file path</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Shortcut" xml:space="preserve">
+    <value>Shortcut</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Text" xml:space="preserve">
+    <value>Text</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Website" xml:space="preserve">
+    <value>Website</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Shortcut" xml:space="preserve">
+    <value>For example: Ctrl+Shift+M</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Text" xml:space="preserve">
+    <value>Text to type</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Fans" xml:space="preserve">
+    <value>Fans</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_GamingMode" xml:space="preserve">
+    <value>Gaming mode</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Lighting" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Performance" xml:space="preserve">
+    <value>Performance</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonBackToQuickControls.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Back to quick controls</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonChooseFanMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Choose fan mode</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonChooseLightingEffect.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Choose lighting effect</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonChoosePerformanceMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Choose performance mode</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonConfigureGamingModeKeys.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Configure gaming mode keys</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonCycleFanMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Cycle fan mode</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonCycleFunctionRowMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Cycle function row mode</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonCycleLightingEffect.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Cycle lighting effect</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonCyclePerformanceMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Cycle performance mode</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleBatteryProtection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Toggle battery protection</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleChargeLimit.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Toggle charge limit</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleChargeLimit.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Toggle charge limit</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Toggle gaming mode</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGPUClockTuning.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Toggle GPU clock tuning</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGPUClockTuning.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Toggle GPU clock tuning</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGPUClockTuning2.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Toggle GPU clock tuning</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGPUClockTuning2.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Toggle GPU clock tuning</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGPUTuning.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Toggle GPU tuning</value>
+  </data>
+  <data name="TrayDashboardWindow_ChargeLimitSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Charge limit</value>
+  </data>
+  <data name="TrayDashboardWindow_FansDetailText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Fan choices</value>
+  </data>
+  <data name="TrayDashboardWindow_GpuCoreClockSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU core clock offset</value>
+  </data>
+  <data name="TrayDashboardWindow_GpuMemoryClockSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU memory clock offset</value>
+  </data>
+  <data name="TrayDashboardWindow_LightingDetailText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Lighting effect choices</value>
+  </data>
+  <data name="TrayDashboardWindow_PerformanceDetailText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Performance choices</value>
+  </data>
+  <data name="TrayDashboardWindow_SliderKeyboardBrightness.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Keyboard brightness</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockBatteryProtection.Text" xml:space="preserve">
+    <value>Battery protection</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockBlockAltTab.Text" xml:space="preserve">
+    <value>Block Alt+Tab</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockBlockWindowsKey.Text" xml:space="preserve">
+    <value>Block Windows key</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockC.Text" xml:space="preserve">
+    <value>C</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockChooseWhichKeysWindowsBlocksWhileGaming.Text" xml:space="preserve">
+    <value>Choose which keys Windows blocks while gaming mode is on.</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockFans.Text" xml:space="preserve">
+    <value>Fans</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockFunctionRow.Text" xml:space="preserve">
+    <value>Function row</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockGamingMode.Text" xml:space="preserve">
+    <value>Gaming mode</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockGPUTuning.Text" xml:space="preserve">
+    <value>GPU tuning</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockLighting.Text" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockM.Text" xml:space="preserve">
+    <value>M</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockPerformance.Text" xml:space="preserve">
+    <value>Performance</value>
+  </data>
+  <data name="TrayDashboardWindow_WindowTitle" xml:space="preserve">
+    <value>OpenBlade quick controls</value>
+  </data>
+  <data name="TrayIconMenu_DoubleClick" xml:space="preserve">
+    <value>Double-click</value>
+  </data>
+  <data name="TrayIconMenu_Exit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="TrayIconMenu_Open" xml:space="preserve">
+    <value>Open</value>
+  </data>
+</root>

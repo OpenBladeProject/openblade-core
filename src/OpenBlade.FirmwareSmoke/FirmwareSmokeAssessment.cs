@@ -370,6 +370,26 @@ public static class FirmwareSmokeAssessment
                     : baselineVersion,
                 currentVersion));
         }
+
+        if (expectedChangedComponents.Contains(FirmwareComponent.Vbios)
+            || requiredReadableComponents.Contains(FirmwareComponent.Vbios))
+        {
+            bool baselineGpuReadable = !IsUnavailable(baseline.VbiosGpuName);
+            bool currentGpuReadable = !IsUnavailable(current.VbiosGpuName);
+            checks.Add(Check(
+                "firmware.vbios-gpu",
+                "VBIOS GPU identity remains readable and unchanged",
+                baselineGpuReadable
+                    && currentGpuReadable
+                    && string.Equals(
+                        baseline.VbiosGpuName,
+                        current.VbiosGpuName,
+                        StringComparison.Ordinal),
+                baselineGpuReadable
+                    ? baseline.VbiosGpuName
+                    : "The same readable GPU identity in both snapshots",
+                current.VbiosGpuName));
+        }
     }
 
     private static void RequireComponents(
@@ -398,8 +418,15 @@ public static class FirmwareSmokeAssessment
     private static string FirmwareInventory(FirmwareIdentity firmware) =>
         string.Join(
             "; ",
-            FirmwareVersions(firmware).Select(version =>
-                $"{FirmwareComponentName(version.Key)}={version.Value}"));
+            FirmwareVersions(firmware)
+                .Select(version => version.Key == FirmwareComponent.Vbios
+                    ? $"VBIOS={version.Value} (GPU={firmware.VbiosGpuName})"
+                    : $"{FirmwareComponentName(version.Key)}={version.Value}")
+                .Concat(
+                [
+                    $"Thunderbolt={firmware.Thunderbolt} ({firmware.ThunderboltAccess ?? "Unavailable"})",
+                    $"Touchpad={firmware.Touchpad} ({firmware.TouchpadAccess ?? "Unavailable"})",
+                ]));
 
     private static string FirmwareComponentName(FirmwareComponent component) =>
         component switch

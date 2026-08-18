@@ -1,0 +1,1287 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name=" · " xml:space="preserve">
+    <value> · </value>
+  </data>
+  <data name=" (CPU {0}, GPU {1})" xml:space="preserve">
+    <value> (CPU {0}, GPU {1})</value>
+  </data>
+  <data name=" {0}" xml:space="preserve">
+    <value> {0}</value>
+  </data>
+  <data name=" / " xml:space="preserve">
+    <value> / </value>
+  </data>
+  <data name=" | " xml:space="preserve">
+    <value> | </value>
+  </data>
+  <data name=", {0}{1} steps" xml:space="preserve">
+    <value>, {0}{1} steps</value>
+  </data>
+  <data name=", step not yet validated" xml:space="preserve">
+    <value>, step not yet validated</value>
+  </data>
+  <data name="{0:N0} RPM" xml:space="preserve">
+    <value>{0:N0} RPM</value>
+  </data>
+  <data name="{0} · {1}" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="{0} {1:N0} RPM" xml:space="preserve">
+    <value>{0} {1:N0} RPM</value>
+  </data>
+  <data name="{0} {1}" xml:space="preserve">
+    <value>{0} {1}</value>
+  </data>
+  <data name="{0} {1} °C" xml:space="preserve">
+    <value>{0} {1} °C</value>
+  </data>
+  <data name="{0} {1}: {2}" xml:space="preserve">
+    <value>{0} {1}: {2}</value>
+  </data>
+  <data name="{0} {1}: {2}. Pending: {3}" xml:space="preserve">
+    <value>{0} {1}: {2}. Pending: {3}</value>
+  </data>
+  <data name="{0} / {1}" xml:space="preserve">
+    <value>{0} / {1}</value>
+  </data>
+  <data name="{0} %" xml:space="preserve">
+    <value>{0} %</value>
+  </data>
+  <data name="{0} °C" xml:space="preserve">
+    <value>{0} °C</value>
+  </data>
+  <data name="{0} × {1}" xml:space="preserve">
+    <value>{0} × {1}</value>
+  </data>
+  <data name="{0} | {1} fans" xml:space="preserve">
+    <value>{0} | {1} fans</value>
+  </data>
+  <data name="{0} | {1}%" xml:space="preserve">
+    <value>{0} | {1}%</value>
+  </data>
+  <data name="{0} | {1}% | {2}" xml:space="preserve">
+    <value>{0} | {1}% | {2}</value>
+  </data>
+  <data name="{0} and {1}" xml:space="preserve">
+    <value>{0} and {1}</value>
+  </data>
+  <data name="{0} and {1}, {2}" xml:space="preserve">
+    <value>{0} and {1}, {2}</value>
+  </data>
+  <data name="{0} fans" xml:space="preserve">
+    <value>{0} fans</value>
+  </data>
+  <data name="{0} Hz" xml:space="preserve">
+    <value>{0} Hz</value>
+  </data>
+  <data name="{0} MHz" xml:space="preserve">
+    <value>{0} MHz</value>
+  </data>
+  <data name="{0} minutes" xml:space="preserve">
+    <value>{0} minutes</value>
+  </data>
+  <data name="{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ." xml:space="preserve">
+    <value>{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ.</value>
+  </data>
+  <data name="{0} unavailable" xml:space="preserve">
+    <value>{0} unavailable</value>
+  </data>
+  <data name="{0} W" xml:space="preserve">
+    <value>{0} W</value>
+  </data>
+  <data name="{0}-bit" xml:space="preserve">
+    <value>{0}-bit</value>
+  </data>
+  <data name="{0}–{1}{2}{3}" xml:space="preserve">
+    <value>{0}–{1}{2}{3}</value>
+  </data>
+  <data name="{0}, {1}" xml:space="preserve">
+    <value>{0}, {1}</value>
+  </data>
+  <data name="{0}; {1}" xml:space="preserve">
+    <value>{0}; {1}</value>
+  </data>
+  <data name="{0}; check incomplete: {1}" xml:space="preserve">
+    <value>{0}; check incomplete: {1}</value>
+  </data>
+  <data name="{0}: {1:N0} RPM" xml:space="preserve">
+    <value>{0}: {1:N0} RPM</value>
+  </data>
+  <data name="{0}: {1} {2}" xml:space="preserve">
+    <value>{0}: {1} {2}</value>
+  </data>
+  <data name="{0}: unavailable" xml:space="preserve">
+    <value>{0}: unavailable</value>
+  </data>
+  <data name="{0}%" xml:space="preserve">
+    <value>{0}%</value>
+  </data>
+  <data name="{0}% ({1} Wh of {2} Wh)" xml:space="preserve">
+    <value>{0}% ({1} Wh of {2} Wh)</value>
+  </data>
+  <data name="{0}°" xml:space="preserve">
+    <value>{0}°</value>
+  </data>
+  <data name="{0}° / {1}°" xml:space="preserve">
+    <value>{0}° / {1}°</value>
+  </data>
+  <data name="{0}°C" xml:space="preserve">
+    <value>{0}°C</value>
+  </data>
+  <data name="{0}K" xml:space="preserve">
+    <value>{0}K</value>
+  </data>
+  <data name="+{0} W" xml:space="preserve">
+    <value>+{0} W</value>
+  </data>
+  <data name="60 Hz lighting is not available for this keyboard." xml:space="preserve">
+    <value>60 Hz lighting is not available for this keyboard.</value>
+  </data>
+  <data name="A shortcut must include a non-modifier key." xml:space="preserve">
+    <value>A shortcut must include a non-modifier key.</value>
+  </data>
+  <data name="AC · {0}" xml:space="preserve">
+    <value>AC · {0}</value>
+  </data>
+  <data name="AC profile" xml:space="preserve">
+    <value>AC profile</value>
+  </data>
+  <data name="Active profile" xml:space="preserve">
+    <value>Active profile</value>
+  </data>
+  <data name="All profiles" xml:space="preserve">
+    <value>All profiles</value>
+  </data>
+  <data name="Ambient Awareness" xml:space="preserve">
+    <value>Ambient Awareness</value>
+  </data>
+  <data name="Ambient Awareness, {0}" xml:space="preserve">
+    <value>Ambient Awareness, {0}</value>
+  </data>
+  <data name="Ambient Awareness, full screen" xml:space="preserve">
+    <value>Ambient Awareness, full screen</value>
+  </data>
+  <data name="Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back." xml:space="preserve">
+    <value>Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back.</value>
+  </data>
+  <data name="Another Razer app is running" xml:space="preserve">
+    <value>Another Razer app is running</value>
+  </data>
+  <data name="Another Razer app may be using the laptop’s lighting interface. OpenBlade will enable these controls when it becomes available." xml:space="preserve">
+    <value>Another Razer app may be using the laptop’s lighting interface. OpenBlade will enable these controls when it becomes available.</value>
+  </data>
+  <data name="Another user is controlling OpenBlade" xml:space="preserve">
+    <value>Another user is controlling OpenBlade</value>
+  </data>
+  <data name="Appearance" xml:space="preserve">
+    <value>Appearance</value>
+  </data>
+  <data name="Audio Meter" xml:space="preserve">
+    <value>Audio Meter</value>
+  </data>
+  <data name="Audio Meter, color boost {0}, smoothing: {1}" xml:space="preserve">
+    <value>Audio Meter, color boost {0}, smoothing: {1}</value>
+  </data>
+  <data name="Automatic" xml:space="preserve">
+    <value>Automatic</value>
+  </data>
+  <data name="Available" xml:space="preserve">
+    <value>Available</value>
+  </data>
+  <data name="Available · Windows OSD" xml:space="preserve">
+    <value>Available · Windows OSD</value>
+  </data>
+  <data name="Balanced" xml:space="preserve">
+    <value>Balanced</value>
+  </data>
+  <data name="Balances performance and energy use." xml:space="preserve">
+    <value>Balances performance and energy use.</value>
+  </data>
+  <data name="Battery" xml:space="preserve">
+    <value>Battery</value>
+  </data>
+  <data name="Battery · {0}" xml:space="preserve">
+    <value>Battery · {0}</value>
+  </data>
+  <data name="Battery power" xml:space="preserve">
+    <value>Battery power</value>
+  </data>
+  <data name="Battery power flow" xml:space="preserve">
+    <value>Battery power flow</value>
+  </data>
+  <data name="Battery power unavailable" xml:space="preserve">
+    <value>Battery power unavailable</value>
+  </data>
+  <data name="Battery profile" xml:space="preserve">
+    <value>Battery profile</value>
+  </data>
+  <data name="Battery protection" xml:space="preserve">
+    <value>Battery protection</value>
+  </data>
+  <data name="Battery protection off" xml:space="preserve">
+    <value>Battery protection off</value>
+  </data>
+  <data name="Battery protection: {0} (not saved to profile)" xml:space="preserve">
+    <value>Battery protection: {0} (not saved to profile)</value>
+  </data>
+  <data name="Battery Saver" xml:space="preserve">
+    <value>Battery Saver</value>
+  </data>
+  <data name="Battery setting unavailable" xml:space="preserve">
+    <value>Battery setting unavailable</value>
+  </data>
+  <data name="Behavior" xml:space="preserve">
+    <value>Behavior</value>
+  </data>
+  <data name="Best performance" xml:space="preserve">
+    <value>Best performance</value>
+  </data>
+  <data name="Best power efficiency" xml:space="preserve">
+    <value>Best power efficiency</value>
+  </data>
+  <data name="Block Alt+Tab" xml:space="preserve">
+    <value>Block Alt+Tab</value>
+  </data>
+  <data name="Block Windows key" xml:space="preserve">
+    <value>Block Windows key</value>
+  </data>
+  <data name="Bottom" xml:space="preserve">
+    <value>Bottom</value>
+  </data>
+  <data name="Breathing" xml:space="preserve">
+    <value>Breathing</value>
+  </data>
+  <data name="Breathing, one color" xml:space="preserve">
+    <value>Breathing, one color</value>
+  </data>
+  <data name="Breathing, random colors" xml:space="preserve">
+    <value>Breathing, random colors</value>
+  </data>
+  <data name="Breathing, two colors" xml:space="preserve">
+    <value>Breathing, two colors</value>
+  </data>
+  <data name="Built-in display" xml:space="preserve">
+    <value>Built-in display</value>
+  </data>
+  <data name="Cancel charge to 100%" xml:space="preserve">
+    <value>Cancel charge to 100%</value>
+  </data>
+  <data name="Changed outside OpenBlade" xml:space="preserve">
+    <value>Changed outside OpenBlade</value>
+  </data>
+  <data name="Changed outside OpenBlade: {0}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade." xml:space="preserve">
+    <value>Changed outside OpenBlade: {0}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade.</value>
+  </data>
+  <data name="Charge limit" xml:space="preserve">
+    <value>Charge limit</value>
+  </data>
+  <data name="Charge limit {0}%" xml:space="preserve">
+    <value>Charge limit {0}%</value>
+  </data>
+  <data name="Charge limit: {0}% not saved to profile" xml:space="preserve">
+    <value>Charge limit: {0}% not saved to profile</value>
+  </data>
+  <data name="Charge to 100% until unplugged" xml:space="preserve">
+    <value>Charge to 100% until unplugged</value>
+  </data>
+  <data name="Charging at {0} W" xml:space="preserve">
+    <value>Charging at {0} W</value>
+  </data>
+  <data name="Charging to 100%" xml:space="preserve">
+    <value>Charging to 100%</value>
+  </data>
+  <data name="Check Razer&apos;s official page for the latest firmware versions." xml:space="preserve">
+    <value>Check Razer&apos;s official page for the latest firmware versions.</value>
+  </data>
+  <data name="Check status" xml:space="preserve">
+    <value>Check status</value>
+  </data>
+  <data name="Checking" xml:space="preserve">
+    <value>Checking</value>
+  </data>
+  <data name="Checking GitHub for updates..." xml:space="preserve">
+    <value>Checking GitHub for updates...</value>
+  </data>
+  <data name="Checking laptop" xml:space="preserve">
+    <value>Checking laptop</value>
+  </data>
+  <data name="Checking Razer&apos;s official support page..." xml:space="preserve">
+    <value>Checking Razer&apos;s official support page...</value>
+  </data>
+  <data name="Checking the built-in display..." xml:space="preserve">
+    <value>Checking the built-in display...</value>
+  </data>
+  <data name="Choose a supported keyboard lighting effect." xml:space="preserve">
+    <value>Choose a supported keyboard lighting effect.</value>
+  </data>
+  <data name="Choose automatic, fixed, maximum, or manual fan control." xml:space="preserve">
+    <value>Choose automatic, fixed, maximum, or manual fan control.</value>
+  </data>
+  <data name="Choose function keys or media keys as the primary action." xml:space="preserve">
+    <value>Choose function keys or media keys as the primary action.</value>
+  </data>
+  <data name="Choose the actions assigned to M1 through M5." xml:space="preserve">
+    <value>Choose the actions assigned to M1 through M5.</value>
+  </data>
+  <data name="Choose the active power mode and custom CPU or GPU levels." xml:space="preserve">
+    <value>Choose the active power mode and custom CPU or GPU levels.</value>
+  </data>
+  <data name="Choose the active power mode." xml:space="preserve">
+    <value>Choose the active power mode.</value>
+  </data>
+  <data name="Choose the color profile used by the built-in display." xml:space="preserve">
+    <value>Choose the color profile used by the built-in display.</value>
+  </data>
+  <data name="Choose the current fan mode." xml:space="preserve">
+    <value>Choose the current fan mode.</value>
+  </data>
+  <data name="Choose the effect&apos;s first color." xml:space="preserve">
+    <value>Choose the effect&apos;s first color.</value>
+  </data>
+  <data name="Choose the keyboard color." xml:space="preserve">
+    <value>Choose the keyboard color.</value>
+  </data>
+  <data name="Choose the keyboard effect and brightness." xml:space="preserve">
+    <value>Choose the keyboard effect and brightness.</value>
+  </data>
+  <data name="Choose the laptop&apos;s performance and power behavior." xml:space="preserve">
+    <value>Choose the laptop&apos;s performance and power behavior.</value>
+  </data>
+  <data name="Choose the lighting mode for the logo on the lid." xml:space="preserve">
+    <value>Choose the lighting mode for the logo on the lid.</value>
+  </data>
+  <data name="Choose when OpenBlade checks GitHub for new releases." xml:space="preserve">
+    <value>Choose when OpenBlade checks GitHub for new releases.</value>
+  </data>
+  <data name="Choose whether the keyboard animation plays during startup." xml:space="preserve">
+    <value>Choose whether the keyboard animation plays during startup.</value>
+  </data>
+  <data name="clockwise" xml:space="preserve">
+    <value>clockwise</value>
+  </data>
+  <data name="Color" xml:space="preserve">
+    <value>Color</value>
+  </data>
+  <data name="color boost {0}, smoothing: {1}" xml:space="preserve">
+    <value>color boost {0}, smoothing: {1}</value>
+  </data>
+  <data name="Color profile" xml:space="preserve">
+    <value>Color profile</value>
+  </data>
+  <data name="Color profile changed outside OpenBlade." xml:space="preserve">
+    <value>Color profile changed outside OpenBlade.</value>
+  </data>
+  <data name="Compare the settings stored in AC, USB-C, and Battery profiles." xml:space="preserve">
+    <value>Compare the settings stored in AC, USB-C, and Battery profiles.</value>
+  </data>
+  <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
+    <value>Configure live readings, sign-in, and lighting ownership.</value>
+  </data>
+  <data name="Configure theme, accent color, navigation, and tray text." xml:space="preserve">
+    <value>Configure theme, accent color, navigation, and tray text.</value>
+  </data>
+  <data name="Connection, active settings, and the live readings you selected." xml:space="preserve">
+    <value>Connection, active settings, and the live readings you selected.</value>
+  </data>
+  <data name="Control keyboard effects, brightness, and laptop logo lighting." xml:space="preserve">
+    <value>Control keyboard effects, brightness, and laptop logo lighting.</value>
+  </data>
+  <data name="Control keyboard effects, brightness, colors, and direction." xml:space="preserve">
+    <value>Control keyboard effects, brightness, colors, and direction.</value>
+  </data>
+  <data name="Control refresh rate, HDR, and color profile." xml:space="preserve">
+    <value>Control refresh rate, HDR, and color profile.</value>
+  </data>
+  <data name="Control refresh rate, HDR, and the color profile." xml:space="preserve">
+    <value>Control refresh rate, HDR, and the color profile.</value>
+  </data>
+  <data name="Controller detection needs attention" xml:space="preserve">
+    <value>Controller detection needs attention</value>
+  </data>
+  <data name="Controls unavailable" xml:space="preserve">
+    <value>Controls unavailable</value>
+  </data>
+  <data name="Core {0}, memory {1}" xml:space="preserve">
+    <value>Core {0}, memory {1}</value>
+  </data>
+  <data name="Could not change start at sign-in: {0}" xml:space="preserve">
+    <value>Could not change start at sign-in: {0}</value>
+  </data>
+  <data name="Could not check: {0}" xml:space="preserve">
+    <value>Could not check: {0}</value>
+  </data>
+  <data name="Could not clear {0} overrides." xml:space="preserve">
+    <value>Could not clear {0} overrides.</value>
+  </data>
+  <data name="Could not restore the saved display profile because the display controller is unavailable." xml:space="preserve">
+    <value>Could not restore the saved display profile because the display controller is unavailable.</value>
+  </data>
+  <data name="Could not restore the saved display profile because Windows did not confirm every setting." xml:space="preserve">
+    <value>Could not restore the saved display profile because Windows did not confirm every setting.</value>
+  </data>
+  <data name="Could not restore the saved display profile: {0}" xml:space="preserve">
+    <value>Could not restore the saved display profile: {0}</value>
+  </data>
+  <data name="Could not restore the saved profile settings because the power source changed." xml:space="preserve">
+    <value>Could not restore the saved profile settings because the power source changed.</value>
+  </data>
+  <data name="Couldn&apos;t check for updates. Try again later." xml:space="preserve">
+    <value>Couldn&apos;t check for updates. Try again later.</value>
+  </data>
+  <data name="Couldn&apos;t read" xml:space="preserve">
+    <value>Couldn&apos;t read</value>
+  </data>
+  <data name="Couldn&apos;t read Razer&apos;s page. The official link is still available." xml:space="preserve">
+    <value>Couldn&apos;t read Razer&apos;s page. The official link is still available.</value>
+  </data>
+  <data name="counterclockwise" xml:space="preserve">
+    <value>counterclockwise</value>
+  </data>
+  <data name="CPU {0}" xml:space="preserve">
+    <value>CPU {0}</value>
+  </data>
+  <data name="CPU temperature" xml:space="preserve">
+    <value>CPU temperature</value>
+  </data>
+  <data name="Current profile" xml:space="preserve">
+    <value>Current profile</value>
+  </data>
+  <data name="Current setting" xml:space="preserve">
+    <value>Current setting</value>
+  </data>
+  <data name="Current settings are not saved to this profile" xml:space="preserve">
+    <value>Current settings are not saved to this profile</value>
+  </data>
+  <data name="Custom" xml:space="preserve">
+    <value>Custom</value>
+  </data>
+  <data name="Custom, CPU {0}, GPU {1}" xml:space="preserve">
+    <value>Custom, CPU {0}, GPU {1}</value>
+  </data>
+  <data name="Daily" xml:space="preserve">
+    <value>Daily</value>
+  </data>
+  <data name="Dark" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="Device information" xml:space="preserve">
+    <value>Device information</value>
+  </data>
+  <data name="Device status and live readings" xml:space="preserve">
+    <value>Device status and live readings</value>
+  </data>
+  <data name="Diagnostic export canceled." xml:space="preserve">
+    <value>Diagnostic export canceled.</value>
+  </data>
+  <data name="Diagnostic export failed: {0}" xml:space="preserve">
+    <value>Diagnostic export failed: {0}</value>
+  </data>
+  <data name="Diagnostics exported to {0}." xml:space="preserve">
+    <value>Diagnostics exported to {0}.</value>
+  </data>
+  <data name="Different from saved profile" xml:space="preserve">
+    <value>Different from saved profile</value>
+  </data>
+  <data name="Display" xml:space="preserve">
+    <value>Display</value>
+  </data>
+  <data name="Display available" xml:space="preserve">
+    <value>Display available</value>
+  </data>
+  <data name="Display controls are unavailable." xml:space="preserve">
+    <value>Display controls are unavailable.</value>
+  </data>
+  <data name="Display setting failed." xml:space="preserve">
+    <value>Display setting failed.</value>
+  </data>
+  <data name="Display settings are unavailable." xml:space="preserve">
+    <value>Display settings are unavailable.</value>
+  </data>
+  <data name="Display settings changed outside OpenBlade." xml:space="preserve">
+    <value>Display settings changed outside OpenBlade.</value>
+  </data>
+  <data name="Display settings could not be refreshed." xml:space="preserve">
+    <value>Display settings could not be refreshed.</value>
+  </data>
+  <data name="Display turns off" xml:space="preserve">
+    <value>Display turns off</value>
+  </data>
+  <data name="Dynamic {0}–{1} Hz" xml:space="preserve">
+    <value>Dynamic {0}–{1} Hz</value>
+  </data>
+  <data name="Enter a complete http or https address." xml:space="preserve">
+    <value>Enter a complete http or https address.</value>
+  </data>
+  <data name="Enter a value for this action." xml:space="preserve">
+    <value>Enter a value for this action.</value>
+  </data>
+  <data name="Every 10 seconds" xml:space="preserve">
+    <value>Every 10 seconds</value>
+  </data>
+  <data name="Every 2 seconds" xml:space="preserve">
+    <value>Every 2 seconds</value>
+  </data>
+  <data name="Every 5 seconds" xml:space="preserve">
+    <value>Every 5 seconds</value>
+  </data>
+  <data name="Every second" xml:space="preserve">
+    <value>Every second</value>
+  </data>
+  <data name="Every startup" xml:space="preserve">
+    <value>Every startup</value>
+  </data>
+  <data name="Fan 1" xml:space="preserve">
+    <value>Fan 1</value>
+  </data>
+  <data name="Fan 1 speed" xml:space="preserve">
+    <value>Fan 1 speed</value>
+  </data>
+  <data name="Fan 2" xml:space="preserve">
+    <value>Fan 2</value>
+  </data>
+  <data name="Fan 2 speed" xml:space="preserve">
+    <value>Fan 2 speed</value>
+  </data>
+  <data name="Fan speed" xml:space="preserve">
+    <value>Fan speed</value>
+  </data>
+  <data name="Fans" xml:space="preserve">
+    <value>Fans</value>
+  </data>
+  <data name="Favors lower energy use." xml:space="preserve">
+    <value>Favors lower energy use.</value>
+  </data>
+  <data name="Favors responsiveness over energy use." xml:space="preserve">
+    <value>Favors responsiveness over energy use.</value>
+  </data>
+  <data name="Fire" xml:space="preserve">
+    <value>Fire</value>
+  </data>
+  <data name="Fixed speed" xml:space="preserve">
+    <value>Fixed speed</value>
+  </data>
+  <data name="Fixed, {0:N0} RPM" xml:space="preserve">
+    <value>Fixed, {0:N0} RPM</value>
+  </data>
+  <data name="Follow Windows" xml:space="preserve">
+    <value>Follow Windows</value>
+  </data>
+  <data name="Full screen" xml:space="preserve">
+    <value>Full screen</value>
+  </data>
+  <data name="Function keys" xml:space="preserve">
+    <value>Function keys</value>
+  </data>
+  <data name="Function row" xml:space="preserve">
+    <value>Function row</value>
+  </data>
+  <data name="Gaming mode" xml:space="preserve">
+    <value>Gaming mode</value>
+  </data>
+  <data name="GitHub is temporarily unavailable. Try again after {0:g}." xml:space="preserve">
+    <value>GitHub is temporarily unavailable. Try again after {0:g}.</value>
+  </data>
+  <data name="GitHub rate limit reached. Try again after {0:g}." xml:space="preserve">
+    <value>GitHub rate limit reached. Try again after {0:g}.</value>
+  </data>
+  <data name="GPU {0}" xml:space="preserve">
+    <value>GPU {0}</value>
+  </data>
+  <data name="GPU core clock" xml:space="preserve">
+    <value>GPU core clock</value>
+  </data>
+  <data name="GPU memory clock" xml:space="preserve">
+    <value>GPU memory clock</value>
+  </data>
+  <data name="GPU temperature" xml:space="preserve">
+    <value>GPU temperature</value>
+  </data>
+  <data name="GPU tuning" xml:space="preserve">
+    <value>GPU tuning</value>
+  </data>
+  <data name="HDR" xml:space="preserve">
+    <value>HDR</value>
+  </data>
+  <data name="HDR changed outside OpenBlade." xml:space="preserve">
+    <value>HDR changed outside OpenBlade.</value>
+  </data>
+  <data name="HDR off" xml:space="preserve">
+    <value>HDR off</value>
+  </data>
+  <data name="HDR on" xml:space="preserve">
+    <value>HDR on</value>
+  </data>
+  <data name="High" xml:space="preserve">
+    <value>High</value>
+  </data>
+  <data name="Idle" xml:space="preserve">
+    <value>Idle</value>
+  </data>
+  <data name="Imported animation" xml:space="preserve">
+    <value>Imported animation</value>
+  </data>
+  <data name="Inactivity timeout" xml:space="preserve">
+    <value>Inactivity timeout</value>
+  </data>
+  <data name="Incompatible firmware" xml:space="preserve">
+    <value>Incompatible firmware</value>
+  </data>
+  <data name="Incompatible hardware" xml:space="preserve">
+    <value>Incompatible hardware</value>
+  </data>
+  <data name="Interactive session required" xml:space="preserve">
+    <value>Interactive session required</value>
+  </data>
+  <data name="Inward" xml:space="preserve">
+    <value>Inward</value>
+  </data>
+  <data name="Keep lighting on" xml:space="preserve">
+    <value>Keep lighting on</value>
+  </data>
+  <data name="Keeps the current Windows setting." xml:space="preserve">
+    <value>Keeps the current Windows setting.</value>
+  </data>
+  <data name="Keyboard" xml:space="preserve">
+    <value>Keyboard</value>
+  </data>
+  <data name="Keyboard behavior" xml:space="preserve">
+    <value>Keyboard behavior</value>
+  </data>
+  <data name="Keyboard brightness" xml:space="preserve">
+    <value>Keyboard brightness</value>
+  </data>
+  <data name="Keyboard lighting" xml:space="preserve">
+    <value>Keyboard lighting</value>
+  </data>
+  <data name="Laptop controls are currently unavailable. Check Troubleshooting for details." xml:space="preserve">
+    <value>Laptop controls are currently unavailable. Check Troubleshooting for details.</value>
+  </data>
+  <data name="Laptop controls changed outside OpenBlade" xml:space="preserve">
+    <value>Laptop controls changed outside OpenBlade</value>
+  </data>
+  <data name="Laptop lid logo" xml:space="preserve">
+    <value>Laptop lid logo</value>
+  </data>
+  <data name="Laptop logo" xml:space="preserve">
+    <value>Laptop logo</value>
+  </data>
+  <data name="Laptop not found" xml:space="preserve">
+    <value>Laptop not found</value>
+  </data>
+  <data name="Laptop performance" xml:space="preserve">
+    <value>Laptop performance</value>
+  </data>
+  <data name="Laptop performance: {0}{5}Windows power mode: {1}{5}Fans: {2}{5}Lighting: {3}{5}Display: {4}" xml:space="preserve">
+    <value>Laptop performance: {0}{5}Windows power mode: {1}{5}Fans: {2}{5}Lighting: {3}{5}Display: {4}</value>
+  </data>
+  <data name="Last checked {0:g}. Check again to load published versions." xml:space="preserve">
+    <value>Last checked {0:g}. Check again to load published versions.</value>
+  </data>
+  <data name="Last checked at {0:T}.{1}Values change only when Windows or firmware reports new data." xml:space="preserve">
+    <value>Last checked at {0:T}.{1}Values change only when Windows or firmware reports new data.</value>
+  </data>
+  <data name="Latest firmware versions last loaded {0:g}." xml:space="preserve">
+    <value>Latest firmware versions last loaded {0:g}.</value>
+  </data>
+  <data name="Latest firmware versions loaded from Razer." xml:space="preserve">
+    <value>Latest firmware versions loaded from Razer.</value>
+  </data>
+  <data name="Latest release: {0}. The installed version could not be compared." xml:space="preserve">
+    <value>Latest release: {0}. The installed version could not be compared.</value>
+  </data>
+  <data name="Launch OpenBlade automatically when you sign in." xml:space="preserve">
+    <value>Launch OpenBlade automatically when you sign in.</value>
+  </data>
+  <data name="Leave unchanged" xml:space="preserve">
+    <value>Leave unchanged</value>
+  </data>
+  <data name="Left" xml:space="preserve">
+    <value>Left</value>
+  </data>
+  <data name="Leftward" xml:space="preserve">
+    <value>Leftward</value>
+  </data>
+  <data name="Light" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="Lighting" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="Lighting brightness" xml:space="preserve">
+    <value>Lighting brightness</value>
+  </data>
+  <data name="Lighting color" xml:space="preserve">
+    <value>Lighting color</value>
+  </data>
+  <data name="Lighting effect" xml:space="preserve">
+    <value>Lighting effect</value>
+  </data>
+  <data name="Live readings are unavailable while the OpenBlade service is not running." xml:space="preserve">
+    <value>Live readings are unavailable while the OpenBlade service is not running.</value>
+  </data>
+  <data name="Loaded" xml:space="preserve">
+    <value>Loaded</value>
+  </data>
+  <data name="Long" xml:space="preserve">
+    <value>Long</value>
+  </data>
+  <data name="Low" xml:space="preserve">
+    <value>Low</value>
+  </data>
+  <data name="Manage battery protection and temporary full charge." xml:space="preserve">
+    <value>Manage battery protection and temporary full charge.</value>
+  </data>
+  <data name="Manage battery protection, charge limit, and temporary full charge." xml:space="preserve">
+    <value>Manage battery protection, charge limit, and temporary full charge.</value>
+  </data>
+  <data name="Manual fan curve" xml:space="preserve">
+    <value>Manual fan curve</value>
+  </data>
+  <data name="Manual only" xml:space="preserve">
+    <value>Manual only</value>
+  </data>
+  <data name="Manual override clear requests completed; service confirmation is unavailable." xml:space="preserve">
+    <value>Manual override clear requests completed; service confirmation is unavailable.</value>
+  </data>
+  <data name="Manual overrides cleared; hardware restoration was not applied for {0}." xml:space="preserve">
+    <value>Manual overrides cleared; hardware restoration was not applied for {0}.</value>
+  </data>
+  <data name="Manual overrides cleared." xml:space="preserve">
+    <value>Manual overrides cleared.</value>
+  </data>
+  <data name="Matches saved profile" xml:space="preserve">
+    <value>Matches saved profile</value>
+  </data>
+  <data name="Maximum" xml:space="preserve">
+    <value>Maximum</value>
+  </data>
+  <data name="Media keys" xml:space="preserve">
+    <value>Media keys</value>
+  </data>
+  <data name="Medium" xml:space="preserve">
+    <value>Medium</value>
+  </data>
+  <data name="Monthly" xml:space="preserve">
+    <value>Monthly</value>
+  </data>
+  <data name="Native" xml:space="preserve">
+    <value>Native</value>
+  </data>
+  <data name="Never" xml:space="preserve">
+    <value>Never</value>
+  </data>
+  <data name="Newer {0} firmware is available from Razer." xml:space="preserve">
+    <value>Newer {0} firmware is available from Razer.</value>
+  </data>
+  <data name="Nightly" xml:space="preserve">
+    <value>Nightly</value>
+  </data>
+  <data name="No eligible published release is available." xml:space="preserve">
+    <value>No eligible published release is available.</value>
+  </data>
+  <data name="No internet connection. Check your connection and try again." xml:space="preserve">
+    <value>No internet connection. Check your connection and try again.</value>
+  </data>
+  <data name="No manual overrides active." xml:space="preserve">
+    <value>No manual overrides active.</value>
+  </data>
+  <data name="None" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="Not applicable" xml:space="preserve">
+    <value>Not applicable</value>
+  </data>
+  <data name="Not available · OpenBlade OSD" xml:space="preserve">
+    <value>Not available · OpenBlade OSD</value>
+  </data>
+  <data name="Not charging" xml:space="preserve">
+    <value>Not charging</value>
+  </data>
+  <data name="Not checked" xml:space="preserve">
+    <value>Not checked</value>
+  </data>
+  <data name="Not detected" xml:space="preserve">
+    <value>Not detected</value>
+  </data>
+  <data name="Not listed" xml:space="preserve">
+    <value>Not listed</value>
+  </data>
+  <data name="Not loaded" xml:space="preserve">
+    <value>Not loaded</value>
+  </data>
+  <data name="Not set" xml:space="preserve">
+    <value>Not set</value>
+  </data>
+  <data name="Not shown: {0}. Windows limits tray hover text to {1} characters." xml:space="preserve">
+    <value>Not shown: {0}. Windows limits tray hover text to {1} characters.</value>
+  </data>
+  <data name="Off" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="On" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="On battery" xml:space="preserve">
+    <value>On battery</value>
+  </data>
+  <data name="OpenBlade" xml:space="preserve">
+    <value>OpenBlade</value>
+  </data>
+  <data name="OpenBlade · {0}" xml:space="preserve">
+    <value>OpenBlade · {0}</value>
+  </data>
+  <data name="OpenBlade · Service unavailable" xml:space="preserve">
+    <value>OpenBlade · Service unavailable</value>
+  </data>
+  <data name="OpenBlade {0} is available." xml:space="preserve">
+    <value>OpenBlade {0} is available.</value>
+  </data>
+  <data name="OpenBlade app name" xml:space="preserve">
+    <value>OpenBlade app name</value>
+  </data>
+  <data name="OpenBlade can’t connect to its service, so lighting controls are unavailable." xml:space="preserve">
+    <value>OpenBlade can’t connect to its service, so lighting controls are unavailable.</value>
+  </data>
+  <data name="OpenBlade can’t find a supported laptop, so lighting controls are unavailable." xml:space="preserve">
+    <value>OpenBlade can’t find a supported laptop, so lighting controls are unavailable.</value>
+  </data>
+  <data name="OpenBlade could not check every Razer controller. Controls remain available only when the laptop is verified." xml:space="preserve">
+    <value>OpenBlade could not check every Razer controller. Controls remain available only when the laptop is verified.</value>
+  </data>
+  <data name="OpenBlade could not confirm {0} after a write. The last confirmed values remain shown. Checking the current state is read-only; OpenBlade will not retry the write automatically." xml:space="preserve">
+    <value>OpenBlade could not confirm {0} after a write. The last confirmed values remain shown. Checking the current state is read-only; OpenBlade will not retry the write automatically.</value>
+  </data>
+  <data name="OpenBlade could not verify this configuration: {0}." xml:space="preserve">
+    <value>OpenBlade could not verify this configuration: {0}.</value>
+  </data>
+  <data name="OpenBlade couldn’t access the laptop’s lighting interface. Another lighting app may be using it." xml:space="preserve">
+    <value>OpenBlade couldn’t access the laptop’s lighting interface. Another lighting app may be using it.</value>
+  </data>
+  <data name="OpenBlade couldn’t complete that action. Check Troubleshooting for details." xml:space="preserve">
+    <value>OpenBlade couldn’t complete that action. Check Troubleshooting for details.</value>
+  </data>
+  <data name="OpenBlade couldn’t confirm whether another Razer app is using the laptop’s lighting interface. Controls will remain disabled until access is available." xml:space="preserve">
+    <value>OpenBlade couldn’t confirm whether another Razer app is using the laptop’s lighting interface. Controls will remain disabled until access is available.</value>
+  </data>
+  <data name="OpenBlade found a supported laptop with incompatible firmware, so lighting controls are unavailable unless you enable the firmware override." xml:space="preserve">
+    <value>OpenBlade found a supported laptop with incompatible firmware, so lighting controls are unavailable unless you enable the firmware override.</value>
+  </data>
+  <data name="OpenBlade has not tested this configuration: {0}." xml:space="preserve">
+    <value>OpenBlade has not tested this configuration: {0}.</value>
+  </data>
+  <data name="OpenBlade is checking the laptop before enabling lighting controls." xml:space="preserve">
+    <value>OpenBlade is checking the laptop before enabling lighting controls.</value>
+  </data>
+  <data name="OpenBlade is up to date." xml:space="preserve">
+    <value>OpenBlade is up to date.</value>
+  </data>
+  <data name="OpenBlade only" xml:space="preserve">
+    <value>OpenBlade only</value>
+  </data>
+  <data name="OpenBlade saved the change, but the laptop has not applied it." xml:space="preserve">
+    <value>OpenBlade saved the change, but the laptop has not applied it.</value>
+  </data>
+  <data name="OpenBlade service isn’t running" xml:space="preserve">
+    <value>OpenBlade service isn’t running</value>
+  </data>
+  <data name="OpenBlade will not start when you sign in." xml:space="preserve">
+    <value>OpenBlade will not start when you sign in.</value>
+  </data>
+  <data name="OpenBlade will start when you sign in." xml:space="preserve">
+    <value>OpenBlade will start when you sign in.</value>
+  </data>
+  <data name="Operation failed: {0}" xml:space="preserve">
+    <value>Operation failed: {0}</value>
+  </data>
+  <data name="Other controller may be active" xml:space="preserve">
+    <value>Other controller may be active</value>
+  </data>
+  <data name="Outward" xml:space="preserve">
+    <value>Outward</value>
+  </data>
+  <data name="Pending: {0}" xml:space="preserve">
+    <value>Pending: {0}</value>
+  </data>
+  <data name="Performance" xml:space="preserve">
+    <value>Performance</value>
+  </data>
+  <data name="Power mode" xml:space="preserve">
+    <value>Power mode</value>
+  </data>
+  <data name="Power source" xml:space="preserve">
+    <value>Power source</value>
+  </data>
+  <data name="Power source unavailable" xml:space="preserve">
+    <value>Power source unavailable</value>
+  </data>
+  <data name="External power (unclassified)" xml:space="preserve">
+    <value>External power (unclassified)</value>
+  </data>
+  <data name="Preparing diagnostic export..." xml:space="preserve">
+    <value>Preparing diagnostic export...</value>
+  </data>
+  <data name="Primary color" xml:space="preserve">
+    <value>Primary color</value>
+  </data>
+  <data name="Profile and battery power" xml:space="preserve">
+    <value>Profile and battery power</value>
+  </data>
+  <data name="Random" xml:space="preserve">
+    <value>Random</value>
+  </data>
+  <data name="random colors" xml:space="preserve">
+    <value>random colors</value>
+  </data>
+  <data name="random colors, {0}" xml:space="preserve">
+    <value>random colors, {0}</value>
+  </data>
+  <data name="Razer app active" xml:space="preserve">
+    <value>Razer app active</value>
+  </data>
+  <data name="Reactive" xml:space="preserve">
+    <value>Reactive</value>
+  </data>
+  <data name="Reactive, {0}" xml:space="preserve">
+    <value>Reactive, {0}</value>
+  </data>
+  <data name="Read-only" xml:space="preserve">
+    <value>Read-only</value>
+  </data>
+  <data name="Ready" xml:space="preserve">
+    <value>Ready</value>
+  </data>
+  <data name="Reconnecting to service" xml:space="preserve">
+    <value>Reconnecting to service</value>
+  </data>
+  <data name="Refresh rate" xml:space="preserve">
+    <value>Refresh rate</value>
+  </data>
+  <data name="Refresh rate changed outside OpenBlade." xml:space="preserve">
+    <value>Refresh rate changed outside OpenBlade.</value>
+  </data>
+  <data name="Render supported animated effects at 60 Hz. Uses more CPU and power." xml:space="preserve">
+    <value>Render supported animated effects at 60 Hz. Uses more CPU and power.</value>
+  </data>
+  <data name="Restore charge limit" xml:space="preserve">
+    <value>Restore charge limit</value>
+  </data>
+  <data name="Right" xml:space="preserve">
+    <value>Right</value>
+  </data>
+  <data name="Rightward" xml:space="preserve">
+    <value>Rightward</value>
+  </data>
+  <data name="Ripple" xml:space="preserve">
+    <value>Ripple</value>
+  </data>
+  <data name="Running" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="Save profile changes" xml:space="preserve">
+    <value>Save profile changes</value>
+  </data>
+  <data name="Save to AC profile" xml:space="preserve">
+    <value>Save to AC profile</value>
+  </data>
+  <data name="Save to battery profile" xml:space="preserve">
+    <value>Save to battery profile</value>
+  </data>
+  <data name="Save to profile" xml:space="preserve">
+    <value>Save to profile</value>
+  </data>
+  <data name="Save to USB-C profile" xml:space="preserve">
+    <value>Save to USB-C profile</value>
+  </data>
+  <data name="Saved profile comparison" xml:space="preserve">
+    <value>Saved profile comparison</value>
+  </data>
+  <data name="Service disconnected" xml:space="preserve">
+    <value>Service disconnected</value>
+  </data>
+  <data name="Service unavailable" xml:space="preserve">
+    <value>Service unavailable</value>
+  </data>
+  <data name="Set function-key behavior and gaming mode." xml:space="preserve">
+    <value>Set function-key behavior and gaming mode.</value>
+  </data>
+  <data name="Short" xml:space="preserve">
+    <value>Short</value>
+  </data>
+  <data name="Shortcut keys" xml:space="preserve">
+    <value>Shortcut keys</value>
+  </data>
+  <data name="Show detected laptop and firmware details." xml:space="preserve">
+    <value>Show detected laptop and firmware details.</value>
+  </data>
+  <data name="Show diagnostics, documentation, and project links." xml:space="preserve">
+    <value>Show diagnostics, documentation, and project links.</value>
+  </data>
+  <data name="Show service, laptop, power, and software status." xml:space="preserve">
+    <value>Show service, laptop, power, and software status.</value>
+  </data>
+  <data name="Show the app identity and project relationship." xml:space="preserve">
+    <value>Show the app identity and project relationship.</value>
+  </data>
+  <data name="Show the installed app and service versions." xml:space="preserve">
+    <value>Show the installed app and service versions.</value>
+  </data>
+  <data name="Shutdown" xml:space="preserve">
+    <value>Shutdown</value>
+  </data>
+  <data name="Silent" xml:space="preserve">
+    <value>Silent</value>
+  </data>
+  <data name="Spectrum Cycling" xml:space="preserve">
+    <value>Spectrum Cycling</value>
+  </data>
+  <data name="Stable" xml:space="preserve">
+    <value>Stable</value>
+  </data>
+  <data name="Starlight" xml:space="preserve">
+    <value>Starlight</value>
+  </data>
+  <data name="Starlight, one color, {0}" xml:space="preserve">
+    <value>Starlight, one color, {0}</value>
+  </data>
+  <data name="Starlight, random colors, {0}" xml:space="preserve">
+    <value>Starlight, random colors, {0}</value>
+  </data>
+  <data name="Starlight, two colors, {0}" xml:space="preserve">
+    <value>Starlight, two colors, {0}</value>
+  </data>
+  <data name="Start at sign-in is unavailable: {0}" xml:space="preserve">
+    <value>Start at sign-in is unavailable: {0}</value>
+  </data>
+  <data name="Startup animation" xml:space="preserve">
+    <value>Startup animation</value>
+  </data>
+  <data name="State not confirmed" xml:space="preserve">
+    <value>State not confirmed</value>
+  </data>
+  <data name="Static" xml:space="preserve">
+    <value>Static</value>
+  </data>
+  <data name="Stop OpenBlade until Windows restarts." xml:space="preserve">
+    <value>Stop OpenBlade until Windows restarts.</value>
+  </data>
+  <data name="Support" xml:space="preserve">
+    <value>Support</value>
+  </data>
+  <data name="Switch off lighting" xml:space="preserve">
+    <value>Switch off lighting</value>
+  </data>
+  <data name="Temperatures" xml:space="preserve">
+    <value>Temperatures</value>
+  </data>
+  <data name="Temporary change not saved to this profile" xml:space="preserve">
+    <value>Temporary change not saved to this profile</value>
+  </data>
+  <data name="Temporary full charge active" xml:space="preserve">
+    <value>Temporary full charge active</value>
+  </data>
+  <data name="Temporary full charge state unavailable" xml:space="preserve">
+    <value>Temporary full charge state unavailable</value>
+  </data>
+  <data name="The active effect was set outside OpenBlade and cannot be read from firmware." xml:space="preserve">
+    <value>The active effect was set outside OpenBlade and cannot be read from firmware.</value>
+  </data>
+  <data name="The display session agent is not responding." xml:space="preserve">
+    <value>The display session agent is not responding.</value>
+  </data>
+  <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
+    <value>The diagnostic saver returned an invalid result.</value>
+  </data>
+  <data name="The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout." xml:space="preserve">
+    <value>The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout.</value>
+  </data>
+  <data name="Tidal" xml:space="preserve">
+    <value>Tidal</value>
+  </data>
+  <data name="Tidal, inward" xml:space="preserve">
+    <value>Tidal, inward</value>
+  </data>
+  <data name="Tidal, outward" xml:space="preserve">
+    <value>Tidal, outward</value>
+  </data>
+  <data name="Top" xml:space="preserve">
+    <value>Top</value>
+  </data>
+  <data name="Troubleshooting" xml:space="preserve">
+    <value>Troubleshooting</value>
+  </data>
+  <data name="Turn GPU clock tuning on or off." xml:space="preserve">
+    <value>Turn GPU clock tuning on or off.</value>
+  </data>
+  <data name="Turn keyboard lighting off with the display or after inactivity." xml:space="preserve">
+    <value>Turn keyboard lighting off with the display or after inactivity.</value>
+  </data>
+  <data name="Turn lighting off" xml:space="preserve">
+    <value>Turn lighting off</value>
+  </data>
+  <data name="Turn off battery protection" xml:space="preserve">
+    <value>Turn off battery protection</value>
+  </data>
+  <data name="Turn off HDR to change color profiles." xml:space="preserve">
+    <value>Turn off HDR to change color profiles.</value>
+  </data>
+  <data name="Turn the configured battery charge limit on or off." xml:space="preserve">
+    <value>Turn the configured battery charge limit on or off.</value>
+  </data>
+  <data name="Turn the laptop gaming mode on or off." xml:space="preserve">
+    <value>Turn the laptop gaming mode on or off.</value>
+  </data>
+  <data name="two colors, {0} and {1}" xml:space="preserve">
+    <value>two colors, {0} and {1}</value>
+  </data>
+  <data name="Unavailable" xml:space="preserve">
+    <value>Unavailable</value>
+  </data>
+  <data name="Unknown" xml:space="preserve">
+    <value>Unknown</value>
+  </data>
+  <data name="Unknown modifier: {0}" xml:space="preserve">
+    <value>Unknown modifier: {0}</value>
+  </data>
+  <data name="Unknown shortcut key: {0}" xml:space="preserve">
+    <value>Unknown shortcut key: {0}</value>
+  </data>
+  <data name="Untested platform configuration" xml:space="preserve">
+    <value>Untested platform configuration</value>
+  </data>
+  <data name="until reset" xml:space="preserve">
+    <value>until reset</value>
+  </data>
+  <data name="until the power source changes" xml:space="preserve">
+    <value>until the power source changes</value>
+  </data>
+  <data name="Up to {0:0.##} seconds" xml:space="preserve">
+    <value>Up to {0:0.##} seconds</value>
+  </data>
+  <data name="Up to 1 second" xml:space="preserve">
+    <value>Up to 1 second</value>
+  </data>
+  <data name="Update check canceled." xml:space="preserve">
+    <value>Update check canceled.</value>
+  </data>
+  <data name="Updates" xml:space="preserve">
+    <value>Updates</value>
+  </data>
+  <data name="Updates have not been checked for the {0} channel." xml:space="preserve">
+    <value>Updates have not been checked for the {0} channel.</value>
+  </data>
+  <data name="Updates have not been checked." xml:space="preserve">
+    <value>Updates have not been checked.</value>
+  </data>
+  <data name="USB-C · {0}" xml:space="preserve">
+    <value>USB-C · {0}</value>
+  </data>
+  <data name="USB-C profile" xml:space="preserve">
+    <value>USB-C profile</value>
+  </data>
+  <data name="Use a shortcut such as Ctrl+Shift+M." xml:space="preserve">
+    <value>Use a shortcut such as Ctrl+Shift+M.</value>
+  </data>
+  <data name="Using {0} W" xml:space="preserve">
+    <value>Using {0} W</value>
+  </data>
+  <data name="Verified Razer Blade" xml:space="preserve">
+    <value>Verified Razer Blade</value>
+  </data>
+  <data name="Versions" xml:space="preserve">
+    <value>Versions</value>
+  </data>
+  <data name="VBIOS {0}" xml:space="preserve">
+    <value>VBIOS {0}</value>
+  </data>
+  <data name="VID {0} · PID {1}" xml:space="preserve">
+    <value>VID {0} · PID {1}</value>
+  </data>
+  <data name="Waiting for power source" xml:space="preserve">
+    <value>Waiting for power source</value>
+  </data>
+  <data name="Waiting for the first live-reading check." xml:space="preserve">
+    <value>Waiting for the first live-reading check.</value>
+  </data>
+  <data name="Wave" xml:space="preserve">
+    <value>Wave</value>
+  </data>
+  <data name="Wave, {0}" xml:space="preserve">
+    <value>Wave, {0}</value>
+  </data>
+  <data name="Weekly" xml:space="preserve">
+    <value>Weekly</value>
+  </data>
+  <data name="Wheel" xml:space="preserve">
+    <value>Wheel</value>
+  </data>
+  <data name="Wheel, {0}" xml:space="preserve">
+    <value>Wheel, {0}</value>
+  </data>
+  <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
+    <value>Windows did not confirm the requested start-at-sign-in setting.</value>
+  </data>
+  <data name="Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies." xml:space="preserve">
+    <value>Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies.</value>
+  </data>
+  <data name="Windows power mode" xml:space="preserve">
+    <value>Windows power mode</value>
+  </data>
+  <data name="Fragment.BatteryProtection" xml:space="preserve">
+    <value>battery protection</value>
+  </data>
+  <data name="Fragment.Bottom" xml:space="preserve">
+    <value>bottom</value>
+  </data>
+  <data name="Fragment.ChargeLimit" xml:space="preserve">
+    <value>charge limit</value>
+  </data>
+  <data name="Fragment.Fans" xml:space="preserve">
+    <value>fans</value>
+  </data>
+  <data name="Fragment.FullScreen" xml:space="preserve">
+    <value>full screen</value>
+  </data>
+  <data name="Fragment.Left" xml:space="preserve">
+    <value>left</value>
+  </data>
+  <data name="Fragment.Leftward" xml:space="preserve">
+    <value>leftward</value>
+  </data>
+  <data name="Fragment.Lighting" xml:space="preserve">
+    <value>lighting</value>
+  </data>
+  <data name="Fragment.Long" xml:space="preserve">
+    <value>long</value>
+  </data>
+  <data name="Fragment.Medium" xml:space="preserve">
+    <value>medium</value>
+  </data>
+  <data name="Fragment.Performance" xml:space="preserve">
+    <value>performance</value>
+  </data>
+  <data name="Fragment.Right" xml:space="preserve">
+    <value>right</value>
+  </data>
+  <data name="Fragment.Rightward" xml:space="preserve">
+    <value>rightward</value>
+  </data>
+  <data name="Fragment.Short" xml:space="preserve">
+    <value>short</value>
+  </data>
+  <data name="Fragment.Top" xml:space="preserve">
+    <value>top</value>
+  </data>
+</root>

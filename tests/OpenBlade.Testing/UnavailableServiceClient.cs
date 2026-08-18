@@ -97,6 +97,11 @@ internal abstract class UnavailableServiceClient : IServiceClient
         CancellationToken token) =>
         Unavailable("External lighting override policy is unavailable.");
 
+    public virtual Task<ControlOperationResult> SetLightingRefreshRateAsync(
+        LightingRefreshRate refreshRate,
+        CancellationToken token) =>
+        Unavailable("Selectable lighting refresh rates are unavailable.");
+
     public virtual Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
         bool enabled,
         CancellationToken token) =>

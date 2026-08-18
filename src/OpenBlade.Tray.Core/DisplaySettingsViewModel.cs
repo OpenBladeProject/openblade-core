@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using OpenBlade.Contracts;
 
@@ -13,6 +14,13 @@ public sealed record DisplayColorProfileOption(
     string Key,
     string Label);
 
+public enum DisplaySettingsFailureKind
+{
+    None,
+    SessionAgentUnavailable,
+    ControlsUnavailable,
+}
+
 public sealed record DisplaySettingsSnapshot(
     bool IsAvailable,
     IReadOnlyList<DisplayRefreshRateOption> RefreshRateOptions,
@@ -26,7 +34,8 @@ public sealed record DisplaySettingsSnapshot(
     string? DisplayName = null,
     int Width = 0,
     int Height = 0,
-    int? BitsPerColorChannel = null);
+    int? BitsPerColorChannel = null,
+    DisplaySettingsFailureKind FailureKind = DisplaySettingsFailureKind.None);
 
 public sealed class DisplayProfileSettingsChangedEventArgs(
     PowerSource powerSource,
@@ -70,7 +79,7 @@ public sealed class UnavailableDisplaySettingsAdapter : IDisplaySettingsAdapter
 {
     public static UnavailableDisplaySettingsAdapter Instance { get; } = new();
 
-    private static readonly DisplaySettingsSnapshot UnavailableState = new(
+    private static DisplaySettingsSnapshot UnavailableState => new(
         IsAvailable: false,
         RefreshRateOptions: [],
         SelectedRefreshRateKey: null,
@@ -78,7 +87,7 @@ public sealed class UnavailableDisplaySettingsAdapter : IDisplaySettingsAdapter
         IsHdrEnabled: false,
         ColorProfileOptions: [],
         SelectedColorProfileKey: null,
-        StatusMessage: "Display settings are unavailable.");
+        StatusMessage: TrayText.Get("Display settings are unavailable."));
 
     private UnavailableDisplaySettingsAdapter()
     {
@@ -110,10 +119,10 @@ public sealed class UnavailableDisplaySettingsAdapter : IDisplaySettingsAdapter
 
 public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
-    private const string HdrColorProfileMessage =
-        "Turn off HDR to change color profiles.";
-    private const string DefaultColorProfileMessage =
-        "Choose the color profile used by the built-in display.";
+    private static string HdrColorProfileMessage =>
+        TrayText.Get("Turn off HDR to change color profiles.");
+    private static string DefaultColorProfileMessage =>
+        TrayText.Get("Choose the color profile used by the built-in display.");
 
     private readonly IDisplaySettingsAdapter adapter;
     private readonly SemaphoreSlim operationGate = new(1, 1);
@@ -131,7 +140,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         DisplayProfileSettings.Unconfigured();
     private bool hasPendingProfileChange;
     private bool profilePersistenceAvailable;
-    private string statusMessage = "Checking the built-in display...";
+    private string statusMessage = TrayText.Get("Checking the built-in display...");
     private int disposed;
 
     public DisplaySettingsViewModel(IDisplaySettingsAdapter adapter)
@@ -332,14 +341,14 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     public string ProfileRelationshipStatus => !ProfilePersistenceAvailable
         || !HasConfirmedPowerSource
         || !IsAvailable
-        ? "Unavailable"
+        ? TrayText.Get("Unavailable")
         : HasPendingProfileChange
-            ? "Temporary change not saved to this profile"
+            ? TrayText.Get("Temporary change not saved to this profile")
             : !ActiveProfileSettings.IsConfigured || HasSaveableUnsetProfileField
-                ? "Current settings are not saved to this profile"
+                ? TrayText.Get("Current settings are not saved to this profile")
                 : CurrentSettingsMatchActiveProfile
-                    ? "Matches saved profile"
-                    : "Different from saved profile";
+                    ? TrayText.Get("Matches saved profile")
+                    : TrayText.Get("Different from saved profile");
 
     private bool HasConfirmedPowerSource => ActivePowerSource is
         PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
@@ -385,10 +394,15 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         string? previousColorProfile = SelectedColorProfile?.Key;
         bool previousHdr = IsHdrEnabled;
         bool hadPriorState = IsAvailable;
+        bool refreshSucceeded = false;
 
-        await RunSerializedAsync(adapter.GetStateAsync, token, showBusy: false);
+        await RunSerializedAsync(
+            adapter.GetStateAsync,
+            token,
+            state => refreshSucceeded = state.OperationSucceeded,
+            showBusy: false);
 
-        if (!IsAvailable)
+        if (!refreshSucceeded || !IsAvailable)
         {
             return;
         }
@@ -402,12 +416,12 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         if (changedCount > 0)
         {
             StatusMessage = changedCount > 1
-                ? "Display settings changed outside OpenBlade."
+                ? TrayText.Get("Display settings changed outside OpenBlade.")
                 : refreshChanged
-                    ? "Refresh rate changed outside OpenBlade."
+                    ? TrayText.Get("Refresh rate changed outside OpenBlade.")
                     : hdrChanged
-                        ? "HDR changed outside OpenBlade."
-                        : "Color profile changed outside OpenBlade.";
+                        ? TrayText.Get("HDR changed outside OpenBlade.")
+                        : TrayText.Get("Color profile changed outside OpenBlade.");
         }
     }
 
@@ -569,16 +583,16 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             await operationGate.WaitAsync(linkedCancellation.Token);
             enteredGate = true;
             DisplaySettingsSnapshot state = await operation(linkedCancellation.Token);
-            Apply(state);
+            Apply(state, isRefresh: !showBusy);
             applied?.Invoke(state);
         }
         catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            StatusMessage = $"Display setting failed: {exception.Message}";
+            StatusMessage = TrayText.Get("Display setting failed.");
         }
         finally
         {
@@ -642,13 +656,18 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                     state.SelectedColorProfileKey,
                     StringComparison.Ordinal)));
 
-    private void Apply(DisplaySettingsSnapshot state)
+    private void Apply(DisplaySettingsSnapshot state, bool isRefresh)
     {
         ArgumentNullException.ThrowIfNull(state);
+        if (!state.OperationSucceeded && !string.IsNullOrWhiteSpace(state.StatusMessage))
+        {
+            Trace.TraceInformation(
+                "Display settings operation reported: {0}",
+                state.StatusMessage);
+        }
         if (IsAvailable && !state.OperationSucceeded && !state.IsAvailable)
         {
-            StatusMessage = state.StatusMessage
-                ?? "Display settings could not be refreshed.";
+            StatusMessage = FailureMessage(state.FailureKind, isRefresh);
             return;
         }
 
@@ -671,10 +690,24 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         IsAvailable = state.IsAvailable;
         IsHdrSupported = state.IsHdrSupported;
         IsHdrEnabled = state.IsHdrEnabled;
-        StatusMessage = state.StatusMessage ?? (state.IsAvailable
-            ? FormatDisplayDetails(state)
-            : "Display settings are unavailable.");
+        StatusMessage = !state.OperationSucceeded
+            ? FailureMessage(state.FailureKind, isRefresh)
+            : state.IsAvailable
+                ? FormatDisplayDetails(state)
+                : TrayText.Get("Display settings are unavailable.");
     }
+
+    private static string FailureMessage(
+        DisplaySettingsFailureKind failureKind,
+        bool isRefresh) => failureKind switch
+        {
+            DisplaySettingsFailureKind.SessionAgentUnavailable =>
+                TrayText.Get("The display session agent is not responding."),
+            DisplaySettingsFailureKind.ControlsUnavailable =>
+                TrayText.Get("Display controls are unavailable."),
+            _ when isRefresh => TrayText.Get("Display settings could not be refreshed."),
+            _ => TrayText.Get("Display setting failed."),
+        };
 
     private static string FormatDisplayDetails(DisplaySettingsSnapshot state)
     {
@@ -685,7 +718,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         }
         if (state.Width > 0 && state.Height > 0)
         {
-            details.Add($"{state.Width} × {state.Height}");
+            details.Add(TrayText.Format("{0} × {1}", state.Width, state.Height));
         }
 
         DisplayRefreshRateOption? refresh = state.RefreshRateOptions.FirstOrDefault(
@@ -699,11 +732,13 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         }
         if (state.BitsPerColorChannel is > 0)
         {
-            details.Add($"{state.BitsPerColorChannel}-bit");
+            details.Add(TrayText.Format("{0}-bit", state.BitsPerColorChannel));
         }
         if (state.IsHdrSupported)
         {
-            details.Add(state.IsHdrEnabled ? "HDR on" : "HDR off");
+            details.Add(state.IsHdrEnabled
+                ? TrayText.Get("HDR on")
+                : TrayText.Get("HDR off"));
         }
         if (!state.IsHdrEnabled)
         {
@@ -718,7 +753,9 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             }
         }
 
-        return details.Count == 0 ? "Display available" : string.Join(" · ", details);
+        return details.Count == 0
+            ? TrayText.Get("Display available")
+            : string.Join(TrayText.Get(" · "), details);
     }
 
     private void NotifyControlStateChanged()

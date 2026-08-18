@@ -240,7 +240,12 @@ public sealed class WindowsDiagnosticMetadataSource : IDiagnosticMetadataSource
                 firmware.BiosVersion,
                 firmware.EcVersion,
                 firmware.McuVersion,
-                firmware.VbiosVersion),
+                firmware.VbiosVersion,
+                firmware.VbiosGpuName,
+                firmware.ThunderboltFirmwareVersion,
+                firmware.TouchpadFirmwareVersion,
+                firmware.ThunderboltFirmwareAccess?.ToString(),
+                firmware.TouchpadFirmwareAccess?.ToString()),
             ReadSensitiveTokens(),
             DateTimeOffset.UtcNow);
     }
@@ -315,6 +320,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
     {
         cancellationToken.ThrowIfCancellationRequested();
         ServiceStatusSnapshot status = runtime.GetStatus();
+        Rz090581CapabilityDiagnostics? capabilityDiagnostics =
+            runtime.GetCachedRz090581CapabilityDiagnostics();
         DiagnosticHistorySnapshot historySnapshot = history.Snapshot();
         DiagnosticHostMetadata metadata = metadataSource.Capture();
         DiagnosticVersions versions = metadata.Versions;
@@ -332,7 +339,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             versions,
             CreateDeviceIdentity(status),
             CreateCapabilities(status.Capabilities),
-            CreateConfiguration(status, liveReadingsEnabled),
+            CreateConfiguration(status, capabilityDiagnostics, liveReadingsEnabled),
             historySnapshot.CommandResults,
             historySnapshot.LogLines,
             metadata.SensitiveTokens);
@@ -387,6 +394,12 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             result[$"lighting.{value}"] = capabilities.LightingEffects.Contains(value);
             result[$"lighting.observed.{value}"] =
                 capabilities.ObservedLightingEffects.Contains(value);
+        }
+
+        foreach (LightingRefreshRate value in Enum.GetValues<LightingRefreshRate>())
+        {
+            result[$"lighting.refreshRate.{value}"] =
+                capabilities.SupportedLightingRefreshRates.Contains(value);
         }
 
         result["battery.chargeLimit"] = capabilities.ChargeLimits.Count > 0;
@@ -451,6 +464,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
 
     private static IReadOnlyDictionary<string, string> CreateConfiguration(
         ServiceStatusSnapshot status,
+        Rz090581CapabilityDiagnostics? capabilityDiagnostics,
         bool liveReadingsEnabled)
     {
         DeviceCapabilities capabilities = status.Capabilities ?? DeviceCapabilities.Unavailable();
@@ -496,6 +510,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 status.LightingRendererOwnership.ToString(),
             ["lighting.alwaysOverrideExternalChanges"] =
                 status.AlwaysOverrideExternalLightingChanges.ToString(),
+            ["lighting.refreshRate"] = status.LightingRefreshRate.ToString(),
             ["firmware.allowUntested"] = status.AllowUntestedFirmware.ToString(),
             ["firmware.compatibility"] = status.FirmwareCompatibility.ToString(),
             ["confirmed.performance"] = EnumOrUnavailable(confirmed?.Performance),
@@ -537,6 +552,18 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.FanSpeedRange?.MaximumRpm),
             ["capability.fanSpeedStepRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.StepRpm),
+            ["capability.rz09-0581.skuHardwareConfigurationRaw"] =
+                HexByteOrUnavailable(
+                    capabilityDiagnostics?.SkuHardwareConfigurationRaw),
+            ["capability.rz09-0581.miniLedPanelResolutionRaw"] =
+                HexByteOrUnavailable(
+                    capabilityDiagnostics?.MiniLedPanelResolutionRaw),
+            ["capability.rz09-0581.thermalFanIds"] =
+                capabilityDiagnostics is { } diagnostics
+                    ? string.Join(
+                        ", ",
+                        diagnostics.ThermalFanIds.Select(value => $"0x{value:X2}"))
+                    : "Unavailable",
             ["override.performance"] = status.PerformanceOverride is null
                 ? "None"
                 : $"{status.PerformanceOverride.Value} ({status.PerformanceOverride.Lifetime})",
@@ -580,6 +607,9 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
 
     private static string BoolOrUnavailable(bool? value) =>
         value?.ToString() ?? "Unavailable";
+
+    private static string HexByteOrUnavailable(byte? value) =>
+        value is { } raw ? $"0x{raw:X2}" : "Unavailable";
 
     private static string EnumOrUnavailable<T>(T? value)
         where T : struct, Enum => value?.ToString() ?? "Unavailable";

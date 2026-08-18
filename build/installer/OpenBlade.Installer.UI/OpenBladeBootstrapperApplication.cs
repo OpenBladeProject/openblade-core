@@ -18,6 +18,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private const string BundleLogVariable = "WixBundleLog";
     private const string BundleVersionVariable = "WixBundleVersion";
     private const string OpenBladeSetupPackage = "OpenBladeSetup";
+    private const string OpenBladeVcRuntimePackage = "OpenBladeVcRuntime";
     private const int ProductVersionConflict = unchecked((int)0x80070666);
     private const int InstallerConfigurationCorrupt = unchecked((int)0x8007064A);
 
@@ -189,7 +190,9 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         catch (Exception exception)
         {
             Ui(() => window?.ShowFailure(
-                $"OpenBlade was installed, but it could not be launched: {exception.Message}",
+                InstallerStrings.Format(
+                    "OpenBlade was installed, but it could not be launched: {0}",
+                    exception.Message),
                 TryGetVariable(BundleLogVariable)));
         }
     }
@@ -202,7 +205,9 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
         catch (Exception exception)
         {
-            Ui(() => window?.ShowFailure(exception.Message, TryGetVariable(BundleLogVariable)));
+            Ui(() => window?.ShowFailure(
+                InstallerStrings.Format("Windows could not open the requested path: {0}", exception.Message),
+                TryGetVariable(BundleLogVariable)));
         }
     }
 
@@ -327,13 +332,17 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     {
         if (Failed(e.Status))
         {
-            CompleteWithFailure(e.Status, "OpenBlade setup could not inspect the installed state.");
+            CompleteWithFailure(
+                e.Status,
+                InstallerStrings.Get("OpenBlade setup could not inspect the installed state."));
             return;
         }
 
         if (command is null)
         {
-            CompleteWithFailure(unchecked((int)0x80004005), "The setup command is unavailable.");
+            CompleteWithFailure(
+                unchecked((int)0x80004005),
+                InstallerStrings.Get("The setup command is unavailable."));
             return;
         }
 
@@ -477,7 +486,11 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     {
         if (Failed(e.Status))
         {
-            CompleteWithFailure(e.Status, lastError ?? "OpenBlade setup could not prepare the requested action.");
+            CompleteWithFailure(
+                e.Status,
+                lastError is null
+                    ? InstallerStrings.Get("OpenBlade setup could not prepare the requested action.")
+                    : InstallerStrings.Format("OpenBlade setup could not prepare the requested action: {0}", lastError));
             return;
         }
 
@@ -528,13 +541,16 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         bool relatedBundle = upgradeRelatedBundleVersions.TryGetValue(
             e.PackageId,
             out string relatedVersion);
-        string phase = relatedBundle
-            ? DescribeRelatedBundleExecution(relatedVersion)
+        string diagnosticPhase = relatedBundle
+            ? $"Removing OpenBlade {relatedVersion}"
             : package;
         AddDetail(relatedBundle
-            ? $"{phase}."
-            : $"Running {phase}.");
-        Ui(() => window?.SetProgress(CalculatedProgress(), phase));
+            ? $"{diagnosticPhase}."
+            : $"Running {diagnosticPhase}.");
+        string visiblePhase = DescribePackageExecutionStatus(
+            e.PackageId,
+            relatedBundle ? relatedVersion : null);
+        Ui(() => window?.SetProgress(CalculatedProgress(), visiblePhase));
         e.Cancel = cancellationRequested;
     }
 
@@ -594,8 +610,10 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         {
             Ui(() => window?.ShowFailure(
                 cancellationRequested
-                    ? "Setup was cancelled and the previous state was restored."
-                    : lastError ?? $"Setup failed with 0x{e.Status:X8}.",
+                    ? InstallerStrings.Get("Setup was cancelled and the previous state was restored.")
+                    : lastError is null
+                        ? InstallerStrings.Format("Setup failed with 0x{0:X8}.", e.Status)
+                        : InstallerStrings.Format("Setup failed: {0}", lastError),
                 TryGetVariable(BundleLogVariable)));
         }
         else
@@ -634,19 +652,21 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         {
             CompleteWithFailure(
                 ProductVersionConflict,
-                $"OpenBlade {installedVersion} is already installed. "
-                + "Run this installer interactively to confirm overwriting it.");
+                InstallerStrings.Format(
+                    "OpenBlade {0} is already installed. Run this installer interactively to confirm overwriting it.",
+                    installedVersion));
         }
     }
 
     private void RejectSameVersionReplacement(string installedVersion)
     {
         bool canOfferMaintenance = CanOfferSameVersionMaintenance();
-        string message =
-            $"Another OpenBlade {installedVersion} installer build is already registered. "
-            + SelectSameVersionConflictGuidance(
+        string message = InstallerStrings.Format(
+            "Another OpenBlade {0} installer build is already registered. {1}",
+            installedVersion,
+            SelectSameVersionConflictGuidance(
                 canOfferMaintenance,
-                sameVersionRelatedBundleCached);
+                sameVersionRelatedBundleCached));
         RejectRelatedBundleReplacement(
             SelectRelatedBundleConflictStatus(multipleRegistrations: false),
             message);
@@ -654,11 +674,9 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private void RejectMultipleRelatedBundles(int relatedBundleCount)
     {
-        string message =
-            $"OpenBlade setup found {relatedBundleCount} related installer registrations. "
-            + "Setup stopped before making changes because executing one legacy bundle can recursively launch the others. "
-            + "Use Uninstall on each registered OpenBlade entry when available. "
-            + "If duplicates remain, use Windows installer recovery before running this installer again.";
+        string message = InstallerStrings.Format(
+            "OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again.",
+            relatedBundleCount);
         RejectRelatedBundleReplacement(
             SelectRelatedBundleConflictStatus(multipleRegistrations: true),
             message);
@@ -732,8 +750,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         {
             CompleteWithFailure(
                 InstallerConfigurationCorrupt,
-                "The registered OpenBlade installer ownership token is missing or malformed. "
-                + "Use Windows installer recovery before trying again.");
+                InstallerStrings.Get(
+                    "The registered OpenBlade installer ownership token is missing or malformed. Use Windows installer recovery before trying again."));
             return false;
         }
 
@@ -750,14 +768,71 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         Ui(() => window?.AddDetail(message));
     }
 
-    private void AddPipeDetail(string message)
+    private void AddPipeDetail(InstallerSetupProgress progress)
     {
+        Engine.Log(LogLevel.Standard, progress.WireValue);
         Ui(() =>
         {
-            Engine.Log(LogLevel.Standard, message);
-            window?.AddDetail(message);
+            PresentPipeProgress(window, progress);
         });
     }
+
+    internal static void PresentPipeProgress(
+        InstallerWindow? target,
+        InstallerSetupProgress progress)
+    {
+        string visibleProgress = LocalizeProgress(progress);
+        target?.AddDetail(visibleProgress);
+        target?.SetStatus(visibleProgress);
+    }
+
+    internal static string LocalizeProgress(InstallerSetupProgress progress) => progress.Code switch
+    {
+        InstallerSetupProgressCode.InspectPayload =>
+            InstallerStrings.Get("Preparing OpenBlade files…"),
+        InstallerSetupProgressCode.ReadInstallState or
+        InstallerSetupProgressCode.ReadUninstallState =>
+            InstallerStrings.Get("Reading the current installation…"),
+        InstallerSetupProgressCode.RemoveLegacyRegistration =>
+            InstallerStrings.Get("Removing an earlier OpenBlade registration…"),
+        InstallerSetupProgressCode.StopServiceForReplacement or
+        InstallerSetupProgressCode.StopTrayAndSessionAgent =>
+            InstallerStrings.Get("Stopping OpenBlade components…"),
+        InstallerSetupProgressCode.RemoveDynamicLighting or
+        InstallerSetupProgressCode.RemoveDynamicLightingAndOwnership =>
+            InstallerStrings.Get("Removing Dynamic Lighting registration…"),
+        InstallerSetupProgressCode.ActivateFiles =>
+            InstallerStrings.Get("Activating OpenBlade files…"),
+        InstallerSetupProgressCode.RegisterDynamicLighting =>
+            InstallerStrings.Get("Registering Dynamic Lighting…"),
+        InstallerSetupProgressCode.WriteStandaloneUninstaller =>
+            InstallerStrings.Get("Preparing Windows uninstall support…"),
+        InstallerSetupProgressCode.InstallService =>
+            InstallerStrings.Get("Installing the OpenBlade service…"),
+        InstallerSetupProgressCode.VerifyServiceHealth =>
+            InstallerStrings.Get("Checking the OpenBlade service…"),
+        InstallerSetupProgressCode.CreateShortcuts =>
+            InstallerStrings.Get("Creating OpenBlade shortcuts…"),
+        InstallerSetupProgressCode.WriteBundleOwnership =>
+            InstallerStrings.Get("Recording installer ownership…"),
+        InstallerSetupProgressCode.RestorePreviousState or
+        InstallerSetupProgressCode.RestoreRegistrationState or
+        InstallerSetupProgressCode.RestoreFiles =>
+            InstallerStrings.Get("Restoring the previous installation state…"),
+        InstallerSetupProgressCode.RemoveShortcuts =>
+            InstallerStrings.Get("Removing OpenBlade shortcuts…"),
+        InstallerSetupProgressCode.RemoveService =>
+            InstallerStrings.Get("Removing the OpenBlade service…"),
+        InstallerSetupProgressCode.RemoveProgramFiles =>
+            InstallerStrings.Get("Removing OpenBlade files…"),
+        InstallerSetupProgressCode.RemoveSavedData =>
+            InstallerStrings.Get("Removing saved OpenBlade data…"),
+        InstallerSetupProgressCode.CopyFile =>
+            InstallerStrings.Format("Copying {0}…", progress.Argument ?? string.Empty),
+        InstallerSetupProgressCode.CommitFiles =>
+            InstallerStrings.Get("Committing OpenBlade files…"),
+        _ => InstallerStrings.Get("Applying the requested changes…"),
+    };
 
     private void QuitAfterRunFailure(Exception exception)
     {
@@ -861,7 +936,29 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     }
 
     internal static string DescribeRelatedBundleExecution(string version) =>
-        $"Removing OpenBlade {version}";
+        InstallerStrings.Format("Removing OpenBlade {0}", version);
+
+    internal static string DescribePackageExecutionStatus(
+        string packageId,
+        string? relatedVersion)
+    {
+        if (relatedVersion is not null)
+        {
+            return DescribeRelatedBundleExecution(relatedVersion);
+        }
+
+        if (string.Equals(packageId, OpenBladeVcRuntimePackage, StringComparison.Ordinal))
+        {
+            return InstallerStrings.Get("Installing required Windows components…");
+        }
+
+        if (string.Equals(packageId, OpenBladeSetupPackage, StringComparison.Ordinal))
+        {
+            return InstallerStrings.Get("Applying OpenBlade changes…");
+        }
+
+        return InstallerStrings.Get("Applying the requested changes…");
+    }
 
     private static Version? ParseBurnComparableVersion(string value)
     {
@@ -952,12 +1049,12 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         bool canOfferMaintenance,
         bool relatedBundleCached) =>
         canOfferMaintenance
-            ? "Run this installer interactively and choose Repair or Uninstall."
+            ? InstallerStrings.Get("Run this installer interactively and choose Repair or Uninstall.")
             : !relatedBundleCached
-                ? "Its cached installer is unavailable, so setup cannot safely repair or remove it. "
-                    + "Use Windows installer recovery before trying again."
-                : "Setup cannot safely choose one maintenance owner for this state. "
-                    + "Use Windows Installed apps to repair or remove the registered bundle first.";
+                ? InstallerStrings.Get(
+                    "Its cached installer is unavailable, so setup cannot safely repair or remove it. Use Windows installer recovery before trying again.")
+                : InstallerStrings.Get(
+                    "Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first.");
 
     internal static bool ShouldBlockMultipleRelatedBundles(
         LaunchAction action,

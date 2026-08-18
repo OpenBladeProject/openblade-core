@@ -5,7 +5,7 @@ namespace OpenBlade.FirmwareSmoke;
 
 public sealed class FirmwareSmokeSnapshotCollector(IFirmwareSmokeClient client)
 {
-    public const int CurrentSchemaVersion = 7;
+    public const int CurrentSchemaVersion = 8;
     private const int MaximumObservationAttempts = 5;
 
     public async Task<FirmwareSmokeSnapshot> CaptureAsync(
@@ -81,7 +81,12 @@ public sealed class FirmwareSmokeSnapshotCollector(IFirmwareSmokeClient client)
                 firmware.BiosVersion,
                 firmware.EcVersion,
                 firmware.McuVersion,
-                firmware.VbiosVersion),
+                firmware.VbiosVersion,
+                firmware.ThunderboltFirmwareVersion,
+                firmware.TouchpadFirmwareVersion,
+                firmware.ThunderboltFirmwareAccess?.ToString(),
+                firmware.TouchpadFirmwareAccess?.ToString(),
+                firmware.VbiosGpuName),
             new FirmwareSmokeCapabilities(
                 Names(capabilities.PerformancePresets),
                 Names(capabilities.FanModes),

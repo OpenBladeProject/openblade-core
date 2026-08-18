@@ -66,8 +66,8 @@ public static class TrayHoverLabelFormatter
         {
             return new TrayHoverLabelFormatResult(
                 showAppName
-                    ? "OpenBlade · Service unavailable"
-                    : "Service unavailable",
+                    ? TrayText.Get("OpenBlade · Service unavailable")
+                    : TrayText.Get("Service unavailable"),
                 []);
         }
 
@@ -85,8 +85,10 @@ public static class TrayHoverLabelFormatter
                 TrayHoverLabelItemKind.GpuTemperature => gpuTemperatureCelsius is int
                     ? FormatTemperature("GPU", gpuTemperatureCelsius)
                     : string.Empty,
-                TrayHoverLabelItemKind.Fan1Speed => FormatFan("Fan 1", fan1Rpm),
-                TrayHoverLabelItemKind.Fan2Speed => FormatFan("Fan 2", fan2Rpm),
+                TrayHoverLabelItemKind.Fan1Speed =>
+                    FormatFan(TrayText.Get("Fan 1"), fan1Rpm),
+                TrayHoverLabelItemKind.Fan2Speed =>
+                    FormatFan(TrayText.Get("Fan 2"), fan2Rpm),
                 _ => throw new ArgumentOutOfRangeException(nameof(items)),
             }))
             .Where(detail => !string.IsNullOrWhiteSpace(detail.Value))
@@ -99,7 +101,7 @@ public static class TrayHoverLabelFormatter
             string detail = details[index].Value;
             string candidate = string.IsNullOrEmpty(result)
                 ? detail
-                : $"{result} · {detail}";
+                : TrayText.Format("{0} · {1}", result, detail);
             if (candidate.Length > MaximumLength)
             {
                 omittedItems.AddRange(details[index..].Select(value => value.Kind));
@@ -125,19 +127,22 @@ public static class TrayHoverLabelFormatter
         }
 
         string detail = !isConnected
-            ? "Service unavailable"
+            ? TrayText.Get("Service unavailable")
             : mode switch
             {
                 TrayHoverLabelMode.OpenBlade => string.Empty,
                 TrayHoverLabelMode.ActiveProfile => FormatProfile(powerSource, performance),
                 TrayHoverLabelMode.BatteryPowerFlow => batteryPowerFlow,
                 TrayHoverLabelMode.ProfileAndPowerFlow =>
-                    $"{FormatProfile(powerSource, performance)} · {batteryPowerFlow}",
+                    TrayText.Format(
+                        "{0} · {1}",
+                        FormatProfile(powerSource, performance),
+                        batteryPowerFlow),
                 _ => throw new ArgumentOutOfRangeException(nameof(mode)),
             };
         string result = string.IsNullOrEmpty(detail)
             ? "OpenBlade"
-            : $"OpenBlade · {detail}";
+            : TrayText.Format("OpenBlade · {0}", detail);
         return result.Length <= MaximumLength
             ? result
             : result[..MaximumLength];
@@ -148,29 +153,29 @@ public static class TrayHoverLabelFormatter
         PerformancePreset performance) => powerSource switch
         {
             PowerSource.PluggedIn =>
-                $"AC · {PerformancePresetPresentation.Label(performance)}",
+                TrayText.Format(
+                    "AC · {0}",
+                    PerformancePresetPresentation.Label(performance)),
             PowerSource.Battery =>
-                $"Battery · {PerformancePresetPresentation.Label(performance)}",
+                TrayText.Format(
+                    "Battery · {0}",
+                    PerformancePresetPresentation.Label(performance)),
             PowerSource.UsbC =>
-                $"USB-C · {PerformancePresetPresentation.Label(performance)}",
-            PowerSource.ExternalUnknown => "Checking power source",
-            _ => "Power source unavailable",
+                TrayText.Format(
+                    "USB-C · {0}",
+                    PerformancePresetPresentation.Label(performance)),
+            PowerSource.ExternalUnknown => PowerSourcePresentation.Label(powerSource),
+            _ => TrayText.Get("Power source unavailable"),
         };
 
-    private static string FormatPowerSource(PowerSource powerSource) => powerSource switch
-    {
-        PowerSource.PluggedIn => "AC",
-        PowerSource.Battery => "Battery",
-        PowerSource.UsbC => "USB-C",
-        PowerSource.ExternalUnknown => "Checking power source",
-        _ => "Power source unavailable",
-    };
+    private static string FormatPowerSource(PowerSource powerSource) =>
+        PowerSourcePresentation.Label(powerSource);
 
     private static string FormatTemperature(string label, int? value) => value is int celsius
-        ? $"{label} {celsius} °C"
-        : $"{label} unavailable";
+        ? TrayText.Format("{0} {1} °C", label, celsius)
+        : TrayText.Format("{0} unavailable", label);
 
     private static string FormatFan(string label, int? value) => value is int rpm
-        ? $"{label} {rpm:N0} RPM"
-        : $"{label} unavailable";
+        ? TrayText.Format("{0} {1:N0} RPM", label, rpm)
+        : TrayText.Format("{0} unavailable", label);
 }

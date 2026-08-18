@@ -66,6 +66,25 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task ReadAdapterPowerState_PropagatesTransientQueryFailureAndDisposes()
+    {
+        FakeQueryPort port = FakeQueryPort.Success(BatteryValidationSetting.Limit80);
+        var factory = new FakeQueryFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(factory, new IOException("temporary adapter access failure")),
+            UnavailableFanRpmFactory());
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        IOException failure = await Assert.ThrowsAsync<IOException>(
+            () => device.ReadAdapterPowerStateAsync(CancellationToken.None));
+
+        Assert.Contains("temporary adapter access failure", failure.Message);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, port.DisposeCount);
+    }
+
+    [Fact]
     public async Task ReadFanRpm_SharesExistingSerializedHardwareGateWithBatteryRead()
     {
         var batteryPort = FakeQueryPort.Blocked(BatteryValidationSetting.Limit80);
@@ -796,6 +815,87 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(1, port.RelinquishCount);
         Assert.Equal(0, port.DisposeCount);
         Assert.Equal([first, second], port.Writes);
+        Assert.Equal(1, lightingFactory.OpenCount);
+    }
+
+    [Fact]
+    public async Task RetainedLightingPort_ReconcilesChangedRefreshRateBeforeReuse()
+    {
+        var port = new FakeLightingPort(
+            supportedLightingRefreshRates:
+            new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            });
+        var lightingFactory = new FakeLightingFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.ReadCapabilitiesAsync(CancellationToken.None);
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None);
+
+        provider.SetLightingRefreshRate(LightingRefreshRate.SixtyHz);
+        await provider.RelinquishLightingRendererAsync(CancellationToken.None);
+        await device.ReadCapabilitiesAsync(CancellationToken.None);
+        await device.ReadCapabilitiesAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [LightingRefreshRate.ThirtyHz, LightingRefreshRate.SixtyHz],
+            port.LightingRefreshRates);
+        Assert.Equal(1, port.RelinquishCount);
+        Assert.Equal(0, port.DisposeCount);
+        Assert.Equal(1, lightingFactory.OpenCount);
+    }
+
+    [Fact]
+    public async Task RetainedLightingPort_CanceledReconcileRemainsRetryable()
+    {
+        var port = new FakeLightingPort(
+            supportedLightingRefreshRates:
+            new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            });
+        var lightingFactory = new FakeLightingFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.ReadCapabilitiesAsync(CancellationToken.None);
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        port.BlockNextLightingRefreshRate();
+        provider.SetLightingRefreshRate(LightingRefreshRate.SixtyHz);
+
+        Task<DeviceCapabilities> reconcile = device.ReadCapabilitiesAsync(
+            cancellation.Token);
+        await port.LightingRefreshRateStarted.Task.WaitAsync(TestDeadlockGuard);
+        await cancellation.CancelAsync();
+        OperationCanceledException error = await Assert.ThrowsAnyAsync<
+            OperationCanceledException>(() => reconcile);
+
+        Assert.Equal(cancellation.Token, error.CancellationToken);
+        Assert.Equal(0, port.DisposeCount);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        Assert.Equal(1, lightingFactory.OpenCount);
+
+        await device.ReadCapabilitiesAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [LightingRefreshRate.ThirtyHz, LightingRefreshRate.SixtyHz],
+            port.LightingRefreshRates);
+        Assert.Equal(0, port.DisposeCount);
         Assert.Equal(1, lightingFactory.OpenCount);
     }
 
@@ -1770,7 +1870,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         new FakeFanRpmFactory(new(null, HidSessionFailureKind.NativeIoFailure));
 
     private static IProductionBatteryPortFactory Adapt(
-        IBatteryQuerySequenceRunFactory factory) => new QueryFactoryAdapter(factory);
+        IBatteryQuerySequenceRunFactory factory,
+        Exception? adapterPowerFailure = null) =>
+        new QueryFactoryAdapter(factory, adapterPowerFailure);
 
     private static BatteryValidationProbeResult Probe(
         BatteryValidationProbeClassification classification,
@@ -1794,7 +1896,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             ExactMatchCount: 1,
             FirmwareCompatibility: firmwareCompatibility);
 
-    private sealed class QueryFactoryAdapter(IBatteryQuerySequenceRunFactory inner)
+    private sealed class QueryFactoryAdapter(
+        IBatteryQuerySequenceRunFactory inner,
+        Exception? adapterPowerFailure)
         : IProductionBatteryPortFactory
     {
         public DeviceCapabilities Capabilities { get; } = DeviceCapabilities.Unavailable();
@@ -1806,14 +1910,18 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 await inner.OpenAsync(cancellationToken);
             return opened.Value is null
                 ? new(null, opened.Failure) { Diagnostic = opened.Diagnostic }
-                : new(new QueryPortAdapter(opened.Value), opened.Failure)
+                : new(
+                    new QueryPortAdapter(opened.Value, adapterPowerFailure),
+                    opened.Failure)
                 {
                     Diagnostic = opened.Diagnostic,
                 };
         }
     }
 
-    private sealed class QueryPortAdapter(IBatteryQuerySequencePort inner)
+    private sealed class QueryPortAdapter(
+        IBatteryQuerySequencePort inner,
+        Exception? adapterPowerFailure)
         : IProductionBatteryPort
     {
         public DeviceCapabilities Capabilities { get; } = DeviceCapabilities.Unavailable();
@@ -1868,8 +1976,13 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 new ProductionPerformanceFanState(null, null));
 
         public Task<AdapterPowerState> QueryAdapterPowerStateAsync(
-            CancellationToken cancellationToken) =>
-            Task.FromResult(AdapterPowerState.FullPower280W);
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return adapterPowerFailure is null
+                ? Task.FromResult(AdapterPowerState.FullPower280W)
+                : Task.FromException<AdapterPowerState>(adapterPowerFailure);
+        }
 
         public Task SetPerformanceAsync(
             PerformancePreset value,
@@ -2081,7 +2194,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     {
         public FakeLightingPort(
             bool supportsKeyboardBrightness = true,
-            string keyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581)
+            string keyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581,
+            IReadOnlySet<LightingRefreshRate>? supportedLightingRefreshRates = null)
         {
             Capabilities = new DeviceCapabilities(
                 new HashSet<PerformancePreset>(),
@@ -2102,6 +2216,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 KeyboardLightingLayoutId = keyboardLightingLayoutId,
                 ObservedLightingEffects =
                     new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
+                SupportedLightingRefreshRates = supportedLightingRefreshRates
+                    ?? new HashSet<LightingRefreshRate>(),
             };
         }
 
@@ -2120,6 +2236,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         public List<bool> PlaybackMuteIndicatorStates { get; } = [];
 
         public List<KeyboardBrightnessDirection> BrightnessSteps { get; } = [];
+
+        public List<LightingRefreshRate> LightingRefreshRates { get; } = [];
 
         public byte BrightnessStepResult { get; init; } = 50;
 
@@ -2141,6 +2259,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         public int DriverModeReadCount { get; private set; }
 
         public int DriverModeReleaseCount { get; private set; }
+
+        public TaskCompletionSource LightingRefreshRateStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private TaskCompletionSource? lightingRefreshRateRelease;
+        private int blockNextLightingRefreshRate;
 
         public Exception? ReadFailure { get; set; }
 
@@ -2207,6 +2331,27 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 _ => throw new ArgumentOutOfRangeException(),
             };
             return Task.CompletedTask;
+        }
+
+        public void BlockNextLightingRefreshRate()
+        {
+            lightingRefreshRateRelease = new(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref blockNextLightingRefreshRate, 1);
+        }
+
+        public async Task SetLightingRefreshRateAsync(
+            LightingRefreshRate refreshRate,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Interlocked.Exchange(ref blockNextLightingRefreshRate, 0) != 0)
+            {
+                LightingRefreshRateStarted.TrySetResult();
+                await lightingRefreshRateRelease!.Task.WaitAsync(cancellationToken);
+            }
+
+            LightingRefreshRates.Add(refreshRate);
         }
 
         public Task<byte> StepBrightnessAsync(

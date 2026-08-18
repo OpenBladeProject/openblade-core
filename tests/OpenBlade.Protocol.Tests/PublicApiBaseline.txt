@@ -301,8 +301,10 @@ type interface OpenBlade.Protocol.IBladeDevice
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.PowerTransitionDeviceStateReadResult> ReadStateForPowerTransitionAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<System.Byte> StepKeyboardBrightnessAsync(OpenBlade.Contracts.KeyboardBrightnessDirection direction, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetLightingRefreshRateAsync(OpenBlade.Contracts.LightingRefreshRate refreshRate, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.ConfirmedDeviceState> ReadLightingStateAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> ReadLightingRendererOwnershipAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.Rz090581CapabilityDiagnostics> ReadRz090581CapabilityDiagnosticsAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode>> ReadFunctionKeyPrimaryAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> MaintainDriverModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReadDriverModeAsync(System.Threading.CancellationToken cancellationToken)
@@ -345,7 +347,9 @@ type interface OpenBlade.Protocol.IProductionBatteryPort
   method virtual System.Boolean get_SupportsFunctionKeyPrimaryQuery()
   method virtual System.Boolean get_SupportsGamingModeQuery()
   method virtual System.Boolean get_SupportsMcuVersionQuery()
+  method virtual System.Boolean get_SupportsRz090581CapabilityDiagnosticsQuery()
   method virtual System.Boolean get_SupportsStartupAnimationQuery()
+  method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.Rz090581CapabilityDiagnostics> QueryRz090581CapabilityDiagnosticsAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode>> QueryFunctionKeyPrimaryAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> QueryGamingModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> QueryStartupAnimationAsync(System.Threading.CancellationToken cancellationToken)
@@ -354,6 +358,7 @@ type interface OpenBlade.Protocol.IProductionBatteryPort
   property System.Boolean SupportsFunctionKeyPrimaryQuery { get; }
   property System.Boolean SupportsGamingModeQuery { get; }
   property System.Boolean SupportsMcuVersionQuery { get; }
+  property System.Boolean SupportsRz090581CapabilityDiagnosticsQuery { get; }
   property System.Boolean SupportsStartupAnimationQuery { get; }
   property System.Boolean SupportsTemporaryFullChargeQuery { get; }
 type interface OpenBlade.Protocol.IProductionBatteryPortFactory
@@ -374,6 +379,7 @@ type interface OpenBlade.Protocol.IProductionLightingPort
   method abstract System.Threading.Tasks.Task<System.Byte> StepBrightnessAsync(OpenBlade.Contracts.KeyboardBrightnessDirection direction, System.Threading.CancellationToken cancellationToken)
   method virtual OpenBlade.Protocol.DriverModeRestoreOutcome get_DriverModeRestoreOutcome()
   method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetLightingRefreshRateAsync(OpenBlade.Contracts.LightingRefreshRate refreshRate, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Boolean> DisposeWithinCleanupDeadlineAsync()
   method virtual System.Threading.Tasks.Task<System.Nullable<OpenBlade.Contracts.LogoLightingMode>> ReadLogoStateAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> MaintainDriverModeAsync(System.Threading.CancellationToken cancellationToken)

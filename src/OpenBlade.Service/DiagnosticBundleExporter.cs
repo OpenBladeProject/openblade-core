@@ -10,7 +10,12 @@ public sealed record DiagnosticVersions(
     string BiosVersion,
     string EcVersion = "Unavailable",
     string McuVersion = "Unavailable",
-    string VbiosVersion = "Unavailable");
+    string VbiosVersion = "Unavailable",
+    string VbiosGpuName = "Unavailable",
+    string ThunderboltFirmwareVersion = "Unavailable",
+    string TouchpadFirmwareVersion = "Unavailable",
+    string? ThunderboltFirmwareAccess = null,
+    string? TouchpadFirmwareAccess = null);
 
 public sealed record DiagnosticDeviceIdentity(
     string Model,

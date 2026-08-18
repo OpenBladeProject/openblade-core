@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 44;
+    public const int ProtocolVersion = 46;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -171,6 +171,7 @@ public static class IpcMessageCodec
                 Enum.IsDefined(set.Usage),
             SetKeyboardLightingControlModeRequest set => Enum.IsDefined(set.Mode),
             SetExternalLightingOverridePolicyRequest => true,
+            SetLightingRefreshRateRequest set => Enum.IsDefined(set.RefreshRate),
             SetFirmwareCompatibilityOverrideRequest => true,
             ReapplyChangedSettingsRequest => true,
             SetLightingSuppressionRequest set => Enum.IsDefined(set.Reason),
@@ -428,6 +429,11 @@ public static class IpcMessageCodec
         if (!Enum.IsDefined(status.KeyboardLightingControlMode))
         {
             throw InvalidStatus("keyboard-lighting control mode is unknown");
+        }
+
+        if (!Enum.IsDefined(status.LightingRefreshRate))
+        {
+            throw InvalidStatus("lighting refresh rate is unknown");
         }
 
         if (!Enum.IsDefined(status.ControlAccess))

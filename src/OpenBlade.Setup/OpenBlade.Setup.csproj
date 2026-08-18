@@ -15,4 +15,8 @@
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(OpenBladeIncludePseudoLocalization)' == 'false'">
+    <EmbeddedResource Remove="Properties\Resources.qps-ploc.resx" />
+  </ItemGroup>
+
 </Project>

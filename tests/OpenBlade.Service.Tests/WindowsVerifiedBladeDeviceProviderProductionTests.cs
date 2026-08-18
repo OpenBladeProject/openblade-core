@@ -946,6 +946,29 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(1, port.DisposeCount);
     }
 
+    [Fact]
+    public async Task ReadRz090581CapabilityDiagnostics_UsesFreshIdentityGatedReadOnlyPort()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable();
+        var expected = new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            rz090581CapabilityDiagnostics: expected);
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        Rz090581CapabilityDiagnostics? actual =
+            await device.ReadRz090581CapabilityDiagnosticsAsync(default);
+
+        Assert.Same(expected, actual);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, port.Rz090581CapabilityDiagnosticsQueryCount);
+        Assert.Equal(1, port.DisposeCount);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -1833,7 +1856,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         ProductionPerformanceFanState? performanceFan = null,
         string? mcuVersion = null,
         bool? startupAnimation = null,
-        bool blockPerformanceWrite = false) : IProductionBatteryPort
+        bool blockPerformanceWrite = false,
+        Rz090581CapabilityDiagnostics? rz090581CapabilityDiagnostics = null)
+        : IProductionBatteryPort
     {
         private readonly TaskCompletionSource? protectionRelease = blockProtectionQuery
             ? new(TaskCreationOptions.RunContinuationsAsynchronously)
@@ -1847,6 +1872,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public bool SupportsTemporaryFullChargeQuery => temporary.HasValue;
         public bool SupportsMcuVersionQuery => mcuVersion is not null;
         public bool SupportsStartupAnimationQuery => startupAnimation.HasValue;
+        public bool SupportsRz090581CapabilityDiagnosticsQuery =>
+            rz090581CapabilityDiagnostics is not null;
         public BladeWriteException? WriteFailure { get; set; }
         public Exception? ProtectionFailure { get; init; }
         public Exception? TemporaryFailure { get; init; }
@@ -1861,6 +1888,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public int PerformanceFanQueryCount { get; private set; }
         public int McuVersionQueryCount { get; private set; }
         public int StartupAnimationQueryCount { get; private set; }
+        public int Rz090581CapabilityDiagnosticsQueryCount { get; private set; }
         public int SetPerformanceCount { get; private set; }
         public int SetCustomPerformanceCount { get; private set; }
         public int SetFanModeCount { get; private set; }
@@ -1920,6 +1948,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             cancellationToken.ThrowIfCancellationRequested();
             McuVersionQueryCount++;
             return Task.FromResult(mcuVersion);
+        }
+
+        public Task<Rz090581CapabilityDiagnostics?>
+            QueryRz090581CapabilityDiagnosticsAsync(
+                CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Rz090581CapabilityDiagnosticsQueryCount++;
+            return Task.FromResult(rz090581CapabilityDiagnostics);
         }
 
         public Task<bool?> QueryStartupAnimationAsync(

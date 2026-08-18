@@ -1,0 +1,1287 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name=" · " xml:space="preserve">
+    <value> · </value>
+  </data>
+  <data name=" (CPU {0}, GPU {1})" xml:space="preserve">
+    <value>[!!  (CPÚ {0}, GPÚ {1}) ~~~ !!]</value>
+  </data>
+  <data name=" {0}" xml:space="preserve">
+    <value> {0}</value>
+  </data>
+  <data name=" / " xml:space="preserve">
+    <value> / </value>
+  </data>
+  <data name=" | " xml:space="preserve">
+    <value> | </value>
+  </data>
+  <data name=", {0}{1} steps" xml:space="preserve">
+    <value>[!! , {0}{1} stéps ~~ !!]</value>
+  </data>
+  <data name=", step not yet validated" xml:space="preserve">
+    <value>[!! , stép nót ýét válídátéd ~~~~~~~ !!]</value>
+  </data>
+  <data name="{0:N0} RPM" xml:space="preserve">
+    <value>[!! {0:N0} RPM ~~ !!]</value>
+  </data>
+  <data name="{0} · {1}" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="{0} {1:N0} RPM" xml:space="preserve">
+    <value>[!! {0} {1:N0} RPM ~~ !!]</value>
+  </data>
+  <data name="{0} {1}" xml:space="preserve">
+    <value>{0} {1}</value>
+  </data>
+  <data name="{0} {1} °C" xml:space="preserve">
+    <value>[!! {0} {1} °C ~~ !!]</value>
+  </data>
+  <data name="{0} {1}: {2}" xml:space="preserve">
+    <value>{0} {1}: {2}</value>
+  </data>
+  <data name="{0} {1}: {2}. Pending: {3}" xml:space="preserve">
+    <value>[!! {0} {1}: {2}. Péndíng: {3} ~~~ !!]</value>
+  </data>
+  <data name="{0} / {1}" xml:space="preserve">
+    <value>{0} / {1}</value>
+  </data>
+  <data name="{0} %" xml:space="preserve">
+    <value>{0} %</value>
+  </data>
+  <data name="{0} °C" xml:space="preserve">
+    <value>[!! {0} °C ~~ !!]</value>
+  </data>
+  <data name="{0} × {1}" xml:space="preserve">
+    <value>{0} × {1}</value>
+  </data>
+  <data name="{0} | {1} fans" xml:space="preserve">
+    <value>[!! {0} | {1} fáns ~~ !!]</value>
+  </data>
+  <data name="{0} | {1}%" xml:space="preserve">
+    <value>{0} | {1}%</value>
+  </data>
+  <data name="{0} | {1}% | {2}" xml:space="preserve">
+    <value>{0} | {1}% | {2}</value>
+  </data>
+  <data name="{0} and {1}" xml:space="preserve">
+    <value>[!! {0} ánd {1} ~~ !!]</value>
+  </data>
+  <data name="{0} and {1}, {2}" xml:space="preserve">
+    <value>[!! {0} ánd {1}, {2} ~~ !!]</value>
+  </data>
+  <data name="{0} fans" xml:space="preserve">
+    <value>[!! {0} fáns ~~ !!]</value>
+  </data>
+  <data name="{0} Hz" xml:space="preserve">
+    <value>[!! {0} Hz ~~ !!]</value>
+  </data>
+  <data name="{0} MHz" xml:space="preserve">
+    <value>[!! {0} MHz ~~ !!]</value>
+  </data>
+  <data name="{0} minutes" xml:space="preserve">
+    <value>[!! {0} mínútés ~~~ !!]</value>
+  </data>
+  <data name="{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ." xml:space="preserve">
+    <value>[!! {0} Thís ís á cómpátíbílítý nótícé, nót á hárdwáré fáílúré. Cóntróls rémáín áváíláblé, bút béhávíór máý díffér. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="{0} unavailable" xml:space="preserve">
+    <value>[!! {0} únáváíláblé ~~~~ !!]</value>
+  </data>
+  <data name="{0} W" xml:space="preserve">
+    <value>[!! {0} W ~~ !!]</value>
+  </data>
+  <data name="{0}-bit" xml:space="preserve">
+    <value>[!! {0}-bít ~~ !!]</value>
+  </data>
+  <data name="{0}–{1}{2}{3}" xml:space="preserve">
+    <value>{0}–{1}{2}{3}</value>
+  </data>
+  <data name="{0}, {1}" xml:space="preserve">
+    <value>{0}, {1}</value>
+  </data>
+  <data name="{0}; {1}" xml:space="preserve">
+    <value>{0}; {1}</value>
+  </data>
+  <data name="{0}; check incomplete: {1}" xml:space="preserve">
+    <value>[!! {0}; chéck íncómplété: {1} ~~~~~~ !!]</value>
+  </data>
+  <data name="{0}: {1:N0} RPM" xml:space="preserve">
+    <value>[!! {0}: {1:N0} RPM ~~ !!]</value>
+  </data>
+  <data name="{0}: {1} {2}" xml:space="preserve">
+    <value>{0}: {1} {2}</value>
+  </data>
+  <data name="{0}: unavailable" xml:space="preserve">
+    <value>[!! {0}: únáváíláblé ~~~~ !!]</value>
+  </data>
+  <data name="{0}%" xml:space="preserve">
+    <value>{0}%</value>
+  </data>
+  <data name="{0}% ({1} Wh of {2} Wh)" xml:space="preserve">
+    <value>[!! {0}% ({1} Wh óf {2} Wh) ~~~ !!]</value>
+  </data>
+  <data name="{0}°" xml:space="preserve">
+    <value>{0}°</value>
+  </data>
+  <data name="{0}° / {1}°" xml:space="preserve">
+    <value>{0}° / {1}°</value>
+  </data>
+  <data name="{0}°C" xml:space="preserve">
+    <value>[!! {0}°C ~~ !!]</value>
+  </data>
+  <data name="{0}K" xml:space="preserve">
+    <value>[!! {0}K ~~ !!]</value>
+  </data>
+  <data name="+{0} W" xml:space="preserve">
+    <value>[!! +{0} W ~~ !!]</value>
+  </data>
+  <data name="60 Hz lighting is not available for this keyboard." xml:space="preserve">
+    <value>[!! 60 Hz líghtíng ís nót áváíláblé fór thís kéýbóárd. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="A shortcut must include a non-modifier key." xml:space="preserve">
+    <value>[!! Á shórtcút múst ínclúdé á nón-módífíér kéý. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="AC · {0}" xml:space="preserve">
+    <value>[!! ÁC · {0} ~~ !!]</value>
+  </data>
+  <data name="AC profile" xml:space="preserve">
+    <value>[!! ÁC prófílé ~~~~ !!]</value>
+  </data>
+  <data name="Active profile" xml:space="preserve">
+    <value>[!! Áctívé prófílé ~~~~~ !!]</value>
+  </data>
+  <data name="All profiles" xml:space="preserve">
+    <value>[!! Áll prófílés ~~~~ !!]</value>
+  </data>
+  <data name="Ambient Awareness" xml:space="preserve">
+    <value>[!! Ámbíént Áwárénéss ~~~~~~ !!]</value>
+  </data>
+  <data name="Ambient Awareness, {0}" xml:space="preserve">
+    <value>[!! Ámbíént Áwárénéss, {0} ~~~~~~ !!]</value>
+  </data>
+  <data name="Ambient Awareness, full screen" xml:space="preserve">
+    <value>[!! Ámbíént Áwárénéss, fúll scréén ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back." xml:space="preserve">
+    <value>[!! Ánóthér Razer ápp cán álsó chángé thésé séttíngs. OpenBlade wíll shów chángés ínstéád óf chángíng thém báck. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Another Razer app is running" xml:space="preserve">
+    <value>[!! Ánóthér Razer ápp ís rúnníng ~~~~~~~ !!]</value>
+  </data>
+  <data name="Another Razer app may be using the laptop’s lighting interface. OpenBlade will enable these controls when it becomes available." xml:space="preserve">
+    <value>[!! Ánóthér Razer ápp máý bé úsíng thé láptóp’s líghtíng íntérfácé. OpenBlade wíll énáblé thésé cóntróls whén ít bécómés áváíláblé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Another user is controlling OpenBlade" xml:space="preserve">
+    <value>[!! Ánóthér úsér ís cóntróllíng OpenBlade ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Appearance" xml:space="preserve">
+    <value>[!! Áppéáráncé ~~~~ !!]</value>
+  </data>
+  <data name="Audio Meter" xml:space="preserve">
+    <value>[!! Áúdíó Métér ~~~~ !!]</value>
+  </data>
+  <data name="Audio Meter, color boost {0}, smoothing: {1}" xml:space="preserve">
+    <value>[!! Áúdíó Métér, cólór bóóst {0}, smóóthíng: {1} ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Automatic" xml:space="preserve">
+    <value>[!! Áútómátíc ~~~~ !!]</value>
+  </data>
+  <data name="Available" xml:space="preserve">
+    <value>[!! Áváíláblé ~~~~ !!]</value>
+  </data>
+  <data name="Available · Windows OSD" xml:space="preserve">
+    <value>[!! Áváíláblé · Windows ÓSD ~~~~~ !!]</value>
+  </data>
+  <data name="Balanced" xml:space="preserve">
+    <value>[!! Báláncéd ~~~ !!]</value>
+  </data>
+  <data name="Balances performance and energy use." xml:space="preserve">
+    <value>[!! Báláncés pérfórmáncé ánd énérgý úsé. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Battery" xml:space="preserve">
+    <value>[!! Báttérý ~~~ !!]</value>
+  </data>
+  <data name="Battery · {0}" xml:space="preserve">
+    <value>[!! Báttérý · {0} ~~~ !!]</value>
+  </data>
+  <data name="Battery power" xml:space="preserve">
+    <value>[!! Báttérý pówér ~~~~~ !!]</value>
+  </data>
+  <data name="Battery power flow" xml:space="preserve">
+    <value>[!! Báttérý pówér flów ~~~~~~ !!]</value>
+  </data>
+  <data name="Battery power unavailable" xml:space="preserve">
+    <value>[!! Báttérý pówér únáváíláblé ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Battery profile" xml:space="preserve">
+    <value>[!! Báttérý prófílé ~~~~~ !!]</value>
+  </data>
+  <data name="Battery protection" xml:space="preserve">
+    <value>[!! Báttérý prótéctíón ~~~~~~ !!]</value>
+  </data>
+  <data name="Battery protection off" xml:space="preserve">
+    <value>[!! Báttérý prótéctíón óff ~~~~~~~ !!]</value>
+  </data>
+  <data name="Battery protection: {0} (not saved to profile)" xml:space="preserve">
+    <value>[!! Báttérý prótéctíón: {0} (nót sávéd tó prófílé) ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Battery Saver" xml:space="preserve">
+    <value>[!! Báttérý Sávér ~~~~~ !!]</value>
+  </data>
+  <data name="Battery setting unavailable" xml:space="preserve">
+    <value>[!! Báttérý séttíng únáváíláblé ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Behavior" xml:space="preserve">
+    <value>[!! Béhávíór ~~~ !!]</value>
+  </data>
+  <data name="Best performance" xml:space="preserve">
+    <value>[!! Bést pérfórmáncé ~~~~~~ !!]</value>
+  </data>
+  <data name="Best power efficiency" xml:space="preserve">
+    <value>[!! Bést pówér éffícíéncý ~~~~~~~ !!]</value>
+  </data>
+  <data name="Block Alt+Tab" xml:space="preserve">
+    <value>[!! Blóck Ált+Táb ~~~~ !!]</value>
+  </data>
+  <data name="Block Windows key" xml:space="preserve">
+    <value>[!! Blóck Windows kéý ~~~ !!]</value>
+  </data>
+  <data name="Bottom" xml:space="preserve">
+    <value>[!! Bóttóm ~~~ !!]</value>
+  </data>
+  <data name="Breathing" xml:space="preserve">
+    <value>[!! Bréáthíng ~~~~ !!]</value>
+  </data>
+  <data name="Breathing, one color" xml:space="preserve">
+    <value>[!! Bréáthíng, óné cólór ~~~~~~ !!]</value>
+  </data>
+  <data name="Breathing, random colors" xml:space="preserve">
+    <value>[!! Bréáthíng, rándóm cólórs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Breathing, two colors" xml:space="preserve">
+    <value>[!! Bréáthíng, twó cólórs ~~~~~~~ !!]</value>
+  </data>
+  <data name="Built-in display" xml:space="preserve">
+    <value>[!! Búílt-ín díspláý ~~~~~ !!]</value>
+  </data>
+  <data name="Cancel charge to 100%" xml:space="preserve">
+    <value>[!! Cáncél chárgé tó 100% ~~~~~ !!]</value>
+  </data>
+  <data name="Changed outside OpenBlade" xml:space="preserve">
+    <value>[!! Chángéd óútsídé OpenBlade ~~~~~ !!]</value>
+  </data>
+  <data name="Changed outside OpenBlade: {0}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade." xml:space="preserve">
+    <value>[!! Chángéd óútsídé OpenBlade: {0}. Ýóúr sávéd prófílés áré únchángéd. Áútómátíc prófílé úpdátés fór thésé cóntróls áré páúséd úntíl ýóú chángé thém ín OpenBlade. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Charge limit" xml:space="preserve">
+    <value>[!! Chárgé límít ~~~~ !!]</value>
+  </data>
+  <data name="Charge limit {0}%" xml:space="preserve">
+    <value>[!! Chárgé límít {0}% ~~~~ !!]</value>
+  </data>
+  <data name="Charge limit: {0}% not saved to profile" xml:space="preserve">
+    <value>[!! Chárgé límít: {0}% nót sávéd tó prófílé ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Charge to 100% until unplugged" xml:space="preserve">
+    <value>[!! Chárgé tó 100% úntíl únplúggéd ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Charging at {0} W" xml:space="preserve">
+    <value>[!! Chárgíng át {0} W ~~~~ !!]</value>
+  </data>
+  <data name="Charging to 100%" xml:space="preserve">
+    <value>[!! Chárgíng tó 100% ~~~~ !!]</value>
+  </data>
+  <data name="Check Razer's official page for the latest firmware versions." xml:space="preserve">
+    <value>[!! Chéck Razer's óffícíál págé fór thé látést fírmwáré vérsíóns. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Check status" xml:space="preserve">
+    <value>[!! Chéck státús ~~~~ !!]</value>
+  </data>
+  <data name="Checking" xml:space="preserve">
+    <value>[!! Chéckíng ~~~ !!]</value>
+  </data>
+  <data name="Checking GitHub for updates..." xml:space="preserve">
+    <value>[!! Chéckíng GitHub fór úpdátés... ~~~~~~~ !!]</value>
+  </data>
+  <data name="Checking laptop" xml:space="preserve">
+    <value>[!! Chéckíng láptóp ~~~~~ !!]</value>
+  </data>
+  <data name="Checking Razer's official support page..." xml:space="preserve">
+    <value>[!! Chéckíng Razer's óffícíál súppórt págé... ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Checking the built-in display..." xml:space="preserve">
+    <value>[!! Chéckíng thé búílt-ín díspláý... ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose a supported keyboard lighting effect." xml:space="preserve">
+    <value>[!! Chóósé á súppórtéd kéýbóárd líghtíng éfféct. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose automatic, fixed, maximum, or manual fan control." xml:space="preserve">
+    <value>[!! Chóósé áútómátíc, fíxéd, máxímúm, ór mánúál fán cóntról. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose function keys or media keys as the primary action." xml:space="preserve">
+    <value>[!! Chóósé fúnctíón kéýs ór médíá kéýs ás thé prímárý áctíón. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose the actions assigned to M1 through M5." xml:space="preserve">
+    <value>[!! Chóósé thé áctíóns ássígnéd tó M1 thróúgh M5. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose the active power mode and custom CPU or GPU levels." xml:space="preserve">
+    <value>[!! Chóósé thé áctívé pówér módé ánd cústóm CPÚ ór GPÚ lévéls. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose the active power mode." xml:space="preserve">
+    <value>[!! Chóósé thé áctívé pówér módé. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose the color profile used by the built-in display." xml:space="preserve">
+    <value>[!! Chóósé thé cólór prófílé úséd bý thé búílt-ín díspláý. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose the current fan mode." xml:space="preserve">
+    <value>[!! Chóósé thé cúrrént fán módé. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose the effect's first color." xml:space="preserve">
+    <value>[!! Chóósé thé éfféct's fírst cólór. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose the keyboard color." xml:space="preserve">
+    <value>[!! Chóósé thé kéýbóárd cólór. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose the keyboard effect and brightness." xml:space="preserve">
+    <value>[!! Chóósé thé kéýbóárd éfféct ánd bríghtnéss. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose the laptop's performance and power behavior." xml:space="preserve">
+    <value>[!! Chóósé thé láptóp's pérfórmáncé ánd pówér béhávíór. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose the lighting mode for the logo on the lid." xml:space="preserve">
+    <value>[!! Chóósé thé líghtíng módé fór thé lógó ón thé líd. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose when OpenBlade checks GitHub for new releases." xml:space="preserve">
+    <value>[!! Chóósé whén OpenBlade chécks GitHub fór néw réléásés. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose whether the keyboard animation plays during startup." xml:space="preserve">
+    <value>[!! Chóósé whéthér thé kéýbóárd ánímátíón pláýs dúríng stártúp. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="clockwise" xml:space="preserve">
+    <value>[!! clóckwísé ~~~~ !!]</value>
+  </data>
+  <data name="Color" xml:space="preserve">
+    <value>[!! Cólór ~~ !!]</value>
+  </data>
+  <data name="color boost {0}, smoothing: {1}" xml:space="preserve">
+    <value>[!! cólór bóóst {0}, smóóthíng: {1} ~~~~~~~ !!]</value>
+  </data>
+  <data name="Color profile" xml:space="preserve">
+    <value>[!! Cólór prófílé ~~~~~ !!]</value>
+  </data>
+  <data name="Color profile changed outside OpenBlade." xml:space="preserve">
+    <value>[!! Cólór prófílé chángéd óútsídé OpenBlade. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Compare the settings stored in AC, USB-C, and Battery profiles." xml:space="preserve">
+    <value>[!! Cómpáré thé séttíngs stóréd ín ÁC, ÚSB-C, ánd Báttérý prófílés. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
+    <value>[!! Cónfígúré lívé réádíngs, sígn-ín, ánd líghtíng ównérshíp. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Configure theme, accent color, navigation, and tray text." xml:space="preserve">
+    <value>[!! Cónfígúré thémé, áccént cólór, návígátíón, ánd tráý téxt. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Connection, active settings, and the live readings you selected." xml:space="preserve">
+    <value>[!! Cónnéctíón, áctívé séttíngs, ánd thé lívé réádíngs ýóú séléctéd. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Control keyboard effects, brightness, and laptop logo lighting." xml:space="preserve">
+    <value>[!! Cóntról kéýbóárd éffécts, bríghtnéss, ánd láptóp lógó líghtíng. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Control keyboard effects, brightness, colors, and direction." xml:space="preserve">
+    <value>[!! Cóntról kéýbóárd éffécts, bríghtnéss, cólórs, ánd díréctíón. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Control refresh rate, HDR, and color profile." xml:space="preserve">
+    <value>[!! Cóntról réfrésh ráté, HDR, ánd cólór prófílé. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Control refresh rate, HDR, and the color profile." xml:space="preserve">
+    <value>[!! Cóntról réfrésh ráté, HDR, ánd thé cólór prófílé. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Controller detection needs attention" xml:space="preserve">
+    <value>[!! Cóntróllér détéctíón nééds átténtíón ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Controls unavailable" xml:space="preserve">
+    <value>[!! Cóntróls únáváíláblé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Core {0}, memory {1}" xml:space="preserve">
+    <value>[!! Córé {0}, mémórý {1} ~~~~ !!]</value>
+  </data>
+  <data name="Could not change start at sign-in: {0}" xml:space="preserve">
+    <value>[!! Cóúld nót chángé stárt át sígn-ín: {0} ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Could not check: {0}" xml:space="preserve">
+    <value>[!! Cóúld nót chéck: {0} ~~~~~ !!]</value>
+  </data>
+  <data name="Could not clear {0} overrides." xml:space="preserve">
+    <value>[!! Cóúld nót cléár {0} óvérrídés. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Could not restore the saved display profile because the display controller is unavailable." xml:space="preserve">
+    <value>[!! Cóúld nót réstóré thé sávéd díspláý prófílé bécáúsé thé díspláý cóntróllér ís únáváíláblé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Could not restore the saved display profile because Windows did not confirm every setting." xml:space="preserve">
+    <value>[!! Cóúld nót réstóré thé sávéd díspláý prófílé bécáúsé Windows díd nót cónfírm évérý séttíng. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Could not restore the saved display profile: {0}" xml:space="preserve">
+    <value>[!! Cóúld nót réstóré thé sávéd díspláý prófílé: {0} ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Could not restore the saved profile settings because the power source changed." xml:space="preserve">
+    <value>[!! Cóúld nót réstóré thé sávéd prófílé séttíngs bécáúsé thé pówér sóúrcé chángéd. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Couldn't check for updates. Try again later." xml:space="preserve">
+    <value>[!! Cóúldn't chéck fór úpdátés. Trý ágáín látér. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Couldn't read" xml:space="preserve">
+    <value>[!! Cóúldn't réád ~~~~ !!]</value>
+  </data>
+  <data name="Couldn't read Razer's page. The official link is still available." xml:space="preserve">
+    <value>[!! Cóúldn't réád Razer's págé. Thé óffícíál línk ís stíll áváíláblé. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="counterclockwise" xml:space="preserve">
+    <value>[!! cóúntérclóckwísé ~~~~~~ !!]</value>
+  </data>
+  <data name="CPU {0}" xml:space="preserve">
+    <value>[!! CPÚ {0} ~~ !!]</value>
+  </data>
+  <data name="CPU temperature" xml:space="preserve">
+    <value>[!! CPÚ témpérátúré ~~~~~ !!]</value>
+  </data>
+  <data name="Current profile" xml:space="preserve">
+    <value>[!! Cúrrént prófílé ~~~~~ !!]</value>
+  </data>
+  <data name="Current setting" xml:space="preserve">
+    <value>[!! Cúrrént séttíng ~~~~~ !!]</value>
+  </data>
+  <data name="Current settings are not saved to this profile" xml:space="preserve">
+    <value>[!! Cúrrént séttíngs áré nót sávéd tó thís prófílé ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Custom" xml:space="preserve">
+    <value>[!! Cústóm ~~~ !!]</value>
+  </data>
+  <data name="Custom, CPU {0}, GPU {1}" xml:space="preserve">
+    <value>[!! Cústóm, CPÚ {0}, GPÚ {1} ~~~~~ !!]</value>
+  </data>
+  <data name="Daily" xml:space="preserve">
+    <value>[!! Dáílý ~~ !!]</value>
+  </data>
+  <data name="Dark" xml:space="preserve">
+    <value>[!! Dárk ~~ !!]</value>
+  </data>
+  <data name="Device information" xml:space="preserve">
+    <value>[!! Dévícé ínfórmátíón ~~~~~~ !!]</value>
+  </data>
+  <data name="Device status and live readings" xml:space="preserve">
+    <value>[!! Dévícé státús ánd lívé réádíngs ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Diagnostic export canceled." xml:space="preserve">
+    <value>[!! Díágnóstíc éxpórt cáncéléd. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Diagnostic export failed: {0}" xml:space="preserve">
+    <value>[!! Díágnóstíc éxpórt fáíléd: {0} ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Diagnostics exported to {0}." xml:space="preserve">
+    <value>[!! Díágnóstícs éxpórtéd tó {0}. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Different from saved profile" xml:space="preserve">
+    <value>[!! Dífférént fróm sávéd prófílé ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Display" xml:space="preserve">
+    <value>[!! Díspláý ~~~ !!]</value>
+  </data>
+  <data name="Display available" xml:space="preserve">
+    <value>[!! Díspláý áváíláblé ~~~~~~ !!]</value>
+  </data>
+  <data name="Display controls are unavailable." xml:space="preserve">
+    <value>[!! Díspláý cóntróls áré únáváíláblé. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Display setting failed." xml:space="preserve">
+    <value>[!! Díspláý séttíng fáíléd. ~~~~~~~ !!]</value>
+  </data>
+  <data name="Display settings are unavailable." xml:space="preserve">
+    <value>[!! Díspláý séttíngs áré únáváíláblé. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Display settings changed outside OpenBlade." xml:space="preserve">
+    <value>[!! Díspláý séttíngs chángéd óútsídé OpenBlade. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Display settings could not be refreshed." xml:space="preserve">
+    <value>[!! Díspláý séttíngs cóúld nót bé réfréshéd. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Display turns off" xml:space="preserve">
+    <value>[!! Díspláý túrns óff ~~~~~~ !!]</value>
+  </data>
+  <data name="Dynamic {0}–{1} Hz" xml:space="preserve">
+    <value>[!! Dýnámíc {0}–{1} Hz ~~~~ !!]</value>
+  </data>
+  <data name="Enter a complete http or https address." xml:space="preserve">
+    <value>[!! Éntér á cómplété http ór https áddréss. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Enter a value for this action." xml:space="preserve">
+    <value>[!! Éntér á válúé fór thís áctíón. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Every 10 seconds" xml:space="preserve">
+    <value>[!! Évérý 10 sécónds ~~~~~ !!]</value>
+  </data>
+  <data name="Every 2 seconds" xml:space="preserve">
+    <value>[!! Évérý 2 sécónds ~~~~~ !!]</value>
+  </data>
+  <data name="Every 5 seconds" xml:space="preserve">
+    <value>[!! Évérý 5 sécónds ~~~~~ !!]</value>
+  </data>
+  <data name="Every second" xml:space="preserve">
+    <value>[!! Évérý sécónd ~~~~ !!]</value>
+  </data>
+  <data name="Every startup" xml:space="preserve">
+    <value>[!! Évérý stártúp ~~~~~ !!]</value>
+  </data>
+  <data name="Fan 1" xml:space="preserve">
+    <value>[!! Fán 1 ~~ !!]</value>
+  </data>
+  <data name="Fan 1 speed" xml:space="preserve">
+    <value>[!! Fán 1 spééd ~~~ !!]</value>
+  </data>
+  <data name="Fan 2" xml:space="preserve">
+    <value>[!! Fán 2 ~~ !!]</value>
+  </data>
+  <data name="Fan 2 speed" xml:space="preserve">
+    <value>[!! Fán 2 spééd ~~~ !!]</value>
+  </data>
+  <data name="Fan speed" xml:space="preserve">
+    <value>[!! Fán spééd ~~~ !!]</value>
+  </data>
+  <data name="Fans" xml:space="preserve">
+    <value>[!! Fáns ~~ !!]</value>
+  </data>
+  <data name="Favors lower energy use." xml:space="preserve">
+    <value>[!! Fávórs lówér énérgý úsé. ~~~~~~~ !!]</value>
+  </data>
+  <data name="Favors responsiveness over energy use." xml:space="preserve">
+    <value>[!! Fávórs réspónsívénéss óvér énérgý úsé. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fire" xml:space="preserve">
+    <value>[!! Fíré ~~ !!]</value>
+  </data>
+  <data name="Fixed speed" xml:space="preserve">
+    <value>[!! Fíxéd spééd ~~~~ !!]</value>
+  </data>
+  <data name="Fixed, {0:N0} RPM" xml:space="preserve">
+    <value>[!! Fíxéd, {0:N0} RPM ~~~ !!]</value>
+  </data>
+  <data name="Follow Windows" xml:space="preserve">
+    <value>[!! Fóllów Windows ~~~ !!]</value>
+  </data>
+  <data name="Full screen" xml:space="preserve">
+    <value>[!! Fúll scréén ~~~~ !!]</value>
+  </data>
+  <data name="Function keys" xml:space="preserve">
+    <value>[!! Fúnctíón kéýs ~~~~~ !!]</value>
+  </data>
+  <data name="Function row" xml:space="preserve">
+    <value>[!! Fúnctíón rów ~~~~ !!]</value>
+  </data>
+  <data name="Gaming mode" xml:space="preserve">
+    <value>[!! Gámíng módé ~~~~ !!]</value>
+  </data>
+  <data name="GitHub is temporarily unavailable. Try again after {0:g}." xml:space="preserve">
+    <value>[!! GitHub ís témpórárílý únáváíláblé. Trý ágáín áftér {0:g}. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="GitHub rate limit reached. Try again after {0:g}." xml:space="preserve">
+    <value>[!! GitHub ráté límít réáchéd. Trý ágáín áftér {0:g}. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="GPU {0}" xml:space="preserve">
+    <value>[!! GPÚ {0} ~~ !!]</value>
+  </data>
+  <data name="GPU core clock" xml:space="preserve">
+    <value>[!! GPÚ córé clóck ~~~~~ !!]</value>
+  </data>
+  <data name="GPU memory clock" xml:space="preserve">
+    <value>[!! GPÚ mémórý clóck ~~~~~ !!]</value>
+  </data>
+  <data name="GPU temperature" xml:space="preserve">
+    <value>[!! GPÚ témpérátúré ~~~~~ !!]</value>
+  </data>
+  <data name="GPU tuning" xml:space="preserve">
+    <value>[!! GPÚ túníng ~~~~ !!]</value>
+  </data>
+  <data name="HDR" xml:space="preserve">
+    <value>[!! HDR ~~ !!]</value>
+  </data>
+  <data name="HDR changed outside OpenBlade." xml:space="preserve">
+    <value>[!! HDR chángéd óútsídé OpenBlade. ~~~~~~ !!]</value>
+  </data>
+  <data name="HDR off" xml:space="preserve">
+    <value>[!! HDR óff ~~~ !!]</value>
+  </data>
+  <data name="HDR on" xml:space="preserve">
+    <value>[!! HDR ón ~~ !!]</value>
+  </data>
+  <data name="High" xml:space="preserve">
+    <value>[!! Hígh ~~ !!]</value>
+  </data>
+  <data name="Idle" xml:space="preserve">
+    <value>[!! Ídlé ~~ !!]</value>
+  </data>
+  <data name="Imported animation" xml:space="preserve">
+    <value>[!! Ímpórtéd ánímátíón ~~~~~~ !!]</value>
+  </data>
+  <data name="Inactivity timeout" xml:space="preserve">
+    <value>[!! Ínáctívítý tíméóút ~~~~~~ !!]</value>
+  </data>
+  <data name="Incompatible firmware" xml:space="preserve">
+    <value>[!! Íncómpátíblé fírmwáré ~~~~~~~ !!]</value>
+  </data>
+  <data name="Incompatible hardware" xml:space="preserve">
+    <value>[!! Íncómpátíblé hárdwáré ~~~~~~~ !!]</value>
+  </data>
+  <data name="Interactive session required" xml:space="preserve">
+    <value>[!! Íntéráctívé séssíón réqúíréd ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Inward" xml:space="preserve">
+    <value>[!! Ínwárd ~~~ !!]</value>
+  </data>
+  <data name="Keep lighting on" xml:space="preserve">
+    <value>[!! Kéép líghtíng ón ~~~~~ !!]</value>
+  </data>
+  <data name="Keeps the current Windows setting." xml:space="preserve">
+    <value>[!! Kééps thé cúrrént Windows séttíng. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Keyboard" xml:space="preserve">
+    <value>[!! Kéýbóárd ~~~ !!]</value>
+  </data>
+  <data name="Keyboard behavior" xml:space="preserve">
+    <value>[!! Kéýbóárd béhávíór ~~~~~~ !!]</value>
+  </data>
+  <data name="Keyboard brightness" xml:space="preserve">
+    <value>[!! Kéýbóárd bríghtnéss ~~~~~~~ !!]</value>
+  </data>
+  <data name="Keyboard lighting" xml:space="preserve">
+    <value>[!! Kéýbóárd líghtíng ~~~~~~ !!]</value>
+  </data>
+  <data name="Laptop controls are currently unavailable. Check Troubleshooting for details." xml:space="preserve">
+    <value>[!! Láptóp cóntróls áré cúrréntlý únáváíláblé. Chéck Tróúbléshóótíng fór détáíls. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Laptop controls changed outside OpenBlade" xml:space="preserve">
+    <value>[!! Láptóp cóntróls chángéd óútsídé OpenBlade ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Laptop lid logo" xml:space="preserve">
+    <value>[!! Láptóp líd lógó ~~~~~ !!]</value>
+  </data>
+  <data name="Laptop logo" xml:space="preserve">
+    <value>[!! Láptóp lógó ~~~~ !!]</value>
+  </data>
+  <data name="Laptop not found" xml:space="preserve">
+    <value>[!! Láptóp nót fóúnd ~~~~~ !!]</value>
+  </data>
+  <data name="Laptop performance" xml:space="preserve">
+    <value>[!! Láptóp pérfórmáncé ~~~~~~ !!]</value>
+  </data>
+  <data name="Laptop performance: {0}{5}Windows power mode: {1}{5}Fans: {2}{5}Lighting: {3}{5}Display: {4}" xml:space="preserve">
+    <value>[!! Láptóp pérfórmáncé: {0}{5}Windows pówér módé: {1}{5}Fáns: {2}{5}Líghtíng: {3}{5}Díspláý: {4} ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Last checked {0:g}. Check again to load published versions." xml:space="preserve">
+    <value>[!! Lást chéckéd {0:g}. Chéck ágáín tó lóád públíshéd vérsíóns. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Last checked at {0:T}.{1}Values change only when Windows or firmware reports new data." xml:space="preserve">
+    <value>[!! Lást chéckéd át {0:T}.{1}Válúés chángé ónlý whén Windows ór fírmwáré répórts néw dátá. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Latest firmware versions last loaded {0:g}." xml:space="preserve">
+    <value>[!! Látést fírmwáré vérsíóns lást lóádéd {0:g}. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Latest firmware versions loaded from Razer." xml:space="preserve">
+    <value>[!! Látést fírmwáré vérsíóns lóádéd fróm Razer. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Latest release: {0}. The installed version could not be compared." xml:space="preserve">
+    <value>[!! Látést réléásé: {0}. Thé ínstálléd vérsíón cóúld nót bé cómpáréd. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Launch OpenBlade automatically when you sign in." xml:space="preserve">
+    <value>[!! Láúnch OpenBlade áútómátícállý whén ýóú sígn ín. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Leave unchanged" xml:space="preserve">
+    <value>[!! Léávé únchángéd ~~~~~ !!]</value>
+  </data>
+  <data name="Left" xml:space="preserve">
+    <value>[!! Léft ~~ !!]</value>
+  </data>
+  <data name="Leftward" xml:space="preserve">
+    <value>[!! Léftwárd ~~~ !!]</value>
+  </data>
+  <data name="Light" xml:space="preserve">
+    <value>[!! Líght ~~ !!]</value>
+  </data>
+  <data name="Lighting" xml:space="preserve">
+    <value>[!! Líghtíng ~~~ !!]</value>
+  </data>
+  <data name="Lighting brightness" xml:space="preserve">
+    <value>[!! Líghtíng bríghtnéss ~~~~~~~ !!]</value>
+  </data>
+  <data name="Lighting color" xml:space="preserve">
+    <value>[!! Líghtíng cólór ~~~~~ !!]</value>
+  </data>
+  <data name="Lighting effect" xml:space="preserve">
+    <value>[!! Líghtíng éfféct ~~~~~ !!]</value>
+  </data>
+  <data name="Live readings are unavailable while the OpenBlade service is not running." xml:space="preserve">
+    <value>[!! Lívé réádíngs áré únáváíláblé whílé thé OpenBlade sérvícé ís nót rúnníng. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Loaded" xml:space="preserve">
+    <value>[!! Lóádéd ~~~ !!]</value>
+  </data>
+  <data name="Long" xml:space="preserve">
+    <value>[!! Lóng ~~ !!]</value>
+  </data>
+  <data name="Low" xml:space="preserve">
+    <value>[!! Lów ~~ !!]</value>
+  </data>
+  <data name="Manage battery protection and temporary full charge." xml:space="preserve">
+    <value>[!! Mánágé báttérý prótéctíón ánd témpórárý fúll chárgé. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Manage battery protection, charge limit, and temporary full charge." xml:space="preserve">
+    <value>[!! Mánágé báttérý prótéctíón, chárgé límít, ánd témpórárý fúll chárgé. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Manual fan curve" xml:space="preserve">
+    <value>[!! Mánúál fán cúrvé ~~~~~ !!]</value>
+  </data>
+  <data name="Manual only" xml:space="preserve">
+    <value>[!! Mánúál ónlý ~~~~ !!]</value>
+  </data>
+  <data name="Manual override clear requests completed; service confirmation is unavailable." xml:space="preserve">
+    <value>[!! Mánúál óvérrídé cléár réqúésts cómplétéd; sérvícé cónfírmátíón ís únáváíláblé. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Manual overrides cleared; hardware restoration was not applied for {0}." xml:space="preserve">
+    <value>[!! Mánúál óvérrídés cléáréd; hárdwáré réstórátíón wás nót ápplíéd fór {0}. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Manual overrides cleared." xml:space="preserve">
+    <value>[!! Mánúál óvérrídés cléáréd. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Matches saved profile" xml:space="preserve">
+    <value>[!! Mátchés sávéd prófílé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Maximum" xml:space="preserve">
+    <value>[!! Máxímúm ~~~ !!]</value>
+  </data>
+  <data name="Media keys" xml:space="preserve">
+    <value>[!! Médíá kéýs ~~~~ !!]</value>
+  </data>
+  <data name="Medium" xml:space="preserve">
+    <value>[!! Médíúm ~~~ !!]</value>
+  </data>
+  <data name="Monthly" xml:space="preserve">
+    <value>[!! Mónthlý ~~~ !!]</value>
+  </data>
+  <data name="Native" xml:space="preserve">
+    <value>[!! Nátívé ~~~ !!]</value>
+  </data>
+  <data name="Never" xml:space="preserve">
+    <value>[!! Névér ~~ !!]</value>
+  </data>
+  <data name="Newer {0} firmware is available from Razer." xml:space="preserve">
+    <value>[!! Néwér {0} fírmwáré ís áváíláblé fróm Razer. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Nightly" xml:space="preserve">
+    <value>[!! Níghtlý ~~~ !!]</value>
+  </data>
+  <data name="No eligible published release is available." xml:space="preserve">
+    <value>[!! Nó élígíblé públíshéd réléásé ís áváíláblé. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="No internet connection. Check your connection and try again." xml:space="preserve">
+    <value>[!! Nó íntérnét cónnéctíón. Chéck ýóúr cónnéctíón ánd trý ágáín. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="No manual overrides active." xml:space="preserve">
+    <value>[!! Nó mánúál óvérrídés áctívé. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="None" xml:space="preserve">
+    <value>[!! Nóné ~~ !!]</value>
+  </data>
+  <data name="Not applicable" xml:space="preserve">
+    <value>[!! Nót ápplícáblé ~~~~~ !!]</value>
+  </data>
+  <data name="Not available · OpenBlade OSD" xml:space="preserve">
+    <value>[!! Nót áváíláblé · OpenBlade ÓSD ~~~~~~ !!]</value>
+  </data>
+  <data name="Not charging" xml:space="preserve">
+    <value>[!! Nót chárgíng ~~~~ !!]</value>
+  </data>
+  <data name="Not checked" xml:space="preserve">
+    <value>[!! Nót chéckéd ~~~~ !!]</value>
+  </data>
+  <data name="Not detected" xml:space="preserve">
+    <value>[!! Nót détéctéd ~~~~ !!]</value>
+  </data>
+  <data name="Not listed" xml:space="preserve">
+    <value>[!! Nót lístéd ~~~~ !!]</value>
+  </data>
+  <data name="Not loaded" xml:space="preserve">
+    <value>[!! Nót lóádéd ~~~~ !!]</value>
+  </data>
+  <data name="Not set" xml:space="preserve">
+    <value>[!! Nót sét ~~~ !!]</value>
+  </data>
+  <data name="Not shown: {0}. Windows limits tray hover text to {1} characters." xml:space="preserve">
+    <value>[!! Nót shówn: {0}. Windows límíts tráý hóvér téxt tó {1} cháráctérs. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Off" xml:space="preserve">
+    <value>[!! Óff ~~ !!]</value>
+  </data>
+  <data name="On" xml:space="preserve">
+    <value>[!! Ón ~~ !!]</value>
+  </data>
+  <data name="On battery" xml:space="preserve">
+    <value>[!! Ón báttérý ~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade" xml:space="preserve">
+    <value>[!! OpenBlade ~~ !!]</value>
+  </data>
+  <data name="OpenBlade · {0}" xml:space="preserve">
+    <value>[!! OpenBlade · {0} ~~ !!]</value>
+  </data>
+  <data name="OpenBlade · Service unavailable" xml:space="preserve">
+    <value>[!! OpenBlade · Sérvícé únáváíláblé ~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade {0} is available." xml:space="preserve">
+    <value>[!! OpenBlade {0} ís áváíláblé. ~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade app name" xml:space="preserve">
+    <value>[!! OpenBlade ápp námé ~~~ !!]</value>
+  </data>
+  <data name="OpenBlade can’t connect to its service, so lighting controls are unavailable." xml:space="preserve">
+    <value>[!! OpenBlade cán’t cónnéct tó íts sérvícé, só líghtíng cóntróls áré únáváíláblé. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade can’t find a supported laptop, so lighting controls are unavailable." xml:space="preserve">
+    <value>[!! OpenBlade cán’t fínd á súppórtéd láptóp, só líghtíng cóntróls áré únáváíláblé. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade could not check every Razer controller. Controls remain available only when the laptop is verified." xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót chéck évérý Razer cóntróllér. Cóntróls rémáín áváíláblé ónlý whén thé láptóp ís vérífíéd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade could not confirm {0} after a write. The last confirmed values remain shown. Checking the current state is read-only; OpenBlade will not retry the write automatically." xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót cónfírm {0} áftér á wríté. Thé lást cónfírméd válúés rémáín shówn. Chéckíng thé cúrrént státé ís réád-ónlý; OpenBlade wíll nót rétrý thé wríté áútómátícállý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade could not verify this configuration: {0}." xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót vérífý thís cónfígúrátíón: {0}. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade couldn’t access the laptop’s lighting interface. Another lighting app may be using it." xml:space="preserve">
+    <value>[!! OpenBlade cóúldn’t áccéss thé láptóp’s líghtíng íntérfácé. Ánóthér líghtíng ápp máý bé úsíng ít. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade couldn’t complete that action. Check Troubleshooting for details." xml:space="preserve">
+    <value>[!! OpenBlade cóúldn’t cómplété thát áctíón. Chéck Tróúbléshóótíng fór détáíls. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade couldn’t confirm whether another Razer app is using the laptop’s lighting interface. Controls will remain disabled until access is available." xml:space="preserve">
+    <value>[!! OpenBlade cóúldn’t cónfírm whéthér ánóthér Razer ápp ís úsíng thé láptóp’s líghtíng íntérfácé. Cóntróls wíll rémáín dísábléd úntíl áccéss ís áváíláblé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade found a supported laptop with incompatible firmware, so lighting controls are unavailable unless you enable the firmware override." xml:space="preserve">
+    <value>[!! OpenBlade fóúnd á súppórtéd láptóp wíth íncómpátíblé fírmwáré, só líghtíng cóntróls áré únáváíláblé únléss ýóú énáblé thé fírmwáré óvérrídé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade has not tested this configuration: {0}." xml:space="preserve">
+    <value>[!! OpenBlade hás nót téstéd thís cónfígúrátíón: {0}. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade is checking the laptop before enabling lighting controls." xml:space="preserve">
+    <value>[!! OpenBlade ís chéckíng thé láptóp béfóré énáblíng líghtíng cóntróls. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade is up to date." xml:space="preserve">
+    <value>[!! OpenBlade ís úp tó dáté. ~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade only" xml:space="preserve">
+    <value>[!! OpenBlade ónlý ~~ !!]</value>
+  </data>
+  <data name="OpenBlade saved the change, but the laptop has not applied it." xml:space="preserve">
+    <value>[!! OpenBlade sávéd thé chángé, bút thé láptóp hás nót ápplíéd ít. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade service isn’t running" xml:space="preserve">
+    <value>[!! OpenBlade sérvícé ísn’t rúnníng ~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade will not start when you sign in." xml:space="preserve">
+    <value>[!! OpenBlade wíll nót stárt whén ýóú sígn ín. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade will start when you sign in." xml:space="preserve">
+    <value>[!! OpenBlade wíll stárt whén ýóú sígn ín. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Operation failed: {0}" xml:space="preserve">
+    <value>[!! Ópérátíón fáíléd: {0} ~~~~~~ !!]</value>
+  </data>
+  <data name="Other controller may be active" xml:space="preserve">
+    <value>[!! Óthér cóntróllér máý bé áctívé ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Outward" xml:space="preserve">
+    <value>[!! Óútwárd ~~~ !!]</value>
+  </data>
+  <data name="Pending: {0}" xml:space="preserve">
+    <value>[!! Péndíng: {0} ~~~ !!]</value>
+  </data>
+  <data name="Performance" xml:space="preserve">
+    <value>[!! Pérfórmáncé ~~~~ !!]</value>
+  </data>
+  <data name="Power mode" xml:space="preserve">
+    <value>[!! Pówér módé ~~~~ !!]</value>
+  </data>
+  <data name="Power source" xml:space="preserve">
+    <value>[!! Pówér sóúrcé ~~~~ !!]</value>
+  </data>
+  <data name="Power source unavailable" xml:space="preserve">
+    <value>[!! Pówér sóúrcé únáváíláblé ~~~~~~~~ !!]</value>
+  </data>
+  <data name="External power (unclassified)" xml:space="preserve">
+    <value>[!! Éxtérnál pówér (únclássífíéd) ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Preparing diagnostic export..." xml:space="preserve">
+    <value>[!! Prépáríng díágnóstíc éxpórt... ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Primary color" xml:space="preserve">
+    <value>[!! Prímárý cólór ~~~~~ !!]</value>
+  </data>
+  <data name="Profile and battery power" xml:space="preserve">
+    <value>[!! Prófílé ánd báttérý pówér ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Random" xml:space="preserve">
+    <value>[!! Rándóm ~~~ !!]</value>
+  </data>
+  <data name="random colors" xml:space="preserve">
+    <value>[!! rándóm cólórs ~~~~~ !!]</value>
+  </data>
+  <data name="random colors, {0}" xml:space="preserve">
+    <value>[!! rándóm cólórs, {0} ~~~~~ !!]</value>
+  </data>
+  <data name="Razer app active" xml:space="preserve">
+    <value>[!! Razer ápp áctívé ~~~~ !!]</value>
+  </data>
+  <data name="Reactive" xml:space="preserve">
+    <value>[!! Réáctívé ~~~ !!]</value>
+  </data>
+  <data name="Reactive, {0}" xml:space="preserve">
+    <value>[!! Réáctívé, {0} ~~~ !!]</value>
+  </data>
+  <data name="Read-only" xml:space="preserve">
+    <value>[!! Réád-ónlý ~~~ !!]</value>
+  </data>
+  <data name="Ready" xml:space="preserve">
+    <value>[!! Réádý ~~ !!]</value>
+  </data>
+  <data name="Reconnecting to service" xml:space="preserve">
+    <value>[!! Récónnéctíng tó sérvícé ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Refresh rate" xml:space="preserve">
+    <value>[!! Réfrésh ráté ~~~~ !!]</value>
+  </data>
+  <data name="Refresh rate changed outside OpenBlade." xml:space="preserve">
+    <value>[!! Réfrésh ráté chángéd óútsídé OpenBlade. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Render supported animated effects at 60 Hz. Uses more CPU and power." xml:space="preserve">
+    <value>[!! Réndér súppórtéd ánímátéd éffécts át 60 Hz. Úsés móré CPÚ ánd pówér. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Restore charge limit" xml:space="preserve">
+    <value>[!! Réstóré chárgé límít ~~~~~~~ !!]</value>
+  </data>
+  <data name="Right" xml:space="preserve">
+    <value>[!! Ríght ~~ !!]</value>
+  </data>
+  <data name="Rightward" xml:space="preserve">
+    <value>[!! Ríghtwárd ~~~~ !!]</value>
+  </data>
+  <data name="Ripple" xml:space="preserve">
+    <value>[!! Rípplé ~~~ !!]</value>
+  </data>
+  <data name="Running" xml:space="preserve">
+    <value>[!! Rúnníng ~~~ !!]</value>
+  </data>
+  <data name="Save profile changes" xml:space="preserve">
+    <value>[!! Sávé prófílé chángés ~~~~~~~ !!]</value>
+  </data>
+  <data name="Save to AC profile" xml:space="preserve">
+    <value>[!! Sávé tó ÁC prófílé ~~~~~~ !!]</value>
+  </data>
+  <data name="Save to battery profile" xml:space="preserve">
+    <value>[!! Sávé tó báttérý prófílé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Save to profile" xml:space="preserve">
+    <value>[!! Sávé tó prófílé ~~~~~ !!]</value>
+  </data>
+  <data name="Save to USB-C profile" xml:space="preserve">
+    <value>[!! Sávé tó ÚSB-C prófílé ~~~~~~ !!]</value>
+  </data>
+  <data name="Saved profile comparison" xml:space="preserve">
+    <value>[!! Sávéd prófílé cómpárísón ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Service disconnected" xml:space="preserve">
+    <value>[!! Sérvícé díscónnéctéd ~~~~~~~ !!]</value>
+  </data>
+  <data name="Service unavailable" xml:space="preserve">
+    <value>[!! Sérvícé únáváíláblé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Set function-key behavior and gaming mode." xml:space="preserve">
+    <value>[!! Sét fúnctíón-kéý béhávíór ánd gámíng módé. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Short" xml:space="preserve">
+    <value>[!! Shórt ~~ !!]</value>
+  </data>
+  <data name="Shortcut keys" xml:space="preserve">
+    <value>[!! Shórtcút kéýs ~~~~~ !!]</value>
+  </data>
+  <data name="Show detected laptop and firmware details." xml:space="preserve">
+    <value>[!! Shów détéctéd láptóp ánd fírmwáré détáíls. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Show diagnostics, documentation, and project links." xml:space="preserve">
+    <value>[!! Shów díágnóstícs, dócúméntátíón, ánd prójéct línks. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Show service, laptop, power, and software status." xml:space="preserve">
+    <value>[!! Shów sérvícé, láptóp, pówér, ánd sóftwáré státús. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Show the app identity and project relationship." xml:space="preserve">
+    <value>[!! Shów thé ápp ídéntítý ánd prójéct rélátíónshíp. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Show the installed app and service versions." xml:space="preserve">
+    <value>[!! Shów thé ínstálléd ápp ánd sérvícé vérsíóns. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Shutdown" xml:space="preserve">
+    <value>[!! Shútdówn ~~~ !!]</value>
+  </data>
+  <data name="Silent" xml:space="preserve">
+    <value>[!! Sílént ~~~ !!]</value>
+  </data>
+  <data name="Spectrum Cycling" xml:space="preserve">
+    <value>[!! Spéctrúm Cýclíng ~~~~~~ !!]</value>
+  </data>
+  <data name="Stable" xml:space="preserve">
+    <value>[!! Stáblé ~~~ !!]</value>
+  </data>
+  <data name="Starlight" xml:space="preserve">
+    <value>[!! Stárlíght ~~~~ !!]</value>
+  </data>
+  <data name="Starlight, one color, {0}" xml:space="preserve">
+    <value>[!! Stárlíght, óné cólór, {0} ~~~~~~ !!]</value>
+  </data>
+  <data name="Starlight, random colors, {0}" xml:space="preserve">
+    <value>[!! Stárlíght, rándóm cólórs, {0} ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Starlight, two colors, {0}" xml:space="preserve">
+    <value>[!! Stárlíght, twó cólórs, {0} ~~~~~~~ !!]</value>
+  </data>
+  <data name="Start at sign-in is unavailable: {0}" xml:space="preserve">
+    <value>[!! Stárt át sígn-ín ís únáváíláblé: {0} ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Startup animation" xml:space="preserve">
+    <value>[!! Stártúp ánímátíón ~~~~~~ !!]</value>
+  </data>
+  <data name="State not confirmed" xml:space="preserve">
+    <value>[!! Státé nót cónfírméd ~~~~~~ !!]</value>
+  </data>
+  <data name="Static" xml:space="preserve">
+    <value>[!! Státíc ~~~ !!]</value>
+  </data>
+  <data name="Stop OpenBlade until Windows restarts." xml:space="preserve">
+    <value>[!! Stóp OpenBlade úntíl Windows réstárts. ~~~~~~ !!]</value>
+  </data>
+  <data name="Support" xml:space="preserve">
+    <value>[!! Súppórt ~~~ !!]</value>
+  </data>
+  <data name="Switch off lighting" xml:space="preserve">
+    <value>[!! Swítch óff líghtíng ~~~~~~ !!]</value>
+  </data>
+  <data name="Temperatures" xml:space="preserve">
+    <value>[!! Témpérátúrés ~~~~~ !!]</value>
+  </data>
+  <data name="Temporary change not saved to this profile" xml:space="preserve">
+    <value>[!! Témpórárý chángé nót sávéd tó thís prófílé ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Temporary full charge active" xml:space="preserve">
+    <value>[!! Témpórárý fúll chárgé áctívé ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Temporary full charge state unavailable" xml:space="preserve">
+    <value>[!! Témpórárý fúll chárgé státé únáváíláblé ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The active effect was set outside OpenBlade and cannot be read from firmware." xml:space="preserve">
+    <value>[!! Thé áctívé éfféct wás sét óútsídé OpenBlade ánd cánnót bé réád fróm fírmwáré. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The display session agent is not responding." xml:space="preserve">
+    <value>[!! Thé díspláý séssíón ágént ís nót réspóndíng. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
+    <value>[!! Thé díágnóstíc sávér rétúrnéd án ínválíd résúlt. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout." xml:space="preserve">
+    <value>[!! Thé éxáct ádmíttéd Razer drívér léts Windows shów íts nátívé bríghtnéss flýóút. OpenBlade réválídátés thé éxáct dévícé páth fór évérý kéý préss. Whén thé nátívé páth ís únáváíláblé, OpenBlade úsés íts ówn flýóút. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Tidal" xml:space="preserve">
+    <value>[!! Tídál ~~ !!]</value>
+  </data>
+  <data name="Tidal, inward" xml:space="preserve">
+    <value>[!! Tídál, ínwárd ~~~~ !!]</value>
+  </data>
+  <data name="Tidal, outward" xml:space="preserve">
+    <value>[!! Tídál, óútwárd ~~~~~ !!]</value>
+  </data>
+  <data name="Top" xml:space="preserve">
+    <value>[!! Tóp ~~ !!]</value>
+  </data>
+  <data name="Troubleshooting" xml:space="preserve">
+    <value>[!! Tróúbléshóótíng ~~~~~~ !!]</value>
+  </data>
+  <data name="Turn GPU clock tuning on or off." xml:space="preserve">
+    <value>[!! Túrn GPÚ clóck túníng ón ór óff. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Turn keyboard lighting off with the display or after inactivity." xml:space="preserve">
+    <value>[!! Túrn kéýbóárd líghtíng óff wíth thé díspláý ór áftér ínáctívítý. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Turn lighting off" xml:space="preserve">
+    <value>[!! Túrn líghtíng óff ~~~~~~ !!]</value>
+  </data>
+  <data name="Turn off battery protection" xml:space="preserve">
+    <value>[!! Túrn óff báttérý prótéctíón ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Turn off HDR to change color profiles." xml:space="preserve">
+    <value>[!! Túrn óff HDR tó chángé cólór prófílés. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Turn the configured battery charge limit on or off." xml:space="preserve">
+    <value>[!! Túrn thé cónfígúréd báttérý chárgé límít ón ór óff. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Turn the laptop gaming mode on or off." xml:space="preserve">
+    <value>[!! Túrn thé láptóp gámíng módé ón ór óff. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="two colors, {0} and {1}" xml:space="preserve">
+    <value>[!! twó cólórs, {0} ánd {1} ~~~~~ !!]</value>
+  </data>
+  <data name="Unavailable" xml:space="preserve">
+    <value>[!! Únáváíláblé ~~~~ !!]</value>
+  </data>
+  <data name="Unknown" xml:space="preserve">
+    <value>[!! Únknówn ~~~ !!]</value>
+  </data>
+  <data name="Unknown modifier: {0}" xml:space="preserve">
+    <value>[!! Únknówn módífíér: {0} ~~~~~~ !!]</value>
+  </data>
+  <data name="Unknown shortcut key: {0}" xml:space="preserve">
+    <value>[!! Únknówn shórtcút kéý: {0} ~~~~~~~ !!]</value>
+  </data>
+  <data name="Untested platform configuration" xml:space="preserve">
+    <value>[!! Úntéstéd plátfórm cónfígúrátíón ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="until reset" xml:space="preserve">
+    <value>[!! úntíl rését ~~~~ !!]</value>
+  </data>
+  <data name="until the power source changes" xml:space="preserve">
+    <value>[!! úntíl thé pówér sóúrcé chángés ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Up to {0:0.##} seconds" xml:space="preserve">
+    <value>[!! Úp tó {0:0.##} sécónds ~~~~ !!]</value>
+  </data>
+  <data name="Up to 1 second" xml:space="preserve">
+    <value>[!! Úp tó 1 sécónd ~~~~ !!]</value>
+  </data>
+  <data name="Update check canceled." xml:space="preserve">
+    <value>[!! Úpdáté chéck cáncéléd. ~~~~~~~ !!]</value>
+  </data>
+  <data name="Updates" xml:space="preserve">
+    <value>[!! Úpdátés ~~~ !!]</value>
+  </data>
+  <data name="Updates have not been checked for the {0} channel." xml:space="preserve">
+    <value>[!! Úpdátés hávé nót béén chéckéd fór thé {0} chánnél. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Updates have not been checked." xml:space="preserve">
+    <value>[!! Úpdátés hávé nót béén chéckéd. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="USB-C · {0}" xml:space="preserve">
+    <value>[!! ÚSB-C · {0} ~~ !!]</value>
+  </data>
+  <data name="USB-C profile" xml:space="preserve">
+    <value>[!! ÚSB-C prófílé ~~~~ !!]</value>
+  </data>
+  <data name="Use a shortcut such as Ctrl+Shift+M." xml:space="preserve">
+    <value>[!! Úsé á shórtcút súch ás Ctrl+Shíft+M. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Using {0} W" xml:space="preserve">
+    <value>[!! Úsíng {0} W ~~~ !!]</value>
+  </data>
+  <data name="Verified Razer Blade" xml:space="preserve">
+    <value>[!! Vérífíéd Razer Bládé ~~~~~ !!]</value>
+  </data>
+  <data name="Versions" xml:space="preserve">
+    <value>[!! Vérsíóns ~~~ !!]</value>
+  </data>
+  <data name="VBIOS {0}" xml:space="preserve">
+    <value>[!! VBÍÓS {0} ~~ !!]</value>
+  </data>
+  <data name="VID {0} · PID {1}" xml:space="preserve">
+    <value>[!! VÍD {0} · PÍD {1} ~~~ !!]</value>
+  </data>
+  <data name="Waiting for power source" xml:space="preserve">
+    <value>[!! Wáítíng fór pówér sóúrcé ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Waiting for the first live-reading check." xml:space="preserve">
+    <value>[!! Wáítíng fór thé fírst lívé-réádíng chéck. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Wave" xml:space="preserve">
+    <value>[!! Wávé ~~ !!]</value>
+  </data>
+  <data name="Wave, {0}" xml:space="preserve">
+    <value>[!! Wávé, {0} ~~ !!]</value>
+  </data>
+  <data name="Weekly" xml:space="preserve">
+    <value>[!! Wééklý ~~~ !!]</value>
+  </data>
+  <data name="Wheel" xml:space="preserve">
+    <value>[!! Whéél ~~ !!]</value>
+  </data>
+  <data name="Wheel, {0}" xml:space="preserve">
+    <value>[!! Whéél, {0} ~~ !!]</value>
+  </data>
+  <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
+    <value>[!! Windows díd nót cónfírm thé réqúéstéd stárt-át-sígn-ín séttíng. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies." xml:space="preserve">
+    <value>[!! Windows Dynamic Lighting ówns thé kéýbóárd. OpenBlade wíll nót chángé kéýbóárd bríghtnéss, éffécts, ór líghtíng pówér pólícíés. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Windows power mode" xml:space="preserve">
+    <value>[!! Windows pówér módé ~~~~ !!]</value>
+  </data>
+  <data name="Fragment.BatteryProtection" xml:space="preserve">
+    <value>[!! báttérý prótéctíón ~~~~~~ !!]</value>
+  </data>
+  <data name="Fragment.Bottom" xml:space="preserve">
+    <value>[!! bóttóm ~~~ !!]</value>
+  </data>
+  <data name="Fragment.ChargeLimit" xml:space="preserve">
+    <value>[!! chárgé límít ~~~~ !!]</value>
+  </data>
+  <data name="Fragment.Fans" xml:space="preserve">
+    <value>[!! fáns ~~ !!]</value>
+  </data>
+  <data name="Fragment.FullScreen" xml:space="preserve">
+    <value>[!! fúll scréén ~~~~ !!]</value>
+  </data>
+  <data name="Fragment.Left" xml:space="preserve">
+    <value>[!! léft ~~ !!]</value>
+  </data>
+  <data name="Fragment.Leftward" xml:space="preserve">
+    <value>[!! léftwárd ~~~ !!]</value>
+  </data>
+  <data name="Fragment.Lighting" xml:space="preserve">
+    <value>[!! líghtíng ~~~ !!]</value>
+  </data>
+  <data name="Fragment.Long" xml:space="preserve">
+    <value>[!! lóng ~~ !!]</value>
+  </data>
+  <data name="Fragment.Medium" xml:space="preserve">
+    <value>[!! médíúm ~~~ !!]</value>
+  </data>
+  <data name="Fragment.Performance" xml:space="preserve">
+    <value>[!! pérfórmáncé ~~~~ !!]</value>
+  </data>
+  <data name="Fragment.Right" xml:space="preserve">
+    <value>[!! ríght ~~ !!]</value>
+  </data>
+  <data name="Fragment.Rightward" xml:space="preserve">
+    <value>[!! ríghtwárd ~~~~ !!]</value>
+  </data>
+  <data name="Fragment.Short" xml:space="preserve">
+    <value>[!! shórt ~~ !!]</value>
+  </data>
+  <data name="Fragment.Top" xml:space="preserve">
+    <value>[!! tóp ~~ !!]</value>
+  </data>
+</root>

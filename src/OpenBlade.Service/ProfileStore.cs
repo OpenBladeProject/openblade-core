@@ -8,7 +8,8 @@ public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromIn
 
 public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
 {
-    internal const int CurrentSchemaVersion = 13;
+    internal const int CurrentSchemaVersion = 14;
+    internal const int LatestSupportedSchemaVersion = 13;
     internal const int PreviousSchemaVersion = 12;
     internal const int FormerSchemaVersion = 11;
     internal const int OlderSchemaVersion = 10;
@@ -107,6 +108,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
 
         ProfileSet profiles;
         if (schemaVersion is CurrentSchemaVersion
+            or LatestSupportedSchemaVersion
             or PreviousSchemaVersion
             or FormerSchemaVersion
             or OlderSchemaVersion

@@ -222,13 +222,22 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 5,
                 0,
                 TimeSpan.Zero),
-            LastKnownFirmwareModelNumber: "RZ09-0581",
-            LastKnownPublishedBiosVersion: "3.01",
-            LastKnownPublishedEcVersion: "1.04",
-            LastKnownPublishedMcuVersion: "1.06",
+            LastKnownFirmwareModelNumber: "RZ09-0528",
+            LastKnownPublishedBiosVersion: "2.02",
+            LastKnownPublishedEcVersion: "1.09",
+            LastKnownPublishedMcuVersion: "1.09",
+            LastKnownPublishedVbiosVersion: "98.03.5C.40.25",
+            LastKnownPublishedVbiosGpuName: "RTX 5090",
+            LastKnownPublishedThunderboltVersion: "69.1",
+            LastKnownPublishedTouchpadVersion: "1.07",
             LastKnownPublishedBiosStatus: RazerPublishedFirmwareVersionStatus.Listed,
             LastKnownPublishedEcStatus: RazerPublishedFirmwareVersionStatus.Listed,
             LastKnownPublishedMcuStatus: RazerPublishedFirmwareVersionStatus.Listed,
+            LastKnownPublishedVbiosStatus: RazerPublishedFirmwareVersionStatus.Listed,
+            LastKnownPublishedThunderboltStatus:
+                RazerPublishedFirmwareVersionStatus.Listed,
+            LastKnownPublishedTouchpadStatus:
+                RazerPublishedFirmwareVersionStatus.Listed,
             Notifications: NotificationPreferences.Default with
             {
                 PerformanceChangesEnabled = false,
@@ -236,7 +245,8 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 AppUpdatesEnabled = false,
             },
             LastNotifiedReleaseTag: "v1.2.0",
-            LastNotifiedFirmwareSignature: "RZ09-0581|bios=3.01|ec=1.04|mcu=1.06",
+            LastNotifiedFirmwareSignature:
+                "RZ09-0528|bios=2.02|ec=1.09|mcu=1.09|vbios=98.03.5C.40.25|vbiosGpu=RTX 5090",
             TrayDashboard: new TrayDashboardPreference(
                 Controls:
                 [
@@ -332,10 +342,14 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             new DateTimeOffset(2026, 7, 27, 11, 5, 0, TimeSpan.Zero),
             reloaded.FirmwareUpdateCheckRetryAfter);
-        Assert.Equal("RZ09-0581", reloaded.LastKnownFirmwareModelNumber);
-        Assert.Equal("3.01", reloaded.LastKnownPublishedBiosVersion);
-        Assert.Equal("1.04", reloaded.LastKnownPublishedEcVersion);
-        Assert.Equal("1.06", reloaded.LastKnownPublishedMcuVersion);
+        Assert.Equal("RZ09-0528", reloaded.LastKnownFirmwareModelNumber);
+        Assert.Equal("2.02", reloaded.LastKnownPublishedBiosVersion);
+        Assert.Equal("1.09", reloaded.LastKnownPublishedEcVersion);
+        Assert.Equal("1.09", reloaded.LastKnownPublishedMcuVersion);
+        Assert.Equal("98.03.5C.40.25", reloaded.LastKnownPublishedVbiosVersion);
+        Assert.Equal("RTX 5090", reloaded.LastKnownPublishedVbiosGpuName);
+        Assert.Equal("69.1", reloaded.LastKnownPublishedThunderboltVersion);
+        Assert.Equal("1.07", reloaded.LastKnownPublishedTouchpadVersion);
         Assert.Equal(
             RazerPublishedFirmwareVersionStatus.Listed,
             reloaded.LastKnownPublishedBiosStatus);
@@ -345,13 +359,22 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             RazerPublishedFirmwareVersionStatus.Listed,
             reloaded.LastKnownPublishedMcuStatus);
+        Assert.Equal(
+            RazerPublishedFirmwareVersionStatus.Listed,
+            reloaded.LastKnownPublishedVbiosStatus);
+        Assert.Equal(
+            RazerPublishedFirmwareVersionStatus.Listed,
+            reloaded.LastKnownPublishedThunderboltStatus);
+        Assert.Equal(
+            RazerPublishedFirmwareVersionStatus.Listed,
+            reloaded.LastKnownPublishedTouchpadStatus);
         Assert.False(reloaded.EffectiveNotifications.PerformanceChangesEnabled);
         Assert.True(reloaded.EffectiveNotifications.ProfileAndPowerSourceChangesEnabled);
         Assert.False(reloaded.EffectiveNotifications.AppUpdatesEnabled);
         Assert.True(reloaded.EffectiveNotifications.FirmwareUpdatesEnabled);
         Assert.Equal("v1.2.0", reloaded.LastNotifiedReleaseTag);
         Assert.Equal(
-            "RZ09-0581|bios=3.01|ec=1.04|mcu=1.06",
+            "RZ09-0528|bios=2.02|ec=1.09|mcu=1.09|vbios=98.03.5C.40.25|vbiosGpu=RTX 5090",
             reloaded.LastNotifiedFirmwareSignature);
         Assert.Equal(
             TrayDashboardControlKind.Performance,

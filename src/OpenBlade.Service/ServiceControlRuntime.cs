@@ -26,6 +26,8 @@ public interface IServiceControlRuntime
 
     ServiceStatusSnapshot GetStatus();
 
+    Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() => null;
+
     Task ActivateUserAsync(
         SecurityIdentifier userSid,
         CancellationToken cancellationToken) => Task.CompletedTask;
@@ -114,6 +116,13 @@ public interface IServiceControlRuntime
             new ControlOperationResult(
                 ControlOperationStatus.Blocked,
                 "External lighting override policy is unavailable."));
+
+    Task<ControlOperationResult> SetLightingRefreshRateAsync(
+        LightingRefreshRate refreshRate,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Selectable lighting refresh rates are unavailable."));
 
     Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
         bool enabled,
@@ -247,11 +256,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static readonly TimeSpan FullObservationInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan FastPathControllerPresenceInterval =
         TimeSpan.FromSeconds(15);
+    // Five full open/query/close HID sessions permit two agreeing known replies
+    // despite up to three transient failures, while bounding every classification
+    // path, including the read-before-write paths used by control commands.
+    private const int MaximumAdapterPowerClassificationSamples = 5;
+    private const int RequiredAgreeingAdapterPowerSamples = 2;
     // Allow slow HID re-enumeration without carrying resume attribution into a
     // later, unrelated device or power lifecycle.
     internal static readonly TimeSpan ResumeValidationObservationWindow =
         TimeSpan.FromMinutes(1);
     private const int ObservationFailureThreshold = 3;
+    private const int Rz090581CapabilityDiagnosticsReadAttemptLimit = 3;
+    private const int MaximumMcuVersionReadAttempts = 3;
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
         new(null, null, null, null);
     private static readonly DeviceCapabilities UnavailableCapabilities =
@@ -291,7 +307,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly Dictionary<DeviceSubsystem, PendingWriteConfirmation>
         pendingWriteConfirmations = [];
     private ServiceStatusSnapshot? status;
-    private bool mcuVersionReadAttempted;
+    private int rz090581CapabilityDiagnosticsReadAttempts;
+    private Rz090581CapabilityDiagnostics? rz090581CapabilityDiagnostics;
+    private int mcuVersionReadAttempts;
     private LightingSettings? lastOwnedLightingSettings;
     private FanControlSettings? lastOwnedFanControlSettings;
     private LightingSettings? pendingLightingRestore;
@@ -326,6 +344,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private DisplayBrightnessHidUsage assertedDisplayBrightnessUsage;
     private bool displayBrightnessReleaseRequired;
     private bool displayBrightnessNeutralizationPending = true;
+    private AdapterPowerClassificationDiagnosticKind?
+        lastAdapterPowerClassificationDiagnosticKind;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -605,6 +625,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             preferences = configuration.Preferences;
             deviceProvider.SetAllowUntestedFirmware(
                 configuration.Preferences.AllowUntestedFirmware);
+            deviceProvider.SetLightingRefreshRate(
+                configuration.Preferences.LightingRefreshRate);
             this.persistentOverrides = persistentOverrides;
             startupProfileReconciliationPending = true;
             startupProfileReconciliationRequested = false;
@@ -636,6 +658,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public ServiceStatusSnapshot GetStatus() => Volatile.Read(ref status)
         ?? throw new InvalidOperationException("The service runtime is not initialized.");
+
+    public Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() =>
+        Volatile.Read(ref rz090581CapabilityDiagnostics);
 
     public async Task ActivateUserAsync(
         SecurityIdentifier userSid,
@@ -768,6 +793,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             preferences = context.Configuration.Preferences;
             deviceProvider.SetAllowUntestedFirmware(
                 context.Configuration.Preferences.AllowUntestedFirmware);
+            deviceProvider.SetLightingRefreshRate(
+                context.Configuration.Preferences.LightingRefreshRate);
             persistentOverrides = overrides;
             lightingSuppressions.Clear();
             lightingSuppressionWritePending = false;
@@ -816,6 +843,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 AlwaysOverrideExternalLightingChanges =
                     context.Configuration.Preferences
                         .AlwaysOverrideExternalLightingChanges,
+                LightingRefreshRate =
+                    EffectiveLightingRefreshRate(current.Capabilities),
                 KeyboardLightingControlMode =
                     context.Configuration.Preferences.KeyboardLightingControlMode,
                 AllowUntestedFirmware =
@@ -2040,6 +2069,144 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         + result.Message,
                 }
                 : result;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult> SetLightingRefreshRateAsync(
+        LightingRefreshRate refreshRate,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        if (!Enum.IsDefined(refreshRate))
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The requested lighting refresh rate is invalid.");
+        }
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            ServiceStatusSnapshot current = GetStatus();
+            if (IsKeyboardLightingDelegated)
+            {
+                return WindowsDynamicLightingOwnsKeyboard();
+            }
+
+            if (!current.DeviceVerified
+                || current.WritesBlocked
+                || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "The lighting refresh rate cannot change while laptop controls are unavailable.");
+            }
+
+            if (current.Capabilities?.SupportedLightingRefreshRates.Contains(refreshRate)
+                != true)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "The requested lighting refresh rate is not supported by this keyboard.");
+            }
+
+            BatteryAutomationPreferences previousPreferences = preferences;
+            bool preferenceChanged = previousPreferences.LightingRefreshRate != refreshRate;
+            if (preferenceChanged)
+            {
+                BatteryAutomationPreferences staged = preferences with
+                {
+                    LightingRefreshRate = refreshRate,
+                };
+                await ConfigurationStore.SaveConfigurationAsync(Automation.Profiles, staged, token)
+                    .ConfigureAwait(false);
+                preferences = staged;
+            }
+
+            deviceProvider.SetLightingRefreshRate(refreshRate);
+
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    preferenceChanged
+                        ? "The lighting refresh rate was saved and will apply when the keyboard reconnects."
+                        : $"Keyboard lighting is already set to {RefreshRateLabel(refreshRate)}.");
+            }
+
+            async Task<Exception?> TryRollbackPreferenceAsync()
+            {
+                if (!preferenceChanged)
+                {
+                    return null;
+                }
+
+                try
+                {
+                    await ConfigurationStore.SaveConfigurationAsync(
+                        Automation.Profiles,
+                        previousPreferences,
+                        CancellationToken.None).ConfigureAwait(false);
+                    preferences = previousPreferences;
+                    deviceProvider.SetLightingRefreshRate(
+                        previousPreferences.LightingRefreshRate);
+                    return null;
+                }
+                catch (Exception rollbackException)
+                {
+                    return rollbackException;
+                }
+            }
+
+            try
+            {
+                await device.SetLightingRefreshRateAsync(refreshRate, token)
+                    .ConfigureAwait(false);
+                PublishIfChanged(current with
+                {
+                    LightingRefreshRate = refreshRate,
+                    Message = $"Keyboard lighting refresh rate is set to {RefreshRateLabel(refreshRate)}.",
+                });
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    $"Keyboard lighting is running at {RefreshRateLabel(refreshRate)}.");
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                Exception? rollbackException = await TryRollbackPreferenceAsync()
+                    .ConfigureAwait(false);
+                if (rollbackException is not null)
+                {
+                    throw new InvalidOperationException(
+                        "The lighting refresh-rate change was canceled after persistence, and the saved selection could not be rolled back.",
+                        rollbackException);
+                }
+
+                throw;
+            }
+            catch (Exception exception)
+            {
+                Exception? rollbackException = await TryRollbackPreferenceAsync()
+                    .ConfigureAwait(false);
+                if (rollbackException is not null)
+                {
+                    return new ControlOperationResult(
+                        ControlOperationStatus.Failed,
+                        "The active lighting renderer could not be updated, and the saved refresh-rate selection could not be rolled back. Retry the selection. "
+                        + exception.Message
+                        + " Rollback: "
+                        + rollbackException.Message);
+                }
+
+                return new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "The active lighting renderer could not be updated, so the refresh-rate selection was rolled back. "
+                    + exception.Message);
+            }
         }
         finally
         {
@@ -4217,6 +4384,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // Resume begins a new hardware-enumeration session. Restore the bounded
+            // MCU inventory budget without turning ordinary healthy observations
+            // into an unbounded retry loop.
+            mcuVersionReadAttempts = 0;
             bool gpuClockOffsetConfirmationInvalidated = false;
             if (deviceProvider is IGpuClockOffsetConfirmationInvalidator invalidator)
             {
@@ -6220,6 +6391,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (windowsSource == PowerSource.Battery)
         {
+            lastAdapterPowerClassificationDiagnosticKind = null;
             return PowerSource.Battery;
         }
 
@@ -6246,47 +6418,102 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return PowerSource.ExternalUnknown;
             }
 
-            AdapterPowerState first =
-                await device.ReadAdapterPowerStateAsync(cancellationToken);
-            AdapterPowerState second =
-                await device.ReadAdapterPowerStateAsync(cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-
-            AdapterPowerState classified = first;
-            if (first != second)
+            AdapterPowerState classified = AdapterPowerState.Unknown;
+            int agreeingSamples = 0;
+            int unknownSamples = 0;
+            int accessFailures = 0;
+            string? lastFailureKind = null;
+            int attempts = 0;
+            for (;
+                attempts < MaximumAdapterPowerClassificationSamples;
+                attempts++)
             {
-                // A single adapter query can transiently return Unknown while USB-C PD
-                // remains connected. Retry only when the other sample is known. Two
-                // different known values still indicate a real/unstable transition and
-                // must remain unresolved so no control write uses ambiguous evidence.
-                if (first == AdapterPowerState.Unknown
-                    ^ second == AdapterPowerState.Unknown)
+                AdapterPowerState sample;
+                try
                 {
-                    AdapterPowerState known = first == AdapterPowerState.Unknown
-                        ? second
-                        : first;
-                    AdapterPowerState retry =
-                        await device.ReadAdapterPowerStateAsync(cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (retry == known)
-                    {
-                        classified = known;
-                    }
-                    else
-                    {
-                        return PowerSource.ExternalUnknown;
-                    }
+                    sample = await device.ReadAdapterPowerStateAsync(cancellationToken);
                 }
-                else
+                catch (OperationCanceledException) when (
+                    cancellationToken.IsCancellationRequested)
                 {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    accessFailures++;
+                    lastFailureKind = exception.GetType().Name;
+                    continue;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                if (sample == AdapterPowerState.Unknown)
+                {
+                    unknownSamples++;
+                    continue;
+                }
+
+                if (classified == AdapterPowerState.Unknown)
+                {
+                    classified = sample;
+                    agreeingSamples = 1;
+                    continue;
+                }
+
+                if (sample != classified)
+                {
+                    RecordAdapterPowerClassificationDiagnostic(
+                        AdapterPowerClassificationDiagnosticKind.ConflictingKnownReplies,
+                        ControlOperationStatus.Blocked,
+                        "Power adapter classification observed conflicting known read-only replies; control writes remain blocked.");
                     return PowerSource.ExternalUnknown;
                 }
+
+                agreeingSamples++;
+                if (agreeingSamples >= RequiredAgreeingAdapterPowerSamples)
+                {
+                    break;
+                }
+            }
+
+            if (agreeingSamples < RequiredAgreeingAdapterPowerSamples)
+            {
+                AdapterPowerClassificationDiagnosticKind diagnosticKind =
+                    accessFailures > 0
+                        ? AdapterPowerClassificationDiagnosticKind.DeviceAccessFailures
+                        : AdapterPowerClassificationDiagnosticKind.UnknownReplies;
+                string detail = accessFailures > 0
+                    ? $"Power adapter classification remained unavailable after {attempts} read-only samples ({accessFailures} device-access failures, {unknownSamples} unknown replies; last failure {lastFailureKind})."
+                    : $"Power adapter classification remained unknown after {attempts} read-only samples.";
+                RecordAdapterPowerClassificationDiagnostic(
+                    diagnosticKind,
+                    ControlOperationStatus.Blocked,
+                    detail);
+                return PowerSource.ExternalUnknown;
+            }
+
+            if (accessFailures > 0 || unknownSamples > 0)
+            {
+                RecordAdapterPowerClassificationDiagnostic(
+                    AdapterPowerClassificationDiagnosticKind.Recovered,
+                    ControlOperationStatus.Stored,
+                    $"Power adapter classification recovered after {attempts + 1} "
+                    + $"read-only samples ({accessFailures} device-access failures, "
+                    + $"{unknownSamples} unknown replies).");
+            }
+            else
+            {
+                lastAdapterPowerClassificationDiagnosticKind = null;
             }
 
             return classified switch
             {
                 AdapterPowerState.FullPower280W => PowerSource.PluggedIn,
                 AdapterPowerState.FullPower330W => PowerSource.PluggedIn,
+                AdapterPowerState.UsbCPower45W => PowerSource.UsbC,
+                AdapterPowerState.UsbCPower60W => PowerSource.UsbC,
+                AdapterPowerState.UsbCPower65W => PowerSource.UsbC,
+                AdapterPowerState.UsbCPower80W => PowerSource.UsbC,
+                AdapterPowerState.UsbCPower90W => PowerSource.UsbC,
                 AdapterPowerState.UsbCPower100W => PowerSource.UsbC,
                 _ => PowerSource.ExternalUnknown,
             };
@@ -6299,6 +6526,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             return PowerSource.ExternalUnknown;
         }
+    }
+
+    private void RecordAdapterPowerClassificationDiagnostic(
+        AdapterPowerClassificationDiagnosticKind kind,
+        ControlOperationStatus status,
+        string detail)
+    {
+        if (lastAdapterPowerClassificationDiagnosticKind == kind)
+        {
+            return;
+        }
+
+        lastAdapterPowerClassificationDiagnosticKind = kind;
+        history.RecordSummary(status, detail);
+    }
+
+    private enum AdapterPowerClassificationDiagnosticKind
+    {
+        ConflictingKnownReplies,
+        DeviceAccessFailures,
+        UnknownReplies,
+        Recovered,
     }
 
     private async Task ObserveCoreAsync(
@@ -6740,6 +6989,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FirmwareVersions? firmware = await ReadFirmwareVersionsAsync(
             device,
             cancellationToken);
+        await ReadRz090581CapabilityDiagnosticsAsync(
+            device,
+            firmware,
+            cancellationToken).ConfigureAwait(false);
         FanRpmReadings? fans = null;
         FanTemperatureReadings temperatures = default;
         if (includeLiveReadings)
@@ -6817,6 +7070,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     : TransientExternalPowerMessage
                 : "Verified device state observed.",
             Capabilities = observation.Capabilities,
+            LightingRefreshRate = EffectiveLightingRefreshRate(
+                observation.Capabilities),
             ConfirmedState = observation.Confirmed,
             Profiles = Automation.Profiles,
             DesiredState = Automation.Resolve(observation.Confirmed),
@@ -7155,7 +7410,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         FirmwareVersions? current = GetStatus().Firmware;
-        if (mcuVersionReadAttempted
+        if (mcuVersionReadAttempts >= MaximumMcuVersionReadAttempts
             || current is null
             || !string.Equals(
                 current.McuVersion,
@@ -7165,22 +7420,73 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return current;
         }
 
-        mcuVersionReadAttempted = true;
+        mcuVersionReadAttempts++;
         try
         {
             string? mcuVersion = await device.ReadMcuVersionAsync(cancellationToken)
                 .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             return string.IsNullOrWhiteSpace(mcuVersion)
                 ? current
                 : current with { McuVersion = mcuVersion.Trim() };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            mcuVersionReadAttempts--;
             throw;
         }
         catch
         {
             return current;
+        }
+    }
+
+    private async Task ReadRz090581CapabilityDiagnosticsAsync(
+        IBladeDevice device,
+        FirmwareVersions? firmware,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(
+                firmware?.ModelNumber,
+                RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                firmware?.BiosVersion,
+                TargetBladeDevice.BiosVersion,
+                StringComparison.Ordinal)
+            || deviceProvider.FirmwareCompatibility
+                != FirmwareCompatibilityStatus.Tested)
+        {
+            return;
+        }
+
+        if (Volatile.Read(ref rz090581CapabilityDiagnostics) is not null
+            || rz090581CapabilityDiagnosticsReadAttempts
+                >= Rz090581CapabilityDiagnosticsReadAttemptLimit)
+        {
+            return;
+        }
+
+        rz090581CapabilityDiagnosticsReadAttempts++;
+        try
+        {
+            Rz090581CapabilityDiagnostics? observed =
+                await device.ReadRz090581CapabilityDiagnosticsAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (observed is not null)
+            {
+                Volatile.Write(ref rz090581CapabilityDiagnostics, observed);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            rz090581CapabilityDiagnosticsReadAttempts--;
+            throw;
+        }
+        catch
+        {
+            return;
         }
     }
 
@@ -7676,6 +7982,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         string message,
         bool deviceVerified = false)
     {
+        if (!deviceVerified)
+        {
+            // A confirmed loss of the verified device ends the current hardware
+            // session. A later re-verification receives a fresh bounded budget.
+            mcuVersionReadAttempts = 0;
+        }
+
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
         PublishIfChanged(current with
@@ -7776,6 +8089,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingSuppressions: [],
             AlwaysOverrideExternalLightingChanges:
                 preferences.AlwaysOverrideExternalLightingChanges,
+            LightingRefreshRate: LightingRefreshRate.ThirtyHz,
             BatteryHealth: batteryHealth,
             KeyboardLightingControlMode:
                 preferences.KeyboardLightingControlMode,
@@ -7793,6 +8107,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool IsKeyboardLightingDelegated =>
         preferences.KeyboardLightingControlMode
             == KeyboardLightingControlMode.WindowsDynamicLighting;
+
+    private LightingRefreshRate EffectiveLightingRefreshRate(
+        DeviceCapabilities? capabilities) =>
+        capabilities?.SupportedLightingRefreshRates.Contains(
+            preferences.LightingRefreshRate) == true
+            ? preferences.LightingRefreshRate
+            : LightingRefreshRate.ThirtyHz;
 
     private static ControlOperationResult WindowsDynamicLightingOwnsKeyboard() => new(
         ControlOperationStatus.Blocked,
@@ -7886,6 +8207,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ExternalChanges = driftTracker.ExternalChanges,
             Message = message,
             Capabilities = capabilities ?? UnavailableCapabilities,
+            LightingRefreshRate = EffectiveLightingRefreshRate(capabilities),
             ConfirmedState = confirmed,
             Profiles = Automation.Profiles,
             DesiredState = Automation.Resolve(confirmed ?? UnknownConfirmedState),
@@ -8164,6 +8486,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.KeyboardDriverModeActive == right.KeyboardDriverModeActive
         && left.AlwaysOverrideExternalLightingChanges
             == right.AlwaysOverrideExternalLightingChanges
+        && left.LightingRefreshRate == right.LightingRefreshRate
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
         && left.FirmwareCompatibility == right.FirmwareCompatibility
         && left.DisplayBrightnessHidAvailability
@@ -8175,6 +8498,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.Firmware == right.Firmware
         && left.BatteryHealth == right.BatteryHealth
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
+
+    private static string RefreshRateLabel(LightingRefreshRate value) => value switch
+    {
+        LightingRefreshRate.ThirtyHz => "30 Hz",
+        LightingRefreshRate.SixtyHz => "60 Hz",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
 
     private static async Task<LightingRendererOwnershipState> ReadLightingOwnershipAsync(
         IBladeDevice device,
@@ -8606,6 +8936,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && left.FanSpeedRange == right.FanSpeedRange
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
+            && left.SupportedLightingRefreshRates.SetEquals(
+                right.SupportedLightingRefreshRates)
             && left.LogoLightingModes.SetEquals(right.LogoLightingModes)
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)

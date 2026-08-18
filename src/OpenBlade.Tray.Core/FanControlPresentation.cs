@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
+using System.Globalization;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
@@ -22,7 +24,7 @@ public sealed class FanCurveEditorPoint : INotifyPropertyChanged
 
     public int TemperatureCelsius { get; }
 
-    public string TemperatureLabel => $"{TemperatureCelsius}°C";
+    public string TemperatureLabel => TrayText.Format("{0}°C", TemperatureCelsius);
 
     public int SpeedRpm
     {
@@ -41,7 +43,7 @@ public sealed class FanCurveEditorPoint : INotifyPropertyChanged
         }
     }
 
-    public string SpeedLabel => $"{SpeedRpm:N0} RPM";
+    public string SpeedLabel => TrayText.Format("{0:N0} RPM", SpeedRpm);
 
     public FanCurvePoint ToValue() => new(TemperatureCelsius, SpeedRpm);
 }
@@ -55,16 +57,21 @@ public static class FanModePresentation
         FanMode.ManualCurve,
     ];
 
-    private static readonly FanModeOption[] Options = Order
-        .Select(value => new FanModeOption(value, Label(value)))
-        .ToArray();
+    private static readonly ConcurrentDictionary<string, FanModeOption[]> OptionsByCulture =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private static FanModeOption[] Options => OptionsByCulture.GetOrAdd(
+        CultureInfo.CurrentUICulture.Name,
+        _ => Order
+            .Select(value => new FanModeOption(value, Label(value)))
+            .ToArray());
 
     public static string Label(FanMode value) => value switch
     {
-        FanMode.Automatic => "Automatic",
-        FanMode.Fixed => "Fixed speed",
-        FanMode.ManualCurve => "Manual fan curve",
-        FanMode.Maximum => "Maximum",
+        FanMode.Automatic => TrayText.Get("Automatic"),
+        FanMode.Fixed => TrayText.Get("Fixed speed"),
+        FanMode.ManualCurve => TrayText.Get("Manual fan curve"),
+        FanMode.Maximum => TrayText.Get("Maximum"),
         _ => value.ToString(),
     };
 

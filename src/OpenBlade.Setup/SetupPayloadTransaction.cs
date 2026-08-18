@@ -149,7 +149,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             foreach (PayloadEntry entry in sourceManifest.Values.OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                progressReporter.Report($"Copying {entry.RelativePath}");
+                progressReporter.Report(SetupProgressCode.CopyFile, entry.RelativePath);
                 string source = ResolveContainedPath(payloadRoot, entry.RelativePath);
                 string destination = ResolveContainedPath(staging, entry.RelativePath);
                 files.CreateDirectory(Path.GetDirectoryName(destination)!);
@@ -209,7 +209,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        progressReporter.Report("Activating the staged OpenBlade files");
+        progressReporter.Report(SetupProgressCode.ActivateFiles);
         EnsureTransactionPaths(paths, stagingDirectory, backupDirectory, failedDirectory);
         bool liveExists = files.DirectoryExists(paths.InstallDirectory);
         if (liveExists != HadExistingInstall)
@@ -300,7 +300,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        progressReporter.Report("Committing the OpenBlade file transaction");
+        progressReporter.Report(SetupProgressCode.CommitFiles);
         state = TransactionState.Committed;
         if (HadExistingInstall && files.DirectoryExists(backupDirectory))
         {
@@ -333,7 +333,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        progressReporter.Report("Restoring the previous OpenBlade files");
+        progressReporter.Report(SetupProgressCode.RestoreFiles);
         switch (state)
         {
             case TransactionState.Staged:

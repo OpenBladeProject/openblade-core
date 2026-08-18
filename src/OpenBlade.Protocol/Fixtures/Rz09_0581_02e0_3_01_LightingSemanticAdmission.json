@@ -50,5 +50,9 @@
     "wheel",
     "ripple",
     "ambientAwareness"
+  ],
+  "supportedRefreshRates": [
+    "thirtyHz",
+    "sixtyHz"
   ]
 }

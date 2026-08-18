@@ -9,6 +9,61 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class MainViewModelTests
 {
+    [Fact]
+    public async Task LocalizedInstanceDefaultsFollowTheCurrentCulture()
+    {
+        string englishUnavailable;
+        string englishBatteryOption;
+        using (new CultureScope("en-US"))
+        {
+            await using var english = new MainViewModel(
+                new FakeServiceClient(),
+                new RecordingDispatcher());
+            englishUnavailable = english.CurrentBatterySettingLabel;
+            englishBatteryOption = english.ProfileComparisonOptions
+                .Single(option => option.Source == PowerSource.Battery)
+                .Label;
+        }
+
+        using var culture = new CultureScope("qps-ploc");
+        await using var pseudo = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+        Assert.StartsWith("[!! ", pseudo.CurrentBatterySettingLabel, StringComparison.Ordinal);
+        Assert.NotEqual(englishUnavailable, pseudo.CurrentBatterySettingLabel);
+        string pseudoBatteryOption = pseudo.ProfileComparisonOptions
+            .Single(option => option.Source == PowerSource.Battery)
+            .Label;
+        Assert.StartsWith("[!! ", pseudoBatteryOption, StringComparison.Ordinal);
+        Assert.NotEqual(englishBatteryOption, pseudoBatteryOption);
+    }
+
+    [Fact]
+    public async Task ProfileRelationshipStatus_UsesTypedExternalChangesUnderPseudoCulture()
+    {
+        using var culture = new CultureScope("qps-ploc");
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ExternalChanges =
+            [
+                DeviceSubsystem.Performance,
+                DeviceSubsystem.Fans,
+                DeviceSubsystem.Lighting,
+            ],
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        string changedOutside = TrayText.Get("Changed outside OpenBlade");
+        string matchesProfile = TrayText.Get("Matches saved profile");
+        Assert.Equal(changedOutside, viewModel.ThermalProfileRelationshipStatus);
+        Assert.Equal(changedOutside, viewModel.LightingProfileRelationshipStatus);
+        Assert.NotEqual(matchesProfile, viewModel.ThermalProfileRelationshipStatus);
+        Assert.NotEqual(matchesProfile, viewModel.LightingProfileRelationshipStatus);
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, true)]
@@ -3050,7 +3105,7 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.SetLightingCommand.CanExecute(
             ProfileDefaults.CreateSafeDefaults().UsbC.Lighting));
         Assert.False(viewModel.ClearManualOverridesCommand.CanExecute(null));
-        Assert.Equal("Checking power source", viewModel.ActivePowerSourceLabel);
+        Assert.Equal("External power (unclassified)", viewModel.ActivePowerSourceLabel);
         Assert.Equal("Save to profile", viewModel.SaveToActiveProfileLabel);
 
         viewModel.BatteryPerformanceOption = viewModel.AvailableBatteryPerformanceOptions
@@ -5161,6 +5216,55 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task LightingRefreshRate_RequiresLabsAndAdvertisedCapability()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            },
+        };
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities));
+        await WaitUntilAsync(() => viewModel.SupportsSixtyHzLighting);
+
+        Assert.False(await viewModel.SetLightingRefreshRateAsync(
+            LightingRefreshRate.SixtyHz,
+            CancellationToken.None));
+        viewModel.LabFeaturesEnabled = true;
+
+        Assert.True(await viewModel.SetLightingRefreshRateAsync(
+            LightingRefreshRate.SixtyHz,
+            CancellationToken.None));
+        Assert.True(viewModel.IsSixtyHzLightingEnabled);
+        Assert.Equal(LightingRefreshRate.SixtyHz, client.LightingRefreshRate);
+
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities) with
+        {
+            LightingRefreshRate = LightingRefreshRate.SixtyHz,
+        });
+        await WaitUntilAsync(() => viewModel.IsSixtyHzLightingEnabled);
+        client.MutationResults.Enqueue(new ControlOperationResult(
+            ControlOperationStatus.Failed,
+            "Renderer restart failed."));
+
+        Assert.False(await viewModel.SetLightingRefreshRateAsync(
+            LightingRefreshRate.ThirtyHz,
+            CancellationToken.None));
+        Assert.True(viewModel.IsSixtyHzLightingEnabled);
+    }
+
+    [Fact]
     public async Task FirmwareCompatibilityOverride_ReflectsStatusAndSendsMutation()
     {
         var client = new FakeServiceClient();
@@ -6281,18 +6385,26 @@ public sealed class MainViewModelTests
             nameof(MainViewModel.TroubleshootingKeyboardDriverModeStatus),
             driverStatusChanges);
 
+        viewModel.TrayHoverLabelMode = TrayHoverLabelMode.ActiveProfile;
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
             Revision = 5,
             ActivePowerSource = PowerSource.ExternalUnknown,
         });
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "Checking power source"
+            viewModel.ControlAccessStatus == "External power (unclassified)"
             && viewModel.ActivePowerSource == PowerSource.ExternalUnknown);
-        Assert.Equal("Checking power source", viewModel.ProfileStateLabel);
-        Assert.True(viewModel.IsReadinessChecking);
+        Assert.Equal("External power (unclassified)", viewModel.ProfileStateLabel);
+        Assert.Equal("External power (unclassified)", viewModel.ActivePowerSourceLabel);
+        Assert.Equal(
+            "OpenBlade · External power (unclassified) · Balanced",
+            viewModel.TrayHoverLabelText);
+        Assert.False(viewModel.IsReadinessChecking);
         Assert.False(viewModel.IsReadinessReady);
-        Assert.Equal("Checking power source", viewModel.TroubleshootingPowerSourceStatus);
+        Assert.True(viewModel.IsReadinessWarning);
+        Assert.Equal(
+            "External power (unclassified)",
+            viewModel.TroubleshootingPowerSourceStatus);
         Assert.False(viewModel.CanControlHardware);
 
         client.PublishReconnecting();
@@ -7821,6 +7933,7 @@ public sealed class MainViewModelTests
         public FanControlSettings? LastFanControlSettings { get; private set; }
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
         public bool? ExternalLightingOverridePolicy { get; private set; }
+        public LightingRefreshRate? LightingRefreshRate { get; private set; }
         public bool? FirmwareCompatibilityOverride { get; private set; }
         public int ReapplyChangedSettingsCalls { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
@@ -8001,6 +8114,14 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             ExternalLightingOverridePolicy = enabled;
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> SetLightingRefreshRateAsync(
+            LightingRefreshRate refreshRate,
+            CancellationToken token)
+        {
+            LightingRefreshRate = refreshRate;
             return MutateAsync(token);
         }
 

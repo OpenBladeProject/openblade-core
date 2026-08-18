@@ -539,6 +539,7 @@ public static class BatteryValidationFactory
             ],
             new HashSet<AdapterPowerState>
             {
+                AdapterPowerState.Battery,
                 AdapterPowerState.UsbCPower100W,
                 AdapterPowerState.FullPower280W,
             },

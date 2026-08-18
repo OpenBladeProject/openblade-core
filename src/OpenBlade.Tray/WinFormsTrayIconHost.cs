@@ -234,12 +234,18 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private static ContextMenuStrip BuildTrayMenu(Action openTray, Action exitTray)
     {
         var menu = new ContextMenuStrip();
-        var open = new ToolStripMenuItem("Open")
+        var open = new ToolStripMenuItem(LocalizedResources.Get(
+            "TrayIconMenu_Open",
+            "Open"))
         {
-            ShortcutKeyDisplayString = "Double-click",
+            ShortcutKeyDisplayString = LocalizedResources.Get(
+                "TrayIconMenu_DoubleClick",
+                "Double-click"),
         };
         open.Click += (_, _) => openTray();
-        var exit = new ToolStripMenuItem("Exit");
+        var exit = new ToolStripMenuItem(LocalizedResources.Get(
+            "TrayIconMenu_Exit",
+            "Exit"));
         exit.Click += (_, _) => exitTray();
         menu.Items.Add(open);
         menu.Items.Add(new ToolStripSeparator());

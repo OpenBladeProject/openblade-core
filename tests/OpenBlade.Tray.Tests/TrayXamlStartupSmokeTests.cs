@@ -14,27 +14,64 @@ public sealed class TrayXamlStartupSmokeTests
 
     [InteractiveDesktopFact]
     [Trait("Category", "InteractiveDesktop")]
+    public Task PseudoLocalizedDashboardCompiledXamlLoads() =>
+        RunTraySmokeAsync(
+            "--xaml-startup-smoke",
+            "OpenBlade-xaml-pseudo-smoke",
+            pseudoLocalized: true);
+
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task UnsupportedLanguageFallsBackToEnglishAndCompiledXamlLoads() =>
+        RunTraySmokeAsync(
+            "--xaml-startup-smoke",
+            "OpenBlade-xaml-fallback-smoke",
+            localizationLanguage: "de-DE");
+
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
     public Task ResponsiveChoiceSelectorPreservesAuthoritativeSelection() =>
         RunTraySmokeAsync(
             "--responsive-choice-selector-smoke",
             "OpenBlade-responsive-selector-smoke");
 
-    private static async Task RunTraySmokeAsync(string argument, string reportPrefix)
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task ResponsivePageHeaderStabilizesAndWrapsSaveAndRestoreActions() =>
+        RunTraySmokeAsync(
+            "--responsive-page-header-smoke",
+            "OpenBlade-responsive-page-header-smoke");
+
+    private static async Task RunTraySmokeAsync(
+        string argument,
+        string reportPrefix,
+        bool pseudoLocalized = false,
+        string? localizationLanguage = null)
     {
-        string executable = GetTrayExecutablePath();
+        string executable = GetTrayExecutablePath(pseudoLocalized);
         Assert.True(File.Exists(executable), $"Tray executable not found: {executable}");
         string reportPath = Path.Combine(
             Path.GetTempPath(),
             $"{reportPrefix}-{Guid.NewGuid():N}.txt");
 
-        using var process = Process.Start(new ProcessStartInfo(
+        var startInfo = new ProcessStartInfo(
             executable,
             $"{argument} \"{reportPath}\"")
         {
             CreateNoWindow = true,
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(executable)!,
-        });
+        };
+        if (pseudoLocalized)
+        {
+            startInfo.Environment["OPENBLADE_PSEUDO_LOCALIZATION"] = "1";
+        }
+        if (!string.IsNullOrWhiteSpace(localizationLanguage))
+        {
+            startInfo.Environment["OPENBLADE_LOCALIZATION_LANGUAGE"] =
+                localizationLanguage;
+        }
+        using var process = Process.Start(startInfo);
         Assert.NotNull(process);
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -84,7 +121,9 @@ public sealed class TrayXamlStartupSmokeTests
         Assert.True(definition.DisableParallelization);
     }
 
-    private static string GetTrayExecutablePath([CallerFilePath] string testPath = "")
+    private static string GetTrayExecutablePath(
+        bool pseudoLocalized,
+        [CallerFilePath] string testPath = "")
     {
         string configuration = typeof(TrayXamlStartupSmokeTests).Assembly
             .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration
@@ -93,14 +132,19 @@ public sealed class TrayXamlStartupSmokeTests
             Path.GetDirectoryName(testPath)!,
             "..",
             ".."));
+        string outputDirectory = pseudoLocalized
+            ? "bin-localization-preview"
+            : "bin";
         return Path.Combine(
             repository,
             "src",
             "OpenBlade.Tray",
-            "bin",
+            outputDirectory,
             configuration,
             "net10.0-windows10.0.26100.0",
             "win-x64",
-            "OpenBlade.Tray.exe");
+            pseudoLocalized
+                ? "OpenBlade.LocalizationPreview.exe"
+                : "OpenBlade.Tray.exe");
     }
 }

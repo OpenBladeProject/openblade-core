@@ -31,22 +31,21 @@ internal static class UninstallUserInterface
 
     public static bool ConfirmPreservingProfiles() => MessageBox(
         0,
-        "OpenBlade and its background service will be removed.\n\n"
-            + "Your saved profiles and preferences will be kept so they are available if you reinstall.\n\n"
-            + "Do you want to continue?",
-        "Uninstall OpenBlade",
+        SetupStrings.Get(
+            "OpenBlade and its background service will be removed.\n\nYour saved profiles and preferences will be kept so they are available if you reinstall.\n\nDo you want to continue?"),
+        SetupStrings.Get("Uninstall OpenBlade"),
         YesNo | IconQuestion | TaskModal) == Yes;
 
     public static void ShowSuccess() => _ = MessageBox(
         0,
-        "OpenBlade was removed. Your saved profiles and preferences were kept.",
-        "OpenBlade uninstalled",
+        SetupStrings.Get("OpenBlade was removed. Your saved profiles and preferences were kept."),
+        SetupStrings.Get("OpenBlade uninstalled"),
         Ok | IconInformation | TaskModal);
 
     public static void ShowFailure(string message) => _ = MessageBox(
         0,
-        $"OpenBlade could not be removed.\n\n{message}",
-        "OpenBlade uninstall failed",
+        SetupStrings.Format("OpenBlade could not be removed.\n\n{0}", message),
+        SetupStrings.Get("OpenBlade uninstall failed"),
         Ok | IconError | TaskModal);
 
     [DllImport("kernel32.dll")]

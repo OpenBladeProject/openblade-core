@@ -5,10 +5,27 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
-## [0.8.4-nightly.20] - 2026-08-15
-
 ### Added
 
+- Added GPU-specific VBIOS update comparison for exact supported Blade models.
+  OpenBlade now carries the installed NVIDIA adapter identity through service
+  status and diagnostics, selects only the matching official Razer VBIOS
+  release, and declines comparison when either side cannot be identified.
+- Added exact-RZ09-0581 published Thunderbolt 5 and touchpad versions to the
+  firmware inventory as observed-only fields. Their installed versions remain
+  unavailable, so they never produce an update comparison or notification.
+- Added exact-RZ09-0581 BIOS 3.01 read-only diagnostics for the captured Synapse
+  SKU hardware-configuration byte, Mini-LED panel-resolution byte, and thermal
+  fan ID list. The raw values remain in the service's diagnostic cache and
+  exports and do not enable firmware writes.
+- Added an opt-in **60 Hz lighting** Lab mode for the admitted RZ09-0581
+  keyboard transport. The service keeps 30 Hz as the default, persists the
+  selection after the tray exits, and applies it to supported built-in,
+  Ambient Awareness, and Audio Meter animation while RZ09-0528 remains at
+  30 Hz.
+- Added en-US resource catalogs and qps-ploc validation for the tray and
+  graphical installer, including safe installer fallback and required-key,
+  placeholder, accessibility-name, and critical-page startup checks.
 - Added an importable example of a cyan sweep that moves from left to right
   with a dim blue wake.
 - Added a versioned, data-only `.oblight` keyboard lighting preset format and
@@ -21,6 +38,72 @@ All notable changes to OpenBlade are documented in this file. The project follow
   admitted binding are reported, while per-key KeyboardExtended files are
   rejected instead of cropped. Imported effects remain limited to capabilities
   already admitted for the exact connected Blade.
+
+### Changed
+
+- Advanced the firmware-smoke snapshot schema from 7 to 8 for observed-only
+  Thunderbolt and touchpad inventory metadata.
+- Expanded the RZ09-0581 BIOS 4.00 USB-C profile to exact 45 W, 60 W, 65 W,
+  80 W, 90 W, and 100 W adapter classes. These classes share the same USB-C
+  profile; bounded transient HID failures still require two agreeing replies
+  before controls are enabled.
+- Moved the Lab keyboard preset importer into the Keyboard section and replaced
+  the long Lab features description with an on-demand list of current features.
+- Advanced the profile/configuration schema from 13 to 14 for the persisted
+  lighting refresh-rate preference. Migrated configurations default to 30 Hz.
+
+### Fixed
+
+- Added typed decoding for the capture-backed RZ09-0528 `0011` no-adapter
+  response while keeping Windows Offline authoritative for battery power and
+  excluding that response from other Blade models.
+- Retried transient MCU firmware-version read failures during later verified
+  observations, while keeping the query bounded and stopping after a confirmed
+  version is available.
+- Clarified unclassified external power consistently across control access,
+  active profile, tray hover, and troubleshooting instead of presenting a
+  completed bounded classification attempt as still checking.
+- Kept conditional profile Save and **Use profile settings** actions beside
+  Customize when they fit, while moving the complete action group below the
+  title or stacking long localized actions before they can overlap or clip.
+- Kept page customization buttons aligned with their titles while allowing
+  longer localized and profile actions to use a separate row.
+- Fixed the **Random colors** switch track alignment and made compact switch
+  alignment explicit across the main window and quick controls.
+- Expanded the graphical installer's progress details pane to use the available
+  window height instead of remaining limited to a few log lines.
+- Offered **Repair** and **Uninstall** when an interactive installer finds one
+  cached OpenBlade bundle with the same version. Repair overwrites the installed
+  files, records instance-specific ownership, and retires the old registration
+  without letting it remove the repaired payload. Uninstall keeps saved profiles
+  and removes through the cached installed bundle without registering the incoming
+  one, with guidance to use its Windows Installed apps entry when profile removal
+  is also wanted.
+- Advanced the combined service IPC contract to version 46 so peers without
+  the expanded firmware inventory are no longer accepted as wire-compatible.
+- Rejected imported lighting sequences for a different keyboard layout before
+  opening the lighting device or changing its state.
+- Kept the Lab features row aligned with neighboring Settings rows when showing
+  its information button.
+- Validated imported lighting timelines without rebuilding their decoded frame
+  graph during each IPC status check.
+- Labeled imported animations consistently in profile details and summaries
+  instead of showing `Sequence` and `#000000`.
+- Preserved configured Windows power modes when migrating schema 12 profiles
+  to the keyboard-animation profile schema.
+- Kept a completed non-looping RZ09-0528 lighting sequence on its final frame
+  without faulting or surrendering the service-owned renderer.
+- Prevented brief firmware lighting-off readings during AC and battery
+  transitions from being mistaken for external changes. OpenBlade now confirms
+  a zero reading at the point where it would release the owned renderer, while
+  preserving a stable external lighting change without overwriting it. If that
+  confirmation is unavailable, only lighting is skipped; the remaining profile
+  controls still apply.
+
+## [0.8.4-nightly.20] - 2026-08-15
+
+### Added
+
 - Added Windows-native display-brightness handling and flyout presentation for
   the reconstructed function row, using the exact admitted Razer virtual
   Consumer Control path already present on the RZ09-0581. The existing WMI
@@ -40,8 +123,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Moved the Lab keyboard preset importer into the Keyboard section and replaced
-  the long Lab features description with an on-demand list of current features.
 - Replaced common dropdown-only settings with responsive Windows selectors.
   Performance, fan, function-row, lighting, display, and app settings use
   horizontal choices when their options fit on one line without squeezing
@@ -62,27 +143,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Offered **Repair** and **Uninstall** when an interactive installer finds one
-  cached OpenBlade bundle with the same version. Repair overwrites the installed
-  files, records instance-specific ownership, and retires the old registration
-  without letting it remove the repaired payload. Uninstall keeps saved profiles
-  and removes through the cached installed bundle without registering the incoming
-  one, with guidance to use its Windows Installed apps entry when profile removal
-  is also wanted.
-- Advanced the combined service IPC contract to version 44 so incompatible
-  version-43 peers are no longer accepted as wire-compatible.
-- Rejected imported lighting sequences for a different keyboard layout before
-  opening the lighting device or changing its state.
-- Kept the Lab features row aligned with neighboring Settings rows when showing
-  its information button.
-- Validated imported lighting timelines without rebuilding their decoded frame
-  graph during each IPC status check.
-- Labeled imported animations consistently in profile details and summaries
-  instead of showing `Sequence` and `#000000`.
-- Preserved configured Windows power modes when migrating schema 12 profiles
-  to the keyboard-animation profile schema.
-- Kept a completed non-looping RZ09-0528 lighting sequence on its final frame
-  without faulting or surrendering the service-owned renderer.
 - Reduced excess vertical space in single-line Dashboard rows while preserving
   the original spacing for descriptions, editors, and titles that wrap at
   narrow widths without disrupting conditional-row animations.
@@ -92,12 +152,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   highlighted while idle or when editing, and split shared nested-card styling
   into explicit hover-free editor, neutral hover, and emphasized variants so
   future editors cannot inherit an unintended full-card highlight.
-- Prevented brief firmware lighting-off readings during AC and battery
-  transitions from being mistaken for external changes. OpenBlade now confirms
-  a zero reading at the point where it would release the owned renderer, while
-  preserving a stable external lighting change without overwriting it. If that
-  confirmation is unavailable, only lighting is skipped; the remaining profile
-  controls still apply.
 - Made the main window and tray dashboard available before the initial display
   query finishes, while coalescing display refreshes so a slow Session Agent
   response cannot queue redundant follow-up queries. Profile capture still waits

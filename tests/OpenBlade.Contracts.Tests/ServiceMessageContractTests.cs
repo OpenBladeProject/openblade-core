@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionFortyFourAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionFortySixAndRetainExactSizeLimit()
     {
-        Assert.Equal(44, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(46, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -34,6 +34,7 @@ public sealed class ServiceMessageContractTests
             (typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage"),
             (typeof(SetKeyboardLightingControlModeRequest), "setKeyboardLightingControlMode"),
             (typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy"),
+            (typeof(SetLightingRefreshRateRequest), "setLightingRefreshRate"),
             (typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride"),
             (typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings"),
             (typeof(SetLightingSuppressionRequest), "setLightingSuppression"),
@@ -65,6 +66,7 @@ public sealed class ServiceMessageContractTests
             "Firmware", "ServiceVersion", "LightingRendererOwnership", "LightingSuppressions",
             "StartupAnimationEnabled", "FunctionKeyPrimary", "GamingModeEnabled",
             "AlwaysOverrideExternalLightingChanges", "KeyboardDriverModeActive",
+            "LightingRefreshRate",
             "PerformanceShortcutPreview", "BatteryHealth", "KeyboardLightingControlMode",
             "ControlAccess", "AllowUntestedFirmware", "FirmwareCompatibility",
             "DisplayBrightnessHidAvailability",
@@ -82,6 +84,7 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(FunctionKeyPrimaryMode?), typeof(ServiceStatusSnapshot).GetProperty("FunctionKeyPrimary")!.PropertyType);
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("GamingModeEnabled")!.PropertyType);
         Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("AlwaysOverrideExternalLightingChanges")!.PropertyType);
+        Assert.Equal(typeof(LightingRefreshRate), typeof(ServiceStatusSnapshot).GetProperty("LightingRefreshRate")!.PropertyType);
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("KeyboardDriverModeActive")!.PropertyType);
         Assert.Equal(typeof(KeyboardLightingControlMode), typeof(ServiceStatusSnapshot).GetProperty("KeyboardLightingControlMode")!.PropertyType);
         Assert.Equal(typeof(PerformanceShortcutPreview), typeof(ServiceStatusSnapshot).GetProperty("PerformanceShortcutPreview")!.PropertyType);

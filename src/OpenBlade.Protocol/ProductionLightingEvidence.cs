@@ -113,7 +113,8 @@ internal sealed record ProductionLightingSemanticAdmissionEvidence(
     ProductionLightingBrightnessEvidence Brightness,
     ProductionLightingLogoEvidence Logo,
     ProductionLightingMatrixEvidence Matrix,
-    LightingEffect[] SupportedEffects);
+    LightingEffect[] SupportedEffects,
+    LightingRefreshRate[] SupportedRefreshRates);
 
 internal sealed record ProductionLightingControlEnvelopeEvidence(
     int ReportLength,
@@ -161,7 +162,7 @@ internal static class ProductionLightingEvidenceSource
         "5177FA9F6F91D96C9C34C5506CDA8EDC0A86EE5B5EEFA5F4322F4E4633C23521";
 
     private const string ApprovedSemanticAdmissionFixtureSha256 =
-        "14943D43A82BEA37B2211C72766DD54C393315F851ED7AF40FB2AB8E4635C999";
+        "96A2768F91726EA6C5C149423AD5E7538E1A9083FD6A0760711C30D9E398E858";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -289,6 +290,10 @@ internal static class ProductionLightingEvidenceSource
                 LightingEffect.Wheel,
                 LightingEffect.Ripple,
                 LightingEffect.AmbientAwareness,
+            ],
+            [
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
             ]);
     }
 
@@ -315,7 +320,9 @@ internal static class ProductionLightingEvidenceSource
         && approved.Matrix.KnownAnswerColor == current.Matrix.KnownAnswerColor
         && approved.Matrix.KnownAnswerFeatureReportSha256
             == current.Matrix.KnownAnswerFeatureReportSha256
-        && approved.SupportedEffects.SequenceEqual(current.SupportedEffects);
+        && approved.SupportedEffects.SequenceEqual(current.SupportedEffects)
+        && approved.SupportedRefreshRates.SequenceEqual(
+            current.SupportedRefreshRates);
 
     internal static bool HasCurrentExactBuildValidationArtifact()
     {

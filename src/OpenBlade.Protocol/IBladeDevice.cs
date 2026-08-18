@@ -27,6 +27,10 @@ public interface IBladeDevice
     Task<string?> ReadMcuVersionAsync(CancellationToken cancellationToken) =>
         Task.FromResult<string?>(null);
 
+    Task<Rz090581CapabilityDiagnostics?> ReadRz090581CapabilityDiagnosticsAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult<Rz090581CapabilityDiagnostics?>(null);
+
     Task<bool?> ReadStartupAnimationAsync(CancellationToken cancellationToken) =>
         Task.FromResult<bool?>(null);
 
@@ -87,6 +91,12 @@ public interface IBladeDevice
     Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken);
 
     Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken);
+
+    Task SetLightingRefreshRateAsync(
+        LightingRefreshRate refreshRate,
+        CancellationToken cancellationToken) =>
+        Task.FromException(new NotSupportedException(
+            "Selectable lighting refresh rates are unavailable."));
 
     Task<byte> StepKeyboardBrightnessAsync(
         KeyboardBrightnessDirection direction,

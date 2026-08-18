@@ -66,47 +66,47 @@ public static class DashboardCardPreferenceDefaults
         string Description,
         bool IsPinnedByDefault);
 
-    private static readonly CardDefinition[] Definitions =
+    private static CardDefinition[] Definitions =>
     [
         new(
             DashboardCardKind.DeviceStatus,
-            "Device status and live readings",
-            "Connection, active settings, and the live readings you selected.",
+            TrayText.Get("Device status and live readings"),
+            TrayText.Get("Connection, active settings, and the live readings you selected."),
             true),
         new(
             DashboardCardKind.PowerMode,
-            "Power mode",
-            "Choose the active power mode and custom CPU or GPU levels.",
+            TrayText.Get("Power mode"),
+            TrayText.Get("Choose the active power mode and custom CPU or GPU levels."),
             false),
         new(
             DashboardCardKind.Fans,
-            "Fans",
-            "Choose automatic, fixed, maximum, or manual fan control.",
+            TrayText.Get("Fans"),
+            TrayText.Get("Choose automatic, fixed, maximum, or manual fan control."),
             false),
         new(
             DashboardCardKind.Battery,
-            "Battery",
-            "Manage battery protection, charge limit, and temporary full charge.",
+            TrayText.Get("Battery"),
+            TrayText.Get("Manage battery protection, charge limit, and temporary full charge."),
             false),
         new(
             DashboardCardKind.KeyboardBehavior,
-            "Keyboard behavior",
-            "Set function-key behavior and gaming mode.",
+            TrayText.Get("Keyboard behavior"),
+            TrayText.Get("Set function-key behavior and gaming mode."),
             false),
         new(
             DashboardCardKind.StartupAnimation,
-            "Startup animation",
-            "Choose whether the keyboard animation plays during startup.",
+            TrayText.Get("Startup animation"),
+            TrayText.Get("Choose whether the keyboard animation plays during startup."),
             false),
         new(
             DashboardCardKind.Lighting,
-            "Lighting",
-            "Control keyboard effects, brightness, and laptop logo lighting.",
+            TrayText.Get("Lighting"),
+            TrayText.Get("Control keyboard effects, brightness, and laptop logo lighting."),
             false),
         new(
             DashboardCardKind.Display,
-            "Display",
-            "Control refresh rate, HDR, and the color profile.",
+            TrayText.Get("Display"),
+            TrayText.Get("Control refresh rate, HDR, and the color profile."),
             false),
     ];
 

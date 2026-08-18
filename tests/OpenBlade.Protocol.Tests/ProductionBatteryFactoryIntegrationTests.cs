@@ -9,6 +9,52 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(1);
 
     [Fact]
+    public void Rz090581CapabilityDiagnosticsAdmission_RequiresExactBios301Evidence()
+    {
+        ProductionBatteryReadEvidence admitted =
+            ProductionBatteryFactory.GetRz090581ProductionBatteryReadEvidence(
+                ExactRz090581Identity("3.01"));
+        Assert.True(admitted.SupportsRz090581CapabilityDiagnosticsQuery);
+
+        HostIdentityReadResult[] rejected =
+        [
+            ExactRz090581Identity("4.00"),
+            ExactRz090581Identity(
+                "99.99",
+                HostFirmwareCompatibility.UntestedAllowed),
+            ExactRz090581Identity(
+                "3.01",
+                HostFirmwareCompatibility.UntestedAllowed),
+            new(
+                new HostIdentityEvidence(
+                    "Razer",
+                    "Blade 16 - RZ09-0528",
+                    "RZ09-05289EN4",
+                    "3.01"),
+                null,
+                HostFirmwareCompatibility.Tested),
+            new(
+                new HostIdentityEvidence(
+                    "Razer",
+                    "Blade 16 - RZ09-0581",
+                    "RZ09-05819EN3",
+                    "3.01"),
+                null,
+                HostFirmwareCompatibility.Tested),
+            new(null, HidSessionFailureKind.IdentityBlocked),
+        ];
+
+        foreach (HostIdentityReadResult identity in rejected)
+        {
+            ProductionBatteryReadEvidence evidence =
+                ProductionBatteryFactory.GetRz090581ProductionBatteryReadEvidence(
+                    identity);
+            Assert.False(evidence.SupportsRz090581CapabilityDiagnosticsQuery);
+            Assert.True(evidence.SupportsMcuVersionQuery);
+        }
+    }
+
+    [Fact]
     public void Rz090581GpuOverclockPolicy_RequiresExactIdentityButNotSpecificBios()
     {
         HostIdentityReadResult bios301 = ExactRz090581Identity("3.01");
@@ -39,23 +85,42 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
-    public void Rz090581AdapterAdmission_Adds330WOnlyForExactAdmittedTarget()
+    public void Rz090581AdapterAdmission_ScopesOptionalClassesToExactEvidence()
     {
-        AdapterPowerState[] expected =
+        AdapterPowerState[] bios301Expected =
         [
             AdapterPowerState.UsbCPower100W,
             AdapterPowerState.FullPower280W,
             AdapterPowerState.FullPower330W,
         ];
+        AdapterPowerState[] bios400Expected =
+        [
+            AdapterPowerState.UsbCPower100W,
+            AdapterPowerState.FullPower280W,
+            AdapterPowerState.FullPower330W,
+            AdapterPowerState.UsbCPower45W,
+            AdapterPowerState.UsbCPower60W,
+            AdapterPowerState.UsbCPower65W,
+            AdapterPowerState.UsbCPower80W,
+            AdapterPowerState.UsbCPower90W,
+        ];
 
         Assert.Equal(
-            expected,
+            bios301Expected,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
                 ExactRz090581Identity("3.01")).Order().ToArray());
         Assert.Equal(
-            expected,
+            bios400Expected,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
                 ExactRz090581Identity("4.00")).Order().ToArray());
+        Assert.DoesNotContain(
+            AdapterPowerState.UsbCPower45W,
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+                ExactRz090581Identity("3.01")));
+        Assert.DoesNotContain(
+            AdapterPowerState.UsbCPower65W,
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+                ExactRz090581Identity("3.01")));
         Assert.DoesNotContain(
             AdapterPowerState.FullPower330W,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
@@ -89,7 +154,15 @@ public sealed class ProductionBatteryFactoryIntegrationTests
                 static () => throw new UnvalidatedCommandException("invalid manifest"));
 
         Assert.Equal(
-            [AdapterPowerState.UsbCPower100W, AdapterPowerState.FullPower280W],
+            [
+                AdapterPowerState.UsbCPower100W,
+                AdapterPowerState.FullPower280W,
+                AdapterPowerState.UsbCPower45W,
+                AdapterPowerState.UsbCPower60W,
+                AdapterPowerState.UsbCPower65W,
+                AdapterPowerState.UsbCPower80W,
+                AdapterPowerState.UsbCPower90W,
+            ],
             states.Order().ToArray());
     }
 

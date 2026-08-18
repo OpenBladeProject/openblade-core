@@ -39,7 +39,20 @@ public sealed class CapabilityPresentationTests
             "FirmwareVersionsSection");
         Assert.Single(versionsSection.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "Latest");
+            && Attribute(element, "Text") == "Published by Razer");
+        XElement publishedOnlyNotice = Assert.Single(
+            versionsSection.Descendants(),
+            element => Attribute(element, "Text")?.StartsWith(
+                "Published only:",
+                StringComparison.Ordinal) == true);
+        Assert.Contains(
+            "cannot read the installed Thunderbolt 5 or touchpad firmware versions",
+            Attribute(publishedOnlyNotice, "Text"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ShowsPublishedOnlyFirmwareNotice",
+            Attribute(publishedOnlyNotice, "Visibility"),
+            StringComparison.Ordinal);
         Assert.Equal(2, document.Descendants().Count(element =>
             Attribute(element, "Text") == "Checks at startup when due."));
         Assert.DoesNotContain(
@@ -121,7 +134,7 @@ public sealed class CapabilityPresentationTests
         XElement[] valueGrids = versionsGrid.Elements()
             .Where(element => element.Name.LocalName == "Grid")
             .ToArray();
-        Assert.Equal(4, valueGrids.Length);
+        Assert.Equal(7, valueGrids.Length);
         Assert.All(valueGrids, grid => Assert.Equal(
             2,
             grid.Elements()
@@ -145,9 +158,21 @@ public sealed class CapabilityPresentationTests
                         "FirmwareUpdateViewModel.Published",
                         StringComparison.Ordinal)))
             .ToArray();
-        Assert.Equal(6, versionValues.Length);
+        Assert.Equal(12, versionValues.Length);
         Assert.All(versionValues, value =>
             Assert.Equal("Wrap", Attribute(value, "TextWrapping")));
+        Assert.Equal(
+            2,
+            versionsSection.Descendants()
+                .Count(element => Attribute(element, "Visibility")?.Contains(
+                    "ShowsThunderboltFirmware",
+                    StringComparison.Ordinal) == true));
+        Assert.Equal(
+            2,
+            versionsSection.Descendants()
+                .Count(element => Attribute(element, "Visibility")?.Contains(
+                    "ShowsTouchpadFirmware",
+                    StringComparison.Ordinal) == true));
     }
 
     [Fact]
@@ -501,11 +526,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{StaticResource SettingsNeutralSubcardStyle}",
             Attribute(toggleRow, "Style"));
-        Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));
-        Assert.Equal("Center", Attribute(toggle, "VerticalAlignment"));
-        Assert.Equal("0", Attribute(toggle, "MinWidth"));
-        Assert.Equal(string.Empty, Attribute(toggle, "OffContent"));
-        Assert.Equal(string.Empty, Attribute(toggle, "OnContent"));
+        Assert.Equal(
+            "{StaticResource CompactCardToggleSwitchStyle}",
+            Attribute(toggle, "Style"));
         Assert.Equal(
             [coreRow, memoryRow],
             toggleRow.ElementsAfterSelf()
@@ -808,7 +831,7 @@ public sealed class CapabilityPresentationTests
         Assert.True(
             document.Descendants().Count(element => element.Name.LocalName == "VisualState") >= 6);
         Assert.Equal(
-            3,
+            0,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "AdaptiveTrigger"
                 && Attribute(element, "MinWindowWidth") == "900"));
@@ -1035,8 +1058,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("OnDisplayRefreshRateChanged", Attribute(refresh, "SelectionChanged"));
 
         XElement hdr = NamedElement(document, "ToggleSwitch", "DisplayHdrToggle");
-        Assert.Equal("Right", Attribute(hdr, "HorizontalAlignment"));
-        Assert.Equal("Center", Attribute(hdr, "VerticalAlignment"));
+        Assert.Equal(
+            "{StaticResource CompactCardToggleSwitchStyle}",
+            Attribute(hdr, "Style"));
         Assert.Equal("OnDisplayHdrToggled", Attribute(hdr, "Toggled"));
 
         XElement color = NamedElement(
@@ -1080,10 +1104,9 @@ public sealed class CapabilityPresentationTests
         foreach (XElement toggle in settings.Descendants()
                      .Where(element => element.Name.LocalName == "ToggleSwitch"))
         {
-            Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));
-            Assert.Equal("0", Attribute(toggle, "MinWidth"));
-            Assert.Equal(string.Empty, Attribute(toggle, "OffContent"));
-            Assert.Equal(string.Empty, Attribute(toggle, "OnContent"));
+            Assert.Equal(
+                "{StaticResource CompactCardToggleSwitchStyle}",
+                Attribute(toggle, "Style"));
         }
 
         Assert.Contains(about.Descendants(), element =>
@@ -1169,15 +1192,17 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("OnStartMinimizedToggled", Attribute(startMinimized, "Toggled"));
         XElement gamingMode = NamedElement(document, "ToggleSwitch", "GamingModeToggle");
         Assert.Equal("OnGamingModeToggled", Attribute(gamingMode, "Toggled"));
-        Assert.Equal("Right", Attribute(gamingMode, "HorizontalAlignment"));
-        Assert.Equal("Center", Attribute(gamingMode, "VerticalAlignment"));
+        Assert.Equal(
+            "{StaticResource CompactCardToggleSwitchStyle}",
+            Attribute(gamingMode, "Style"));
         XElement startupAnimation = NamedElement(
             document,
             "ToggleSwitch",
             "StartupAnimationToggle");
         Assert.Equal("OnStartupAnimationToggled", Attribute(startupAnimation, "Toggled"));
-        Assert.Equal("Right", Attribute(startupAnimation, "HorizontalAlignment"));
-        Assert.Equal("Center", Attribute(startupAnimation, "VerticalAlignment"));
+        Assert.Equal(
+            "{StaticResource CompactCardToggleSwitchStyle}",
+            Attribute(startupAnimation, "Style"));
         Assert.Contains(
             "Open in the notification area without showing the window.",
             xaml,
@@ -1346,7 +1371,7 @@ public sealed class CapabilityPresentationTests
         foreach (string label in new[]
                  {
                      "OpenBlade service",
-                     "Laptop behavior",
+                     "Control access",
                      "Keyboard driver mode",
                      "Power source",
                      "Other Razer software running",
@@ -2737,11 +2762,9 @@ public sealed class CapabilityPresentationTests
         });
         Assert.All([displayOffToggle, idleTimeoutToggle], toggle =>
         {
-            Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));
-            Assert.Equal("Center", Attribute(toggle, "VerticalAlignment"));
-            Assert.Equal("0", Attribute(toggle, "MinWidth"));
-            Assert.Equal(string.Empty, Attribute(toggle, "OffContent"));
-            Assert.Equal(string.Empty, Attribute(toggle, "OnContent"));
+            Assert.Equal(
+                "{StaticResource CompactCardToggleSwitchStyle}",
+                Attribute(toggle, "Style"));
         });
         Assert.Equal("Right", Attribute(idleTimeoutNumberBox, "HorizontalAlignment"));
         Assert.Equal("Center", Attribute(idleTimeoutNumberBox, "VerticalAlignment"));

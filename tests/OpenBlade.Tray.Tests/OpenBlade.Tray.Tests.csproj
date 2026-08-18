@@ -28,6 +28,8 @@
              Link="WindowsStartupRegistration.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\ElevatedServiceControlLauncher.cs"
              Link="ElevatedServiceControlLauncher.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\PageHeaderLayoutPolicy.cs"
+             Link="PageHeaderLayoutPolicy.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\RazerServiceStopOperation.cs"
              Link="RazerServiceStopOperation.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\ServiceStateConfirmation.cs"
@@ -50,6 +52,10 @@
     <MSBuild Projects="..\..\src\OpenBlade.Tray\OpenBlade.Tray.csproj"
              Targets="Build"
              Properties="Configuration=$(Configuration)"
+             BuildInParallel="false" />
+    <MSBuild Projects="..\..\src\OpenBlade.Tray\OpenBlade.Tray.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);OpenBladeLocalizationPreview=true"
              BuildInParallel="false" />
   </Target>
 

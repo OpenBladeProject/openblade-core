@@ -374,7 +374,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 setupExecutable,
                 paths.InstallDirectory,
                 "uninstall --interactive",
-                "Uninstall OpenBlade and keep saved profiles",
+                SetupStrings.Get("Uninstall OpenBlade and keep saved profiles"),
                 WindowStyle: 7),
             cancellationToken);
     }

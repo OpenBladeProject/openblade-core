@@ -1314,7 +1314,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task FirstVerifiedObservation_ReadsMcuVersionOnceAndPreservesOtherFirmware()
+    public async Task FirstVerifiedObservation_StopsMcuReadsAfterSuccessAndPreservesOtherFirmware()
     {
         var firmware = new FirmwareVersions(
             "3.01",
@@ -1333,6 +1333,314 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             firmware with { McuVersion = "1.5.0.0" },
             context.Runtime.GetStatus().Firmware);
         Assert.Equal(1, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_ReadsRz090581CapabilityDiagnosticsOnce()
+    {
+        TestContext context = CreateRz090581Bios301Context();
+        var expected = new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+        context.Device.Rz090581CapabilityDiagnostics = expected;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Rz090581CapabilityDiagnostics? actual =
+            context.Runtime.GetCachedRz090581CapabilityDiagnostics();
+        Assert.NotNull(actual);
+        Assert.Equal(expected.SkuHardwareConfigurationRaw, actual.SkuHardwareConfigurationRaw);
+        Assert.Equal(expected.MiniLedPanelResolutionRaw, actual.MiniLedPanelResolutionRaw);
+        Assert.Equal(expected.ThermalFanIds, actual.ThermalFanIds);
+        Assert.Equal(1, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_UsesFreshlyTestedFirmwareCompatibility()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            firmwareVersions: FirmwareVersions.Unavailable() with
+            {
+                BiosVersion = TargetBladeDevice.BiosVersion,
+                ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            });
+        var expected = new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+        context.Device.Rz090581CapabilityDiagnostics = expected;
+        context.Provider.ReportUnknownFirmwareCompatibility = true;
+        context.Provider.AfterTryGet = () =>
+            context.Provider.ReportUnknownFirmwareCompatibility = false;
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(configuration, PowerSource.PluggedIn);
+        Assert.Equal(
+            FirmwareCompatibilityStatus.Unknown,
+            context.Runtime.GetStatus().FirmwareCompatibility);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            FirmwareCompatibilityStatus.Tested,
+            context.Runtime.GetStatus().FirmwareCompatibility);
+        Assert.Equal(expected, context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(1, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task VerifiedObservations_RetryRz090581DiagnosticsAfterFailureAndStopOnSuccess()
+    {
+        TestContext context = CreateRz090581Bios301Context();
+        var expected = new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+        context.Device.Rz090581CapabilityDiagnosticsFailures.Enqueue(
+            new IOException("synthetic diagnostic read failure"));
+        context.Device.Rz090581CapabilityDiagnostics = expected;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.NotNull(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(2, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task VerifiedObservations_BoundPersistentRz090581DiagnosticFailures()
+    {
+        TestContext context = CreateRz090581Bios301Context();
+        context.Device.Rz090581CapabilityDiagnosticsFailure =
+            new IOException("persistent synthetic diagnostic read failure");
+
+        for (int observation = 0; observation < 5; observation++)
+        {
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(3, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task RequestedCancellation_DoesNotConsumeRz090581DiagnosticRetryBudget()
+    {
+        TestContext context = CreateRz090581Bios301Context();
+        using var cancellation = new CancellationTokenSource();
+        context.Device.BeforeRz090581CapabilityDiagnosticsRead = cancellation.Cancel;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.ObserveAsync(cancellation.Token));
+
+        context.Device.BeforeRz090581CapabilityDiagnosticsRead = null;
+        context.Device.Rz090581CapabilityDiagnosticsFailure =
+            new IOException("persistent synthetic diagnostic read failure");
+        for (int observation = 0; observation < 4; observation++)
+        {
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(4, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task CanceledNullRz090581DiagnosticCompletion_PreservesAllLaterAttempts()
+    {
+        TestContext context = CreateRz090581Bios301Context();
+        using var cancellation = new CancellationTokenSource();
+        context.Device.AfterRz090581CapabilityDiagnosticsRead = cancellation.Cancel;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.ObserveAsync(cancellation.Token));
+
+        context.Device.AfterRz090581CapabilityDiagnosticsRead = null;
+        context.Device.Rz090581CapabilityDiagnosticsFailure =
+            new IOException("persistent synthetic diagnostic read failure");
+        for (int observation = 0; observation < 4; observation++)
+        {
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(4, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_SkipsRz090581DiagnosticsForBios400()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: FirmwareVersions.Unavailable() with
+            {
+                BiosVersion = "4.00",
+                ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            });
+        context.Device.Rz090581CapabilityDiagnostics =
+            new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(0, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_SkipsRz090581DiagnosticsForOtherModel()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: FirmwareVersions.Unavailable() with
+            {
+                ModelNumber = RazerBladeModelCatalog.Rz090528ModelNumber,
+            });
+        context.Device.Rz090581CapabilityDiagnostics =
+            new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(0, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task VerifiedObservation_RetriesMcuReadAfterTransientFailure()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+        context.Device.McuVersionFailures.Enqueue(
+            new TimeoutException("firmware query timed out"));
+        context.Device.McuVersion = " 1.5.0.0 ";
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(firmware, context.Runtime.GetStatus().Firmware);
+        Assert.Equal(1, context.Device.McuVersionReadCalls);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(2, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task VerifiedObservation_StopsMcuReadsAfterBoundedFailures()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(firmware, context.Runtime.GetStatus().Firmware);
+        Assert.Equal(3, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task ReverifiedDevice_RestoresBoundedMcuReadBudget()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(3, context.Device.McuVersionReadCalls);
+
+        context.Provider.Available = false;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+
+        context.Provider.Available = true;
+        context.Device.McuVersion = "1.5.0.0";
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(4, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task Resume_RestoresBoundedMcuReadBudget()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(3, context.Device.McuVersionReadCalls);
+
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        context.Device.McuVersion = "1.5.0.0";
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(4, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task CanceledMcuRead_NullCompletionDoesNotConsumeRetryBudget()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+        using var cancellation = new CancellationTokenSource();
+        context.Device.AfterMcuVersionRead = cancellation.Cancel;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            context.Runtime.ObserveAsync(cancellation.Token));
+
+        context.Device.AfterMcuVersionRead = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.McuVersion = "1.5.0.0";
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(4, context.Device.McuVersionReadCalls);
     }
 
     [Fact]
@@ -2940,6 +3248,114 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task LightingRefreshRate_PersistsAndAppliesOnlyAdvertisedRate()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            },
+        };
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: false,
+            CancellationToken.None);
+
+        ControlOperationResult applied = await context.Runtime
+            .SetLightingRefreshRateAsync(
+                LightingRefreshRate.SixtyHz,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        Assert.Equal(
+            LightingRefreshRate.SixtyHz,
+            context.Runtime.GetStatus().LightingRefreshRate);
+        Assert.Equal(
+            [LightingRefreshRate.SixtyHz],
+            context.Device.LightingRefreshRates);
+        BatteryConfiguration saved = await context.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.Equal(
+            LightingRefreshRate.SixtyHz,
+            saved.Preferences.LightingRefreshRate);
+
+        ControlOperationResult reapplied = await context.Runtime
+            .SetLightingRefreshRateAsync(
+                LightingRefreshRate.SixtyHz,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, reapplied.Status);
+        Assert.Equal(
+            [LightingRefreshRate.SixtyHz, LightingRefreshRate.SixtyHz],
+            context.Device.LightingRefreshRates);
+
+        context.Device.LightingRefreshRateFailure = new IOException("renderer unavailable");
+        ControlOperationResult savedButNotApplied = await context.Runtime
+            .SetLightingRefreshRateAsync(
+                LightingRefreshRate.ThirtyHz,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, savedButNotApplied.Status);
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: false,
+            CancellationToken.None);
+        Assert.Equal(
+            LightingRefreshRate.SixtyHz,
+            context.Runtime.GetStatus().LightingRefreshRate);
+        saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(
+            LightingRefreshRate.SixtyHz,
+            saved.Preferences.LightingRefreshRate);
+
+        context.Device.LightingRefreshRateFailure = null;
+        ControlOperationResult retried = await context.Runtime
+            .SetLightingRefreshRateAsync(
+                LightingRefreshRate.ThirtyHz,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, retried.Status);
+        Assert.Equal(
+            LightingRefreshRate.ThirtyHz,
+            context.Runtime.GetStatus().LightingRefreshRate);
+
+        using var cancellation = new CancellationTokenSource();
+        context.Device.BeforeLightingRefreshRateSet = cancellation.Cancel;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.SetLightingRefreshRateAsync(
+                LightingRefreshRate.SixtyHz,
+                cancellation.Token));
+        saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(
+            LightingRefreshRate.ThirtyHz,
+            saved.Preferences.LightingRefreshRate);
+        Assert.Equal(
+            LightingRefreshRate.ThirtyHz,
+            context.Runtime.GetStatus().LightingRefreshRate);
+        context.Device.BeforeLightingRefreshRateSet = null;
+
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+            },
+        };
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: false,
+            CancellationToken.None);
+        int appliedRateCount = context.Device.LightingRefreshRates.Count;
+        ControlOperationResult blocked = await context.Runtime
+            .SetLightingRefreshRateAsync(
+                LightingRefreshRate.SixtyHz,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, blocked.Status);
+        Assert.Equal(appliedRateCount, context.Device.LightingRefreshRates.Count);
+    }
+
+    [Fact]
     public async Task FirmwareCompatibilityOverride_PersistsAndRefreshesDeviceAdmission()
     {
         TestContext context = CreateContext(providerAvailable: false);
@@ -3000,6 +3416,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            },
         };
         context.Device.ConfirmedState = new ConfirmedDeviceState(
             PerformancePreset.Balanced,
@@ -3035,13 +3456,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 LightingSuppressionReason.DisplayOff,
                 suppressed: true,
                 CancellationToken.None);
+        ControlOperationResult refreshRate =
+            await context.Runtime.SetLightingRefreshRateAsync(
+                LightingRefreshRate.SixtyHz,
+                CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Blocked, effect.Status);
         Assert.Equal(ControlOperationStatus.Blocked, brightness.Status);
         Assert.Equal(ControlOperationStatus.Blocked, suppression.Status);
+        Assert.Equal(ControlOperationStatus.Blocked, refreshRate.Status);
         Assert.Equal(writesBeforeDelegation, context.Device.LightingSetCalls);
+        Assert.Empty(context.Device.LightingRefreshRates);
         Assert.All(
-            new[] { effect, brightness, suppression },
+            new[] { effect, brightness, suppression, refreshRate },
             result => Assert.Contains("Windows Dynamic Lighting", result.Message));
 
         BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
@@ -9401,14 +9828,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal("Failed", failedRecord.Status);
     }
 
-    [Fact]
-    public async Task Observation_ClassifiesUsbCPdOnlyAfterTwoAgreeingAdapterReads()
+    [Theory]
+    [InlineData(AdapterPowerState.UsbCPower45W)]
+    [InlineData(AdapterPowerState.UsbCPower60W)]
+    [InlineData(AdapterPowerState.UsbCPower65W)]
+    [InlineData(AdapterPowerState.UsbCPower80W)]
+    [InlineData(AdapterPowerState.UsbCPower90W)]
+    [InlineData(AdapterPowerState.UsbCPower100W)]
+    public async Task Observation_ClassifiesUsbCPdOnlyAfterTwoAgreeingAdapterReads(
+        AdapterPowerState usbCPowerState)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
             initialPowerSource: PowerSource.ExternalUnknown);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
-        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        context.Device.AdapterPowerState = usbCPowerState;
         context.Device.ConfirmedState = new ConfirmedDeviceState(
             PerformancePreset.Balanced,
             FanMode.Automatic,
@@ -9424,6 +9858,33 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
         Assert.False(status.WritesBlocked);
         Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task Observation_KeepsWindowsExternalPowerUnresolvedForBatteryReplies()
+    {
+        TestContext context = CreateWritableContext();
+        var temporaryOverride = new ManualOverride<PerformancePreset>(
+            PerformancePreset.Silent,
+            OverrideLifetime.UntilPowerSourceChange);
+        ControlOperationResult applied = await context.Runtime.SetPerformanceOverrideAsync(
+            temporaryOverride,
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        int setterCallsBeforeObservation = context.Device.TotalSetterCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Battery;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.PluggedIn, status.ActivePowerSource);
+        Assert.Equal(2, context.Device.AdapterPowerReadCalls);
+        Assert.True(status.WritesBlocked);
+        Assert.Equal(temporaryOverride.Value, status.PerformanceOverride?.Value);
+        Assert.Equal(temporaryOverride.Lifetime, status.PerformanceOverride?.Lifetime);
+        Assert.Equal(setterCallsBeforeObservation, context.Device.TotalSetterCalls);
     }
 
     [Fact]
@@ -9647,6 +10108,85 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             refreshed.Message,
             StringComparison.OrdinalIgnoreCase);
         Assert.Equal(5, context.Device.AdapterPowerReadCalls);
+    }
+
+    [Fact]
+    public async Task UsbCPd_TransientAccessFailureAndUnknownReplyRecoverWithinBound()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            context.Runtime.GetStatus().Profiles.UsbC.Lighting);
+        context.Device.AdapterPowerFailures.Enqueue(
+            new IOException("temporary adapter access failure"));
+        context.Device.AdapterPowerStates.Enqueue(AdapterPowerState.UsbCPower100W);
+        context.Device.AdapterPowerStates.Enqueue(AdapterPowerState.Unknown);
+        context.Device.AdapterPowerStates.Enqueue(AdapterPowerState.UsbCPower100W);
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.UsbC, status.ActivePowerSource);
+        Assert.False(status.WritesBlocked);
+        Assert.Equal(4, context.Device.AdapterPowerReadCalls);
+        DiagnosticCommandResult diagnostic = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(
+                "classification recovered",
+                StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains("1 device-access failures", diagnostic.Detail);
+        Assert.Contains("1 unknown replies", diagnostic.Detail);
+        Assert.Equal("Stored", diagnostic.Status);
+    }
+
+    [Fact]
+    public async Task ExternalPower_FailureModesRemainBlockedAndDeduplicateByMode()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerFailure = new IOException(
+            "persistent adapter access failure");
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        context.Device.AdapterPowerFailure = null;
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.ExternalUnknown, status.ActivePowerSource);
+        Assert.True(status.WritesBlocked);
+        Assert.Equal(20, context.Device.AdapterPowerReadCalls);
+        DiagnosticCommandResult[] diagnostics = context.History.Snapshot().CommandResults
+            .Where(result => result.Detail?.Contains(
+                "Power adapter classification remained",
+                StringComparison.OrdinalIgnoreCase) == true)
+            .ToArray();
+        Assert.Equal(2, diagnostics.Length);
+        DiagnosticCommandResult accessFailure = Assert.Single(
+            diagnostics,
+            result => result.Detail?.Contains(
+                "5 device-access failures",
+                StringComparison.OrdinalIgnoreCase) == true);
+        DiagnosticCommandResult unknownReplies = Assert.Single(
+            diagnostics,
+            result => result.Detail?.Contains(
+                "classification remained unknown",
+                StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal("Blocked", accessFailure.Status);
+        Assert.Equal("Blocked", unknownReplies.Status);
     }
 
     [Fact]
@@ -10069,6 +10609,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
         return context;
     }
+
+    private TestContext CreateRz090581Bios301Context() => CreateContext(
+        providerAvailable: true,
+        firmwareVersions: FirmwareVersions.Unavailable() with
+        {
+            BiosVersion = "3.01",
+            ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+        });
 
     private TestContext CreateContext(
         bool providerAvailable,
@@ -10720,6 +11268,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int LightingSetCalls { get; private set; }
 
+        public List<LightingRefreshRate> LightingRefreshRates { get; } = [];
+
         public List<KeyboardBrightnessDirection> KeyboardBrightnessSteps { get; } = [];
 
         public byte NextKeyboardBrightness { get; set; } = 50;
@@ -10745,14 +11295,32 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int McuVersionReadCalls { get; private set; }
 
+        public int Rz090581CapabilityDiagnosticsReadCalls { get; private set; }
+
         public AdapterPowerState AdapterPowerState { get; set; } =
             AdapterPowerState.FullPower280W;
 
         public Queue<AdapterPowerState> AdapterPowerStates { get; } = new();
 
+        public Queue<Exception?> AdapterPowerFailures { get; } = new();
+
         public Exception? AdapterPowerFailure { get; set; }
 
         public string? McuVersion { get; set; }
+
+        public Rz090581CapabilityDiagnostics? Rz090581CapabilityDiagnostics { get; set; }
+
+        public Queue<Exception> Rz090581CapabilityDiagnosticsFailures { get; } = new();
+
+        public Exception? Rz090581CapabilityDiagnosticsFailure { get; set; }
+
+        public Action? BeforeRz090581CapabilityDiagnosticsRead { get; set; }
+
+        public Action? AfterRz090581CapabilityDiagnosticsRead { get; set; }
+
+        public Queue<Exception> McuVersionFailures { get; } = new();
+
+        public Action? AfterMcuVersionRead { get; set; }
 
         public int TotalSetterCalls => PerformanceSetCalls
             + FanSetCalls
@@ -10775,6 +11343,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Exception? FanFailure { get; set; }
 
         public Exception? LightingFailure { get; set; }
+
+        public Exception? LightingRefreshRateFailure { get; set; }
+
+        public Action? BeforeLightingRefreshRateSet { get; set; }
 
         public Exception? OneShotFailure { get; set; }
 
@@ -10904,6 +11476,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             TotalCalls++;
             AdapterPowerReadCalls++;
+            if (AdapterPowerFailures.TryDequeue(out Exception? scriptedFailure)
+                && scriptedFailure is not null)
+            {
+                return Task.FromException<AdapterPowerState>(scriptedFailure);
+            }
+
             if (AdapterPowerFailure is not null)
             {
                 return Task.FromException<AdapterPowerState>(AdapterPowerFailure);
@@ -10918,14 +11496,38 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Task<string?> ReadMcuVersionAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (McuVersion is null)
+            McuVersionReadCalls++;
+            if (McuVersionFailures.TryDequeue(out Exception? failure))
+            {
+                return Task.FromException<string?>(failure);
+            }
+
+            string? version = McuVersion;
+            AfterMcuVersionRead?.Invoke();
+            if (version is null)
             {
                 return Task.FromResult<string?>(null);
             }
 
             TotalCalls++;
-            McuVersionReadCalls++;
-            return Task.FromResult<string?>(McuVersion);
+            return Task.FromResult<string?>(version);
+        }
+
+        public Task<Rz090581CapabilityDiagnostics?>
+            ReadRz090581CapabilityDiagnosticsAsync(
+                CancellationToken cancellationToken)
+        {
+            Rz090581CapabilityDiagnosticsReadCalls++;
+            BeforeRz090581CapabilityDiagnosticsRead?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Rz090581CapabilityDiagnosticsFailures.TryDequeue(out Exception? failure)
+                || (failure = Rz090581CapabilityDiagnosticsFailure) is not null)
+            {
+                return Task.FromException<Rz090581CapabilityDiagnostics?>(failure);
+            }
+
+            AfterRz090581CapabilityDiagnosticsRead?.Invoke();
+            return Task.FromResult(Rz090581CapabilityDiagnostics);
         }
 
         public Task EnsureDriverModeAsync(CancellationToken cancellationToken)
@@ -11252,6 +11854,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             };
 
             AfterSetter?.Invoke(DeviceSubsystem.Lighting);
+            return Task.CompletedTask;
+        }
+
+        public Task SetLightingRefreshRateAsync(
+            LightingRefreshRate refreshRate,
+            CancellationToken cancellationToken)
+        {
+            LightingRefreshRates.Add(refreshRate);
+            BeforeLightingRefreshRateSet?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (LightingRefreshRateFailure is not null)
+            {
+                throw LightingRefreshRateFailure;
+            }
+
             return Task.CompletedTask;
         }
 

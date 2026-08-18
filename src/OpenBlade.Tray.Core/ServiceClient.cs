@@ -192,6 +192,15 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 enabled),
             token);
 
+    public Task<ControlOperationResult> SetLightingRefreshRateAsync(
+        LightingRefreshRate refreshRate,
+        CancellationToken token) => SendMutationAsync(
+            new SetLightingRefreshRateRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                refreshRate),
+            token);
+
     public Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
         bool enabled,
         CancellationToken token) => SendMutationAsync(

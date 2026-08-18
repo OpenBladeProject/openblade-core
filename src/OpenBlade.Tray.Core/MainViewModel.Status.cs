@@ -40,6 +40,7 @@ public sealed partial class MainViewModel
         && left.KeyboardDriverModeActive == right.KeyboardDriverModeActive
         && left.AlwaysOverrideExternalLightingChanges
             == right.AlwaysOverrideExternalLightingChanges
+        && left.LightingRefreshRate == right.LightingRefreshRate
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
         && left.FirmwareCompatibility == right.FirmwareCompatibility
         && left.DisplayBrightnessHidAvailability
@@ -72,6 +73,8 @@ public sealed partial class MainViewModel
             && left.FanSpeedRange == right.FanSpeedRange
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
+            && left.SupportedLightingRefreshRates.SetEquals(
+                right.SupportedLightingRefreshRates)
             && left.LogoLightingModes.SetEquals(right.LogoLightingModes)
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)

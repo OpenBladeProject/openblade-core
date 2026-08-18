@@ -1,11 +1,24 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Principal;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.Windows.Globalization;
 using OpenBlade.Contracts;
 using OpenBlade.Platform;
 using OpenBlade.Session;
+using Windows.Graphics.Imaging;
+using Windows.Storage.Streams;
 using WinRT.Interop;
+using XamlButton = Microsoft.UI.Xaml.Controls.Button;
+using XamlColumnDefinition = Microsoft.UI.Xaml.Controls.ColumnDefinition;
+using XamlGrid = Microsoft.UI.Xaml.Controls.Grid;
+using XamlOrientation = Microsoft.UI.Xaml.Controls.Orientation;
+using XamlRowDefinition = Microsoft.UI.Xaml.Controls.RowDefinition;
+using XamlStackPanel = Microsoft.UI.Xaml.Controls.StackPanel;
+using XamlTextBlock = Microsoft.UI.Xaml.Controls.TextBlock;
 
 namespace OpenBlade.Tray;
 
@@ -19,8 +32,16 @@ internal enum StartOpenBladeResult
 public partial class App : Microsoft.UI.Xaml.Application
 {
     private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
+    private const string ResponsivePageHeaderSmokeArgument =
+        "--responsive-page-header-smoke";
     private const string ResponsiveChoiceSelectorSmokeArgument =
         "--responsive-choice-selector-smoke";
+    private const string LocalizationSnapshotDirectoryVariable =
+        "OPENBLADE_LOCALIZATION_SNAPSHOT_DIR";
+    private const string LocalizationSnapshotPageVariable =
+        "OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE";
+    private const string LocalizationLanguageVariable =
+        "OPENBLADE_LOCALIZATION_LANGUAGE";
     private const string PerformanceNotificationReplacementTag = "performance";
     private static readonly TimeSpan RazerServiceStopCancellationTimeout =
         TimeSpan.FromSeconds(65);
@@ -45,12 +66,39 @@ public partial class App : Microsoft.UI.Xaml.Application
     private WindowsProcessorEfficiencyPolicy processorPolicy = null!;
     private int fatalCrashReported;
 
+    static App()
+    {
+        ApplyLocalizationEnvironmentOverride();
+    }
+
     public bool ExitRequested => exitLifecycle?.ExitRequested == true;
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        base.OnLaunched(args);
         string[] commandLineArguments = Environment.GetCommandLineArgs();
+        bool pseudoLocalizationRequested = string.Equals(
+                Environment.GetEnvironmentVariable("OPENBLADE_PSEUDO_LOCALIZATION"),
+                "1",
+                StringComparison.Ordinal);
+        string? localizationLanguage = Environment.GetEnvironmentVariable(
+            LocalizationLanguageVariable);
+        base.OnLaunched(args);
+        string? localizationSnapshotDirectory = Environment.GetEnvironmentVariable(
+            LocalizationSnapshotDirectoryVariable);
+        if (!string.IsNullOrWhiteSpace(localizationSnapshotDirectory))
+        {
+            _ = RunLocalizationSnapshotAsync(
+                localizationSnapshotDirectory,
+                pseudoLocalizationRequested,
+                localizationLanguage);
+            return;
+        }
+        if (commandLineArguments is
+            [_, ResponsivePageHeaderSmokeArgument, string headerSmokeReportPath])
+        {
+            _ = RunResponsivePageHeaderSmokeAsync(headerSmokeReportPath);
+            return;
+        }
         if (commandLineArguments is
             [_, ResponsiveChoiceSelectorSmokeArgument, string selectorSmokeReportPath])
         {
@@ -61,7 +109,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             try
             {
-                RunXamlStartupSmoke(smokeReportPath);
+                RunXamlStartupSmoke(
+                    smokeReportPath,
+                    pseudoLocalizationRequested,
+                    localizationLanguage);
             }
             catch (Exception exception)
             {
@@ -244,12 +295,27 @@ public partial class App : Microsoft.UI.Xaml.Application
         ShowMainWindow(initialLaunch: true);
     }
 
-    private void RunXamlStartupSmoke(string smokeReportPath)
+    private void RunXamlStartupSmoke(
+        string smokeReportPath,
+        bool pseudoLocalizationRequested,
+        string? localizationLanguage)
     {
+        if (pseudoLocalizationRequested)
+        {
+            AssertPseudoResourcesLoaded();
+        }
+        else if (!string.IsNullOrWhiteSpace(localizationLanguage))
+        {
+            AssertEnglishResourceFallback();
+        }
         File.WriteAllText(smokeReportPath, "enable visual styles");
         System.Windows.Forms.Application.EnableVisualStyles();
         File.WriteAllText(smokeReportPath, "construct main window");
         var smokeMainWindow = new MainWindow();
+        if (pseudoLocalizationRequested)
+        {
+            AssertPseudoXamlApplied(smokeMainWindow);
+        }
         File.WriteAllText(smokeReportPath, "construct dashboard window");
         var smokeDashboardWindow = new TrayDashboardWindow(
             smokeMainWindow.ViewModel,
@@ -275,6 +341,504 @@ public partial class App : Microsoft.UI.Xaml.Application
         smokeMainWindow.Close();
         File.WriteAllText(smokeReportPath, "completed");
         Environment.Exit(0);
+    }
+
+    private static void ApplyLocalizationEnvironmentOverride()
+    {
+        string? language = RequestedLocalizationLanguage();
+        if (string.IsNullOrWhiteSpace(language))
+        {
+            return;
+        }
+
+        CultureInfo managedCulture = CultureInfo.GetCultureInfo(language);
+        string resourceLanguage = managedCulture.Name;
+        ApplicationLanguages.PrimaryLanguageOverride = resourceLanguage;
+        CultureInfo.CurrentUICulture = managedCulture;
+        LocalizedResources.SetLanguageOverride(resourceLanguage);
+    }
+
+    private static string? RequestedLocalizationLanguage() => string.Equals(
+                Environment.GetEnvironmentVariable("OPENBLADE_PSEUDO_LOCALIZATION"),
+                "1",
+                StringComparison.Ordinal)
+            ? "qps-ploc"
+            : Environment.GetEnvironmentVariable(LocalizationLanguageVariable);
+
+    private async Task RunLocalizationSnapshotAsync(
+        string outputDirectory,
+        bool pseudoLocalizationRequested,
+        string? localizationLanguage)
+    {
+        string? reportPath = null;
+        MainWindow? snapshotMainWindow = null;
+        TrayDashboardWindow? snapshotDashboardWindow = null;
+        try
+        {
+            string resolvedDirectory = Path.GetFullPath(outputDirectory);
+            reportPath = Path.Combine(resolvedDirectory, "snapshot-report.txt");
+            Directory.CreateDirectory(resolvedDirectory);
+            if (pseudoLocalizationRequested)
+            {
+                AssertPseudoResourcesLoaded();
+            }
+            else if (!string.IsNullOrWhiteSpace(localizationLanguage))
+            {
+                AssertEnglishResourceFallback();
+            }
+
+            System.Windows.Forms.Application.EnableVisualStyles();
+            snapshotMainWindow = MainWindow.CreateLocalizationSnapshot();
+            snapshotMainWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 820));
+            snapshotMainWindow.Activate();
+            await WaitForSnapshotLayoutAsync();
+            string[] mainDestinations =
+            {
+                "home",
+                "profiles",
+                "laptop",
+                "lighting",
+                "display",
+                "settings",
+                "about",
+            };
+            string? requestedPage = Environment.GetEnvironmentVariable(
+                LocalizationSnapshotPageVariable);
+            if (!string.IsNullOrWhiteSpace(requestedPage)
+                && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
+                && !string.Equals(
+                    requestedPage,
+                    "tray-dashboard",
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Unknown localization snapshot page '{requestedPage}'.");
+            }
+            IEnumerable<string> destinations = string.IsNullOrWhiteSpace(requestedPage)
+                ? mainDestinations
+                : mainDestinations.Where(destination => string.Equals(
+                    destination,
+                    requestedPage,
+                    StringComparison.Ordinal));
+            foreach (string destination in destinations)
+            {
+                snapshotMainWindow.SelectLocalizationSnapshotPage(destination);
+                await WaitForSnapshotLayoutAsync();
+                await SaveSnapshotAsync(
+                    snapshotMainWindow.Content,
+                    Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+            }
+
+            if (string.IsNullOrWhiteSpace(requestedPage)
+                || string.Equals(
+                    requestedPage,
+                    "tray-dashboard",
+                    StringComparison.Ordinal))
+            {
+                snapshotDashboardWindow = new TrayDashboardWindow(
+                    snapshotMainWindow.ViewModel,
+                    WindowNative.GetWindowHandle(snapshotMainWindow),
+                    _ => { });
+                TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
+                snapshotDashboardWindow.ApplyPreferences(defaults with
+                {
+                    Controls = defaults.Controls!
+                        .Select(control => control with { IsVisible = true })
+                        .ToArray(),
+                    StatusItems = defaults.StatusItems!
+                        .Select(status => status with { IsVisible = true })
+                        .ToArray(),
+                    Sliders = defaults.Sliders!
+                        .Select(slider => slider with { IsVisible = true })
+                        .ToArray(),
+                });
+                snapshotDashboardWindow.AppWindow.Resize(
+                    new Windows.Graphics.SizeInt32(430, 760));
+                snapshotDashboardWindow.Activate();
+                await WaitForSnapshotLayoutAsync();
+                await SaveSnapshotAsync(
+                    snapshotDashboardWindow.Content,
+                    Path.Combine(resolvedDirectory, "tray-dashboard.png"));
+            }
+
+            await File.WriteAllTextAsync(
+                reportPath,
+                pseudoLocalizationRequested
+                    ? "completed qps-ploc"
+                    : "completed en-US");
+            Environment.Exit(0);
+        }
+        catch (Exception exception)
+        {
+            if (reportPath is not null)
+            {
+                try
+                {
+                    await File.WriteAllTextAsync(reportPath, exception.ToString());
+                }
+                catch (Exception reportException)
+                {
+                    Trace.TraceError(
+                        "OpenBlade localization snapshot report failed: {0}",
+                        reportException);
+                }
+            }
+            else
+            {
+                Trace.TraceError(
+                    "OpenBlade localization snapshot setup failed: {0}",
+                    exception);
+            }
+            Environment.Exit(1);
+        }
+        finally
+        {
+            snapshotDashboardWindow?.Dispose();
+            snapshotMainWindow?.Close();
+        }
+    }
+
+    private static async Task WaitForSnapshotLayoutAsync()
+    {
+        // Let the built-in navigation transition finish before capturing geometry.
+        await Task.Delay(1500);
+        await Task.Yield();
+    }
+
+    private static void AssertPseudoResourcesLoaded()
+    {
+        const string visibleResourceKey = "MainWindow_ButtonCheckNow.Content";
+        string visibleText = LocalizedResources.Get(
+            visibleResourceKey,
+            "Check now");
+        string accessibleName = LocalizedResources.Get(
+            "MainWindow_ButtonCheckNow.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
+            "Check GitHub for OpenBlade updates");
+        string? resolvedLanguage = LocalizedResources.GetResolvedLanguage(
+            visibleResourceKey);
+        if (!visibleText.StartsWith("[!!", StringComparison.Ordinal)
+            || !accessibleName.StartsWith("[!!", StringComparison.Ordinal)
+            || !string.Equals(
+                resolvedLanguage,
+                "qps-ploc",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "The qps-ploc resource context did not load known visible and accessibility resources. "
+                    + $"Visible='{visibleText}', accessible='{accessibleName}', "
+                    + $"override='{ApplicationLanguages.PrimaryLanguageOverride}', "
+                    + $"candidate='{resolvedLanguage ?? "<none>"}'.");
+        }
+    }
+
+    private static void AssertEnglishResourceFallback()
+    {
+        string knownResource = LocalizedResources.Get(
+            "MainWindow_ButtonCheckNow.Content",
+            "Check now");
+        if (!string.Equals(knownResource, "Check now", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "An unsupported localization language did not fall back to en-US.");
+        }
+    }
+
+    private static void AssertPseudoXamlApplied(MainWindow mainWindow)
+    {
+        string expectedContent = LocalizedResources.Get(
+            "MainWindow_ButtonCheckNow.Content",
+            "Check now");
+        string expectedAccessibleName = LocalizedResources.Get(
+            "MainWindow_ButtonCheckNow.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
+            "Check GitHub for OpenBlade updates");
+        if (!mainWindow.HasLocalizedCheckNowButton(expectedContent, expectedAccessibleName))
+        {
+            throw new InvalidOperationException(
+                "Compiled x:Uid resources did not apply qps-ploc visible and accessibility text. "
+                    + $"Expected content='{expectedContent}', accessible='{expectedAccessibleName}'. "
+                    + "The named Settings-page button retained a different value.");
+        }
+    }
+
+    private static async Task SaveSnapshotAsync(object? content, string path)
+    {
+        if (content is not UIElement element)
+        {
+            throw new InvalidOperationException(
+                "The localization snapshot window has no renderable content.");
+        }
+
+        var bitmap = new RenderTargetBitmap();
+        await bitmap.RenderAsync(element);
+        if (bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
+        {
+            throw new InvalidOperationException(
+                "The localization snapshot window produced an empty image.");
+        }
+
+        Windows.Storage.Streams.IBuffer pixels = await bitmap.GetPixelsAsync();
+        using var stream = new InMemoryRandomAccessStream();
+        BitmapEncoder encoder = await BitmapEncoder.CreateAsync(
+            BitmapEncoder.PngEncoderId,
+            stream);
+        using var pixelReader = DataReader.FromBuffer(pixels);
+        byte[] pixelBytes = new byte[checked((int)pixels.Length)];
+        pixelReader.ReadBytes(pixelBytes);
+        encoder.SetPixelData(
+            BitmapPixelFormat.Bgra8,
+            BitmapAlphaMode.Premultiplied,
+            checked((uint)bitmap.PixelWidth),
+            checked((uint)bitmap.PixelHeight),
+            96,
+            96,
+            pixelBytes);
+        await encoder.FlushAsync();
+
+        stream.Seek(0);
+        using var reader = new DataReader(stream.GetInputStreamAt(0));
+        await reader.LoadAsync(checked((uint)stream.Size));
+        byte[] encoded = new byte[checked((int)stream.Size)];
+        reader.ReadBytes(encoded);
+        await File.WriteAllBytesAsync(path, encoded);
+    }
+
+    private static async Task RunResponsivePageHeaderSmokeAsync(string smokeReportPath)
+    {
+        try
+        {
+            File.WriteAllText(smokeReportPath, "construct responsive page header");
+            var smokeWindow = new MainWindow();
+            FrameworkElement root = smokeWindow.Content as FrameworkElement
+                ?? throw new InvalidOperationException("The main window root was not created.");
+            Style titleStyle = (Style)root.Resources["PageHeaderTitleStyle"];
+            Style saveStyle = (Style)root.Resources["ProfileSaveButtonStyle"];
+            Style secondaryStyle = (Style)root.Resources["PageHeaderSecondaryButtonStyle"];
+
+            var header = new ResponsivePageHeader
+            {
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
+                Width = 420,
+            };
+            header.RowDefinitions.Add(new XamlRowDefinition { Height = GridLength.Auto });
+            header.RowDefinitions.Add(new XamlRowDefinition { Height = GridLength.Auto });
+            header.ColumnDefinitions.Add(new XamlColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star),
+            });
+            header.ColumnDefinitions.Add(new XamlColumnDefinition { Width = GridLength.Auto });
+            header.ColumnDefinitions.Add(new XamlColumnDefinition { Width = GridLength.Auto });
+
+            var title = new XamlTextBlock
+            {
+                Style = titleStyle,
+                Text = "Display",
+            };
+            ResponsivePageHeader.SetRole(title, ResponsivePageHeaderElementRole.Title);
+            header.Children.Add(title);
+
+            var save = new XamlButton
+            {
+                Content = "Save these current settings to an extraordinarily long USB-C power profile with additional localized wording",
+                Style = saveStyle,
+                Visibility = Visibility.Visible,
+                Width = 300,
+            };
+            var restore = new XamlButton
+            {
+                Content = "Restore this extraordinarily long localized profile configuration and discard the current settings",
+                Style = secondaryStyle,
+                Visibility = Visibility.Collapsed,
+                Width = 300,
+            };
+            var actions = new XamlStackPanel
+            {
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right,
+                Orientation = XamlOrientation.Horizontal,
+                Spacing = 8,
+                VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
+                Visibility = Visibility.Visible,
+            };
+            actions.Children.Add(save);
+            actions.Children.Add(restore);
+            XamlGrid.SetColumn(actions, 1);
+            ResponsivePageHeader.SetRole(
+                actions,
+                ResponsivePageHeaderElementRole.ProfileActions);
+            header.Children.Add(actions);
+
+            var customize = new XamlButton
+            {
+                Content = "Customize",
+                Style = secondaryStyle,
+            };
+            XamlGrid.SetColumn(customize, 2);
+            ResponsivePageHeader.SetRole(
+                customize,
+                ResponsivePageHeaderElementRole.Customize);
+            header.Children.Add(customize);
+
+            var host = new XamlGrid
+            {
+                Padding = new Thickness(24),
+            };
+            host.Children.Add(header);
+            smokeWindow.Content = host;
+            smokeWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1400, 600));
+            var loaded = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            header.Loaded += (_, _) => loaded.TrySetResult(true);
+            smokeWindow.Activate();
+            await loaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            File.WriteAllText(smokeReportPath, "verify save-only horizontal layout");
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHorizontalLowerRow(actions),
+                "The Save-only action counted its collapsed Restore sibling.");
+            RequireResponsivePageHeader(
+                save.ActualHeight > 32,
+                "The long Save-only action did not wrap at its 300-DIP test width.");
+            RequireResponsivePageHeader(
+                actions.ActualWidth <= header.ActualWidth + 0.5,
+                "The Save-only lower row exceeded the header width.");
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHorizontalLowerRow(actions),
+                "The long Save-only action changed placement after a repeated layout pass.");
+
+            File.WriteAllText(smokeReportPath, "verify wide and narrow round trip");
+            header.Width = 1300;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsTitleRow(actions),
+                "The Save-only action did not return to the title row when it fit.");
+            save.Width = double.NaN;
+            header.Width = 360;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsVerticalLowerRow(actions, header.ActualWidth),
+                "The Save-only action did not return to the vertical lower row.");
+
+            File.WriteAllText(smokeReportPath, "verify long restore-only layout");
+            save.Visibility = Visibility.Collapsed;
+            restore.Visibility = Visibility.Visible;
+            restore.Width = double.NaN;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsVerticalLowerRow(actions, header.ActualWidth),
+                "A long Restore-only action did not use the vertical lower row.");
+            RequireResponsivePageHeader(
+                actions.ActualWidth <= header.ActualWidth + 0.5
+                    && restore.ActualWidth <= header.ActualWidth + 0.5
+                    && restore.ActualHeight > 32,
+                "The long Restore-only action did not wrap within the header width.");
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsVerticalLowerRow(actions, header.ActualWidth),
+                "The long Restore-only action changed placement after a repeated layout pass.");
+
+            File.WriteAllText(smokeReportPath, "verify empty transition layout");
+            restore.Visibility = Visibility.Collapsed;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHiddenProfileActionSlot(actions),
+                "An action group with no visible Save or Restore action reserved a lower row.");
+
+            File.WriteAllText(smokeReportPath, "verify restore-only sibling exclusion");
+            header.Width = 420;
+            restore.Width = 300;
+            restore.Visibility = Visibility.Visible;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHorizontalLowerRow(actions),
+                "The Restore-only action counted its collapsed Save sibling.");
+
+            File.WriteAllText(smokeReportPath, "verify both actions move together");
+            save.Width = 300;
+            save.Visibility = Visibility.Visible;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsVerticalLowerRow(actions, header.ActualWidth),
+                "Visible Save and Restore actions did not move together to the vertical lower row.");
+
+            File.WriteAllText(smokeReportPath, "verify complete state round trip");
+            restore.Visibility = Visibility.Collapsed;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHorizontalLowerRow(actions),
+                "The header did not restore its original Save-only horizontal layout.");
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsHorizontalLowerRow(actions),
+                "The restored Save-only layout changed after a repeated layout pass.");
+
+            smokeWindow.Close();
+            File.WriteAllText(smokeReportPath, "completed");
+            Environment.Exit(0);
+        }
+        catch (Exception exception)
+        {
+            File.WriteAllText(smokeReportPath, exception.ToString());
+            Environment.Exit(1);
+        }
+    }
+
+    private static async Task DrainResponsiveHeaderLayoutAsync(
+        ResponsivePageHeader header)
+    {
+        header.UpdateLayout();
+        await DrainDispatcherAsync(header.DispatcherQueue);
+        header.UpdateLayout();
+        await DrainDispatcherAsync(header.DispatcherQueue);
+    }
+
+    private static bool IsTitleRow(XamlStackPanel actions) =>
+        XamlGrid.GetRow(actions) == 0
+        && XamlGrid.GetColumn(actions) == 1
+        && XamlGrid.GetColumnSpan(actions) == 1
+        && actions.Orientation == XamlOrientation.Horizontal
+        && actions.HorizontalAlignment == Microsoft.UI.Xaml.HorizontalAlignment.Right
+        && actions.Margin.Top == 0
+        && actions.Margin.Right == PageHeaderLayoutPolicy.InterActionGroupGapDip
+        && double.IsPositiveInfinity(actions.MaxWidth);
+
+    private static bool IsHorizontalLowerRow(XamlStackPanel actions) =>
+        XamlGrid.GetRow(actions) == 1
+        && XamlGrid.GetColumn(actions) == 0
+        && XamlGrid.GetColumnSpan(actions) == 3
+        && actions.Orientation == XamlOrientation.Horizontal
+        && actions.HorizontalAlignment == Microsoft.UI.Xaml.HorizontalAlignment.Stretch
+        && actions.Margin.Top == 12
+        && actions.Margin.Right == 0
+        && double.IsPositiveInfinity(actions.MaxWidth);
+
+    private static bool IsVerticalLowerRow(
+        XamlStackPanel actions,
+        double availableWidth) =>
+        XamlGrid.GetRow(actions) == 1
+        && XamlGrid.GetColumn(actions) == 0
+        && XamlGrid.GetColumnSpan(actions) == 3
+        && actions.Orientation == XamlOrientation.Vertical
+        && actions.HorizontalAlignment == Microsoft.UI.Xaml.HorizontalAlignment.Stretch
+        && actions.Margin.Top == 12
+        && actions.Margin.Right == 0
+        && Math.Abs(actions.MaxWidth - availableWidth) < 0.5;
+
+    private static bool IsHiddenProfileActionSlot(XamlStackPanel actions) =>
+        XamlGrid.GetRow(actions) == 0
+        && XamlGrid.GetColumn(actions) == 1
+        && XamlGrid.GetColumnSpan(actions) == 1
+        && actions.Orientation == XamlOrientation.Horizontal
+        && actions.HorizontalAlignment == Microsoft.UI.Xaml.HorizontalAlignment.Right
+        && actions.Margin == new Thickness(0)
+        && double.IsPositiveInfinity(actions.MaxWidth);
+
+    private static void RequireResponsivePageHeader(bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw new InvalidOperationException(message);
+        }
     }
 
     private static async Task RunResponsiveChoiceSelectorSmokeAsync(string smokeReportPath)
@@ -716,8 +1280,12 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (signal.Kind == PerformanceShortcutNotificationKind.Failed)
         {
             notification = new TrayNotification(
-                "Performance mode could not be changed",
-                "OpenBlade could not apply the selected mode.",
+                LocalizedResources.Get(
+                    "App_PerformanceNotification_FailedTitle",
+                    "Performance mode could not be changed"),
+                LocalizedResources.Get(
+                    "App_PerformanceNotification_FailedBody",
+                    "OpenBlade could not apply the selected mode."),
                 TrayNotificationSeverity.Error,
                 ReplacementTag: PerformanceNotificationReplacementTag,
                 Destination: TrayNotificationDestination.Troubleshooting);
@@ -725,8 +1293,13 @@ public partial class App : Microsoft.UI.Xaml.Application
         else
         {
             string body = signal.Preset is { } preset
-                ? $"Current mode: {PerformancePresetPresentation.Label(preset)}"
-                : "The performance mode changed.";
+                ? LocalizedResources.Format(
+                    "App_PerformanceNotification_CurrentMode",
+                    "Current mode: {0}",
+                    PerformancePresetPresentation.Label(preset))
+                : LocalizedResources.Get(
+                    "App_PerformanceNotification_ChangedBody",
+                    "The performance mode changed.");
             string? logoAssetRelativePath = signal.Preset is { } selectedPreset
                 ? PerformanceNotificationIconAsset.Resolve(
                     mainWindow?.ViewModel.ActivePowerSource
@@ -734,7 +1307,9 @@ public partial class App : Microsoft.UI.Xaml.Application
                     selectedPreset)
                 : null;
             notification = new TrayNotification(
-                "Performance mode changed",
+                LocalizedResources.Get(
+                    "App_PerformanceNotification_ChangedTitle",
+                    "Performance mode changed"),
                 body,
                 TrayNotificationSeverity.Information,
                 LogoAssetRelativePath: logoAssetRelativePath,
@@ -924,8 +1499,13 @@ public partial class App : Microsoft.UI.Xaml.Application
                 ShowTrayTaskDialog(new TaskDialogPage
                 {
                     Caption = "OpenBlade",
-                    Heading = "OpenBlade could not shut down",
-                    Text = exception.Message,
+                    Heading = LocalizedResources.Get(
+                        "App_ExitError_Heading",
+                        "OpenBlade could not shut down"),
+                    Text = LocalizedResources.Format(
+                        "App_ExitError_Text",
+                        "OpenBlade could not shut down: {0}",
+                        exception.Message),
                     Buttons = { TaskDialogButton.Close },
                     DefaultButton = TaskDialogButton.Close,
                 });
@@ -941,14 +1521,22 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private TrayExitChoice ShowTrayExitDialog()
     {
-        var keepRunning = new TaskDialogButton("Keep background features running");
-        var shutDown = new TaskDialogButton("Shut down completely");
+        var keepRunning = new TaskDialogButton(LocalizedResources.Get(
+            "App_ExitDialog_KeepRunning",
+            "Keep background features running"));
+        var shutDown = new TaskDialogButton(LocalizedResources.Get(
+            "App_ExitDialog_ShutDown",
+            "Shut down completely"));
         var page = new TaskDialogPage
         {
             Caption = "OpenBlade",
-            Heading = "Exit OpenBlade?",
-            Text = "Choose whether keyboard lighting, hotkeys, profiles, and automation "
-                + "should keep running in the background.",
+            Heading = LocalizedResources.Get(
+                "App_ExitDialog_Heading",
+                "Exit OpenBlade?"),
+            Text = LocalizedResources.Get(
+                "App_ExitDialog_Text",
+                "Choose whether keyboard lighting, hotkeys, profiles, and automation "
+                    + "should keep running in the background."),
             AllowCancel = true,
             DefaultButton = TaskDialogButton.Cancel,
             Buttons =
