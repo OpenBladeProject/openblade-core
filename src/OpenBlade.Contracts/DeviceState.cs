@@ -364,6 +364,11 @@ public sealed record FirmwareVersions(
         null);
 }
 
+public sealed record Rz090581CapabilityDiagnostics(
+    byte SkuHardwareConfigurationRaw,
+    byte MiniLedPanelResolutionRaw,
+    IReadOnlyList<byte> ThermalFanIds);
+
 public sealed record BatteryHealthStatus(
     int DesignCapacityMilliwattHours,
     int FullChargeCapacityMilliwattHours);

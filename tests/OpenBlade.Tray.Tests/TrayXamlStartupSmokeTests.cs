@@ -35,6 +35,13 @@ public sealed class TrayXamlStartupSmokeTests
             "--responsive-choice-selector-smoke",
             "OpenBlade-responsive-selector-smoke");
 
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task ResponsivePageHeaderStabilizesAndWrapsSaveAndRestoreActions() =>
+        RunTraySmokeAsync(
+            "--responsive-page-header-smoke",
+            "OpenBlade-responsive-page-header-smoke");
+
     private static async Task RunTraySmokeAsync(
         string argument,
         string reportPrefix,

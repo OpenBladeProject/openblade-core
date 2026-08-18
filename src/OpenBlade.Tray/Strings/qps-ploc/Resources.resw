@@ -1269,7 +1269,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Láptóp béhávíór ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockLaptopBehavior2.Text" xml:space="preserve">
-    <value>[!! Láptóp béhávíór ~~~~~ !!]</value>
+    <value>[!! Cóntról áccéss ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockLaptopLidLogo.Text" xml:space="preserve">
     <value>[!! Láptóp líd lógó ~~~~~ !!]</value>

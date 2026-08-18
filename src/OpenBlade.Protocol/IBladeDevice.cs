@@ -27,6 +27,10 @@ public interface IBladeDevice
     Task<string?> ReadMcuVersionAsync(CancellationToken cancellationToken) =>
         Task.FromResult<string?>(null);
 
+    Task<Rz090581CapabilityDiagnostics?> ReadRz090581CapabilityDiagnosticsAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult<Rz090581CapabilityDiagnostics?>(null);
+
     Task<bool?> ReadStartupAnimationAsync(CancellationToken cancellationToken) =>
         Task.FromResult<bool?>(null);
 

@@ -320,6 +320,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
     {
         cancellationToken.ThrowIfCancellationRequested();
         ServiceStatusSnapshot status = runtime.GetStatus();
+        Rz090581CapabilityDiagnostics? capabilityDiagnostics =
+            runtime.GetCachedRz090581CapabilityDiagnostics();
         DiagnosticHistorySnapshot historySnapshot = history.Snapshot();
         DiagnosticHostMetadata metadata = metadataSource.Capture();
         DiagnosticVersions versions = metadata.Versions;
@@ -337,7 +339,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             versions,
             CreateDeviceIdentity(status),
             CreateCapabilities(status.Capabilities),
-            CreateConfiguration(status, liveReadingsEnabled),
+            CreateConfiguration(status, capabilityDiagnostics, liveReadingsEnabled),
             historySnapshot.CommandResults,
             historySnapshot.LogLines,
             metadata.SensitiveTokens);
@@ -462,6 +464,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
 
     private static IReadOnlyDictionary<string, string> CreateConfiguration(
         ServiceStatusSnapshot status,
+        Rz090581CapabilityDiagnostics? capabilityDiagnostics,
         bool liveReadingsEnabled)
     {
         DeviceCapabilities capabilities = status.Capabilities ?? DeviceCapabilities.Unavailable();
@@ -549,6 +552,18 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.FanSpeedRange?.MaximumRpm),
             ["capability.fanSpeedStepRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.StepRpm),
+            ["capability.rz09-0581.skuHardwareConfigurationRaw"] =
+                HexByteOrUnavailable(
+                    capabilityDiagnostics?.SkuHardwareConfigurationRaw),
+            ["capability.rz09-0581.miniLedPanelResolutionRaw"] =
+                HexByteOrUnavailable(
+                    capabilityDiagnostics?.MiniLedPanelResolutionRaw),
+            ["capability.rz09-0581.thermalFanIds"] =
+                capabilityDiagnostics is { } diagnostics
+                    ? string.Join(
+                        ", ",
+                        diagnostics.ThermalFanIds.Select(value => $"0x{value:X2}"))
+                    : "Unavailable",
             ["override.performance"] = status.PerformanceOverride is null
                 ? "None"
                 : $"{status.PerformanceOverride.Value} ({status.PerformanceOverride.Lifetime})",
@@ -592,6 +607,9 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
 
     private static string BoolOrUnavailable(bool? value) =>
         value?.ToString() ?? "Unavailable";
+
+    private static string HexByteOrUnavailable(byte? value) =>
+        value is { } raw ? $"0x{raw:X2}" : "Unavailable";
 
     private static string EnumOrUnavailable<T>(T? value)
         where T : struct, Enum => value?.ToString() ?? "Unavailable";

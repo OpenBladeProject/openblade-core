@@ -18,6 +18,12 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Theory]
+    [InlineData("0011", AdapterPowerState.Battery)]
+    [InlineData("0211", AdapterPowerState.UsbCPower45W)]
+    [InlineData("0311", AdapterPowerState.UsbCPower60W)]
+    [InlineData("0411", AdapterPowerState.UsbCPower65W)]
+    [InlineData("0511", AdapterPowerState.UsbCPower80W)]
+    [InlineData("0611", AdapterPowerState.UsbCPower90W)]
     [InlineData("0711", AdapterPowerState.UsbCPower100W)]
     [InlineData("1111", AdapterPowerState.FullPower280W)]
     [InlineData("1211", AdapterPowerState.FullPower330W)]
@@ -42,6 +48,12 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Theory]
+    [InlineData("0011", AdapterPowerState.Unknown)]
+    [InlineData("0211", AdapterPowerState.Unknown)]
+    [InlineData("0311", AdapterPowerState.Unknown)]
+    [InlineData("0411", AdapterPowerState.Unknown)]
+    [InlineData("0511", AdapterPowerState.Unknown)]
+    [InlineData("0611", AdapterPowerState.Unknown)]
     [InlineData("0711", AdapterPowerState.Unknown)]
     [InlineData("1111", AdapterPowerState.FullPower280W)]
     [InlineData("1211", AdapterPowerState.Unknown)]
@@ -89,6 +101,47 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal((0x00, 0x87), (command.ClassId, command.CommandId));
         Assert.Equal([0x00, 0x00, 0x00, 0x00], command.Arguments.ToArray());
         Assert.Equal(4, command.ExpectedPayloadLength);
+    }
+
+    [Fact]
+    public async Task Rz090581CapabilityDiagnostics_WithoutEvidenceReturnsNullWithoutIo()
+    {
+        var session = new ScriptedSession(Success([0x01]));
+        await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
+
+        Assert.Null(await port.QueryRz090581CapabilityDiagnosticsAsync(default));
+        Assert.Empty(session.Commands);
+    }
+
+    [Fact]
+    public async Task Rz090581CapabilityDiagnostics_QueryIsSerializedAndReadOnly()
+    {
+        byte[] fans = new byte[80];
+        fans[0] = 2;
+        fans[1] = 1;
+        fans[2] = 2;
+        var session = new ScriptedSession(
+            Success([0x01]),
+            Success([0x00]),
+            Success(fans));
+        await using var port = CreatePort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedRz090581CapabilityDiagnosticsReadEvidence());
+
+        Assert.True(port.SupportsRz090581CapabilityDiagnosticsQuery);
+        Rz090581CapabilityDiagnostics? diagnostics =
+            await port.QueryRz090581CapabilityDiagnosticsAsync(default);
+
+        Assert.NotNull(diagnostics);
+        Assert.Equal(0x01, diagnostics.SkuHardwareConfigurationRaw);
+        Assert.Equal(0x00, diagnostics.MiniLedPanelResolutionRaw);
+        Assert.Equal([0x01, 0x02], diagnostics.ThermalFanIds);
+        Assert.Collection(
+            session.Commands,
+            command => AssertQuery(command, 0x8F, [0x00], 1),
+            command => AssertQuery(command, 0x8E, [0x00], 1),
+            command => AssertQuery(command, 0x80, new byte[80], 80));
     }
 
     [Fact]
@@ -1369,8 +1422,26 @@ public sealed class ProductionBatteryPortTests
             ProductionBatteryQueryCapability.GamingMode,
         });
 
+    private static ProductionBatteryReadEvidence
+        AcceptedRz090581CapabilityDiagnosticsReadEvidence() => new(
+            new HashSet<ProductionBatteryQueryCapability>
+            {
+                ProductionBatteryQueryCapability.Rz090581CapabilityDiagnostics,
+            });
+
     private static ProductionBatteryReadEvidence NoTemporaryReadEvidence() => new(
         new HashSet<ProductionBatteryQueryCapability>());
+
+    private static void AssertQuery(
+        RazerCommandSpec command,
+        byte commandId,
+        byte[] arguments,
+        int expectedPayloadLength)
+    {
+        Assert.Equal((0x0D, commandId), (command.ClassId, command.CommandId));
+        Assert.Equal(arguments, command.Arguments.ToArray());
+        Assert.Equal(expectedPayloadLength, command.ExpectedPayloadLength);
+    }
 
     private static CapturedCommandFixture Fixture(
         string action,

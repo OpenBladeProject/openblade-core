@@ -210,13 +210,19 @@
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
+            <DataTemplate x:Key="PageHeaderButtonContentTemplate">
+                <TextBlock Text="{Binding}"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap" />
+            </DataTemplate>
             <Style x:Key="ProfileSaveButtonStyle"
                    TargetType="Button"
                    BasedOn="{StaticResource AccentButtonStyle}">
                 <Setter Property="MinHeight" Value="32" />
-                <Setter Property="Height" Value="32" />
-                <Setter Property="Padding" Value="14,0" />
+                <Setter Property="Padding" Value="14,4" />
                 <Setter Property="FontSize" Value="14" />
+                <Setter Property="ContentTemplate" Value="{StaticResource PageHeaderButtonContentTemplate}" />
+                <Setter Property="HorizontalAlignment" Value="Left" />
                 <Setter Property="VerticalAlignment" Value="Center" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
             </Style>
@@ -224,9 +230,10 @@
                    TargetType="Button"
                    BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="MinHeight" Value="32" />
-                <Setter Property="Height" Value="32" />
-                <Setter Property="Padding" Value="14,0" />
+                <Setter Property="Padding" Value="14,4" />
                 <Setter Property="FontSize" Value="14" />
+                <Setter Property="ContentTemplate" Value="{StaticResource PageHeaderButtonContentTemplate}" />
+                <Setter Property="HorizontalAlignment" Value="Left" />
                 <Setter Property="VerticalAlignment" Value="Center" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
             </Style>
@@ -2126,9 +2133,8 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <Grid x:Name="DashboardPageHeader"
-                              Margin="0,0,0,20"
-                              ColumnSpacing="16">
+                        <local:ResponsivePageHeader x:Name="DashboardPageHeader"
+                                                    Margin="0,0,0,20">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -2136,22 +2142,20 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock x:Uid="MainWindow_TextBlockDashboard" Text="Dashboard" Style="{StaticResource PageHeaderTitleStyle}" />
-                            <Button x:Uid="MainWindow_ButtonCustomize" Grid.Column="1"
-                                    Content="Customize"
-                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                    AutomationProperties.Name="Customize dashboard"
-                                    Click="OnCustomizeDashboard" />
+                            <TextBlock x:Uid="MainWindow_TextBlockDashboard"
+                                       Text="Dashboard"
+                                       Style="{StaticResource PageHeaderTitleStyle}"
+                                       local:ResponsivePageHeader.Role="Title" />
                             <StackPanel x:Name="DashboardProfileSaveActions"
-                                        Grid.Row="1"
-                                        Grid.ColumnSpan="2"
+                                        Grid.Column="1"
                                         Orientation="Horizontal"
                                         Spacing="8"
-                                        HorizontalAlignment="Left"
-                                        Margin="0,12,0,0"
+                                        HorizontalAlignment="Right"
                                         Visibility="{x:Bind ViewModel.HasDashboardProfileActionOpportunity, Mode=OneWay}"
-                                        VerticalAlignment="Center">
+                                        VerticalAlignment="Center"
+                                        local:ResponsivePageHeader.Role="ProfileActions">
                                 <Button Content="{x:Bind ViewModel.DashboardProfileSaveLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         Visibility="{x:Bind ViewModel.HasDashboardProfileSaveOpportunity, Mode=OneWay}"
@@ -2161,7 +2165,14 @@
                                         Visibility="{x:Bind ViewModel.HasDashboardProfileRestoreOpportunity, Mode=OneWay}"
                                         Command="{x:Bind ViewModel.DiscardProfileDraftCommand}" />
                             </StackPanel>
-                        </Grid>
+                            <Button x:Uid="MainWindow_ButtonCustomize"
+                                    Grid.Column="2"
+                                    Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    AutomationProperties.Name="Customize dashboard"
+                                    Click="OnCustomizeDashboard"
+                                    local:ResponsivePageHeader.Role="Customize" />
+                        </local:ResponsivePageHeader>
 
                         <Grid x:Name="DashboardCardHost">
                         <Grid.ChildrenTransitions>
@@ -2820,9 +2831,8 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <Grid x:Name="LaptopPageHeader"
-                              Margin="0,0,0,20"
-                              ColumnSpacing="16">
+                        <local:ResponsivePageHeader x:Name="LaptopPageHeader"
+                                                    Margin="0,0,0,20">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -2830,27 +2840,19 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Uid="MainWindow_TextBlockLaptop" Text="Laptop"
-                                       Style="{StaticResource PageHeaderTitleStyle}" />
-                            <Button x:Uid="MainWindow_ButtonCustomize2" Grid.Column="1"
-                                    Content="Customize"
-                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                    Tag="Laptop"
-                                    Click="OnCustomizePageSections"
-                                    AutomationProperties.Name="Customize Laptop page" />
+                                       Style="{StaticResource PageHeaderTitleStyle}"
+                                       local:ResponsivePageHeader.Role="Title" />
                             <StackPanel x:Name="LaptopHeaderActions"
-                                        Grid.Row="1"
-                                        Grid.ColumnSpan="2"
+                                        Grid.Column="1"
                                         Orientation="Horizontal"
-                                        Spacing="12"
-                                        HorizontalAlignment="Left"
-                                        Margin="0,12,0,0"
+                                        Spacing="8"
+                                        HorizontalAlignment="Right"
                                         Visibility="{x:Bind ViewModel.HasLaptopPageProfileActionOpportunity, Mode=OneWay}"
-                                        VerticalAlignment="Center">
-                            <StackPanel x:Name="LaptopProfileSaveActions"
-                                        Orientation="Horizontal"
-                                        Spacing="8">
+                                        VerticalAlignment="Center"
+                                        local:ResponsivePageHeader.Role="ProfileActions">
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}"
@@ -2860,8 +2862,15 @@
                                         Visibility="{x:Bind ViewModel.HasLaptopPageProfileDifference, Mode=OneWay}"
                                         Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
                             </StackPanel>
-                            </StackPanel>
-                        </Grid>
+                            <Button x:Uid="MainWindow_ButtonCustomize2"
+                                    Grid.Column="2"
+                                    Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    Tag="Laptop"
+                                    Click="OnCustomizePageSections"
+                                    AutomationProperties.Name="Customize Laptop page"
+                                    local:ResponsivePageHeader.Role="Customize" />
+                        </local:ResponsivePageHeader>
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
                         <ContentControl x:Name="KeyboardBehaviorCard"
@@ -2958,9 +2967,8 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <Grid x:Name="LightingPageHeader"
-                              Margin="0,0,0,20"
-                              ColumnSpacing="16">
+                        <local:ResponsivePageHeader x:Name="LightingPageHeader"
+                                                    Margin="0,0,0,20">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -2968,44 +2976,45 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="10"
+                                        VerticalAlignment="Center"
+                                        local:ResponsivePageHeader.Role="Title">
                                 <TextBlock x:Uid="MainWindow_TextBlockLighting" Text="Lighting" Style="{StaticResource PageHeaderTitleStyle}" />
                                 <ProgressRing x:Uid="MainWindow_ProgressRingApplyingLighting" Style="{StaticResource FirmwareProgressRingStyle}"
                                               IsActive="{x:Bind ViewModel.IsLightingOperationInProgress, Mode=OneWay}"
                                               AutomationProperties.Name="Applying lighting" />
                             </StackPanel>
-                            <Button x:Uid="MainWindow_ButtonCustomize3" Grid.Column="1"
-                                    Content="Customize"
-                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                    Tag="Lighting"
-                                    Click="OnCustomizePageSections"
-                                    AutomationProperties.Name="Customize Lighting page" />
                             <StackPanel x:Name="LightingHeaderActions"
-                                        Grid.Row="1"
-                                        Grid.ColumnSpan="2"
+                                        Grid.Column="1"
                                         Orientation="Horizontal"
-                                        Spacing="12"
-                                        HorizontalAlignment="Left"
-                                        Margin="0,12,0,0"
+                                        Spacing="8"
+                                        HorizontalAlignment="Right"
                                         Visibility="{x:Bind ViewModel.HasLightingProfileActionOpportunity, Mode=OneWay}"
-                                        VerticalAlignment="Center">
-                            <ContentControl x:Name="LightingProfileSaveActions"
-                                            VerticalAlignment="Center"
-                                            IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                        VerticalAlignment="Center"
+                                        local:ResponsivePageHeader.Role="ProfileActions">
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
+                                        IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
                                         Visibility="{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}"
                                         Command="{x:Bind ViewModel.SaveLightingProfileDraftCommand}" />
                                 <Button x:Uid="MainWindow_ButtonUseProfileSettings3" Content="Use profile settings"
                                         Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                        IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
                                         Visibility="{x:Bind ViewModel.HasLightingProfileDifference, Mode=OneWay}"
                                         Command="{x:Bind ViewModel.DiscardLightingProfileDraftCommand}" />
-                                </StackPanel>
-                            </ContentControl>
                             </StackPanel>
-                        </Grid>
+                            <Button x:Uid="MainWindow_ButtonCustomize3"
+                                    Grid.Column="2"
+                                    Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    Tag="Lighting"
+                                    Click="OnCustomizePageSections"
+                                    AutomationProperties.Name="Customize Lighting page"
+                                    local:ResponsivePageHeader.Role="Customize" />
+                        </local:ResponsivePageHeader>
                         <StackPanel x:Name="LightingCardsHost">
                         <ContentControl x:Name="LightingCard"
                                         Content="{x:Bind ViewModel}"
@@ -3031,9 +3040,8 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <Grid x:Name="DisplayPageHeader"
-                              Margin="0,0,0,20"
-                              ColumnSpacing="16">
+                        <local:ResponsivePageHeader x:Name="DisplayPageHeader"
+                                                    Margin="0,0,0,20">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -3041,31 +3049,25 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="10"
+                                        VerticalAlignment="Center"
+                                        local:ResponsivePageHeader.Role="Title">
                                 <TextBlock x:Uid="MainWindow_TextBlockDisplay2" Text="Display" Style="{StaticResource PageHeaderTitleStyle}" />
                                 <ProgressRing x:Uid="MainWindow_ProgressRingApplyingDisplaySetting" Style="{StaticResource FirmwareProgressRingStyle}"
                                               IsActive="{x:Bind DisplayViewModel.IsBusy, Mode=OneWay}"
                                               AutomationProperties.Name="Applying display setting" />
                             </StackPanel>
-                            <Button x:Uid="MainWindow_ButtonCustomize4" Grid.Column="1"
-                                    Content="Customize"
-                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                    Tag="Display"
-                                    Click="OnCustomizePageSections"
-                                    AutomationProperties.Name="Customize Display page" />
                             <StackPanel x:Name="DisplayHeaderActions"
-                                        Grid.Row="1"
-                                        Grid.ColumnSpan="2"
+                                        Grid.Column="1"
                                         Orientation="Horizontal"
-                                        Spacing="12"
-                                        HorizontalAlignment="Left"
-                                        Margin="0,12,0,0"
+                                        Spacing="8"
+                                        HorizontalAlignment="Right"
                                         Visibility="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
-                                        VerticalAlignment="Center">
-                            <StackPanel x:Name="DisplayProfileSaveActions"
-                                        Orientation="Horizontal"
-                                        Spacing="8">
+                                        VerticalAlignment="Center"
+                                        local:ResponsivePageHeader.Role="ProfileActions">
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         IsEnabled="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
@@ -3075,8 +3077,15 @@
                                         Visibility="{x:Bind DisplayViewModel.HasProfileDifference, Mode=OneWay}"
                                         Click="OnUseDisplayProfileSettings" />
                             </StackPanel>
-                            </StackPanel>
-                        </Grid>
+                            <Button x:Uid="MainWindow_ButtonCustomize4"
+                                    Grid.Column="2"
+                                    Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    Tag="Display"
+                                    Click="OnCustomizePageSections"
+                                    AutomationProperties.Name="Customize Display page"
+                                    local:ResponsivePageHeader.Role="Customize" />
+                        </local:ResponsivePageHeader>
                         <StackPanel x:Name="DisplayCardsHost">
                         <ContentControl x:Name="DisplayCard"
                                         Content="{x:Bind DisplayViewModel}"
@@ -4477,7 +4486,7 @@
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                            <TextBlock x:Uid="MainWindow_TextBlockLaptopBehavior2" Text="Laptop behavior" Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <TextBlock x:Uid="MainWindow_TextBlockLaptopBehavior2" Text="Control access" Style="{StaticResource TroubleshootingLabelStyle}" />
                                             <Grid Grid.Column="1">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                                 <Grid VerticalAlignment="Center">

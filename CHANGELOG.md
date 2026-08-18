@@ -14,6 +14,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Added exact-RZ09-0581 published Thunderbolt 5 and touchpad versions to the
   firmware inventory as observed-only fields. Their installed versions remain
   unavailable, so they never produce an update comparison or notification.
+- Added exact-RZ09-0581 BIOS 3.01 read-only diagnostics for the captured Synapse
+  SKU hardware-configuration byte, Mini-LED panel-resolution byte, and thermal
+  fan ID list. The raw values remain in the service's diagnostic cache and
+  exports and do not enable firmware writes.
 - Added an opt-in **60 Hz lighting** Lab mode for the admitted RZ09-0581
   keyboard transport. The service keeps 30 Hz as the default, persists the
   selection after the tray exits, and applies it to supported built-in,
@@ -39,6 +43,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Advanced the firmware-smoke snapshot schema from 7 to 8 for observed-only
   Thunderbolt and touchpad inventory metadata.
+- Expanded the RZ09-0581 BIOS 4.00 USB-C profile to exact 45 W, 60 W, 65 W,
+  80 W, 90 W, and 100 W adapter classes. These classes share the same USB-C
+  profile; bounded transient HID failures still require two agreeing replies
+  before controls are enabled.
 - Moved the Lab keyboard preset importer into the Keyboard section and replaced
   the long Lab features description with an on-demand list of current features.
 - Advanced the profile/configuration schema from 13 to 14 for the persisted
@@ -46,6 +54,18 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Added typed decoding for the capture-backed RZ09-0528 `0011` no-adapter
+  response while keeping Windows Offline authoritative for battery power and
+  excluding that response from other Blade models.
+- Retried transient MCU firmware-version read failures during later verified
+  observations, while keeping the query bounded and stopping after a confirmed
+  version is available.
+- Clarified unclassified external power consistently across control access,
+  active profile, tray hover, and troubleshooting instead of presenting a
+  completed bounded classification attempt as still checking.
+- Kept conditional profile Save and **Use profile settings** actions beside
+  Customize when they fit, while moving the complete action group below the
+  title or stacking long localized actions before they can overlap or clip.
 - Kept page customization buttons aligned with their titles while allowing
   longer localized and profile actions to use a separate row.
 - Fixed the **Random colors** switch track alignment and made compact switch

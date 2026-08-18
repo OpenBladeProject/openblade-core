@@ -318,9 +318,6 @@
   <data name="Checking laptop" xml:space="preserve">
     <value>[!! Chéckíng láptóp ~~~~~ !!]</value>
   </data>
-  <data name="Checking power source" xml:space="preserve">
-    <value>[!! Chéckíng pówér sóúrcé ~~~~~~~ !!]</value>
-  </data>
   <data name="Checking Razer's official support page..." xml:space="preserve">
     <value>[!! Chéckíng Razer's óffícíál súppórt págé... ~~~~~~~~~~ !!]</value>
   </data>
@@ -929,6 +926,9 @@
   </data>
   <data name="Power source unavailable" xml:space="preserve">
     <value>[!! Pówér sóúrcé únáváíláblé ~~~~~~~~ !!]</value>
+  </data>
+  <data name="External power (unclassified)" xml:space="preserve">
+    <value>[!! Éxtérnál pówér (únclássífíéd) ~~~~~~~~~ !!]</value>
   </data>
   <data name="Preparing diagnostic export..." xml:space="preserve">
     <value>[!! Prépáríng díágnóstíc éxpórt... ~~~~~~~~~ !!]</value>

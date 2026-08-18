@@ -1,10 +1,16 @@
 # Reviewed exported API baseline. Regenerate with build/Update-PublicApiBaselines.ps1 and review the diff.
 type enum OpenBlade.Contracts.AdapterPowerState
   field System.Int32 value__
+  field const OpenBlade.Contracts.AdapterPowerState Battery = 9
   field const OpenBlade.Contracts.AdapterPowerState FullPower280W = 2
   field const OpenBlade.Contracts.AdapterPowerState FullPower330W = 3
   field const OpenBlade.Contracts.AdapterPowerState Unknown = 0
   field const OpenBlade.Contracts.AdapterPowerState UsbCPower100W = 1
+  field const OpenBlade.Contracts.AdapterPowerState UsbCPower45W = 4
+  field const OpenBlade.Contracts.AdapterPowerState UsbCPower60W = 5
+  field const OpenBlade.Contracts.AdapterPowerState UsbCPower65W = 6
+  field const OpenBlade.Contracts.AdapterPowerState UsbCPower80W = 7
+  field const OpenBlade.Contracts.AdapterPowerState UsbCPower90W = 8
 type sealed class OpenBlade.Contracts.AmbientAwarenessLightingParameters
   base OpenBlade.Contracts.LightingEffectParameters
   interface System.IEquatable<OpenBlade.Contracts.AmbientAwarenessLightingParameters>
@@ -1578,6 +1584,26 @@ type sealed class OpenBlade.Contracts.RippleLightingParameters
   method virtual OpenBlade.Contracts.RippleLightingParameters <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.RippleLightingParameters other)
   property OpenBlade.Contracts.RgbColor Color { get; init; }
+type sealed class OpenBlade.Contracts.Rz090581CapabilityDiagnostics
+  interface System.IEquatable<OpenBlade.Contracts.Rz090581CapabilityDiagnostics>
+  ctor (System.Byte SkuHardwareConfigurationRaw, System.Byte MiniLedPanelResolutionRaw, System.Collections.Generic.IReadOnlyList<System.Byte> ThermalFanIds)
+  method OpenBlade.Contracts.Rz090581CapabilityDiagnostics <Clone>$()
+  method System.Byte get_MiniLedPanelResolutionRaw()
+  method System.Byte get_SkuHardwareConfigurationRaw()
+  method System.Collections.Generic.IReadOnlyList<System.Byte> get_ThermalFanIds()
+  method System.Void Deconstruct(out System.Byte SkuHardwareConfigurationRaw, out System.Byte MiniLedPanelResolutionRaw, out System.Collections.Generic.IReadOnlyList<System.Byte> ThermalFanIds)
+  method System.Void set_MiniLedPanelResolutionRaw(System.Byte value)
+  method System.Void set_SkuHardwareConfigurationRaw(System.Byte value)
+  method System.Void set_ThermalFanIds(System.Collections.Generic.IReadOnlyList<System.Byte> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.Rz090581CapabilityDiagnostics left, OpenBlade.Contracts.Rz090581CapabilityDiagnostics right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.Rz090581CapabilityDiagnostics left, OpenBlade.Contracts.Rz090581CapabilityDiagnostics right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.Rz090581CapabilityDiagnostics other)
+  property System.Byte MiniLedPanelResolutionRaw { get; init; }
+  property System.Byte SkuHardwareConfigurationRaw { get; init; }
+  property System.Collections.Generic.IReadOnlyList<System.Byte> ThermalFanIds { get; init; }
 type sealed class OpenBlade.Contracts.SequenceLightingParameters
   base OpenBlade.Contracts.LightingEffectParameters
   interface System.IEquatable<OpenBlade.Contracts.SequenceLightingParameters>
