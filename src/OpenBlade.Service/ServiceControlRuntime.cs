@@ -264,6 +264,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     internal static readonly TimeSpan ResumeValidationObservationWindow =
         TimeSpan.FromMinutes(1);
     private const int ObservationFailureThreshold = 3;
+    private const int MaximumMcuVersionReadAttempts = 3;
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
         new(null, null, null, null);
     private static readonly DeviceCapabilities UnavailableCapabilities =
@@ -303,7 +304,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly Dictionary<DeviceSubsystem, PendingWriteConfirmation>
         pendingWriteConfirmations = [];
     private ServiceStatusSnapshot? status;
-    private bool mcuVersionReadAttempted;
+    private int mcuVersionReadAttempts;
     private LightingSettings? lastOwnedLightingSettings;
     private FanControlSettings? lastOwnedFanControlSettings;
     private LightingSettings? pendingLightingRestore;
@@ -4375,6 +4376,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // Resume begins a new hardware-enumeration session. Restore the bounded
+            // MCU inventory budget without turning ordinary healthy observations
+            // into an unbounded retry loop.
+            mcuVersionReadAttempts = 0;
             bool gpuClockOffsetConfirmationInvalidated = false;
             if (deviceProvider is IGpuClockOffsetConfirmationInvalidator invalidator)
             {
@@ -7393,7 +7398,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         FirmwareVersions? current = GetStatus().Firmware;
-        if (mcuVersionReadAttempted
+        if (mcuVersionReadAttempts >= MaximumMcuVersionReadAttempts
             || current is null
             || !string.Equals(
                 current.McuVersion,
@@ -7403,17 +7408,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return current;
         }
 
-        mcuVersionReadAttempted = true;
+        mcuVersionReadAttempts++;
         try
         {
             string? mcuVersion = await device.ReadMcuVersionAsync(cancellationToken)
                 .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             return string.IsNullOrWhiteSpace(mcuVersion)
                 ? current
                 : current with { McuVersion = mcuVersion.Trim() };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            mcuVersionReadAttempts--;
             throw;
         }
         catch
@@ -7914,6 +7921,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         string message,
         bool deviceVerified = false)
     {
+        if (!deviceVerified)
+        {
+            // A confirmed loss of the verified device ends the current hardware
+            // session. A later re-verification receives a fresh bounded budget.
+            mcuVersionReadAttempts = 0;
+        }
+
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
         PublishIfChanged(current with

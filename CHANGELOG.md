@@ -41,6 +41,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Retried transient MCU firmware-version read failures during later verified
+  observations, while keeping the query bounded and stopping after a confirmed
+  version is available.
 - Clarified unclassified external power consistently across control access,
   active profile, tray hover, and troubleshooting instead of presenting a
   completed bounded classification attempt as still checking.
