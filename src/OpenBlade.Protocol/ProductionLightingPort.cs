@@ -36,6 +36,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private readonly TimeSpan exchangeTimeout;
     private readonly TimeSpan cleanupDrainTimeout;
     private readonly PendingDisposalRegistry pendingDisposals;
+    private readonly IKeyboardLightingFrameObserver frameObserver;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly SemaphoreSlim featureIoGate = new(1, 1);
     private readonly object effectSync = new();
@@ -51,6 +52,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private long effectStartedTimestamp;
     private LightingSettings? lastDeliveredState;
     private byte? lastKnownBrightnessRaw;
+    private int observableBrightnessRaw = -1;
     private int nextCommandTransaction = 1;
     private int nextMatrixTransaction = 1;
     private int ownershipState;
@@ -71,7 +73,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
-        PendingDisposalRegistry pendingDisposals)
+        PendingDisposalRegistry pendingDisposals,
+        IKeyboardLightingFrameObserver? frameObserver = null)
     {
         this.actor = actor ?? throw new ArgumentNullException(nameof(actor));
         session = actor.Session;
@@ -83,6 +86,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         this.cleanupDrainTimeout = cleanupDrainTimeout;
         this.pendingDisposals = pendingDisposals
             ?? throw new ArgumentNullException(nameof(pendingDisposals));
+        this.frameObserver = frameObserver
+            ?? UnavailableKeyboardLightingFrameObserver.Instance;
         Capabilities = CreateCapabilities(admitted && matrixWriter is not null);
     }
 
@@ -465,6 +470,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 }
             }
 
+            NotifyBrightnessObserver(resultingPercent);
             return resultingPercent;
         }
         finally
@@ -815,6 +821,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
 
         lastKnownBrightnessRaw = raw;
+        Volatile.Write(ref observableBrightnessRaw, raw);
         return raw;
     }
 
@@ -833,10 +840,12 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         {
             await ExecuteWriteCoreAsync(command, cancellationToken).ConfigureAwait(false);
             lastKnownBrightnessRaw = raw;
+            Volatile.Write(ref observableBrightnessRaw, raw);
         }
         catch
         {
             lastKnownBrightnessRaw = null;
+            Volatile.Write(ref observableBrightnessRaw, -1);
             throw;
         }
     }
@@ -852,6 +861,36 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             throw new BladeWriteException(
                 WriteSubmissionState.Indeterminate,
                 "Lighting brightness did not match independent readback.");
+        }
+
+        NotifyBrightnessObserver(checked(
+            (byte)LightingBrightnessProtocol.RawToPercent(confirmed)));
+    }
+
+    private void NotifyBrightnessObserver(byte percent)
+    {
+        try
+        {
+            if (frameObserver.IsBrightnessInterested)
+            {
+                frameObserver.TryPublishBrightness(percent);
+            }
+        }
+        catch
+        {
+            // Cooling-pad mirroring is an isolated optional sink. It must
+            // never change confirmed keyboard brightness state.
+        }
+    }
+
+    private void NotifyCurrentBrightnessObserver()
+    {
+        int raw = Volatile.Read(ref observableBrightnessRaw);
+        if (raw is >= byte.MinValue and <= byte.MaxValue)
+        {
+            NotifyBrightnessObserver(
+                checked((byte)LightingBrightnessProtocol.RawToPercent(
+                    checked((byte)raw))));
         }
     }
 
@@ -1140,6 +1179,22 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             result = await matrixWriter.WriteAsync(
                 new Pid02E0MatrixReport(AllocateMatrixTransaction(), frame),
                 cancellationToken).ConfigureAwait(false);
+            if (result.Failure is null)
+            {
+                NotifyCurrentBrightnessObserver();
+                try
+                {
+                    if (frameObserver.IsInterested)
+                    {
+                        frameObserver.TryPublish(ToAmbientLightingFrame(frame));
+                    }
+                }
+                catch
+                {
+                    // Cooling-pad mirroring is an isolated optional sink. It
+                    // must never change confirmed keyboard submission state.
+                }
+            }
         }
         finally
         {
@@ -1163,6 +1218,18 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         throw new BladeWriteException(
             state,
             $"The matrix write failed ({result.Failure}, {phase}, {error}, {bytes}).");
+    }
+
+    private static AmbientLightingFrame ToAmbientLightingFrame(
+        Pid02E0MatrixFrame frame)
+    {
+        var slots = new RgbColor[Pid02E0MatrixFrame.SlotCount];
+        for (int index = 0; index < slots.Length; index++)
+        {
+            MatrixRgb color = frame[index];
+            slots[index] = new RgbColor(color.Red, color.Green, color.Blue);
+        }
+        return new AmbientLightingFrame(slots);
     }
 
     private IPid02E0LightingEffect CreateEffect(LightingSettings settings)

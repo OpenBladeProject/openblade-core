@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 47;
+    public const int ProtocolVersion = 48;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -147,6 +147,15 @@ public static class IpcMessageCodec
             SetPerformanceOverrideRequest set =>
                 set.Value is null
                 || set.Value.IsWellFormed(),
+            SetHyperBoostRequest => true,
+            SetCoolingPadFanIntentRequest set => set.Intent?.IsWellFormed == true,
+            SetCoolingDemandLeaseRequest set =>
+                set.LeaseId != Guid.Empty
+                && set.TtlMilliseconds is >= 2_000 and <= 30_000,
+            ReleaseCoolingDemandLeaseRequest release => release.LeaseId != Guid.Empty,
+            SetCoolingDemandApiEnabledRequest => true,
+            SetCoolingPadLightingSyncRequest set =>
+                !set.Enabled || !set.AcknowledgeRecovery,
             CyclePerformanceShortcutRequest cycle => Enum.IsDefined(cycle.Source),
             SetPerformanceShortcutPreviewRequest preview =>
                 preview.SessionId != Guid.Empty
@@ -396,10 +405,32 @@ public static class IpcMessageCodec
             throw InvalidStatus("confirmed performance state is inconsistent");
         }
 
+        if (status.ConfirmedState is { HyperBoostActive: true } hyperBoost
+            && (status.Capabilities?.HyperBoostAccess is not (
+                    DeviceFeatureAccess.ObservedOnly
+                    or DeviceFeatureAccess.ReadOnly
+                    or DeviceFeatureAccess.ReadWrite)
+                || hyperBoost.Performance is not null
+                || hyperBoost.Fans != FanMode.Automatic))
+        {
+            throw InvalidStatus("confirmed HyperBoost state is inconsistent");
+        }
+
         if (status.ConfirmedState?.GpuClockOffsets is { } gpuClockOffsets
             && !gpuClockOffsets.IsWellFormed)
         {
             throw InvalidStatus("confirmed GPU clock-offset state is inconsistent");
+        }
+
+        if (status.CoolingPad is { IsWellFormed: false })
+        {
+            throw InvalidStatus("cooling-pad status is inconsistent");
+        }
+        if (status.CoolingPad is not null
+            && status.Capabilities?.CoolingPadSupportAccess is null)
+        {
+            throw InvalidStatus(
+                "cooling-pad status requires machine-scoped support");
         }
 
         if (status.PerformanceOverride is { } performanceOverride
@@ -690,16 +721,8 @@ public static class IpcMessageCodec
                 throw new JsonException("Charge limits are invalid.");
             }
 
-            Span<int> sortedLimits = stackalloc int[value.Count];
-            int index = 0;
-            foreach (int limit in value)
-            {
-                sortedLimits[index++] = limit;
-            }
-            sortedLimits.Sort();
-
             writer.WriteStartArray();
-            foreach (int limit in sortedLimits)
+            foreach (int limit in value.Order())
             {
                 writer.WriteNumberValue(limit);
             }

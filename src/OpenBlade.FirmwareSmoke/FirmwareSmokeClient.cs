@@ -19,6 +19,10 @@ public interface IFirmwareSmokeClient : IAsyncDisposable
         PerformanceOverride? value,
         CancellationToken cancellationToken);
 
+    Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        CancellationToken cancellationToken);
+
     Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
         FanControlSettings? settings,
@@ -58,6 +62,11 @@ public sealed class FirmwareSmokeClient : IFirmwareSmokeClient
         PerformanceOverride? value,
         CancellationToken cancellationToken) =>
         client.SetPerformanceConfigurationOverrideAsync(value, cancellationToken);
+
+    public Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        CancellationToken cancellationToken) =>
+        client.SetHyperBoostAsync(enabled, cancellationToken);
 
     public Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,

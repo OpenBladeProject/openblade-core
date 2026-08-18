@@ -17,6 +17,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     private readonly TimeSpan exchangeTimeout;
     private readonly TimeSpan cleanupDrainTimeout;
     private readonly PendingDisposalRegistry pendingDisposals;
+    private readonly IKeyboardLightingFrameObserver frameObserver;
 
     internal ProductionLightingFactory(
         bool admitted,
@@ -26,7 +27,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
-        PendingDisposalRegistry? pendingDisposals = null)
+        PendingDisposalRegistry? pendingDisposals = null,
+        IKeyboardLightingFrameObserver? frameObserver = null)
     {
         this.admitted = admitted;
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
@@ -40,23 +42,39 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         this.exchangeTimeout = exchangeTimeout;
         this.cleanupDrainTimeout = cleanupDrainTimeout;
         this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
+        this.frameObserver = frameObserver
+            ?? UnavailableKeyboardLightingFrameObserver.Instance;
         Capabilities = ProductionLightingPort.CreateCapabilities(admitted);
     }
 
     public DeviceCapabilities Capabilities { get; }
 
     public static IProductionLightingPortFactory CreateWindows()
-        => CreateWindowsCore(compatibilityPolicy: null);
+        => CreateWindowsCore(
+            compatibilityPolicy: null,
+            UnavailableKeyboardLightingFrameObserver.Instance);
 
     internal static IProductionLightingPortFactory CreateWindows(
         FirmwareCompatibilityPolicy compatibilityPolicy)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
-        return CreateWindowsCore(compatibilityPolicy);
+        return CreateWindowsCore(
+            compatibilityPolicy,
+            UnavailableKeyboardLightingFrameObserver.Instance);
+    }
+
+    internal static IProductionLightingPortFactory CreateWindows(
+        FirmwareCompatibilityPolicy compatibilityPolicy,
+        IKeyboardLightingFrameObserver frameObserver)
+    {
+        ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        ArgumentNullException.ThrowIfNull(frameObserver);
+        return CreateWindowsCore(compatibilityPolicy, frameObserver);
     }
 
     private static IProductionLightingPortFactory CreateWindowsCore(
-        FirmwareCompatibilityPolicy? compatibilityPolicy)
+        FirmwareCompatibilityPolicy? compatibilityPolicy,
+        IKeyboardLightingFrameObserver frameObserver)
     {
         _ = ProductionLightingEvidenceSource.ReadValidatedOracle();
         return CreateWindows(
@@ -64,14 +82,16 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
                 ProductionLightingEvidenceSource
                     .IsProductionLightingImplementationApproved(),
             ControllerExclusivityPolicy.Advisory,
-            compatibilityPolicy);
+            compatibilityPolicy,
+            frameObserver);
     }
 
     public static IProductionLightingPortFactory CreateWindowsReadOnly() =>
         CreateWindows(
             admitted: false,
             ControllerExclusivityPolicy.Advisory,
-            compatibilityPolicy: null);
+            compatibilityPolicy: null,
+            UnavailableKeyboardLightingFrameObserver.Instance);
 
     internal static IProductionLightingPortFactory CreateWindowsReadOnly(
         FirmwareCompatibilityPolicy compatibilityPolicy)
@@ -80,7 +100,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         return CreateWindows(
             admitted: false,
             ControllerExclusivityPolicy.Advisory,
-            compatibilityPolicy);
+            compatibilityPolicy,
+            UnavailableKeyboardLightingFrameObserver.Instance);
     }
 
     /// <summary>
@@ -94,7 +115,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         return CreateWindows(
             admitted: true,
             ControllerExclusivityPolicy.Strict,
-            compatibilityPolicy: null);
+            compatibilityPolicy: null,
+            UnavailableKeyboardLightingFrameObserver.Instance);
     }
 
     public async Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
@@ -194,7 +216,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             timeProvider,
             exchangeTimeout,
             cleanupDrainTimeout,
-            pendingDisposals);
+            pendingDisposals,
+            frameObserver);
         if (admitted)
         {
             try
@@ -219,7 +242,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     private static IProductionLightingPortFactory CreateWindows(
         bool admitted,
         ControllerExclusivityPolicy exclusivityPolicy,
-        FirmwareCompatibilityPolicy? compatibilityPolicy)
+        FirmwareCompatibilityPolicy? compatibilityPolicy,
+        IKeyboardLightingFrameObserver frameObserver)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -283,7 +307,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout,
-            PendingDisposalRegistry.Shared);
+            PendingDisposalRegistry.Shared,
+            frameObserver);
     }
 
     private async Task DisposeActorBoundedAsync(ValidationActor actor) =>

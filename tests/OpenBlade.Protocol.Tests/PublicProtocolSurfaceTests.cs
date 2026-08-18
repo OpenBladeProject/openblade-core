@@ -156,7 +156,7 @@ public sealed class PublicProtocolSurfaceTests
         Dictionary<string, MethodInfo> methods = factoryType.GetMethods(
                 BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
             .ToDictionary(method => method.Name, StringComparer.Ordinal);
-        Assert.Equal(12, methods.Count);
+        Assert.Equal(13, methods.Count);
         Assert.Equal(typeof(IBatteryValidationRunFactory), methods["CreateWindows"].ReturnType);
         Assert.Equal(
             typeof(IBatteryQuerySequenceRunFactory),
@@ -176,6 +176,9 @@ public sealed class PublicProtocolSurfaceTests
         Assert.Equal(
             typeof(IPerformanceFanSetterValidationRunner),
             methods["CreateWindowsPerformanceFanSetterValidation"].ReturnType);
+        Assert.Equal(
+            typeof(IPerformanceFanSetterValidationRunner),
+            methods["CreateWindowsRz090581Bios400HyperBoostSetterValidation"].ReturnType);
         Assert.Equal(
             typeof(IProtectionOffValidationRunFactory),
             methods["CreateWindowsProtectionOffValidation"].ReturnType);

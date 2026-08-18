@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenBlade.Capture\OpenBlade.Capture.csproj" />
+    <ProjectReference Include="..\..\src\OpenBlade.Service\OpenBlade.Service.csproj" />
   </ItemGroup>
 
 </Project>

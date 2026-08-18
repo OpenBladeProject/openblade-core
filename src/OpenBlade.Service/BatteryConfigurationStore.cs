@@ -185,6 +185,7 @@ public sealed class BatteryConfigurationStore
         if (marker is null || marker.SchemaVersion is not (
                 ProfileStore.LegacySchemaVersion
                 or ProfileStore.LatestSupportedSchemaVersion
+                or ProfileStore.PriorSchemaVersion
                 or ProfileStore.EarliestSupportedSchemaVersion
                 or ProfileStore.EarlierSupportedSchemaVersion
                 or ProfileStore.OldestSupportedSchemaVersion
@@ -222,7 +223,8 @@ public sealed class BatteryConfigurationStore
                 "The profile and battery configuration marker schemas do not match.");
         }
 
-        bool preferencesMigrated = preferences.ProtectionEnabled.HasValue;
+        bool preferencesMigrated = preferences.ProtectionEnabled.HasValue
+            || marker.SchemaVersion != ProfileStore.CurrentSchemaVersion;
         preferences = preferences with { ProtectionEnabled = null };
         return new CommittedSnapshot(
             new BatteryConfiguration(profiles, preferences, Recovered: false),

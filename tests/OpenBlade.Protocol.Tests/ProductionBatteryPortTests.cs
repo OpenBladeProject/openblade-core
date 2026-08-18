@@ -759,6 +759,507 @@ public sealed class ProductionBatteryPortTests
                 Convert.ToHexString(command.Arguments.Span))).ToArray());
     }
 
+    [Fact]
+    public async Task HyperBoostPair_MapsTypedActiveStateWithoutPoisoningPort()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success([0xD0]));
+        await using var port = CreatePort(
+            session,
+            Catalog(Fixture(
+                ProductionBatteryPort.Limit80Action,
+                0x07,
+                0x12,
+                [0xD0])));
+
+        ProductionPerformanceFanState state =
+            await port.QueryPerformanceFanStateAsync(default);
+        await port.SetChargeLimitAsync(80, default);
+
+        Assert.True(state.HyperBoostActive);
+        Assert.Null(state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Equal(3, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task SetHyperBoost_EnableRequiresPadFullPowerBalancedAndVerifiesReadback()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x11, 0x11]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]));
+        var eligibility = new StubHyperBoostEligibility(padPresent: true);
+        await using var port = CreateHyperBoostPort(session, eligibility);
+
+        await port.SetHyperBoostAsync(enabled: true, default);
+
+        Assert.Equal(1, eligibility.ReadCount);
+        Assert.Equal(
+            [(0x0D, 0x82), (0x0D, 0x82), (0x07, 0x8C),
+             (0x0D, 0x02), (0x0D, 0x02), (0x0D, 0x82), (0x0D, 0x82)],
+            session.Commands.Select(command => (command.ClassId, command.CommandId)).ToArray());
+    }
+
+    [Fact]
+    public async Task SetHyperBoost_EnableFailsBeforeWriteWhenPadIsAbsent()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]));
+        await using var port = CreateHyperBoostPort(
+            session,
+            new StubHyperBoostEligibility(padPresent: false));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(enabled: true, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(2, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent)]
+    [InlineData(CoolingPadConnectionState.Ambiguous)]
+    [InlineData(CoolingPadConnectionState.ObservationFailed)]
+    public async Task SetHyperBoost_EnableRequiresFreshExactPadState(
+        CoolingPadConnectionState padState)
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]));
+        var eligibility = new StubHyperBoostEligibility(padState);
+        await using var port = CreateHyperBoostPort(session, eligibility);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(enabled: true, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(1, eligibility.ReadCount);
+        Assert.Equal(2, session.Commands.Count);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x02);
+    }
+
+    [Fact]
+    public async Task SetHyperBoost_EnableFailsBeforeWriteWithoutFullPowerAdapter()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x07, 0x11]));
+        await using var port = CreateHyperBoostPort(
+            session,
+            new StubHyperBoostEligibility(padPresent: true));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(enabled: true, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(3, session.Commands.Count);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x02);
+    }
+
+    [Fact]
+    public async Task SetHyperBoost_EnableRejectsNonBalancedBaselineBeforeEligibility()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x02, 0x00]),
+            Success([0x01, 0x02, 0x02, 0x00]));
+        var eligibility = new StubHyperBoostEligibility(padPresent: true);
+        await using var port = CreateHyperBoostPort(session, eligibility);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(enabled: true, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(0, eligibility.ReadCount);
+        Assert.Equal(2, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task SetHyperBoost_DisableOnlyRestoresBalancedAndVerifiesReadback()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]));
+        var eligibility = new StubHyperBoostEligibility(padPresent: false);
+        await using var port = CreateHyperBoostPort(session, eligibility);
+
+        await port.SetHyperBoostAsync(enabled: false, default);
+
+        Assert.Equal(0, eligibility.ReadCount);
+        Assert.Equal(
+            ["01010000", "01020000"],
+            session.Commands
+                .Where(command => command.CommandId == 0x02)
+                .Select(command => Convert.ToHexString(command.Arguments.Span))
+                .ToArray());
+        Assert.Equal(6, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task SetHyperBoost_DisableRejectsNonHyperBoostBaselineWithoutWrites()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x02, 0x00]),
+            Success([0x01, 0x02, 0x02, 0x00]));
+        await using var port = CreateHyperBoostPort(
+            session,
+            new StubHyperBoostEligibility(padPresent: false));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(enabled: false, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(2, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    [Theory]
+    [InlineData(
+        PerformancePreset.Silent,
+        ProductionBatteryPort.PerformanceSilentFirstAction,
+        ProductionBatteryPort.PerformanceSilentSecondAction,
+        (byte)0x05)]
+    [InlineData(
+        PerformancePreset.Performance,
+        ProductionBatteryPort.PerformanceBoostFirstAction,
+        ProductionBatteryPort.PerformanceBoostSecondAction,
+        (byte)0x02)]
+    public async Task SetHyperBoost_InjectedDirectBaseEnablesWithoutBalancedAndRestoresExactMode(
+        PerformancePreset baseMode,
+        string restoreFirstAction,
+        string restoreSecondAction,
+        byte baseCode)
+    {
+        byte[] baseFirst = [0x01, 0x01, baseCode, 0x00];
+        byte[] baseSecond = [0x01, 0x02, baseCode, 0x00];
+        var session = new ScriptedSession(
+            Success(baseFirst),
+            Success(baseSecond),
+            Success([0x11, 0x11]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success(baseFirst),
+            Success(baseSecond),
+            Success(baseFirst),
+            Success(baseSecond));
+        await using var port = CreateHyperBoostPort(
+            session,
+            new StubHyperBoostEligibility(padPresent: true),
+            Catalog(
+                Fixture(restoreFirstAction, 0x0D, 0x02, baseFirst),
+                Fixture(restoreSecondAction, 0x0D, 0x02, baseSecond)),
+            hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
+                baseMode == PerformancePreset.Silent
+                    ? DeviceFeatureAccess.ReadWrite
+                    : DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                baseMode == PerformancePreset.Performance
+                    ? DeviceFeatureAccess.ReadWrite
+                    : DeviceFeatureAccess.ObservedOnly));
+
+        await port.SetHyperBoostAsync(true, baseMode, default);
+        await port.SetHyperBoostAsync(false, baseMode, default);
+
+        string[] writes = session.Commands
+            .Where(command => command.CommandId == 0x02)
+            .Select(command => Convert.ToHexString(command.Arguments.Span))
+            .ToArray();
+        Assert.Equal(
+            ["01010700", "01020700", Convert.ToHexString(baseFirst), Convert.ToHexString(baseSecond)],
+            writes);
+        Assert.DoesNotContain("01010000", writes);
+        Assert.DoesNotContain("01020000", writes);
+    }
+
+    [Fact]
+    public async Task SetPerformance_BalancedRestoresHyperBoostAndStopsAfterVerifiedBaseline()
+    {
+        byte[] balancedFirst = [0x01, 0x01, 0x00, 0x00];
+        byte[] balancedSecond = [0x01, 0x02, 0x00, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success(balancedFirst),
+            Success(balancedSecond),
+            Success(balancedFirst),
+            Success(balancedSecond));
+        await using var port = CreateHyperBoostPort(
+            session,
+            new StubHyperBoostEligibility(padPresent: false),
+            Catalog(
+                Fixture(
+                    ProductionBatteryPort.PerformanceBalancedFirstAction,
+                    0x0D,
+                    0x02,
+                    balancedFirst),
+                Fixture(
+                    ProductionBatteryPort.PerformanceBalancedSecondAction,
+                    0x0D,
+                    0x02,
+                    balancedSecond)));
+
+        await port.SetPerformanceAsync(PerformancePreset.Balanced, default);
+
+        Assert.Equal(
+            [(0x82, "01010000"), (0x82, "01020000"),
+             (0x02, "01010000"), (0x02, "01020000"),
+             (0x82, "01010000"), (0x82, "01020000")],
+            session.Commands.Select(command => (
+                command.CommandId,
+                Convert.ToHexString(command.Arguments.Span))).ToArray());
+    }
+
+    [Fact]
+    public async Task SetPerformance_PerformanceRestoresHyperBoostBeforeApplyingAndVerifyingTarget()
+    {
+        byte[] balancedFirst = [0x01, 0x01, 0x00, 0x00];
+        byte[] balancedSecond = [0x01, 0x02, 0x00, 0x00];
+        byte[] targetFirst = [0x01, 0x01, 0x02, 0x00];
+        byte[] targetSecond = [0x01, 0x02, 0x02, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success(balancedFirst),
+            Success(balancedSecond),
+            Success(balancedFirst),
+            Success(balancedSecond),
+            Success(targetFirst),
+            Success(targetSecond),
+            Success(targetFirst),
+            Success(targetSecond));
+        await using var port = CreateHyperBoostPort(
+            session,
+            new StubHyperBoostEligibility(padPresent: false),
+            Catalog(
+                Fixture(
+                    ProductionBatteryPort.PerformanceBoostFirstAction,
+                    0x0D,
+                    0x02,
+                    targetFirst),
+                Fixture(
+                    ProductionBatteryPort.PerformanceBoostSecondAction,
+                    0x0D,
+                    0x02,
+                    targetSecond)));
+
+        await port.SetPerformanceAsync(PerformancePreset.Performance, default);
+
+        Assert.Equal(
+            ["01010000", "01020000", "01010200", "01020200"],
+            session.Commands
+                .Where(command => command.CommandId == 0x02)
+                .Select(command => Convert.ToHexString(command.Arguments.Span))
+                .ToArray());
+        Assert.Equal(10, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task SetPerformance_HyperBoostRestoreMismatchStopsBeforeTargetAndPoisonsPort()
+    {
+        byte[] balancedFirst = [0x01, 0x01, 0x00, 0x00];
+        byte[] balancedSecond = [0x01, 0x02, 0x00, 0x00];
+        byte[] targetFirst = [0x01, 0x01, 0x02, 0x00];
+        byte[] targetSecond = [0x01, 0x02, 0x02, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success(balancedFirst),
+            Success(balancedSecond),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]));
+        await using var port = CreateHyperBoostPort(
+            session,
+            new StubHyperBoostEligibility(padPresent: false),
+            Catalog(
+                Fixture(
+                    ProductionBatteryPort.PerformanceBoostFirstAction,
+                    0x0D,
+                    0x02,
+                    targetFirst),
+                Fixture(
+                    ProductionBatteryPort.PerformanceBoostSecondAction,
+                    0x0D,
+                    0x02,
+                    targetSecond)));
+
+        BladeWriteException failed = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Performance, default));
+        BladeWriteException poisoned = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Performance, default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failed.SubmissionState);
+        Assert.Equal(WriteSubmissionState.Indeterminate, poisoned.SubmissionState);
+        Assert.Equal(["01010000", "01020000"], session.Commands
+            .Where(command => command.CommandId == 0x02)
+            .Select(command => Convert.ToHexString(command.Arguments.Span))
+            .ToArray());
+        Assert.Equal(6, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task FanSettersRejectConfirmedHyperBoostWithoutWrites()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]));
+        await using var port = CreateHyperBoostPort(
+            session,
+            new StubHyperBoostEligibility(padPresent: false),
+            Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException automatic = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanModeAsync(FanMode.Automatic, default));
+        BladeWriteException fixedMode = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 3700, ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, automatic.SubmissionState);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, fixedMode.SubmissionState);
+        Assert.Equal(4, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    [Fact]
+    public async Task CustomPerformanceRestoresHyperBoostBeforeApplyingAndConfirmingTarget()
+    {
+        CustomPerformanceSettings target = new(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium);
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success([0x01, 0x01, 0x02]),
+            Success([0x01, 0x02, 0x01]),
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success([0x01, 0x01, 0x02]),
+            Success([0x01, 0x02, 0x01]));
+        await using var port = CreateHyperBoostPort(
+            session,
+            new StubHyperBoostEligibility(padPresent: false),
+            Catalog(CustomPerformanceFixtures()));
+
+        await port.SetCustomPerformanceAsync(target, default);
+
+        Assert.Equal(
+            ["01010000", "01020000", "01010400", "01020400"],
+            session.Commands
+                .Where(command => command.CommandId == 0x02)
+                .Select(command => Convert.ToHexString(command.Arguments.Span))
+                .ToArray());
+        Assert.Equal(14, session.Commands.Count);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(DeviceFeatureAccess.ObservedOnly)]
+    [InlineData(DeviceFeatureAccess.ReadOnly)]
+    public async Task NonWritableHyperBoostAccessNeverUsesRestorationFixture(
+        DeviceFeatureAccess? access)
+    {
+        byte[] targetFirst = [0x01, 0x01, 0x02, 0x00];
+        byte[] targetSecond = [0x01, 0x02, 0x02, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]));
+        await using var port = new ProductionBatteryPort(
+            session,
+            Catalog(
+                Fixture(
+                    ProductionBatteryPort.PerformanceBoostFirstAction,
+                    0x0D,
+                    0x02,
+                    targetFirst),
+                Fixture(
+                    ProductionBatteryPort.PerformanceBoostSecondAction,
+                    0x0D,
+                    0x02,
+                    targetSecond)),
+            NoTemporaryReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            hyperBoostAccess: access,
+            hyperBoostCatalog: HyperBoostCatalog());
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Performance, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(2, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    [Fact]
+    public void WritableHyperBoostRequiresFixtureAndPadEligibilityInvariant()
+    {
+        Assert.Throws<UnvalidatedCommandException>(() => new ProductionBatteryPort(
+            new ScriptedSession(),
+            DeviceCommandCatalog.Empty,
+            NoTemporaryReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite));
+
+        Assert.Throws<UnvalidatedCommandException>(() => new ProductionBatteryPort(
+            new ScriptedSession(),
+            DeviceCommandCatalog.Empty,
+            NoTemporaryReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostCatalog: HyperBoostCatalog()));
+
+        Assert.Throws<ArgumentException>(() => new ProductionBatteryPort(
+            new ScriptedSession(),
+            DeviceCommandCatalog.Empty,
+            NoTemporaryReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            hyperBoostAccess: DeviceFeatureAccess.ObservedOnly,
+            hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly)));
+
+        Assert.Throws<ArgumentException>(() => new ProductionBatteryPort(
+            new ScriptedSession(),
+            DeviceCommandCatalog.Empty,
+            NoTemporaryReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
+                (DeviceFeatureAccess)999,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly)));
+    }
+
     [Theory]
     [InlineData(
         PerformancePreset.BatterySaver,
@@ -1034,7 +1535,7 @@ public sealed class ProductionBatteryPortTests
     public async Task UnknownThermalPayload_FailsClosedWithoutSecondRead()
     {
         var session = new ScriptedSession(
-            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x01, 0x08, 0x00]),
             Success([0x01, 0x02, 0x00, 0x00]));
         await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
 
@@ -1383,8 +1884,67 @@ public sealed class ProductionBatteryPortTests
             admittedFanModes,
             admittedAdapterPowerStates);
 
+    private static ProductionBatteryPort CreateHyperBoostPort(
+        IRazerCommandSession session,
+        IHyperBoostEligibilitySource eligibility,
+        DeviceCommandCatalog? catalog = null,
+        HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null) => new(
+            session,
+            catalog ?? DeviceCommandCatalog.Empty,
+            NoTemporaryReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostBaseModes: hyperBoostBaseModes
+                ?? new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ObservedOnly),
+            hyperBoostCatalog: HyperBoostCatalog(),
+            hyperBoostEligibility: eligibility);
+
     private static DeviceCommandCatalog Catalog(params CapturedCommandFixture[] fixtures) =>
         DeviceCommandCatalog.Create(CapturedFixtureFile.TargetDevice, fixtures);
+
+    private static DeviceCommandCatalog HyperBoostCatalog()
+    {
+        var target = new DeviceIdentity("RZ09-0581", 0x1532, 0x02E0, "4.00");
+        return DeviceCommandCatalog.Create(
+            target,
+            [
+                HyperBoostFixture(
+                    target,
+                    ProductionBatteryPort.HyperBoostEnableFirstAction,
+                    [0x01, 0x01, 0x07, 0x00]),
+                HyperBoostFixture(
+                    target,
+                    ProductionBatteryPort.HyperBoostEnableSecondAction,
+                    [0x01, 0x02, 0x07, 0x00]),
+                HyperBoostFixture(
+                    target,
+                    ProductionBatteryPort.HyperBoostRestoreFirstAction,
+                    [0x01, 0x01, 0x00, 0x00]),
+                HyperBoostFixture(
+                    target,
+                    ProductionBatteryPort.HyperBoostRestoreSecondAction,
+                    [0x01, 0x02, 0x00, 0x00]),
+            ]);
+    }
+
+    private static CapturedCommandFixture HyperBoostFixture(
+        DeviceIdentity target,
+        string action,
+        byte[] payload) => new(
+            target,
+            action,
+            0x0D,
+            0x02,
+            payload,
+            Captured: true,
+            Decoded: true,
+            Applied: true,
+            ReadBack: true,
+            Restored: true);
 
     private static ProductionBatteryReadEvidence AcceptedTemporaryReadEvidence() => new(
         new HashSet<ProductionBatteryQueryCapability>
@@ -1558,6 +2118,31 @@ public sealed class ProductionBatteryPortTests
         {
             Disposition = RazerCommandSessionDisposition.FullyDisposed;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class StubHyperBoostEligibility : IHyperBoostEligibilitySource
+    {
+        private readonly CoolingPadConnectionState state;
+
+        internal StubHyperBoostEligibility(bool padPresent)
+            : this(padPresent
+                ? CoolingPadConnectionState.PresentExact
+                : CoolingPadConnectionState.Absent)
+        {
+        }
+
+        internal StubHyperBoostEligibility(CoolingPadConnectionState state)
+        {
+            this.state = state;
+        }
+
+        public int ReadCount { get; private set; }
+
+        public CoolingPadConnectionState ObserveCoolingPad()
+        {
+            ReadCount++;
+            return state;
         }
     }
 

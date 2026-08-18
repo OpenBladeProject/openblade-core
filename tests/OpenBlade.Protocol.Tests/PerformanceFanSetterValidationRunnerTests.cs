@@ -46,6 +46,24 @@ public sealed class PerformanceFanSetterValidationRunnerTests
             "01020300",
             ["01010600", "01020600"]
         },
+        {
+            PerformanceFanValidationTarget.HyperBoost,
+            "01010000",
+            "01020000",
+            ["01010700", "01020700"]
+        },
+        {
+            PerformanceFanValidationTarget.HyperBoostFromSilent,
+            "01010500",
+            "01020500",
+            ["01010700", "01020700"]
+        },
+        {
+            PerformanceFanValidationTarget.HyperBoostFromPerformance,
+            "01010200",
+            "01020200",
+            ["01010700", "01020700"]
+        },
     };
 
     [Theory]
@@ -97,6 +115,131 @@ public sealed class PerformanceFanSetterValidationRunnerTests
             Assert.Empty(result.CandidateFanRpmSamples);
             Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x88);
         }
+    }
+
+    [Fact]
+    public async Task RunAsync_SafetyGateRunsAfterBalancedBaselineAndBeforeAnyWrite()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+        var gate = new ScriptedSafetyGate(new(
+            FullPowerAdapterConfirmed: true,
+            CoolingPadPresentConfirmed: false,
+            CoolingPadOpaqueZeroConfirmed: false,
+            PerformanceFanValidationSafetyFailure.CoolingPadAbsent));
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: gate).RunAsync(
+                PerformanceFanValidationTarget.HyperBoost,
+                default);
+
+        Assert.Equal(1, gate.Calls);
+        Assert.Equal(PerformanceFanValidationFailure.OpenFailed, result.Failure);
+        Assert.Equal(
+            PerformanceFanValidationSafetyFailure.CoolingPadAbsent,
+            result.SafetyFailure);
+        Assert.True(result.FullPowerAdapterConfirmed);
+        Assert.False(result.ApplyAttempted);
+        Assert.Equal(4, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    [Fact]
+    public async Task RunAsync_SafetyGateConfirmationIsCarriedIntoSuccessfulResult()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+        var gate = new ScriptedSafetyGate(new(
+            FullPowerAdapterConfirmed: true,
+            CoolingPadPresentConfirmed: true,
+            CoolingPadOpaqueZeroConfirmed: true,
+            PerformanceFanValidationSafetyFailure.None));
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: gate).RunAsync(
+                PerformanceFanValidationTarget.HyperBoost,
+                default);
+
+        Assert.True(result.Success);
+        Assert.True(result.FullPowerAdapterConfirmed);
+        Assert.True(result.CoolingPadPresentConfirmed);
+        Assert.True(result.CoolingPadOpaqueZeroConfirmed);
+        Assert.Equal(1, gate.Calls);
+    }
+
+    [Theory]
+    [InlineData(
+        PerformanceFanValidationTarget.HyperBoostFromSilent,
+        "01010500",
+        "01020500")]
+    [InlineData(
+        PerformanceFanValidationTarget.HyperBoostFromPerformance,
+        "01010200",
+        "01020200")]
+    public async Task RunAsync_DirectBaseSafetyUsesTwoIdenticalRequestedBasePairs(
+        PerformanceFanValidationTarget target,
+        string baseline1,
+        string baseline2)
+    {
+        var session = new StatefulSession(baseline1, baseline2);
+        var gate = new ScriptedSafetyGate(new(
+            FullPowerAdapterConfirmed: true,
+            CoolingPadPresentConfirmed: true,
+            CoolingPadOpaqueZeroConfirmed: true,
+            PerformanceFanValidationSafetyFailure.None));
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: gate).RunAsync(target, default);
+
+        Assert.True(result.Success);
+        Assert.True(result.BaselineRequiredBaseModeConfirmed);
+        Assert.False(result.BaselineBalancedConfirmed);
+        Assert.True(result.FullPowerAdapterConfirmed);
+        Assert.True(result.CoolingPadPresentConfirmed);
+        Assert.True(result.CoolingPadOpaqueZeroConfirmed);
+        Assert.False(result.BalancedIntermediaryObserved);
+        Assert.Equal(1, gate.Calls);
+        Assert.Equal(4, session.Commands.Take(4).Count(command =>
+            command.CommandId == 0x82));
+
+        string[] writes = session.Commands
+            .Where(command => command.CommandId is 0x01 or 0x02)
+            .Select(command => Convert.ToHexString(command.Arguments.Span))
+            .ToArray();
+        Assert.Equal(["01010700", "01020700", baseline1, baseline2], writes);
+        Assert.DoesNotContain("01010000", writes);
+        Assert.DoesNotContain("01020000", writes);
+    }
+
+    [Fact]
+    public async Task RunAsync_SafetyGateRequiresTwoIdenticalBalancedPairs()
+    {
+        var session = new StatefulSession(
+            "01010000",
+            "01020000",
+            stateAfterFirstThermalPair1: "01010500",
+            stateAfterFirstThermalPair2: "01020500");
+        var gate = new ScriptedSafetyGate(new(
+            FullPowerAdapterConfirmed: true,
+            CoolingPadPresentConfirmed: true,
+            CoolingPadOpaqueZeroConfirmed: true,
+            PerformanceFanValidationSafetyFailure.None));
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: gate).RunAsync(
+                PerformanceFanValidationTarget.HyperBoost,
+                default);
+
+        Assert.Equal(
+            PerformanceFanValidationFailure.BaselinePairMismatch,
+            result.Failure);
+        Assert.Equal(0, gate.Calls);
+        Assert.False(result.ApplyAttempted);
+        Assert.DoesNotContain(
+            session.Commands,
+            command => command.CommandId is 0x01 or 0x02);
     }
 
     [Theory]
@@ -261,6 +404,46 @@ public sealed class PerformanceFanSetterValidationRunnerTests
     }
 
     [Theory]
+    [InlineData("01010500", "01020500")]
+    [InlineData("01010200", "01020200")]
+    [InlineData("01010300", "01020300")]
+    [InlineData("01010600", "01020600")]
+    public async Task RunAsync_HyperBoostRequiresBalancedAutomaticBaseline(
+        string first,
+        string second)
+    {
+        var session = new StatefulSession(first, second);
+
+        PerformanceFanSetterValidationResult result = await Runner(session)
+            .RunAsync(PerformanceFanValidationTarget.HyperBoost, default);
+
+        Assert.Equal(
+            PerformanceFanValidationFailure.BaselineNotBalanced,
+            result.Failure);
+        Assert.False(result.ApplyAttempted);
+        Assert.DoesNotContain(
+            session.Commands,
+            command => command.CommandId is 0x01 or 0x02);
+    }
+
+    [Fact]
+    public async Task RunAsync_HyperBoostBaselineIsNeverUsedForAnotherTarget()
+    {
+        var session = new StatefulSession("01010700", "01020700");
+
+        PerformanceFanSetterValidationResult result = await Runner(session)
+            .RunAsync(PerformanceFanValidationTarget.Silent, default);
+
+        Assert.Equal(
+            PerformanceFanValidationFailure.BaselinePairMismatch,
+            result.Failure);
+        Assert.False(result.ApplyAttempted);
+        Assert.DoesNotContain(
+            session.Commands,
+            command => command.CommandId is 0x01 or 0x02);
+    }
+
+    [Theory]
     [InlineData("01010001", "01020001")]
     [InlineData("01010401", "01020401")]
     [InlineData("01010000", "01020200")]
@@ -310,7 +493,8 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         IRazerCommandSession session,
         int maximumSamples = 3,
         int stateCheckEverySamples = 3,
-        TimeSpan? sampleInterval = null) => new(
+        TimeSpan? sampleInterval = null,
+        IPerformanceFanValidationSafetyGate? safetyGate = null) => new(
         static () => new ValidationRunContext(),
         new ActorFactory(new ValidationActor(
             session,
@@ -322,7 +506,24 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         new PendingDisposalRegistry(),
         fixedFanSampleInterval: sampleInterval ?? TimeSpan.Zero,
         fixedFanMaximumSamples: maximumSamples,
-        fixedFanStateCheckEverySamples: stateCheckEverySamples);
+        fixedFanStateCheckEverySamples: stateCheckEverySamples,
+        safetyGate: safetyGate);
+
+    private sealed class ScriptedSafetyGate(
+        PerformanceFanValidationSafetyGateResult result)
+        : IPerformanceFanValidationSafetyGate
+    {
+        public int Calls { get; private set; }
+
+        public Task<PerformanceFanValidationSafetyGateResult> ValidateAsync(
+            ValidationRunContext context,
+            IRazerCommandSession session,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(result);
+        }
+    }
 
     private sealed class ActorFactory(ValidationActor actor) : IValidationActorFactory
     {
@@ -340,13 +541,16 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         int? failFanSelector = null,
         IReadOnlyList<FanRpmReadings>? fanRpmSamples = null,
         int? loseFixedStateAfterCompletedFanSamples = null,
-        Action? afterCompletedFanSample = null) : IRazerCommandSession
+        Action? afterCompletedFanSample = null,
+        string? stateAfterFirstThermalPair1 = null,
+        string? stateAfterFirstThermalPair2 = null) : IRazerCommandSession
     {
         private readonly byte[][] baseline =
             [Convert.FromHexString(firstHex), Convert.FromHexString(secondHex)];
         private readonly byte[][] state =
             [Convert.FromHexString(firstHex), Convert.FromHexString(secondHex)];
         private int completedFanSamples;
+        private int completedThermalPairs;
         private int writeCount;
 
         internal List<RazerCommandSpec> Commands { get; } = [];
@@ -370,6 +574,18 @@ public sealed class PerformanceFanSetterValidationRunnerTests
                     && !command.PayloadValidator(response))
                 {
                     return Failure(HidSessionFailureKind.ProtocolFailure);
+                }
+
+                if (index == 1)
+                {
+                    completedThermalPairs++;
+                    if (completedThermalPairs == 1
+                        && stateAfterFirstThermalPair1 is not null
+                        && stateAfterFirstThermalPair2 is not null)
+                    {
+                        state[0] = Convert.FromHexString(stateAfterFirstThermalPair1);
+                        state[1] = Convert.FromHexString(stateAfterFirstThermalPair2);
+                    }
                 }
 
                 return Success(response);

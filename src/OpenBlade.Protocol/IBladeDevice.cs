@@ -58,6 +58,16 @@ public interface IBladeDevice
 
     Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken);
 
+    Task SetHyperBoostAsync(bool enabled, CancellationToken cancellationToken) =>
+        Task.FromException(new CapabilityUnavailableException(
+            "HyperBoost control is unavailable."));
+
+    Task SetHyperBoostAsync(
+        bool enabled,
+        PerformancePreset baseMode,
+        CancellationToken cancellationToken) =>
+        SetHyperBoostAsync(enabled, cancellationToken);
+
     Task SetPerformanceAsync(
         PerformancePreset value,
         CustomPerformanceSettings? customPerformance,

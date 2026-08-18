@@ -1,4 +1,5 @@
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
@@ -77,6 +78,85 @@ public sealed class WindowsHidEnumeratorTests
             parameters));
         Assert.Equal(0, native.BindCalls);
         Assert.All([first, second, production], handle => Assert.True(handle.FileHandle.IsClosed));
+    }
+
+    [Fact]
+    public void HyperBoostEligibility_RequiresExactCoolingPadCollection()
+    {
+        DiagnosticNative native = new();
+        native.Add("wrong-geometry", new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 375));
+        var source = new WindowsHyperBoostEligibilitySource(native);
+
+        Assert.Equal(
+            CoolingPadConnectionState.Absent,
+            source.ObserveCoolingPad());
+
+        native.Add(
+            "wrong-revision",
+            new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 91, 0x0201));
+
+        Assert.Equal(
+            CoolingPadConnectionState.Absent,
+            source.ObserveCoolingPad());
+
+        native.Add(
+            "exact-pad",
+            new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 91, 0x0200));
+
+        Assert.Equal(
+            CoolingPadConnectionState.PresentExact,
+            source.ObserveCoolingPad());
+        Assert.Equal(3, native.EnumerateCalls);
+        Assert.Equal(0, native.BindCalls);
+    }
+
+    [Fact]
+    public void CoolingPadDiscovery_DistinguishesAbsentExactAndAmbiguous()
+    {
+        DiagnosticNative native = new();
+        var source = new WindowsCoolingPadDiscoverySource(native);
+
+        Assert.Equal(CoolingPadConnectionState.Absent, source.Observe());
+
+        native.Add(
+            "wrong-revision",
+            new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 91, 0x0201));
+        Assert.Equal(CoolingPadConnectionState.Absent, source.Observe());
+
+        native.Add(
+            "exact-pad",
+            new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 91, 0x0200));
+        Assert.Equal(CoolingPadConnectionState.PresentExact, source.Observe());
+
+        native.Add(
+            "second-pad",
+            new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 91, 0x0200));
+        Assert.Equal(CoolingPadConnectionState.Ambiguous, source.Observe());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void CoolingPadDiscovery_TargetMetadataFailureIsNotReportedAsAbsence(
+        bool openFailure)
+    {
+        DiagnosticNative native = new();
+        const string targetPath = @"\\?\hid#vid_1532&pid_0f43&mi_00#test";
+        native.Add(
+            targetPath,
+            new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 91, 0x0200));
+        if (openFailure)
+        {
+            native.OpenFailures.Add(targetPath);
+        }
+        else
+        {
+            native.ReadFailures.Add(targetPath);
+        }
+
+        var source = new WindowsCoolingPadDiscoverySource(native);
+
+        Assert.Equal(CoolingPadConnectionState.ObservationFailed, source.Observe());
     }
 
     private sealed class DiagnosticNative : IHidCandidateNative

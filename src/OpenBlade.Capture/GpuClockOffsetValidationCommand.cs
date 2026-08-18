@@ -46,6 +46,13 @@ internal interface IGpuClockOffsetValidationController
     void Set(GpuClockOffsetValidationSettings settings);
 }
 
+internal enum SynapseActivityObservation
+{
+    Inactive,
+    Active,
+    ObservationFailed,
+}
+
 internal static class GpuClockOffsetValidationEnvironment
 {
     internal const string Confirmation =
@@ -107,13 +114,75 @@ internal static class GpuClockOffsetValidationEnvironment
         }
     }
 
+    internal static bool HasOneExactCoolingPadControlCollection()
+    {
+        try
+        {
+            HidInterfaceInfo[] controlCollections = WindowsHidEnumerator
+                .FindCollections(0x1532, 0x0F43)
+                .Where(collection =>
+                    collection.UsagePage == 0x000C
+                    && collection.Usage == 0x0001
+                    && collection.FeatureReportByteLength == 91)
+                .ToArray();
+            return controlCollections.Length == 1
+                && controlCollections[0].VersionNumber ==
+                    WindowsCoolingPadDiscoverySource.VersionNumber;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     internal static bool IsSynapseInactive() =>
-        HasNoProcess("RazerAppEngine")
-        && HasNoProcess("GameManagerService3")
-        && HasNoProcess("razer_elevation_service");
+        ObserveSynapseActivity() == SynapseActivityObservation.Inactive;
+
+    internal static SynapseActivityObservation ObserveSynapseActivity()
+    {
+        bool active = false;
+        foreach (string name in new[]
+        {
+            "RazerAppEngine",
+            "GameManagerService3",
+            "razer_elevation_service",
+        })
+        {
+            Process[] processes;
+            try
+            {
+                processes = Process.GetProcessesByName(name);
+            }
+            catch
+            {
+                return SynapseActivityObservation.ObservationFailed;
+            }
+
+            try
+            {
+                active |= processes.Length > 0;
+            }
+            finally
+            {
+                foreach (Process process in processes)
+                {
+                    process.Dispose();
+                }
+            }
+        }
+
+        return active
+            ? SynapseActivityObservation.Active
+            : SynapseActivityObservation.Inactive;
+    }
 
     internal static bool IsOpenBladeServiceInactive() =>
         HasNoProcess("OpenBlade.Service");
+
+    internal static bool IsUsbCaptureInactive() =>
+        HasNoProcess("USBPcapCMD")
+        && HasNoProcess("dumpcap")
+        && HasNoProcess("tshark");
 
     internal static bool AreGpuTuningToolsInactive() =>
         HasNoProcess("MSIAfterburner")

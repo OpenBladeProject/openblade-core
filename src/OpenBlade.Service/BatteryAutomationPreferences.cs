@@ -3,7 +3,7 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
 
-// ProtectionEnabled is read only while migrating schema 1-10 configuration.
+// ProtectionEnabled is read only while migrating older configuration schemas.
 // Current-schema writes omit it because PowerProfile owns the setting.
 public sealed record BatteryAutomationPreferences(
     [property: JsonPropertyName("protectionEnabled")]
@@ -14,7 +14,11 @@ public sealed record BatteryAutomationPreferences(
     KeyboardLightingControlMode KeyboardLightingControlMode =
         KeyboardLightingControlMode.OpenBlade,
     bool AllowUntestedFirmware = false,
-    LightingRefreshRate LightingRefreshRate = LightingRefreshRate.ThirtyHz);
+    LightingRefreshRate LightingRefreshRate = LightingRefreshRate.ThirtyHz,
+    CoolingPadFanIntent? CoolingPadFanIntent = null,
+    bool AllowExternalCoolingDemand = false,
+    bool CoolingPadLightingSyncEnabled = false,
+    bool CoolingPadLightingRecoveryRequired = false);
 
 public sealed record BatteryConfiguration(
     ProfileSet Profiles,

@@ -84,9 +84,125 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
-    public void Rz090581AdapterAdmission_ScopesOptionalClassesToExactEvidence()
+    public void Rz090581HyperBoostAccess_IsModelScopedAcrossFirmware()
     {
-        AdapterPowerState[] modelScopedExpected =
+        Assert.Equal(
+            DeviceFeatureAccess.ReadOnly,
+            ProductionBatteryFactory.GetRz090581HyperBoostAccess(
+                ExactRz090581Identity("3.01")));
+        Assert.Equal(
+            DeviceFeatureAccess.ReadOnly,
+            ProductionBatteryFactory.GetRz090581HyperBoostAccess(
+                ExactRz090581Identity("4.00")));
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            ProductionBatteryFactory.GetRz090581HyperBoostAccess(
+                ExactRz090581Identity("3.01"),
+                reversibleWritesAdmitted: true));
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            ProductionBatteryFactory.GetRz090581HyperBoostAccess(
+                ExactRz090581Identity(
+                    "99.99",
+                    HostFirmwareCompatibility.ModelScoped),
+                reversibleWritesAdmitted: true));
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            ProductionBatteryFactory.GetRz090581HyperBoostAccess(
+                ExactRz090581Identity(
+                    "99.99",
+                    HostFirmwareCompatibility.UntestedBlocked),
+                reversibleWritesAdmitted: true));
+        Assert.Null(ProductionBatteryFactory.GetRz090581HyperBoostAccess(
+            new HostIdentityReadResult(null, HidSessionFailureKind.IdentityBlocked)));
+        Assert.Null(ProductionBatteryFactory.GetRz090581HyperBoostAccess(new(
+            new HostIdentityEvidence(
+                "Razer",
+                "Blade 16 - RZ09-0528",
+                "RZ09-05289EN4",
+                "4.00"),
+            null,
+            HostFirmwareCompatibility.Tested)));
+    }
+
+    [Fact]
+    public void Rz090581HyperBoostBaseModes_AdmitOnlyValidatedBalancedTransition()
+    {
+        HyperBoostBaseModeCapabilities capabilities =
+            Assert.IsType<HyperBoostBaseModeCapabilities>(
+                ProductionBatteryFactory.GetRz090581HyperBoostBaseModeCapabilities(
+                    ExactRz090581Identity("4.00")));
+
+        Assert.Equal(DeviceFeatureAccess.ObservedOnly, capabilities.Silent);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, capabilities.Balanced);
+        Assert.Equal(DeviceFeatureAccess.ObservedOnly, capabilities.Performance);
+        Assert.Equal(
+            capabilities,
+            ProductionBatteryFactory.GetRz090581HyperBoostBaseModeCapabilities(
+                ExactRz090581Identity("3.01")));
+        Assert.Equal(
+            capabilities,
+            ProductionBatteryFactory.GetRz090581HyperBoostBaseModeCapabilities(
+                ExactRz090581Identity(
+                    "99.99",
+                    HostFirmwareCompatibility.ModelScoped)));
+    }
+
+    [Fact]
+    public void Rz090581CoolingPadSupport_IsMachineScopedAndBiosIndependent()
+    {
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            ProductionBatteryFactory.GetRz090581CoolingPadSupportAccess(
+                ExactRz090581Identity("3.01")));
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            ProductionBatteryFactory.GetRz090581CoolingPadSupportAccess(
+                ExactRz090581Identity("4.00")));
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            ProductionBatteryFactory.GetRz090581CoolingPadSupportAccess(
+                ExactRz090581Identity(
+                    "99.99",
+                    HostFirmwareCompatibility.UntestedAllowed)));
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            ProductionBatteryFactory.GetRz090581CoolingPadSupportAccess(
+                ExactRz090581Identity(
+                    "99.99",
+                    HostFirmwareCompatibility.UntestedBlocked)));
+        Assert.Null(ProductionBatteryFactory.GetRz090581CoolingPadSupportAccess(
+            new HostIdentityReadResult(null, HidSessionFailureKind.IdentityBlocked)));
+        Assert.Null(ProductionBatteryFactory.GetRz090581CoolingPadSupportAccess(new(
+            new HostIdentityEvidence(
+                "Razer",
+                "Blade 16 - RZ09-0528",
+                "RZ09-05289EN4",
+                "4.00"),
+            null,
+            HostFirmwareCompatibility.Tested)));
+        Assert.Null(ProductionBatteryFactory.GetRz090581CoolingPadSupportAccess(new(
+            new HostIdentityEvidence(
+                "Other",
+                "Blade 16 - RZ09-0581",
+                "RZ09-05819EN4",
+                "4.00"),
+            null,
+            HostFirmwareCompatibility.Tested)));
+        Assert.Null(ProductionBatteryFactory.GetRz090581CoolingPadSupportAccess(new(
+            new HostIdentityEvidence(
+                "Razer",
+                "Blade 16 - RZ09-0581",
+                "RZ09-05810THER",
+                "4.00"),
+            null,
+            HostFirmwareCompatibility.Tested)));
+    }
+
+    [Fact]
+    public void Rz090581AdapterAdmission_Adds330WOnlyForExactAdmittedTarget()
+    {
+        AdapterPowerState[] expected =
         [
             AdapterPowerState.UsbCPower100W,
             AdapterPowerState.FullPower280W,
@@ -99,19 +215,21 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         ];
 
         Assert.Equal(
-            modelScopedExpected,
+            expected,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
                 ExactRz090581Identity("3.01")).Order().ToArray());
         Assert.Equal(
-            modelScopedExpected,
+            expected,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
                 ExactRz090581Identity("4.00")).Order().ToArray());
         Assert.Equal(
-            modelScopedExpected,
+            expected,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
                 ExactRz090581Identity(
                     "99.99",
-                    HostFirmwareCompatibility.ModelScoped)).Order().ToArray());
+                    HostFirmwareCompatibility.UntestedAllowed))
+                .Order()
+                .ToArray());
         Assert.DoesNotContain(
             AdapterPowerState.FullPower330W,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(new(
@@ -240,6 +358,7 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         {
             SupportsEnableDisable = true,
         };
+        DeviceFeatureAccess hyperBoostAccess = DeviceFeatureAccess.ObservedOnly;
         PowerSourceBehaviorObservation[] sourceBehaviors =
         [
             new(
@@ -256,7 +375,9 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             cpuPowerLimitCapabilities: cpuPowerLimit,
             cpuVoltageOptimizerCapabilities: cpuVoltageOptimizer,
             gpuOverclockCapabilities: gpuOverclock,
-            observedPowerSourceBehaviors: sourceBehaviors);
+            observedPowerSourceBehaviors: sourceBehaviors,
+            hyperBoostAccess: hyperBoostAccess,
+            coolingPadSupportAccess: DeviceFeatureAccess.ObservedOnly);
 
         await using IProductionBatteryPort port = Assert.IsAssignableFrom<IProductionBatteryPort>(
             (await factory.OpenAsync(default)).Value);
@@ -266,6 +387,12 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             factory.Capabilities.CpuVoltageOptimizer,
             port.Capabilities.CpuVoltageOptimizer);
         Assert.Equal(factory.Capabilities.GpuOverclock, port.Capabilities.GpuOverclock);
+        Assert.Equal(
+            factory.Capabilities.HyperBoostAccess,
+            port.Capabilities.HyperBoostAccess);
+        Assert.Equal(
+            factory.Capabilities.CoolingPadSupportAccess,
+            port.Capabilities.CoolingPadSupportAccess);
         Assert.Equal(
             factory.Capabilities.ObservedPowerSourceBehaviors,
             port.Capabilities.ObservedPowerSourceBehaviors);
@@ -401,7 +528,9 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
-        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null) =>
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
+        DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? coolingPadSupportAccess = null) =>
         Factory(
             _ => actors,
             createContext,
@@ -409,7 +538,9 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             cpuPowerLimitCapabilities,
             cpuVoltageOptimizerCapabilities,
             gpuOverclockCapabilities,
-            observedPowerSourceBehaviors);
+            observedPowerSourceBehaviors,
+            hyperBoostAccess,
+            coolingPadSupportAccess);
 
     private static ProductionBatteryFactory Factory(
         Func<TimeSpan, IValidationActorFactory> createActors,
@@ -418,7 +549,9 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
-        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null) => new(
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
+        DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? coolingPadSupportAccess = null) => new(
             catalog ?? DeviceCommandCatalog.Empty,
             ProductionBatteryReadEvidence.Production,
             createContext ?? (static () => new ValidationRunContext()),
@@ -430,7 +563,9 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             cpuPowerLimitCapabilities: cpuPowerLimitCapabilities,
             cpuVoltageOptimizerCapabilities: cpuVoltageOptimizerCapabilities,
             gpuOverclockCapabilities: gpuOverclockCapabilities,
-            observedPowerSourceBehaviors: observedPowerSourceBehaviors);
+            observedPowerSourceBehaviors: observedPowerSourceBehaviors,
+            hyperBoostAccess: hyperBoostAccess,
+            coolingPadSupportAccess: coolingPadSupportAccess);
 
     private static DeviceCommandCatalog Limit80Catalog() => DeviceCommandCatalog.Create(
         CapturedFixtureFile.TargetDevice,

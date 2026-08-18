@@ -9,6 +9,7 @@ public sealed class Worker(
     MachineProfileBootstrapper profileBootstrapper,
     PersistentOverrideStore overrideStore,
     ServiceRunMarkerStore runMarkerStore,
+    IServiceOwnershipJournalCleaner ownershipJournalCleaner,
     IPowerStateProvider powerStateProvider,
     IServiceLifecycleEventSource lifecycleEventSource,
     LowPowerGate lowPowerGate,
@@ -25,6 +26,7 @@ public sealed class Worker(
             profileBootstrapper,
             overrideStore,
             runMarkerStore,
+            ownershipJournalCleaner,
             runtime,
             powerStateProvider,
             logger);

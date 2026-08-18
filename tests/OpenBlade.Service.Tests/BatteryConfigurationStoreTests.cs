@@ -103,7 +103,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task LoadAsync_MigratesSchema13WithoutLightingRefreshRateToThirtyHz()
+    public async Task LoadAsync_MigratesSchema14WithCoolingPadDefaults()
     {
         Paths paths = CreatePaths();
         Directory.CreateDirectory(directory);
@@ -140,6 +140,10 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.Equal(
             LightingRefreshRate.ThirtyHz,
             loaded.Preferences.LightingRefreshRate);
+        Assert.Null(loaded.Preferences.CoolingPadFanIntent);
+        Assert.False(loaded.Preferences.AllowExternalCoolingDemand);
+        Assert.False(loaded.Preferences.CoolingPadLightingSyncEnabled);
+        Assert.False(loaded.Preferences.CoolingPadLightingRecoveryRequired);
         using JsonDocument persistedProfiles = JsonDocument.Parse(
             await File.ReadAllBytesAsync(paths.Profiles));
         using JsonDocument persistedPreferences = JsonDocument.Parse(
@@ -167,6 +171,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             Hash(await File.ReadAllBytesAsync(paths.Preferences)),
             persistedMarker.RootElement.GetProperty("preferencesSha256").GetString());
     }
+
 
     [Theory]
     [InlineData(0, PerformancePreset.BatterySaver)]

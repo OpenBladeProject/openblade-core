@@ -6,6 +6,7 @@ public sealed class ServiceStartupCoordinator(
     MachineProfileBootstrapper profileBootstrapper,
     PersistentOverrideStore overrideStore,
     ServiceRunMarkerStore runMarkerStore,
+    IServiceOwnershipJournalCleaner ownershipJournalCleaner,
     IServiceControlRuntime runtime,
     IPowerStateProvider powerStateProvider,
     ILogger logger)
@@ -34,6 +35,11 @@ public sealed class ServiceStartupCoordinator(
             .ConfigureAwait(false);
         bool recoveringUnexpectedExit =
             startupKind == ServiceStartupKind.UnexpectedExitRecovery;
+        if (!recoveringUnexpectedExit)
+        {
+            await ownershipJournalCleaner.ClearAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
         if (recoveringUnexpectedExit)
         {
             logger.LogWarning(

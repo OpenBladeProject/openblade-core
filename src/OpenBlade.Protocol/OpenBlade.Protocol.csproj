@@ -18,6 +18,15 @@
       Include="Fixtures\Rz09_0581_02e0_3_01_BatteryProduction.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_BatteryProduction.json" />
     <EmbeddedResource
+      Include="Fixtures\Rz09_0581_02e0_4_00_HyperBoostProduction.json"
+      LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_HyperBoostProduction.json" />
+    <EmbeddedResource
+      Include="Fixtures\Rz09_0581_02e0_4_00_HyperBoostBaseModesAdmission.json"
+      LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_HyperBoostBaseModesAdmission.json" />
+    <EmbeddedResource
+      Include="Fixtures\Rz09_0581_0f43_CoolingPadSemanticAdmission.json"
+      LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_0f43_CoolingPadSemanticAdmission.json" />
+    <EmbeddedResource
       Include="Fixtures\Rz09_0581_02e0_3_01_LightingProduction.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_LightingProduction.json" />
     <EmbeddedResource

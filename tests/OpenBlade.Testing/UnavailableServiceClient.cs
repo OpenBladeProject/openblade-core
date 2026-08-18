@@ -38,6 +38,42 @@ internal abstract class UnavailableServiceClient : IServiceClient
         CancellationToken token) =>
         Unavailable("Performance overrides are unavailable.");
 
+    public virtual Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        CancellationToken token) =>
+        Unavailable("HyperBoost control is unavailable.");
+
+    public virtual Task<ControlOperationResult> SetCoolingPadFanIntentAsync(
+        CoolingPadFanIntent intent,
+        CancellationToken token) =>
+        Unavailable("Cooling-pad fan intent is unavailable.");
+
+    public virtual Task<ControlOperationResult> SetCoolingDemandLeaseAsync(
+        Guid leaseId,
+        CoolingDemandLevel demand,
+        TimeSpan lifetime,
+        CancellationToken token) =>
+        Unavailable("External cooling demand is unavailable.");
+
+    public virtual Task<ControlOperationResult> ReleaseCoolingDemandLeaseAsync(
+        Guid leaseId,
+        CancellationToken token) =>
+        Unavailable("External cooling demand is unavailable.");
+
+    public virtual Task<ControlOperationResult> SetCoolingDemandApiEnabledAsync(
+        bool enabled,
+        CancellationToken token) =>
+        Unavailable("The cooling-demand API is unavailable.");
+
+    public virtual Task<ControlOperationResult> SetCoolingPadLightingSyncAsync(
+        bool enabled,
+        CancellationToken token) =>
+        Unavailable("Cooling-pad lighting synchronization is unavailable.");
+
+    public virtual Task<ControlOperationResult> AcknowledgeCoolingPadLightingRecoveryAsync(
+        CancellationToken token) =>
+        Unavailable("Cooling-pad lighting recovery acknowledgement is unavailable.");
+
     public virtual Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
         PerformanceOverride? value,
         CancellationToken token) => value is { Value: PerformancePreset.Custom }

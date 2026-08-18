@@ -1,0 +1,50 @@
+[
+  {
+    "device": { "model": "RZ09-0581", "vendorId": 5426, "productId": 736, "biosVersion": "4.00" },
+    "action": "hyperboost-enable-channel-1",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQEHAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": { "model": "RZ09-0581", "vendorId": 5426, "productId": 736, "biosVersion": "4.00" },
+    "action": "hyperboost-enable-channel-2",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQIHAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": { "model": "RZ09-0581", "vendorId": 5426, "productId": 736, "biosVersion": "4.00" },
+    "action": "hyperboost-restore-balanced-channel-1",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQEAAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": { "model": "RZ09-0581", "vendorId": 5426, "productId": 736, "biosVersion": "4.00" },
+    "action": "hyperboost-restore-balanced-channel-2",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQIAAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  }
+]

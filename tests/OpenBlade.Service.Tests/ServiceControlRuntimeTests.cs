@@ -592,6 +592,412 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
     }
 
+    [Fact]
+    public async Task UnexpectedRestart_DisablesSavedCoolingPadLightingWithoutPadWrite()
+    {
+        var coordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            coolingPadLightingCoordinator: coordinator);
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        await context.Store.SaveConfigurationAsync(
+            configuration.Profiles,
+            configuration.Preferences with
+            {
+                CoolingPadLightingSyncEnabled = true,
+            },
+            CancellationToken.None);
+        configuration = await context.Store.LoadAsync(CancellationToken.None);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.False((await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadLightingSyncEnabled);
+        Assert.True((await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadLightingRecoveryRequired);
+        Assert.True(context.Runtime.GetStatus().CoolingPad!.LightingRecoveryRequired);
+        Assert.DoesNotContain(true, coordinator.EnabledValues);
+        Assert.False(coordinator.Snapshot.Enabled);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_DeferredUserLightingPreferenceIsClearedWithoutPadWrite()
+    {
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var userPreferences = new BatteryAutomationPreferences(
+            CoolingPadLightingSyncEnabled: true);
+        IUserConfigurationRepository repository = CreateUserConfigurationRepository(
+            userSid,
+            userPreferences);
+        var coordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            userConfigurationRepository: repository,
+            coolingPadLightingCoordinator: coordinator);
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+
+        Assert.False((await CreateUserConfigurationStore(userSid)
+                .LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadLightingSyncEnabled);
+        Assert.True((await CreateUserConfigurationStore(userSid)
+                .LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadLightingRecoveryRequired);
+        Assert.DoesNotContain(true, coordinator.EnabledValues);
+        Assert.False(coordinator.Snapshot.Enabled);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_LightingPreferenceSaveFailureRetainsRecoveryMarker()
+    {
+        bool rejectSave = false;
+        var coordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            transactionBoundary: (boundary, _) =>
+            {
+                if (rejectSave
+                    && boundary is BatteryConfigurationCommitBoundary.BeforeProfileReplacement)
+                {
+                    throw new IOException("configuration write failed");
+                }
+
+                return Task.CompletedTask;
+            },
+            coolingPadLightingCoordinator: coordinator);
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        await context.Store.SaveConfigurationAsync(
+            configuration.Profiles,
+            configuration.Preferences with
+            {
+                CoolingPadLightingSyncEnabled = true,
+            },
+            CancellationToken.None);
+        configuration = await context.Store.LoadAsync(CancellationToken.None);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        rejectSave = true;
+
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.True(status.WritesBlocked);
+        Assert.Contains("could not be cleared", status.Message);
+        Assert.True((await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadLightingSyncEnabled);
+        Assert.DoesNotContain(true, coordinator.EnabledValues);
+
+        ControlOperationResult shutdown = await context.Runtime.PrepareForShutdownAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, shutdown.Status);
+        Assert.Contains("run marker", shutdown.Message);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_RestoresJournaledActiveHyperBoostOnce()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.OwnedConfirmed,
+                PerformancePreset.Balanced,
+                DateTimeOffset.UtcNow),
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostOwnershipJournalStore: journal);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            Lighting: null)
+        {
+            HyperBoostActive = true,
+        };
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+        Assert.Equal(
+            ["write:RestorePending:Balanced", "clear"],
+            journal.Events);
+        Assert.Null(journal.Journal);
+
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_InactiveHyperBoostClearsJournalWithoutWrite()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.EnablePending,
+                PerformancePreset.Balanced,
+                DateTimeOffset.UtcNow),
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostOwnershipJournalStore: journal);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            Lighting: null);
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.Equal(
+            ["write:Relinquished:Balanced", "clear"],
+            journal.Events);
+        Assert.Null(journal.Journal);
+    }
+
+    [Theory]
+    [InlineData((int)HyperBoostOwnershipJournalState.EnablePending)]
+    [InlineData((int)HyperBoostOwnershipJournalState.RestorePending)]
+    [InlineData((int)HyperBoostOwnershipJournalState.Relinquished)]
+    public async Task UnexpectedRestart_ActiveNonOwnedJournalBlocksWithoutWrite(
+        int stateValue)
+    {
+        var state = (HyperBoostOwnershipJournalState)stateValue;
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                state,
+                PerformancePreset.Balanced,
+                DateTimeOffset.UtcNow),
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostOwnershipJournalStore: journal);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            Lighting: null)
+        {
+            HyperBoostActive = true,
+        };
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains(
+            "ownership was never durably confirmed",
+            context.Runtime.GetStatus().Message,
+            StringComparison.Ordinal);
+        Assert.NotNull(journal.Journal);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_InvalidHyperBoostJournalBlocksWithoutWrite()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Invalid = true,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostOwnershipJournalStore: journal);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            Lighting: null)
+        {
+            HyperBoostActive = true,
+        };
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains(
+            "journal is invalid",
+            context.Runtime.GetStatus().Message,
+            StringComparison.Ordinal);
+        Assert.Empty(journal.Events);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_HandsBackJournaledCoolingPadFanOwnershipOnce()
+    {
+        string journalPath = Path.Combine(directory, "cooling-pad-fan-ownership.json");
+        var journal = new CoolingPadFanOwnershipJournalStore(journalPath);
+        await journal.WriteAsync(
+            new CoolingPadFanOwnershipJournal(
+                CoolingPadFanOwnershipJournalState.OwnedConfirmed,
+                new CoolingPadFanTarget(2_200),
+                DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        var backend = new RecordingCoolingPadFanSemanticBackend();
+        var coordinator = AdmittedCoolingPadFanRuntimeCoordinator.CreateForTesting(
+            backend,
+            journal);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            coolingPadFanCoordinator: coordinator);
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        Assert.Equal(1, backend.HandbackCount);
+        Assert.False(File.Exists(journalPath));
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_PendingCoolingPadFanOwnershipBlocksWithoutWrite()
+    {
+        string journalPath = Path.Combine(directory, "cooling-pad-fan-ownership.json");
+        var journal = new CoolingPadFanOwnershipJournalStore(journalPath);
+        await journal.WriteAsync(
+            new CoolingPadFanOwnershipJournal(
+                CoolingPadFanOwnershipJournalState.AcquirePending,
+                new CoolingPadFanTarget(2_200),
+                DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        var backend = new RecordingCoolingPadFanSemanticBackend();
+        var coordinator = AdmittedCoolingPadFanRuntimeCoordinator.CreateForTesting(
+            backend,
+            journal);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            coolingPadFanCoordinator: coordinator);
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        Assert.Equal(0, backend.HandbackCount);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains(
+            "not durably confirmed",
+            context.Runtime.GetStatus().Message,
+            StringComparison.Ordinal);
+        Assert.True(File.Exists(journalPath));
+    }
+
     [Theory]
     [InlineData(DeviceSubsystem.Performance)]
     [InlineData(DeviceSubsystem.Fans)]
@@ -840,6 +1246,505 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             result.Message,
             StringComparison.Ordinal);
         Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent, -1, true, CoolingPadObservationFailure.None)]
+    [InlineData(CoolingPadConnectionState.Ambiguous, -1, true, CoolingPadObservationFailure.None)]
+    [InlineData(CoolingPadConnectionState.ObservationFailed, -1, false, CoolingPadObservationFailure.Discovery)]
+    [InlineData(CoolingPadConnectionState.PresentExact, 1, true, CoolingPadObservationFailure.None)]
+    [InlineData(CoolingPadConnectionState.PresentExact, 0, false, CoolingPadObservationFailure.Transport)]
+    public async Task CoolingPadSafetyLoss_RestoresOwnedPadRequiredHyperBoostOnce(
+        CoolingPadConnectionState connection,
+        int opaqueValue,
+        bool isFresh,
+        CoolingPadObservationFailure failure)
+    {
+        var padProvider = new MutableVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.PresentExact,
+                OpaqueFanObservation: 0,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = await CreateOwnedHyperBoostContextAsync(padProvider);
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+        padProvider.Snapshot = new CoolingPadObservationSnapshot(
+            connection,
+            opaqueValue >= 0 ? (byte)opaqueValue : null,
+            isFresh,
+            failure);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+    }
+
+    [Fact]
+    public async Task CoolingPadSafetyLoss_DoesNotRestoreExternallyObservedHyperBoost()
+    {
+        var padProvider = new MutableVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.Absent,
+                OpaqueFanObservation: null,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: padProvider);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+        {
+            HyperBoostActive = true,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+    }
+
+    [Fact]
+    public async Task HyperBoostOwnershipJournal_TracksPendingOwnedRestoreAndClear()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostContextAsync(
+            hyperBoostOwnershipJournalStore: journal);
+
+        ControlOperationResult restored = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, restored.Status);
+        Assert.Equal(
+            [
+                "write:EnablePending:Balanced",
+                "write:OwnedConfirmed:Balanced",
+                "write:RestorePending:Balanced",
+                "clear",
+            ],
+            journal.Events);
+    }
+
+    [Fact]
+    public async Task HyperBoostOwnershipJournal_KnownNotAppliedEnableClearsPendingRecord()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateHyperBoostReadyContextAsync(
+            hyperBoostOwnershipJournalStore: journal);
+        context.Device.HyperBoostFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "synthetic known-not-applied enable");
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(
+            ["write:EnablePending:Balanced", "clear"],
+            journal.Events);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+    }
+
+    [Fact]
+    public async Task HyperBoostOwnershipJournal_IndeterminateEnableRetainsPendingRecord()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateHyperBoostReadyContextAsync(
+            hyperBoostOwnershipJournalStore: journal);
+        context.Device.HyperBoostFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "synthetic indeterminate enable");
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(["write:EnablePending:Balanced"], journal.Events);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().UnconfirmedWrites);
+    }
+
+    [Fact]
+    public async Task FreshInactiveObservation_RetiresDurableHyperBoostOwnership()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostContextAsync(
+            hyperBoostOwnershipJournalStore: journal);
+        journal.Events.Clear();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            context.Device.ConfirmedState.Lighting)
+        {
+            HyperBoostActive = false,
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            ["write:Relinquished:Balanced", "clear"],
+            journal.Events);
+        Assert.Null(journal.Journal);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            HyperBoostActive = true,
+        };
+        TestContext restarted = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostOwnershipJournalStore: journal);
+        restarted.Device.Capabilities = context.Device.Capabilities;
+        restarted.Device.ConfirmedState = context.Device.ConfirmedState;
+        BatteryConfiguration configuration = await restarted.Store.LoadAsync(
+            CancellationToken.None);
+        restarted.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await restarted.Runtime.ObserveAsync(CancellationToken.None);
+        await restarted.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        Assert.Equal(0, restarted.Device.HyperBoostSetCalls);
+        Assert.True(restarted.Device.ConfirmedState.HyperBoostActive);
+    }
+
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, true)]
+    public async Task FreshInactiveObservation_JournalRetirementFailsClosed(
+        bool failRelinquishedWrite,
+        bool failClear,
+        bool writesBlocked)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostContextAsync(
+            hyperBoostOwnershipJournalStore: journal);
+        int setterCalls = context.Device.HyperBoostSetCalls;
+        journal.Events.Clear();
+        journal.WriteFailure = failRelinquishedWrite
+            ? new IOException("synthetic relinquished write failure")
+            : null;
+        journal.ClearFailure = failClear
+            ? new IOException("synthetic clear failure")
+            : null;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            context.Device.ConfirmedState.Lighting)
+        {
+            HyperBoostActive = false,
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(writesBlocked, context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(setterCalls, context.Device.HyperBoostSetCalls);
+        if (failRelinquishedWrite && !failClear)
+        {
+            Assert.Null(journal.Journal);
+        }
+        else if (!failRelinquishedWrite && failClear)
+        {
+            Assert.Equal(
+                HyperBoostOwnershipJournalState.Relinquished,
+                journal.Journal?.State);
+        }
+    }
+
+    [Fact]
+    public async Task HyperBoostOwnershipJournal_WriteFailureBlocksBeforeHardware()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            WriteFailure = new IOException("synthetic journal failure"),
+        };
+        TestContext context = await CreateHyperBoostReadyContextAsync(
+            hyperBoostOwnershipJournalStore: journal);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.Empty(journal.Events);
+    }
+
+    [Fact]
+    public async Task HyperBoostOwnershipJournal_FinalizationFailureRestoresOnce()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            WriteFailure = new IOException("synthetic finalization failure"),
+            WriteFailureOnCall = 2,
+        };
+        TestContext context = await CreateHyperBoostReadyContextAsync(
+            hyperBoostOwnershipJournalStore: journal);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(2, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            [
+                "write:EnablePending:Balanced",
+                "write:Relinquished:Balanced",
+                "clear",
+            ],
+            journal.Events);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
+    public async Task HyperBoostOwnershipJournal_FinalizationAndRestoreFailureDoNotRetry()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            WriteFailure = new IOException("synthetic finalization failure"),
+            WriteFailureOnCall = 2,
+        };
+        TestContext context = await CreateHyperBoostReadyContextAsync(
+            hyperBoostOwnershipJournalStore: journal);
+        context.Device.HyperBoostFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "synthetic restore failure");
+        context.Device.HyperBoostFailureOnCall = 2;
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(2, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(
+            ["write:EnablePending:Balanced"],
+            journal.Events);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.EnablePending,
+            journal.Journal?.State);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_RestoresOwnedHyperBoostBeforeKeyboardExactlyOnce()
+    {
+        TestContext context = await CreateOwnedHyperBoostContextAsync();
+        context.Device.DriverModeActive = true;
+        bool restoredBeforeKeyboard = false;
+        context.Device.AfterHyperBoostSetter = () =>
+        {
+            if (context.Device.LastHyperBoostEnabled == false)
+            {
+                restoredBeforeKeyboard = context.Device.DriverModeReleaseCalls == 0;
+            }
+        };
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.True(restoredBeforeKeyboard);
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.LastHyperBoostEnabled);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+
+        await context.Runtime.PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_RestoresOwnedHyperBoostWhenAdapterIsUnknown()
+    {
+        TestContext context = await CreateOwnedHyperBoostContextAsync();
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_DoesNotRestoreExternallyObservedHyperBoost()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+        {
+            HyperBoostActive = true,
+        };
+        context.Device.DriverModeActive = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+        Assert.Contains("did not establish ownership", result.Message);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_UnknownAdapterDoesNotRestoreExternalHyperBoost()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+        {
+            HyperBoostActive = true,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Contains("did not establish ownership", result.Message);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_IndeterminateHyperBoostIsNotRetriedAndReleasesKeyboard()
+    {
+        TestContext context = await CreateOwnedHyperBoostContextAsync();
+        context.Device.DriverModeActive = true;
+        context.Device.HyperBoostFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "synthetic HyperBoost restoration failure");
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().UnconfirmedWrites);
+
+        context.Device.HyperBoostFailure = null;
+        await context.Runtime.PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_KnownNotAppliedHyperBoostCanRetryAtLaterBoundary()
+    {
+        TestContext context = await CreateOwnedHyperBoostContextAsync();
+        context.Device.DriverModeActive = true;
+        context.Device.HyperBoostFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "synthetic known-not-applied restoration failure");
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+
+        ControlOperationResult blocked = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, blocked.Status);
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+
+        context.Device.HyperBoostFailure = null;
+        ControlOperationResult restored = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, restored.Status);
+        Assert.Equal(hyperBoostWrites + 2, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_PreCanceledHyperBoostCanRetryAtLaterBoundary()
+    {
+        TestContext context = await CreateOwnedHyperBoostContextAsync();
+        context.Device.DriverModeActive = true;
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        ControlOperationResult canceled = await context.Runtime
+            .PrepareForShutdownAsync(cancellation.Token);
+
+        Assert.Equal(ControlOperationStatus.Failed, canceled.Status);
+        Assert.Equal(hyperBoostWrites, context.Device.HyperBoostSetCalls);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+
+        ControlOperationResult restored = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, restored.Status);
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
     }
 
     [Theory]
@@ -1110,6 +2015,35 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             entry => entry.Detail?.Contains(
                 "Attempting",
                 StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public async Task PrepareForLowPower_RestoresOwnedHyperBoostBeforeKeyboardExactlyOnce()
+    {
+        TestContext context = await CreateOwnedHyperBoostContextAsync();
+        context.Device.DriverModeActive = true;
+        bool restoredBeforeKeyboard = false;
+        context.Device.AfterHyperBoostSetter = () =>
+        {
+            if (context.Device.LastHyperBoostEnabled == false)
+            {
+                restoredBeforeKeyboard = context.Device.DriverModeReleaseCalls == 0;
+            }
+        };
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForLowPowerAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.True(restoredBeforeKeyboard);
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
     }
 
     [Fact]
@@ -1749,6 +2683,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects =
                 new HashSet<LightingEffect> { LightingEffect.Spectrum },
         };
@@ -1765,6 +2700,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             DeviceFeatureAccess.ObservedOnly,
             context.Runtime.GetStatus().Capabilities!.LampArrayLightingAccess);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            context.Runtime.GetStatus().Capabilities!.CoolingPadSupportAccess);
         Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
@@ -2612,7 +3550,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Fact]
     public async Task LightingPowerPolicy_OverlappingReasonsSwitchOffOnceAndRestoreLatestIntent()
     {
-        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        var lightingCoordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            coolingPadLightingCoordinator: lightingCoordinator);
         LightingSettings expected = context.Runtime.GetStatus().DesiredState.Lighting.Value;
         ProfileSet profiles = context.Runtime.GetStatus().Profiles with
         {
@@ -2662,6 +3603,42 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(expected, context.Device.ConfirmedState.Lighting);
         Assert.Equal(3, context.Device.LightingSetCalls);
         Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
+        Assert.Equal([true, false], lightingCoordinator.SuppressedValues);
+    }
+
+    [Fact]
+    public async Task LightingPowerPolicy_PadFaultReportsFailureAfterKeyboardSuppression()
+    {
+        var lightingCoordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite)
+        {
+            FaultOnSuppressed = true,
+        };
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            coolingPadLightingCoordinator: lightingCoordinator);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles with
+        {
+            PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(
+                    turnOffWhenDisplayTurnsOff: true,
+                    idleTimeoutMinutes: null),
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.DisplayOff,
+            suppressed: true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+        Assert.Contains("Keyboard lighting was switched off", result.Message);
+        Assert.Contains("BlackoutWrite:Indeterminate", result.Message);
+        Assert.Equal(
+            CoolingPadLightingSyncState.Faulted,
+            lightingCoordinator.Snapshot.State);
     }
 
     [Fact]
@@ -3500,7 +4477,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Fact]
     public async Task WindowsDynamicLightingMode_InvalidatesOwnedRendererBeforeDelegating()
     {
-        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        var lightingCoordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            coolingPadLightingCoordinator: lightingCoordinator);
         context.Device.Capabilities = context.Device.Capabilities with
         {
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
@@ -3523,12 +4503,51 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             KeyboardLightingControlMode.WindowsDynamicLighting,
             context.Runtime.GetStatus().KeyboardLightingControlMode);
+        Assert.Equal([true], lightingCoordinator.DelegatedValues);
+    }
+
+    [Fact]
+    public async Task WindowsDynamicLightingMode_PadFaultReportsFailureAfterDelegation()
+    {
+        var lightingCoordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite)
+        {
+            FaultOnDelegated = true,
+        };
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            coolingPadLightingCoordinator: lightingCoordinator);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result =
+            await context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(
+            KeyboardLightingControlMode.WindowsDynamicLighting,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Contains("delegated to Windows", result.Message);
+        Assert.Contains("BlackoutWrite:Indeterminate", result.Message);
+        Assert.Equal(
+            CoolingPadLightingSyncState.Faulted,
+            lightingCoordinator.Snapshot.State);
     }
 
     [Fact]
     public async Task WindowsDynamicLightingMode_DoesNotDelegateWhenRendererInvalidationFails()
     {
-        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        var lightingCoordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            coolingPadLightingCoordinator: lightingCoordinator);
         context.Device.Capabilities = context.Device.Capabilities with
         {
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
@@ -3553,16 +4572,20 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             KeyboardLightingControlMode.OpenBlade,
             saved.Preferences.KeyboardLightingControlMode);
+        Assert.Equal([true, false], lightingCoordinator.DelegatedValues);
     }
 
     [Fact]
     public async Task WindowsDynamicLightingMode_RestoresRendererWhenPersistenceFails()
     {
         bool failPersistence = false;
+        var lightingCoordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
         TestContext context = await CreateOwnedStaticLightingContextAsync(
             (_, _) => failPersistence
                 ? Task.FromException(new IOException("Synthetic persistence failure."))
-                : Task.CompletedTask);
+                : Task.CompletedTask,
+            coolingPadLightingCoordinator: lightingCoordinator);
         context.Device.Capabilities = context.Device.Capabilities with
         {
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
@@ -3586,6 +4609,61 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             KeyboardLightingControlMode.OpenBlade,
             context.Runtime.GetStatus().KeyboardLightingControlMode);
+        Assert.Equal([true, false], lightingCoordinator.DelegatedValues);
+    }
+
+    [Fact]
+    public async Task CoolingPadLightingLifecycle_IsInvalidatedForLowPowerAndShutdown()
+    {
+        var lowPowerCoordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
+        TestContext lowPowerContext = CreateContext(
+            providerAvailable: true,
+            coolingPadLightingCoordinator: lowPowerCoordinator);
+
+        _ = await lowPowerContext.Runtime.PrepareForLowPowerAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, lowPowerCoordinator.InvalidateCount);
+
+        var shutdownCoordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
+        TestContext shutdownContext = CreateContext(
+            providerAvailable: true,
+            coolingPadLightingCoordinator: shutdownCoordinator);
+
+        _ = await shutdownContext.Runtime.PrepareForShutdownAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, shutdownCoordinator.InvalidateCount);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CoolingPadLightingLifecycle_FailureIsReportedWithoutSkippingKeyboardCleanup(
+        bool shutdown)
+    {
+        var coordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite)
+        {
+            InvalidateFailure = new IOException("synthetic pad cleanup failure"),
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadLightingCoordinator: coordinator);
+        context.Device.DriverModeActive = true;
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+
+        ControlOperationResult result = shutdown
+            ? await context.Runtime.PrepareForShutdownAsync(CancellationToken.None)
+            : await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains("Cooling-pad lighting cleanup", result.Message);
+        Assert.Contains("synthetic pad cleanup failure", result.Message);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+        Assert.False(context.Device.DriverModeActive);
     }
 
     [Fact]
@@ -6262,6 +7340,1756 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task HyperBoostControl_PublishesConfirmedEnableAndDisableReadback()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact),
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider());
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Stored,
+            (await context.Runtime.SetCoolingPadFanIntentAsync(
+                CoolingPadFanIntent.Default,
+                CancellationToken.None)).Status);
+
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+        ControlOperationResult disabled = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, enabled.Status);
+        Assert.Equal(ControlOperationStatus.Applied, disabled.Status);
+        Assert.Equal(2, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.LastHyperBoostEnabled);
+        Assert.False(context.Runtime.GetStatus().ConfirmedState!.HyperBoostActive);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            context.Runtime.GetStatus().ConfirmedState!.Performance);
+        Assert.Equal(FanMode.Automatic, context.Runtime.GetStatus().ConfirmedState!.Fans);
+    }
+
+    [Fact]
+    public async Task HyperBoostControl_InjectedQuietAdmissionRestoresOwnedExactBase()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact),
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider());
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite),
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Silent,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            CoolingPadFanIntent.Default,
+            CancellationToken.None);
+
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        ControlOperationResult restored = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, restored.Status);
+        Assert.Equal(PerformancePreset.Silent, context.Device.LastHyperBoostBaseMode);
+        Assert.Equal(PerformancePreset.Silent, context.Runtime.GetStatus().ConfirmedState!.Performance);
+        Assert.Contains("Quiet power mode is restored", restored.Message);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.Performance)]
+    public async Task HyperBoostDisable_PostWriteReadFailureReconcilesExactBase(
+        PerformancePreset baseMode)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact),
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider());
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite),
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            baseMode,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            CoolingPadFanIntent.Default,
+            CancellationToken.None);
+
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 1;
+        ControlOperationResult restore = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, restore.Status);
+        Assert.Equal(baseMode, context.Device.ConfirmedState.Performance);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().UnconfirmedWrites);
+
+        context.Device.ReadStateFailureOnCall = null;
+        int writes = context.Device.HyperBoostSetCalls;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(baseMode, context.Runtime.GetStatus().ConfirmedState!.Performance);
+        Assert.Equal(writes, context.Device.HyperBoostSetCalls);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Performance, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Balanced, FanMode.ManualCurve)]
+    public async Task HyperBoostDisable_PostWriteReadFailureDefinitiveMismatchUnblocks(
+        PerformancePreset observedBase,
+        FanMode observedFans)
+    {
+        TestContext context = await CreateOwnedHyperBoostContextAsync();
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 1;
+
+        ControlOperationResult restore = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, restore.Status);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        context.Device.ReadStateFailureOnCall = null;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            observedBase,
+            observedFans,
+            ConfirmedBattery(80),
+            context.Device.ConfirmedState.Lighting)
+        {
+            HyperBoostActive = false,
+        };
+        int writes = context.Device.HyperBoostSetCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(writes, context.Device.HyperBoostSetCalls);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent, "Quiet")]
+    [InlineData(PerformancePreset.Performance, "Performance")]
+    public async Task HyperBoostControl_ObservedDirectBaseIsImplementedButNotAdmitted(
+        PerformancePreset baseMode,
+        string label)
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly),
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            baseMode,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains($"Direct HyperBoost from {label}", result.Message);
+        Assert.Contains("implemented but not validated", result.Message);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+    }
+
+    [Fact]
+    public async Task HyperBoostEnable_RejectsUnsavedDefaultCoolingPadIntent()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact),
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider());
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("saved cooling-pad Auto intent", result.Message);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+    }
+
+    [Theory]
+    [InlineData(WriteSubmissionState.KnownNotApplied, false)]
+    [InlineData(WriteSubmissionState.Indeterminate, true)]
+    public async Task HyperBoostFailure_LatchesThermalStateOnlyWhenIndeterminate(
+        WriteSubmissionState submissionState,
+        bool expectedBlocked)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact),
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider());
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            CoolingPadFanIntent.Default,
+            CancellationToken.None);
+        context.Device.HyperBoostFailure = new BladeWriteException(
+            submissionState,
+            "test HyperBoost submission failure");
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(
+            expectedBlocked ? ControlOperationStatus.Failed : ControlOperationStatus.Blocked,
+            result.Status);
+        Assert.Equal(expectedBlocked, context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            expectedBlocked
+                ? [DeviceSubsystem.Performance, DeviceSubsystem.Fans]
+                : [],
+            context.Runtime.GetStatus().UnconfirmedWrites);
+
+        if (expectedBlocked)
+        {
+            ControlOperationResult fixedIntent =
+                await context.Runtime.SetCoolingPadFanIntentAsync(
+                    new CoolingPadFanIntent(
+                        CoolingPadFanMode.Fixed,
+                        new CoolingDemandLevel(6_875),
+                        CoolingPadSmartCurve.Default),
+                    CancellationToken.None);
+            Assert.Equal(ControlOperationStatus.Blocked, fixedIntent.Status);
+            await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+            Assert.Null(context.Runtime.GetStatus().CoolingPad!.ComputedDemand);
+            Assert.Null(context.Runtime.GetStatus().CoolingPad!.PlannedFanTarget);
+
+            context.Device.HyperBoostFailure = null;
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = FanMode.Automatic,
+                HyperBoostActive = true,
+            };
+
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+
+            Assert.False(context.Runtime.GetStatus().WritesBlocked);
+            Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+            Assert.True(context.Runtime.GetStatus().ConfirmedState!.HyperBoostActive);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HyperBoostPostWriteReadFailure_LatchesAndSuppressesPadDemand(
+        bool cancelReadback)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact),
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider());
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            CoolingPadFanIntent.Default,
+            CancellationToken.None);
+
+        using var cancellation = new CancellationTokenSource();
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 1;
+        if (cancelReadback)
+        {
+            context.Device.ReadStateFailureOnCallException =
+                new OperationCanceledException(cancellation.Token);
+            context.Device.AfterHyperBoostSetter = cancellation.Cancel;
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                context.Runtime.SetHyperBoostAsync(true, cancellation.Token));
+        }
+        else
+        {
+            ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None);
+            Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        }
+
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().UnconfirmedWrites);
+
+        ControlOperationResult fixedIntent =
+            await context.Runtime.SetCoolingPadFanIntentAsync(
+                new CoolingPadFanIntent(
+                    CoolingPadFanMode.Fixed,
+                    new CoolingDemandLevel(6_875),
+                    CoolingPadSmartCurve.Default),
+                CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Blocked, fixedIntent.Status);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.ComputedDemand);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.PlannedFanTarget);
+        Assert.Equal(
+            CoolingPadFanMode.Automatic,
+            context.Runtime.GetStatus().CoolingPad!.DesiredFanIntent.Mode);
+    }
+
+    [Fact]
+    public async Task HyperBoostEnable_RequiresBalancedAutomaticBaseline()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Maximum,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+    }
+
+    [Theory]
+    [InlineData(
+        DeviceFeatureAccess.ObservedOnly,
+        CoolingPadConnectionState.PresentExact,
+        true,
+        CoolingPadObservationFailure.None,
+        null)]
+    [InlineData(
+        DeviceFeatureAccess.ReadOnly,
+        CoolingPadConnectionState.PresentExact,
+        false,
+        CoolingPadObservationFailure.None,
+        null)]
+    [InlineData(
+        DeviceFeatureAccess.ReadOnly,
+        CoolingPadConnectionState.PresentExact,
+        true,
+        CoolingPadObservationFailure.None,
+        0x2C)]
+    [InlineData(
+        DeviceFeatureAccess.ReadOnly,
+        CoolingPadConnectionState.Absent,
+        true,
+        CoolingPadObservationFailure.None,
+        null)]
+    [InlineData(
+        DeviceFeatureAccess.ReadOnly,
+        CoolingPadConnectionState.ObservationFailed,
+        false,
+        CoolingPadObservationFailure.Transport,
+        null)]
+    public async Task HyperBoostEnable_RequiresFreshOpaqueZeroObservation(
+        DeviceFeatureAccess access,
+        CoolingPadConnectionState connection,
+        bool isFresh,
+        CoolingPadObservationFailure failure,
+        int? opaqueFanObservation)
+    {
+        var padProvider = new FixedVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.PresentExact,
+                OpaqueFanObservation: 0,
+                IsFresh: true,
+                CoolingPadObservationFailure.None),
+            access,
+            freshSnapshot:
+                new CoolingPadObservationSnapshot(
+                    connection,
+                    opaqueFanObservation is { } value ? (byte)value : null,
+                    isFresh,
+                    failure));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact),
+            coolingPadProvider: padProvider);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            CoolingPadFanIntent.Default,
+            CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("opaque-zero", result.Message);
+        Assert.Contains("active mode", result.Message);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.Equal(1, padProvider.FreshObserveCount);
+    }
+
+    [Fact]
+    public async Task HyperBoostActive_RejectsManualLaptopFanOverrideBeforePersistence()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            Performance: null,
+            Fans: FanMode.Automatic,
+            Battery: ConfirmedBattery(80),
+            Lighting: ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+        {
+            HyperBoostActive = true,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.Persistent),
+            FanControlSettings.FromLegacy(FanMode.Fixed),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("Automatic", result.Message);
+        Assert.Null(context.Runtime.GetStatus().FanOverride);
+        Assert.Null(context.Runtime.GetStatus().FanControlOverride);
+        Assert.Equal(0, context.Device.FanSetCalls);
+    }
+
+    [Fact]
+    public async Task HyperBoostEnable_ClearsAndRejectsCoolingDemandLeases()
+    {
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            userConfigurationRepository: CreateUserConfigurationRepository(
+                userSid,
+                new BatteryAutomationPreferences()),
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact),
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider());
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ActivateUserAsync(
+            userSid,
+            sessionId: 1,
+            static () => true,
+            CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            CoolingPadFanIntent.Default,
+            CancellationToken.None);
+        await context.Runtime.SetCoolingDemandApiEnabledAsync(
+            true,
+            CancellationToken.None);
+        await context.Runtime.WaitForCoolingPadReconciliationRequestAsync(
+            CancellationToken.None);
+        Task requestedReconciliation =
+            context.Runtime.WaitForCoolingPadReconciliationRequestAsync(
+                CancellationToken.None);
+        ControlOperationResult accepted =
+            await context.Runtime.SetCoolingDemandLeaseAsync(
+                userSid.Value,
+                sessionId: 1,
+                Guid.NewGuid(),
+                CoolingDemandLevel.Maximum,
+                ttlMilliseconds: 30_000,
+                CancellationToken.None);
+        await requestedReconciliation.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(ControlOperationStatus.Stored, accepted.Status);
+        Assert.Equal(1, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+        ControlOperationResult rejected =
+            await context.Runtime.SetCoolingDemandLeaseAsync(
+                userSid.Value,
+                sessionId: 1,
+                Guid.NewGuid(),
+                CoolingDemandLevel.Maximum,
+                ttlMilliseconds: 30_000,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, enabled.Status);
+        Assert.Equal(ControlOperationStatus.Blocked, rejected.Status);
+        Assert.Equal(0, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.ComputedDemand);
+        Assert.True(context.Runtime.GetStatus().CoolingPad!.CoolingDemandApiEnabled);
+
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                false,
+                CancellationToken.None)).Status);
+        Assert.Equal(0, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+        Assert.Equal(
+            ControlOperationStatus.Stored,
+            (await context.Runtime.SetCoolingDemandLeaseAsync(
+                userSid.Value,
+                sessionId: 1,
+                Guid.NewGuid(),
+                CoolingDemandLevel.Maximum,
+                ttlMilliseconds: 30_000,
+                CancellationToken.None)).Status);
+    }
+
+    [Fact]
+    public async Task HyperBoostIndeterminate_ClearsAndRejectsCoolingDemandLeases()
+    {
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            userConfigurationRepository: CreateUserConfigurationRepository(
+                userSid,
+                new BatteryAutomationPreferences()),
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact),
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider());
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ActivateUserAsync(
+            userSid,
+            sessionId: 1,
+            static () => true,
+            CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            CoolingPadFanIntent.Default,
+            CancellationToken.None);
+        await context.Runtime.SetCoolingDemandApiEnabledAsync(
+            true,
+            CancellationToken.None);
+        await context.Runtime.SetCoolingDemandLeaseAsync(
+            userSid.Value,
+            sessionId: 1,
+            Guid.NewGuid(),
+            CoolingDemandLevel.Maximum,
+            ttlMilliseconds: 30_000,
+            CancellationToken.None);
+        context.Device.HyperBoostFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "test HyperBoost submission failure");
+
+        ControlOperationResult failed = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+        ControlOperationResult rejected =
+            await context.Runtime.SetCoolingDemandLeaseAsync(
+                userSid.Value,
+                sessionId: 1,
+                Guid.NewGuid(),
+                CoolingDemandLevel.Maximum,
+                ttlMilliseconds: 30_000,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(ControlOperationStatus.Blocked, rejected.Status);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(0, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.ComputedDemand);
+        Assert.True(context.Runtime.GetStatus().CoolingPad!.CoolingDemandApiEnabled);
+    }
+
+    [Fact]
+    public async Task ExternallyObservedHyperBoost_ClearsAndRejectsCoolingDemandLeases()
+    {
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            userConfigurationRepository: CreateUserConfigurationRepository(
+                userSid,
+                new BatteryAutomationPreferences()),
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ActivateUserAsync(
+            userSid,
+            sessionId: 1,
+            static () => true,
+            CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingDemandApiEnabledAsync(
+            true,
+            CancellationToken.None);
+        await context.Runtime.SetCoolingDemandLeaseAsync(
+            userSid.Value,
+            sessionId: 1,
+            Guid.NewGuid(),
+            CoolingDemandLevel.Maximum,
+            ttlMilliseconds: 30_000,
+            CancellationToken.None);
+        Assert.Equal(1, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = true,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ControlOperationResult rejected =
+            await context.Runtime.SetCoolingDemandLeaseAsync(
+                userSid.Value,
+                sessionId: 1,
+                Guid.NewGuid(),
+                CoolingDemandLevel.Maximum,
+                ttlMilliseconds: 30_000,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, rejected.Status);
+        Assert.Equal(0, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.ComputedDemand);
+    }
+
+    [Fact]
+    public async Task CoolingPadIntentAndDemandLease_PublishComputedButNeverAppliedState()
+    {
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        IUserConfigurationRepository repository = CreateUserConfigurationRepository(
+            userSid,
+            new BatteryAutomationPreferences());
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            fanTemperatureSource: new FixedFanTemperatureSource(
+                new FanTemperatureReadings(65, 75)),
+            userConfigurationRepository: repository,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ActivateUserAsync(
+            userSid,
+            sessionId: 1,
+            static () => true,
+            CancellationToken.None);
+        int laptopSetterCallsBeforePadPlanning = context.Device.TotalSetterCalls;
+        var intent = new CoolingPadFanIntent(
+            CoolingPadFanMode.SmartCurve,
+            new CoolingDemandLevel(6_875),
+            CoolingPadSmartCurve.Default);
+
+        ControlOperationResult stored = await context.Runtime.SetCoolingPadFanIntentAsync(
+            intent,
+            CancellationToken.None);
+        ControlOperationResult api = await context.Runtime.SetCoolingDemandApiEnabledAsync(
+            true,
+            CancellationToken.None);
+        Guid leaseId = Guid.NewGuid();
+        ControlOperationResult lease = await context.Runtime.SetCoolingDemandLeaseAsync(
+            userSid.Value,
+            sessionId: 1,
+            leaseId,
+            new CoolingDemandLevel(8_000),
+            ttlMilliseconds: 5_000,
+            CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        CoolingPadStatus status = Assert.IsType<CoolingPadStatus>(
+            context.Runtime.GetStatus().CoolingPad);
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        Assert.Equal(ControlOperationStatus.Stored, api.Status);
+        Assert.Equal(ControlOperationStatus.Stored, lease.Status);
+        Assert.Equal(CoolingPadConnectionState.PresentExact, status.Connection);
+        Assert.Equal(CoolingPadFanMode.SmartCurve, status.DesiredFanIntent.Mode);
+        Assert.Equal(8_000, status.ComputedDemand!.Value.BasisPoints);
+        Assert.Equal(new CoolingPadFanTarget(2_550), status.PlannedFanTarget);
+        Assert.Null(status.AppliedDemand);
+        Assert.Equal(CoolingPadControlOwnershipState.Unowned, status.Ownership);
+        Assert.True(status.CoolingDemandApiEnabled);
+        Assert.Equal(1, status.ActiveDemandLeases);
+        Assert.Equal(
+            laptopSetterCallsBeforePadPlanning,
+            context.Device.TotalSetterCalls);
+
+        await context.Runtime.ReleaseCoolingDemandLeaseAsync(
+            userSid.Value,
+            sessionId: 1,
+            leaseId,
+            CancellationToken.None);
+        Assert.NotNull(context.Runtime.GetStatus().CoolingPad!.ComputedDemand);
+        Assert.NotEqual(
+            8_000,
+            context.Runtime.GetStatus().CoolingPad!.ComputedDemand!.Value.BasisPoints);
+
+        BatteryConfiguration persisted = await CreateUserConfigurationStore(userSid)
+            .LoadAsync(CancellationToken.None);
+        Assert.Equal(CoolingPadFanMode.SmartCurve, persisted.Preferences.CoolingPadFanIntent!.Mode);
+        Assert.True(persisted.Preferences.AllowExternalCoolingDemand);
+    }
+
+    [Fact]
+    public async Task CoolingPadAdmittedFanCoordinator_AppliesDeduplicatesAndPublishesStatus()
+    {
+        var backend = new RecordingCoolingPadFanSemanticBackend();
+        var coordinator =
+            AdmittedCoolingPadFanRuntimeCoordinator.CreateForTesting(backend);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider(),
+            coolingPadFanCoordinator: coordinator);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var intent = new CoolingPadFanIntent(
+            CoolingPadFanMode.Fixed,
+            new CoolingDemandLevel(6_875),
+            CoolingPadSmartCurve.Default);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            intent,
+            CancellationToken.None);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        CoolingPadStatus status = Assert.IsType<CoolingPadStatus>(
+            context.Runtime.GetStatus().CoolingPad);
+        Assert.Equal(
+            [CoolingPadFanTarget.FromDemand(intent.FixedDemand)],
+            backend.AppliedTargets);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, status.Capabilities.FanControlAccess);
+        Assert.Equal(
+            CoolingDemandApiAccess.AppliedControl,
+            status.Capabilities.CoolingDemandApiAccess);
+        Assert.Equal(CoolingPadControlOwnershipState.Owned, status.Ownership);
+        Assert.Equal(intent.FixedDemand, status.AppliedDemand);
+        Assert.Equal(CoolingPadFanTarget.FromDemand(intent.FixedDemand), status.PlannedFanTarget);
+        Assert.True(status.IsWellFormed);
+    }
+
+    [Fact]
+    public void CoolingPadFanCoordinator_RejectsUnadmittedRuntimeInjection()
+    {
+        ArgumentException failure = Assert.Throws<ArgumentException>(() => CreateContext(
+            providerAvailable: true,
+            coolingPadFanCoordinator: new UnadmittedCoolingPadFanRuntimeCoordinator()));
+
+        Assert.Equal("coolingPadFanCoordinator", failure.ParamName);
+    }
+
+    [Fact]
+    public async Task CoolingPadConnectionLoss_InvalidatesOwnedStateWithoutAnotherWrite()
+    {
+        var backend = new RecordingCoolingPadFanSemanticBackend();
+        var coordinator =
+            AdmittedCoolingPadFanRuntimeCoordinator.CreateForTesting(backend);
+        var padProvider = new MutableVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.PresentExact,
+                OpaqueFanObservation: 0,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: padProvider,
+            coolingPadFanCoordinator: coordinator);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            new CoolingPadFanIntent(
+                CoolingPadFanMode.Fixed,
+                new CoolingDemandLevel(6_875),
+                CoolingPadSmartCurve.Default),
+            CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        padProvider.Snapshot = new CoolingPadObservationSnapshot(
+            CoolingPadConnectionState.Absent,
+            OpaqueFanObservation: null,
+            IsFresh: true,
+            CoolingPadObservationFailure.None);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        CoolingPadStatus status = Assert.IsType<CoolingPadStatus>(
+            context.Runtime.GetStatus().CoolingPad);
+        Assert.Equal(CoolingPadConnectionState.Absent, status.Connection);
+        Assert.Equal(CoolingPadControlOwnershipState.Indeterminate, status.Ownership);
+        Assert.Null(status.AppliedDemand);
+        Assert.Single(backend.AppliedTargets);
+        Assert.Equal(0, backend.HandbackCount);
+        Assert.True(status.IsWellFormed);
+    }
+
+    [Fact]
+    public async Task HyperBoostEnable_HandsBackOwnedPadFanAndPreservesSavedIntent()
+    {
+        var backend = new RecordingCoolingPadFanSemanticBackend();
+        var coordinator =
+            AdmittedCoolingPadFanRuntimeCoordinator.CreateForTesting(backend);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider(),
+            coolingPadFanCoordinator: coordinator);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var intent = new CoolingPadFanIntent(
+            CoolingPadFanMode.Fixed,
+            new CoolingDemandLevel(6_875),
+            CoolingPadSmartCurve.Default);
+        await context.Runtime.SetCoolingPadFanIntentAsync(intent, CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(1, backend.HandbackCount);
+        Assert.Equal(CoolingPadControlOwnershipState.Unowned, coordinator.Snapshot.Ownership);
+        Assert.Equal(intent, (await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadFanIntent);
+    }
+
+    [Fact]
+    public async Task HyperBoostEnable_BlocksIndeterminatePadOwnershipEvenWithSavedAuto()
+    {
+        var backend = new RecordingCoolingPadFanSemanticBackend();
+        var coordinator =
+            AdmittedCoolingPadFanRuntimeCoordinator.CreateForTesting(backend);
+        await coordinator.ReconcileAsync(
+            new CoolingDemandLevel(6_000),
+            "acquire",
+            CancellationToken.None);
+        await coordinator.InvalidateConnectionAsync(
+            "synthetic identity loss",
+            CancellationToken.None);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider(),
+            coolingPadFanCoordinator: coordinator);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            CoolingPadFanIntent.Default,
+            CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("ownership is indeterminate", result.Message, StringComparison.Ordinal);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CoolingPadOwnedFan_IsHandedBackAtLifecycleBoundary(bool shutdown)
+    {
+        var backend = new RecordingCoolingPadFanSemanticBackend();
+        var coordinator =
+            AdmittedCoolingPadFanRuntimeCoordinator.CreateForTesting(backend);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider(),
+            coolingPadFanCoordinator: coordinator);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var intent = new CoolingPadFanIntent(
+            CoolingPadFanMode.Fixed,
+            new CoolingDemandLevel(6_875),
+            CoolingPadSmartCurve.Default);
+        await context.Runtime.SetCoolingPadFanIntentAsync(intent, CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        _ = shutdown
+            ? await context.Runtime.PrepareForShutdownAsync(CancellationToken.None)
+            : await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+
+        Assert.Equal(1, backend.HandbackCount);
+        Assert.Equal(CoolingPadControlOwnershipState.Unowned, coordinator.Snapshot.Ownership);
+        Assert.Equal(intent, (await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadFanIntent);
+    }
+
+    [Fact]
+    public async Task CoolingPadLifecycleHandback_RetrySuppressionRemainsFailed()
+    {
+        var backend = new RecordingCoolingPadFanSemanticBackend();
+        var coordinator =
+            AdmittedCoolingPadFanRuntimeCoordinator.CreateForTesting(backend);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider(),
+            coolingPadFanCoordinator: coordinator);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            new CoolingPadFanIntent(
+                CoolingPadFanMode.Fixed,
+                new CoolingDemandLevel(6_875),
+                CoolingPadSmartCurve.Default),
+            CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        backend.HandbackFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "synthetic lifecycle block");
+
+        ControlOperationResult first = await context.Runtime.PrepareForLowPowerAsync(
+            CancellationToken.None);
+        ControlOperationResult repeated = await context.Runtime.PrepareForLowPowerAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, first.Status);
+        Assert.Equal(ControlOperationStatus.Failed, repeated.Status);
+        Assert.Contains("not confirmed", repeated.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, backend.HandbackCount);
+        Assert.Equal(CoolingPadControlOwnershipState.Owned, coordinator.Snapshot.Ownership);
+    }
+
+    [Fact]
+    public async Task CoolingPadSmartCurve_ConcurrentEditNeverPublishesPreviousCurveDemand()
+    {
+        var temperatureSource = new BlockingFanTemperatureSource(
+            new FanTemperatureReadings(65, 75));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            fanTemperatureSource: temperatureSource,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var first = new CoolingPadFanIntent(
+            CoolingPadFanMode.SmartCurve,
+            CoolingDemandLevel.Zero,
+            CoolingPadSmartCurve.Default);
+        var replacement = new CoolingPadFanIntent(
+            CoolingPadFanMode.SmartCurve,
+            CoolingDemandLevel.Zero,
+            new CoolingPadSmartCurve(
+                [
+                    new(20, new CoolingDemandLevel(9_000)),
+                    new(100, new CoolingDemandLevel(9_000)),
+                ],
+                [
+                    new(20, new CoolingDemandLevel(9_000)),
+                    new(100, new CoolingDemandLevel(9_000)),
+                ],
+                useHigherTemperatureForBoth: false));
+        await context.Runtime.SetCoolingPadFanIntentAsync(first, CancellationToken.None);
+
+        Task maintenance = context.Runtime.MaintainCoolingPadAsync(
+            CancellationToken.None);
+        await temperatureSource.WaitUntilReadAsync();
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            replacement,
+            CancellationToken.None);
+        temperatureSource.Complete();
+        await maintenance;
+
+        CoolingPadStatus status = Assert.IsType<CoolingPadStatus>(
+            context.Runtime.GetStatus().CoolingPad);
+        Assert.Equal(replacement, status.DesiredFanIntent);
+        Assert.Null(status.ComputedDemand);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.Equal(
+            9_000,
+            context.Runtime.GetStatus().CoolingPad!.ComputedDemand!.Value.BasisPoints);
+    }
+
+    [Fact]
+    public async Task CoolingPadLightingSync_EnableRemainsBlockedWithoutWriteAdmission()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetCoolingPadLightingSyncAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("Whole-strip projection is resolved", result.Message);
+        Assert.Contains("cadence", result.Message);
+        Assert.False(context.Runtime.GetStatus().CoolingPad!.LightingSyncEnabled);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            context.Runtime.GetStatus().CoolingPad!.Capabilities.LightingSyncAccess);
+        Assert.Equal(
+            CoolingPadLightingSyncState.Unavailable,
+            context.Runtime.GetStatus().CoolingPad!.LightingSyncState);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task CoolingPadLightingSync_AdmittedCoordinatorPersistsAndQuiesces()
+    {
+        var coordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
+        var padProvider = new FixedVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.PresentExact,
+                OpaqueFanObservation: 0,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: padProvider,
+            coolingPadLightingCoordinator: coordinator);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        ControlOperationResult enabled =
+            await context.Runtime.SetCoolingPadLightingSyncAsync(
+                true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, enabled.Status);
+        Assert.True(context.Runtime.GetStatus().CoolingPad!.LightingSyncEnabled);
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            context.Runtime.GetStatus().CoolingPad!.Capabilities.LightingSyncAccess);
+        Assert.True((await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadLightingSyncEnabled);
+
+        ControlOperationResult disabled =
+            await context.Runtime.SetCoolingPadLightingSyncAsync(
+                false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, disabled.Status);
+        Assert.False(context.Runtime.GetStatus().CoolingPad!.LightingSyncEnabled);
+        Assert.False((await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadLightingSyncEnabled);
+        Assert.False(coordinator.Snapshot.Enabled);
+        Assert.Equal([true, false], coordinator.EnabledValues);
+        Assert.Contains(true, coordinator.ConnectedValues);
+    }
+
+    [Fact]
+    public async Task CoolingPadLightingSync_AsyncFaultPublishesStatusImmediately()
+    {
+        var coordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
+        var padProvider = new FixedVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.PresentExact,
+                OpaqueFanObservation: 0,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: padProvider,
+            coolingPadLightingCoordinator: coordinator);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadLightingSyncAsync(
+            true,
+            CancellationToken.None);
+        long previousRevision = context.Runtime.GetStatus().Revision;
+
+        coordinator.PublishSnapshot(
+            CoolingPadLightingSyncState.Faulted,
+            "FrameWrite:Indeterminate");
+
+        CoolingPadStatus status = Assert.IsType<CoolingPadStatus>(
+            context.Runtime.GetStatus().CoolingPad);
+        Assert.True(context.Runtime.GetStatus().Revision > previousRevision);
+        Assert.Equal(CoolingPadLightingSyncState.Faulted, status.LightingSyncState);
+        Assert.Contains("FrameWrite:Indeterminate", status.Message);
+        Assert.Contains("no automatic retry", status.Message);
+
+        ControlOperationResult disabled =
+            await context.Runtime.SetCoolingPadLightingSyncAsync(
+                false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, disabled.Status);
+        Assert.Contains("handback remains unconfirmed", disabled.Message);
+        Assert.Contains("Restore the prior preset manually", disabled.Message);
+        Assert.False(context.Runtime.GetStatus().CoolingPad!.LightingSyncEnabled);
+        Assert.Equal(
+            CoolingPadLightingSyncState.Faulted,
+            context.Runtime.GetStatus().CoolingPad!.LightingSyncState);
+        Assert.False((await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadLightingSyncEnabled);
+        Assert.True((await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadLightingRecoveryRequired);
+        Assert.True(context.Runtime.GetStatus().CoolingPad!.LightingRecoveryRequired);
+
+        ControlOperationResult blockedEnable =
+            await context.Runtime.SetCoolingPadLightingSyncAsync(
+                true,
+                CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Blocked, blockedEnable.Status);
+
+        ControlOperationResult acknowledged =
+            await context.Runtime.AcknowledgeCoolingPadLightingRecoveryAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, acknowledged.Status);
+        Assert.Equal(1, coordinator.AcknowledgeRecoveryCount);
+        Assert.False((await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadLightingRecoveryRequired);
+        Assert.False(context.Runtime.GetStatus().CoolingPad!.LightingRecoveryRequired);
+        Assert.Equal(
+            CoolingPadLightingSyncState.Disabled,
+            context.Runtime.GetStatus().CoolingPad!.LightingSyncState);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task CoolingPadLightingSync_CanAcknowledgeCoordinatorFaultBeforePreferenceIsSet()
+    {
+        var coordinator = new RecordingCoolingPadLightingRuntimeCoordinator(
+            DeviceFeatureAccess.ReadWrite);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadLightingCoordinator: coordinator);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        coordinator.PublishSnapshot(
+            CoolingPadLightingSyncState.Faulted,
+            "BaselineQuery:KnownNotApplied");
+
+        Assert.True(context.Runtime.GetStatus().CoolingPad!.LightingRecoveryRequired);
+        ControlOperationResult disabled =
+            await context.Runtime.SetCoolingPadLightingSyncAsync(
+                false,
+                CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, disabled.Status);
+        Assert.True((await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.CoolingPadLightingRecoveryRequired);
+
+        ControlOperationResult acknowledged =
+            await context.Runtime.AcknowledgeCoolingPadLightingRecoveryAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, acknowledged.Status);
+        Assert.Equal(1, coordinator.AcknowledgeRecoveryCount);
+        Assert.False(context.Runtime.GetStatus().CoolingPad!.LightingRecoveryRequired);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task CoolingPadMaintenance_SkipsTemperatureAndProviderDuringLowPower()
+    {
+        var gate = new LowPowerGate();
+        Assert.True(gate.Enter());
+        var temperatureSource = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 75));
+        var padProvider = new FixedVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.PresentExact,
+                OpaqueFanObservation: 0x2C,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            fanTemperatureSource: temperatureSource,
+            coolingPadProvider: padProvider,
+            lowPowerGate: gate);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            new CoolingPadFanIntent(
+                CoolingPadFanMode.SmartCurve,
+                new CoolingDemandLevel(6_875),
+                CoolingPadSmartCurve.Default),
+            CancellationToken.None);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.Equal(0, temperatureSource.ReadCount);
+        Assert.Equal(0, padProvider.ObserveCount);
+
+        Assert.True(gate.Exit());
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.Equal(1, temperatureSource.ReadCount);
+        Assert.Equal(1, padProvider.ObserveCount);
+    }
+
+    [Fact]
+    public async Task CoolingPadMaintenance_ObservesPresenceBeforeReadingSmartCurveSensors()
+    {
+        var temperatureSource = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 75));
+        var padProvider = new FixedVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.Absent,
+                OpaqueFanObservation: null,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            fanTemperatureSource: temperatureSource,
+            coolingPadProvider: padProvider);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadFanIntentAsync(
+            new CoolingPadFanIntent(
+                CoolingPadFanMode.SmartCurve,
+                CoolingPadFanIntent.Default.FixedDemand,
+                CoolingPadSmartCurve.Default),
+            CancellationToken.None);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.Equal(1, padProvider.ObserveCount);
+        Assert.Equal(0, temperatureSource.ReadCount);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.ComputedDemand);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.PlannedFanTarget);
+    }
+
+    [Fact]
+    public async Task CoolingPadMaintenance_InFlightObservationCannotOverwriteLowPowerStatus()
+    {
+        var gate = new LowPowerGate();
+        var padProvider = new BlockingVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.PresentExact,
+                OpaqueFanObservation: 0x2C,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: padProvider,
+            lowPowerGate: gate);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        Assert.False(context.Runtime.GetStatus().CoolingPad!.ConfiguredFanTargetIsFresh);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.ConfiguredFanTarget);
+
+        Task inFlight = context.Runtime.MaintainCoolingPadAsync(
+            CancellationToken.None);
+        await padProvider.WaitUntilBlockedAsync();
+        Assert.True(gate.Enter());
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        padProvider.Complete();
+        await inFlight;
+
+        CoolingPadStatus status = Assert.IsType<CoolingPadStatus>(
+            context.Runtime.GetStatus().CoolingPad);
+        Assert.False(status.ConfiguredFanTargetIsFresh);
+        Assert.Null(status.ConfiguredFanTarget);
+        Assert.Null(status.PlannedFanTarget);
+        Assert.Equal(0, status.ActiveDemandLeases);
+        Assert.Contains("low power", status.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(gate.Exit());
+    }
+
+    [Fact]
+    public async Task CoolingDemandLeases_AreClearedAndRejectedAcrossLowPower()
+    {
+        var gate = new LowPowerGate();
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        IUserConfigurationRepository repository = CreateUserConfigurationRepository(
+            userSid,
+            new BatteryAutomationPreferences());
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            userConfigurationRepository: repository,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact),
+            lowPowerGate: gate);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ActivateUserAsync(
+            userSid,
+            sessionId: 1,
+            static () => true,
+            CancellationToken.None);
+        await context.Runtime.SetCoolingDemandApiEnabledAsync(
+            true,
+            CancellationToken.None);
+        ControlOperationResult accepted =
+            await context.Runtime.SetCoolingDemandLeaseAsync(
+                userSid.Value,
+                sessionId: 1,
+                Guid.NewGuid(),
+                CoolingDemandLevel.Maximum,
+                ttlMilliseconds: 30_000,
+                CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, accepted.Status);
+        Assert.Equal(1, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+
+        Assert.True(gate.Enter());
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        ControlOperationResult rejected =
+            await context.Runtime.SetCoolingDemandLeaseAsync(
+                userSid.Value,
+                sessionId: 1,
+                Guid.NewGuid(),
+                CoolingDemandLevel.Maximum,
+                ttlMilliseconds: 30_000,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, rejected.Status);
+        Assert.Equal(0, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.ComputedDemand);
+        Assert.False(
+            context.Runtime.GetStatus().CoolingPad!.ConfiguredFanTargetIsFresh);
+        Assert.True(context.Runtime.GetStatus().CoolingPad!.CoolingDemandApiEnabled);
+        Assert.True(gate.Exit());
+    }
+
+    [Fact]
+    public async Task CoolingPadObservation_DoesNotPublishOpaqueValueAsTargetOrActiveState()
+    {
+        var padProvider = new FixedVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.PresentExact,
+                OpaqueFanObservation: 0x2C,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: padProvider);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        CoolingPadStatus status = Assert.IsType<CoolingPadStatus>(
+            context.Runtime.GetStatus().CoolingPad);
+        Assert.Equal(DeviceFeatureAccess.ReadOnly, status.Capabilities.FanObservationAccess);
+        Assert.Null(status.ConfiguredFanTarget);
+        Assert.False(status.ConfiguredFanTargetIsFresh);
+        Assert.Null(status.ConfirmedActiveFanControlMode);
+        Assert.Equal(CoolingPadControlOwnershipState.Unowned, status.Ownership);
+        Assert.Null(status.AppliedDemand);
+        Assert.Equal(1, padProvider.ObserveCount);
+
+        await context.Runtime.SetCoolingDemandApiEnabledAsync(
+            true,
+            CancellationToken.None);
+        Assert.Equal(
+            DeviceFeatureAccess.ReadOnly,
+            context.Runtime.GetStatus().CoolingPad!.Capabilities.FanObservationAccess);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.ConfiguredFanTarget);
+    }
+
+    [Fact]
+    public async Task CoolingPadOpaqueZero_DoesNotConfirmAutomaticModeOrTarget()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadProvider: FreshOpaqueZeroCoolingPadProvider());
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        CoolingPadStatus status = Assert.IsType<CoolingPadStatus>(
+            context.Runtime.GetStatus().CoolingPad);
+        Assert.Null(status.ConfiguredFanTarget);
+        Assert.False(status.ConfiguredFanTargetIsFresh);
+        Assert.Null(status.ConfirmedActiveFanControlMode);
+        Assert.Contains("opaque", status.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("no assigned", status.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CoolingPadIntent_RejectsNonAutomaticModeWhileHyperBoostIsActive()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+        {
+            HyperBoostActive = true,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var fixedIntent = new CoolingPadFanIntent(
+            CoolingPadFanMode.Fixed,
+            new CoolingDemandLevel(5_000),
+            CoolingPadSmartCurve.Default);
+
+        ControlOperationResult result = await context.Runtime.SetCoolingPadFanIntentAsync(
+            fixedIntent,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        BatteryConfiguration persisted = await context.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.Null(persisted.Preferences.CoolingPadFanIntent);
+    }
+
+    [Fact]
+    public async Task CoolingPadControl_IsHiddenWithoutMachineSupportEvenWhenHyperBoostObserved()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetCoolingPadFanIntentAsync(
+            CoolingPadFanIntent.Default,
+            CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task ActivateUserAsync_ClearsCoolingDemandLeasesAcrossUsers()
+    {
+        var firstSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var secondSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1002");
+        var preferences = new BatteryAutomationPreferences(
+            AllowExternalCoolingDemand: true);
+        var repository = new MappedUserConfigurationRepository(
+            new Dictionary<string, BatteryConfiguration>
+            {
+                [firstSid.Value] = new BatteryConfiguration(
+                    ProfileDefaults.CreateSafeDefaults(),
+                    preferences,
+                    Recovered: false),
+                [secondSid.Value] = new BatteryConfiguration(
+                    ProfileDefaults.CreateSafeDefaults(),
+                    preferences,
+                    Recovered: false),
+            },
+            directory);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            userConfigurationRepository: repository,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ActivateUserAsync(
+            firstSid,
+            sessionId: 1,
+            static () => true,
+            CancellationToken.None);
+        _ = await context.Runtime.SetCoolingDemandLeaseAsync(
+            firstSid.Value,
+            sessionId: 1,
+            Guid.NewGuid(),
+            CoolingDemandLevel.Maximum,
+            ttlMilliseconds: 30_000,
+            CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        Assert.Equal(1, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+
+        await context.Runtime.ActivateUserAsync(secondSid, CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.ComputedDemand);
+    }
+
+    [Fact]
+    public async Task ActivateUserAsync_ClearsCoolingDemandLeasesAcrossSameUserSessions()
+    {
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var preferences = new BatteryAutomationPreferences(
+            AllowExternalCoolingDemand: true);
+        var repository = new MappedUserConfigurationRepository(
+            new Dictionary<string, BatteryConfiguration>
+            {
+                [userSid.Value] = new BatteryConfiguration(
+                    ProfileDefaults.CreateSafeDefaults(),
+                    preferences,
+                    Recovered: false),
+            },
+            directory);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            userConfigurationRepository: repository,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ActivateUserAsync(
+            userSid,
+            sessionId: 1,
+            static () => true,
+            CancellationToken.None);
+        _ = await context.Runtime.SetCoolingDemandLeaseAsync(
+            userSid.Value,
+            sessionId: 1,
+            Guid.NewGuid(),
+            CoolingDemandLevel.Maximum,
+            ttlMilliseconds: 30_000,
+            CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        Assert.Equal(1, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+
+        await context.Runtime.ActivateUserAsync(
+            userSid,
+            sessionId: 2,
+            static () => true,
+            CancellationToken.None);
+        ControlOperationResult staleSession =
+            await context.Runtime.SetCoolingDemandLeaseAsync(
+                userSid.Value,
+                sessionId: 1,
+                Guid.NewGuid(),
+                CoolingDemandLevel.Maximum,
+                ttlMilliseconds: 30_000,
+                CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, staleSession.Status);
+        Assert.Equal(0, context.Runtime.GetStatus().CoolingPad!.ActiveDemandLeases);
+        Assert.Null(context.Runtime.GetStatus().CoolingPad!.ComputedDemand);
+    }
+
+    [Fact]
     public async Task FunctionKeyControl_PublishesConfirmedReadback()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -7323,6 +10151,38 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 DeviceSubsystem.Battery,
             ],
             context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_LifecyclePathClassifiesHyperBoostTransition()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new InterleavedResumeLifecycleEventSource(() =>
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    Performance = null,
+                    Fans = FanMode.Automatic,
+                    HyperBoostActive = true,
+                };
+            }),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Blocked.ToString(), validation.Status);
+        Assert.Contains("Power mode", validation.Detail, StringComparison.Ordinal);
+        Assert.Contains(
+            "changed",
+            validation.Detail,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -10350,7 +13210,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             transactionBoundary = null,
         LowPowerGate? lowPowerGate = null,
         IUserConfigurationRepository? userConfigurationRepository = null,
-        bool explicitAction = true)
+        bool explicitAction = true,
+        ICoolingPadLightingRuntimeCoordinator? coolingPadLightingCoordinator = null)
     {
         LightingSettings lighting = LightingSettingsFactory.Static(
             new RgbColor(0, 128, 255),
@@ -10368,7 +13229,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities),
             transactionBoundary: transactionBoundary,
             lowPowerGate: lowPowerGate,
-            userConfigurationRepository: userConfigurationRepository);
+            userConfigurationRepository: userConfigurationRepository,
+            coolingPadLightingCoordinator: coolingPadLightingCoordinator);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             LightingEffects = capabilities.LightingEffects,
@@ -10658,7 +13520,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         LowPowerGate? lowPowerGate = null,
         TimeProvider? timeProvider = null,
         IUserConfigurationRepository? userConfigurationRepository = null,
-        IDisplayBrightnessHidController? displayBrightnessHidController = null)
+        IDisplayBrightnessHidController? displayBrightnessHidController = null,
+        ICoolingPadDiscoverySource? coolingPadDiscoverySource = null,
+        IVerifiedCoolingPadProvider? coolingPadProvider = null,
+        ICoolingPadLightingRuntimeCoordinator? coolingPadLightingCoordinator = null,
+        ICoolingPadFanRuntimeCoordinator? coolingPadFanCoordinator = null,
+        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -10738,7 +13605,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 ?? new FixedFanTemperatureSource(default),
             timeProvider: timeProvider,
             userConfigurationRepository: userConfigurationRepository,
-            displayBrightnessHidController: displayBrightnessHidController);
+            displayBrightnessHidController: displayBrightnessHidController,
+            coolingPadDiscoverySource: coolingPadDiscoverySource,
+            coolingPadProvider: coolingPadProvider,
+            coolingPadLightingCoordinator: coolingPadLightingCoordinator,
+            coolingPadFanCoordinator: coolingPadFanCoordinator,
+            hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -10755,6 +13627,29 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             provider,
             device,
             history);
+    }
+
+    private IUserConfigurationRepository CreateUserConfigurationRepository(
+        System.Security.Principal.SecurityIdentifier userSid,
+        BatteryAutomationPreferences preferences) =>
+        new MappedUserConfigurationRepository(
+            new Dictionary<string, BatteryConfiguration>
+            {
+                [userSid.Value] = new BatteryConfiguration(
+                    ProfileDefaults.CreateSafeDefaults(),
+                    preferences,
+                    Recovered: false),
+            },
+            directory);
+
+    private BatteryConfigurationStore CreateUserConfigurationStore(
+        System.Security.Principal.SecurityIdentifier userSid)
+    {
+        string root = Path.Combine(directory, userSid.Value);
+        return new BatteryConfigurationStore(
+            Path.Combine(root, "profiles.json"),
+            Path.Combine(root, "battery-preferences.json"),
+            Path.Combine(root, "battery-configuration.commit.json"));
     }
 
     private static void SeedConfiguration(
@@ -10964,6 +13859,410 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             return ValueTask.FromResult(new FanTemperatureReadings(
                 includeCpu ? readings.CpuCelsius : null,
                 includeGpu ? readings.GpuCelsius : null));
+        }
+    }
+
+    private sealed class BlockingFanTemperatureSource(FanTemperatureReadings readings)
+        : IFanTemperatureSource
+    {
+        private readonly TaskCompletionSource readStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource complete = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask<FanTemperatureReadings> ReadAsync(
+            CancellationToken cancellationToken)
+        {
+            readStarted.TrySetResult();
+            await complete.Task.WaitAsync(cancellationToken);
+            return readings;
+        }
+
+        internal Task WaitUntilReadAsync() => readStarted.Task;
+
+        internal void Complete() => complete.TrySetResult();
+    }
+
+    private sealed class FixedCoolingPadDiscoverySource(
+        CoolingPadConnectionState state) : ICoolingPadDiscoverySource
+    {
+        public CoolingPadConnectionState Observe() => state;
+    }
+
+    private static FixedVerifiedCoolingPadProvider FreshOpaqueZeroCoolingPadProvider() =>
+        new(new CoolingPadObservationSnapshot(
+            CoolingPadConnectionState.PresentExact,
+            OpaqueFanObservation: 0,
+            IsFresh: true,
+            CoolingPadObservationFailure.None));
+
+    private async Task<TestContext> CreateHyperBoostReadyContextAsync(
+        IVerifiedCoolingPadProvider? coolingPadProvider = null,
+        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact),
+            coolingPadProvider: coolingPadProvider
+                ?? FreshOpaqueZeroCoolingPadProvider(),
+            hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Stored,
+            (await context.Runtime.SetCoolingPadFanIntentAsync(
+                CoolingPadFanIntent.Default,
+                CancellationToken.None)).Status);
+        return context;
+    }
+
+    private async Task<TestContext> CreateOwnedHyperBoostContextAsync(
+        IVerifiedCoolingPadProvider? coolingPadProvider = null,
+        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null)
+    {
+        TestContext context = await CreateHyperBoostReadyContextAsync(
+            coolingPadProvider,
+            hyperBoostOwnershipJournalStore);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        return context;
+    }
+
+    private sealed class FixedVerifiedCoolingPadProvider(
+        CoolingPadObservationSnapshot snapshot,
+        DeviceFeatureAccess access = DeviceFeatureAccess.ReadOnly,
+        CoolingPadObservationSnapshot? freshSnapshot = null)
+        : IVerifiedCoolingPadProvider
+    {
+        public DeviceFeatureAccess FanObservationAccess => access;
+
+        public int ObserveCount { get; private set; }
+
+        public int FreshObserveCount { get; private set; }
+
+        public Task<CoolingPadObservationSnapshot> ObserveAsync(
+            CancellationToken cancellationToken)
+        {
+            ObserveCount++;
+            return Task.FromResult(snapshot);
+        }
+
+        public Task<CoolingPadObservationSnapshot> ObserveFreshAsync(
+            CancellationToken cancellationToken)
+        {
+            FreshObserveCount++;
+            return Task.FromResult(freshSnapshot ?? snapshot);
+        }
+
+        public Task InvalidateAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class MutableVerifiedCoolingPadProvider(
+        CoolingPadObservationSnapshot snapshot) : IVerifiedCoolingPadProvider
+    {
+        internal CoolingPadObservationSnapshot Snapshot { get; set; } = snapshot;
+
+        public DeviceFeatureAccess FanObservationAccess => DeviceFeatureAccess.ReadOnly;
+
+        public Task<CoolingPadObservationSnapshot> ObserveAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Snapshot);
+        }
+
+        public Task<CoolingPadObservationSnapshot> ObserveFreshAsync(
+            CancellationToken cancellationToken) => ObserveAsync(cancellationToken);
+
+        public Task InvalidateAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class RecordingHyperBoostOwnershipJournalStore
+        : IHyperBoostOwnershipJournalStore
+    {
+        internal List<string> Events { get; } = [];
+
+        internal Exception? WriteFailure { get; set; }
+
+        internal int? WriteFailureOnCall { get; set; }
+
+        private int writeCalls;
+
+        internal Exception? ClearFailure { get; set; }
+
+        internal HyperBoostOwnershipJournal? Journal { get; set; }
+
+        internal bool Invalid { get; init; }
+
+        public Task<HyperBoostOwnershipJournalLoadResult> LoadAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(
+                new HyperBoostOwnershipJournalLoadResult(Journal, Invalid));
+        }
+
+        public Task WriteAsync(
+            HyperBoostOwnershipJournal journal,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            writeCalls++;
+            if (WriteFailure is not null
+                && (WriteFailureOnCall is null || WriteFailureOnCall == writeCalls))
+            {
+                return Task.FromException(WriteFailure);
+            }
+
+            Events.Add($"write:{journal.State}:{journal.BaseMode}");
+            Journal = journal;
+            return Task.CompletedTask;
+        }
+
+        public Task ClearAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Events.Add("clear");
+            if (ClearFailure is not null)
+            {
+                return Task.FromException(ClearFailure);
+            }
+            Journal = null;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingCoolingPadFanSemanticBackend
+        : ICoolingPadFanSemanticBackend
+    {
+        internal List<CoolingPadFanTarget> AppliedTargets { get; } = [];
+
+        internal int HandbackCount { get; private set; }
+
+        internal Exception? HandbackFailure { get; set; }
+
+        public Task AcquireTargetAsync(
+            CoolingPadFanTarget target,
+            CancellationToken cancellationToken)
+            => ApplyAsync(target, cancellationToken);
+
+        public Task UpdateTargetAsync(
+            CoolingPadFanTarget target,
+            CancellationToken cancellationToken)
+            => ApplyAsync(target, cancellationToken);
+
+        private Task ApplyAsync(
+            CoolingPadFanTarget target,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AppliedTargets.Add(target);
+            return Task.CompletedTask;
+        }
+
+        public Task HandbackAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            HandbackCount++;
+            return HandbackFailure is null
+                ? Task.CompletedTask
+                : Task.FromException(HandbackFailure);
+        }
+    }
+
+    private sealed class UnadmittedCoolingPadFanRuntimeCoordinator
+        : ICoolingPadFanRuntimeCoordinator
+    {
+        public CoolingPadFanRuntimeSnapshot Snapshot { get; } = new(
+            DeviceFeatureAccess.ReadWrite,
+            CoolingPadControlOwnershipState.Unowned,
+            AppliedDemand: null,
+            AppliedTarget: null,
+            "Unadmitted test coordinator.");
+
+        public Task ReconcileAsync(
+            CoolingDemandLevel? demand,
+            string reason,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task HandbackAsync(
+            string reason,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task InvalidateConnectionAsync(
+            string reason,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<CoolingPadFanCrashRecoveryResult> RecoverAfterUnexpectedExitAsync(
+            CancellationToken cancellationToken) => Task.FromResult(
+            new CoolingPadFanCrashRecoveryResult(
+                CoolingPadFanCrashRecoveryStatus.None,
+                "No recovery was required."));
+    }
+
+    private sealed class BlockingVerifiedCoolingPadProvider(
+        CoolingPadObservationSnapshot snapshot) : IVerifiedCoolingPadProvider
+    {
+        private readonly TaskCompletionSource blocked = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource complete = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private int observeCount;
+
+        public DeviceFeatureAccess FanObservationAccess => DeviceFeatureAccess.ReadOnly;
+
+        public async Task<CoolingPadObservationSnapshot> ObserveAsync(
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref observeCount) == 1)
+            {
+                return snapshot;
+            }
+
+            blocked.TrySetResult();
+            await complete.Task.WaitAsync(cancellationToken);
+            return snapshot;
+        }
+
+        public Task<CoolingPadObservationSnapshot> ObserveFreshAsync(
+            CancellationToken cancellationToken) => Task.FromResult(snapshot);
+
+        public Task InvalidateAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        internal Task WaitUntilBlockedAsync() => blocked.Task;
+
+        internal void Complete() => complete.TrySetResult();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class RecordingCoolingPadLightingRuntimeCoordinator(
+        DeviceFeatureAccess access) : ICoolingPadLightingRuntimeCoordinator
+    {
+        private bool enabled;
+        private CoolingPadLightingSyncState? publishedState;
+        private string? publishedReason;
+
+        public event Action<CoolingPadLightingRuntimeSnapshot>? SnapshotChanged;
+
+        public List<bool> EnabledValues { get; } = [];
+
+        public List<bool> ConnectedValues { get; } = [];
+
+        public List<bool> SuppressedValues { get; } = [];
+
+        public List<bool> DelegatedValues { get; } = [];
+
+        public int InvalidateCount { get; private set; }
+
+        public int AcknowledgeRecoveryCount { get; private set; }
+
+        public Exception? InvalidateFailure { get; init; }
+
+        public bool FaultOnSuppressed { get; init; }
+
+        public bool FaultOnDelegated { get; init; }
+
+        public CoolingPadLightingRuntimeSnapshot Snapshot => new(
+            access,
+            enabled,
+            publishedState ?? (enabled
+                ? CoolingPadLightingSyncState.Suppressed
+                : CoolingPadLightingSyncState.Disabled),
+            publishedReason
+                ?? (access == DeviceFeatureAccess.ReadWrite
+                    ? "Admitted"
+                    : "Unavailable"));
+
+        public void PublishSnapshot(
+            CoolingPadLightingSyncState state,
+            string reason)
+        {
+            publishedState = state;
+            publishedReason = reason;
+            SnapshotChanged?.Invoke(Snapshot);
+        }
+
+        public Task SetEnabledAsync(bool value, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            enabled = value;
+            EnabledValues.Add(value);
+            return Task.CompletedTask;
+        }
+
+        public Task AcknowledgeRecoveryAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AcknowledgeRecoveryCount++;
+            enabled = false;
+            publishedState = CoolingPadLightingSyncState.Disabled;
+            publishedReason = "Admitted";
+            SnapshotChanged?.Invoke(Snapshot);
+            return Task.CompletedTask;
+        }
+
+        public Task SetConnectedAsync(bool value, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConnectedValues.Add(value);
+            return Task.CompletedTask;
+        }
+
+        public Task SetSuppressedAsync(bool value, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SuppressedValues.Add(value);
+            if (value && FaultOnSuppressed)
+            {
+                PublishSnapshot(
+                    CoolingPadLightingSyncState.Faulted,
+                    "BlackoutWrite:Indeterminate");
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task SetDelegatedAsync(bool value, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            DelegatedValues.Add(value);
+            if (value && FaultOnDelegated)
+            {
+                PublishSnapshot(
+                    CoolingPadLightingSyncState.Faulted,
+                    "BlackoutWrite:Indeterminate");
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task InvalidateAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            InvalidateCount++;
+            return InvalidateFailure is null
+                ? Task.CompletedTask
+                : Task.FromException(InvalidateFailure);
         }
     }
 
@@ -11276,6 +14575,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int PerformanceSetCalls { get; private set; }
 
+        public int HyperBoostSetCalls { get; private set; }
+
+        public bool? LastHyperBoostEnabled { get; private set; }
+
+        public PerformancePreset? LastHyperBoostBaseMode { get; private set; }
+
         public List<PerformancePreset> PerformanceWrites { get; } = [];
 
         public int FanSetCalls { get; private set; }
@@ -11364,6 +14669,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? PerformanceFailure { get; set; }
 
+        public Exception? HyperBoostFailure { get; set; }
+
+        public int? HyperBoostFailureOnCall { get; set; }
+
         public Exception? FanFailure { get; set; }
 
         public Exception? LightingFailure { get; set; }
@@ -11420,6 +14729,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Action? BeforeReadLightingState { get; set; }
 
         public Action<DeviceSubsystem>? AfterSetter { get; set; }
+
+        public Action? AfterHyperBoostSetter { get; set; }
 
         public Func<Task>? ChargeLimitSetterBoundary { get; set; }
 
@@ -11600,6 +14911,47 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             }
 
             AfterSetter?.Invoke(DeviceSubsystem.Performance);
+            return Task.CompletedTask;
+        }
+
+        public Task SetHyperBoostAsync(
+            bool enabled,
+            CancellationToken cancellationToken) => SetHyperBoostAsync(
+                enabled,
+                PerformancePreset.Balanced,
+                cancellationToken);
+
+        public Task SetHyperBoostAsync(
+            bool enabled,
+            PerformancePreset baseMode,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TotalCalls++;
+            HyperBoostSetCalls++;
+            LastHyperBoostEnabled = enabled;
+            LastHyperBoostBaseMode = baseMode;
+            if (HyperBoostFailure is not null
+                && (HyperBoostFailureOnCall is null
+                    || HyperBoostFailureOnCall == HyperBoostSetCalls))
+            {
+                return Task.FromException(HyperBoostFailure);
+            }
+
+            ConfirmedState = enabled
+                ? ConfirmedState with
+                {
+                    Performance = null,
+                    Fans = FanMode.Automatic,
+                    HyperBoostActive = true,
+                }
+                : ConfirmedState with
+                {
+                    Performance = baseMode,
+                    Fans = FanMode.Automatic,
+                    HyperBoostActive = false,
+                };
+            AfterHyperBoostSetter?.Invoke();
             return Task.CompletedTask;
         }
 

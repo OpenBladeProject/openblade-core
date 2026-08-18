@@ -105,6 +105,9 @@ public sealed class Rz090528BatteryValidationFactoryTests
             },
             factory.Capabilities.GpuOverclock);
         Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            factory.Capabilities.HyperBoostAccess);
+        Assert.Equal(
             [
                 new PowerSourceBehaviorObservation(
                     PowerSource.Battery,

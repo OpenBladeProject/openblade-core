@@ -340,6 +340,26 @@ public sealed class BatteryValidationProbeTests
     }
 
     [Fact]
+    public void Evaluate_OptionalRevisionGateRejectsSameGeometryDifferentRevision()
+    {
+        ScriptedNative native = new([]);
+        native.Add("wrong-revision", ExactHandle with { VersionNumber = 0x0201 });
+        var evaluator = new WindowsRazerHidEvidenceEvaluator(
+            new ScriptedIdentitySource(ExactHost, null),
+            new ScriptedGuard(new HardwareAccessDecision([], null), null),
+            native,
+            ControllerExclusivityPolicy.Strict,
+            ExactHandle with { VersionNumber = 0x0200 });
+
+        using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
+
+        Assert.Equal(
+            BatteryValidationProbeClassification.NoExactHandle,
+            evaluation.Result.Classification);
+        Assert.Equal(0, evaluation.Result.ExactMatchCount);
+    }
+
+    [Fact]
     public void Evaluate_AccessDeniedRetriesMetadataOnlyWithOtherwiseExactParameters()
     {
         ScriptedNative native = new([]);

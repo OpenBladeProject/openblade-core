@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 2,
+  "evidenceKind": "coolingPadSemanticAdmission",
+  "host": {
+    "manufacturer": "Razer",
+    "model": "Blade 16 - RZ09-0581",
+    "sku": "RZ09-05819EN4"
+  },
+  "device": {
+    "vendorId": 5426,
+    "productId": 3907,
+    "usagePage": 12,
+    "usage": 1,
+    "featureReportLength": 91,
+    "releaseNumber": 512,
+    "featureReportId": 5,
+    "controlReportLength": 90
+  },
+  "fan": {
+    "opaqueQuery": "0D/81:010500",
+    "hostControlPreparation": "0D/10:000600",
+    "hostDemand2200": "0D/01:01052C",
+    "exactIdentityAndTransportReviewed": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-08-rz09-0581-cooling-pad-module-discovery.json",
+        "sha256": "B3A485F413DA7A8FED175268380EAB9C43E6ECE035C87EF267CDD271F6932A0C"
+      }
+    },
+    "hostControl2200PairPhysicallyValidated": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-09-rz09-0581-cooling-pad-host-control-physical-positive.json",
+        "sha256": "58908312EEBD407D3D2C647F59F8C9CFC97C06D417D0D67D76075C235FB965BC"
+      }
+    },
+    "openBladeHandbackValidated": { "validated": false, "evidence": null },
+    "fullTargetRangeValidated": { "validated": false, "evidence": null },
+    "smartCurveCadenceValidated": { "validated": false, "evidence": null },
+    "disconnectReconnectValidated": { "validated": false, "evidence": null },
+    "lowPowerLifecycleValidated": { "validated": false, "evidence": null },
+    "crashRecoveryValidated": { "validated": false, "evidence": null },
+    "hyperBoostInterlockValidated": { "validated": false, "evidence": null },
+    "physicalButtonOwnershipPolicyValidated": { "validated": false, "evidence": null }
+  },
+  "lighting": {
+    "frameCommand": "0F/03",
+    "framePayloadLength": 59,
+    "logicalSlotCount": 18,
+    "uniformKnownAnswerColor": "123456",
+    "uniformKnownAnswerReportSha256": "2E3F0F802124D7933D499AEBEAB760F6C026DBDB2C639E2E5448FBB006CF1A07",
+    "brightnessQuery": "0F/84:010500",
+    "brightnessSetPrefix": "0F/04:0100",
+    "exactIdentityAndGeometryReviewed": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-08-rz09-0581-cooling-pad-module-discovery.json",
+        "sha256": "B3A485F413DA7A8FED175268380EAB9C43E6ECE035C87EF267CDD271F6932A0C"
+      }
+    },
+    "wholeStripProjectionResolved": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/decoded/rz09-0581-pid-02e0-bios-4.00-cooling-pad-protocol-observations.json",
+        "sha256": "6A3825D706314889948F5BD5E9DBDCE7A27E86A10E91B631952ECEE14CDB71FE"
+      }
+    },
+    "displayOffOracleObserved": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-09-rz09-0581-cooling-pad-display-off.json",
+        "sha256": "AF3EB444747E10A789B5DE0EDD2BC2A63B36A13C427D932EEDAAF386CE8F5F46"
+      }
+    },
+    "openBladeReversibleFrameLifecycleValidated": { "validated": false, "evidence": null },
+    "frameCadenceValidated": { "validated": false, "evidence": null },
+    "disconnectReconnectValidated": { "validated": false, "evidence": null },
+    "sleepResumeValidated": { "validated": false, "evidence": null },
+    "controllerHandoffValidated": { "validated": false, "evidence": null }
+  }
+}

@@ -39,6 +39,15 @@ public interface IServiceControlRuntime
             ? ActivateUserAsync(userSid, cancellationToken)
             : Task.CompletedTask;
 
+    Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        int sessionId,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken) => ActivateUserAsync(
+            userSid,
+            stillControlsSession,
+            cancellationToken);
+
     Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
         CancellationToken token);
@@ -46,6 +55,60 @@ public interface IServiceControlRuntime
     Task<ControlOperationResult> SetPerformanceOverrideAsync(
         ManualOverride<PerformancePreset>? value,
         CancellationToken token);
+
+    Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "HyperBoost control is unavailable."));
+
+    Task<ControlOperationResult> SetCoolingPadFanIntentAsync(
+        CoolingPadFanIntent intent,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Cooling-pad fan intent is unavailable."));
+
+    Task<ControlOperationResult> SetCoolingDemandLeaseAsync(
+        string userSid,
+        int sessionId,
+        Guid leaseId,
+        CoolingDemandLevel demand,
+        int ttlMilliseconds,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "External cooling demand is unavailable."));
+
+    Task<ControlOperationResult> ReleaseCoolingDemandLeaseAsync(
+        string userSid,
+        int sessionId,
+        Guid leaseId,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                "No matching cooling-demand lease was active."));
+
+    Task<ControlOperationResult> SetCoolingDemandApiEnabledAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The cooling-demand API is unavailable."));
+
+    Task<ControlOperationResult> SetCoolingPadLightingSyncAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Cooling-pad lighting synchronization is unavailable."));
+
+    Task<ControlOperationResult> AcknowledgeCoolingPadLightingRecoveryAsync(
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Cooling-pad lighting recovery acknowledgement is unavailable."));
 
     Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
         PerformanceOverride? value,
@@ -240,6 +303,13 @@ public interface IServiceControlRuntime
 
     Task MaintainFanCurveAsync(CancellationToken cancellationToken) =>
         Task.CompletedTask;
+
+    Task MaintainCoolingPadAsync(CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
+    Task WaitForCoolingPadReconciliationRequestAsync(
+        CancellationToken cancellationToken) =>
+        Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
 }
 
 public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
@@ -292,6 +362,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
     private readonly TimeProvider timeProvider;
     private readonly SemaphoreSlim operationGate = new(1, 1);
+    private readonly SemaphoreSlim coolingPadReconciliationSignal = new(0, 1);
     private readonly ProfileSetValidator validator;
     private readonly object initializationGate = new();
     private readonly object statusPublishGate = new();
@@ -312,6 +383,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private int mcuVersionReadAttempts;
     private LightingSettings? lastOwnedLightingSettings;
     private FanControlSettings? lastOwnedFanControlSettings;
+    // Process-local by design. A first observation of mode 7 does not establish
+    // ownership; only a successful OpenBlade enable with matching readback does.
+    private bool ownsHyperBoost;
+    private PerformancePreset? ownedHyperBoostBaseMode;
+    private long hyperBoostOwnershipGeneration;
     private LightingSettings? pendingLightingRestore;
     private bool pendingLightingRestoreFromLifecycle;
     private LightingSettings? faultedLightingRecoveryCandidate;
@@ -320,6 +396,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool explicitLightingOwnershipActive;
     private string? lightingRecoveryPauseMessage;
     private readonly IFanTemperatureSource fanTemperatureSource;
+    private readonly IVerifiedCoolingPadProvider coolingPadProvider;
+    private readonly ICoolingPadLightingRuntimeCoordinator coolingPadLightingCoordinator;
+    private readonly ICoolingPadFanRuntimeCoordinator coolingPadFanCoordinator;
+    private readonly IHyperBoostOwnershipJournalStore hyperBoostOwnershipJournalStore;
+    private readonly CoolingDemandLeaseRegistry coolingDemandLeases;
+    private CoolingDemandLevel? lastCoolingPadSmartCurveDemand;
+    private bool lastCoolingPadSmartCurveFailSafe;
     private int? lastCurveFan1Rpm;
     private int? lastCurveFan2Rpm;
     private int consecutiveDeviceProbeFailures;
@@ -333,6 +416,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool startupProfileReconciliationPending;
     private bool startupProfileReconciliationRequested;
     private bool unexpectedExitRecoveryPending;
+    private bool coolingPadLightingUnexpectedExitRecoveryPending;
     private bool manualFanCurveRecoveryPending;
     private bool unexpectedExitRecoveryDeferredForUserConfiguration;
     private DeferredManualFanSafetyState deferredManualFanSafetyState;
@@ -340,6 +424,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool suppressInitialUserProfileApplyAfterUnexpectedExit;
     private bool suppressInitialKnownPowerSourceApplyAfterUnexpectedExit;
     private string? activeUserSid;
+    private int activeUserSessionId = -1;
     private ResumeStateBaseline? pendingResumeStateBaseline;
     private DisplayBrightnessHidUsage assertedDisplayBrightnessUsage;
     private bool displayBrightnessReleaseRequired;
@@ -461,7 +546,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IFirmwareVersionSource firmwareVersionSource,
         ProfileSetValidator validator,
         IUserConfigurationRepository userConfigurationRepository,
-        IDisplayBrightnessHidController displayBrightnessHidController)
+        IDisplayBrightnessHidController displayBrightnessHidController,
+        IVerifiedCoolingPadProvider coolingPadProvider)
         : this(
             store,
             overrideStore,
@@ -476,7 +562,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             validator,
             fanTemperatureSource: null,
             userConfigurationRepository: userConfigurationRepository,
-            displayBrightnessHidController: displayBrightnessHidController)
+            displayBrightnessHidController: displayBrightnessHidController,
+            coolingPadProvider: coolingPadProvider)
     {
     }
 
@@ -546,7 +633,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IFanTemperatureSource? fanTemperatureSource = null,
         TimeProvider? timeProvider = null,
         IUserConfigurationRepository? userConfigurationRepository = null,
-        IDisplayBrightnessHidController? displayBrightnessHidController = null)
+        IDisplayBrightnessHidController? displayBrightnessHidController = null,
+        ICoolingPadDiscoverySource? coolingPadDiscoverySource = null,
+        IVerifiedCoolingPadProvider? coolingPadProvider = null,
+        ICoolingPadLightingRuntimeCoordinator? coolingPadLightingCoordinator = null,
+        ICoolingPadFanRuntimeCoordinator? coolingPadFanCoordinator = null,
+        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null)
     {
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
@@ -567,12 +659,32 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.transitionRetryDelay = transitionRetryDelay
             ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        coolingDemandLeases = new CoolingDemandLeaseRegistry(this.timeProvider);
         this.validator = validator ?? throw new ArgumentNullException(nameof(validator));
         this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
             ?? new SafeWindowsFanTemperatureSource();
         this.displayBrightnessHidController = displayBrightnessHidController
             ?? UnavailableDisplayBrightnessHidController.Instance;
+        this.coolingPadProvider = coolingPadProvider
+            ?? new DiscoveryOnlyCoolingPadProvider(
+                coolingPadDiscoverySource ?? CoolingPadDiscoveryFactory.CreateWindows());
+        this.coolingPadLightingCoordinator = coolingPadLightingCoordinator
+            ?? new ProtocolCoolingPadLightingRuntimeCoordinator(
+                CoolingPadLightingCoordinatorFactory.CreateWindows());
+        this.coolingPadLightingCoordinator.SnapshotChanged +=
+            OnCoolingPadLightingSnapshotChanged;
+        this.coolingPadFanCoordinator = coolingPadFanCoordinator switch
+        {
+            null => UnavailableCoolingPadFanRuntimeCoordinator.Instance,
+            UnavailableCoolingPadFanRuntimeCoordinator unavailable => unavailable,
+            AdmittedCoolingPadFanRuntimeCoordinator admitted => admitted,
+            _ => throw new ArgumentException(
+                "Only the unavailable or explicitly admitted cooling-pad fan runtime coordinator may be used.",
+                nameof(coolingPadFanCoordinator)),
+        };
+        this.hyperBoostOwnershipJournalStore = hyperBoostOwnershipJournalStore
+            ?? UnavailableHyperBoostOwnershipJournalStore.Instance;
     }
 
     public void Initialize(BatteryConfiguration configuration, PowerSource powerSource) =>
@@ -631,6 +743,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             startupProfileReconciliationPending = true;
             startupProfileReconciliationRequested = false;
             unexpectedExitRecoveryPending = recoveringUnexpectedExit;
+            coolingPadLightingUnexpectedExitRecoveryPending =
+                configuration.Preferences.CoolingPadLightingRecoveryRequired
+                || recoveringUnexpectedExit
+                    && configuration.Preferences.CoolingPadLightingSyncEnabled;
             manualFanCurveRecoveryPending = recoveringUnexpectedExit;
             // Production profiles and overrides become authoritative only after
             // an authorized active user is known. The machine bootstrap must not
@@ -791,6 +907,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 powerSource,
                 overrides);
             preferences = context.Configuration.Preferences;
+            coolingPadLightingUnexpectedExitRecoveryPending |=
+                preferences.CoolingPadLightingRecoveryRequired
+                || unexpectedExitRecoveryDeferredForUserConfiguration
+                    && preferences.CoolingPadLightingSyncEnabled;
             deviceProvider.SetAllowUntestedFirmware(
                 context.Configuration.Preferences.AllowUntestedFirmware);
             deviceProvider.SetLightingRefreshRate(
@@ -850,6 +970,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 AllowUntestedFirmware =
                     context.Configuration.Preferences.AllowUntestedFirmware,
                 PerformanceShortcutPreview = null,
+                CoolingPad = null,
             });
 
             if (unexpectedExitRecoveryDeferredForUserConfiguration)
@@ -861,7 +982,57 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (stillControlsSession())
             {
+                coolingDemandLeases.Clear();
                 Volatile.Write(ref activeUserSid, userSid.Value);
+                Volatile.Write(ref activeUserSessionId, -1);
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task ActivateUserAsync(
+        SecurityIdentifier userSid,
+        int sessionId,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken)
+    {
+        if (sessionId < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sessionId));
+        }
+
+        await ActivateUserAsync(
+            userSid,
+            stillControlsSession,
+            cancellationToken).ConfigureAwait(false);
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!stillControlsSession()
+                || !string.Equals(
+                    activeUserSid,
+                    userSid.Value,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            int previousSession = Volatile.Read(ref activeUserSessionId);
+            if (previousSession == sessionId)
+            {
+                return;
+            }
+
+            bool hadLeases = coolingDemandLeases.Count != 0;
+            coolingDemandLeases.Clear();
+            Volatile.Write(ref activeUserSessionId, sessionId);
+            if (hadLeases)
+            {
+                PublishCoolingPadStatus(
+                    "Cooling-demand leases from the previous Windows session were released.");
             }
         }
         finally
@@ -1140,6 +1311,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FanControlSettings? settings,
         CancellationToken token)
     {
+        if (GetStatus().ConfirmedState?.HyperBoostActive == true
+            && value is not null
+            && (settings ?? FanControlSettings.FromLegacy(value.Value)).Mode
+                != FanMode.Automatic)
+        {
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Laptop fan overrides must remain Automatic while HyperBoost is active."));
+        }
+
         FanControlSettings? previous = null;
         PerformancePreset performanceIntent = PerformancePreset.Balanced;
         CustomPerformanceSettings? customPerformanceIntent = null;
@@ -1184,6 +1365,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FanControlSettings settings = snapshot.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(snapshot.DesiredState.Fans.Value);
         if (settings.Mode != FanMode.ManualCurve
+            || snapshot.ConfirmedState?.HyperBoostActive == true
             || !snapshot.DeviceVerified
             || snapshot.WritesBlocked
             || unexpectedExitRecoveryDeferredForUserConfiguration
@@ -1696,6 +1878,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            ControlOperationResult? coolingPadLightingFailure = null;
             if (mode == KeyboardLightingControlMode.WindowsDynamicLighting
                 && GetStatus().Capabilities?.LampArrayLightingAccess is null)
             {
@@ -1710,6 +1893,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 if (delegateToWindows)
                 {
+                    coolingPadLightingFailure =
+                        await TryUpdateCoolingPadLightingAsync(
+                            static (coordinator, cancellationToken) =>
+                                coordinator.SetDelegatedAsync(true, cancellationToken),
+                            "Cooling-pad lighting could not be delegated before Windows took keyboard lighting ownership.",
+                            token)
+                        .ConfigureAwait(false);
                     // Reassert the ownership boundary even when the persisted
                     // preference already says Windows owns lighting. This
                     // recovers safely from a previously interrupted transition
@@ -1719,11 +1909,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         token).ConfigureAwait(false);
                 }
 
+                string alreadyCurrent = delegateToWindows
+                    ? "Keyboard lighting is already delegated to Windows."
+                    : "OpenBlade already controls keyboard lighting.";
+                if (coolingPadLightingFailure is not null)
+                {
+                    return new ControlOperationResult(
+                        ControlOperationStatus.Failed,
+                        $"{alreadyCurrent} {coolingPadLightingFailure.Message}");
+                }
                 return new ControlOperationResult(
                     ControlOperationStatus.Stored,
-                    delegateToWindows
-                        ? "Keyboard lighting is already delegated to Windows."
-                        : "OpenBlade already controls keyboard lighting.");
+                    alreadyCurrent);
             }
 
             BatteryAutomationPreferences staged = preferences with
@@ -1736,12 +1933,32 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             };
             if (delegateToWindows)
             {
+                coolingPadLightingFailure =
+                    await TryUpdateCoolingPadLightingAsync(
+                        static (coordinator, cancellationToken) =>
+                            coordinator.SetDelegatedAsync(true, cancellationToken),
+                        "Cooling-pad lighting could not be delegated before Windows took keyboard lighting ownership.",
+                        token)
+                    .ConfigureAwait(false);
                 // Stop the live renderer before persisting or publishing the
                 // delegation. Keeping a lifecycle restore candidate lets us
                 // put the renderer back if persistence fails.
-                await InvalidateLightingRendererCoreAsync(
-                    preserveForLifecycleRestore: true,
-                    token).ConfigureAwait(false);
+                try
+                {
+                    await InvalidateLightingRendererCoreAsync(
+                        preserveForLifecycleRestore: true,
+                        token).ConfigureAwait(false);
+                }
+                catch
+                {
+                    await TryUpdateCoolingPadLightingAsync(
+                            static (coordinator, cancellationToken) =>
+                                coordinator.SetDelegatedAsync(false, cancellationToken),
+                            "Cooling-pad lighting delegation could not be rolled back after keyboard renderer invalidation failed.",
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    throw;
+                }
             }
 
             try
@@ -1760,6 +1977,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         throw new InvalidOperationException(
                             "The previous lighting renderer could not be restored.");
                     }
+                    await TryUpdateCoolingPadLightingAsync(
+                            static (coordinator, cancellationToken) =>
+                                coordinator.SetDelegatedAsync(false, cancellationToken),
+                            "Cooling-pad lighting delegation could not be rolled back after preference persistence failed.",
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
                 }
                 catch (Exception restoreException)
                 {
@@ -1774,6 +1997,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             preferences = staged;
 
+            if (!delegateToWindows)
+            {
+                coolingPadLightingFailure =
+                    await TryUpdateCoolingPadLightingAsync(
+                        static (coordinator, cancellationToken) =>
+                            coordinator.SetDelegatedAsync(false, cancellationToken),
+                        "Cooling-pad lighting could not leave delegated mode.",
+                        token)
+                    .ConfigureAwait(false);
+            }
+
             if (delegateToWindows)
             {
                 pendingLightingRestore = null;
@@ -1787,6 +2021,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             string message = delegateToWindows
                 ? "Keyboard lighting was delegated to Windows Dynamic Lighting. OpenBlade will not write keyboard lighting."
                 : "OpenBlade keyboard lighting control is enabled. No lighting change was applied.";
+            ControlOperationStatus operationStatus = ControlOperationStatus.Stored;
+            if (coolingPadLightingFailure is not null)
+            {
+                operationStatus = ControlOperationStatus.Failed;
+                message = $"{message} {coolingPadLightingFailure.Message}";
+            }
             PublishIfChanged(GetStatus() with
             {
                 KeyboardLightingControlMode = mode,
@@ -1796,8 +2036,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 LightingSuppressions = CurrentLightingSuppressions(),
                 Message = message,
             });
-            history.RecordSummary(ControlOperationStatus.Stored, message);
-            return new ControlOperationResult(ControlOperationStatus.Stored, message);
+            history.RecordSummary(operationStatus, message);
+            return new ControlOperationResult(operationStatus, message);
         }
         finally
         {
@@ -2393,6 +2633,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             bool wasSuppressed = lightingSuppressions.Count > 0;
+            ControlOperationResult? coolingPadLightingFailure = null;
             if (alreadySet != suppressed)
             {
                 UpdateLightingSuppressionState(reason, suppressed);
@@ -2404,6 +2645,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return new ControlOperationResult(
                     ControlOperationStatus.Stored,
                     "Lighting power policy state was updated.");
+            }
+
+            if (!wasSuppressed && isSuppressed)
+            {
+                coolingPadLightingFailure =
+                    await TryUpdateCoolingPadLightingAsync(
+                        static (coordinator, cancellationToken) =>
+                            coordinator.SetSuppressedAsync(true, cancellationToken),
+                        "Cooling-pad lighting could not be suppressed before the keyboard lighting transition.",
+                        token)
+                    .ConfigureAwait(false);
             }
 
             ControlOperationResult result = await ApplyScopedIntentAsync(
@@ -2418,6 +2670,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (result.Status == ControlOperationStatus.Applied)
             {
                 lightingSuppressionWritePending = false;
+                if (wasSuppressed && !isSuppressed)
+                {
+                    coolingPadLightingFailure =
+                        await TryUpdateCoolingPadLightingAsync(
+                            static (coordinator, cancellationToken) =>
+                                coordinator.SetSuppressedAsync(false, cancellationToken),
+                            "Cooling-pad lighting could not be restored after keyboard lighting resumed.",
+                            token)
+                        .ConfigureAwait(false);
+                }
+            }
+            if (result.Status == ControlOperationStatus.Applied
+                && coolingPadLightingFailure is not null)
+            {
+                string partialFailure = isSuppressed
+                    ? $"Keyboard lighting was switched off, but cooling-pad lighting suppression failed. {coolingPadLightingFailure.Message}"
+                    : $"Keyboard lighting was restored, but cooling-pad lighting restoration failed. {coolingPadLightingFailure.Message}";
+                history.RecordSummary(ControlOperationStatus.Failed, partialFailure);
+                return new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    partialFailure);
             }
             return result.Status == ControlOperationStatus.Applied
                 ? result with
@@ -2734,6 +3007,1623 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             operationGate.Release();
         }
     }
+
+    public Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        CancellationToken token) => SetHyperBoostCoreAsync(
+            enabled,
+            expectedOwnershipGeneration: null,
+            token);
+
+    private async Task<ControlOperationResult> SetHyperBoostCoreAsync(
+        bool enabled,
+        long? expectedOwnershipGeneration,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        ServiceStatusSnapshot? writeBaseline = null;
+        bool setterCompleted = false;
+        bool ownedDisableAttempt = false;
+        bool ownershipJournalPrepared = false;
+        PerformancePreset pendingBaseMode = PerformancePreset.Balanced;
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                .ConfigureAwait(false);
+            ServiceStatusSnapshot current = GetStatus();
+            if (expectedOwnershipGeneration is { } expected
+                && (!ownsHyperBoost || hyperBoostOwnershipGeneration != expected))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    "HyperBoost lifecycle restoration was skipped because OpenBlade ownership changed before the write.");
+            }
+            bool ownedLifecycleRestore = !enabled
+                && expectedOwnershipGeneration is not null
+                && ownsHyperBoost
+                && current.ConfirmedState?.HyperBoostActive == true
+                && !HasPendingWriteConfirmations();
+            if (!current.DeviceVerified
+                || current.WritesBlocked && !ownedLifecycleRestore
+                || current.Capabilities?.HyperBoostAccess
+                    != DeviceFeatureAccess.ReadWrite
+                || current.ConfirmedState is not { } confirmed)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "HyperBoost control is unavailable right now.");
+            }
+
+            if (confirmed.HyperBoostActive == enabled)
+            {
+                if (!enabled)
+                {
+                    bool hadOwnership = ownsHyperBoost
+                        || ownedHyperBoostBaseMode is not null;
+                    bool retired = !hadOwnership
+                        || await RetireInactiveHyperBoostJournalIfPresentAsync(
+                                "HyperBoost was already off, but its ownership journal could not be retired.")
+                            .ConfigureAwait(false);
+                    if (hadOwnership)
+                    {
+                        hyperBoostOwnershipGeneration++;
+                    }
+                    ownsHyperBoost = false;
+                    ownedHyperBoostBaseMode = null;
+                    if (!retired)
+                    {
+                        return new ControlOperationResult(
+                            ControlOperationStatus.Failed,
+                            "HyperBoost is already off, but OpenBlade could not safely retire its ownership journal. Control writes remain blocked.");
+                    }
+                }
+
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    enabled
+                        ? "HyperBoost is already active."
+                        : "HyperBoost is already off.");
+            }
+
+            CoolingPadFanRuntimeSnapshot fanRuntime = coolingPadFanCoordinator.Snapshot;
+            if (enabled
+                && fanRuntime.Ownership
+                    == CoolingPadControlOwnershipState.Indeterminate)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "HyperBoost is blocked because cooling-pad fan ownership is indeterminate. OpenBlade will not issue another pad or thermal write until that state is recovered.");
+            }
+            bool savedPadAuto = preferences.CoolingPadFanIntent is
+            {
+                Mode: CoolingPadFanMode.Automatic,
+            };
+            bool canHandbackOwnedPadControl = fanRuntime is
+            {
+                Access: DeviceFeatureAccess.ReadWrite,
+                Ownership: CoolingPadControlOwnershipState.Owned,
+            };
+            bool padPresentEligibility = current.CoolingPad is
+            {
+                Connection: CoolingPadConnectionState.PresentExact,
+            } && (savedPadAuto || canHandbackOwnedPadControl);
+            if (enabled && confirmed.Performance is null)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "HyperBoost requires a fresh confirmed base performance mode.");
+            }
+
+            PerformancePreset requestedBaseMode = enabled
+                ? confirmed.Performance!.Value
+                : ownedHyperBoostBaseMode ?? PerformancePreset.Balanced;
+            pendingBaseMode = requestedBaseMode;
+            DeviceFeatureAccess? requestedBaseAccess = current.Capabilities
+                ?.HyperBoostBaseModes?.AccessFor(requestedBaseMode)
+                ?? (requestedBaseMode == PerformancePreset.Balanced
+                    ? current.Capabilities?.HyperBoostAccess
+                    : null);
+            if (enabled && requestedBaseAccess != DeviceFeatureAccess.ReadWrite)
+            {
+                string message = requestedBaseMode is
+                    PerformancePreset.Silent or PerformancePreset.Performance
+                    && requestedBaseAccess == DeviceFeatureAccess.ObservedOnly
+                        ? $"Direct HyperBoost from {PerformanceLabel(requestedBaseMode)} is implemented but not validated for this exact laptop and firmware. Only a base mode with ReadWrite admission can be enabled."
+                        : $"{PerformanceLabel(requestedBaseMode)} is not an admitted HyperBoost base mode for this exact laptop and firmware.";
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    message);
+            }
+
+            if (enabled
+                && (current.ActivePowerSource != PowerSource.PluggedIn
+                    || confirmed.Fans != FanMode.Automatic
+                    || !padPresentEligibility))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    $"HyperBoost requires the full-power adapter, an admitted {PerformanceLabel(requestedBaseMode)} direct transition, Automatic laptop fans, and the exact Razer cooling pad with saved cooling-pad Auto intent or confirmed handback of OpenBlade-owned pad control.");
+            }
+
+            if (enabled)
+            {
+                if (canHandbackOwnedPadControl)
+                {
+                    try
+                    {
+                        await coolingPadFanCoordinator.HandbackAsync(
+                                "Cooling-pad fan control was handed back before HyperBoost. Saved fan intent is unchanged.",
+                                token)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception exception)
+                    {
+                        string failure =
+                            $"HyperBoost was not submitted because cooling-pad fan handback failed: {exception.Message}";
+                        history.RecordSummary(ControlOperationStatus.Failed, failure);
+                        PublishCoolingPadStatus(failure);
+                        return new ControlOperationResult(
+                            ControlOperationStatus.Failed,
+                            failure);
+                    }
+
+                    if (coolingPadFanCoordinator.Snapshot.Ownership
+                        != CoolingPadControlOwnershipState.Unowned)
+                    {
+                        const string failure =
+                            "HyperBoost was not submitted because cooling-pad fan handback was not confirmed.";
+                        history.RecordSummary(ControlOperationStatus.Failed, failure);
+                        PublishCoolingPadStatus(failure);
+                        return new ControlOperationResult(
+                            ControlOperationStatus.Failed,
+                            failure);
+                    }
+                }
+
+                CoolingPadObservationSnapshot pad =
+                    await coolingPadProvider.ObserveFreshAsync(token)
+                        .ConfigureAwait(false);
+                bool freshPresentEligibility = coolingPadProvider.FanObservationAccess
+                        == DeviceFeatureAccess.ReadOnly
+                    && pad.Connection == CoolingPadConnectionState.PresentExact
+                    && pad.IsFresh
+                    && pad.Failure == CoolingPadObservationFailure.None
+                    && pad.OpaqueFanObservation == 0;
+                if (!freshPresentEligibility)
+                {
+                    return new ControlOperationResult(
+                        ControlOperationStatus.Blocked,
+                        "HyperBoost requires a fresh exact-pad opaque-zero observation after saved Auto intent or confirmed OpenBlade handback. Zero is only a conservative compatibility prerequisite and can also occur during Fixed control; OpenBlade cannot independently read the pad's active mode.");
+                }
+            }
+
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "HyperBoost control is unavailable right now.");
+            }
+
+            writeBaseline = current;
+            ownedDisableAttempt = !enabled && ownsHyperBoost;
+            if (enabled || ownedDisableAttempt)
+            {
+                await hyperBoostOwnershipJournalStore.WriteAsync(
+                        new HyperBoostOwnershipJournal(
+                            enabled
+                                ? HyperBoostOwnershipJournalState.EnablePending
+                                : HyperBoostOwnershipJournalState.RestorePending,
+                            requestedBaseMode,
+                            timeProvider.GetUtcNow()),
+                        token)
+                    .ConfigureAwait(false);
+                ownershipJournalPrepared = true;
+            }
+            await device.SetHyperBoostAsync(enabled, requestedBaseMode, token)
+                .ConfigureAwait(false);
+            setterCompleted = true;
+            ConfirmedDeviceState readback = await device.ReadStateAsync(token)
+                .ConfigureAwait(false);
+            bool matched = readback.HyperBoostActive == enabled
+                && (enabled
+                    || readback is
+                    {
+                        Performance: var restoredPerformance,
+                        Fans: FanMode.Automatic,
+                    } && restoredPerformance == requestedBaseMode);
+            if (!matched)
+            {
+                if (!enabled)
+                {
+                    hyperBoostOwnershipGeneration++;
+                    ownsHyperBoost = false;
+                    ownedHyperBoostBaseMode = null;
+                }
+
+                if (readback.HyperBoostActive)
+                {
+                    coolingDemandLeases.Clear();
+                }
+                var mismatch = new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "HyperBoost changed, but the final laptop state did not match the requested mode. OpenBlade will not retry it.");
+                history.RecordSummary(mismatch.Status, mismatch.Message);
+                PublishIfChanged(current with
+                {
+                    ConfirmedState = readback,
+                    CoolingPad = readback.HyperBoostActive
+                        ? SuppressCoolingPadDemandForHyperBoost(
+                            current.CoolingPad,
+                            mismatch.Message)
+                        : current.CoolingPad,
+                    Message = mismatch.Message,
+                });
+                return mismatch;
+            }
+
+            if (enabled)
+            {
+                coolingDemandLeases.Clear();
+            }
+
+            if (enabled)
+            {
+                bool journalFinalized =
+                    await TryWriteHyperBoostOwnershipJournalAsync(
+                        HyperBoostOwnershipJournalState.OwnedConfirmed,
+                        requestedBaseMode,
+                        "HyperBoost was confirmed, but its durable ownership journal could not be finalized.")
+                    .ConfigureAwait(false);
+                if (!journalFinalized)
+                {
+                    return await RestoreAfterHyperBoostJournalFailureAsync(
+                            device,
+                            current,
+                            readback,
+                            requestedBaseMode)
+                        .ConfigureAwait(false);
+                }
+            }
+            else if (ownedDisableAttempt)
+            {
+                await TryClearHyperBoostOwnershipJournalAsync(
+                        "HyperBoost was restored, but its durable ownership journal could not be cleared.")
+                    .ConfigureAwait(false);
+            }
+
+            hyperBoostOwnershipGeneration++;
+            ownsHyperBoost = enabled;
+            ownedHyperBoostBaseMode = enabled ? requestedBaseMode : null;
+
+            var result = new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                enabled
+                    ? "HyperBoost is active. Keep the cooling pad set to Auto while it remains active."
+                    : $"HyperBoost is off and {PerformanceLabel(requestedBaseMode)} power mode is restored.");
+            history.RecordSummary(result.Status, result.Message);
+            PublishIfChanged(current with
+            {
+                ConfirmedState = readback,
+                CoolingPad = enabled
+                    ? SuppressCoolingPadDemandForHyperBoost(
+                        current.CoolingPad,
+                        result.Message)
+                    : current.CoolingPad,
+                Message = result.Message,
+            });
+            return result;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            if (setterCompleted)
+            {
+                if (ownedDisableAttempt)
+                {
+                    hyperBoostOwnershipGeneration++;
+                    ownsHyperBoost = false;
+                    ownedHyperBoostBaseMode = null;
+                }
+
+                LatchPendingHyperBoost(writeBaseline, enabled, pendingBaseMode);
+                PublishPendingHyperBoostStatus(
+                    "HyperBoost was submitted, but final readback was canceled. Thermal writes remain blocked until a fresh observation resolves it.");
+            }
+            else if (ownershipJournalPrepared)
+            {
+                await RestorePreparedHyperBoostJournalAsync(
+                        enabled,
+                        pendingBaseMode)
+                    .ConfigureAwait(false);
+            }
+            throw;
+        }
+        catch (CapabilityUnavailableException exception)
+        {
+            if (ownershipJournalPrepared && !setterCompleted)
+            {
+                await RestorePreparedHyperBoostJournalAsync(
+                        enabled,
+                        pendingBaseMode)
+                    .ConfigureAwait(false);
+            }
+            var result = new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                exception.Message);
+            history.RecordSummary(result.Status, result.Message);
+            return result;
+        }
+        catch (BladeWriteException exception)
+        {
+            if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
+            {
+                if (ownedDisableAttempt)
+                {
+                    hyperBoostOwnershipGeneration++;
+                    ownsHyperBoost = false;
+                    ownedHyperBoostBaseMode = null;
+                }
+
+                LatchPendingHyperBoost(writeBaseline, enabled, pendingBaseMode);
+                PublishPendingHyperBoostStatus(exception.Message);
+            }
+            else if (ownershipJournalPrepared)
+            {
+                await RestorePreparedHyperBoostJournalAsync(
+                        enabled,
+                        pendingBaseMode)
+                    .ConfigureAwait(false);
+            }
+
+            var result = new ControlOperationResult(
+                exception.SubmissionState == WriteSubmissionState.KnownNotApplied
+                    ? ControlOperationStatus.Blocked
+                    : ControlOperationStatus.Failed,
+                exception.Message);
+            history.RecordSummary(result.Status, result.Message);
+            if (exception.SubmissionState != WriteSubmissionState.Indeterminate)
+            {
+                PublishIfChanged(GetStatus() with { Message = result.Message });
+            }
+            return result;
+        }
+        catch
+        {
+            if (setterCompleted)
+            {
+                if (ownedDisableAttempt)
+                {
+                    hyperBoostOwnershipGeneration++;
+                    ownsHyperBoost = false;
+                    ownedHyperBoostBaseMode = null;
+                }
+
+                LatchPendingHyperBoost(writeBaseline, enabled, pendingBaseMode);
+                PublishPendingHyperBoostStatus(
+                    "HyperBoost was submitted, but final readback failed. Thermal writes remain blocked until a fresh observation resolves it.");
+            }
+            else if (ownershipJournalPrepared)
+            {
+                await RestorePreparedHyperBoostJournalAsync(
+                        enabled,
+                        pendingBaseMode)
+                    .ConfigureAwait(false);
+            }
+            var result = new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "HyperBoost could not be updated. OpenBlade did not retry the write.");
+            history.RecordSummary(result.Status, result.Message);
+            return result;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private Task RestorePreparedHyperBoostJournalAsync(
+        bool enabled,
+        PerformancePreset baseMode) => enabled
+        ? TryClearHyperBoostOwnershipJournalAsync(
+            "A non-submitted HyperBoost enable left a pending ownership journal that could not be cleared.")
+        : TryWriteHyperBoostOwnershipJournalAsync(
+            HyperBoostOwnershipJournalState.OwnedConfirmed,
+            baseMode,
+            "A non-submitted HyperBoost restore left a pending ownership journal that could not be returned to owned state.");
+
+    private async Task<bool> TryWriteHyperBoostOwnershipJournalAsync(
+        HyperBoostOwnershipJournalState state,
+        PerformancePreset baseMode,
+        string failureMessage)
+    {
+        try
+        {
+            await hyperBoostOwnershipJournalStore.WriteAsync(
+                    new HyperBoostOwnershipJournal(
+                        state,
+                        baseMode,
+                        timeProvider.GetUtcNow()),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"{failureMessage} {exception.Message}");
+            return false;
+        }
+    }
+
+    private async Task<ControlOperationResult>
+        RestoreAfterHyperBoostJournalFailureAsync(
+            IBladeDevice device,
+            ServiceStatusSnapshot baseline,
+            ConfirmedDeviceState activeReadback,
+            PerformancePreset baseMode)
+    {
+        const string failurePrefix =
+            "HyperBoost was activated, but durable ownership could not be recorded.";
+        try
+        {
+            await device.SetHyperBoostAsync(
+                    enabled: false,
+                    baseMode,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            ConfirmedDeviceState restored = await device.ReadStateAsync(
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            if (restored is
+                {
+                    HyperBoostActive: false,
+                    Performance: var restoredBase,
+                    Fans: FanMode.Automatic,
+                }
+                && restoredBase == baseMode)
+            {
+                bool retired = await RetireHyperBoostOwnershipJournalAsync(
+                        baseMode,
+                        "HyperBoost was restored after its ownership journal could not be finalized.")
+                    .ConfigureAwait(false);
+                hyperBoostOwnershipGeneration++;
+                ownsHyperBoost = false;
+                ownedHyperBoostBaseMode = null;
+                string message = retired
+                    ? $"{failurePrefix} OpenBlade restored {PerformanceLabel(baseMode)} exactly once and did not leave HyperBoost active."
+                    : $"{failurePrefix} OpenBlade restored {PerformanceLabel(baseMode)}, but the pending ownership journal could not be retired; control writes remain blocked.";
+                var result = new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    message);
+                history.RecordSummary(result.Status, result.Message);
+                PublishIfChanged(baseline with
+                {
+                    ConfirmedState = restored,
+                    WritesBlocked = baseline.WritesBlocked || !retired,
+                    Message = result.Message,
+                });
+                return result;
+            }
+        }
+        catch (Exception exception)
+        {
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"{failurePrefix} The one-shot restoration did not complete: {exception.Message}");
+        }
+
+        LatchPendingHyperBoost(baseline, enabled: false, baseMode);
+        const string uncertainMessage =
+            "HyperBoost ownership could not be recorded and the one-shot restoration was not confirmed. OpenBlade will not retry; thermal writes remain blocked until a fresh observation and manual recovery resolve the state.";
+        var uncertain = new ControlOperationResult(
+            ControlOperationStatus.Failed,
+            uncertainMessage);
+        history.RecordSummary(uncertain.Status, uncertain.Message);
+        PublishIfChanged(baseline with
+        {
+            ConfirmedState = activeReadback,
+            CoolingPad = SuppressCoolingPadDemandForHyperBoost(
+                baseline.CoolingPad,
+                uncertain.Message),
+            Message = uncertain.Message,
+        });
+        return uncertain;
+    }
+
+    private async Task TryClearHyperBoostOwnershipJournalAsync(
+        string failureMessage)
+    {
+        try
+        {
+            await hyperBoostOwnershipJournalStore.ClearAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"{failureMessage} {exception.Message}");
+        }
+    }
+
+    private async Task<bool> RetireHyperBoostOwnershipJournalAsync(
+        PerformancePreset baseMode,
+        string failureMessage)
+    {
+        bool relinquished = false;
+        try
+        {
+            await hyperBoostOwnershipJournalStore.WriteAsync(
+                    new HyperBoostOwnershipJournal(
+                        HyperBoostOwnershipJournalState.Relinquished,
+                        baseMode,
+                        timeProvider.GetUtcNow()),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            relinquished = true;
+        }
+        catch (Exception exception)
+        {
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"{failureMessage} The relinquished marker could not be written: {exception.Message}");
+        }
+
+        try
+        {
+            await hyperBoostOwnershipJournalStore.ClearAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"{failureMessage} The journal could not be removed: {exception.Message}");
+            return relinquished;
+        }
+    }
+
+    private async Task<bool> RetireInactiveHyperBoostJournalIfPresentAsync(
+        string failureMessage)
+    {
+        HyperBoostOwnershipJournalLoadResult load;
+        try
+        {
+            load = await hyperBoostOwnershipJournalStore.LoadAsync(
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"{failureMessage} The journal could not be inspected: {exception.Message}");
+            return false;
+        }
+
+        if (load.Invalid)
+        {
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"{failureMessage} The journal is invalid and was preserved for manual inspection.");
+            return false;
+        }
+
+        return load.Journal is not { } journal
+            || await RetireHyperBoostOwnershipJournalAsync(
+                    journal.BaseMode,
+                    failureMessage)
+                .ConfigureAwait(false);
+    }
+
+    public async Task<ControlOperationResult> SetCoolingPadFanIntentAsync(
+        CoolingPadFanIntent intent,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        if (intent is null || !intent.IsWellFormed)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "The cooling-pad fan intent is invalid.");
+        }
+        if (GetStatus().Capabilities?.CoolingPadSupportAccess is null)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Cooling-pad controls are unavailable for this laptop model.");
+        }
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            ServiceStatusSnapshot current = GetStatus();
+            if (current.Capabilities?.CoolingPadSupportAccess is null)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Cooling-pad controls are unavailable for this laptop model.");
+            }
+            if (HyperBoostMayBeActive(current)
+                && intent.Mode != CoolingPadFanMode.Automatic)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Keep the cooling-pad intent set to Auto while HyperBoost is active.");
+            }
+
+            BatteryAutomationPreferences staged = preferences with
+            {
+                CoolingPadFanIntent = intent,
+            };
+            await ConfigurationStore.SaveConfigurationAsync(
+                    Automation.Profiles,
+                    staged,
+                    token)
+                .ConfigureAwait(false);
+            preferences = staged;
+            if (current.CoolingPad?.DesiredFanIntent != intent)
+            {
+                lastCoolingPadSmartCurveDemand = null;
+                lastCoolingPadSmartCurveFailSafe = false;
+            }
+
+            CoolingDemandLevel? computed = ResolveCoolingPadBaseDemand(
+                intent,
+                lastCoolingPadSmartCurveDemand);
+            CoolingDemandLevel? external = preferences.AllowExternalCoolingDemand
+                ? coolingDemandLeases.GetMaximumDemand()
+                : null;
+            computed = MaxNullable(computed, external);
+            bool fanWritesAdmitted = coolingPadFanCoordinator.Snapshot.Access
+                == DeviceFeatureAccess.ReadWrite;
+            string message = fanWritesAdmitted
+                ? intent.Mode == CoolingPadFanMode.Automatic
+                    ? "Cooling-pad Auto intent was stored. OpenBlade will hand back any owned host target on the next bounded control tick; the active pad mode remains unreadable."
+                    : "Cooling-pad fan intent was stored and will be reconciled on the next bounded control tick. Applied status reports only the last acknowledged host target, not measured RPM or active mode."
+                : intent.Mode == CoolingPadFanMode.Automatic
+                    ? "Cooling-pad Auto intent was stored. OpenBlade cannot yet confirm or write the active pad mode."
+                    : "Cooling-pad fan intent was stored. Pad fan writes remain disabled until reversible write validation is complete.";
+            PublishIfChanged(current with
+            {
+                CoolingPad = CreateCoolingPadStatus(
+                    current.CoolingPad?.Connection
+                        ?? CoolingPadConnectionState.Unavailable,
+                    intent,
+                    HyperBoostMayBeActive(current)
+                        ? null
+                        : computed,
+                    coolingDemandLeases.Count,
+                    preferences.AllowExternalCoolingDemand,
+                    message,
+                    current.CoolingPad?.Capabilities.FanObservationAccess
+                        ?? coolingPadProvider.FanObservationAccess,
+                    configuredFanTarget: null,
+                    configuredFanTargetIsFresh: false),
+                Message = message,
+            });
+            history.RecordSummary(ControlOperationStatus.Stored, message);
+            RequestCoolingPadReconciliation();
+            return new ControlOperationResult(ControlOperationStatus.Stored, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult> SetCoolingDemandLeaseAsync(
+        string userSid,
+        int sessionId,
+        Guid leaseId,
+        CoolingDemandLevel demand,
+        int ttlMilliseconds,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        if (lowPowerGate.IsActive)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Cooling-demand leases are unavailable while the system is entering or leaving low power.");
+        }
+        if (!preferences.AllowExternalCoolingDemand)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "External cooling demand is disabled in OpenBlade settings.");
+        }
+        if (GetStatus().Capabilities?.CoolingPadSupportAccess is null)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Cooling-pad controls are unavailable for this laptop model.");
+        }
+        if (HyperBoostMayBeActive(GetStatus()))
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Cooling-demand leases are unavailable while HyperBoost is active or awaiting confirmation.");
+        }
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (lowPowerGate.IsActive)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Cooling-demand leases are unavailable while the system is entering or leaving low power.");
+            }
+            if (!preferences.AllowExternalCoolingDemand)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "External cooling demand is disabled in OpenBlade settings.");
+            }
+            if (GetStatus().Capabilities?.CoolingPadSupportAccess is null)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Cooling-pad controls are unavailable for this laptop model.");
+            }
+            if (HyperBoostMayBeActive(GetStatus()))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Cooling-demand leases are unavailable while HyperBoost is active or awaiting confirmation.");
+            }
+            if (!IsActiveCoolingDemandLeaseOwner(userSid, sessionId))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Cooling demand was not accepted because the requesting Windows session is no longer active.");
+            }
+
+            try
+            {
+                coolingDemandLeases.Set(
+                    new CoolingDemandLeaseOwner(userSid, sessionId),
+                    leaseId,
+                    demand,
+                    TimeSpan.FromMilliseconds(ttlMilliseconds));
+            }
+            catch (Exception exception) when (exception is
+                ArgumentException or InvalidOperationException)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    exception.Message);
+            }
+
+            string message = coolingPadFanCoordinator.Snapshot.Access
+                    == DeviceFeatureAccess.ReadWrite
+                ? "Cooling demand was accepted as a temporary floor and will be considered on the next bounded control tick. Applied status reports only the last acknowledged host target."
+                : "Cooling demand was accepted as a temporary floor. Pad fan writes remain disabled, so it has not been applied.";
+            PublishCoolingPadStatus(message);
+            RequestCoolingPadReconciliation();
+            return new ControlOperationResult(ControlOperationStatus.Stored, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult> ReleaseCoolingDemandLeaseAsync(
+        string userSid,
+        int sessionId,
+        Guid leaseId,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (!IsActiveCoolingDemandLeaseOwner(userSid, sessionId))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "The cooling-demand lease was not changed because the requesting Windows session is no longer active.");
+            }
+
+            bool released = coolingDemandLeases.Release(
+                new CoolingDemandLeaseOwner(userSid, sessionId),
+                leaseId);
+            string message = released
+                ? "The cooling-demand lease was released."
+                : "No matching cooling-demand lease was active.";
+            PublishCoolingPadStatus(message);
+            if (released)
+            {
+                RequestCoolingPadReconciliation();
+            }
+            return new ControlOperationResult(ControlOperationStatus.Stored, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult> SetCoolingDemandApiEnabledAsync(
+        bool enabled,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        if (GetStatus().Capabilities?.CoolingPadSupportAccess is null)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The cooling-demand API is unavailable for this laptop model.");
+        }
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (GetStatus().Capabilities?.CoolingPadSupportAccess is null)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "The cooling-demand API is unavailable for this laptop model.");
+            }
+
+            BatteryAutomationPreferences staged = preferences with
+            {
+                AllowExternalCoolingDemand = enabled,
+            };
+            await ConfigurationStore.SaveConfigurationAsync(
+                    Automation.Profiles,
+                    staged,
+                    token)
+                .ConfigureAwait(false);
+            preferences = staged;
+            if (!enabled)
+            {
+                coolingDemandLeases.Clear();
+                RequestCoolingPadReconciliation();
+            }
+
+            string message = enabled
+                ? coolingPadFanCoordinator.Snapshot.Access
+                    == DeviceFeatureAccess.ReadWrite
+                    ? "The local cooling-demand API is enabled. Requests are bounded, expire automatically, and reconcile through the admitted host-control path on a bounded tick."
+                    : "The local cooling-demand API is enabled. Requests are bounded and expire automatically; pad writes remain disabled."
+                : "The local cooling-demand API is disabled and all active leases were released.";
+            PublishCoolingPadStatus(message);
+            return new ControlOperationResult(ControlOperationStatus.Stored, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult> SetCoolingPadLightingSyncAsync(
+        bool enabled,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (GetStatus().Capabilities?.CoolingPadSupportAccess is null)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Cooling-pad lighting sync is unavailable for this laptop model.");
+            }
+
+            if (enabled
+                && (coolingPadLightingUnexpectedExitRecoveryPending
+                    || preferences.CoolingPadLightingRecoveryRequired))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Cooling-pad lighting sync cannot be enabled until the saved crash-recovery preference is cleared and the prior pad preset is restored manually.");
+            }
+
+            CoolingPadLightingRuntimeSnapshot lighting =
+                coolingPadLightingCoordinator.Snapshot;
+            if (enabled && lighting.Access != DeviceFeatureAccess.ReadWrite)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    $"Cooling-pad lighting sync is visible but cannot be enabled: {lighting.Reason}. Whole-strip projection is resolved; reversible OpenBlade frame lifecycle, cadence, reconnect/resume, and controller handoff validation are still required.");
+            }
+
+            bool previousEnabled = preferences.CoolingPadLightingSyncEnabled;
+            if (previousEnabled == enabled
+                && lighting.Enabled == enabled
+                && (enabled
+                    || lighting.State != CoolingPadLightingSyncState.Faulted))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    enabled
+                        ? "Cooling-pad lighting sync is already enabled."
+                        : "Cooling-pad lighting sync is already disabled.");
+            }
+
+            BatteryAutomationPreferences staged = preferences with
+            {
+                CoolingPadLightingSyncEnabled = enabled,
+            };
+
+            if (enabled)
+            {
+                await ConfigurationStore.SaveConfigurationAsync(
+                        Automation.Profiles,
+                        staged,
+                        token)
+                    .ConfigureAwait(false);
+                preferences = staged;
+                try
+                {
+                    await coolingPadLightingCoordinator.SetEnabledAsync(true, token)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception activationException)
+                {
+                    BatteryAutomationPreferences rollback = preferences with
+                    {
+                        CoolingPadLightingSyncEnabled = false,
+                    };
+                    try
+                    {
+                        await ConfigurationStore.SaveConfigurationAsync(
+                                Automation.Profiles,
+                                rollback,
+                                CancellationToken.None)
+                            .ConfigureAwait(false);
+                        preferences = rollback;
+                    }
+                    catch (Exception rollbackException)
+                    {
+                        throw new AggregateException(
+                            "Cooling-pad lighting sync could not be activated and its saved preference could not be rolled back.",
+                            activationException,
+                            rollbackException);
+                    }
+                    throw;
+                }
+            }
+            else
+            {
+                await coolingPadLightingCoordinator.SetEnabledAsync(false, token)
+                    .ConfigureAwait(false);
+                bool recoveryRequired =
+                    preferences.CoolingPadLightingRecoveryRequired
+                    || coolingPadLightingCoordinator.Snapshot.State
+                        == CoolingPadLightingSyncState.Faulted;
+                staged = staged with
+                {
+                    CoolingPadLightingRecoveryRequired = recoveryRequired,
+                };
+                try
+                {
+                    await ConfigurationStore.SaveConfigurationAsync(
+                            Automation.Profiles,
+                            staged,
+                            token)
+                        .ConfigureAwait(false);
+                    preferences = staged;
+                    coolingPadLightingUnexpectedExitRecoveryPending =
+                        recoveryRequired;
+                }
+                catch (Exception saveException)
+                {
+                    if (previousEnabled)
+                    {
+                        try
+                        {
+                            await coolingPadLightingCoordinator.SetEnabledAsync(
+                                    true,
+                                    CancellationToken.None)
+                                .ConfigureAwait(false);
+                        }
+                        catch (Exception restoreException)
+                        {
+                            throw new AggregateException(
+                                "Cooling-pad lighting sync was quiesced, but its saved preference could not be updated and live sync could not be restored.",
+                                saveException,
+                                restoreException);
+                        }
+                    }
+                    throw;
+                }
+            }
+
+            CoolingPadLightingRuntimeSnapshot resultSnapshot =
+                coolingPadLightingCoordinator.Snapshot;
+            string message = enabled
+                ? "Cooling-pad whole-strip lighting sync is enabled."
+                : resultSnapshot.State == CoolingPadLightingSyncState.Faulted
+                    ? $"Cooling-pad lighting sync is disabled, but pad handback remains unconfirmed after {resultSnapshot.Reason}. Restore the prior preset manually; no automatic retry will be attempted."
+                    : "Cooling-pad lighting sync is disabled.";
+            PublishCoolingPadStatus(message);
+            return new ControlOperationResult(ControlOperationStatus.Stored, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult>
+        AcknowledgeCoolingPadLightingRecoveryAsync(CancellationToken token)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (!preferences.CoolingPadLightingRecoveryRequired
+                && !coolingPadLightingUnexpectedExitRecoveryPending
+                && coolingPadLightingCoordinator.Snapshot.State
+                    != CoolingPadLightingSyncState.Faulted)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    "Cooling-pad lighting recovery is already clear.");
+            }
+
+            if (coolingPadLightingCoordinator.Snapshot.Enabled)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Disable cooling-pad lighting sync before acknowledging manual preset recovery.");
+            }
+
+            BatteryAutomationPreferences staged = preferences with
+            {
+                CoolingPadLightingSyncEnabled = false,
+                CoolingPadLightingRecoveryRequired = false,
+            };
+            await ConfigurationStore.SaveConfigurationAsync(
+                    Automation.Profiles,
+                    staged,
+                    token)
+                .ConfigureAwait(false);
+            try
+            {
+                await coolingPadLightingCoordinator.AcknowledgeRecoveryAsync(token)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                BatteryAutomationPreferences rollback = preferences with
+                {
+                    CoolingPadLightingSyncEnabled = false,
+                    CoolingPadLightingRecoveryRequired = true,
+                };
+                await ConfigurationStore.SaveConfigurationAsync(
+                        Automation.Profiles,
+                        rollback,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                preferences = rollback;
+                coolingPadLightingUnexpectedExitRecoveryPending = true;
+                throw;
+            }
+
+            preferences = staged;
+            coolingPadLightingUnexpectedExitRecoveryPending = false;
+            const string message =
+                "Cooling-pad lighting recovery was acknowledged after manual preset restoration. Sync remains disabled until you enable it again.";
+            PublishCoolingPadStatus(message);
+            return new ControlOperationResult(ControlOperationStatus.Stored, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task MaintainCoolingPadAsync(CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        if (lowPowerGate.IsActive)
+        {
+            return;
+        }
+
+        if (GetStatus().Capabilities?.CoolingPadSupportAccess is null)
+        {
+            if (GetStatus().CoolingPad is not null)
+            {
+                PublishIfChanged(GetStatus() with { CoolingPad = null });
+            }
+            return;
+        }
+        CoolingPadObservationSnapshot observation =
+            await coolingPadProvider.ObserveAsync(cancellationToken)
+                .ConfigureAwait(false);
+        if (lowPowerGate.IsActive)
+        {
+            return;
+        }
+
+        CoolingPadFanIntent intent = preferences.CoolingPadFanIntent
+            ?? CoolingPadFanIntent.Default;
+        CoolingPadFanIntent? evaluatedSmartCurveIntent = null;
+        FanTemperatureReadings? smartCurveTemperatures = null;
+        if (observation is
+            {
+                Connection: CoolingPadConnectionState.PresentExact,
+                Failure: CoolingPadObservationFailure.None,
+            }
+            && intent.Mode == CoolingPadFanMode.SmartCurve
+            && !HyperBoostMayBeActive(GetStatus()))
+        {
+            evaluatedSmartCurveIntent = intent;
+            smartCurveTemperatures =
+                await fanTemperatureSource.ReadAsync(cancellationToken)
+                    .ConfigureAwait(false);
+        }
+
+        if (lowPowerGate.IsActive)
+        {
+            return;
+        }
+
+        CoolingPadConnectionState connection = observation.Connection;
+        bool restoreOwnedHyperBoost = false;
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (lowPowerGate.IsActive)
+            {
+                return;
+            }
+
+            CoolingPadLightingRuntimeSnapshot lighting =
+                coolingPadLightingCoordinator.Snapshot;
+            bool requestedLightingSync =
+                preferences.CoolingPadLightingSyncEnabled
+                && !coolingPadLightingUnexpectedExitRecoveryPending;
+            if (lighting.Access == DeviceFeatureAccess.ReadWrite
+                && lighting.Enabled != requestedLightingSync)
+            {
+                await coolingPadLightingCoordinator.SetEnabledAsync(
+                        requestedLightingSync,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await coolingPadLightingCoordinator.SetConnectedAsync(
+                    observation is
+                    {
+                        Connection: CoolingPadConnectionState.PresentExact,
+                        Failure: CoolingPadObservationFailure.None,
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            ServiceStatusSnapshot current = GetStatus();
+            if (current.Capabilities?.CoolingPadSupportAccess is null)
+            {
+                if (current.CoolingPad is not null)
+                {
+                    PublishIfChanged(current with { CoolingPad = null });
+                }
+                return;
+            }
+
+            intent = preferences.CoolingPadFanIntent ?? CoolingPadFanIntent.Default;
+            bool hyperBoostMayBeActive = HyperBoostMayBeActive(current);
+            if (intent.Mode == CoolingPadFanMode.SmartCurve
+                && !hyperBoostMayBeActive
+                && intent == evaluatedSmartCurveIntent
+                && smartCurveTemperatures is { } temperatures)
+            {
+                CoolingPadDemandResult calculated =
+                    CoolingPadSmartCurveEvaluator.Calculate(
+                        intent.SmartCurve,
+                        temperatures);
+                lastCoolingPadSmartCurveDemand = calculated.Demand;
+                lastCoolingPadSmartCurveFailSafe = calculated.FailSafe;
+            }
+            else
+            {
+                lastCoolingPadSmartCurveDemand = null;
+                lastCoolingPadSmartCurveFailSafe = false;
+            }
+            CoolingDemandLevel? computed = hyperBoostMayBeActive
+                ? null
+                : ResolveCoolingPadBaseDemand(
+                    intent,
+                    lastCoolingPadSmartCurveDemand);
+            if (preferences.AllowExternalCoolingDemand
+                && !hyperBoostMayBeActive)
+            {
+                computed = MaxNullable(computed, coolingDemandLeases.GetMaximumDemand());
+            }
+
+            bool exactPadAvailable = observation is
+            {
+                Connection: CoolingPadConnectionState.PresentExact,
+                Failure: CoolingPadObservationFailure.None,
+            };
+            bool exactPadMeetsHyperBoostSafety = observation is
+            {
+                Connection: CoolingPadConnectionState.PresentExact,
+                Failure: CoolingPadObservationFailure.None,
+                IsFresh: true,
+                OpaqueFanObservation: 0,
+            };
+            restoreOwnedHyperBoost = ownsHyperBoost
+                && current.ConfirmedState?.HyperBoostActive == true
+                && !exactPadMeetsHyperBoostSafety;
+            if (!exactPadAvailable)
+            {
+                await TryInvalidateCoolingPadFanConnectionAsync(
+                        observation.Failure == CoolingPadObservationFailure.None
+                            ? $"Cooling-pad fan ownership was invalidated because the exact pad connection is {connection}."
+                            : $"Cooling-pad fan ownership was invalidated after {observation.Failure} observation failure.",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await TryReconcileCoolingPadFanAsync(
+                        hyperBoostMayBeActive ? null : computed,
+                        hyperBoostMayBeActive
+                            ? "Cooling-pad fan control was handed back for HyperBoost. Saved fan intent is unchanged."
+                            : computed is null
+                                ? "Cooling-pad fan control was handed back because no host demand is active. Saved fan intent is unchanged."
+                                : "The computed cooling-pad fan target was confirmed by the admitted semantic backend.",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            CoolingPadFanRuntimeSnapshot fanRuntime = coolingPadFanCoordinator.Snapshot;
+            string message = fanRuntime.Access == DeviceFeatureAccess.ReadWrite
+                ? fanRuntime.Reason
+                : hyperBoostMayBeActive
+                ? "HyperBoost is active or awaiting confirmation; OpenBlade suppresses host cooling demand and requires saved pad Auto intent."
+                : lastCoolingPadSmartCurveFailSafe
+                    ? "Cooling-pad Smart Curve computed maximum demand because a required temperature was unavailable or unsafe. The demand was not written."
+                    : observation.Failure switch
+                    {
+                        CoolingPadObservationFailure.Conflict =>
+                            "Cooling-pad observation is blocked while another controller owns the device.",
+                        CoolingPadObservationFailure.IdentityOrAccess =>
+                            "Cooling-pad identity or access validation failed; no pad action was attempted.",
+                        CoolingPadObservationFailure.Protocol =>
+                            "The cooling pad returned an invalid read-only observation; the previous opaque value, if any, is stale.",
+                        CoolingPadObservationFailure.LowPower =>
+                            "Cooling-pad observation is paused while the system is entering or leaving low power.",
+                        CoolingPadObservationFailure.Transport =>
+                            "Cooling-pad observation failed; the previous opaque value, if any, is stale.",
+                        _ => connection switch
+                        {
+                            CoolingPadConnectionState.PresentExact =>
+                                observation.IsFresh
+                                    ? observation.OpaqueFanObservation is { } raw
+                                        ? $"The exact Razer cooling pad returned opaque fan observation 0x{raw:X2}. It has no assigned RPM, target, active-mode, or ownership meaning; fan and lighting writes remain disabled pending reviewed admission."
+                                        : "The exact Razer cooling pad returned no fan observation. Active mode and speed remain unknown; fan and lighting writes remain disabled pending reviewed admission."
+                                    : "The exact Razer cooling pad is present. Its last opaque fan observation is stale; fan and lighting writes remain disabled pending reviewed admission.",
+                            CoolingPadConnectionState.Absent =>
+                                "The Razer cooling pad is not connected.",
+                            CoolingPadConnectionState.Ambiguous =>
+                                "More than one matching cooling-pad control collection was found; access is blocked.",
+                            CoolingPadConnectionState.ObservationFailed =>
+                                "Cooling-pad discovery failed; no pad action was attempted.",
+                            _ => "Cooling-pad controls are unavailable.",
+                        },
+                    };
+            CoolingPadStatus next = CreateCoolingPadStatus(
+                connection,
+                intent,
+                computed,
+                coolingDemandLeases.Count,
+                preferences.AllowExternalCoolingDemand,
+                message,
+                coolingPadProvider.FanObservationAccess,
+                configuredFanTarget: null,
+                configuredFanTargetIsFresh: false);
+            if (current.CoolingPad != next)
+            {
+                PublishIfChanged(current with { CoolingPad = next });
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+
+        if (restoreOwnedHyperBoost)
+        {
+            await RestoreOwnedHyperBoostForLifecycleCoreAsync(
+                    "cooling-pad safety recovery",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    public Task WaitForCoolingPadReconciliationRequestAsync(
+        CancellationToken cancellationToken) =>
+        coolingPadReconciliationSignal.WaitAsync(cancellationToken);
+
+    private void RequestCoolingPadReconciliation()
+    {
+        try
+        {
+            coolingPadReconciliationSignal.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // One pending wake represents every newer intent or lease change.
+            // Coalescing keeps the control cadence bounded.
+        }
+    }
+
+    private void PublishCoolingPadStatus(string message)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (current.Capabilities?.CoolingPadSupportAccess is null)
+        {
+            PublishIfChanged(current with
+            {
+                CoolingPad = null,
+                Message = message,
+            });
+            history.RecordSummary(ControlOperationStatus.Stored, message);
+            return;
+        }
+
+        CoolingPadFanIntent intent = preferences.CoolingPadFanIntent
+            ?? CoolingPadFanIntent.Default;
+        bool hyperBoostMayBeActive = HyperBoostMayBeActive(current);
+        CoolingDemandLevel? computed = hyperBoostMayBeActive
+            ? null
+            : ResolveCoolingPadBaseDemand(
+                intent,
+                lastCoolingPadSmartCurveDemand);
+        if (preferences.AllowExternalCoolingDemand
+            && !hyperBoostMayBeActive)
+        {
+            computed = MaxNullable(computed, coolingDemandLeases.GetMaximumDemand());
+        }
+        PublishIfChanged(current with
+        {
+            CoolingPad = CreateCoolingPadStatus(
+                current.CoolingPad?.Connection ?? CoolingPadConnectionState.Unavailable,
+                intent,
+                computed,
+                coolingDemandLeases.Count,
+                preferences.AllowExternalCoolingDemand,
+                message,
+                current.CoolingPad?.Capabilities.FanObservationAccess
+                    ?? coolingPadProvider.FanObservationAccess,
+                configuredFanTarget: null,
+                configuredFanTargetIsFresh: false),
+            Message = message,
+        });
+        history.RecordSummary(ControlOperationStatus.Stored, message);
+    }
+
+    private async Task<ControlOperationResult?> TryUpdateCoolingPadLightingAsync(
+        Func<ICoolingPadLightingRuntimeCoordinator, CancellationToken, Task> update,
+        string failureMessage,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await update(coolingPadLightingCoordinator, cancellationToken)
+                .ConfigureAwait(false);
+            CoolingPadLightingRuntimeSnapshot snapshot =
+                coolingPadLightingCoordinator.Snapshot;
+            if (snapshot.State == CoolingPadLightingSyncState.Faulted)
+            {
+                string failure =
+                    $"{failureMessage} {snapshot.Reason}. No automatic retry was attempted.";
+                history.RecordSummary(ControlOperationStatus.Failed, failure);
+                return new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    failure);
+            }
+
+            return null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            string failure = $"{failureMessage} {exception.Message}";
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                failure);
+            return new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                failure);
+        }
+    }
+
+    private void OnCoolingPadLightingSnapshotChanged(
+        CoolingPadLightingRuntimeSnapshot snapshot)
+    {
+        if (Volatile.Read(ref status) is null)
+        {
+            return;
+        }
+
+        try
+        {
+            PublishStatusUpdate(current =>
+            {
+                CoolingPadStatus? coolingPad = current.CoolingPad;
+                if (coolingPad is null
+                    || current.Capabilities?.CoolingPadSupportAccess is null)
+                {
+                    return current;
+                }
+
+                string message = snapshot.State == CoolingPadLightingSyncState.Faulted
+                    ? $"Cooling-pad lighting sync faulted ({snapshot.Reason}); no automatic retry was attempted."
+                    : coolingPad.Message;
+                return current with
+                {
+                    CoolingPad = coolingPad with
+                    {
+                        Capabilities = coolingPad.Capabilities with
+                        {
+                            LightingSyncAccess = snapshot.Access,
+                        },
+                        LightingSyncEnabled = snapshot.Enabled,
+                        LightingSyncState = snapshot.State,
+                        LightingRecoveryRequired =
+                            coolingPad.LightingRecoveryRequired
+                            || !snapshot.Enabled
+                                && snapshot.State
+                                    == CoolingPadLightingSyncState.Faulted,
+                        Message = message,
+                    },
+                };
+            });
+
+            if (snapshot.State == CoolingPadLightingSyncState.Faulted)
+            {
+                history.RecordSummary(
+                    ControlOperationStatus.Failed,
+                    $"Cooling-pad lighting sync faulted: {snapshot.Reason}. No automatic retry was attempted.");
+            }
+        }
+        catch (Exception exception)
+        {
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"Cooling-pad lighting status publication failed: {exception.Message}");
+        }
+    }
+
+    private async Task TryReconcileCoolingPadFanAsync(
+        CoolingDemandLevel? demand,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await coolingPadFanCoordinator.ReconcileAsync(
+                    demand,
+                    reason,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"Cooling-pad fan reconciliation failed: {exception.Message}");
+        }
+    }
+
+    private async Task TryInvalidateCoolingPadFanConnectionAsync(
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await coolingPadFanCoordinator.InvalidateConnectionAsync(
+                    reason,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"Cooling-pad fan connection invalidation failed: {exception.Message}");
+        }
+    }
+
+    private CoolingPadStatus CreateCoolingPadStatus(
+        CoolingPadConnectionState connection,
+        CoolingPadFanIntent intent,
+        CoolingDemandLevel? computedDemand,
+        int activeDemandLeases,
+        bool coolingDemandApiEnabled,
+        string message,
+        DeviceFeatureAccess fanObservationAccess = DeviceFeatureAccess.ObservedOnly,
+        CoolingPadFanTarget? configuredFanTarget = null,
+        bool configuredFanTargetIsFresh = false)
+    {
+        CoolingPadFanRuntimeSnapshot fanRuntime = coolingPadFanCoordinator.Snapshot;
+        CoolingDemandApiAccess demandApiAccess = fanRuntime.Access
+                == DeviceFeatureAccess.ReadWrite
+            ? CoolingDemandApiAccess.AppliedControl
+            : CoolingDemandApiAccess.IntentOnly;
+        CoolingPadLightingRuntimeSnapshot lighting =
+            coolingPadLightingCoordinator.Snapshot;
+        bool lightingRecoveryRequired =
+            preferences.CoolingPadLightingRecoveryRequired
+            || coolingPadLightingUnexpectedExitRecoveryPending
+            || !lighting.Enabled
+                && lighting.State == CoolingPadLightingSyncState.Faulted;
+        return new(
+            connection,
+            new CoolingPadCapabilities(
+                fanObservationAccess,
+                fanRuntime.Access,
+                DeviceFeatureAccess.ObservedOnly,
+                lighting.Access,
+                SupportsIntentPersistence: true,
+                demandApiAccess),
+            intent,
+            computedDemand,
+            AppliedDemand: fanRuntime.AppliedDemand,
+            ConfiguredFanTarget: configuredFanTarget,
+            ConfiguredFanTargetIsFresh: configuredFanTargetIsFresh,
+            fanRuntime.Ownership,
+            coolingDemandApiEnabled,
+            activeDemandLeases,
+            LightingSyncEnabled: lightingRecoveryRequired ? false : lighting.Enabled,
+            LightingSyncState: lightingRecoveryRequired
+                ? CoolingPadLightingSyncState.Faulted
+                : lighting.State,
+            Message: message)
+        {
+            PlannedFanTarget = computedDemand is { } demand
+                ? CoolingPadFanTarget.FromDemand(demand)
+                : null,
+            LightingRecoveryRequired = lightingRecoveryRequired,
+        };
+    }
+
+    private static CoolingDemandLevel? ResolveCoolingPadBaseDemand(
+        CoolingPadFanIntent intent,
+        CoolingDemandLevel? smartCurveDemand) => intent.Mode switch
+        {
+            CoolingPadFanMode.Automatic => null,
+            CoolingPadFanMode.Fixed => intent.FixedDemand,
+            CoolingPadFanMode.SmartCurve => smartCurveDemand,
+            _ => null,
+        };
+
+    private static CoolingDemandLevel? MaxNullable(
+        CoolingDemandLevel? left,
+        CoolingDemandLevel? right) => (left, right) switch
+        {
+            (null, null) => null,
+            ({ } value, null) => value,
+            (null, { } value) => value,
+            ({ } leftValue, { } rightValue) =>
+                CoolingDemandLevel.Max(leftValue, rightValue),
+        };
 
     private async Task<ControlOperationResult> ApplyVerifiedOneShotLaptopControlAsync(
         ApplyOneShotLaptopControl value,
@@ -3171,6 +5061,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        bool restoreJournaledHyperBoost = false;
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -3182,8 +5073,161 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             await RefreshControllerPresenceAndRelinquishLightingAsync(
                 cancellationToken).ConfigureAwait(false);
+            if (!unexpectedExitRecoveryDeferredForUserConfiguration
+                && !await DisableCoolingPadLightingAfterUnexpectedExitCoreAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return;
+            }
             startupProfileReconciliationRequested = true;
-            if (unexpectedExitRecoveryDeferredForUserConfiguration)
+            CoolingPadFanCrashRecoveryResult fanRecovery =
+                await coolingPadFanCoordinator.RecoverAfterUnexpectedExitAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            if (fanRecovery.Status == CoolingPadFanCrashRecoveryStatus.Blocked)
+            {
+                history.RecordSummary(
+                    ControlOperationStatus.Failed,
+                    fanRecovery.Message);
+                PublishCoolingPadStatus(fanRecovery.Message);
+                PublishIfChanged(GetStatus() with
+                {
+                    WritesBlocked = true,
+                    Message = fanRecovery.Message,
+                });
+                return;
+            }
+            if (fanRecovery.Status == CoolingPadFanCrashRecoveryStatus.Recovered)
+            {
+                history.RecordSummary(
+                    ControlOperationStatus.Applied,
+                    fanRecovery.Message);
+                PublishCoolingPadStatus(fanRecovery.Message);
+            }
+            HyperBoostOwnershipJournalLoadResult journalLoad =
+                await hyperBoostOwnershipJournalStore.LoadAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            if (journalLoad.Invalid)
+            {
+                const string invalidJournal =
+                    "The HyperBoost ownership journal is invalid. OpenBlade will not issue an automatic recovery write.";
+                history.RecordSummary(ControlOperationStatus.Failed, invalidJournal);
+                PublishIfChanged(GetStatus() with
+                {
+                    WritesBlocked = true,
+                    Message = invalidJournal,
+                });
+                return;
+            }
+
+            if (journalLoad.Journal is { } journal)
+            {
+                ServiceStatusSnapshot current = GetStatus();
+                if (!current.DeviceVerified
+                    || current.ConfirmedState is not { } confirmed)
+                {
+                    return;
+                }
+
+                if (!confirmed.HyperBoostActive)
+                {
+                    bool retired = await RetireHyperBoostOwnershipJournalAsync(
+                            journal.BaseMode,
+                            "Inactive HyperBoost was confirmed after an unexpected exit, but its stale ownership journal could not be retired.")
+                        .ConfigureAwait(false);
+                    if (!retired)
+                    {
+                        const string retirementFailed =
+                            "Inactive HyperBoost was confirmed after an unexpected exit, but OpenBlade could not safely retire its ownership journal. Control writes remain blocked.";
+                        PublishIfChanged(current with
+                        {
+                            WritesBlocked = true,
+                            Message = retirementFailed,
+                        });
+                        return;
+                    }
+                }
+                else if (journal.State
+                    != HyperBoostOwnershipJournalState.OwnedConfirmed)
+                {
+                    string pending =
+                        $"OpenBlade found active HyperBoost after an unexpected exit, but the ownership journal is {journal.State}. Because ownership was never durably confirmed, no automatic recovery write was issued.";
+                    history.RecordSummary(ControlOperationStatus.Failed, pending);
+                    PublishIfChanged(current with
+                    {
+                        WritesBlocked = true,
+                        Message = pending,
+                    });
+                    return;
+                }
+                else
+                {
+                    DeviceFeatureAccess? baseAccess = current.Capabilities
+                        ?.HyperBoostBaseModes?.AccessFor(journal.BaseMode)
+                        ?? (journal.BaseMode == PerformancePreset.Balanced
+                            ? current.Capabilities?.HyperBoostAccess
+                            : null);
+                    if (current.Capabilities?.HyperBoostAccess
+                            != DeviceFeatureAccess.ReadWrite
+                        || baseAccess != DeviceFeatureAccess.ReadWrite)
+                    {
+                        string unavailable =
+                            $"OpenBlade found journaled HyperBoost ownership after an unexpected exit, but direct restoration to {PerformanceLabel(journal.BaseMode)} is not admitted. No recovery write was issued.";
+                        history.RecordSummary(ControlOperationStatus.Failed, unavailable);
+                        PublishIfChanged(current with
+                        {
+                            WritesBlocked = true,
+                            Message = unavailable,
+                        });
+                        return;
+                    }
+
+                    hyperBoostOwnershipGeneration++;
+                    ownsHyperBoost = true;
+                    ownedHyperBoostBaseMode = journal.BaseMode;
+                    restoreJournaledHyperBoost = true;
+                }
+            }
+
+            if (!restoreJournaledHyperBoost)
+            {
+                if (unexpectedExitRecoveryDeferredForUserConfiguration)
+                {
+                    return;
+                }
+
+                if (GetStatus() is { DeviceVerified: true, WritesBlocked: false })
+                {
+                    CompleteUnexpectedExitRecoveryCore();
+                }
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+
+        if (!restoreJournaledHyperBoost)
+        {
+            return;
+        }
+
+        ControlOperationResult restoration =
+            await RestoreOwnedHyperBoostForLifecycleCoreAsync(
+                    "unexpected-exit recovery",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (restoration.Status != ControlOperationStatus.Applied)
+        {
+            return;
+        }
+
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!unexpectedExitRecoveryPending
+                || unexpectedExitRecoveryDeferredForUserConfiguration)
             {
                 return;
             }
@@ -3798,6 +5842,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return false;
         }
 
+        if (!await DisableCoolingPadLightingAfterUnexpectedExitCoreAsync(
+                cancellationToken)
+            .ConfigureAwait(false))
+        {
+            return false;
+        }
+
         PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken)
             .ConfigureAwait(false);
         if (!stillControlsSession()
@@ -4008,6 +6059,69 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             Message =
                 "The power source changed while crash recovery waits for an authorized active-user request; no hardware profile was applied.",
         });
+    }
+
+    private async Task<bool> DisableCoolingPadLightingAfterUnexpectedExitCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!coolingPadLightingUnexpectedExitRecoveryPending)
+        {
+            return true;
+        }
+
+        CoolingPadLightingRuntimeSnapshot lighting =
+            coolingPadLightingCoordinator.Snapshot;
+        if (lighting.Enabled)
+        {
+            const string liveFailure =
+                "Cooling-pad lighting was unexpectedly active during crash recovery. OpenBlade will not issue an automatic pad write.";
+            history.RecordSummary(ControlOperationStatus.Failed, liveFailure);
+            PublishIfChanged(GetStatus() with
+            {
+                WritesBlocked = true,
+                Message = liveFailure,
+            });
+            return false;
+        }
+
+        BatteryAutomationPreferences staged = preferences with
+        {
+            CoolingPadLightingSyncEnabled = false,
+            CoolingPadLightingRecoveryRequired = true,
+        };
+        try
+        {
+            await ConfigurationStore.SaveConfigurationAsync(
+                    Automation.Profiles,
+                    staged,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            string persistenceFailure =
+                $"Cooling-pad lighting remains disabled after the unexpected exit, but its saved enable preference could not be cleared: {exception.Message}";
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                persistenceFailure);
+            PublishIfChanged(GetStatus() with
+            {
+                WritesBlocked = true,
+                Message = persistenceFailure,
+            });
+            return false;
+        }
+
+        preferences = staged;
+        coolingPadLightingUnexpectedExitRecoveryPending = true;
+        const string message =
+            "Cooling-pad lighting sync was disabled after the unexpected service exit. Restore the pad's prior lighting preset manually before enabling sync again.";
+        PublishCoolingPadStatus(message);
+        return true;
     }
 
     public async Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken)
@@ -4327,27 +6441,147 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : "Performance shortcut preview was published."));
     }
 
+    private async Task<ControlOperationResult> RestoreOwnedHyperBoostForLifecycleCoreAsync(
+        string reasonLabel,
+        CancellationToken cancellationToken)
+    {
+        PerformancePreset restoreBaseMode = PerformancePreset.Balanced;
+        long expectedOwnershipGeneration = 0;
+        try
+        {
+            await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ServiceStatusSnapshot current = GetStatus();
+                if (!ownsHyperBoost)
+                {
+                    return new ControlOperationResult(
+                        ControlOperationStatus.Stored,
+                        "HyperBoost was left unchanged because OpenBlade did not establish ownership of the active mode.");
+                }
+
+                if (current.ConfirmedState?.HyperBoostActive != true)
+                {
+                    bool retired = await RetireHyperBoostOwnershipJournalAsync(
+                            ownedHyperBoostBaseMode
+                                ?? PerformancePreset.Balanced,
+                            "HyperBoost was already inactive at the lifecycle boundary, but its ownership journal could not be retired.")
+                        .ConfigureAwait(false);
+                    hyperBoostOwnershipGeneration++;
+                    ownsHyperBoost = false;
+                    ownedHyperBoostBaseMode = null;
+                    return new ControlOperationResult(
+                        retired
+                            ? ControlOperationStatus.Stored
+                            : ControlOperationStatus.Failed,
+                        retired
+                            ? "HyperBoost was already inactive at the lifecycle boundary."
+                            : "HyperBoost was already inactive, but its ownership journal could not be retired; control writes remain blocked.");
+                }
+
+                restoreBaseMode = ownedHyperBoostBaseMode
+                    ?? PerformancePreset.Balanced;
+                expectedOwnershipGeneration = hyperBoostOwnershipGeneration;
+            }
+            finally
+            {
+                operationGate.Release();
+            }
+
+            string boundary = reasonLabel == "shutdown"
+                ? "before shutdown"
+                : $"before {reasonLabel}";
+            history.RecordSummary(
+                ControlOperationStatus.Stored,
+                $"Attempting to restore OpenBlade-owned HyperBoost to {PerformanceLabel(restoreBaseMode)} {boundary}.");
+
+            ControlOperationResult result = await SetHyperBoostCoreAsync(
+                    enabled: false,
+                    expectedOwnershipGeneration,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (result.Status != ControlOperationStatus.Applied)
+            {
+                return result;
+            }
+
+            string restored = $"OpenBlade-owned HyperBoost was restored to {PerformanceLabel(restoreBaseMode)} {boundary}.";
+            history.RecordSummary(ControlOperationStatus.Applied, restored);
+            return new ControlOperationResult(ControlOperationStatus.Applied, restored);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            const string canceled =
+                "HyperBoost lifecycle restoration was canceled. OpenBlade will not retry it during this lifecycle boundary.";
+            history.RecordSummary(ControlOperationStatus.Failed, canceled);
+            return new ControlOperationResult(ControlOperationStatus.Failed, canceled);
+        }
+        catch (Exception exception)
+        {
+            string failure =
+                $"HyperBoost lifecycle restoration failed. OpenBlade will not retry it: {exception.Message}";
+            history.RecordSummary(ControlOperationStatus.Failed, failure);
+            return new ControlOperationResult(ControlOperationStatus.Failed, failure);
+        }
+    }
+
     public async Task<ControlOperationResult> PrepareForShutdownAsync(
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
-        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ControlOperationResult hyperBoostResult =
+            await RestoreOwnedHyperBoostForLifecycleCoreAsync(
+                "shutdown",
+                cancellationToken).ConfigureAwait(false);
+        CancellationToken cleanupToken = cancellationToken.IsCancellationRequested
+            ? CancellationToken.None
+            : cancellationToken;
+        await operationGate.WaitAsync(cleanupToken).ConfigureAwait(false);
         try
         {
             ControlOperationResult? brightnessResult = displayBrightnessReleaseRequired
-                ? await ReleaseDisplayBrightnessUsageCoreAsync(cancellationToken)
+                ? await ReleaseDisplayBrightnessUsageCoreAsync(cleanupToken)
                     .ConfigureAwait(false)
                 : null;
+            coolingDemandLeases.Clear();
+            PublishCoolingPadStatus(
+                "Cooling-demand leases were cleared for service shutdown.");
+            ControlOperationResult? coolingPadFanResult =
+                await HandbackCoolingPadFanForLifecycleAsync(
+                        "service shutdown",
+                        cleanupToken)
+                    .ConfigureAwait(false);
+            ControlOperationResult? coolingPadLightingResult =
+                await TryUpdateCoolingPadLightingAsync(
+                    static (coordinator, token) => coordinator.InvalidateAsync(token),
+                    "Cooling-pad lighting could not be quiesced for service shutdown.",
+                    cleanupToken)
+                .ConfigureAwait(false);
+            try
+            {
+                await coolingPadProvider.InvalidateAsync(cleanupToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cleanupToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // Cooling-pad observation owns no writes. Failure to close its
+                // optional handle must not skip keyboard or fan cleanup.
+            }
+
             ControlOperationResult driverModeResult = await ReleaseDriverModeCoreAsync(
                 "shutdown",
-                cancellationToken).ConfigureAwait(false);
+                cleanupToken).ConfigureAwait(false);
             ControlOperationResult fanResult;
             try
             {
                 fanResult = await RestoreAutomaticFansForShutdownCoreAsync(
-                    cancellationToken).ConfigureAwait(false);
+                    cleanupToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cleanupToken.IsCancellationRequested)
             {
                 throw;
             }
@@ -4361,10 +6595,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     failure);
             }
 
-            ControlOperationResult cleanup = CombineShutdownCleanupResults(
+            ControlOperationResult combined = CombineShutdownCleanupResults(
+                hyperBoostResult,
+                coolingPadFanResult,
+                coolingPadLightingResult,
                 fanResult,
                 driverModeResult);
-            return CombineDisplayBrightnessCleanup(brightnessResult, cleanup);
+            combined = CombineDisplayBrightnessCleanup(brightnessResult, combined);
+            if (!coolingPadLightingUnexpectedExitRecoveryPending)
+            {
+                return combined;
+            }
+
+            const string unresolved =
+                "Cooling-pad lighting crash recovery is unresolved, so the service run marker must be retained.";
+            history.RecordSummary(ControlOperationStatus.Failed, unresolved);
+            return new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                $"{combined.Message} {unresolved}");
         }
         finally
         {
@@ -4373,10 +6621,57 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     public async Task<ControlOperationResult> PrepareForLowPowerAsync(
-        CancellationToken cancellationToken) => await ReleaseDriverModeAsync(
-            preserveLightingIntent: true,
-            reasonLabel: "low power",
-            cancellationToken).ConfigureAwait(false);
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        ControlOperationResult hyperBoostResult =
+            await RestoreOwnedHyperBoostForLifecycleCoreAsync(
+                    "low power",
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+        CancellationToken cleanupToken = cancellationToken.IsCancellationRequested
+            ? CancellationToken.None
+            : cancellationToken;
+        coolingDemandLeases.Clear();
+        ControlOperationResult? coolingPadFanResult =
+            await HandbackCoolingPadFanForLifecycleAsync(
+                    "low power",
+                    cleanupToken)
+                .ConfigureAwait(false);
+        PublishCoolingPadPausedStatus(
+            "Cooling-demand leases were cleared for low power. Saved cooling-pad intent is unchanged.");
+        ControlOperationResult? coolingPadLightingResult =
+            await TryUpdateCoolingPadLightingAsync(
+                static (coordinator, token) => coordinator.InvalidateAsync(token),
+                "Cooling-pad lighting could not be quiesced for low power.",
+                cleanupToken)
+            .ConfigureAwait(false);
+        try
+        {
+            await coolingPadProvider.InvalidateAsync(cleanupToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cleanupToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Keep the mandatory keyboard low-power handoff independent from
+            // optional cooling-pad observation cleanup.
+        }
+        ControlOperationResult driverModeResult = await ReleaseDriverModeAsync(
+                preserveLightingIntent: true,
+                reasonLabel: "low power",
+                cleanupToken)
+            .ConfigureAwait(false);
+        return CombineLowPowerCleanupResults(
+            hyperBoostResult,
+            coolingPadFanResult,
+            coolingPadLightingResult,
+            driverModeResult);
+    }
 
     public async Task BeginResumeValidationAsync(CancellationToken cancellationToken)
     {
@@ -4671,34 +6966,140 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         };
     }
 
+    private async Task<ControlOperationResult?> HandbackCoolingPadFanForLifecycleAsync(
+        string lifecycle,
+        CancellationToken cancellationToken)
+    {
+        CoolingPadFanRuntimeSnapshot before = coolingPadFanCoordinator.Snapshot;
+        if (before.Access != DeviceFeatureAccess.ReadWrite
+            || before.Ownership == CoolingPadControlOwnershipState.Unowned)
+        {
+            return null;
+        }
+
+        try
+        {
+            await coolingPadFanCoordinator.HandbackForLifecycleAsync(
+                    $"Cooling-pad fan control was handed back for {lifecycle}. Saved fan intent is unchanged.",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            CoolingPadFanRuntimeSnapshot after = coolingPadFanCoordinator.Snapshot;
+            if (after.Ownership != CoolingPadControlOwnershipState.Unowned)
+            {
+                string suppressed =
+                    $"Cooling-pad fan handback was not confirmed for {lifecycle}. {after.Reason}";
+                history.RecordSummary(ControlOperationStatus.Failed, suppressed);
+                PublishCoolingPadStatus(suppressed);
+                return new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    suppressed);
+            }
+            string success =
+                $"Cooling-pad fan handback was confirmed for {lifecycle}; saved fan intent is unchanged.";
+            history.RecordSummary(ControlOperationStatus.Applied, success);
+            PublishCoolingPadStatus(success);
+            return new ControlOperationResult(ControlOperationStatus.Applied, success);
+        }
+        catch (Exception exception)
+        {
+            string failure =
+                $"Cooling-pad fan handback failed for {lifecycle}. OpenBlade will not retry it: {exception.Message}";
+            history.RecordSummary(ControlOperationStatus.Failed, failure);
+            PublishCoolingPadStatus(failure);
+            return new ControlOperationResult(ControlOperationStatus.Failed, failure);
+        }
+    }
+
     private static ControlOperationResult CombineShutdownCleanupResults(
+        ControlOperationResult hyperBoostResult,
+        ControlOperationResult? coolingPadFanResult,
+        ControlOperationResult? coolingPadLightingResult,
         ControlOperationResult fanResult,
         ControlOperationResult driverModeResult)
     {
-        ControlOperationStatus status;
-        if (fanResult.Status == ControlOperationStatus.Failed
-            || driverModeResult.Status == ControlOperationStatus.Failed)
+        var results = new List<ControlOperationResult> { hyperBoostResult };
+        var messages = new List<string>
         {
-            status = ControlOperationStatus.Failed;
-        }
-        else if (fanResult.Status == ControlOperationStatus.Blocked
-            || driverModeResult.Status == ControlOperationStatus.Blocked)
+            $"HyperBoost cleanup: {hyperBoostResult.Message}",
+        };
+        AddOptionalCleanupResult(
+            results,
+            messages,
+            "Cooling-pad fan cleanup",
+            coolingPadFanResult);
+        AddOptionalCleanupResult(
+            results,
+            messages,
+            "Cooling-pad lighting cleanup",
+            coolingPadLightingResult);
+        results.Add(fanResult);
+        messages.Add($"Fan cleanup: {fanResult.Message}");
+        results.Add(driverModeResult);
+        messages.Add($"Keyboard cleanup: {driverModeResult.Message}");
+        return new ControlOperationResult(
+            CombineCleanupStatus([.. results]),
+            string.Join(' ', messages));
+    }
+
+    private static ControlOperationResult CombineLowPowerCleanupResults(
+        ControlOperationResult hyperBoostResult,
+        ControlOperationResult? coolingPadFanResult,
+        ControlOperationResult? coolingPadLightingResult,
+        ControlOperationResult driverModeResult)
+    {
+        var results = new List<ControlOperationResult> { hyperBoostResult };
+        var messages = new List<string>
         {
-            status = ControlOperationStatus.Blocked;
-        }
-        else if (fanResult.Status == ControlOperationStatus.Applied
-            || driverModeResult.Status == ControlOperationStatus.Applied)
+            $"HyperBoost cleanup: {hyperBoostResult.Message}",
+        };
+        AddOptionalCleanupResult(
+            results,
+            messages,
+            "Cooling-pad fan cleanup",
+            coolingPadFanResult);
+        AddOptionalCleanupResult(
+            results,
+            messages,
+            "Cooling-pad lighting cleanup",
+            coolingPadLightingResult);
+        results.Add(driverModeResult);
+        messages.Add($"Keyboard cleanup: {driverModeResult.Message}");
+        return new ControlOperationResult(
+            CombineCleanupStatus([.. results]),
+            string.Join(' ', messages));
+    }
+
+    private static void AddOptionalCleanupResult(
+        List<ControlOperationResult> results,
+        List<string> messages,
+        string label,
+        ControlOperationResult? result)
+    {
+        if (result is not { } value)
         {
-            status = ControlOperationStatus.Applied;
-        }
-        else
-        {
-            status = ControlOperationStatus.Stored;
+            return;
         }
 
-        return new ControlOperationResult(
-            status,
-            $"Fan cleanup: {fanResult.Message} Keyboard cleanup: {driverModeResult.Message}");
+        results.Add(value);
+        messages.Add($"{label}: {value.Message}");
+    }
+
+    private static ControlOperationStatus CombineCleanupStatus(
+        params ControlOperationResult[] results)
+    {
+        if (results.Any(static result => result.Status == ControlOperationStatus.Failed))
+        {
+            return ControlOperationStatus.Failed;
+        }
+
+        if (results.Any(static result => result.Status == ControlOperationStatus.Blocked))
+        {
+            return ControlOperationStatus.Blocked;
+        }
+
+        return results.Any(static result => result.Status == ControlOperationStatus.Applied)
+            ? ControlOperationStatus.Applied
+            : ControlOperationStatus.Stored;
     }
 
     private static ControlOperationResult CombineDisplayBrightnessCleanup(
@@ -5451,6 +7852,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 cachedConfirmed,
                 outcome,
                 token).ConfigureAwait(false);
+        if (confirmed is { HyperBoostActive: false })
+        {
+            bool retired = true;
+            if (ownsHyperBoost || ownedHyperBoostBaseMode is not null)
+            {
+                retired = await RetireInactiveHyperBoostJournalIfPresentAsync(
+                        "A confirmed inactive observation relinquished HyperBoost ownership, but its journal could not be retired.")
+                    .ConfigureAwait(false);
+                hyperBoostOwnershipGeneration++;
+            }
+            ownsHyperBoost = false;
+            ownedHyperBoostBaseMode = null;
+            if (!retired)
+            {
+                PublishIfChanged(GetStatus() with
+                {
+                    WritesBlocked = true,
+                    Message =
+                        "HyperBoost is inactive, but its ownership journal could not be retired. Control writes remain blocked.",
+                });
+            }
+        }
 
         if (!outcome.ReadbackMatched
             && outcome.WriteAttempted
@@ -6622,6 +9045,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             lastFullObservationTimestamp = Stopwatch.GetTimestamp();
             BatteryHealthStatus? batteryHealth =
                 CaptureBatteryHealthAfterFirstVerificationCore();
+            bool journalRetired = true;
+            if (!observation.Confirmed.HyperBoostActive)
+            {
+                journalRetired = await RetireInactiveHyperBoostJournalIfPresentAsync(
+                        "A fresh inactive HyperBoost observation relinquished ownership, but its journal could not be retired.")
+                    .ConfigureAwait(false);
+            }
             PublishVerifiedDeviceObservation(
                 powerSource,
                 powerSourceConfirmed,
@@ -6629,6 +9059,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 batteryPowerFlowMilliwatts,
                 observation,
                 batteryHealth);
+            if (!journalRetired)
+            {
+                PublishIfChanged(GetStatus() with
+                {
+                    WritesBlocked = true,
+                    Message =
+                        "HyperBoost is inactive, but its ownership journal could not be retired. Control writes remain blocked.",
+                });
+            }
 
             bool lightingRelinquishFailed = skipLightingHandoff;
             if (!skipLightingHandoff)
@@ -6838,8 +9277,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ConfirmedDeviceState observed)
     {
         var compared = new List<DeviceSubsystem>(4);
-        if (baseline.Confirmed.Performance is not null
-            && observed.Performance is not null
+        if ((baseline.Confirmed.Performance is not null
+                || baseline.Confirmed.HyperBoostActive)
+            && (observed.Performance is not null
+                || observed.HyperBoostActive)
             && !baseline.GpuClockOffsetConfirmationInvalidated
             && (baseline.Confirmed.GpuClockOffsets is null
                 || observed.GpuClockOffsets is not null))
@@ -6891,6 +9332,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 DeviceSubsystem.Performance =>
                     baseline.Performance == observed.Performance
+                    && baseline.HyperBoostActive == observed.HyperBoostActive
                     && CompareWhenBothKnown(
                         baseline.CustomPerformance,
                         observed.CustomPerformance)
@@ -7059,7 +9501,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FullDeviceObservation observation,
         BatteryHealthStatus? batteryHealth)
     {
-        PublishIfChanged(GetStatus() with
+        ServiceStatusSnapshot current = GetStatus();
+        if (!observation.Confirmed.HyperBoostActive)
+        {
+            if (ownsHyperBoost || ownedHyperBoostBaseMode is not null)
+            {
+                hyperBoostOwnershipGeneration++;
+            }
+            ownsHyperBoost = false;
+            ownedHyperBoostBaseMode = null;
+        }
+
+        if (observation.Confirmed.HyperBoostActive)
+        {
+            coolingDemandLeases.Clear();
+        }
+
+        PublishIfChanged(current with
         {
             DeviceVerified = true,
             WritesBlocked = !powerSourceConfirmed,
@@ -7073,6 +9531,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRefreshRate = EffectiveLightingRefreshRate(
                 observation.Capabilities),
             ConfirmedState = observation.Confirmed,
+            CoolingPad = observation.Confirmed.HyperBoostActive
+                ? SuppressCoolingPadDemandForHyperBoost(
+                    current.CoolingPad,
+                    "HyperBoost is active; cooling-demand leases were cleared and host pad demand is suppressed.")
+                : current.CoolingPad,
             Profiles = Automation.Profiles,
             DesiredState = Automation.Resolve(observation.Confirmed),
             ActivePowerSource = powerSource,
@@ -7284,6 +9747,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ServiceStatusSnapshot current = GetStatus();
         if (!unexpectedExitRecoveryPending
+            || coolingPadLightingUnexpectedExitRecoveryPending
             || unexpectedExitRecoveryDeferredForUserConfiguration
             || !current.DeviceVerified
             || current.WritesBlocked)
@@ -7558,6 +10022,105 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    private bool HyperBoostMayBeActive(ServiceStatusSnapshot snapshot)
+    {
+        if (snapshot.ConfirmedState?.HyperBoostActive == true)
+        {
+            return true;
+        }
+
+        lock (pendingWriteConfirmationGate)
+        {
+            return pendingWriteConfirmations.Values.Any(
+                static pending => pending.HyperBoostActive is not null);
+        }
+    }
+
+    private bool IsActiveCoolingDemandLeaseOwner(string userSid, int sessionId) =>
+        sessionId >= 0
+        && !string.IsNullOrWhiteSpace(userSid)
+        && string.Equals(
+            Volatile.Read(ref activeUserSid),
+            userSid,
+            StringComparison.OrdinalIgnoreCase)
+        && Volatile.Read(ref activeUserSessionId) == sessionId;
+
+    private void LatchPendingHyperBoost(
+        ServiceStatusSnapshot? baseline,
+        bool enabled,
+        PerformancePreset baseMode)
+    {
+        // Either an indeterminate enable or disable may have left firmware in
+        // HyperBoost. Ephemeral host-demand leases must not survive that unknown
+        // state and then reappear after reconciliation.
+        coolingDemandLeases.Clear();
+        if (baseline?.ConfirmedState is not { } preWriteState)
+        {
+            return;
+        }
+
+        var pending = new PendingWriteConfirmation(
+            baseline.ActivePowerSource,
+            baseline.DesiredState,
+            preWriteState,
+            HyperBoostActive: enabled,
+            HyperBoostBaseMode: baseMode);
+        SetPendingWriteConfirmation(DeviceSubsystem.Performance, pending);
+        SetPendingWriteConfirmation(DeviceSubsystem.Fans, pending);
+    }
+
+    private void PublishPendingHyperBoostStatus(string message)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        PublishIfChanged(current with
+        {
+            CoolingPad = SuppressCoolingPadDemandForHyperBoost(
+                current.CoolingPad,
+                message),
+            Message = message,
+        });
+    }
+
+    private CoolingPadStatus? SuppressCoolingPadDemandForHyperBoost(
+        CoolingPadStatus? coolingPad,
+        string message)
+    {
+        CoolingPadFanRuntimeSnapshot fanRuntime = coolingPadFanCoordinator.Snapshot;
+        return coolingPad is { } pad
+            ? pad with
+            {
+                ComputedDemand = null,
+                PlannedFanTarget = null,
+                AppliedDemand = fanRuntime.AppliedDemand,
+                Ownership = fanRuntime.Ownership,
+                ActiveDemandLeases = 0,
+                Message = message,
+            }
+            : null;
+    }
+
+    private void PublishCoolingPadPausedStatus(string message)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        CoolingPadFanRuntimeSnapshot fanRuntime = coolingPadFanCoordinator.Snapshot;
+        PublishIfChanged(current with
+        {
+            CoolingPad = current.CoolingPad is { } pad
+                ? pad with
+                {
+                    ComputedDemand = null,
+                    PlannedFanTarget = null,
+                    AppliedDemand = fanRuntime.AppliedDemand,
+                    Ownership = fanRuntime.Ownership,
+                    ConfiguredFanTargetIsFresh = false,
+                    ActiveDemandLeases = 0,
+                    Message = message,
+                }
+                : null,
+            Message = message,
+        });
+    }
+
     private void SetPendingWriteConfirmation(
         DeviceSubsystem subsystem,
         PendingWriteConfirmation pending)
@@ -7663,16 +10226,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ConfirmedDeviceState confirmed,
         IBladeDevice device) => subsystem switch
         {
-            DeviceSubsystem.Performance => MatchPendingPerformance(
+            DeviceSubsystem.Performance => MatchPendingHyperBoost(
                 pending,
-                confirmed,
-                device),
-            DeviceSubsystem.Fans => confirmed.Fans is null
-                ? PendingConfirmationResult.Unavailable
-                : confirmed.Fans == (pending.Target.FanControl?.Mode
-                    ?? pending.Target.Fans.Value)
-                    ? PendingConfirmationResult.Match
-                    : PendingConfirmationResult.Mismatch,
+                confirmed) ?? MatchPendingPerformance(
+                    pending,
+                    confirmed,
+                    device),
+            DeviceSubsystem.Fans => MatchPendingHyperBoost(
+                pending,
+                confirmed) ?? (confirmed.Fans is null
+                    ? PendingConfirmationResult.Unavailable
+                    : confirmed.Fans == (pending.Target.FanControl?.Mode
+                        ?? pending.Target.Fans.Value)
+                        ? PendingConfirmationResult.Match
+                        : PendingConfirmationResult.Mismatch),
             DeviceSubsystem.Battery =>
                 // Temporary full charge changes the meaning of the other battery
                 // fields. A null value is insufficient evidence, so keep the write
@@ -7689,6 +10256,38 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     : PendingConfirmationResult.Mismatch,
             _ => PendingConfirmationResult.Unavailable,
         };
+
+    private static PendingConfirmationResult? MatchPendingHyperBoost(
+        PendingWriteConfirmation pending,
+        ConfirmedDeviceState confirmed)
+    {
+        if (pending.HyperBoostActive is not bool expected)
+        {
+            return null;
+        }
+
+        if (confirmed.HyperBoostActive != expected)
+        {
+            return PendingConfirmationResult.Mismatch;
+        }
+
+        return expected
+            ? confirmed.Fans == FanMode.Automatic
+                ? PendingConfirmationResult.Match
+                : confirmed.Fans is not null
+                    ? PendingConfirmationResult.Mismatch
+                    : PendingConfirmationResult.Unavailable
+            : confirmed is
+            {
+                Performance: var restoredPerformance,
+                Fans: FanMode.Automatic,
+            } && restoredPerformance == pending.HyperBoostBaseMode
+                ? PendingConfirmationResult.Match
+                : confirmed.Performance is not null
+                    && confirmed.Fans is not null
+                    ? PendingConfirmationResult.Mismatch
+                    : PendingConfirmationResult.Unavailable;
+    }
 
     private static PendingConfirmationResult MatchPendingPerformance(
         PendingWriteConfirmation pending,
@@ -7957,6 +10556,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         || capabilities.LogoLightingModes.Count > 0
         || capabilities.ChargeLimits.Count > 0
         || capabilities.OneShotLaptopControls.Count > 0
+        || capabilities.CoolingPadSupportAccess is not null
         || capabilities.SupportsBatteryProtectionOff
         || capabilities.SupportsTemporaryFullCharge;
 
@@ -8098,6 +10698,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FanControlOverride = Automation.FanControlOverride,
             BatteryPolicyOverride = Automation.BatteryPolicyOverride,
             BatteryProtectionOverride = Automation.BatteryProtectionOverride,
+            CoolingPad = null,
         };
     }
 
@@ -8381,7 +10982,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private sealed record PendingWriteConfirmation(
         PowerSource PowerSource,
         DesiredDeviceState Target,
-        ConfirmedDeviceState PreWriteState);
+        ConfirmedDeviceState PreWriteState,
+        bool? HyperBoostActive = null,
+        PerformancePreset? HyperBoostBaseMode = null);
 
     private enum PendingConfirmationResult
     {
@@ -8494,6 +11097,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware
         && left.BatteryHealth == right.BatteryHealth
+        && left.CoolingPad == right.CoolingPad
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
 
     private static string RefreshRateLabel(LightingRefreshRate value) => value switch
@@ -8876,6 +11480,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             nameof(ConfirmedDeviceState.Performance),
             nameof(ConfirmedDeviceState.CustomPerformance),
             nameof(ConfirmedDeviceState.GpuClockOffsets),
+            nameof(ConfirmedDeviceState.HyperBoostActive),
             nameof(ConfirmedDeviceState.Fans),
             nameof(ConfirmedDeviceState.Battery),
             nameof(ConfirmedDeviceState.Lighting),
@@ -8924,6 +11529,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && left.CpuPowerLimit == right.CpuPowerLimit
             && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
             && left.GpuOverclock == right.GpuOverclock
+            && left.HyperBoostAccess == right.HyperBoostAccess
+            && left.HyperBoostBaseModes == right.HyperBoostBaseModes
+            && left.CoolingPadSupportAccess == right.CoolingPadSupportAccess
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
             && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
             && left.LampArrayLightingAccess == right.LampArrayLightingAccess
@@ -8947,6 +11555,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 StringComparison.Ordinal)
             && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
             && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
+
+    private static string PerformanceLabel(PerformancePreset preset) => preset switch
+    {
+        PerformancePreset.Silent => "Quiet",
+        _ => preset.ToString(),
+    };
 
     private static bool CustomPerformanceCapabilitiesEqual(
         CustomPerformanceCapabilities? left,

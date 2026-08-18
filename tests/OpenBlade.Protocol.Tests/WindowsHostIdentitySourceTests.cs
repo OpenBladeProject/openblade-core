@@ -125,7 +125,7 @@ public sealed class WindowsHostIdentitySourceTests
     }
 
     [Fact]
-    public void ReadExactIdentity_Rz090528UsesIndependentFirmwareSet()
+    public void ReadExactIdentity_Rz090528AdmitsFutureFirmwareByModel()
     {
         FakeRegistryValueSource registry = CreateExactRegistry();
         registry.Values[$"{BiosKey}|SystemProductName"] = "Blade 16 - RZ09-0528";
@@ -163,7 +163,7 @@ public sealed class WindowsHostIdentitySourceTests
     }
 
     [Fact]
-    public void ReadExactIdentity_UntestedFirmwareRequiresExplicitPolicy()
+    public void ReadExactIdentity_ExactVersionValidatorRequiresExplicitPolicy()
     {
         FakeRegistryValueSource registry = CreateExactRegistry();
         registry.Values[$"{BiosKey}|BIOSVersion"] = "3.02";

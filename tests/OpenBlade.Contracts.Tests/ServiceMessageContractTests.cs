@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionFortySevenAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionFortyEightAndRetainExactSizeLimit()
     {
-        Assert.Equal(47, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(48, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -26,6 +26,12 @@ public sealed class ServiceMessageContractTests
             (typeof(ExportDiagnosticsRequest), "exportDiagnostics"),
             (typeof(UpdateProfilesRequest), "updateProfiles"),
             (typeof(SetPerformanceOverrideRequest), "setPerformanceOverride"),
+            (typeof(SetHyperBoostRequest), "setHyperBoost"),
+            (typeof(SetCoolingPadFanIntentRequest), "setCoolingPadFanIntent"),
+            (typeof(SetCoolingDemandLeaseRequest), "setCoolingDemandLease"),
+            (typeof(ReleaseCoolingDemandLeaseRequest), "releaseCoolingDemandLease"),
+            (typeof(SetCoolingDemandApiEnabledRequest), "setCoolingDemandApiEnabled"),
+            (typeof(SetCoolingPadLightingSyncRequest), "setCoolingPadLightingSync"),
             (typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut"),
             (typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview"),
             (typeof(SetFanOverrideRequest), "setFanOverride"),
@@ -70,6 +76,7 @@ public sealed class ServiceMessageContractTests
             "PerformanceShortcutPreview", "BatteryHealth", "KeyboardLightingControlMode",
             "ControlAccess", "AllowUntestedFirmware", "FirmwareCompatibility",
             "DisplayBrightnessHidAvailability",
+            "CoolingPad",
         ];
 
         Assert.Equal(
@@ -95,6 +102,7 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(DisplayBrightnessHidAvailability), typeof(ServiceStatusSnapshot).GetProperty("DisplayBrightnessHidAvailability")!.PropertyType);
         Assert.Equal(typeof(BatteryPolicy), typeof(ServiceStatusSnapshot).GetProperty("BatteryPolicyOverride")!.PropertyType);
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("BatteryProtectionOverride")!.PropertyType);
+        Assert.Equal(typeof(CoolingPadStatus), typeof(ServiceStatusSnapshot).GetProperty("CoolingPad")!.PropertyType);
     }
 
     [Fact]
@@ -140,6 +148,7 @@ public sealed class ServiceMessageContractTests
         Assert.False(capabilities.SupportsBatteryProtectionOff);
         Assert.False(capabilities.SupportsTemporaryFullCharge);
         Assert.Null(capabilities.KeyboardLightingLayoutId);
+        Assert.Null(capabilities.HyperBoostBaseModes);
     }
 
     [Fact]

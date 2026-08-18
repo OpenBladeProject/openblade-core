@@ -199,7 +199,7 @@ public sealed class ServiceCompositionTests
     }
 
     [Fact]
-    public void AddVerifiedBladeDeviceProvider_ResolvesWindowsProviderOnly()
+    public async Task AddVerifiedBladeDeviceProvider_ResolvesWindowsProviderOnly()
     {
         var services = new ServiceCollection();
 
@@ -221,7 +221,7 @@ public sealed class ServiceCompositionTests
                 && descriptor.ImplementationFactory is not null
                 && descriptor.Lifetime == ServiceLifetime.Singleton);
 
-        using ServiceProvider provider = services.BuildServiceProvider();
+        await using ServiceProvider provider = services.BuildServiceProvider();
         Assert.IsAssignableFrom<IFanRpmQueryRunFactory>(
             provider.GetRequiredService<IFanRpmQueryRunFactory>());
         Assert.IsType<NvidiaGpuClockOffsetController>(
@@ -236,6 +236,89 @@ public sealed class ServiceCompositionTests
         Assert.DoesNotContain(
             registrations,
             registration => registration is UnavailableBladeDeviceProvider);
+    }
+
+    [Fact]
+    public async Task AddVerifiedBladeDeviceProvider_RegistersOneDormantLightingCoordinator()
+    {
+        var services = new ServiceCollection();
+
+        services.AddVerifiedBladeDeviceProvider();
+
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        Type protocolAssemblyMarker = typeof(TargetBladeDevice);
+        Type coordinatorType = protocolAssemblyMarker.Assembly.GetType(
+            "OpenBlade.Protocol.ICoolingPadLightingCoordinator",
+            throwOnError: true)!;
+        Type observerType = protocolAssemblyMarker.Assembly.GetType(
+            "OpenBlade.Protocol.IKeyboardLightingFrameObserver",
+            throwOnError: true)!;
+        object coordinator = provider.GetRequiredService(coordinatorType);
+        object observer = provider.GetRequiredService(observerType);
+        ICoolingPadLightingRuntimeCoordinator runtimeCoordinator =
+            provider.GetRequiredService<ICoolingPadLightingRuntimeCoordinator>();
+        ICoolingPadFanRuntimeCoordinator fanRuntimeCoordinator =
+            provider.GetRequiredService<ICoolingPadFanRuntimeCoordinator>();
+        WindowsVerifiedCoolingPadProvider coolingPadProvider =
+            provider.GetRequiredService<WindowsVerifiedCoolingPadProvider>();
+        ICoolingPadLightingSessionOwner lightingSessionOwner =
+            provider.GetRequiredService<ICoolingPadLightingSessionOwner>();
+
+        Assert.Same(coordinator, observer);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            coordinatorType.GetProperty("LightingSyncAccess")!.GetValue(coordinator));
+        Assert.Equal(
+            CoolingPadLightingSyncState.Unavailable,
+            coordinatorType.GetProperty("State")!.GetValue(coordinator));
+        Assert.Equal(
+            false,
+            observerType.GetProperty("IsInterested")!.GetValue(observer));
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            runtimeCoordinator.Snapshot.Access);
+        Assert.False(runtimeCoordinator.Snapshot.Enabled);
+        Assert.Equal(
+            CoolingPadLightingSyncState.Unavailable,
+            runtimeCoordinator.Snapshot.State);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            fanRuntimeCoordinator.Snapshot.Access);
+        Assert.Equal(
+            CoolingPadControlOwnershipState.Unowned,
+            fanRuntimeCoordinator.Snapshot.Ownership);
+        Assert.Null(fanRuntimeCoordinator.Snapshot.AppliedDemand);
+        Assert.Null(fanRuntimeCoordinator.Snapshot.AppliedTarget);
+        Assert.Same(
+            coolingPadProvider,
+            provider.GetRequiredService<IVerifiedCoolingPadProvider>());
+        Assert.IsType<ProviderCoolingPadLightingSessionOwner>(lightingSessionOwner);
+        Assert.Same(
+            UnavailableCoolingPadFanRuntimeCoordinator.Instance,
+            fanRuntimeCoordinator);
+
+        _ = provider.GetRequiredService<IProductionLightingPortFactory>();
+
+        Assert.Same(
+            coordinator,
+            provider.GetRequiredService(coordinatorType));
+        Assert.Equal(
+            false,
+            observerType.GetProperty("IsInterested")!.GetValue(observer));
+    }
+
+    [Fact]
+    public void AddServiceControlRuntime_RegistersOneSingletonFactory()
+    {
+        var services = new ServiceCollection();
+
+        services.AddServiceControlRuntime();
+
+        ServiceDescriptor descriptor = Assert.Single(
+            services,
+            item => item.ServiceType == typeof(IServiceControlRuntime));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
     }
 
     [Fact]

@@ -1011,6 +1011,37 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task ProductionFactory_ThreadsMirrorObserverIntoOpenedPort()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        var observer = new RecordingFrameObserver();
+        var factory = new ProductionLightingFactory(
+            admitted: true,
+            static () => new ValidationRunContext(),
+            _ => new LightingActorFactory(session),
+            static () => new HidSessionResult<IPid02E0MatrixFeatureWriter>(
+                new MatrixWriter(),
+                null),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1),
+            new PendingDisposalRegistry(),
+            observer);
+
+        HidSessionResult<IProductionLightingPort> opened = await factory.OpenAsync(default);
+        await using IProductionLightingPort port = Assert.IsAssignableFrom<IProductionLightingPort>(
+            opened.Value);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(0x12, 0x34, 0x56), 100),
+            default);
+
+        Assert.Single(observer.Frames);
+    }
+
+    [Fact]
     public async Task ProductionFactory_PreservesActorOpenDiagnostic()
     {
         var diagnostic = new HidSessionFailureDiagnostic(
@@ -2117,6 +2148,85 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task SuccessfulKeyboardFrame_PublishesPostSubmissionMirrorFrame()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        var observer = new RecordingFrameObserver();
+        await using var port = CreatePort(
+            session,
+            writer,
+            admitted: true,
+            frameObserver: observer);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(0x12, 0x34, 0x56), 100),
+            default);
+
+        AmbientLightingFrame frame = Assert.Single(observer.Frames);
+        Assert.Equal(new RgbColor(0x12, 0x34, 0x56), frame.Slots[1]);
+        Assert.Equal(default, frame.Slots[0]);
+        Assert.Equal([100], observer.BrightnessValues);
+    }
+
+    [Fact]
+    public async Task SuccessfulKeyboardFrame_SeedsBrightnessWithoutFrameInterest()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        var observer = new BrightnessOnlyFrameObserver();
+        await using var port = CreatePort(
+            session,
+            writer,
+            admitted: true,
+            frameObserver: observer);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(0x12, 0x34, 0x56), 100),
+            default);
+
+        Assert.Equal([100], observer.BrightnessValues);
+    }
+
+    [Fact]
+    public async Task MirrorObserverFailure_DoesNotPoisonKeyboardSubmission()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(
+            session,
+            writer,
+            admitted: true,
+            frameObserver: new ThrowingFrameObserver());
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+
+        Assert.NotEmpty(writer.Reports);
+        Assert.NotEqual(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+    }
+
+    [Fact]
+    public async Task MirrorObserverInterestFailure_DoesNotPoisonKeyboardSubmission()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(
+            session,
+            writer,
+            admitted: true,
+            frameObserver: new ThrowingInterestFrameObserver());
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+
+        Assert.NotEmpty(writer.Reports);
+        Assert.NotEqual(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+    }
+
+    [Fact]
     public async Task AudioMeter_WritesOnlyTheTypedSessionSampleWhileOwned()
     {
         var session = new LightingSession(initialBrightness: 0xFF);
@@ -2161,7 +2271,12 @@ public sealed class ProductionLightingPortTests
     {
         var session = new LightingSession(initialBrightness: 0xFF);
         var writer = new MatrixWriter();
-        await using var port = CreatePort(session, writer, admitted: true);
+        var observer = new RecordingFrameObserver();
+        await using var port = CreatePort(
+            session,
+            writer,
+            admitted: true,
+            frameObserver: observer);
         RgbColor color = new(0x12, 0x34, 0x56);
         await port.SetLightingAsync(LightingSettingsFactory.Static(color, 100), default);
         int commandsBefore = session.Commands.Count;
@@ -2180,6 +2295,46 @@ public sealed class ProductionLightingPortTests
                 (int)command.ClassId,
                 (int)command.CommandId,
                 Convert.ToHexString(command.Arguments.Span))).ToArray());
+        Assert.Equal([100, 50], observer.BrightnessValues);
+    }
+
+    [Fact]
+    public async Task BrightnessStep_PublishesAcknowledgedValueWithoutNewFrame()
+    {
+        var session = new LightingSession(initialBrightness: 0x80);
+        var writer = new MatrixWriter();
+        var observer = new RecordingFrameObserver();
+        await using var port = CreatePort(
+            session,
+            writer,
+            admitted: true,
+            frameObserver: observer);
+
+        byte resulting = await port.StepBrightnessAsync(
+            KeyboardBrightnessDirection.Increase,
+            default);
+
+        Assert.Equal(resulting, Assert.Single(observer.BrightnessValues));
+        Assert.Empty(observer.Frames);
+    }
+
+    [Fact]
+    public async Task BrightnessObserverFailure_DoesNotPoisonKeyboardSubmission()
+    {
+        var session = new LightingSession(initialBrightness: 0x80);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(
+            session,
+            writer,
+            admitted: true,
+            frameObserver: new ThrowingFrameObserver());
+
+        byte resulting = await port.StepBrightnessAsync(
+            KeyboardBrightnessDirection.Increase,
+            default);
+
+        Assert.True(resulting > 0);
+        Assert.NotEqual(LightingRendererOwnershipState.Faulted, port.OwnershipState);
     }
 
     [Fact]
@@ -2633,14 +2788,75 @@ public sealed class ProductionLightingPortTests
         bool admitted,
         TimeProvider? timeProvider = null,
         TimeSpan? cleanupDrainTimeout = null,
-        PendingDisposalRegistry? pendingDisposals = null) => new(
+        PendingDisposalRegistry? pendingDisposals = null,
+        IKeyboardLightingFrameObserver? frameObserver = null) => new(
             new ValidationActor(session, new BatteryCommands(), new TemporaryCommands()),
             writer,
             admitted,
             timeProvider ?? TimeProvider.System,
             TimeSpan.FromSeconds(1),
             cleanupDrainTimeout ?? TimeSpan.FromSeconds(1),
-            pendingDisposals ?? new PendingDisposalRegistry());
+            pendingDisposals ?? new PendingDisposalRegistry(),
+            frameObserver);
+
+    private sealed class RecordingFrameObserver : IKeyboardLightingFrameObserver
+    {
+        public bool IsInterested => true;
+
+        public bool IsBrightnessInterested => true;
+
+        public List<AmbientLightingFrame> Frames { get; } = [];
+
+        public List<byte> BrightnessValues { get; } = [];
+
+        public void TryPublish(AmbientLightingFrame frame) => Frames.Add(frame);
+
+        public void TryPublishBrightness(byte percent) =>
+            BrightnessValues.Add(percent);
+    }
+
+    private sealed class ThrowingFrameObserver : IKeyboardLightingFrameObserver
+    {
+        public bool IsInterested => true;
+
+        public bool IsBrightnessInterested => true;
+
+        public void TryPublish(AmbientLightingFrame frame) =>
+            throw new InvalidOperationException("simulated sink failure");
+
+        public void TryPublishBrightness(byte percent) =>
+            throw new InvalidOperationException("simulated sink failure");
+    }
+
+    private sealed class BrightnessOnlyFrameObserver : IKeyboardLightingFrameObserver
+    {
+        public bool IsInterested => false;
+
+        public bool IsBrightnessInterested => true;
+
+        public List<byte> BrightnessValues { get; } = [];
+
+        public void TryPublish(AmbientLightingFrame frame) =>
+            throw new InvalidOperationException("Frame publication was not requested.");
+
+        public void TryPublishBrightness(byte percent) =>
+            BrightnessValues.Add(percent);
+    }
+
+    private sealed class ThrowingInterestFrameObserver : IKeyboardLightingFrameObserver
+    {
+        public bool IsInterested =>
+            throw new InvalidOperationException("simulated interest failure");
+
+        public bool IsBrightnessInterested =>
+            throw new InvalidOperationException("simulated interest failure");
+
+        public void TryPublish(AmbientLightingFrame frame) =>
+            throw new InvalidOperationException("must not be reached");
+
+        public void TryPublishBrightness(byte percent) =>
+            throw new InvalidOperationException("must not be reached");
+    }
 
     private static IProductionLightingPort CreateOwnedRendererReadPort(
         LightingSession session,
