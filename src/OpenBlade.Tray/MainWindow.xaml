@@ -219,7 +219,7 @@
                    TargetType="Button"
                    BasedOn="{StaticResource AccentButtonStyle}">
                 <Setter Property="MinHeight" Value="32" />
-                <Setter Property="Padding" Value="14,0" />
+                <Setter Property="Padding" Value="14,4" />
                 <Setter Property="FontSize" Value="14" />
                 <Setter Property="ContentTemplate" Value="{StaticResource PageHeaderButtonContentTemplate}" />
                 <Setter Property="HorizontalAlignment" Value="Left" />
@@ -230,7 +230,7 @@
                    TargetType="Button"
                    BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="MinHeight" Value="32" />
-                <Setter Property="Padding" Value="14,0" />
+                <Setter Property="Padding" Value="14,4" />
                 <Setter Property="FontSize" Value="14" />
                 <Setter Property="ContentTemplate" Value="{StaticResource PageHeaderButtonContentTemplate}" />
                 <Setter Property="HorizontalAlignment" Value="Left" />

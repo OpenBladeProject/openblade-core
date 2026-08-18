@@ -696,10 +696,11 @@ public partial class App : Microsoft.UI.Xaml.Application
                 IsHorizontalLowerRow(actions),
                 "The Save-only action counted its collapsed Restore sibling.");
             RequireResponsivePageHeader(
-                actions.ActualWidth <= header.ActualWidth + 0.5
-                    && save.ActualWidth <= header.ActualWidth + 0.5
-                    && save.ActualHeight > 32,
-                "The long Save-only action did not wrap within the header width.");
+                save.ActualHeight > 32,
+                "The long Save-only action did not wrap at its 300-DIP test width.");
+            RequireResponsivePageHeader(
+                actions.ActualWidth <= header.ActualWidth + 0.5,
+                "The Save-only lower row exceeded the header width.");
             await DrainResponsiveHeaderLayoutAsync(header);
             RequireResponsivePageHeader(
                 IsHorizontalLowerRow(actions),

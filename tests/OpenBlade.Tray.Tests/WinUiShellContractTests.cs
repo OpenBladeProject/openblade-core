@@ -74,6 +74,38 @@ public sealed class WinUiShellContractTests
             Assert.True(children.IndexOf(profileActions) < children.IndexOf(customizeButton));
         }
 
+        XElement contentTemplate = KeyedElement(
+            document,
+            "DataTemplate",
+            "PageHeaderButtonContentTemplate");
+        XElement templateText = Assert.Single(
+            contentTemplate.Elements(),
+            element => element.Name.LocalName == "TextBlock");
+        Assert.Equal("Wrap", Attribute(templateText, "TextWrapping"));
+        foreach (string styleKey in new[]
+        {
+            "ProfileSaveButtonStyle",
+            "PageHeaderSecondaryButtonStyle",
+        })
+        {
+            XElement style = KeyedElement(document, "Style", styleKey);
+            XElement[] setters = style.Elements()
+                .Where(element => element.Name.LocalName == "Setter")
+                .ToArray();
+            Assert.Contains(setters, setter =>
+                Attribute(setter, "Property") == "MinHeight"
+                && Attribute(setter, "Value") == "32");
+            Assert.Contains(setters, setter =>
+                Attribute(setter, "Property") == "Padding"
+                && Attribute(setter, "Value") == "14,4");
+            Assert.Contains(setters, setter =>
+                Attribute(setter, "Property") == "ContentTemplate"
+                && Attribute(setter, "Value") ==
+                    "{StaticResource PageHeaderButtonContentTemplate}");
+            Assert.DoesNotContain(setters, setter =>
+                Attribute(setter, "Property") == "Height");
+        }
+
         XElement profilesHeader = NamedElement(document, "Grid", "ProfilesPageHeader");
         XElement profilesActions = NamedElement(document, "StackPanel", "ProfilesHeaderActions");
         Assert.Same(profilesHeader, profilesActions.Parent);
@@ -332,12 +364,6 @@ public sealed class WinUiShellContractTests
             "Fill=\"{ThemeResource SystemFillColorSuccessBrush}\" Visibility=\"{x:Bind ViewModel.IsReadinessReady, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(
-            xaml,
-            "Property=\"ContentTemplate\" Value=\"{StaticResource PageHeaderButtonContentTemplate}\""));
-        Assert.Contains("x:Key=\"PageHeaderButtonContentTemplate\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("TextWrapping=\"Wrap\"", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("HeaderActions.Margin", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
@@ -3277,4 +3303,11 @@ public sealed class WinUiShellContractTests
         string uid) => Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == elementName
             && Attribute(element, "Uid") == uid);
+
+    private static XElement KeyedElement(
+        XDocument document,
+        string elementName,
+        string key) => Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == elementName
+            && Attribute(element, "Key") == key);
 }
