@@ -33,6 +33,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private readonly IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates;
     private readonly SemaphoreSlim? sharedCommandGate;
     private readonly DeviceFeatureAccess? hyperBoostAccess;
+    private readonly DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess;
     private readonly HyperBoostBaseModeCapabilities? hyperBoostBaseModes;
     private readonly DeviceFeatureAccess? coolingPadSupportAccess;
     private readonly IHyperBoostEligibilitySource? hyperBoostEligibility;
@@ -56,6 +57,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null,
         SemaphoreSlim? sharedCommandGate = null,
         DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         DeviceFeatureAccess? coolingPadSupportAccess = null,
         DeviceCommandCatalog? hyperBoostCatalog = null,
@@ -97,6 +99,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             : new HashSet<AdapterPowerState>(admittedAdapterPowerStates);
         this.sharedCommandGate = sharedCommandGate;
         this.hyperBoostAccess = hyperBoostAccess;
+        this.hyperBoostWithoutCoolingPadAccess = hyperBoostWithoutCoolingPadAccess;
         this.hyperBoostBaseModes = hyperBoostBaseModes;
         this.coolingPadSupportAccess = coolingPadSupportAccess;
         this.hyperBoostEligibility = hyperBoostEligibility;
@@ -104,6 +107,18 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             this.hyperBoostAccess,
             this.hyperBoostBaseModes,
             nameof(hyperBoostBaseModes));
+        if (this.hyperBoostWithoutCoolingPadAccess is not null
+            && (this.hyperBoostAccess is null
+                || this.hyperBoostWithoutCoolingPadAccess > this.hyperBoostAccess
+                || this.hyperBoostWithoutCoolingPadAccess is not
+                    (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
+                || this.hyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite
+                    && this.hyperBoostBaseModes?.Balanced
+                        != DeviceFeatureAccess.ReadWrite))
+        {
+            throw new UnvalidatedCommandException(
+                "HyperBoost without the cooling pad requires exact bounded evidence, writable Balanced admission, and access no broader than overall HyperBoost.");
+        }
         if (this.hyperBoostAccess == DeviceFeatureAccess.ReadWrite
             && (!ProductionBatteryPort.HasHyperBoostCommandSet(this.hyperBoostCatalog)
                 || this.hyperBoostEligibility is null))
@@ -134,6 +149,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             this.gpuOverclockCapabilities,
             this.observedPowerSourceBehaviors,
             this.hyperBoostAccess,
+            this.hyperBoostWithoutCoolingPadAccess,
             this.hyperBoostBaseModes,
             this.coolingPadSupportAccess);
     }
@@ -304,6 +320,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 observedPowerSourceBehaviors,
                 sharedCommandGate,
                 hyperBoostAccess,
+                hyperBoostWithoutCoolingPadAccess,
                 hyperBoostBaseModes,
                 coolingPadSupportAccess,
                 hyperBoostCatalog,
@@ -350,6 +367,10 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             GetRz090581HyperBoostAccess(
                 exactIdentity,
                 ProductionBatteryPort.HasHyperBoostCommandSet(hyperBoostCatalog));
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess =
+            GetRz090581HyperBoostWithoutCoolingPadAccess(
+                exactIdentity,
+                HyperBoostWithoutCoolingPadEvidenceGates.Current.WriteAdmitted);
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes =
             GetRz090581HyperBoostBaseModeCapabilities(exactIdentity);
         DeviceFeatureAccess? coolingPadSupportAccess =
@@ -383,6 +404,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             admittedAdapterPowerStates: admittedAdapterPowerStates,
             gpuOverclockCapabilities: gpuOverclockCapabilities,
             hyperBoostAccess: hyperBoostAccess,
+            hyperBoostWithoutCoolingPadAccess: hyperBoostWithoutCoolingPadAccess,
             hyperBoostBaseModes: hyperBoostBaseModes,
             coolingPadSupportAccess: coolingPadSupportAccess,
             hyperBoostCatalog: admittedHyperBoostCatalog,
@@ -440,6 +462,14 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                         ? DeviceFeatureAccess.ReadWrite
                         : DeviceFeatureAccess.ReadOnly
                     : DeviceFeatureAccess.ObservedOnly
+            : null;
+
+    internal static DeviceFeatureAccess? GetRz090581HyperBoostWithoutCoolingPadAccess(
+        HostIdentityReadResult exactIdentity,
+        bool writesAdmitted = false) => IsExactModelScopedRz090581Identity(exactIdentity)
+            ? writesAdmitted
+                ? DeviceFeatureAccess.ReadWrite
+                : DeviceFeatureAccess.ObservedOnly
             : null;
 
     internal static HyperBoostBaseModeCapabilities?

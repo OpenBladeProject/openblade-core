@@ -456,6 +456,8 @@ public static class FirmwareSmokeAssessment
         string expectedHyperBoostAccess = ExpectedHyperBoostAccess(
             snapshot.TargetModel,
             snapshot.Firmware.Bios);
+        string expectedHyperBoostWithoutCoolingPadAccess =
+            ExpectedHyperBoostWithoutCoolingPadAccess(snapshot.TargetModel);
         string expectedCoolingPadSupportAccess = ExpectedCoolingPadSupportAccess(
             snapshot.TargetModel);
         HyperBoostBaseModeCapabilities? expectedHyperBoostBaseModes =
@@ -593,6 +595,17 @@ public static class FirmwareSmokeAssessment
                     StringComparison.Ordinal),
                 expectedHyperBoostAccess,
                 snapshot.Capabilities.HyperBoostAccess ?? "Unavailable"),
+            Check(
+                "capabilities.hyper-boost-without-cooling-pad",
+                "Pad-less HyperBoost access matches reviewed evidence",
+                string.Equals(
+                    snapshot.Capabilities.HyperBoostWithoutCoolingPadAccess
+                        ?? "Unavailable",
+                    expectedHyperBoostWithoutCoolingPadAccess,
+                    StringComparison.Ordinal),
+                expectedHyperBoostWithoutCoolingPadAccess,
+                snapshot.Capabilities.HyperBoostWithoutCoolingPadAccess
+                    ?? "Unavailable"),
             Check(
                 "capabilities.hyper-boost-base-modes",
                 "HyperBoost base-mode access matches direct-transition evidence",
@@ -782,6 +795,8 @@ public static class FirmwareSmokeAssessment
         $"WritableSpecialKeySlots={capabilities.WritableSpecialKeySlots ?? "Unavailable"}; " +
         $"LampArray={capabilities.LampArrayLightingAccess ?? "Unavailable"}; " +
         $"HyperBoost={capabilities.HyperBoostAccess ?? "Unavailable"}; " +
+        $"HyperBoostWithoutCoolingPad=" +
+        $"{capabilities.HyperBoostWithoutCoolingPadAccess ?? "Unavailable"}; " +
         $"HyperBoostBases={HyperBoostBaseModeSummary(capabilities.HyperBoostBaseModes)}; " +
         $"CoolingPadSupport={capabilities.CoolingPadSupportAccess ?? "Unavailable"}; " +
         $"ChargeLimits={capabilities.ChargeLimits.Count}; " +
@@ -816,6 +831,10 @@ public static class FirmwareSmokeAssessment
         && string.Equals(
             left.HyperBoostAccess,
             right.HyperBoostAccess,
+            StringComparison.Ordinal)
+        && string.Equals(
+            left.HyperBoostWithoutCoolingPadAccess,
+            right.HyperBoostWithoutCoolingPadAccess,
             StringComparison.Ordinal)
         && left.HyperBoostBaseModes == right.HyperBoostBaseModes
         && string.Equals(
@@ -877,6 +896,12 @@ public static class FirmwareSmokeAssessment
 
     private static string ExpectedCoolingPadSupportAccess(string modelNumber) =>
         RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
+            == RazerBladeModelCatalog.OpenBladeTargetModelNumber
+                ? DeviceFeatureAccess.ObservedOnly.ToString()
+                : "Unavailable";
+
+    private static string ExpectedHyperBoostWithoutCoolingPadAccess(
+        string modelNumber) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
             == RazerBladeModelCatalog.OpenBladeTargetModelNumber
                 ? DeviceFeatureAccess.ObservedOnly.ToString()
                 : "Unavailable";

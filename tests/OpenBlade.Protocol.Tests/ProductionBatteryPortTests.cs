@@ -825,6 +825,29 @@ public sealed class ProductionBatteryPortTests
         Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
     }
 
+    [Fact]
+    public async Task SetHyperBoost_AdmittedPadlessBalancedPathAcceptsReviewedFullPower()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x12, 0x11]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]));
+        await using var port = CreateHyperBoostPort(
+            session,
+            new StubHyperBoostEligibility(CoolingPadConnectionState.Absent),
+            padlessAccess: DeviceFeatureAccess.ReadWrite,
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W });
+
+        await port.SetHyperBoostAsync(enabled: true, default);
+
+        Assert.Equal(7, session.Commands.Count);
+    }
+
     [Theory]
     [InlineData(CoolingPadConnectionState.Absent)]
     [InlineData(CoolingPadConnectionState.Ambiguous)]
@@ -1888,20 +1911,24 @@ public sealed class ProductionBatteryPortTests
         IRazerCommandSession session,
         IHyperBoostEligibilitySource eligibility,
         DeviceCommandCatalog? catalog = null,
-        HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null) => new(
+        HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
+        DeviceFeatureAccess? padlessAccess = null,
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null) => new(
             session,
             catalog ?? DeviceCommandCatalog.Empty,
             NoTemporaryReadEvidence(),
             new ValidationRunContext(),
             TimeSpan.FromSeconds(1),
             hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostWithoutCoolingPadAccess: padlessAccess,
             hyperBoostBaseModes: hyperBoostBaseModes
                 ?? new HyperBoostBaseModeCapabilities(
                     DeviceFeatureAccess.ObservedOnly,
                     DeviceFeatureAccess.ReadWrite,
                     DeviceFeatureAccess.ObservedOnly),
             hyperBoostCatalog: HyperBoostCatalog(),
-            hyperBoostEligibility: eligibility);
+            hyperBoostEligibility: eligibility,
+            admittedAdapterPowerStates: admittedAdapterPowerStates);
 
     private static DeviceCommandCatalog Catalog(params CapturedCommandFixture[] fixtures) =>
         DeviceCommandCatalog.Create(CapturedFixtureFile.TargetDevice, fixtures);

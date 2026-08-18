@@ -433,6 +433,31 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 DeviceFeatureAccess.ReadOnly or DeviceFeatureAccess.ReadWrite;
         result["performance.hyperBoost.write"] =
             capabilities.HyperBoostAccess == DeviceFeatureAccess.ReadWrite;
+        result["performance.hyperBoost.withoutCoolingPad.observed"] =
+            capabilities.HyperBoostWithoutCoolingPadAccess is not null;
+        result["performance.hyperBoost.withoutCoolingPad.write"] =
+            capabilities.HyperBoostWithoutCoolingPadAccess
+                == DeviceFeatureAccess.ReadWrite;
+        HyperBoostWithoutCoolingPadEvidenceGates padlessHyperBoostEvidence =
+            HyperBoostWithoutCoolingPadEvidenceGates.Current;
+        result["performance.hyperBoost.withoutCoolingPad.gate.exactDeviceFirmware"] =
+            padlessHyperBoostEvidence.ExactDeviceAndFirmwareReviewed;
+        result["performance.hyperBoost.withoutCoolingPad.gate.immediateNoLoad"] =
+            padlessHyperBoostEvidence.ImmediateNoLoadApplyReadbackRestoreValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.sustainedPlan"] =
+            padlessHyperBoostEvidence.SustainedNoLoadPlanReviewed;
+        result["performance.hyperBoost.withoutCoolingPad.gate.sustainedExecution"] =
+            padlessHyperBoostEvidence.SustainedNoLoadExecutionValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.postRestoreAbsence"] =
+            padlessHyperBoostEvidence.PostRestorationAbsenceValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.reviewedLoad"] =
+            padlessHyperBoostEvidence.ReviewedLoadValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.adapterTransition"] =
+            padlessHyperBoostEvidence.AdapterTransitionValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.lowPowerLifecycle"] =
+            padlessHyperBoostEvidence.LowPowerLifecycleValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.crashRecovery"] =
+            padlessHyperBoostEvidence.CrashRecoveryValidated;
         foreach (PerformancePreset baseMode in new[]
         {
             PerformancePreset.Silent,
@@ -661,6 +686,9 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.LampArrayLightingAccess?.ToString() ?? "Unavailable",
             ["capability.hyperBoostAccess"] =
                 capabilities.HyperBoostAccess?.ToString() ?? "Unavailable",
+            ["capability.hyperBoostWithoutCoolingPadAccess"] =
+                capabilities.HyperBoostWithoutCoolingPadAccess?.ToString()
+                    ?? "Unavailable",
             ["capability.hyperBoostBase.Silent"] =
                 capabilities.HyperBoostBaseModes?.Silent.ToString() ?? "Unavailable",
             ["capability.hyperBoostBase.Balanced"] =

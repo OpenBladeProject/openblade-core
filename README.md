@@ -46,6 +46,11 @@ through Balanced. Direct Quiet and Performance transitions are implemented but
 remain observed-only pending their dedicated hardware validations. HyperBoost
 on the `RZ09-0528` is also observed-only.
 
+Pad-less HyperBoost is represented separately on the exact `RZ09-0581` and
+remains observed-only. The complete production route is implemented behind a
+reviewed evidence manifest, but write access stays closed until the sustained,
+load, adapter-transition, low-power, and crash-recovery validations pass.
+
 On the `RZ09-0581`, OpenBlade discovers the exact `1532:0F43` cooling pad
 and can store Auto, Fixed, or Smart Fan Curve intent. Fixed plans cover 500 to
 3200 RPM in 50 RPM steps, while Smart Fan Curve and the local demand API report

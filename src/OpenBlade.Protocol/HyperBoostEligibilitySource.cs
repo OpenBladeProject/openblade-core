@@ -72,8 +72,24 @@ internal sealed class WindowsHyperBoostEligibilitySource(IHidCandidateNative nat
 {
     private readonly ICoolingPadDiscoverySource discovery =
         new WindowsCoolingPadDiscoverySource(native);
+    private readonly ICoolingPadPhysicalPresenceSource physicalPresence =
+        new WindowsCoolingPadPhysicalPresenceSource(native);
 
-    public CoolingPadConnectionState ObserveCoolingPad() => discovery.Observe();
+    public CoolingPadConnectionState ObserveCoolingPad()
+    {
+        CoolingPadConnectionState exact = discovery.Observe();
+        if (exact != CoolingPadConnectionState.Absent)
+        {
+            return exact;
+        }
+
+        return physicalPresence.Observe() switch
+        {
+            CoolingPadPhysicalPresenceObservation.Absent =>
+                CoolingPadConnectionState.Absent,
+            _ => CoolingPadConnectionState.ObservationFailed,
+        };
+    }
 }
 
 internal sealed class WindowsCoolingPadDiscoverySource(IHidCandidateNative native)
@@ -157,6 +173,10 @@ internal sealed class WindowsCoolingPadDiscoverySource(IHidCandidateNative nativ
                         VersionNumber)))
                     {
                         matches++;
+                    }
+                    else if (targetPath)
+                    {
+                        return CoolingPadConnectionState.ObservationFailed;
                     }
                 }
             }

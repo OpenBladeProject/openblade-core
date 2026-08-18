@@ -83,31 +83,33 @@ public sealed class WindowsHidEnumeratorTests
     [Fact]
     public void HyperBoostEligibility_RequiresExactCoolingPadCollection()
     {
-        DiagnosticNative native = new();
-        native.Add("wrong-geometry", new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 375));
-        var source = new WindowsHyperBoostEligibilitySource(native);
+        DiagnosticNative absentNative = new();
+        var absentSource = new WindowsHyperBoostEligibilitySource(absentNative);
 
         Assert.Equal(
             CoolingPadConnectionState.Absent,
-            source.ObserveCoolingPad());
+            absentSource.ObserveCoolingPad());
 
-        native.Add(
-            "wrong-revision",
+        DiagnosticNative wrongRevisionNative = new();
+        wrongRevisionNative.Add(
+            "vid_1532&pid_0f43-wrong-revision",
             new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 91, 0x0201));
 
         Assert.Equal(
-            CoolingPadConnectionState.Absent,
-            source.ObserveCoolingPad());
+            CoolingPadConnectionState.ObservationFailed,
+            new WindowsHyperBoostEligibilitySource(wrongRevisionNative)
+                .ObserveCoolingPad());
 
-        native.Add(
-            "exact-pad",
+        DiagnosticNative exactNative = new();
+        exactNative.Add(
+            "vid_1532&pid_0f43-exact-pad",
             new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 91, 0x0200));
 
         Assert.Equal(
             CoolingPadConnectionState.PresentExact,
-            source.ObserveCoolingPad());
-        Assert.Equal(3, native.EnumerateCalls);
-        Assert.Equal(0, native.BindCalls);
+            new WindowsHyperBoostEligibilitySource(exactNative)
+                .ObserveCoolingPad());
+        Assert.Equal(0, exactNative.BindCalls);
     }
 
     [Fact]

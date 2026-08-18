@@ -66,6 +66,8 @@ public sealed partial class MainViewModel
             && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
             && left.GpuOverclock == right.GpuOverclock
             && left.HyperBoostAccess == right.HyperBoostAccess
+            && left.HyperBoostWithoutCoolingPadAccess
+                == right.HyperBoostWithoutCoolingPadAccess
             && left.HyperBoostBaseModes == right.HyperBoostBaseModes
             && left.CoolingPadSupportAccess == right.CoolingPadSupportAccess
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess

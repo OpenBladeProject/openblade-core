@@ -716,7 +716,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 _ => null,
             };
             var parsedBase = (PerformancePreset)baseMode;
-            bool valid = schemaVersion == 1
+            bool valid = schemaVersion == 2
                 && stateName is not null
                 && parsedBase is PerformancePreset.Silent
                     or PerformancePreset.Balanced

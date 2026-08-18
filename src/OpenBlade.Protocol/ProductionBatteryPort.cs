@@ -113,6 +113,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
         IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
         DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         DeviceFeatureAccess? coolingPadSupportAccess = null,
         DeviceCommandCatalog? hyperBoostCatalog = null,
@@ -133,6 +134,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             gpuOverclockCapabilities,
             observedPowerSourceBehaviors,
             hyperBoostAccess,
+            hyperBoostWithoutCoolingPadAccess,
             hyperBoostBaseModes,
             coolingPadSupportAccess,
             hyperBoostCatalog,
@@ -156,6 +158,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
         SemaphoreSlim? sharedCommandGate = null,
         DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         DeviceFeatureAccess? coolingPadSupportAccess = null,
         DeviceCommandCatalog? hyperBoostCatalog = null,
@@ -178,6 +181,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             gpuOverclockCapabilities,
             observedPowerSourceBehaviors,
             hyperBoostAccess,
+            hyperBoostWithoutCoolingPadAccess,
             hyperBoostBaseModes,
             coolingPadSupportAccess,
             hyperBoostCatalog,
@@ -201,6 +205,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         GpuOverclockCapabilities? gpuOverclockCapabilities,
         IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors,
         DeviceFeatureAccess? hyperBoostAccess,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess,
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes,
         DeviceFeatureAccess? coolingPadSupportAccess,
         DeviceCommandCatalog? hyperBoostCatalog,
@@ -244,6 +249,18 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 "HyperBoost base-mode access must be defined and no broader than overall HyperBoost access.",
                 nameof(hyperBoostBaseModes));
         }
+        if (hyperBoostWithoutCoolingPadAccess is not null
+            && (hyperBoostAccess is null
+                || hyperBoostWithoutCoolingPadAccess > hyperBoostAccess
+                || hyperBoostWithoutCoolingPadAccess is not
+                    (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
+                || hyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite
+                    && hyperBoostBaseModes?.Balanced
+                        != DeviceFeatureAccess.ReadWrite))
+        {
+            throw new UnvalidatedCommandException(
+                "HyperBoost without the cooling pad requires exact bounded evidence, writable Balanced admission, and access no broader than overall HyperBoost.");
+        }
         if (hyperBoostAccess == DeviceFeatureAccess.ReadWrite
             && (!HasHyperBoostCommandSet(this.hyperBoostCatalog)
                 || this.hyperBoostEligibility is null))
@@ -284,6 +301,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             gpuOverclockCapabilities,
             observedPowerSourceBehaviors,
             hyperBoostAccess,
+            hyperBoostWithoutCoolingPadAccess,
             hyperBoostBaseModes,
             coolingPadSupportAccess);
     }
@@ -666,7 +684,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             verifyFinalState: true,
             cancellationToken,
             commandCatalog: commandCatalog,
-            validateEligibility: enabled ? ValidateHyperBoostEligibilityAsync : null);
+            validateEligibility: enabled
+                ? token => ValidateHyperBoostEligibilityAsync(baseMode, token)
+                : null);
     }
 
     private (IReadOnlyList<string> Actions, DeviceCommandCatalog Catalog)
@@ -1092,6 +1112,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
         IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
         DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         DeviceFeatureAccess? coolingPadSupportAccess = null)
     {
@@ -1224,6 +1245,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             CpuVoltageOptimizer = cpuVoltageOptimizerCapabilities,
             GpuOverclock = gpuOverclockCapabilities,
             HyperBoostAccess = hyperBoostAccess,
+            HyperBoostWithoutCoolingPadAccess = hyperBoostWithoutCoolingPadAccess,
             HyperBoostBaseModes = hyperBoostBaseModes,
             CoolingPadSupportAccess = coolingPadSupportAccess,
             ObservedPowerSourceBehaviors = observedPowerSourceBehaviors is null
@@ -1598,23 +1620,29 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             cancellationToken);
 
     private async Task ValidateHyperBoostEligibilityAsync(
+        PerformancePreset baseMode,
         CancellationToken cancellationToken)
     {
-        bool padPresent;
+        CoolingPadConnectionState padState;
         try
         {
-            padPresent = hyperBoostEligibility?.ObserveCoolingPad()
-                == CoolingPadConnectionState.PresentExact;
+            padState = hyperBoostEligibility?.ObserveCoolingPad()
+                ?? CoolingPadConnectionState.ObservationFailed;
         }
         catch
         {
-            padPresent = false;
+            padState = CoolingPadConnectionState.ObservationFailed;
         }
 
-        if (!padPresent)
+        bool padPresentEligibility = padState == CoolingPadConnectionState.PresentExact;
+        bool padAbsentEligibility = padState == CoolingPadConnectionState.Absent
+            && baseMode == PerformancePreset.Balanced
+            && Capabilities.HyperBoostWithoutCoolingPadAccess
+                == DeviceFeatureAccess.ReadWrite;
+        if (!padPresentEligibility && !padAbsentEligibility)
         {
             throw KnownNotApplied(
-                "HyperBoost requires the exact Razer Laptop Cooling Pad to be present.");
+                "HyperBoost requires either the exact Razer Laptop Cooling Pad or separately admitted pad-absent evidence.");
         }
 
         byte transactionId = AllocateTransactionForRead();
@@ -1626,10 +1654,14 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             ThrowReadFailure(adapter.Failure.Value, adapter.Diagnostic, cancellationToken);
         }
 
-        if (adapter.Value != AdapterPowerState.FullPower280W)
+        bool adapterEligible = padAbsentEligibility
+            ? HyperBoostValidationPower.IsAdmittedFullPower(adapter.Value)
+                && admittedAdapterPowerStates?.Contains(adapter.Value) == true
+            : adapter.Value == AdapterPowerState.FullPower280W;
+        if (!adapterEligible)
         {
             throw KnownNotApplied(
-                "HyperBoost requires the confirmed full-power 280 W adapter.");
+                "HyperBoost requires a confirmed admitted full-power adapter.");
         }
     }
 

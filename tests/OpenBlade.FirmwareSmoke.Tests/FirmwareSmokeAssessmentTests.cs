@@ -133,6 +133,7 @@ public sealed class FirmwareSmokeAssessmentTests
             Capabilities = CreateSnapshot("1.9.0.0").Capabilities with
             {
                 HyperBoostAccess = DeviceFeatureAccess.ObservedOnly.ToString(),
+                HyperBoostWithoutCoolingPadAccess = null,
                 HyperBoostBaseModes = null,
                 CoolingPadSupportAccess = null,
                 PerformancePresets = ["Balanced", "Custom", "Performance", "Silent"],
@@ -786,7 +787,9 @@ public sealed class FirmwareSmokeAssessmentTests
             GpuOverclock: null,
             ObservedPowerSourceBehaviors: [],
             HyperBoostAccess: DeviceFeatureAccess.ReadWrite.ToString(),
-            CoolingPadSupportAccess: DeviceFeatureAccess.ObservedOnly.ToString())
+            CoolingPadSupportAccess: DeviceFeatureAccess.ObservedOnly.ToString(),
+            HyperBoostWithoutCoolingPadAccess:
+                DeviceFeatureAccess.ObservedOnly.ToString())
         {
             HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
                 DeviceFeatureAccess.ObservedOnly,

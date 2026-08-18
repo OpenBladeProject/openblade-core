@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 2,
+  "evidenceKind": "hyperBoostWithoutCoolingPadSemanticAdmission",
+  "host": {
+    "manufacturer": "Razer",
+    "model": "Blade 16 - RZ09-0581",
+    "sku": "RZ09-05819EN4",
+    "biosVersion": "4.00",
+    "vendorId": 5426,
+    "productId": 736
+  },
+  "transition": {
+    "baselineMode": "Balanced",
+    "baselineFanMode": "Automatic",
+    "candidateMode": 7,
+    "candidateValue": 0,
+    "thermalChannelCount": 2,
+    "fullPowerAdapterRequired": true,
+    "exactPadAbsenceRequired": true,
+    "admittedFullPowerAdapterStates": ["FullPower280W", "FullPower330W"],
+    "strictControllerExclusionRequired": true,
+    "pairedReadbackRequired": true,
+    "exactBalancedRestoreRequired": true,
+    "indeterminateRetryForbidden": true,
+    "physicalPadVidPidPresenceVetoRequired": true
+  },
+  "evidence": {
+    "immediateAnnotation": "2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json",
+    "immediateAnnotationSha256": "2798260D75AF394A650DA9E3B09D1047E006FB344A5A1DB0529AFEDA260F34EB",
+    "sustainedNoLoadPlan": "Rz09_0581_02e0_4_00_PadAbsentHyperBoostNoLoadPlan.json",
+    "sustainedNoLoadPlanSha256": "589A94BCE7050BA43195BBFE5FAC4E8EDF337D481705047C668460ACAB675D2B"
+  },
+  "gates": {
+    "exactDeviceAndFirmwareReviewed": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json",
+        "sha256": "2798260D75AF394A650DA9E3B09D1047E006FB344A5A1DB0529AFEDA260F34EB"
+      }
+    },
+    "immediateNoLoadApplyReadbackRestoreValidated": {
+      "validated": false,
+      "evidence": null
+    },
+    "sustainedNoLoadPlanReviewed": {
+      "validated": true,
+      "evidence": {
+        "artifact": "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_4_00_PadAbsentHyperBoostNoLoadPlan.json",
+        "sha256": "589A94BCE7050BA43195BBFE5FAC4E8EDF337D481705047C668460ACAB675D2B"
+      }
+    },
+    "sustainedNoLoadExecutionValidated": {
+      "validated": false,
+      "evidence": null
+    },
+    "postRestorationAbsenceValidated": {
+      "validated": false,
+      "evidence": null
+    },
+    "reviewedLoadValidated": {
+      "validated": false,
+      "evidence": null
+    },
+    "adapterTransitionValidated": {
+      "validated": false,
+      "evidence": null
+    },
+    "lowPowerLifecycleValidated": {
+      "validated": false,
+      "evidence": null
+    },
+    "crashRecoveryValidated": {
+      "validated": false,
+      "evidence": null
+    }
+  }
+}

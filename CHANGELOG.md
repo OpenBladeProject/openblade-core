@@ -14,6 +14,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   checking physical pad absence. They accept the reviewed 280 W OEM and
   330 W SlimQ full-power classifications, never retry an indeterminate write,
   and do not enable padless production control.
+- Added the fail-closed production plumbing for pad-less HyperBoost on the exact
+  `RZ09-0581`: a separate capability, defense-in-depth physical-absence checks,
+  Balanced-only routing, admitted full-power adapter checks, and durable
+  ownership-path recovery. The embedded evidence manifest keeps access
+  observed-only until every remaining hardware and lifecycle gate is reviewed.
 - Added confirmed HyperBoost control for the exact `RZ09-0581`. The
   currently admitted transition starts directly from confirmed Balanced
   performance with Automatic laptop fans and requires the exact Razer Laptop
@@ -70,6 +75,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   already admitted for the exact connected Blade.
 
 ### Changed
+
+- Advanced service IPC from 48 to 49, the FirmwareSmoke snapshot schema from
+  10 to 11, and the HyperBoost ownership-journal schema from 1 to 2 for the
+  separate pad-less capability and durable activation-path provenance.
 
 - Bound satisfied HyperBoost, cooling-pad fan, and whole-strip lighting
   admission gates to reviewed artifacts and hashes. Incomplete gates remain

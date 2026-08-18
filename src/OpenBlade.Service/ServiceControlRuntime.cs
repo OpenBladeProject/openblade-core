@@ -387,6 +387,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     // ownership; only a successful OpenBlade enable with matching readback does.
     private bool ownsHyperBoost;
     private PerformancePreset? ownedHyperBoostBaseMode;
+    private bool ownedHyperBoostRequiresCoolingPad;
     private long hyperBoostOwnershipGeneration;
     private LightingSettings? pendingLightingRestore;
     private bool pendingLightingRestoreFromLifecycle;
@@ -3026,6 +3027,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool ownedDisableAttempt = false;
         bool ownershipJournalPrepared = false;
         PerformancePreset pendingBaseMode = PerformancePreset.Balanced;
+        bool journalRequiresCoolingPad = true;
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
@@ -3071,6 +3073,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     }
                     ownsHyperBoost = false;
                     ownedHyperBoostBaseMode = null;
+                    ownedHyperBoostRequiresCoolingPad = false;
                     if (!retired)
                     {
                         return new ControlOperationResult(
@@ -3108,6 +3111,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 Connection: CoolingPadConnectionState.PresentExact,
             } && (savedPadAuto || canHandbackOwnedPadControl);
+            bool padAbsentEligibility = current.Capabilities
+                    ?.HyperBoostWithoutCoolingPadAccess
+                == DeviceFeatureAccess.ReadWrite
+                && current.CoolingPad is
+                {
+                    Connection: CoolingPadConnectionState.Absent,
+                };
             if (enabled && confirmed.Performance is null)
             {
                 return new ControlOperationResult(
@@ -3139,12 +3149,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (enabled
                 && (current.ActivePowerSource != PowerSource.PluggedIn
                     || confirmed.Fans != FanMode.Automatic
-                    || !padPresentEligibility))
+                    || !padPresentEligibility && !padAbsentEligibility
+                    || padAbsentEligibility
+                        && requestedBaseMode != PerformancePreset.Balanced))
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    $"HyperBoost requires the full-power adapter, an admitted {PerformanceLabel(requestedBaseMode)} direct transition, Automatic laptop fans, and the exact Razer cooling pad with saved cooling-pad Auto intent or confirmed handback of OpenBlade-owned pad control.");
+                    $"HyperBoost requires the full-power adapter, an admitted {PerformanceLabel(requestedBaseMode)} direct transition, Automatic laptop fans, and either the exact Razer cooling pad with saved cooling-pad Auto intent or separately admitted pad-less Balanced support.");
             }
+
+            bool enableUsedPresentPadEligibility = enabled
+                && padPresentEligibility;
 
             if (enabled)
             {
@@ -3188,17 +3203,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 CoolingPadObservationSnapshot pad =
                     await coolingPadProvider.ObserveFreshAsync(token)
                         .ConfigureAwait(false);
-                bool freshPresentEligibility = coolingPadProvider.FanObservationAccess
-                        == DeviceFeatureAccess.ReadOnly
-                    && pad.Connection == CoolingPadConnectionState.PresentExact
-                    && pad.IsFresh
-                    && pad.Failure == CoolingPadObservationFailure.None
-                    && pad.OpaqueFanObservation == 0;
-                if (!freshPresentEligibility)
+                bool freshEligibility = enableUsedPresentPadEligibility
+                    ? coolingPadProvider.FanObservationAccess
+                            == DeviceFeatureAccess.ReadOnly
+                        && pad.Connection == CoolingPadConnectionState.PresentExact
+                        && pad.IsFresh
+                        && pad.Failure == CoolingPadObservationFailure.None
+                        && pad.OpaqueFanObservation == 0
+                    : pad.Connection == CoolingPadConnectionState.Absent
+                        && pad.IsFresh
+                        && pad.Failure == CoolingPadObservationFailure.None;
+                if (!freshEligibility)
                 {
                     return new ControlOperationResult(
                         ControlOperationStatus.Blocked,
-                        "HyperBoost requires a fresh exact-pad opaque-zero observation after saved Auto intent or confirmed OpenBlade handback. Zero is only a conservative compatibility prerequisite and can also occur during Fixed control; OpenBlade cannot independently read the pad's active mode.");
+                        enableUsedPresentPadEligibility
+                            ? "HyperBoost requires a fresh exact-pad opaque-zero observation after saved Auto intent or confirmed OpenBlade handback. Zero is only a conservative compatibility prerequisite and can also occur during Fixed control; OpenBlade cannot independently read the pad's active mode."
+                            : "Pad-less HyperBoost requires a fresh observation confirming that no target cooling-pad device is present. Ambiguous or failed enumeration is blocked.");
                 }
             }
 
@@ -3213,12 +3234,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ownedDisableAttempt = !enabled && ownsHyperBoost;
             if (enabled || ownedDisableAttempt)
             {
+                journalRequiresCoolingPad = enabled
+                    ? enableUsedPresentPadEligibility
+                    : ownedHyperBoostRequiresCoolingPad;
                 await hyperBoostOwnershipJournalStore.WriteAsync(
                         new HyperBoostOwnershipJournal(
                             enabled
                                 ? HyperBoostOwnershipJournalState.EnablePending
                                 : HyperBoostOwnershipJournalState.RestorePending,
                             requestedBaseMode,
+                            journalRequiresCoolingPad,
                             timeProvider.GetUtcNow()),
                         token)
                     .ConfigureAwait(false);
@@ -3243,6 +3268,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     hyperBoostOwnershipGeneration++;
                     ownsHyperBoost = false;
                     ownedHyperBoostBaseMode = null;
+                    ownedHyperBoostRequiresCoolingPad = false;
                 }
 
                 if (readback.HyperBoostActive)
@@ -3277,6 +3303,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     await TryWriteHyperBoostOwnershipJournalAsync(
                         HyperBoostOwnershipJournalState.OwnedConfirmed,
                         requestedBaseMode,
+                        journalRequiresCoolingPad,
                         "HyperBoost was confirmed, but its durable ownership journal could not be finalized.")
                     .ConfigureAwait(false);
                 if (!journalFinalized)
@@ -3285,7 +3312,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             device,
                             current,
                             readback,
-                            requestedBaseMode)
+                            requestedBaseMode,
+                            journalRequiresCoolingPad)
                         .ConfigureAwait(false);
                 }
             }
@@ -3299,11 +3327,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             hyperBoostOwnershipGeneration++;
             ownsHyperBoost = enabled;
             ownedHyperBoostBaseMode = enabled ? requestedBaseMode : null;
+            ownedHyperBoostRequiresCoolingPad = enabled
+                && enableUsedPresentPadEligibility;
 
             var result = new ControlOperationResult(
                 ControlOperationStatus.Applied,
                 enabled
-                    ? "HyperBoost is active. Keep the cooling pad set to Auto while it remains active."
+                    ? ownedHyperBoostRequiresCoolingPad
+                        ? "HyperBoost is active through the pad-present path. Keep the cooling pad set to Auto while it remains active."
+                        : "HyperBoost is active through the admitted pad-less path; no cooling pad is required for this owned session."
                     : $"HyperBoost is off and {PerformanceLabel(requestedBaseMode)} power mode is restored.");
             history.RecordSummary(result.Status, result.Message);
             PublishIfChanged(current with
@@ -3327,6 +3359,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     hyperBoostOwnershipGeneration++;
                     ownsHyperBoost = false;
                     ownedHyperBoostBaseMode = null;
+                    ownedHyperBoostRequiresCoolingPad = false;
                 }
 
                 LatchPendingHyperBoost(writeBaseline, enabled, pendingBaseMode);
@@ -3366,6 +3399,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     hyperBoostOwnershipGeneration++;
                     ownsHyperBoost = false;
                     ownedHyperBoostBaseMode = null;
+                    ownedHyperBoostRequiresCoolingPad = false;
                 }
 
                 LatchPendingHyperBoost(writeBaseline, enabled, pendingBaseMode);
@@ -3400,6 +3434,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     hyperBoostOwnershipGeneration++;
                     ownsHyperBoost = false;
                     ownedHyperBoostBaseMode = null;
+                    ownedHyperBoostRequiresCoolingPad = false;
                 }
 
                 LatchPendingHyperBoost(writeBaseline, enabled, pendingBaseMode);
@@ -3433,11 +3468,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         : TryWriteHyperBoostOwnershipJournalAsync(
             HyperBoostOwnershipJournalState.OwnedConfirmed,
             baseMode,
+            ownedHyperBoostRequiresCoolingPad,
             "A non-submitted HyperBoost restore left a pending ownership journal that could not be returned to owned state.");
 
     private async Task<bool> TryWriteHyperBoostOwnershipJournalAsync(
         HyperBoostOwnershipJournalState state,
         PerformancePreset baseMode,
+        bool requiresCoolingPad,
         string failureMessage)
     {
         try
@@ -3446,6 +3483,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     new HyperBoostOwnershipJournal(
                         state,
                         baseMode,
+                        requiresCoolingPad,
                         timeProvider.GetUtcNow()),
                     CancellationToken.None)
                 .ConfigureAwait(false);
@@ -3465,7 +3503,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             IBladeDevice device,
             ServiceStatusSnapshot baseline,
             ConfirmedDeviceState activeReadback,
-            PerformancePreset baseMode)
+            PerformancePreset baseMode,
+            bool requiresCoolingPad)
     {
         const string failurePrefix =
             "HyperBoost was activated, but durable ownership could not be recorded.";
@@ -3489,11 +3528,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 bool retired = await RetireHyperBoostOwnershipJournalAsync(
                         baseMode,
+                        requiresCoolingPad,
                         "HyperBoost was restored after its ownership journal could not be finalized.")
                     .ConfigureAwait(false);
                 hyperBoostOwnershipGeneration++;
                 ownsHyperBoost = false;
                 ownedHyperBoostBaseMode = null;
+                ownedHyperBoostRequiresCoolingPad = false;
                 string message = retired
                     ? $"{failurePrefix} OpenBlade restored {PerformanceLabel(baseMode)} exactly once and did not leave HyperBoost active."
                     : $"{failurePrefix} OpenBlade restored {PerformanceLabel(baseMode)}, but the pending ownership journal could not be retired; control writes remain blocked.";
@@ -3553,6 +3594,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private async Task<bool> RetireHyperBoostOwnershipJournalAsync(
         PerformancePreset baseMode,
+        bool requiresCoolingPad,
         string failureMessage)
     {
         bool relinquished = false;
@@ -3562,6 +3604,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     new HyperBoostOwnershipJournal(
                         HyperBoostOwnershipJournalState.Relinquished,
                         baseMode,
+                        requiresCoolingPad,
                         timeProvider.GetUtcNow()),
                     CancellationToken.None)
                 .ConfigureAwait(false);
@@ -3618,6 +3661,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return load.Journal is not { } journal
             || await RetireHyperBoostOwnershipJournalAsync(
                     journal.BaseMode,
+                    journal.RequiresCoolingPad,
                     failureMessage)
                 .ConfigureAwait(false);
     }
@@ -4256,6 +4300,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 OpaqueFanObservation: 0,
             };
             restoreOwnedHyperBoost = ownsHyperBoost
+                && ownedHyperBoostRequiresCoolingPad
                 && current.ConfirmedState?.HyperBoostActive == true
                 && !exactPadMeetsHyperBoostSafety;
             if (!exactPadAvailable)
@@ -5134,6 +5179,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     bool retired = await RetireHyperBoostOwnershipJournalAsync(
                             journal.BaseMode,
+                            journal.RequiresCoolingPad,
                             "Inactive HyperBoost was confirmed after an unexpected exit, but its stale ownership journal could not be retired.")
                         .ConfigureAwait(false);
                     if (!retired)
@@ -5186,6 +5232,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     hyperBoostOwnershipGeneration++;
                     ownsHyperBoost = true;
                     ownedHyperBoostBaseMode = journal.BaseMode;
+                    ownedHyperBoostRequiresCoolingPad = journal.RequiresCoolingPad;
                     restoreJournaledHyperBoost = true;
                 }
             }
@@ -6465,11 +6512,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     bool retired = await RetireHyperBoostOwnershipJournalAsync(
                             ownedHyperBoostBaseMode
                                 ?? PerformancePreset.Balanced,
+                            ownedHyperBoostRequiresCoolingPad,
                             "HyperBoost was already inactive at the lifecycle boundary, but its ownership journal could not be retired.")
                         .ConfigureAwait(false);
                     hyperBoostOwnershipGeneration++;
                     ownsHyperBoost = false;
                     ownedHyperBoostBaseMode = null;
+                    ownedHyperBoostRequiresCoolingPad = false;
                     return new ControlOperationResult(
                         retired
                             ? ControlOperationStatus.Stored
@@ -7864,6 +7913,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             ownsHyperBoost = false;
             ownedHyperBoostBaseMode = null;
+            ownedHyperBoostRequiresCoolingPad = false;
             if (!retired)
             {
                 PublishIfChanged(GetStatus() with
@@ -9510,6 +9560,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             ownsHyperBoost = false;
             ownedHyperBoostBaseMode = null;
+            ownedHyperBoostRequiresCoolingPad = false;
         }
 
         if (observation.Confirmed.HyperBoostActive)
@@ -11530,6 +11581,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
             && left.GpuOverclock == right.GpuOverclock
             && left.HyperBoostAccess == right.HyperBoostAccess
+            && left.HyperBoostWithoutCoolingPadAccess
+                == right.HyperBoostWithoutCoolingPadAccess
             && left.HyperBoostBaseModes == right.HyperBoostBaseModes
             && left.CoolingPadSupportAccess == right.CoolingPadSupportAccess
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
