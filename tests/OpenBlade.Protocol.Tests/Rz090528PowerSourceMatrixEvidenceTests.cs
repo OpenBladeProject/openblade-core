@@ -91,9 +91,15 @@ public sealed class Rz090528PowerSourceMatrixEvidenceTests
         Assert.StartsWith(
             "ProductionAdmitted: three identical exact-device 07/8C reads returned 0711",
             power.GetProperty("usbC").GetString());
+        string batteryEvidence = Assert.IsType<string>(
+            power.GetProperty("battery").GetString());
         Assert.StartsWith(
             "ProductionAdmitted: three identical exact-device 07/8C reads returned 0011",
-            power.GetProperty("battery").GetString());
+            batteryEvidence);
+        Assert.Contains(
+            "Windows Offline remains the authoritative production battery classifier.",
+            batteryEvidence,
+            StringComparison.Ordinal);
     }
 
     private static JsonDocument LoadHistoricalEvidence() => JsonDocument.Parse(

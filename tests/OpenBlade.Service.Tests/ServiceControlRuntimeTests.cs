@@ -9546,28 +9546,30 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task Observation_ClassifiesCapturedBatteryResponseAfterTwoAgreeingReads()
+    public async Task Observation_KeepsWindowsExternalPowerUnresolvedForBatteryReplies()
     {
-        TestContext context = CreateContext(
-            providerAvailable: true,
-            initialPowerSource: PowerSource.ExternalUnknown);
-        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        TestContext context = CreateWritableContext();
+        var temporaryOverride = new ManualOverride<PerformancePreset>(
+            PerformancePreset.Silent,
+            OverrideLifetime.UntilPowerSourceChange);
+        ControlOperationResult applied = await context.Runtime.SetPerformanceOverrideAsync(
+            temporaryOverride,
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        int setterCallsBeforeObservation = context.Device.TotalSetterCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
         context.Device.AdapterPowerState = AdapterPowerState.Battery;
-        context.Device.ConfirmedState = new ConfirmedDeviceState(
-            PerformancePreset.BatterySaver,
-            FanMode.Automatic,
-            ConfirmedBattery(80),
-            context.Runtime.GetStatus().Profiles.Battery.Lighting);
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
-        Assert.Equal(PowerSource.Battery, status.ActivePowerSource);
+        Assert.Equal(PowerSource.PluggedIn, status.ActivePowerSource);
         Assert.Equal(2, context.Device.AdapterPowerReadCalls);
-        Assert.Equal(PerformancePreset.BatterySaver, status.DesiredState.Performance.Value);
-        Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
-        Assert.False(status.WritesBlocked);
-        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.True(status.WritesBlocked);
+        Assert.Equal(temporaryOverride.Value, status.PerformanceOverride?.Value);
+        Assert.Equal(temporaryOverride.Lifetime, status.PerformanceOverride?.Lifetime);
+        Assert.Equal(setterCallsBeforeObservation, context.Device.TotalSetterCalls);
     }
 
     [Fact]

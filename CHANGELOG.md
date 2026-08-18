@@ -37,8 +37,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Classified the capture-backed RZ09-0528 `0011` adapter response as battery
-  power while keeping that response excluded from other Blade models.
+- Added typed decoding for the capture-backed RZ09-0528 `0011` no-adapter
+  response while keeping Windows Offline authoritative for battery power and
+  excluding that response from other Blade models.
 - Kept page customization buttons aligned with their titles while allowing
   longer localized and profile actions to use a separate row.
 - Fixed the **Random colors** switch track alignment and made compact switch
