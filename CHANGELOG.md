@@ -7,6 +7,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added developer-only padless HyperBoost validation for the exact
+  `RZ09-0581` on BIOS 4.00. The bounded commands validate an immediate
+  apply/readback/restore cycle, a 60-second no-load thermal dwell, and an
+  adapter transition from an admitted full-power class while continuously
+  checking physical pad absence. They accept the reviewed 280 W OEM and
+  330 W SlimQ full-power classifications, never retry an indeterminate write,
+  and do not enable padless production control.
 - Added confirmed HyperBoost control for the exact `RZ09-0581`. The
   currently admitted transition starts directly from confirmed Balanced
   performance with Automatic laptop fans and requires the exact Razer Laptop

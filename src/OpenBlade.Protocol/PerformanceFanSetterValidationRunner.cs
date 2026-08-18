@@ -36,6 +36,7 @@ public enum PerformanceFanValidationFailure
     FixedFanRpmOutOfRange,
     Canceled,
     BaselineNotBalanced,
+    SustainedValidationFailed,
     BaselineNotRequiredBaseMode,
 }
 
@@ -62,9 +63,21 @@ public sealed record PerformanceFanSetterValidationResult(
 {
     internal bool FullPowerAdapterConfirmed { get; init; }
 
+    internal OpenBlade.Contracts.AdapterPowerState InitialAdapterPowerState
+    { get; init; }
+
+    internal bool CoolingPadAbsentConfirmed { get; init; }
+
     internal bool CoolingPadPresentConfirmed { get; init; }
 
     internal bool CoolingPadOpaqueZeroConfirmed { get; init; }
+
+    internal bool PostRestorationFullPowerAdapterConfirmed { get; init; }
+
+    internal bool PostRestorationCoolingPadAbsentConfirmed { get; init; }
+
+    internal PerformanceFanValidationSafetyFailure PostRestorationSafetyFailure
+    { get; init; }
 
     internal PerformanceFanValidationSafetyFailure SafetyFailure { get; init; }
 
@@ -73,6 +86,11 @@ public sealed record PerformanceFanSetterValidationResult(
     internal bool BaselineRequiredBaseModeConfirmed { get; init; }
 
     internal bool BalancedIntermediaryObserved { get; init; }
+
+    internal HyperBoostSustainedValidationResult? SustainedValidation { get; init; }
+
+    internal HyperBoostAdapterTransitionValidationResult? AdapterTransitionValidation
+    { get; init; }
 
     public bool Success => Failure == PerformanceFanValidationFailure.None
         && ApplyAcknowledged
@@ -85,6 +103,8 @@ internal enum PerformanceFanValidationSafetyFailure
     None,
     AdapterPowerReadFailed,
     FullPowerAdapterRequired,
+    CoolingPadPresent,
+    CoolingPadAbsenceObservationFailed,
     CoolingPadAbsent,
     CoolingPadAmbiguous,
     CoolingPadObservationFailed,
@@ -95,14 +115,30 @@ internal enum PerformanceFanValidationSafetyFailure
 
 internal readonly record struct PerformanceFanValidationSafetyGateResult(
     bool FullPowerAdapterConfirmed,
+    bool CoolingPadAbsentConfirmed,
     bool CoolingPadPresentConfirmed,
     bool CoolingPadOpaqueZeroConfirmed,
     PerformanceFanValidationSafetyFailure Failure)
 {
+    internal OpenBlade.Contracts.AdapterPowerState AdapterPowerState { get; init; }
+
+    internal PerformanceFanValidationSafetyGateResult(
+        bool FullPowerAdapterConfirmed,
+        bool CoolingPadAbsentConfirmed,
+        PerformanceFanValidationSafetyFailure Failure)
+        : this(
+            FullPowerAdapterConfirmed,
+            CoolingPadAbsentConfirmed,
+            CoolingPadPresentConfirmed: false,
+            CoolingPadOpaqueZeroConfirmed: false,
+            Failure)
+    {
+    }
+
     internal bool Success => Failure == PerformanceFanValidationSafetyFailure.None
         && FullPowerAdapterConfirmed
-        && CoolingPadPresentConfirmed
-        && CoolingPadOpaqueZeroConfirmed;
+        && (CoolingPadAbsentConfirmed
+            || CoolingPadPresentConfirmed && CoolingPadOpaqueZeroConfirmed);
 }
 
 internal interface IPerformanceFanValidationSafetyGate
@@ -111,6 +147,83 @@ internal interface IPerformanceFanValidationSafetyGate
         ValidationRunContext context,
         IRazerCommandSession session,
         CancellationToken cancellationToken);
+}
+
+internal sealed class PadAbsentHyperBoostSafetyGate(
+    ICoolingPadPhysicalPresenceSource coolingPadPresence,
+    TimeSpan exchangeTimeout) : IPerformanceFanValidationSafetyGate
+{
+    private readonly ICoolingPadPhysicalPresenceSource coolingPadPresence =
+        coolingPadPresence ?? throw new ArgumentNullException(nameof(coolingPadPresence));
+    private readonly TimeSpan exchangeTimeout = ValidateTimeout(exchangeTimeout);
+
+    public async Task<PerformanceFanValidationSafetyGateResult> ValidateAsync(
+        ValidationRunContext context,
+        IRazerCommandSession session,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(session);
+
+        if (!context.TryAllocateTransaction(out byte transactionId))
+        {
+            return Failure(PerformanceFanValidationSafetyFailure.AdapterPowerReadFailed);
+        }
+
+        var adapter = new AdapterPowerCommandClient(session, exchangeTimeout);
+        HidSessionResult<OpenBlade.Contracts.AdapterPowerState> power =
+            await adapter.QueryAsync(transactionId, cancellationToken).ConfigureAwait(false);
+        if (power.Failure is not null)
+        {
+            return Failure(cancellationToken.IsCancellationRequested
+                ? PerformanceFanValidationSafetyFailure.Canceled
+                : PerformanceFanValidationSafetyFailure.AdapterPowerReadFailed);
+        }
+
+        if (!HyperBoostValidationPower.IsAdmittedFullPower(power.Value))
+        {
+            return Failure(PerformanceFanValidationSafetyFailure.FullPowerAdapterRequired);
+        }
+
+        return coolingPadPresence.Observe() switch
+        {
+            CoolingPadPhysicalPresenceObservation.Absent => new(
+                FullPowerAdapterConfirmed: true,
+                CoolingPadAbsentConfirmed: true,
+                CoolingPadPresentConfirmed: false,
+                CoolingPadOpaqueZeroConfirmed: false,
+                PerformanceFanValidationSafetyFailure.None)
+            { AdapterPowerState = power.Value },
+            CoolingPadPhysicalPresenceObservation.Present => new(
+                FullPowerAdapterConfirmed: true,
+                CoolingPadAbsentConfirmed: false,
+                CoolingPadPresentConfirmed: false,
+                CoolingPadOpaqueZeroConfirmed: false,
+                PerformanceFanValidationSafetyFailure.CoolingPadPresent)
+            { AdapterPowerState = power.Value },
+            _ => new(
+                FullPowerAdapterConfirmed: true,
+                CoolingPadAbsentConfirmed: false,
+                CoolingPadPresentConfirmed: false,
+                CoolingPadOpaqueZeroConfirmed: false,
+                PerformanceFanValidationSafetyFailure.CoolingPadAbsenceObservationFailed)
+            { AdapterPowerState = power.Value },
+        };
+    }
+
+    private static TimeSpan ValidateTimeout(TimeSpan timeout)
+    {
+        RazerCommandSessionTimeout.Validate(timeout);
+        return timeout;
+    }
+
+    private static PerformanceFanValidationSafetyGateResult Failure(
+        PerformanceFanValidationSafetyFailure failure) => new(
+        FullPowerAdapterConfirmed: false,
+        CoolingPadAbsentConfirmed: false,
+        CoolingPadPresentConfirmed: false,
+        CoolingPadOpaqueZeroConfirmed: false,
+        failure);
 }
 
 internal sealed class PadPresentHyperBoostSafetyGate(
@@ -217,6 +330,7 @@ internal sealed class PadPresentHyperBoostSafetyGate(
 
         return new(
             FullPowerAdapterConfirmed: true,
+            CoolingPadAbsentConfirmed: false,
             CoolingPadPresentConfirmed: true,
             CoolingPadOpaqueZeroConfirmed: true,
             PerformanceFanValidationSafetyFailure.None);
@@ -233,6 +347,7 @@ internal sealed class PadPresentHyperBoostSafetyGate(
         bool fullPowerConfirmed = false,
         bool padPresentConfirmed = false) => new(
         FullPowerAdapterConfirmed: fullPowerConfirmed,
+        CoolingPadAbsentConfirmed: false,
         CoolingPadPresentConfirmed: padPresentConfirmed,
         CoolingPadOpaqueZeroConfirmed: false,
         failure);
@@ -245,8 +360,16 @@ public interface IPerformanceFanSetterValidationRunner
         CancellationToken cancellationToken);
 }
 
+internal interface IHyperBoostAdapterTransitionValidationRunner
+{
+    Task<PerformanceFanSetterValidationResult> RunAsync(
+        Func<CancellationToken, Task<bool>> confirmTransition,
+        CancellationToken cancellationToken);
+}
+
 internal sealed class PerformanceFanSetterValidationRunner
-    : IPerformanceFanSetterValidationRunner
+    : IPerformanceFanSetterValidationRunner,
+      IHyperBoostAdapterTransitionValidationRunner
 {
     private const byte CommandClass = 0x0D;
     private const byte QueryCommandId = 0x82;
@@ -269,6 +392,9 @@ internal sealed class PerformanceFanSetterValidationRunner
     private readonly int fixedFanStateCheckEverySamples;
     private readonly PendingDisposalRegistry pendingDisposals;
     private readonly IPerformanceFanValidationSafetyGate? safetyGate;
+    private readonly ReviewedHyperBoostThermalPlan? sustainedPlan;
+    private readonly IHyperBoostThermalTelemetrySource? thermalTelemetrySource;
+    private readonly bool adapterTransitionValidation;
     private int started;
 
     internal PerformanceFanSetterValidationRunner(
@@ -281,7 +407,10 @@ internal sealed class PerformanceFanSetterValidationRunner
         TimeSpan? fixedFanSampleInterval = null,
         int fixedFanMaximumSamples = DefaultFixedFanMaximumSamples,
         int fixedFanStateCheckEverySamples = DefaultFixedFanStateCheckEverySamples,
-        IPerformanceFanValidationSafetyGate? safetyGate = null)
+        IPerformanceFanValidationSafetyGate? safetyGate = null,
+        ReviewedHyperBoostThermalPlan? sustainedPlan = null,
+        IHyperBoostThermalTelemetrySource? thermalTelemetrySource = null,
+        bool adapterTransitionValidation = false)
     {
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.actorFactory = actorFactory ?? throw new ArgumentNullException(nameof(actorFactory));
@@ -314,15 +443,56 @@ internal sealed class PerformanceFanSetterValidationRunner
         this.fixedFanStateCheckEverySamples = fixedFanStateCheckEverySamples;
         this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
         this.safetyGate = safetyGate;
+        if (adapterTransitionValidation
+            ? sustainedPlan is null || thermalTelemetrySource is not null
+            : (sustainedPlan is null) != (thermalTelemetrySource is null))
+        {
+            throw new ArgumentException(
+                adapterTransitionValidation
+                    ? "Adapter-transition validation requires a reviewed plan and no telemetry source."
+                    : "A sustained HyperBoost plan and telemetry source must be supplied together.");
+        }
+
+        if (sustainedPlan is not null && safetyGate is null)
+        {
+            throw new ArgumentException(
+                "Sustained pad-absent HyperBoost validation requires the safety gate.");
+        }
+
+        this.sustainedPlan = sustainedPlan;
+        this.thermalTelemetrySource = thermalTelemetrySource;
+        this.adapterTransitionValidation = adapterTransitionValidation;
     }
 
-    public async Task<PerformanceFanSetterValidationResult> RunAsync(
+    public Task<PerformanceFanSetterValidationResult> RunAsync(
         PerformanceFanValidationTarget target,
+        CancellationToken cancellationToken) => RunCoreAsync(
+            target,
+            confirmTransition: null,
+            cancellationToken);
+
+    public Task<PerformanceFanSetterValidationResult> RunAsync(
+        Func<CancellationToken, Task<bool>> confirmTransition,
+        CancellationToken cancellationToken) => RunCoreAsync(
+            PerformanceFanValidationTarget.HyperBoost,
+            confirmTransition ?? throw new ArgumentNullException(nameof(confirmTransition)),
+            cancellationToken);
+
+    private async Task<PerformanceFanSetterValidationResult> RunCoreAsync(
+        PerformanceFanValidationTarget target,
+        Func<CancellationToken, Task<bool>>? confirmTransition,
         CancellationToken cancellationToken)
     {
         if (!Enum.IsDefined(target) || Interlocked.Exchange(ref started, 1) != 0)
         {
             return Empty(target, PerformanceFanValidationFailure.OpenFailed);
+        }
+
+        if (adapterTransitionValidation != (confirmTransition is not null)
+            || sustainedPlan is not null
+            && target != PerformanceFanValidationTarget.HyperBoost)
+        {
+            return Empty(target, PerformanceFanValidationFailure.WrongTarget);
         }
 
         if (cancellationToken.IsCancellationRequested)
@@ -423,6 +593,8 @@ internal sealed class PerformanceFanSetterValidationRunner
                         actor.Session,
                         cancellationToken).ConfigureAwait(false);
                 state.FullPowerAdapterConfirmed = safety.FullPowerAdapterConfirmed;
+                state.InitialAdapterPowerState = safety.AdapterPowerState;
+                state.CoolingPadAbsentConfirmed = safety.CoolingPadAbsentConfirmed;
                 state.CoolingPadPresentConfirmed = safety.CoolingPadPresentConfirmed;
                 state.CoolingPadOpaqueZeroConfirmed =
                     safety.CoolingPadOpaqueZeroConfirmed;
@@ -508,6 +680,43 @@ internal sealed class PerformanceFanSetterValidationRunner
                     state,
                     cancellationToken).ConfigureAwait(false);
             }
+            else if (confirmTransition is not null)
+            {
+                state.AdapterTransitionValidation =
+                    await ValidateAdapterTransitionAsync(
+                        context,
+                        actor.Session,
+                        sustainedPlan!,
+                        state.InitialAdapterPowerState,
+                        confirmTransition,
+                        cancellationToken).ConfigureAwait(false);
+                if (!state.AdapterTransitionValidation.Success)
+                {
+                    state.Failure = state.AdapterTransitionValidation.Failure ==
+                        HyperBoostAdapterTransitionValidationFailure.Canceled
+                            ? PerformanceFanValidationFailure.Canceled
+                            : PerformanceFanValidationFailure
+                                .SustainedValidationFailed;
+                }
+            }
+            else if (target == PerformanceFanValidationTarget.HyperBoost
+                && sustainedPlan is not null
+                && thermalTelemetrySource is not null)
+            {
+                state.SustainedValidation = await ValidateSustainedHyperBoostAsync(
+                    context,
+                    actor.Session,
+                    sustainedPlan,
+                    thermalTelemetrySource,
+                    cancellationToken).ConfigureAwait(false);
+                if (!state.SustainedValidation.Success)
+                {
+                    state.Failure = state.SustainedValidation.Failure ==
+                        HyperBoostSustainedValidationFailure.Canceled
+                            ? PerformanceFanValidationFailure.Canceled
+                            : PerformanceFanValidationFailure.SustainedValidationFailed;
+                }
+            }
 
             // Restoration starts only after both candidate channels have been read
             // successfully. A failed or mismatched paired read is indeterminate and
@@ -548,6 +757,27 @@ internal sealed class PerformanceFanSetterValidationRunner
             {
                 state.ManualRecoveryRequired = true;
                 state.Failure = PerformanceFanValidationFailure.RestorationMismatch;
+            }
+            else if (sustainedPlan is not null
+                && safetyGate is not null
+                && confirmTransition is null)
+            {
+                PerformanceFanValidationSafetyGateResult postRestorationSafety =
+                    await safetyGate.ValidateAsync(
+                        context,
+                        actor.Session,
+                        cleanup.Token).ConfigureAwait(false);
+                state.PostRestorationFullPowerAdapterConfirmed =
+                    postRestorationSafety.FullPowerAdapterConfirmed;
+                state.PostRestorationCoolingPadAbsentConfirmed =
+                    postRestorationSafety.CoolingPadAbsentConfirmed;
+                state.PostRestorationSafetyFailure =
+                    postRestorationSafety.Failure;
+                if (!postRestorationSafety.Success)
+                {
+                    state.Failure =
+                        PerformanceFanValidationFailure.SustainedValidationFailed;
+                }
             }
             else if (!state.CandidateConfirmed)
             {
@@ -722,6 +952,294 @@ internal sealed class PerformanceFanSetterValidationRunner
             return PerformanceFanValidationFailure.FixedFanRpmReadFailed;
         }
     }
+
+    private async Task<HyperBoostSustainedValidationResult>
+        ValidateSustainedHyperBoostAsync(
+            ValidationRunContext context,
+            IRazerCommandSession session,
+            ReviewedHyperBoostThermalPlan plan,
+            IHyperBoostThermalTelemetrySource telemetrySource,
+            CancellationToken cancellationToken)
+    {
+        int plannedSampleCount = checked((int)(plan.Duration.Ticks /
+            plan.SampleInterval.Ticks));
+        var samples = new List<HyperBoostThermalValidationSample>(
+            plannedSampleCount);
+        long startedAt = timeProvider.GetTimestamp();
+        bool continuousPadAbsence = true;
+        bool fullPowerMaintained = true;
+        bool hyperBoostMaintained = true;
+        bool requiredSensorsMaintained = true;
+
+        HyperBoostSustainedValidationResult Result(
+            HyperBoostSustainedValidationFailure failure) => new(
+                plan.PlanId,
+                plan.SourceSha256,
+                plannedSampleCount,
+                samples.Count,
+                failure == HyperBoostSustainedValidationFailure.None
+                    && samples.Count == plannedSampleCount,
+                continuousPadAbsence,
+                fullPowerMaintained,
+                hyperBoostMaintained,
+                requiredSensorsMaintained,
+                samples.ToArray(),
+                failure);
+
+        try
+        {
+            for (int sampleNumber = 1;
+                 sampleNumber <= plannedSampleCount;
+                 sampleNumber++)
+            {
+                await Task.Delay(
+                    plan.SampleInterval,
+                    timeProvider,
+                    cancellationToken).ConfigureAwait(false);
+
+                PerformanceFanValidationSafetyGateResult safety =
+                    await safetyGate!.ValidateAsync(
+                        context,
+                        session,
+                        cancellationToken).ConfigureAwait(false);
+                if (!safety.Success)
+                {
+                    HyperBoostSustainedValidationFailure failure =
+                        MapSustainedSafetyFailure(safety.Failure);
+                    if (failure is HyperBoostSustainedValidationFailure.CoolingPadPresent
+                        or HyperBoostSustainedValidationFailure.CoolingPadAbsenceObservationFailed)
+                    {
+                        continuousPadAbsence = false;
+                    }
+                    else if (failure is HyperBoostSustainedValidationFailure.AdapterPowerReadFailed
+                        or HyperBoostSustainedValidationFailure.FullPowerAdapterRequired)
+                    {
+                        fullPowerMaintained = false;
+                    }
+
+                    return Result(failure);
+                }
+
+                PairRead thermalState = await ReadPairAsync(
+                    context,
+                    session,
+                    cancellationToken,
+                    allowHyperBoost: true).ConfigureAwait(false);
+                if (!thermalState.Success)
+                {
+                    hyperBoostMaintained = false;
+                    return Result(thermalState.PairMismatch
+                        ? HyperBoostSustainedValidationFailure.ThermalStatePairMismatch
+                        : HyperBoostSustainedValidationFailure.ThermalStateReadFailed);
+                }
+
+                if (thermalState.State != ThermalModeState.HyperBoostObserved)
+                {
+                    hyperBoostMaintained = false;
+                    return Result(
+                        HyperBoostSustainedValidationFailure.HyperBoostStateLost);
+                }
+
+                HyperBoostTemperatureObservation temperatures =
+                    await telemetrySource.ReadAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                if (temperatures.CpuCelsius is not int cpu)
+                {
+                    requiredSensorsMaintained = false;
+                    return Result(
+                        HyperBoostSustainedValidationFailure.CpuTemperatureUnavailable);
+                }
+
+                bool gpuUnavailable = temperatures.GpuCelsius is null
+                    && !(temperatures.GpuInactive
+                        && plan.GpuSensorPolicy ==
+                            HyperBoostGpuSensorPolicy.AllowInactive);
+                if (gpuUnavailable)
+                {
+                    requiredSensorsMaintained = false;
+                    return Result(
+                        HyperBoostSustainedValidationFailure.GpuTemperatureUnavailable);
+                }
+
+                FanRpmReadings? fanRpm = await ReadFanRpmSampleAsync(
+                    context,
+                    session,
+                    cancellationToken).ConfigureAwait(false);
+                if (fanRpm is null)
+                {
+                    return Result(
+                        HyperBoostSustainedValidationFailure.FanRpmReadFailed);
+                }
+
+                samples.Add(new(
+                    sampleNumber,
+                    timeProvider.GetElapsedTime(startedAt),
+                    cpu,
+                    temperatures.GpuCelsius,
+                    temperatures.GpuInactive,
+                    fanRpm.Selector1Rpm,
+                    fanRpm.Selector2Rpm));
+
+                if (cpu > plan.MaximumCpuTemperatureCelsius)
+                {
+                    requiredSensorsMaintained = false;
+                    return Result(
+                        HyperBoostSustainedValidationFailure.CpuTemperatureExceeded);
+                }
+
+                if (temperatures.GpuCelsius is int gpu
+                    && gpu > plan.MaximumGpuTemperatureCelsius)
+                {
+                    requiredSensorsMaintained = false;
+                    return Result(
+                        HyperBoostSustainedValidationFailure.GpuTemperatureExceeded);
+                }
+
+                if (plan.MinimumFan1Rpm is int minimumFan1
+                    && fanRpm.Selector1Rpm < minimumFan1)
+                {
+                    return Result(
+                        HyperBoostSustainedValidationFailure.Fan1BelowMinimum);
+                }
+
+                if (plan.MinimumFan2Rpm is int minimumFan2
+                    && fanRpm.Selector2Rpm < minimumFan2)
+                {
+                    return Result(
+                        HyperBoostSustainedValidationFailure.Fan2BelowMinimum);
+                }
+            }
+
+            return Result(HyperBoostSustainedValidationFailure.None);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return Result(HyperBoostSustainedValidationFailure.Canceled);
+        }
+        catch
+        {
+            return Result(HyperBoostSustainedValidationFailure.UnexpectedFailure);
+        }
+    }
+
+    private async Task<HyperBoostAdapterTransitionValidationResult>
+        ValidateAdapterTransitionAsync(
+            ValidationRunContext context,
+            IRazerCommandSession session,
+            ReviewedHyperBoostThermalPlan plan,
+            OpenBlade.Contracts.AdapterPowerState initialAdapterState,
+            Func<CancellationToken, Task<bool>> confirmTransition,
+            CancellationToken cancellationToken)
+    {
+        HyperBoostAdapterTransitionValidationResult Result(
+            bool promptConfirmed,
+            bool readCompleted,
+            OpenBlade.Contracts.AdapterPowerState observed,
+            HyperBoostAdapterTransitionValidationFailure failure) => new(
+                plan.PlanId,
+                plan.SourceSha256,
+                promptConfirmed,
+                readCompleted,
+                initialAdapterState,
+                observed,
+                TransitionConfirmed:
+                    failure == HyperBoostAdapterTransitionValidationFailure.None,
+                failure);
+
+        try
+        {
+            bool confirmed = await confirmTransition(cancellationToken)
+                .ConfigureAwait(false);
+            if (!confirmed)
+            {
+                return Result(
+                    promptConfirmed: false,
+                    readCompleted: false,
+                    OpenBlade.Contracts.AdapterPowerState.Unknown,
+                    HyperBoostAdapterTransitionValidationFailure
+                        .TransitionNotConfirmed);
+            }
+
+            if (!context.TryAllocateTransaction(out byte transactionId))
+            {
+                return Result(
+                    promptConfirmed: true,
+                    readCompleted: false,
+                    OpenBlade.Contracts.AdapterPowerState.Unknown,
+                    HyperBoostAdapterTransitionValidationFailure
+                        .AdapterPowerReadFailed);
+            }
+
+            var adapter = new AdapterPowerCommandClient(session, exchangeTimeout);
+            HidSessionResult<OpenBlade.Contracts.AdapterPowerState> observation =
+                await adapter.QueryAsync(transactionId, cancellationToken)
+                    .ConfigureAwait(false);
+            if (observation.Failure is not null)
+            {
+                return Result(
+                    promptConfirmed: true,
+                    readCompleted: false,
+                    OpenBlade.Contracts.AdapterPowerState.Unknown,
+                    cancellationToken.IsCancellationRequested
+                        ? HyperBoostAdapterTransitionValidationFailure.Canceled
+                        : HyperBoostAdapterTransitionValidationFailure
+                            .AdapterPowerReadFailed);
+            }
+
+            return observation.Value switch
+            {
+                OpenBlade.Contracts.AdapterPowerState.UsbCPower100W => Result(
+                    promptConfirmed: true,
+                    readCompleted: true,
+                    observation.Value,
+                    HyperBoostAdapterTransitionValidationFailure.None),
+                OpenBlade.Contracts.AdapterPowerState.Unknown => Result(
+                    promptConfirmed: true,
+                    readCompleted: true,
+                    observation.Value,
+                    HyperBoostAdapterTransitionValidationFailure
+                        .AdapterPowerUnknown),
+                _ => Result(
+                    promptConfirmed: true,
+                    readCompleted: true,
+                    observation.Value,
+                    HyperBoostAdapterTransitionValidationFailure
+                        .ReviewedNonFullPowerNotObserved),
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return Result(
+                promptConfirmed: false,
+                readCompleted: false,
+                OpenBlade.Contracts.AdapterPowerState.Unknown,
+                HyperBoostAdapterTransitionValidationFailure.Canceled);
+        }
+        catch
+        {
+            return Result(
+                promptConfirmed: false,
+                readCompleted: false,
+                OpenBlade.Contracts.AdapterPowerState.Unknown,
+                HyperBoostAdapterTransitionValidationFailure.UnexpectedFailure);
+        }
+    }
+
+    private static HyperBoostSustainedValidationFailure MapSustainedSafetyFailure(
+        PerformanceFanValidationSafetyFailure failure) => failure switch
+        {
+            PerformanceFanValidationSafetyFailure.AdapterPowerReadFailed =>
+                HyperBoostSustainedValidationFailure.AdapterPowerReadFailed,
+            PerformanceFanValidationSafetyFailure.FullPowerAdapterRequired =>
+                HyperBoostSustainedValidationFailure.FullPowerAdapterRequired,
+            PerformanceFanValidationSafetyFailure.CoolingPadPresent =>
+                HyperBoostSustainedValidationFailure.CoolingPadPresent,
+            PerformanceFanValidationSafetyFailure.CoolingPadAbsenceObservationFailed =>
+                HyperBoostSustainedValidationFailure.CoolingPadAbsenceObservationFailed,
+            PerformanceFanValidationSafetyFailure.Canceled =>
+                HyperBoostSustainedValidationFailure.Canceled,
+            _ => HyperBoostSustainedValidationFailure.UnexpectedFailure,
+        };
 
     private async Task<FanRpmReadings?> ReadFanRpmSampleAsync(
         ValidationRunContext context,
@@ -959,12 +1477,26 @@ internal sealed class PerformanceFanSetterValidationRunner
         internal bool IndeterminatePartialWrite { get; set; }
         internal bool ManualRecoveryRequired { get; set; }
         internal bool FullPowerAdapterConfirmed { get; set; }
+        internal OpenBlade.Contracts.AdapterPowerState InitialAdapterPowerState
+        { get; set; }
+        internal bool CoolingPadAbsentConfirmed { get; set; }
         internal bool CoolingPadPresentConfirmed { get; set; }
         internal bool CoolingPadOpaqueZeroConfirmed { get; set; }
+
+        internal bool PostRestorationFullPowerAdapterConfirmed { get; set; }
+
+        internal bool PostRestorationCoolingPadAbsentConfirmed { get; set; }
+
+        internal PerformanceFanValidationSafetyFailure PostRestorationSafetyFailure
+        { get; set; }
+
         internal PerformanceFanValidationSafetyFailure SafetyFailure { get; set; }
         internal bool BaselineBalancedConfirmed { get; set; }
         internal bool BaselineRequiredBaseModeConfirmed { get; set; }
         internal bool BalancedIntermediaryObserved { get; set; }
+        internal HyperBoostSustainedValidationResult? SustainedValidation { get; set; }
+        internal HyperBoostAdapterTransitionValidationResult? AdapterTransitionValidation
+        { get; set; }
         internal PerformanceFanValidationFailure Failure { get; set; }
 
         internal PerformanceFanSetterValidationResult ToResult() => new(
@@ -985,12 +1517,21 @@ internal sealed class PerformanceFanSetterValidationRunner
             Failure)
         {
             FullPowerAdapterConfirmed = FullPowerAdapterConfirmed,
+            InitialAdapterPowerState = InitialAdapterPowerState,
+            CoolingPadAbsentConfirmed = CoolingPadAbsentConfirmed,
             CoolingPadPresentConfirmed = CoolingPadPresentConfirmed,
             CoolingPadOpaqueZeroConfirmed = CoolingPadOpaqueZeroConfirmed,
+            PostRestorationFullPowerAdapterConfirmed =
+                PostRestorationFullPowerAdapterConfirmed,
+            PostRestorationCoolingPadAbsentConfirmed =
+                PostRestorationCoolingPadAbsentConfirmed,
+            PostRestorationSafetyFailure = PostRestorationSafetyFailure,
             SafetyFailure = SafetyFailure,
             BaselineBalancedConfirmed = BaselineBalancedConfirmed,
             BaselineRequiredBaseModeConfirmed = BaselineRequiredBaseModeConfirmed,
             BalancedIntermediaryObserved = BalancedIntermediaryObserved,
+            SustainedValidation = SustainedValidation,
+            AdapterTransitionValidation = AdapterTransitionValidation,
         };
     }
 }

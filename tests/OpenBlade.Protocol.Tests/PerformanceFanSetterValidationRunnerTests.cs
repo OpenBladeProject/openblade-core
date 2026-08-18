@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
@@ -123,9 +126,8 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         var session = new StatefulSession("01010000", "01020000");
         var gate = new ScriptedSafetyGate(new(
             FullPowerAdapterConfirmed: true,
-            CoolingPadPresentConfirmed: false,
-            CoolingPadOpaqueZeroConfirmed: false,
-            PerformanceFanValidationSafetyFailure.CoolingPadAbsent));
+            CoolingPadAbsentConfirmed: false,
+            PerformanceFanValidationSafetyFailure.CoolingPadPresent));
 
         PerformanceFanSetterValidationResult result = await Runner(
             session,
@@ -136,9 +138,10 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         Assert.Equal(1, gate.Calls);
         Assert.Equal(PerformanceFanValidationFailure.OpenFailed, result.Failure);
         Assert.Equal(
-            PerformanceFanValidationSafetyFailure.CoolingPadAbsent,
+            PerformanceFanValidationSafetyFailure.CoolingPadPresent,
             result.SafetyFailure);
         Assert.True(result.FullPowerAdapterConfirmed);
+        Assert.False(result.CoolingPadAbsentConfirmed);
         Assert.False(result.ApplyAttempted);
         Assert.Equal(4, session.Commands.Count);
         Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
@@ -150,8 +153,7 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         var session = new StatefulSession("01010000", "01020000");
         var gate = new ScriptedSafetyGate(new(
             FullPowerAdapterConfirmed: true,
-            CoolingPadPresentConfirmed: true,
-            CoolingPadOpaqueZeroConfirmed: true,
+            CoolingPadAbsentConfirmed: true,
             PerformanceFanValidationSafetyFailure.None));
 
         PerformanceFanSetterValidationResult result = await Runner(
@@ -162,8 +164,7 @@ public sealed class PerformanceFanSetterValidationRunnerTests
 
         Assert.True(result.Success);
         Assert.True(result.FullPowerAdapterConfirmed);
-        Assert.True(result.CoolingPadPresentConfirmed);
-        Assert.True(result.CoolingPadOpaqueZeroConfirmed);
+        Assert.True(result.CoolingPadAbsentConfirmed);
         Assert.Equal(1, gate.Calls);
     }
 
@@ -184,6 +185,7 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         var session = new StatefulSession(baseline1, baseline2);
         var gate = new ScriptedSafetyGate(new(
             FullPowerAdapterConfirmed: true,
+            CoolingPadAbsentConfirmed: false,
             CoolingPadPresentConfirmed: true,
             CoolingPadOpaqueZeroConfirmed: true,
             PerformanceFanValidationSafetyFailure.None));
@@ -222,8 +224,7 @@ public sealed class PerformanceFanSetterValidationRunnerTests
             stateAfterFirstThermalPair2: "01020500");
         var gate = new ScriptedSafetyGate(new(
             FullPowerAdapterConfirmed: true,
-            CoolingPadPresentConfirmed: true,
-            CoolingPadOpaqueZeroConfirmed: true,
+            CoolingPadAbsentConfirmed: true,
             PerformanceFanValidationSafetyFailure.None));
 
         PerformanceFanSetterValidationResult result = await Runner(
@@ -240,6 +241,455 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         Assert.DoesNotContain(
             session.Commands,
             command => command.CommandId is 0x01 or 0x02);
+    }
+
+    [Fact]
+    public async Task RunAsync_SustainedHyperBoostCompletesPlanAndRestores()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+        var gate = new ScriptedSafetyGate(SafeGateResult);
+        ReviewedHyperBoostThermalPlan plan = Plan();
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: gate,
+            sustainedPlan: plan,
+            thermalTelemetrySource: new ScriptedTelemetrySource(
+                new(70, 60))).RunAsync(
+                    PerformanceFanValidationTarget.HyperBoost,
+                    default);
+
+        Assert.True(result.Success);
+        HyperBoostSustainedValidationResult sustained =
+            Assert.IsType<HyperBoostSustainedValidationResult>(
+                result.SustainedValidation);
+        Assert.True(sustained.Success);
+        Assert.Equal(plan.PlanId, sustained.PlanId);
+        Assert.Equal(plan.SourceSha256, sustained.PlanSha256);
+        Assert.Equal(2, sustained.PlannedSampleCount);
+        Assert.Equal(2, sustained.CompletedSampleCount);
+        Assert.Equal(2, sustained.Samples.Count);
+        Assert.All(sustained.Samples, sample =>
+        {
+            Assert.Equal(70, sample.CpuCelsius);
+            Assert.Equal(60, sample.GpuCelsius);
+            Assert.Equal(5300, sample.Fan1Rpm);
+            Assert.Equal(5300, sample.Fan2Rpm);
+        });
+        Assert.Equal(4, gate.Calls);
+        Assert.True(result.PostRestorationFullPowerAdapterConfirmed);
+        Assert.True(result.PostRestorationCoolingPadAbsentConfirmed);
+        Assert.Equal(
+            PerformanceFanValidationSafetyFailure.None,
+            result.PostRestorationSafetyFailure);
+        Assert.True(result.Restored);
+    }
+
+    [Fact]
+    public async Task RunAsync_AdapterTransitionPromptsAfterMode7AndRestoresImmediately()
+    {
+        var session = new StatefulSession(
+            "01010000",
+            "01020000",
+            adapterPowerState: AdapterPowerState.UsbCPower100W);
+        int boundaryCalls = 0;
+        var runner = Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: Plan(),
+            adapterTransitionValidation: true);
+
+        PerformanceFanSetterValidationResult result = await runner.RunAsync(
+            _ =>
+            {
+                boundaryCalls++;
+                Assert.Equal(
+                    6,
+                    session.Commands.Count(command => command.CommandId == 0x82));
+                Assert.Equal(
+                    2,
+                    session.Commands.Count(command => command.CommandId == 0x02));
+                return Task.FromResult(true);
+            },
+            default);
+
+        Assert.True(result.Success);
+        HyperBoostAdapterTransitionValidationResult transition =
+            Assert.IsType<HyperBoostAdapterTransitionValidationResult>(
+                result.AdapterTransitionValidation);
+        Assert.True(transition.Success);
+        Assert.Equal(AdapterPowerState.FullPower280W, transition.InitialAdapterState);
+        Assert.Equal(AdapterPowerState.UsbCPower100W, transition.ObservedAdapterState);
+        Assert.Equal(1, boundaryCalls);
+        Assert.Equal(1, session.Commands.Count(command => command.CommandId == 0x8C));
+        Assert.Equal(4, session.Commands.Count(command => command.CommandId == 0x02));
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+    }
+
+    [Fact]
+    public async Task RunAsync_AdapterTransitionRetainsAdmittedSlimQFullPowerClass()
+    {
+        var session = new StatefulSession(
+            "01010000",
+            "01020000",
+            adapterPowerState: AdapterPowerState.UsbCPower100W);
+        var safety = new PerformanceFanValidationSafetyGateResult(
+            FullPowerAdapterConfirmed: true,
+            CoolingPadAbsentConfirmed: true,
+            PerformanceFanValidationSafetyFailure.None)
+        {
+            AdapterPowerState = AdapterPowerState.FullPower330W,
+        };
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(safety),
+            sustainedPlan: Plan(),
+            adapterTransitionValidation: true).RunAsync(
+                _ => Task.FromResult(true),
+                default);
+
+        Assert.True(result.Success);
+        Assert.Equal(
+            AdapterPowerState.FullPower330W,
+            result.AdapterTransitionValidation!.InitialAdapterState);
+        Assert.True(result.AdapterTransitionValidation.Success);
+    }
+
+    [Theory]
+    [InlineData((int)AdapterPowerState.Unknown, false)]
+    [InlineData((int)AdapterPowerState.FullPower280W, false)]
+    [InlineData((int)AdapterPowerState.UsbCPower100W, true)]
+    public async Task RunAsync_AdapterTransitionRequiresReviewedTypedUsbCState(
+        int adapterStateValue,
+        bool expectedSuccess)
+    {
+        var session = new StatefulSession(
+            "01010000",
+            "01020000",
+            adapterPowerState: (AdapterPowerState)adapterStateValue);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: Plan(),
+            adapterTransitionValidation: true).RunAsync(
+                _ => Task.FromResult(true),
+                default);
+
+        Assert.Equal(expectedSuccess, result.Success);
+        Assert.Equal(expectedSuccess, result.AdapterTransitionValidation!.Success);
+        Assert.Equal((AdapterPowerState)adapterStateValue,
+            result.AdapterTransitionValidation.ObservedAdapterState);
+        Assert.True(result.RestoreAttempted);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+    }
+
+    [Fact]
+    public async Task RunAsync_AdapterReadFailureIsNotEvidenceAndStillRestores()
+    {
+        var session = new StatefulSession(
+            "01010000",
+            "01020000",
+            failAdapterRead: true);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: Plan(),
+            adapterTransitionValidation: true).RunAsync(
+                _ => Task.FromResult(true),
+                default);
+
+        Assert.Equal(
+            HyperBoostAdapterTransitionValidationFailure.AdapterPowerReadFailed,
+            result.AdapterTransitionValidation!.Failure);
+        Assert.False(result.AdapterTransitionValidation.FreshAdapterReadCompleted);
+        Assert.False(result.Success);
+        Assert.True(result.Restored);
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectedAdapterTransitionPromptStillRestoresWithoutQuery()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: Plan(),
+            adapterTransitionValidation: true).RunAsync(
+                _ => Task.FromResult(false),
+                default);
+
+        Assert.Equal(
+            HyperBoostAdapterTransitionValidationFailure.TransitionNotConfirmed,
+            result.AdapterTransitionValidation!.Failure);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x8C);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+    }
+
+    [Fact]
+    public async Task RunAsync_CanceledAdapterTransitionPromptStillRestores()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var session = new StatefulSession("01010000", "01020000");
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: Plan(),
+            adapterTransitionValidation: true).RunAsync(
+                token =>
+                {
+                    cancellation.Cancel();
+                    throw new OperationCanceledException(token);
+                },
+                cancellation.Token);
+
+        Assert.Equal(PerformanceFanValidationFailure.Canceled, result.Failure);
+        Assert.Equal(
+            HyperBoostAdapterTransitionValidationFailure.Canceled,
+            result.AdapterTransitionValidation!.Failure);
+        Assert.True(result.RestoreAttempted);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+    }
+
+    [Fact]
+    public async Task RunAsync_PostRestorationPadObservationFailsValidationAfterSafeRestore()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+        var gate = new ScriptedSafetyGate(
+            SafeGateResult,
+            SafeGateResult,
+            SafeGateResult,
+            new PerformanceFanValidationSafetyGateResult(
+                FullPowerAdapterConfirmed: true,
+                CoolingPadAbsentConfirmed: false,
+                PerformanceFanValidationSafetyFailure.CoolingPadPresent));
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: gate,
+            sustainedPlan: Plan(),
+            thermalTelemetrySource: new ScriptedTelemetrySource(
+                new(70, 60))).RunAsync(
+                    PerformanceFanValidationTarget.HyperBoost,
+                    default);
+
+        Assert.Equal(
+            PerformanceFanValidationFailure.SustainedValidationFailed,
+            result.Failure);
+        Assert.True(result.SustainedValidation!.Success);
+        Assert.True(result.Restored);
+        Assert.True(result.PostRestorationFullPowerAdapterConfirmed);
+        Assert.False(result.PostRestorationCoolingPadAbsentConfirmed);
+        Assert.Equal(
+            PerformanceFanValidationSafetyFailure.CoolingPadPresent,
+            result.PostRestorationSafetyFailure);
+        Assert.False(result.ManualRecoveryRequired);
+        Assert.Equal(4, gate.Calls);
+    }
+
+    [Fact]
+    public async Task RunAsync_SustainedCpuThresholdBreachFailsButRestoresOnce()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: Plan(maximumCpuTemperature: 80),
+            thermalTelemetrySource: new ScriptedTelemetrySource(
+                new(81, 60))).RunAsync(
+                    PerformanceFanValidationTarget.HyperBoost,
+                    default);
+
+        Assert.Equal(
+            PerformanceFanValidationFailure.SustainedValidationFailed,
+            result.Failure);
+        Assert.Equal(
+            HyperBoostSustainedValidationFailure.CpuTemperatureExceeded,
+            result.SustainedValidation!.Failure);
+        Assert.False(result.SustainedValidation.Success);
+        Assert.True(result.RestoreAttempted);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+        Assert.Equal(4, session.Commands.Count(command => command.CommandId == 0x02));
+    }
+
+    [Fact]
+    public async Task RunAsync_SustainedPadReappearanceFailsAndRestores()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+        var gate = new ScriptedSafetyGate(
+            SafeGateResult,
+            new PerformanceFanValidationSafetyGateResult(
+                FullPowerAdapterConfirmed: true,
+                CoolingPadAbsentConfirmed: false,
+                PerformanceFanValidationSafetyFailure.CoolingPadPresent));
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: gate,
+            sustainedPlan: Plan(),
+            thermalTelemetrySource: new ScriptedTelemetrySource(
+                new(70, 60))).RunAsync(
+                    PerformanceFanValidationTarget.HyperBoost,
+                    default);
+
+        Assert.Equal(
+            HyperBoostSustainedValidationFailure.CoolingPadPresent,
+            result.SustainedValidation!.Failure);
+        Assert.False(result.SustainedValidation.ContinuousPadAbsenceConfirmed);
+        Assert.True(result.Restored);
+        Assert.Equal(3, gate.Calls);
+    }
+
+    [Fact]
+    public async Task RunAsync_SustainedThermalStateLossFailsAndRestores()
+    {
+        var session = new StatefulSession(
+            "01010000",
+            "01020000",
+            loseThermalStateAfterCompletedPair: 3);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: Plan(),
+            thermalTelemetrySource: new ScriptedTelemetrySource(
+                new(70, 60))).RunAsync(
+                    PerformanceFanValidationTarget.HyperBoost,
+                    default);
+
+        Assert.Equal(
+            HyperBoostSustainedValidationFailure.HyperBoostStateLost,
+            result.SustainedValidation!.Failure);
+        Assert.False(result.SustainedValidation.HyperBoostStateMaintained);
+        Assert.True(result.Restored);
+    }
+
+    [Fact]
+    public async Task RunAsync_CancellationDuringSustainedObservationStillRestores()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var session = new StatefulSession("01010000", "01020000");
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: Plan(),
+            thermalTelemetrySource: new CancelingTelemetrySource(cancellation))
+                .RunAsync(
+                    PerformanceFanValidationTarget.HyperBoost,
+                    cancellation.Token);
+
+        Assert.Equal(PerformanceFanValidationFailure.Canceled, result.Failure);
+        Assert.Equal(
+            HyperBoostSustainedValidationFailure.Canceled,
+            result.SustainedValidation!.Failure);
+        Assert.True(result.RestoreAttempted);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+    }
+
+    [Theory]
+    [InlineData((int)HyperBoostGpuSensorPolicy.AllowInactive, true)]
+    [InlineData((int)HyperBoostGpuSensorPolicy.Required, false)]
+    public async Task RunAsync_SustainedGpuInactiveHonorsReviewedPolicy(
+        int policyValue,
+        bool expectedSuccess)
+    {
+        HyperBoostGpuSensorPolicy policy =
+            (HyperBoostGpuSensorPolicy)policyValue;
+        var session = new StatefulSession("01010000", "01020000");
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: Plan(gpuSensorPolicy: policy),
+            thermalTelemetrySource: new ScriptedTelemetrySource(
+                new(70, null, GpuInactive: true))).RunAsync(
+                    PerformanceFanValidationTarget.HyperBoost,
+                    default);
+
+        Assert.Equal(expectedSuccess, result.Success);
+        Assert.Equal(
+            expectedSuccess
+                ? HyperBoostSustainedValidationFailure.None
+                : HyperBoostSustainedValidationFailure.GpuTemperatureUnavailable,
+            result.SustainedValidation!.Failure);
+        Assert.True(result.Restored);
+    }
+
+    [Fact]
+    public async Task RunAsync_SustainedFanReadFailureFailsButRestores()
+    {
+        var session = new StatefulSession(
+            "01010000",
+            "01020000",
+            failFanSelector: 2);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: Plan(),
+            thermalTelemetrySource: new ScriptedTelemetrySource(new(70, 60)))
+                .RunAsync(PerformanceFanValidationTarget.HyperBoost, default);
+
+        Assert.Equal(
+            HyperBoostSustainedValidationFailure.FanRpmReadFailed,
+            result.SustainedValidation!.Failure);
+        Assert.True(result.Restored);
+    }
+
+    [Fact]
+    public async Task RunAsync_SustainedFailureAndRestoreFailureRequiresManualRecovery()
+    {
+        var session = new StatefulSession(
+            "01010000",
+            "01020000",
+            failWriteNumber: 3);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: Plan(maximumCpuTemperature: 80),
+            thermalTelemetrySource: new ScriptedTelemetrySource(new(81, 60)))
+                .RunAsync(PerformanceFanValidationTarget.HyperBoost, default);
+
+        Assert.Equal(
+            HyperBoostSustainedValidationFailure.CpuTemperatureExceeded,
+            result.SustainedValidation!.Failure);
+        Assert.Equal(
+            PerformanceFanValidationFailure.RestoreWriteIndeterminate,
+            result.Failure);
+        Assert.True(result.IndeterminatePartialWrite);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.False(result.Restored);
+    }
+
+    [Fact]
+    public void Constructor_RequiresPlanTelemetryAndSafetyGateTogether()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+        ReviewedHyperBoostThermalPlan plan = Plan();
+
+        Assert.Throws<ArgumentException>(() => Runner(
+            session,
+            sustainedPlan: plan));
+        Assert.Throws<ArgumentException>(() => Runner(
+            session,
+            thermalTelemetrySource: new ScriptedTelemetrySource(new(70, 60))));
+        Assert.Throws<ArgumentException>(() => Runner(
+            session,
+            sustainedPlan: plan,
+            thermalTelemetrySource: new ScriptedTelemetrySource(new(70, 60))));
     }
 
     [Theory]
@@ -494,25 +944,72 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         int maximumSamples = 3,
         int stateCheckEverySamples = 3,
         TimeSpan? sampleInterval = null,
-        IPerformanceFanValidationSafetyGate? safetyGate = null) => new(
+        IPerformanceFanValidationSafetyGate? safetyGate = null,
+        ReviewedHyperBoostThermalPlan? sustainedPlan = null,
+        IHyperBoostThermalTelemetrySource? thermalTelemetrySource = null,
+        bool adapterTransitionValidation = false) => new(
         static () => new ValidationRunContext(),
         new ActorFactory(new ValidationActor(
             session,
             new UnsupportedBatteryCommands(),
             new UnsupportedTemporaryCommands())),
-        TimeProvider.System,
+        sustainedPlan is null ? TimeProvider.System : new ImmediateTimeProvider(),
         TimeSpan.FromSeconds(3),
         TimeSpan.FromSeconds(5),
         new PendingDisposalRegistry(),
         fixedFanSampleInterval: sampleInterval ?? TimeSpan.Zero,
         fixedFanMaximumSamples: maximumSamples,
         fixedFanStateCheckEverySamples: stateCheckEverySamples,
-        safetyGate: safetyGate);
+        safetyGate: safetyGate,
+        sustainedPlan: sustainedPlan,
+        thermalTelemetrySource: thermalTelemetrySource,
+        adapterTransitionValidation: adapterTransitionValidation);
+
+    private static readonly PerformanceFanValidationSafetyGateResult SafeGateResult =
+        new(
+            FullPowerAdapterConfirmed: true,
+            CoolingPadAbsentConfirmed: true,
+            PerformanceFanValidationSafetyFailure.None)
+        {
+            AdapterPowerState = AdapterPowerState.FullPower280W,
+        };
+
+    private static ReviewedHyperBoostThermalPlan Plan(
+        double maximumCpuTemperature = 90,
+        HyperBoostGpuSensorPolicy gpuSensorPolicy =
+            HyperBoostGpuSensorPolicy.Required)
+    {
+        string json = $$"""
+            {
+              "planId": "test-no-load-v1",
+              "modelNumber": "RZ09-0581",
+              "biosVersion": "4.00",
+              "durationSeconds": 1,
+              "sampleIntervalMilliseconds": 500,
+              "maximumCpuTemperatureCelsius": {{maximumCpuTemperature}},
+              "maximumGpuTemperatureCelsius": 85,
+              "gpuSensorPolicy": "{{(gpuSensorPolicy == HyperBoostGpuSensorPolicy.Required ? "required" : "allowInactive")}}",
+              "minimumFan1Rpm": 1000,
+              "minimumFan2Rpm": 1000,
+              "workloadKind": "sustainedNoLoadDwell",
+              "workloadName": null,
+              "workloadSha256": null
+            }
+            """;
+        byte[] bytes = Encoding.UTF8.GetBytes(json);
+        return ReviewedHyperBoostThermalPlan.Parse(
+            bytes,
+            Convert.ToHexString(SHA256.HashData(bytes)));
+    }
 
     private sealed class ScriptedSafetyGate(
-        PerformanceFanValidationSafetyGateResult result)
+        PerformanceFanValidationSafetyGateResult first,
+        params PerformanceFanValidationSafetyGateResult[] additional)
         : IPerformanceFanValidationSafetyGate
     {
+        private readonly PerformanceFanValidationSafetyGateResult[] results =
+            [first, .. additional];
+
         public int Calls { get; private set; }
 
         public Task<PerformanceFanValidationSafetyGateResult> ValidateAsync(
@@ -520,8 +1017,62 @@ public sealed class PerformanceFanSetterValidationRunnerTests
             IRazerCommandSession session,
             CancellationToken cancellationToken)
         {
+            int index = Math.Min(Calls, results.Length - 1);
             Calls++;
-            return Task.FromResult(result);
+            return Task.FromResult(results[index]);
+        }
+    }
+
+    private sealed class ScriptedTelemetrySource(
+        HyperBoostTemperatureObservation first,
+        params HyperBoostTemperatureObservation[] additional)
+        : IHyperBoostThermalTelemetrySource
+    {
+        private readonly HyperBoostTemperatureObservation[] observations =
+            [first, .. additional];
+        private int calls;
+
+        public ValueTask<HyperBoostTemperatureObservation> ReadAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int index = Math.Min(calls++, observations.Length - 1);
+            return ValueTask.FromResult(observations[index]);
+        }
+    }
+
+    private sealed class CancelingTelemetrySource(CancellationTokenSource cancellation)
+        : IHyperBoostThermalTelemetrySource
+    {
+        public ValueTask<HyperBoostTemperatureObservation> ReadAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellation.Cancel();
+            throw new OperationCanceledException(cancellationToken);
+        }
+    }
+
+    private sealed class ImmediateTimeProvider : TimeProvider
+    {
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            callback(state);
+            return CompletedTimer.Instance;
+        }
+
+        private sealed class CompletedTimer : ITimer
+        {
+            internal static CompletedTimer Instance { get; } = new();
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) => false;
+
+            public void Dispose() { }
+
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
     }
 
@@ -543,7 +1094,10 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         int? loseFixedStateAfterCompletedFanSamples = null,
         Action? afterCompletedFanSample = null,
         string? stateAfterFirstThermalPair1 = null,
-        string? stateAfterFirstThermalPair2 = null) : IRazerCommandSession
+        string? stateAfterFirstThermalPair2 = null,
+        int? loseThermalStateAfterCompletedPair = null,
+        AdapterPowerState adapterPowerState = AdapterPowerState.UsbCPower100W,
+        bool failAdapterRead = false) : IRazerCommandSession
     {
         private readonly byte[][] baseline =
             [Convert.FromHexString(firstHex), Convert.FromHexString(secondHex)];
@@ -586,6 +1140,12 @@ public sealed class PerformanceFanSetterValidationRunnerTests
                         state[0] = Convert.FromHexString(stateAfterFirstThermalPair1);
                         state[1] = Convert.FromHexString(stateAfterFirstThermalPair2);
                     }
+
+                    else if (completedThermalPairs == loseThermalStateAfterCompletedPair)
+                    {
+                        state[0] = baseline[0].ToArray();
+                        state[1] = baseline[1].ToArray();
+                    }
                 }
 
                 return Success(response);
@@ -616,6 +1176,23 @@ public sealed class PerformanceFanSetterValidationRunnerTests
                     afterCompletedFanSample?.Invoke();
                 }
 
+                return Success(response);
+            }
+
+            if (command.CommandId == 0x8C)
+            {
+                if (failAdapterRead)
+                {
+                    return Failure(HidSessionFailureKind.Timeout);
+                }
+
+                byte[] response = adapterPowerState switch
+                {
+                    AdapterPowerState.UsbCPower100W => [0x07, 0x11],
+                    AdapterPowerState.FullPower280W => [0x11, 0x11],
+                    AdapterPowerState.FullPower330W => [0x12, 0x11],
+                    _ => [0x00, 0x00],
+                };
                 return Success(response);
             }
 

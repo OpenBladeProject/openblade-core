@@ -566,7 +566,7 @@ type enum OpenBlade.Protocol.PerformanceFanValidationFailure
   field const OpenBlade.Protocol.PerformanceFanValidationFailure ApplyWriteIndeterminate = 9
   field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselineFixedSpeedCannotBeRestored = 7
   field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselineNotBalanced = 20
-  field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselineNotRequiredBaseMode = 21
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselineNotRequiredBaseMode = 22
   field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselinePairMismatch = 6
   field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselineReadFailed = 5
   field const OpenBlade.Protocol.PerformanceFanValidationFailure Canceled = 19
@@ -583,6 +583,7 @@ type enum OpenBlade.Protocol.PerformanceFanValidationFailure
   field const OpenBlade.Protocol.PerformanceFanValidationFailure RestorationPairMismatch = 15
   field const OpenBlade.Protocol.PerformanceFanValidationFailure RestorationReadFailed = 14
   field const OpenBlade.Protocol.PerformanceFanValidationFailure RestoreWriteIndeterminate = 13
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure SustainedValidationFailed = 21
   field const OpenBlade.Protocol.PerformanceFanValidationFailure TargetAlreadyActive = 8
   field const OpenBlade.Protocol.PerformanceFanValidationFailure WrongTarget = 1
 type enum OpenBlade.Protocol.PerformanceFanValidationTarget

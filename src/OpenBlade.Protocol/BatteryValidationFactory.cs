@@ -1062,6 +1062,87 @@ public static class BatteryValidationFactory
             safetyGate: safetyGate);
     }
 
+    internal static IPerformanceFanSetterValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidation() =>
+            CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+                sustainedPlan: null,
+                thermalTelemetrySource: null,
+                adapterTransitionValidation: false);
+
+    internal static IPerformanceFanSetterValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostSustainedValidation(
+            ReviewedHyperBoostThermalPlan sustainedPlan,
+            IHyperBoostThermalTelemetrySource thermalTelemetrySource) =>
+            CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+                sustainedPlan
+                    ?? throw new ArgumentNullException(nameof(sustainedPlan)),
+                thermalTelemetrySource
+                    ?? throw new ArgumentNullException(nameof(thermalTelemetrySource)),
+                adapterTransitionValidation: false);
+
+    internal static IHyperBoostAdapterTransitionValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostAdapterTransitionValidation(
+            ReviewedHyperBoostThermalPlan sustainedPlan) =>
+            (IHyperBoostAdapterTransitionValidationRunner)
+                CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+                    sustainedPlan
+                        ?? throw new ArgumentNullException(nameof(sustainedPlan)),
+                    thermalTelemetrySource: null,
+                    adapterTransitionValidation: true);
+
+    private static IPerformanceFanSetterValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+            ReviewedHyperBoostThermalPlan? sustainedPlan,
+            IHyperBoostThermalTelemetrySource? thermalTelemetrySource,
+            bool adapterTransitionValidation)
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var guard = new WindowsHardwareAccessGuard(
+            new RunningProcessSource(),
+            new WindowsServiceSource());
+        var hostIdentity = new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new ExpectedHostIdentity(
+                "Razer",
+                "Blade 16 - RZ09-0581",
+                "RZ09-05819EN4",
+                Array.AsReadOnly(new[] { "4.00" })));
+        var opener = new WindowsRazerHidSessionOpener(
+            hostIdentity,
+            guard,
+            native,
+            ControllerExclusivityPolicy.Strict,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x02E0,
+                UsagePage: 0x0001,
+                Usage: 0x0002,
+                FeatureReportByteLength: RazerReport.ReportLength + 1));
+        var actorFactory = new ValidationActorFactory(
+            opener,
+            new OverlappedFeatureOperation(native),
+            guard,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            ControllerExclusivityPolicy.Strict,
+            BatteryFeatureReportSettleDelay);
+        var safetyGate = new PadAbsentHyperBoostSafetyGate(
+            new WindowsCoolingPadPhysicalPresenceSource(native),
+            DefaultExchangeTimeout);
+        return new PerformanceFanSetterValidationRunner(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout,
+            safetyGate: safetyGate,
+            sustainedPlan: sustainedPlan,
+            thermalTelemetrySource: thermalTelemetrySource,
+            adapterTransitionValidation: adapterTransitionValidation);
+    }
+
     public static IProtectionOffValidationRunFactory CreateWindowsProtectionOffValidation()
     {
         var native = new WindowsHidNative();
