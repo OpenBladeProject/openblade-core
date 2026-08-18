@@ -6,7 +6,7 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
-    public void LocalizedPageHeadersKeepStableActionsInTitleRows()
+    public void LocalizedPageHeadersKeepProfileActionsResponsiveAndOrdered()
     {
         XDocument document = XDocument.Parse(
             ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
@@ -34,23 +34,76 @@ public sealed class WinUiShellContractTests
                 "{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"),
         })
         {
-            XElement header = NamedElement(document, "Grid", headerName);
-            XElement expandableActions = NamedElement(document, "StackPanel", actionName);
+            XElement header = NamedElement(document, "ResponsivePageHeader", headerName);
+            XElement profileActions = NamedElement(document, "StackPanel", actionName);
             XElement customizeButton = UidElement(document, "Button", customizeUid);
 
-            Assert.Same(header, expandableActions.Parent);
-            Assert.Equal("1", Attribute(expandableActions, "Grid.Row"));
-            Assert.Equal("2", Attribute(expandableActions, "Grid.ColumnSpan"));
-            Assert.Equal("0,12,0,0", Attribute(expandableActions, "Margin"));
-            Assert.Equal(visibilityBinding, Attribute(expandableActions, "Visibility"));
+            Assert.Same(header, profileActions.Parent);
+            Assert.Equal("1", Attribute(profileActions, "Grid.Column"));
+            Assert.Null(Attribute(profileActions, "Grid.Row"));
+            Assert.Null(Attribute(profileActions, "Grid.ColumnSpan"));
+            Assert.Null(Attribute(profileActions, "Margin"));
+            Assert.Equal("Right", Attribute(profileActions, "HorizontalAlignment"));
+            Assert.Equal(
+                "ProfileActions",
+                Attribute(profileActions, "ResponsivePageHeader.Role"));
+            Assert.Equal(visibilityBinding, Attribute(profileActions, "Visibility"));
             Assert.Null(Attribute(header, "RowSpacing"));
+            Assert.Null(Attribute(header, "ColumnSpacing"));
+
+            XElement[] profileButtons = profileActions.Elements()
+                .Where(element => element.Name.LocalName == "Button")
+                .ToArray();
+            Assert.Equal(2, profileButtons.Length);
+            Assert.Equal(
+                "{StaticResource ProfileSaveButtonStyle}",
+                Attribute(profileButtons[0], "Style"));
+            Assert.Equal("Use profile settings", Attribute(profileButtons[1], "Content"));
+            Assert.Equal(
+                "{StaticResource PageHeaderSecondaryButtonStyle}",
+                Attribute(profileButtons[1], "Style"));
 
             Assert.Same(header, customizeButton.Parent);
-            Assert.Equal("1", Attribute(customizeButton, "Grid.Column"));
+            Assert.Equal("2", Attribute(customizeButton, "Grid.Column"));
             Assert.Null(Attribute(customizeButton, "Grid.Row"));
+            Assert.Equal(
+                "Customize",
+                Attribute(customizeButton, "ResponsivePageHeader.Role"));
 
             List<XElement> children = header.Elements().ToList();
-            Assert.True(children.IndexOf(customizeButton) < children.IndexOf(expandableActions));
+            Assert.True(children.IndexOf(profileActions) < children.IndexOf(customizeButton));
+        }
+
+        XElement contentTemplate = KeyedElement(
+            document,
+            "DataTemplate",
+            "PageHeaderButtonContentTemplate");
+        XElement templateText = Assert.Single(
+            contentTemplate.Elements(),
+            element => element.Name.LocalName == "TextBlock");
+        Assert.Equal("Wrap", Attribute(templateText, "TextWrapping"));
+        foreach (string styleKey in new[]
+        {
+            "ProfileSaveButtonStyle",
+            "PageHeaderSecondaryButtonStyle",
+        })
+        {
+            XElement style = KeyedElement(document, "Style", styleKey);
+            XElement[] setters = style.Elements()
+                .Where(element => element.Name.LocalName == "Setter")
+                .ToArray();
+            Assert.Contains(setters, setter =>
+                Attribute(setter, "Property") == "MinHeight"
+                && Attribute(setter, "Value") == "32");
+            Assert.Contains(setters, setter =>
+                Attribute(setter, "Property") == "Padding"
+                && Attribute(setter, "Value") == "14,4");
+            Assert.Contains(setters, setter =>
+                Attribute(setter, "Property") == "ContentTemplate"
+                && Attribute(setter, "Value") ==
+                    "{StaticResource PageHeaderButtonContentTemplate}");
+            Assert.DoesNotContain(setters, setter =>
+                Attribute(setter, "Property") == "Height");
         }
 
         XElement profilesHeader = NamedElement(document, "Grid", "ProfilesPageHeader");
@@ -311,7 +364,6 @@ public sealed class WinUiShellContractTests
             "Fill=\"{ThemeResource SystemFillColorSuccessBrush}\" Visibility=\"{x:Bind ViewModel.IsReadinessReady, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.Contains("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("HeaderActions.Margin", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
@@ -591,7 +643,7 @@ public sealed class WinUiShellContractTests
             "<ScrollViewer x:Name=\"DisplayPage\"");
         string lightingHeader = SliceMethod(
             lightingPage,
-            "<Grid x:Name=\"LightingPageHeader\"",
+            "<local:ResponsivePageHeader x:Name=\"LightingPageHeader\"",
             "<StackPanel x:Name=\"LightingCardsHost\"");
         string lightingTemplate = SliceMethod(
             xaml,
@@ -3251,4 +3303,11 @@ public sealed class WinUiShellContractTests
         string uid) => Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == elementName
             && Attribute(element, "Uid") == uid);
+
+    private static XElement KeyedElement(
+        XDocument document,
+        string elementName,
+        string key) => Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == elementName
+            && Attribute(element, "Key") == key);
 }

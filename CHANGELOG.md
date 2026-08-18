@@ -44,6 +44,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Clarified unclassified external power consistently across control access,
   active profile, tray hover, and troubleshooting instead of presenting a
   completed bounded classification attempt as still checking.
+- Kept conditional profile Save and **Use profile settings** actions beside
+  Customize when they fit, while moving the complete action group below the
+  title or stacking long localized actions before they can overlap or clip.
 - Kept page customization buttons aligned with their titles while allowing
   longer localized and profile actions to use a separate row.
 - Fixed the **Random colors** switch track alignment and made compact switch
