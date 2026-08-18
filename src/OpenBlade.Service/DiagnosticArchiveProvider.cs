@@ -315,6 +315,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
     {
         cancellationToken.ThrowIfCancellationRequested();
         ServiceStatusSnapshot status = runtime.GetStatus();
+        Rz090581CapabilityDiagnostics? capabilityDiagnostics =
+            runtime.GetCachedRz090581CapabilityDiagnostics();
         DiagnosticHistorySnapshot historySnapshot = history.Snapshot();
         DiagnosticHostMetadata metadata = metadataSource.Capture();
         DiagnosticVersions versions = metadata.Versions;
@@ -332,7 +334,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             versions,
             CreateDeviceIdentity(status),
             CreateCapabilities(status.Capabilities),
-            CreateConfiguration(status, liveReadingsEnabled),
+            CreateConfiguration(status, capabilityDiagnostics, liveReadingsEnabled),
             historySnapshot.CommandResults,
             historySnapshot.LogLines,
             metadata.SensitiveTokens);
@@ -457,6 +459,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
 
     private static IReadOnlyDictionary<string, string> CreateConfiguration(
         ServiceStatusSnapshot status,
+        Rz090581CapabilityDiagnostics? capabilityDiagnostics,
         bool liveReadingsEnabled)
     {
         DeviceCapabilities capabilities = status.Capabilities ?? DeviceCapabilities.Unavailable();
@@ -546,14 +549,12 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.FanSpeedRange?.StepRpm),
             ["capability.rz09-0581.skuHardwareConfigurationRaw"] =
                 HexByteOrUnavailable(
-                    status.Rz090581CapabilityDiagnostics?
-                        .SkuHardwareConfigurationRaw),
+                    capabilityDiagnostics?.SkuHardwareConfigurationRaw),
             ["capability.rz09-0581.miniLedPanelResolutionRaw"] =
                 HexByteOrUnavailable(
-                    status.Rz090581CapabilityDiagnostics?
-                        .MiniLedPanelResolutionRaw),
+                    capabilityDiagnostics?.MiniLedPanelResolutionRaw),
             ["capability.rz09-0581.thermalFanIds"] =
-                status.Rz090581CapabilityDiagnostics is { } diagnostics
+                capabilityDiagnostics is { } diagnostics
                     ? string.Join(
                         ", ",
                         diagnostics.ThermalFanIds.Select(value => $"0x{value:X2}"))

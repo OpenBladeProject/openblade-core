@@ -1711,7 +1711,6 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method OpenBlade.Contracts.PerformanceShortcutPreview get_PerformanceShortcutPreview()
   method OpenBlade.Contracts.PowerSource get_ActivePowerSource()
   method OpenBlade.Contracts.ProfileSet get_Profiles()
-  method OpenBlade.Contracts.Rz090581CapabilityDiagnostics get_Rz090581CapabilityDiagnostics()
   method OpenBlade.Contracts.ServiceStatusSnapshot <Clone>$()
   method OpenBlade.Contracts.SessionControlAccess get_ControlAccess()
   method System.Boolean get_AllowUntestedFirmware()
@@ -1767,7 +1766,6 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_PotentialControllers(System.Collections.Generic.IReadOnlyList<System.String> value)
   method System.Void set_Profiles(OpenBlade.Contracts.ProfileSet value)
   method System.Void set_Revision(System.Int64 value)
-  method System.Void set_Rz090581CapabilityDiagnostics(OpenBlade.Contracts.Rz090581CapabilityDiagnostics value)
   method System.Void set_ServiceVersion(System.String value)
   method System.Void set_StartupAnimationEnabled(System.Nullable<System.Boolean> value)
   method System.Void set_UnconfirmedWrites(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> value)
@@ -1797,7 +1795,6 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.PerformanceShortcutPreview PerformanceShortcutPreview { get; init; }
   property OpenBlade.Contracts.PowerSource ActivePowerSource { get; init; }
   property OpenBlade.Contracts.ProfileSet Profiles { get; init; }
-  property OpenBlade.Contracts.Rz090581CapabilityDiagnostics Rz090581CapabilityDiagnostics { get; init; }
   property OpenBlade.Contracts.SessionControlAccess ControlAccess { get; init; }
   property System.Boolean AllowUntestedFirmware { get; init; }
   property System.Boolean AlwaysOverrideExternalLightingChanges { get; init; }

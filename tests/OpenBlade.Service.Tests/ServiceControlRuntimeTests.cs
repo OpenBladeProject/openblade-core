@@ -1346,11 +1346,43 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
         Rz090581CapabilityDiagnostics? actual =
-            context.Runtime.GetStatus().Rz090581CapabilityDiagnostics;
+            context.Runtime.GetCachedRz090581CapabilityDiagnostics();
         Assert.NotNull(actual);
         Assert.Equal(expected.SkuHardwareConfigurationRaw, actual.SkuHardwareConfigurationRaw);
         Assert.Equal(expected.MiniLedPanelResolutionRaw, actual.MiniLedPanelResolutionRaw);
         Assert.Equal(expected.ThermalFanIds, actual.ThermalFanIds);
+        Assert.Equal(1, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_UsesFreshlyTestedFirmwareCompatibility()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            firmwareVersions: FirmwareVersions.Unavailable() with
+            {
+                BiosVersion = TargetBladeDevice.BiosVersion,
+                ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            });
+        var expected = new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+        context.Device.Rz090581CapabilityDiagnostics = expected;
+        context.Provider.ReportUnknownFirmwareCompatibility = true;
+        context.Provider.AfterTryGet = () =>
+            context.Provider.ReportUnknownFirmwareCompatibility = false;
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(configuration, PowerSource.PluggedIn);
+        Assert.Equal(
+            FirmwareCompatibilityStatus.Unknown,
+            context.Runtime.GetStatus().FirmwareCompatibility);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            FirmwareCompatibilityStatus.Tested,
+            context.Runtime.GetStatus().FirmwareCompatibility);
+        Assert.Equal(expected, context.Runtime.GetCachedRz090581CapabilityDiagnostics());
         Assert.Equal(1, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
     }
 
@@ -1364,12 +1396,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.Rz090581CapabilityDiagnostics = expected;
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        Assert.Null(context.Runtime.GetStatus().Rz090581CapabilityDiagnostics);
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
-        Assert.NotNull(context.Runtime.GetStatus().Rz090581CapabilityDiagnostics);
+        Assert.NotNull(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
         Assert.Equal(2, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
     }
 
@@ -1385,7 +1417,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             await context.Runtime.ObserveAsync(CancellationToken.None);
         }
 
-        Assert.Null(context.Runtime.GetStatus().Rz090581CapabilityDiagnostics);
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
         Assert.Equal(3, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
     }
 
@@ -1407,7 +1439,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             await context.Runtime.ObserveAsync(CancellationToken.None);
         }
 
-        Assert.Null(context.Runtime.GetStatus().Rz090581CapabilityDiagnostics);
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
         Assert.Equal(4, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
     }
 
@@ -1429,7 +1461,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             await context.Runtime.ObserveAsync(CancellationToken.None);
         }
 
-        Assert.Null(context.Runtime.GetStatus().Rz090581CapabilityDiagnostics);
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
         Assert.Equal(4, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
     }
 
@@ -1448,7 +1480,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
-        Assert.Null(context.Runtime.GetStatus().Rz090581CapabilityDiagnostics);
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
         Assert.Equal(0, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
     }
 
@@ -1466,7 +1498,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
-        Assert.Null(context.Runtime.GetStatus().Rz090581CapabilityDiagnostics);
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
         Assert.Equal(0, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
     }
 

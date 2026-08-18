@@ -11,30 +11,6 @@ internal static class Rz090581CapabilityDiagnosticsProtocol
     internal const int SingleBytePayloadLength = 1;
     internal const int ThermalFanIdListPayloadLength = 80;
 
-    private static readonly byte[] SingleByteQueryPayload = [0x00];
-    private static readonly byte[] ThermalFanIdListQueryPayload = new byte[80];
-
-    public static RazerReport CreateSkuHardwareConfigurationQuery(byte transactionId) =>
-        RazerReport.Create(
-            transactionId,
-            CommandClass,
-            SkuHardwareConfigurationCommandId,
-            SingleByteQueryPayload);
-
-    public static RazerReport CreateMiniLedPanelResolutionQuery(byte transactionId) =>
-        RazerReport.Create(
-            transactionId,
-            CommandClass,
-            MiniLedPanelResolutionCommandId,
-            SingleByteQueryPayload);
-
-    public static RazerReport CreateThermalFanIdListQuery(byte transactionId) =>
-        RazerReport.Create(
-            transactionId,
-            CommandClass,
-            ThermalFanIdListCommandId,
-            ThermalFanIdListQueryPayload);
-
     public static bool TryDecodeRawByte(ReadOnlySpan<byte> payload, out byte value)
     {
         if (payload.Length != SingleBytePayloadLength)

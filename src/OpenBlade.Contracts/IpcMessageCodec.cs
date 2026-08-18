@@ -478,11 +478,6 @@ public static class IpcMessageCodec
             throw InvalidStatus("capability collections are malformed");
         }
 
-        if (status.Rz090581CapabilityDiagnostics is { IsWellFormed: false })
-        {
-            throw InvalidStatus("RZ09-0581 capability diagnostics are malformed");
-        }
-
         if (string.IsNullOrWhiteSpace(status.ServiceVersion))
         {
             throw InvalidStatus("service version is missing");

@@ -6,21 +6,6 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class Rz090581CapabilityDiagnosticsProtocolTests
 {
     [Fact]
-    public void CreateQueries_UseCapturedReadOnlyCommands()
-    {
-        byte[] sku = Rz090581CapabilityDiagnosticsProtocol
-            .CreateSkuHardwareConfigurationQuery(0x01).Encode();
-        byte[] miniLed = Rz090581CapabilityDiagnosticsProtocol
-            .CreateMiniLedPanelResolutionQuery(0x02).Encode();
-        byte[] fans = Rz090581CapabilityDiagnosticsProtocol
-            .CreateThermalFanIdListQuery(0x03).Encode();
-
-        AssertQuery(sku, 0x01, 0x8F, [0x00]);
-        AssertQuery(miniLed, 0x02, 0x8E, [0x00]);
-        AssertQuery(fans, 0x03, 0x80, new byte[80]);
-    }
-
-    [Fact]
     public void TryDecode_PreservesRawBytesAndUsesBoundedFanCount()
     {
         byte[] fanPayload = new byte[80];
@@ -97,19 +82,6 @@ public sealed class Rz090581CapabilityDiagnosticsProtocolTests
                 out IReadOnlyList<byte> fanIds));
             Assert.Equal([0x01, 0x02], fanIds);
         }
-    }
-
-    private static void AssertQuery(
-        byte[] encoded,
-        byte transactionId,
-        byte commandId,
-        byte[] arguments)
-    {
-        Assert.Equal(transactionId, encoded[1]);
-        Assert.Equal(arguments.Length, encoded[5]);
-        Assert.Equal(0x0D, encoded[6]);
-        Assert.Equal(commandId, encoded[7]);
-        Assert.Equal(arguments, encoded.AsSpan(8, arguments.Length).ToArray());
     }
 
     private static void AssertCapturedRawByte(

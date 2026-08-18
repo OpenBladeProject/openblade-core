@@ -283,19 +283,21 @@ public sealed class DiagnosticArchiveProviderTests
     }
 
     [Fact]
-    public async Task CreateAsync_ExportsRawRz090581CapabilityDiagnosticsFromSnapshot()
+    public async Task CreateAsync_ExportsCachedRz090581CapabilityDiagnosticsWithoutHardwareIo()
     {
-        var runtime = new SnapshotOnlyRuntime(CreateStatus() with
-        {
-            Firmware = FirmwareVersions.Unavailable() with
+        var diagnostics = new Rz090581CapabilityDiagnostics(
+            0x01,
+            0x00,
+            [0x01, 0x02]);
+        var runtime = new SnapshotOnlyRuntime(
+            CreateStatus() with
             {
-                ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+                Firmware = FirmwareVersions.Unavailable() with
+                {
+                    ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+                },
             },
-            Rz090581CapabilityDiagnostics = new Rz090581CapabilityDiagnostics(
-                0x01,
-                0x00,
-                [0x01, 0x02]),
-        });
+            diagnostics);
         var provider = new DiagnosticArchiveProvider(
             runtime,
             new DiagnosticHistory(),
@@ -324,6 +326,7 @@ public sealed class DiagnosticArchiveProviderTests
                 .GetProperty("capability.rz09-0581.thermalFanIds")
                 .GetString());
         Assert.Equal(1, runtime.StatusReads);
+        Assert.Equal(1, runtime.CapabilityDiagnosticReads);
         Assert.Equal(0, runtime.HardwareOrMutationCalls);
     }
 
@@ -406,15 +409,24 @@ public sealed class DiagnosticArchiveProviderTests
             DateTimeOffset.Parse("2026-07-15T12:34:56Z"));
     }
 
-    private sealed class SnapshotOnlyRuntime(ServiceStatusSnapshot status) : IServiceControlRuntime
+    private sealed class SnapshotOnlyRuntime(
+        ServiceStatusSnapshot status,
+        Rz090581CapabilityDiagnostics? capabilityDiagnostics = null) : IServiceControlRuntime
     {
         public int StatusReads { get; private set; }
+        public int CapabilityDiagnosticReads { get; private set; }
         public int HardwareOrMutationCalls { get; private set; }
 
         public ServiceStatusSnapshot GetStatus()
         {
             StatusReads++;
             return status;
+        }
+
+        public Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics()
+        {
+            CapabilityDiagnosticReads++;
+            return capabilityDiagnostics;
         }
 
         public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token) => Unexpected();
