@@ -9811,7 +9811,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task ExternalPower_UnavailableRepliesRemainBlockedAndDeduplicateDiagnostics()
+    public async Task ExternalPower_FailureModesRemainBlockedAndDeduplicateByMode()
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -9821,21 +9821,37 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.RefreshPowerSourceClassificationAsync(
             CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
         context.Device.AdapterPowerFailure = null;
         context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
         await context.Runtime.RefreshPowerSourceClassificationAsync(
             CancellationToken.None);
 
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.Equal(PowerSource.ExternalUnknown, status.ActivePowerSource);
         Assert.True(status.WritesBlocked);
-        Assert.Equal(10, context.Device.AdapterPowerReadCalls);
-        DiagnosticCommandResult diagnostic = Assert.Single(
-            context.History.Snapshot().CommandResults,
+        Assert.Equal(20, context.Device.AdapterPowerReadCalls);
+        DiagnosticCommandResult[] diagnostics = context.History.Snapshot().CommandResults
+            .Where(result => result.Detail?.Contains(
+                "Power adapter classification remained",
+                StringComparison.OrdinalIgnoreCase) == true)
+            .ToArray();
+        Assert.Equal(2, diagnostics.Length);
+        DiagnosticCommandResult accessFailure = Assert.Single(
+            diagnostics,
             result => result.Detail?.Contains(
                 "5 device-access failures",
                 StringComparison.OrdinalIgnoreCase) == true);
-        Assert.Equal("Blocked", diagnostic.Status);
+        DiagnosticCommandResult unknownReplies = Assert.Single(
+            diagnostics,
+            result => result.Detail?.Contains(
+                "classification remained unknown",
+                StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal("Blocked", accessFailure.Status);
+        Assert.Equal("Blocked", unknownReplies.Status);
     }
 
     [Fact]

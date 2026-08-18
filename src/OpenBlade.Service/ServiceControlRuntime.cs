@@ -6464,11 +6464,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (agreeingSamples < RequiredAgreeingAdapterPowerSamples)
             {
+                AdapterPowerClassificationDiagnosticKind diagnosticKind =
+                    accessFailures > 0
+                        ? AdapterPowerClassificationDiagnosticKind.DeviceAccessFailures
+                        : AdapterPowerClassificationDiagnosticKind.UnknownReplies;
                 string detail = accessFailures > 0
                     ? $"Power adapter classification remained unavailable after {attempts} read-only samples ({accessFailures} device-access failures, {unknownSamples} unknown replies; last failure {lastFailureKind})."
                     : $"Power adapter classification remained unknown after {attempts} read-only samples.";
                 RecordAdapterPowerClassificationDiagnostic(
-                    AdapterPowerClassificationDiagnosticKind.Unavailable,
+                    diagnosticKind,
                     ControlOperationStatus.Blocked,
                     detail);
                 return PowerSource.ExternalUnknown;
@@ -6528,7 +6532,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private enum AdapterPowerClassificationDiagnosticKind
     {
         ConflictingKnownReplies,
-        Unavailable,
+        DeviceAccessFailures,
+        UnknownReplies,
         Recovered,
     }
 
