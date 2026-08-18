@@ -116,17 +116,20 @@ public sealed class PadAbsentHyperBoostValidationCommand
             PerformanceFanSetterValidationResult result = await run(
                 PerformanceFanValidationTarget.HyperBoost,
                 commandCancellation.Token).ConfigureAwait(false);
+            bool postRestorationPadAbsent = observePad()
+                == CoolingPadPhysicalPresenceObservation.Absent;
             await output.WriteLineAsync(JsonSerializer.Serialize(
                 new CaptureDocument(
-                    SchemaVersion: 1,
+                    SchemaVersion: 2,
                     ProductionAdmitted: false,
                     PadlessProductionAdmitted: false,
                     FirstAbsenceConfirmed: true,
                     SecondAbsenceConfirmed: true,
                     InteractiveApprovalConfirmed: true,
-                    Result: SemanticResult.From(result)),
+                    PostRestorationPadAbsenceConfirmed: postRestorationPadAbsent,
+                    Result: SemanticResult.From(result, postRestorationPadAbsent)),
                 JsonOptions)).ConfigureAwait(false);
-            return IsSuccessfulResult(result)
+            return IsSuccessfulResult(result, postRestorationPadAbsent)
                 ? 0
                 : result.Failure == PerformanceFanValidationFailure.Canceled
                     ? CanceledExitCode
@@ -140,7 +143,8 @@ public sealed class PadAbsentHyperBoostValidationCommand
     }
 
     private static bool IsSuccessfulResult(
-        PerformanceFanSetterValidationResult result) =>
+        PerformanceFanSetterValidationResult result,
+        bool postRestorationPadAbsent) =>
         result.Target == PerformanceFanValidationTarget.HyperBoost
         && result.Success
         && result.BaselineBalancedConfirmed
@@ -153,6 +157,7 @@ public sealed class PadAbsentHyperBoostValidationCommand
         && result.RestoreAttempted
         && result.RestoreAcknowledged
         && result.Restored
+        && postRestorationPadAbsent
         && !result.IndeterminatePartialWrite
         && !result.ManualRecoveryRequired;
 
@@ -176,6 +181,7 @@ public sealed class PadAbsentHyperBoostValidationCommand
         bool FirstAbsenceConfirmed,
         bool SecondAbsenceConfirmed,
         bool InteractiveApprovalConfirmed,
+        bool PostRestorationPadAbsenceConfirmed,
         SemanticResult Result);
 
     private sealed record ApprovalDocument(
@@ -212,11 +218,12 @@ public sealed class PadAbsentHyperBoostValidationCommand
         bool Success)
     {
         internal static SemanticResult From(
-            PerformanceFanSetterValidationResult result) => new(
+            PerformanceFanSetterValidationResult result,
+            bool postRestorationPadAbsent) => new(
             result.BaselineBalancedConfirmed,
             result.FullPowerAdapterConfirmed,
             result.InitialAdapterPowerState,
-            FinalPadAbsenceConfirmed: result.CoolingPadAbsentConfirmed,
+            FinalPadAbsenceConfirmed: postRestorationPadAbsent,
             result.ApplyAttempted,
             result.ApplyAcknowledged,
             HyperBoostReadbackConfirmed: result.CandidateConfirmed,
@@ -227,6 +234,6 @@ public sealed class PadAbsentHyperBoostValidationCommand
             result.ManualRecoveryRequired,
             result.SafetyFailure,
             result.Failure,
-            IsSuccessfulResult(result));
+            IsSuccessfulResult(result, postRestorationPadAbsent));
     }
 }

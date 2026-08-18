@@ -14,6 +14,7 @@ public sealed class PadAbsentHyperBoostValidationCommandTests
         [
             CoolingPadPhysicalPresenceObservation.Absent,
             CoolingPadPhysicalPresenceObservation.Absent,
+            CoolingPadPhysicalPresenceObservation.Absent,
         ]);
         int runCalls = 0;
         int delayCalls = 0;
@@ -54,6 +55,7 @@ public sealed class PadAbsentHyperBoostValidationCommandTests
         Assert.True(root.GetProperty("firstAbsenceConfirmed").GetBoolean());
         Assert.True(root.GetProperty("secondAbsenceConfirmed").GetBoolean());
         Assert.True(root.GetProperty("interactiveApprovalConfirmed").GetBoolean());
+        Assert.True(root.GetProperty("postRestorationPadAbsenceConfirmed").GetBoolean());
         JsonElement result = root.GetProperty("result");
         Assert.True(result.GetProperty("fullPowerAdapterConfirmed").GetBoolean());
         Assert.Equal(
@@ -148,6 +150,35 @@ public sealed class PadAbsentHyperBoostValidationCommandTests
         Assert.Contains(
             "\"interactiveApprovalConfirmed\": false",
             output.ToString());
+    }
+
+    [Fact]
+    public async Task RunAsync_PostRestorationPresenceFailsClosed()
+    {
+        var observations = new Queue<CoolingPadPhysicalPresenceObservation>(
+        [
+            CoolingPadPhysicalPresenceObservation.Absent,
+            CoolingPadPhysicalPresenceObservation.Absent,
+            CoolingPadPhysicalPresenceObservation.Present,
+        ]);
+        var output = new StringWriter();
+        PadAbsentHyperBoostValidationCommand command = Create(
+            () => observations.Dequeue(),
+            (_, _) => Task.FromResult(Success()),
+            PadAbsentHyperBoostValidationCommand.InteractiveApproval,
+            output);
+
+        int exitCode = await command.RunAsync(ExactArguments(), default);
+
+        Assert.Equal(
+            PadAbsentHyperBoostValidationCommand.ValidationFailureExitCode,
+            exitCode);
+        using JsonDocument document = JsonDocument.Parse(
+            ExtractLastJsonObject(output.ToString()));
+        Assert.False(document.RootElement
+            .GetProperty("postRestorationPadAbsenceConfirmed").GetBoolean());
+        Assert.False(document.RootElement.GetProperty("result")
+            .GetProperty("success").GetBoolean());
     }
 
     [Fact]

@@ -36,8 +36,8 @@ public enum PerformanceFanValidationFailure
     FixedFanRpmOutOfRange,
     Canceled,
     BaselineNotBalanced,
-    SustainedValidationFailed,
-    BaselineNotRequiredBaseMode,
+    BaselineNotRequiredBaseMode = 21,
+    SustainedValidationFailed = 22,
 }
 
 public sealed record PerformanceFanThermalPair(

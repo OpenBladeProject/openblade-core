@@ -229,7 +229,7 @@ internal sealed class PadAbsentHyperBoostAdapterTransitionValidationCommand
                 SecondAbsenceConfirmed: true,
                 InitialApprovalConfirmed: true,
                 postRestorationPadAbsent,
-                SemanticResult.From(result));
+                SemanticResult.From(result, postRestorationPadAbsent));
     }
 
     private sealed record SemanticResult(
@@ -250,7 +250,8 @@ internal sealed class PadAbsentHyperBoostAdapterTransitionValidationCommand
         bool Success)
     {
         internal static SemanticResult From(
-            PerformanceFanSetterValidationResult result)
+            PerformanceFanSetterValidationResult result,
+            bool postRestorationPadAbsent)
         {
             HyperBoostAdapterTransitionValidationResult? transition =
                 result.AdapterTransitionValidation;
@@ -270,7 +271,9 @@ internal sealed class PadAbsentHyperBoostAdapterTransitionValidationCommand
                 transition?.Failure
                     ?? HyperBoostAdapterTransitionValidationFailure.UnexpectedFailure,
                 result.Failure,
-                result.Success && transition?.Success == true);
+                result.Success
+                    && transition?.Success == true
+                    && postRestorationPadAbsent);
         }
     }
 }
