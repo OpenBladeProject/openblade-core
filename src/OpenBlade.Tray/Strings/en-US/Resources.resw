@@ -1269,7 +1269,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Laptop behavior</value>
   </data>
   <data name="MainWindow_TextBlockLaptopBehavior2.Text" xml:space="preserve">
-    <value>Laptop behavior</value>
+    <value>Control access</value>
   </data>
   <data name="MainWindow_TextBlockLaptopLidLogo.Text" xml:space="preserve">
     <value>Laptop lid logo</value>

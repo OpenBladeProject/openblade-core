@@ -164,18 +164,12 @@ public static class TrayHoverLabelFormatter
                 TrayText.Format(
                     "USB-C · {0}",
                     PerformancePresetPresentation.Label(performance)),
-            PowerSource.ExternalUnknown => TrayText.Get("Checking power source"),
+            PowerSource.ExternalUnknown => PowerSourcePresentation.Label(powerSource),
             _ => TrayText.Get("Power source unavailable"),
         };
 
-    private static string FormatPowerSource(PowerSource powerSource) => powerSource switch
-    {
-        PowerSource.PluggedIn => "AC",
-        PowerSource.Battery => TrayText.Get("Battery"),
-        PowerSource.UsbC => "USB-C",
-        PowerSource.ExternalUnknown => TrayText.Get("Checking power source"),
-        _ => TrayText.Get("Power source unavailable"),
-    };
+    private static string FormatPowerSource(PowerSource powerSource) =>
+        PowerSourcePresentation.Label(powerSource);
 
     private static string FormatTemperature(string label, int? value) => value is int celsius
         ? TrayText.Format("{0} {1} °C", label, celsius)

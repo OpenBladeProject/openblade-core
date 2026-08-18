@@ -6,6 +6,11 @@ type enum OpenBlade.Contracts.AdapterPowerState
   field const OpenBlade.Contracts.AdapterPowerState FullPower330W = 3
   field const OpenBlade.Contracts.AdapterPowerState Unknown = 0
   field const OpenBlade.Contracts.AdapterPowerState UsbCPower100W = 1
+  field const OpenBlade.Contracts.AdapterPowerState UsbCPower45W = 4
+  field const OpenBlade.Contracts.AdapterPowerState UsbCPower60W = 5
+  field const OpenBlade.Contracts.AdapterPowerState UsbCPower65W = 6
+  field const OpenBlade.Contracts.AdapterPowerState UsbCPower80W = 7
+  field const OpenBlade.Contracts.AdapterPowerState UsbCPower90W = 8
 type sealed class OpenBlade.Contracts.AmbientAwarenessLightingParameters
   base OpenBlade.Contracts.LightingEffectParameters
   interface System.IEquatable<OpenBlade.Contracts.AmbientAwarenessLightingParameters>

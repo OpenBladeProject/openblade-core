@@ -30,6 +30,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Expanded the RZ09-0581 BIOS 4.00 USB-C profile to exact 45 W, 60 W, 65 W,
+  80 W, 90 W, and 100 W adapter classes. These classes share the same USB-C
+  profile; bounded transient HID failures still require two agreeing replies
+  before controls are enabled.
 - Moved the Lab keyboard preset importer into the Keyboard section and replaced
   the long Lab features description with an on-demand list of current features.
 - Advanced the profile/configuration schema from 13 to 14 for the persisted
@@ -40,6 +44,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Added typed decoding for the capture-backed RZ09-0528 `0011` no-adapter
   response while keeping Windows Offline authoritative for battery power and
   excluding that response from other Blade models.
+- Retried transient MCU firmware-version read failures during later verified
+  observations, while keeping the query bounded and stopping after a confirmed
+  version is available.
+- Clarified unclassified external power consistently across control access,
+  active profile, tray hover, and troubleshooting instead of presenting a
+  completed bounded classification attempt as still checking.
+- Kept conditional profile Save and **Use profile settings** actions beside
+  Customize when they fit, while moving the complete action group below the
+  title or stacking long localized actions before they can overlap or clip.
 - Kept page customization buttons aligned with their titles while allowing
   longer localized and profile actions to use a separate row.
 - Fixed the **Random colors** switch track alignment and made compact switch

@@ -9,6 +9,11 @@ public sealed class AdapterPowerCommandClientTests
 
     [Theory]
     [InlineData("0011", AdapterPowerState.Battery)]
+    [InlineData("0211", AdapterPowerState.UsbCPower45W)]
+    [InlineData("0311", AdapterPowerState.UsbCPower60W)]
+    [InlineData("0411", AdapterPowerState.UsbCPower65W)]
+    [InlineData("0511", AdapterPowerState.UsbCPower80W)]
+    [InlineData("0611", AdapterPowerState.UsbCPower90W)]
     [InlineData("0711", AdapterPowerState.UsbCPower100W)]
     [InlineData("1111", AdapterPowerState.FullPower280W)]
     [InlineData("1211", AdapterPowerState.FullPower330W)]
