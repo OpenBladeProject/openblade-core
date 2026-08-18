@@ -4158,6 +4158,10 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <TextBlock x:Uid="MainWindow_TextBlockFirmware" Text="Firmware" Style="{StaticResource SecondaryTextStyle}" />
                                         <Grid Grid.Column="1" ColumnSpacing="24">
@@ -4166,7 +4170,7 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <TextBlock x:Uid="MainWindow_TextBlockInstalled" Text="Installed" Style="{StaticResource SecondaryTextStyle}" />
-                                            <TextBlock x:Uid="MainWindow_TextBlockLatest" Grid.Column="1" Text="Latest" Style="{StaticResource SecondaryTextStyle}" />
+                                            <TextBlock x:Uid="MainWindow_TextBlockPublishedByRazer" Grid.Column="1" Text="Published by Razer" Style="{StaticResource SecondaryTextStyle}" />
                                         </Grid>
                                         <TextBlock x:Uid="MainWindow_TextBlockBIOS2" Grid.Row="1" Text="BIOS" Style="{StaticResource CardTitleStyle}" />
                                         <Grid Grid.Row="1" Grid.Column="1" ColumnSpacing="24">
@@ -4204,6 +4208,54 @@
                                                        Text="{x:Bind FirmwareUpdateViewModel.PublishedMcuVersion, Mode=OneWay}"
                                                        TextWrapping="Wrap" />
                                         </Grid>
+                                        <TextBlock x:Uid="MainWindow_TextBlockVBIOS2" Grid.Row="4" Text="VBIOS" Style="{StaticResource CardTitleStyle}" />
+                                        <Grid Grid.Row="4" Grid.Column="1" ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{x:Bind FirmwareUpdateViewModel.InstalledVbiosVersion, Mode=OneWay}"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{x:Bind FirmwareUpdateViewModel.PublishedVbiosVersion, Mode=OneWay}"
+                                                       TextWrapping="Wrap" />
+                                        </Grid>
+                                        <TextBlock x:Uid="MainWindow_TextBlockThunderboltFirmware" Grid.Row="5" Text="Thunderbolt 5" Style="{StaticResource CardTitleStyle}"
+                                                   Visibility="{x:Bind FirmwareUpdateViewModel.ShowsThunderboltFirmware, Mode=OneWay}" />
+                                        <Grid Grid.Row="5" Grid.Column="1" ColumnSpacing="24"
+                                              Visibility="{x:Bind FirmwareUpdateViewModel.ShowsThunderboltFirmware, Mode=OneWay}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{x:Bind FirmwareUpdateViewModel.InstalledThunderboltVersion, Mode=OneWay}"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{x:Bind FirmwareUpdateViewModel.PublishedThunderboltVersion, Mode=OneWay}"
+                                                       TextWrapping="Wrap" />
+                                        </Grid>
+                                        <TextBlock x:Uid="MainWindow_TextBlockTouchpadFirmware" Grid.Row="6" Text="Touchpad" Style="{StaticResource CardTitleStyle}"
+                                                   Visibility="{x:Bind FirmwareUpdateViewModel.ShowsTouchpadFirmware, Mode=OneWay}" />
+                                        <Grid Grid.Row="6" Grid.Column="1" ColumnSpacing="24"
+                                              Visibility="{x:Bind FirmwareUpdateViewModel.ShowsTouchpadFirmware, Mode=OneWay}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{x:Bind FirmwareUpdateViewModel.InstalledTouchpadVersion, Mode=OneWay}"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{x:Bind FirmwareUpdateViewModel.PublishedTouchpadVersion, Mode=OneWay}"
+                                                       TextWrapping="Wrap" />
+                                        </Grid>
+                                        <TextBlock x:Uid="MainWindow_TextBlockPublishedOnlyFirmwareNotice"
+                                                   Grid.Row="7"
+                                                   Grid.ColumnSpan="2"
+                                                   Margin="0,4,0,0"
+                                                   Text="Published only: OpenBlade cannot read the installed Thunderbolt 5 or touchpad firmware versions, so these values are not compared."
+                                                   TextWrapping="Wrap"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   Visibility="{x:Bind FirmwareUpdateViewModel.ShowsPublishedOnlyFirmwareNotice, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
 

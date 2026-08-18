@@ -240,7 +240,12 @@ public sealed class WindowsDiagnosticMetadataSource : IDiagnosticMetadataSource
                 firmware.BiosVersion,
                 firmware.EcVersion,
                 firmware.McuVersion,
-                firmware.VbiosVersion),
+                firmware.VbiosVersion,
+                firmware.VbiosGpuName,
+                firmware.ThunderboltFirmwareVersion,
+                firmware.TouchpadFirmwareVersion,
+                firmware.ThunderboltFirmwareAccess?.ToString(),
+                firmware.TouchpadFirmwareAccess?.ToString()),
             ReadSensitiveTokens(),
             DateTimeOffset.UtcNow);
     }

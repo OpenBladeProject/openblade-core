@@ -6,6 +6,19 @@ namespace OpenBlade.FirmwareSmoke.Tests;
 public sealed class ReversibleSmokeRunnerTests
 {
     [Fact]
+    public async Task SnapshotCollector_CapturesVbiosGpuIdentity()
+    {
+        await using var client = new FakeFirmwareSmokeClient();
+
+        FirmwareSmokeSnapshot snapshot = await new FirmwareSmokeSnapshotCollector(client)
+            .CaptureAsync(CancellationToken.None);
+
+        Assert.Equal(
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            snapshot.Firmware.VbiosGpuName);
+    }
+
+    [Fact]
     public async Task RunAsync_AppliesAndRestoresEveryAutomatedControl()
     {
         await using var client = new FakeFirmwareSmokeClient();
@@ -133,7 +146,12 @@ public sealed class ReversibleSmokeRunnerTests
                 FanOverride: null,
                 LightingOverride: null,
                 FullChargeOverride: false,
-                Firmware: new FirmwareVersions("3.01", "1.04", "1.5.0.0", "test"),
+                Firmware: new FirmwareVersions(
+                    "3.01",
+                    "1.04",
+                    "1.5.0.0",
+                    "98.03.5C.40.25",
+                    VbiosGpuName: "NVIDIA GeForce RTX 5090 Laptop GPU"),
                 ServiceVersion: "test",
                 LightingRendererOwnership: LightingRendererOwnershipState.Spectrum,
                 LightingSuppressions: [],

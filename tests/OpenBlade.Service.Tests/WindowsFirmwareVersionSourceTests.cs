@@ -30,7 +30,14 @@ public sealed class WindowsFirmwareVersionSourceTests
         Assert.Equal("1.04", result.EcVersion);
         Assert.Equal("Unavailable", result.McuVersion);
         Assert.Equal("98.3.5c.40.3d", result.VbiosVersion);
+        Assert.Equal("NVIDIA GeForce RTX 5090 Laptop GPU", result.VbiosGpuName);
         Assert.Equal("RZ09-0581", result.ModelNumber);
+        Assert.Equal("Unavailable", result.ThunderboltFirmwareVersion);
+        Assert.Equal("Unavailable", result.TouchpadFirmwareVersion);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            result.ThunderboltFirmwareAccess);
+        Assert.Equal(DeviceFeatureAccess.ObservedOnly, result.TouchpadFirmwareAccess);
     }
 
     [Fact]
@@ -41,6 +48,27 @@ public sealed class WindowsFirmwareVersionSourceTests
             () => throw new IOException("unavailable"));
 
         Assert.Equal(FirmwareVersions.Unavailable(), source.Capture());
+    }
+
+    [Fact]
+    public void Capture_RejectsDistinctNvidiaFirmwareCandidatesAsAmbiguous()
+    {
+        var source = new WindowsFirmwareVersionSource(
+            (_, _) => null,
+            () =>
+            [
+                new VideoFirmwareCandidate(
+                    "NVIDIA GeForce RTX 5080 Laptop GPU",
+                    "Version98.03.5C.40.26"),
+                new VideoFirmwareCandidate(
+                    "NVIDIA GeForce RTX 5090 Laptop GPU (stale eGPU registry entry)",
+                    "Version98.03.5C.40.25"),
+            ]);
+
+        FirmwareVersions result = source.Capture();
+
+        Assert.Equal("Unavailable", result.VbiosVersion);
+        Assert.Equal("Unavailable", result.VbiosGpuName);
     }
 
     [Fact]
@@ -59,6 +87,21 @@ public sealed class WindowsFirmwareVersionSourceTests
             () => []);
 
         Assert.Equal("RZ09-9999ABC", source.Capture().ModelNumber);
+    }
+
+    [Fact]
+    public void Capture_DoesNotExposeRz090581PublishedOnlyComponentsOnRz090528()
+    {
+        var source = new WindowsFirmwareVersionSource(
+            (_, name) => name == "SystemSKU" ? "RZ09-0528ABC" : null,
+            () => []);
+
+        FirmwareVersions result = source.Capture();
+
+        Assert.Null(result.ThunderboltFirmwareAccess);
+        Assert.Null(result.TouchpadFirmwareAccess);
+        Assert.Equal("Unavailable", result.ThunderboltFirmwareVersion);
+        Assert.Equal("Unavailable", result.TouchpadFirmwareVersion);
     }
 
     [Theory]

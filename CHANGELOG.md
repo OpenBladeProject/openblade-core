@@ -7,6 +7,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added GPU-specific VBIOS update comparison for exact supported Blade models.
+  OpenBlade now carries the installed NVIDIA adapter identity through service
+  status and diagnostics, selects only the matching official Razer VBIOS
+  release, and declines comparison when either side cannot be identified.
+- Added exact-RZ09-0581 published Thunderbolt 5 and touchpad versions to the
+  firmware inventory as observed-only fields. Their installed versions remain
+  unavailable, so they never produce an update comparison or notification.
 - Added exact-RZ09-0581 BIOS 3.01 read-only diagnostics for the captured Synapse
   SKU hardware-configuration byte, Mini-LED panel-resolution byte, and thermal
   fan ID list. The raw values remain in the service's diagnostic cache and
@@ -34,6 +41,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Advanced the firmware-smoke snapshot schema from 7 to 8 for observed-only
+  Thunderbolt and touchpad inventory metadata.
 - Expanded the RZ09-0581 BIOS 4.00 USB-C profile to exact 45 W, 60 W, 65 W,
   80 W, 90 W, and 100 W adapter classes. These classes share the same USB-C
   profile; bounded transient HID failures still require two agreeing replies
@@ -70,8 +79,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   and removes through the cached installed bundle without registering the incoming
   one, with guidance to use its Windows Installed apps entry when profile removal
   is also wanted.
-- Advanced the combined service IPC contract to version 45 so incompatible
-  version-44 peers are no longer accepted as wire-compatible.
+- Advanced the combined service IPC contract to version 46 so peers without
+  the expanded firmware inventory are no longer accepted as wire-compatible.
 - Rejected imported lighting sequences for a different keyboard layout before
   opening the lighting device or changing its state.
 - Kept the Lab features row aligned with neighboring Settings rows when showing

@@ -701,18 +701,28 @@ type enum OpenBlade.Contracts.FirmwareCompatibilityStatus
   field const OpenBlade.Contracts.FirmwareCompatibilityStatus UntestedBlocked = 2
 type sealed class OpenBlade.Contracts.FirmwareVersions
   interface System.IEquatable<OpenBlade.Contracts.FirmwareVersions>
-  ctor (System.String BiosVersion, System.String EcVersion, System.String McuVersion, System.String VbiosVersion, System.String ModelNumber = "Unavailable")
+  ctor (System.String BiosVersion, System.String EcVersion, System.String McuVersion, System.String VbiosVersion, System.String ModelNumber = "Unavailable", System.String VbiosGpuName = "Unavailable", System.String ThunderboltFirmwareVersion = "Unavailable", System.String TouchpadFirmwareVersion = "Unavailable", System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> ThunderboltFirmwareAccess = null, System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> TouchpadFirmwareAccess = null)
   method OpenBlade.Contracts.FirmwareVersions <Clone>$()
+  method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_ThunderboltFirmwareAccess()
+  method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_TouchpadFirmwareAccess()
   method System.String get_BiosVersion()
   method System.String get_EcVersion()
   method System.String get_McuVersion()
   method System.String get_ModelNumber()
+  method System.String get_ThunderboltFirmwareVersion()
+  method System.String get_TouchpadFirmwareVersion()
+  method System.String get_VbiosGpuName()
   method System.String get_VbiosVersion()
-  method System.Void Deconstruct(out System.String BiosVersion, out System.String EcVersion, out System.String McuVersion, out System.String VbiosVersion, out System.String ModelNumber)
+  method System.Void Deconstruct(out System.String BiosVersion, out System.String EcVersion, out System.String McuVersion, out System.String VbiosVersion, out System.String ModelNumber, out System.String VbiosGpuName, out System.String ThunderboltFirmwareVersion, out System.String TouchpadFirmwareVersion, out System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> ThunderboltFirmwareAccess, out System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> TouchpadFirmwareAccess)
   method System.Void set_BiosVersion(System.String value)
   method System.Void set_EcVersion(System.String value)
   method System.Void set_McuVersion(System.String value)
   method System.Void set_ModelNumber(System.String value)
+  method System.Void set_ThunderboltFirmwareAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
+  method System.Void set_ThunderboltFirmwareVersion(System.String value)
+  method System.Void set_TouchpadFirmwareAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
+  method System.Void set_TouchpadFirmwareVersion(System.String value)
+  method System.Void set_VbiosGpuName(System.String value)
   method System.Void set_VbiosVersion(System.String value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
@@ -721,10 +731,15 @@ type sealed class OpenBlade.Contracts.FirmwareVersions
   method static System.Boolean op_Equality(OpenBlade.Contracts.FirmwareVersions left, OpenBlade.Contracts.FirmwareVersions right)
   method static System.Boolean op_Inequality(OpenBlade.Contracts.FirmwareVersions left, OpenBlade.Contracts.FirmwareVersions right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.FirmwareVersions other)
+  property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> ThunderboltFirmwareAccess { get; init; }
+  property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> TouchpadFirmwareAccess { get; init; }
   property System.String BiosVersion { get; init; }
   property System.String EcVersion { get; init; }
   property System.String McuVersion { get; init; }
   property System.String ModelNumber { get; init; }
+  property System.String ThunderboltFirmwareVersion { get; init; }
+  property System.String TouchpadFirmwareVersion { get; init; }
+  property System.String VbiosGpuName { get; init; }
   property System.String VbiosVersion { get; init; }
 type enum OpenBlade.Contracts.FunctionKeyPrimaryMode
   field System.Int32 value__
@@ -1207,7 +1222,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 45
+  field const System.Int32 ProtocolVersion = 46
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)

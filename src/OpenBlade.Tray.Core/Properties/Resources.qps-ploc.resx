@@ -1203,6 +1203,9 @@
   <data name="Versions" xml:space="preserve">
     <value>[!! Vérsíóns ~~~ !!]</value>
   </data>
+  <data name="VBIOS {0}" xml:space="preserve">
+    <value>[!! VBÍÓS {0} ~~ !!]</value>
+  </data>
   <data name="VID {0} · PID {1}" xml:space="preserve">
     <value>[!! VÍD {0} · PÍD {1} ~~~ !!]</value>
   </data>

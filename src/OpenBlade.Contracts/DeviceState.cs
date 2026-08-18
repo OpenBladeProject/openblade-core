@@ -344,14 +344,24 @@ public sealed record FirmwareVersions(
     string EcVersion,
     string McuVersion,
     string VbiosVersion,
-    string ModelNumber = "Unavailable")
+    string ModelNumber = "Unavailable",
+    string VbiosGpuName = "Unavailable",
+    string ThunderboltFirmwareVersion = "Unavailable",
+    string TouchpadFirmwareVersion = "Unavailable",
+    DeviceFeatureAccess? ThunderboltFirmwareAccess = null,
+    DeviceFeatureAccess? TouchpadFirmwareAccess = null)
 {
     public static FirmwareVersions Unavailable() => new(
         "Unavailable",
         "Unavailable",
         "Unavailable",
         "Unavailable",
-        "Unavailable");
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        null,
+        null);
 }
 
 public sealed record Rz090581CapabilityDiagnostics(

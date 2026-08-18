@@ -36,12 +36,30 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
             ?? throw new ArgumentNullException(nameof(readVideoFirmwareCandidates));
     }
 
-    public FirmwareVersions Capture() => new(
-        ReadBiosVersion(),
-        ReadEcVersion(),
-        Unavailable,
-        ReadVbiosVersion(),
-        ReadModelNumber());
+    public FirmwareVersions Capture()
+    {
+        VideoFirmwareCandidate? vbios = ReadVbiosFirmware();
+        string modelNumber = ReadModelNumber();
+        bool hasObservedOnlyRz090581Components = string.Equals(
+            RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber,
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            StringComparison.OrdinalIgnoreCase);
+        return new(
+            ReadBiosVersion(),
+            ReadEcVersion(),
+            Unavailable,
+            vbios?.BiosVersion ?? Unavailable,
+            modelNumber,
+            vbios?.AdapterName ?? Unavailable,
+            Unavailable,
+            Unavailable,
+            hasObservedOnlyRz090581Components
+                ? DeviceFeatureAccess.ObservedOnly
+                : null,
+            hasObservedOnlyRz090581Components
+                ? DeviceFeatureAccess.ObservedOnly
+                : null);
+    }
 
     private string ReadModelNumber()
     {
@@ -97,28 +115,42 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
         }
     }
 
-    private string ReadVbiosVersion()
+    private VideoFirmwareCandidate? ReadVbiosFirmware()
     {
         try
         {
-            VideoFirmwareCandidate? nvidia = readVideoFirmwareCandidates()
-                .FirstOrDefault(candidate =>
-                    candidate.AdapterName.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase)
-                    && !string.IsNullOrWhiteSpace(candidate.BiosVersion));
-            if (nvidia is null)
+            VideoFirmwareCandidate[] nvidiaCandidates = readVideoFirmwareCandidates()
+                .Where(candidate =>
+                    candidate.AdapterName.Contains(
+                        "NVIDIA",
+                        StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (nvidiaCandidates.Length != 1)
             {
-                return Unavailable;
+                return null;
+            }
+
+            VideoFirmwareCandidate nvidia = nvidiaCandidates[0];
+            if (string.IsNullOrWhiteSpace(nvidia.BiosVersion))
+            {
+                return null;
             }
 
             string value = nvidia.BiosVersion.Trim();
             string normalized = value.StartsWith("Version", StringComparison.OrdinalIgnoreCase)
                 ? value["Version".Length..].Trim()
                 : value;
-            return string.IsNullOrWhiteSpace(normalized) ? Unavailable : normalized;
+            return string.IsNullOrWhiteSpace(normalized)
+                ? null
+                : nvidia with
+                {
+                    AdapterName = nvidia.AdapterName.Trim(),
+                    BiosVersion = normalized,
+                };
         }
         catch (Exception exception) when (IsSafeMetadataFailure(exception))
         {
-            return Unavailable;
+            return null;
         }
     }
 

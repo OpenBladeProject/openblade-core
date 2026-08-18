@@ -627,9 +627,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         string? initialLastKnownPublishedBiosVersion = null;
         string? initialLastKnownPublishedEcVersion = null;
         string? initialLastKnownPublishedMcuVersion = null;
+        string? initialLastKnownPublishedVbiosVersion = null;
+        string? initialLastKnownPublishedVbiosGpuName = null;
+        string? initialLastKnownPublishedThunderboltVersion = null;
+        string? initialLastKnownPublishedTouchpadVersion = null;
         RazerPublishedFirmwareVersionStatus? initialLastKnownPublishedBiosStatus = null;
         RazerPublishedFirmwareVersionStatus? initialLastKnownPublishedEcStatus = null;
         RazerPublishedFirmwareVersionStatus? initialLastKnownPublishedMcuStatus = null;
+        RazerPublishedFirmwareVersionStatus? initialLastKnownPublishedVbiosStatus = null;
+        RazerPublishedFirmwareVersionStatus?
+            initialLastKnownPublishedThunderboltStatus = null;
+        RazerPublishedFirmwareVersionStatus? initialLastKnownPublishedTouchpadStatus = null;
         NotificationPreferences initialNotifications = NotificationPreferences.Default;
         string? initialLastNotifiedReleaseTag = null;
         string? initialLastNotifiedFirmwareSignature = null;
@@ -683,12 +691,26 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 preferences.LastKnownPublishedEcVersion;
             initialLastKnownPublishedMcuVersion =
                 preferences.LastKnownPublishedMcuVersion;
+            initialLastKnownPublishedVbiosVersion =
+                preferences.LastKnownPublishedVbiosVersion;
+            initialLastKnownPublishedVbiosGpuName =
+                preferences.LastKnownPublishedVbiosGpuName;
+            initialLastKnownPublishedThunderboltVersion =
+                preferences.LastKnownPublishedThunderboltVersion;
+            initialLastKnownPublishedTouchpadVersion =
+                preferences.LastKnownPublishedTouchpadVersion;
             initialLastKnownPublishedBiosStatus =
                 preferences.LastKnownPublishedBiosStatus;
             initialLastKnownPublishedEcStatus =
                 preferences.LastKnownPublishedEcStatus;
             initialLastKnownPublishedMcuStatus =
                 preferences.LastKnownPublishedMcuStatus;
+            initialLastKnownPublishedVbiosStatus =
+                preferences.LastKnownPublishedVbiosStatus;
+            initialLastKnownPublishedThunderboltStatus =
+                preferences.LastKnownPublishedThunderboltStatus;
+            initialLastKnownPublishedTouchpadStatus =
+                preferences.LastKnownPublishedTouchpadStatus;
             initialNotifications = preferences.EffectiveNotifications;
             initialLastNotifiedReleaseTag = preferences.LastNotifiedReleaseTag;
             initialLastNotifiedFirmwareSignature =
@@ -747,7 +769,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialLastKnownPublishedMcuVersion,
             initialLastKnownPublishedBiosStatus,
             initialLastKnownPublishedEcStatus,
-            initialLastKnownPublishedMcuStatus);
+            initialLastKnownPublishedMcuStatus,
+            initialLastKnownPublishedVbiosVersion,
+            initialLastKnownPublishedVbiosGpuName,
+            initialLastKnownPublishedVbiosStatus,
+            initialLastKnownPublishedThunderboltVersion,
+            initialLastKnownPublishedThunderboltStatus,
+            initialLastKnownPublishedTouchpadVersion,
+            initialLastKnownPublishedTouchpadStatus);
         try
         {
             ApplyTheme(ViewModel.Theme);
@@ -1038,9 +1067,20 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastKnownPublishedBiosVersion: FirmwareUpdateViewModel.CachedBiosVersion,
                 LastKnownPublishedEcVersion: FirmwareUpdateViewModel.CachedEcVersion,
                 LastKnownPublishedMcuVersion: FirmwareUpdateViewModel.CachedMcuVersion,
+                LastKnownPublishedVbiosVersion: FirmwareUpdateViewModel.CachedVbiosVersion,
+                LastKnownPublishedVbiosGpuName: FirmwareUpdateViewModel.CachedVbiosGpuName,
+                LastKnownPublishedThunderboltVersion:
+                    FirmwareUpdateViewModel.CachedThunderboltVersion,
+                LastKnownPublishedTouchpadVersion:
+                    FirmwareUpdateViewModel.CachedTouchpadVersion,
                 LastKnownPublishedBiosStatus: FirmwareUpdateViewModel.CachedBiosStatus,
                 LastKnownPublishedEcStatus: FirmwareUpdateViewModel.CachedEcStatus,
                 LastKnownPublishedMcuStatus: FirmwareUpdateViewModel.CachedMcuStatus,
+                LastKnownPublishedVbiosStatus: FirmwareUpdateViewModel.CachedVbiosStatus,
+                LastKnownPublishedThunderboltStatus:
+                    FirmwareUpdateViewModel.CachedThunderboltStatus,
+                LastKnownPublishedTouchpadStatus:
+                    FirmwareUpdateViewModel.CachedTouchpadStatus,
                 Notifications: notificationPreferences,
                 LastNotifiedReleaseTag: lastNotifiedReleaseTag,
                 LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature,

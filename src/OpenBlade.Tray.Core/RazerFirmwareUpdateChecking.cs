@@ -11,7 +11,9 @@ namespace OpenBlade.Tray;
 
 public sealed record RazerFirmwareSupportPage(
     string ModelNumber,
-    Uri OfficialPageUri);
+    Uri OfficialPageUri,
+    bool PublishesThunderboltFirmware = false,
+    bool PublishesTouchpadFirmware = false);
 
 public enum RazerPublishedFirmwareVersionStatus
 {
@@ -19,6 +21,10 @@ public enum RazerPublishedFirmwareVersionStatus
     NotListed,
     Unreadable,
 }
+
+public sealed record RazerPublishedVbiosVersion(
+    string Version,
+    string? GpuName = null);
 
 public sealed record RazerPublishedFirmwareVersions(
     string? BiosVersion,
@@ -29,7 +35,20 @@ public sealed record RazerPublishedFirmwareVersions(
     RazerPublishedFirmwareVersionStatus EcStatus =
         RazerPublishedFirmwareVersionStatus.Listed,
     RazerPublishedFirmwareVersionStatus McuStatus =
-        RazerPublishedFirmwareVersionStatus.Listed);
+        RazerPublishedFirmwareVersionStatus.Listed,
+    IReadOnlyList<RazerPublishedVbiosVersion>? VbiosVersions = null,
+    RazerPublishedFirmwareVersionStatus VbiosStatus =
+        RazerPublishedFirmwareVersionStatus.NotListed,
+    string? ThunderboltVersion = null,
+    RazerPublishedFirmwareVersionStatus ThunderboltStatus =
+        RazerPublishedFirmwareVersionStatus.NotListed,
+    string? TouchpadVersion = null,
+    RazerPublishedFirmwareVersionStatus TouchpadStatus =
+        RazerPublishedFirmwareVersionStatus.NotListed)
+{
+    public IReadOnlyList<RazerPublishedVbiosVersion> EffectiveVbiosVersions =>
+        VbiosVersions ?? [];
+}
 
 public static class RazerFirmwareSupportCatalog
 {
@@ -37,7 +56,9 @@ public static class RazerFirmwareSupportCatalog
     [
         new(
             RazerBladeModelCatalog.OpenBladeTargetModelNumber,
-            new Uri("https://mysupport.razer.com/app/answers/detail/a_id/20854/~/razer-blade-16%E2%80%9D-%282026%29-%7C-rz09-0581x-firmware-updaters")),
+            new Uri("https://mysupport.razer.com/app/answers/detail/a_id/20854/~/razer-blade-16%E2%80%9D-%282026%29-%7C-rz09-0581x-firmware-updaters"),
+            PublishesThunderboltFirmware: true,
+            PublishesTouchpadFirmware: true),
         new(
             RazerBladeModelCatalog.Rz090528ModelNumber,
             new Uri("https://mysupport.razer.com/app/answers/detail/a_id/19821/~/razer-blade-16-%282025%29-%7C-rz09-0528x-drivers-%26-downloads")),
@@ -80,13 +101,28 @@ public static partial class RazerFirmwarePageParser
         ParsedVersion bios = FindVersion(text, BiosLabelRegex(), BiosVersionRegex());
         ParsedVersion ec = FindVersion(text, EcLabelRegex(), EcVersionRegex());
         ParsedVersion mcu = FindVersion(text, McuLabelRegex(), McuVersionRegex());
+        ParsedVbiosVersions vbios = FindVbiosVersions(text);
+        ParsedVersion thunderbolt = FindVersion(
+            text,
+            ThunderboltLabelRegex(),
+            ThunderboltVersionRegex());
+        ParsedVersion touchpad = FindVersion(
+            text,
+            TouchpadLabelRegex(),
+            TouchpadVersionRegex());
         return new(
             bios.Value,
             ec.Value,
             mcu.Value,
             bios.Status,
             ec.Status,
-            mcu.Status);
+            mcu.Status,
+            vbios.Versions,
+            vbios.Status,
+            thunderbolt.Value,
+            thunderbolt.Status,
+            touchpad.Value,
+            touchpad.Status);
     }
 
     private static ParsedVersion FindVersion(
@@ -111,6 +147,44 @@ public static partial class RazerFirmwarePageParser
 
     private readonly record struct ParsedVersion(
         string? Value,
+        RazerPublishedFirmwareVersionStatus Status);
+
+    private static ParsedVbiosVersions FindVbiosVersions(string text)
+    {
+        MatchCollection blocks = VbiosBlockRegex().Matches(text);
+        if (blocks.Count == 0)
+        {
+            return new([], RazerPublishedFirmwareVersionStatus.NotListed);
+        }
+
+        var gpuSpecific = new List<RazerPublishedVbiosVersion>();
+        foreach (Match block in blocks)
+        {
+            string body = block.Groups["body"].Value;
+            MatchCollection gpuVersions = VbiosGpuVersionRegex().Matches(body);
+            foreach (Match match in gpuVersions)
+            {
+                gpuSpecific.Add(new(
+                    match.Groups["version"].Value,
+                    WhitespaceRegex().Replace(match.Groups["gpu"].Value, " ")));
+            }
+        }
+
+        IReadOnlyList<RazerPublishedVbiosVersion> versions = gpuSpecific
+            .GroupBy(
+                version => $"{version.GpuName?.Trim()}|{version.Version.Trim()}",
+                StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+        return new(
+            versions,
+            versions.Count > 0
+                ? RazerPublishedFirmwareVersionStatus.Listed
+                : RazerPublishedFirmwareVersionStatus.Unreadable);
+    }
+
+    private readonly record struct ParsedVbiosVersions(
+        IReadOnlyList<RazerPublishedVbiosVersion> Versions,
         RazerPublishedFirmwareVersionStatus Status);
 
     [GeneratedRegex("<[^>]+>", RegexOptions.Singleline)]
@@ -148,6 +222,36 @@ public static partial class RazerFirmwarePageParser
         "\\bMCU\\s+Firmware\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex McuVersionRegex();
+
+    [GeneratedRegex(
+        "\\bvBIOS\\s+Firmware\\s+Updater\\b(?<body>(?:(?!\\bUpdater\\b).){0,500})",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex VbiosBlockRegex();
+
+    [GeneratedRegex(
+        "\\b(?<gpu>RTX\\s+\\d{4})\\s*:\\s*v\\s*(?<version>[0-9A-F]+(?:\\.[0-9A-F]+)+)\\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex VbiosGpuVersionRegex();
+
+    [GeneratedRegex(
+        "\\bThunderbolt(?:\\s+5)?\\s+Firmware\\s+Updater\\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex ThunderboltLabelRegex();
+
+    [GeneratedRegex(
+        "\\bThunderbolt(?:\\s+5)?\\s+Firmware\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex ThunderboltVersionRegex();
+
+    [GeneratedRegex(
+        "\\bTouchpad\\s+Firmware\\s+Updater\\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex TouchpadLabelRegex();
+
+    [GeneratedRegex(
+        "\\bTouchpad\\s+Firmware\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex TouchpadVersionRegex();
 }
 
 public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
@@ -199,9 +303,27 @@ public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
             string html = await response.Content.ReadAsStringAsync(timeout.Token)
                 .ConfigureAwait(false);
             RazerPublishedFirmwareVersions versions = RazerFirmwarePageParser.Parse(html);
+            versions = versions with
+            {
+                ThunderboltVersion = supportPage.PublishesThunderboltFirmware
+                    ? versions.ThunderboltVersion
+                    : null,
+                ThunderboltStatus = supportPage.PublishesThunderboltFirmware
+                    ? versions.ThunderboltStatus
+                    : RazerPublishedFirmwareVersionStatus.NotListed,
+                TouchpadVersion = supportPage.PublishesTouchpadFirmware
+                    ? versions.TouchpadVersion
+                    : null,
+                TouchpadStatus = supportPage.PublishesTouchpadFirmware
+                    ? versions.TouchpadStatus
+                    : RazerPublishedFirmwareVersionStatus.NotListed,
+            };
             if (versions.BiosVersion is null
                 && versions.EcVersion is null
-                && versions.McuVersion is null)
+                && versions.McuVersion is null
+                && versions.EffectiveVbiosVersions.Count == 0
+                && versions.ThunderboltVersion is null
+                && versions.TouchpadVersion is null)
             {
                 throw new InvalidDataException(
                     "Razer's support page did not contain recognized updater versions.");
@@ -292,13 +414,23 @@ public sealed class FirmwareUpdateAssistantViewModel :
     private string? cachedBiosVersion;
     private string? cachedEcVersion;
     private string? cachedMcuVersion;
+    private string? cachedVbiosVersion;
+    private string? cachedVbiosGpuName;
+    private string? cachedThunderboltVersion;
+    private string? cachedTouchpadVersion;
     private RazerPublishedFirmwareVersionStatus? cachedBiosStatus;
     private RazerPublishedFirmwareVersionStatus? cachedEcStatus;
     private RazerPublishedFirmwareVersionStatus? cachedMcuStatus;
+    private RazerPublishedFirmwareVersionStatus? cachedVbiosStatus;
+    private RazerPublishedFirmwareVersionStatus? cachedThunderboltStatus;
+    private RazerPublishedFirmwareVersionStatus? cachedTouchpadStatus;
     private string statusText = NotCheckedMessage;
     private string publishedBiosVersion = TrayText.Get("Not checked");
     private string publishedEcVersion = TrayText.Get("Not checked");
     private string publishedMcuVersion = TrayText.Get("Not checked");
+    private string publishedVbiosVersion = TrayText.Get("Not checked");
+    private string publishedThunderboltVersion = TrayText.Get("Not checked");
+    private string publishedTouchpadVersion = TrayText.Get("Not checked");
     private bool isChecking;
     private bool isUpdateAvailable;
     private string updateAvailableSummary = string.Empty;
@@ -381,15 +513,39 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     public string? CachedMcuVersion => cachedMcuVersion;
 
+    public string? CachedVbiosVersion => cachedVbiosVersion;
+
+    public string? CachedVbiosGpuName => cachedVbiosGpuName;
+
+    public string? CachedThunderboltVersion => cachedThunderboltVersion;
+
+    public string? CachedTouchpadVersion => cachedTouchpadVersion;
+
     public RazerPublishedFirmwareVersionStatus? CachedBiosStatus => cachedBiosStatus;
 
     public RazerPublishedFirmwareVersionStatus? CachedEcStatus => cachedEcStatus;
 
     public RazerPublishedFirmwareVersionStatus? CachedMcuStatus => cachedMcuStatus;
 
+    public RazerPublishedFirmwareVersionStatus? CachedVbiosStatus => cachedVbiosStatus;
+
+    public RazerPublishedFirmwareVersionStatus? CachedThunderboltStatus =>
+        cachedThunderboltStatus;
+
+    public RazerPublishedFirmwareVersionStatus? CachedTouchpadStatus =>
+        cachedTouchpadStatus;
+
     public ICommand CheckCommand => checkCommand;
 
     public bool IsSupported => supportPage is not null;
+
+    public bool ShowsThunderboltFirmware =>
+        supportPage?.PublishesThunderboltFirmware == true;
+
+    public bool ShowsTouchpadFirmware => supportPage?.PublishesTouchpadFirmware == true;
+
+    public bool ShowsPublishedOnlyFirmwareNotice =>
+        ShowsThunderboltFirmware || ShowsTouchpadFirmware;
 
     public bool IsChecking
     {
@@ -430,6 +586,14 @@ public sealed class FirmwareUpdateAssistantViewModel :
     public string InstalledMcuVersion =>
         McuFirmwareVersionPresentation.Format(installedFirmware?.McuVersion);
 
+    public string InstalledVbiosVersion => FirmwareValue(installedFirmware?.VbiosVersion);
+
+    public string InstalledThunderboltVersion =>
+        FirmwareValue(installedFirmware?.ThunderboltFirmwareVersion);
+
+    public string InstalledTouchpadVersion =>
+        FirmwareValue(installedFirmware?.TouchpadFirmwareVersion);
+
     public string PublishedBiosVersion
     {
         get => publishedBiosVersion;
@@ -448,6 +612,24 @@ public sealed class FirmwareUpdateAssistantViewModel :
         private set => SetField(ref publishedMcuVersion, value);
     }
 
+    public string PublishedVbiosVersion
+    {
+        get => publishedVbiosVersion;
+        private set => SetField(ref publishedVbiosVersion, value);
+    }
+
+    public string PublishedThunderboltVersion
+    {
+        get => publishedThunderboltVersion;
+        private set => SetField(ref publishedThunderboltVersion, value);
+    }
+
+    public string PublishedTouchpadVersion
+    {
+        get => publishedTouchpadVersion;
+        private set => SetField(ref publishedTouchpadVersion, value);
+    }
+
     public void UpdateInstalledFirmware(FirmwareVersions? firmware)
     {
         bool firmwareChanged = !Equals(installedFirmware, firmware);
@@ -460,10 +642,16 @@ public sealed class FirmwareUpdateAssistantViewModel :
         installedFirmware = firmware;
         supportPage = nextPage;
         Notify(nameof(IsSupported));
+        Notify(nameof(ShowsThunderboltFirmware));
+        Notify(nameof(ShowsTouchpadFirmware));
+        Notify(nameof(ShowsPublishedOnlyFirmwareNotice));
         Notify(nameof(OfficialSupportUri));
         Notify(nameof(InstalledBiosVersion));
         Notify(nameof(InstalledEcVersion));
         Notify(nameof(InstalledMcuVersion));
+        Notify(nameof(InstalledVbiosVersion));
+        Notify(nameof(InstalledThunderboltVersion));
+        Notify(nameof(InstalledTouchpadVersion));
         checkCommand.NotifyCanExecuteChanged();
 
         if (modelChanged || firmwareChanged)
@@ -482,7 +670,14 @@ public sealed class FirmwareUpdateAssistantViewModel :
         string? selectedCachedMcuVersion = null,
         RazerPublishedFirmwareVersionStatus? selectedCachedBiosStatus = null,
         RazerPublishedFirmwareVersionStatus? selectedCachedEcStatus = null,
-        RazerPublishedFirmwareVersionStatus? selectedCachedMcuStatus = null)
+        RazerPublishedFirmwareVersionStatus? selectedCachedMcuStatus = null,
+        string? selectedCachedVbiosVersion = null,
+        string? selectedCachedVbiosGpuName = null,
+        RazerPublishedFirmwareVersionStatus? selectedCachedVbiosStatus = null,
+        string? selectedCachedThunderboltVersion = null,
+        RazerPublishedFirmwareVersionStatus? selectedCachedThunderboltStatus = null,
+        string? selectedCachedTouchpadVersion = null,
+        RazerPublishedFirmwareVersionStatus? selectedCachedTouchpadStatus = null)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         Interval = Enum.IsDefined(selectedInterval)
@@ -495,6 +690,11 @@ public sealed class FirmwareUpdateAssistantViewModel :
         cachedBiosVersion = NormalizeCachedVersion(selectedCachedBiosVersion);
         cachedEcVersion = NormalizeCachedVersion(selectedCachedEcVersion);
         cachedMcuVersion = NormalizeCachedVersion(selectedCachedMcuVersion);
+        cachedVbiosVersion = NormalizeCachedVersion(selectedCachedVbiosVersion);
+        cachedVbiosGpuName = NormalizeCachedVersion(selectedCachedVbiosGpuName);
+        cachedThunderboltVersion = NormalizeCachedVersion(
+            selectedCachedThunderboltVersion);
+        cachedTouchpadVersion = NormalizeCachedVersion(selectedCachedTouchpadVersion);
         cachedBiosStatus = NormalizeCachedStatus(
             selectedCachedBiosStatus,
             cachedBiosVersion);
@@ -502,6 +702,15 @@ public sealed class FirmwareUpdateAssistantViewModel :
         cachedMcuStatus = NormalizeCachedStatus(
             selectedCachedMcuStatus,
             cachedMcuVersion);
+        cachedVbiosStatus = NormalizeCachedStatus(
+            selectedCachedVbiosStatus,
+            cachedVbiosVersion);
+        cachedThunderboltStatus = NormalizeCachedStatus(
+            selectedCachedThunderboltStatus,
+            cachedThunderboltVersion);
+        cachedTouchpadStatus = NormalizeCachedStatus(
+            selectedCachedTouchpadStatus,
+            cachedTouchpadVersion);
         RestoreCachedVersionsForCurrentModel();
         Notify(nameof(LastSuccessfulCheckAt));
         Notify(nameof(RetryAfter));
@@ -595,14 +804,43 @@ public sealed class FirmwareUpdateAssistantViewModel :
             PublishedBiosVersion = PublishedValue(versions.BiosVersion, versions.BiosStatus);
             PublishedEcVersion = PublishedValue(versions.EcVersion, versions.EcStatus);
             PublishedMcuVersion = PublishedValue(versions.McuVersion, versions.McuStatus);
+            ResolvedPublishedVbios vbios = ResolvePublishedVbios(
+                versions,
+                installedFirmware?.VbiosGpuName);
+            PublishedVbiosVersion = PublishedValue(vbios.Version, vbios.Status);
+            string? thunderboltVersion = page.PublishesThunderboltFirmware
+                ? versions.ThunderboltVersion
+                : null;
+            RazerPublishedFirmwareVersionStatus thunderboltStatus =
+                page.PublishesThunderboltFirmware
+                    ? versions.ThunderboltStatus
+                    : RazerPublishedFirmwareVersionStatus.NotListed;
+            string? touchpadVersion = page.PublishesTouchpadFirmware
+                ? versions.TouchpadVersion
+                : null;
+            RazerPublishedFirmwareVersionStatus touchpadStatus =
+                page.PublishesTouchpadFirmware
+                    ? versions.TouchpadStatus
+                    : RazerPublishedFirmwareVersionStatus.NotListed;
+            PublishedThunderboltVersion = PublishedValue(
+                thunderboltVersion,
+                thunderboltStatus);
+            PublishedTouchpadVersion = PublishedValue(touchpadVersion, touchpadStatus);
             cachedModelNumber = page.ModelNumber;
             cachedBiosVersion = NormalizeCachedVersion(versions.BiosVersion);
             cachedEcVersion = NormalizeCachedVersion(versions.EcVersion);
             cachedMcuVersion = NormalizeCachedVersion(versions.McuVersion);
+            cachedVbiosVersion = NormalizeCachedVersion(vbios.Version);
+            cachedVbiosGpuName = NormalizeCachedVersion(vbios.GpuName);
+            cachedThunderboltVersion = NormalizeCachedVersion(thunderboltVersion);
+            cachedTouchpadVersion = NormalizeCachedVersion(touchpadVersion);
             cachedBiosStatus = versions.BiosStatus;
             cachedEcStatus = versions.EcStatus;
             cachedMcuStatus = versions.McuStatus;
-            PresentUpdateAvailability(page, versions);
+            cachedVbiosStatus = vbios.Status;
+            cachedThunderboltStatus = thunderboltStatus;
+            cachedTouchpadStatus = touchpadStatus;
+            PresentUpdateAvailability(page, versions, vbios);
             lastSuccessfulCheckAt = timeProvider.GetUtcNow();
             retryAfter = null;
             Notify(nameof(LastSuccessfulCheckAt));
@@ -649,9 +887,74 @@ public sealed class FirmwareUpdateAssistantViewModel :
         PreferencesChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    private static ResolvedPublishedVbios ResolvePublishedVbios(
+        RazerPublishedFirmwareVersions published,
+        string? installedGpuName)
+    {
+        if (published.VbiosStatus != RazerPublishedFirmwareVersionStatus.Listed)
+        {
+            return new(null, null, published.VbiosStatus);
+        }
+
+        IReadOnlyList<RazerPublishedVbiosVersion> versions =
+            published.EffectiveVbiosVersions;
+        RazerPublishedVbiosVersion[] gpuSpecific = versions
+            .Where(version => !string.IsNullOrWhiteSpace(version.GpuName))
+            .ToArray();
+        if (gpuSpecific.Length == 0)
+        {
+            return new(null, null, RazerPublishedFirmwareVersionStatus.Unreadable);
+        }
+
+        string? installedGpu = NormalizeVbiosGpuName(installedGpuName);
+        if (installedGpu is null)
+        {
+            return new(null, null, RazerPublishedFirmwareVersionStatus.Unreadable);
+        }
+
+        RazerPublishedVbiosVersion[] matches = gpuSpecific
+            .Where(version => string.Equals(
+                NormalizeVbiosGpuName(version.GpuName),
+                installedGpu,
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return matches.Length == 1
+            ? new(
+                matches[0].Version,
+                installedGpu,
+                RazerPublishedFirmwareVersionStatus.Listed)
+            : new(null, null, RazerPublishedFirmwareVersionStatus.Unreadable);
+    }
+
+    private static string? NormalizeVbiosGpuName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || string.Equals(
+                value.Trim(),
+                "Unavailable",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        Match match = Regex.Match(
+            value,
+            "\\bRTX\\s+(?<model>\\d{4})\\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success
+            ? $"RTX {match.Groups["model"].Value}"
+            : null;
+    }
+
+    private readonly record struct ResolvedPublishedVbios(
+        string? Version,
+        string? GpuName,
+        RazerPublishedFirmwareVersionStatus Status);
+
     private void PresentUpdateAvailability(
         RazerFirmwareSupportPage page,
-        RazerPublishedFirmwareVersions published)
+        RazerPublishedFirmwareVersions published,
+        ResolvedPublishedVbios vbios)
     {
         var newerComponents = new List<string>();
         AddNewerComponent(
@@ -669,6 +972,10 @@ public sealed class FirmwareUpdateAssistantViewModel :
             "MCU",
             installedFirmware?.McuVersion,
             published.McuVersion);
+        AddNewerVbiosComponent(
+            newerComponents,
+            installedFirmware?.VbiosVersion,
+            vbios.Version);
 
         IsUpdateAvailable = newerComponents.Count > 0;
         UpdateAvailableSummary = IsUpdateAvailable
@@ -686,7 +993,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
             page.ModelNumber,
             $"bios={NormalizeCachedVersion(published.BiosVersion) ?? "-"}",
             $"ec={NormalizeCachedVersion(published.EcVersion) ?? "-"}",
-            $"mcu={NormalizeCachedVersion(published.McuVersion) ?? "-"}");
+            $"mcu={NormalizeCachedVersion(published.McuVersion) ?? "-"}",
+            $"vbios={NormalizeCachedVersion(vbios.Version) ?? "-"}",
+            $"vbiosGpu={NormalizeVbiosGpuName(vbios.GpuName) ?? "-"}");
         UpdateAvailable?.Invoke(
             this,
             new FirmwareUpdateAvailableEventArgs(
@@ -723,6 +1032,48 @@ public sealed class FirmwareUpdateAssistantViewModel :
         }
     }
 
+    private static void AddNewerVbiosComponent(
+        ICollection<string> newerComponents,
+        string? installed,
+        string? published)
+    {
+        IReadOnlyList<uint>? installedVersion = ParseComparableVbiosVersion(installed);
+        IReadOnlyList<uint>? publishedVersion = ParseComparableVbiosVersion(published);
+        if (installedVersion is null || publishedVersion is null)
+        {
+            if ((installedVersion is null && IsTraceableVersion(installed))
+                || (publishedVersion is null && IsTraceableVersion(published)))
+            {
+                Trace.TraceInformation(
+                    "OpenBlade could not compare VBIOS firmware versions. Installed: '{0}'; published: '{1}'.",
+                    installed ?? "Unavailable",
+                    published ?? "Not listed");
+            }
+            return;
+        }
+
+        int componentCount = Math.Max(installedVersion.Count, publishedVersion.Count);
+        for (int index = 0; index < componentCount; index++)
+        {
+            uint installedComponent = index < installedVersion.Count
+                ? installedVersion[index]
+                : 0;
+            uint publishedComponent = index < publishedVersion.Count
+                ? publishedVersion[index]
+                : 0;
+            if (publishedComponent == installedComponent)
+            {
+                continue;
+            }
+
+            if (publishedComponent > installedComponent)
+            {
+                newerComponents.Add(TrayText.Format("VBIOS {0}", published!.Trim()));
+            }
+            return;
+        }
+    }
+
     private static Version? ParseComparableVersion(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -734,6 +1085,35 @@ public sealed class FirmwareUpdateAssistantViewModel :
         return Version.TryParse(candidate, out Version? version)
             ? version
             : null;
+    }
+
+    private static IReadOnlyList<uint>? ParseComparableVbiosVersion(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        string[] components = value.Trim().TrimStart('v', 'V').Split('.');
+        if (components.Length < 2)
+        {
+            return null;
+        }
+
+        var parsed = new uint[components.Length];
+        for (int index = 0; index < components.Length; index++)
+        {
+            if (!uint.TryParse(
+                    components[index],
+                    System.Globalization.NumberStyles.AllowHexSpecifier,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out parsed[index]))
+            {
+                return null;
+            }
+        }
+
+        return parsed;
     }
 
     private static bool IsTraceableVersion(string? value) =>
@@ -760,16 +1140,53 @@ public sealed class FirmwareUpdateAssistantViewModel :
                 StringComparison.OrdinalIgnoreCase);
         bool hasCachedVersion = cachedBiosVersion is not null
             || cachedEcVersion is not null
-            || cachedMcuVersion is not null;
+            || cachedMcuVersion is not null
+            || cachedVbiosVersion is not null
+            || cachedThunderboltVersion is not null
+            || cachedTouchpadVersion is not null;
         if (lastSuccessfulCheckAt is not null && modelMatches && hasCachedVersion)
         {
+            bool hasCachedVbiosResult = cachedVbiosVersion is not null
+                || cachedVbiosStatus is not null;
+            bool cachedVbiosMatchesGpu = cachedVbiosVersion is null
+                || cachedVbiosGpuName is null
+                || string.Equals(
+                    NormalizeVbiosGpuName(cachedVbiosGpuName),
+                    NormalizeVbiosGpuName(installedFirmware?.VbiosGpuName),
+                    StringComparison.OrdinalIgnoreCase);
+            IReadOnlyList<RazerPublishedVbiosVersion> cachedVbiosVersions =
+                cachedVbiosVersion is not null && cachedVbiosMatchesGpu
+                    ? [new(cachedVbiosVersion, cachedVbiosGpuName)]
+                    : [];
             var published = new RazerPublishedFirmwareVersions(
                 cachedBiosVersion,
                 cachedEcVersion,
                 cachedMcuVersion,
                 cachedBiosStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable,
                 cachedEcStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable,
-                cachedMcuStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable);
+                cachedMcuStatus ?? RazerPublishedFirmwareVersionStatus.Unreadable,
+                cachedVbiosVersions,
+                cachedVbiosMatchesGpu
+                    ? cachedVbiosStatus
+                        ?? RazerPublishedFirmwareVersionStatus.Unreadable
+                    : RazerPublishedFirmwareVersionStatus.Unreadable,
+                supportPage!.PublishesThunderboltFirmware
+                    ? cachedThunderboltVersion
+                    : null,
+                supportPage.PublishesThunderboltFirmware
+                    ? cachedThunderboltStatus
+                        ?? RazerPublishedFirmwareVersionStatus.Unreadable
+                    : RazerPublishedFirmwareVersionStatus.NotListed,
+                supportPage.PublishesTouchpadFirmware
+                    ? cachedTouchpadVersion
+                    : null,
+                supportPage.PublishesTouchpadFirmware
+                    ? cachedTouchpadStatus
+                        ?? RazerPublishedFirmwareVersionStatus.Unreadable
+                    : RazerPublishedFirmwareVersionStatus.NotListed);
+            ResolvedPublishedVbios vbios = ResolvePublishedVbios(
+                published,
+                installedFirmware?.VbiosGpuName);
             PublishedBiosVersion = PublishedValue(
                 published.BiosVersion,
                 published.BiosStatus);
@@ -779,7 +1196,20 @@ public sealed class FirmwareUpdateAssistantViewModel :
             PublishedMcuVersion = PublishedValue(
                 published.McuVersion,
                 published.McuStatus);
-            PresentUpdateAvailability(supportPage!, published);
+            PublishedVbiosVersion = hasCachedVbiosResult
+                ? PublishedValue(vbios.Version, vbios.Status)
+                : TrayText.Get("Not checked");
+            PublishedThunderboltVersion = cachedThunderboltStatus is not null
+                || cachedThunderboltVersion is not null
+                    ? PublishedValue(
+                        published.ThunderboltVersion,
+                        published.ThunderboltStatus)
+                    : TrayText.Get("Not checked");
+            PublishedTouchpadVersion = cachedTouchpadStatus is not null
+                || cachedTouchpadVersion is not null
+                    ? PublishedValue(published.TouchpadVersion, published.TouchpadStatus)
+                    : TrayText.Get("Not checked");
+            PresentUpdateAvailability(supportPage!, published, vbios);
             StatusText = IsUpdateAvailable
                 ? UpdateAvailableSummary
                 : TrayText.Format(
@@ -793,6 +1223,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
         PublishedBiosVersion = TrayText.Get("Not checked");
         PublishedEcVersion = TrayText.Get("Not checked");
         PublishedMcuVersion = TrayText.Get("Not checked");
+        PublishedVbiosVersion = TrayText.Get("Not checked");
+        PublishedThunderboltVersion = TrayText.Get("Not checked");
+        PublishedTouchpadVersion = TrayText.Get("Not checked");
         StatusText = CreateNotCheckedMessage();
 
         bool successfulCacheIsInvalid = lastSuccessfulCheckAt is not null
@@ -807,9 +1240,16 @@ public sealed class FirmwareUpdateAssistantViewModel :
             cachedBiosVersion = null;
             cachedEcVersion = null;
             cachedMcuVersion = null;
+            cachedVbiosVersion = null;
+            cachedVbiosGpuName = null;
+            cachedThunderboltVersion = null;
+            cachedTouchpadVersion = null;
             cachedBiosStatus = null;
             cachedEcStatus = null;
             cachedMcuStatus = null;
+            cachedVbiosStatus = null;
+            cachedThunderboltStatus = null;
+            cachedTouchpadStatus = null;
             Notify(nameof(LastSuccessfulCheckAt));
             Notify(nameof(RetryAfter));
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
