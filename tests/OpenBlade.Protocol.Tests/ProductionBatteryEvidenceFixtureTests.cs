@@ -58,7 +58,7 @@ public sealed class ProductionBatteryEvidenceFixtureTests
         Assert.True(source.GetProperty("readOnly").GetBoolean());
         Assert.False(source.GetProperty("rawCapturesCommitted").GetBoolean());
         Assert.Equal(
-            "3D9F4A0E4651FBA9EEEC4D1ACA8FFD8ADFAF82B396620028061666D11BD7454F",
+            "7298282E22BBE9DD1E094EF6DE02F152E537FC1B5A4B6279D10D856E4D41D7C0",
             source.GetProperty("annotationSha256").GetString());
 
         JsonElement responseFormat = root.GetProperty("responseFormat");
@@ -105,6 +105,21 @@ public sealed class ProductionBatteryEvidenceFixtureTests
             synapseMappings,
             mapping => Assert.False(
                 mapping.GetProperty("physicalSampleCaptured").GetBoolean()));
+
+        JsonElement productBehavior = root.GetProperty("productBehavior");
+        Assert.Equal(
+            "UsbC",
+            productBehavior.GetProperty("reportedPowerSource").GetString());
+        Assert.False(
+            productBehavior.GetProperty("wattageSpecificIpcStateExposed").GetBoolean());
+        Assert.False(
+            productBehavior.GetProperty("wattageSpecificProfileSelected").GetBoolean());
+        Assert.Equal(
+            "0411",
+            productBehavior.GetProperty("configured90And99WReturnedPayloadHex").GetString());
+        Assert.False(
+            productBehavior.GetProperty("configuredSourceLimitProvesNegotiatedPower")
+                .GetBoolean());
 
         JsonElement admission = root.GetProperty("productionAdmission");
         Assert.Equal("RZ09-0581", admission.GetProperty("modelNumber").GetString());
