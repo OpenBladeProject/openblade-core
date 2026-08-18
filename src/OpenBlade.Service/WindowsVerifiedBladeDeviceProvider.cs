@@ -849,6 +849,52 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
+        public async Task<Rz090581CapabilityDiagnostics?>
+            ReadRz090581CapabilityDiagnosticsAsync(
+                CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                HidSessionResult<IProductionBatteryPort> opened =
+                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                if (opened.Value is not { } port)
+                {
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    return null;
+                }
+
+                await using (port.ConfigureAwait(false))
+                {
+                    if (opened.Failure is not null)
+                    {
+                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    }
+
+                    return port.SupportsRz090581CapabilityDiagnosticsQuery
+                        ? await port.QueryRz090581CapabilityDiagnosticsAsync(
+                            cancellationToken).ConfigureAwait(false)
+                        : null;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         public async Task<bool?> ReadStartupAnimationAsync(
             CancellationToken cancellationToken)
         {

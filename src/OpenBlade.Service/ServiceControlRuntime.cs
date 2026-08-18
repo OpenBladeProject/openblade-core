@@ -26,6 +26,8 @@ public interface IServiceControlRuntime
 
     ServiceStatusSnapshot GetStatus();
 
+    Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() => null;
+
     Task ActivateUserAsync(
         SecurityIdentifier userSid,
         CancellationToken cancellationToken) => Task.CompletedTask;
@@ -264,6 +266,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     internal static readonly TimeSpan ResumeValidationObservationWindow =
         TimeSpan.FromMinutes(1);
     private const int ObservationFailureThreshold = 3;
+    private const int Rz090581CapabilityDiagnosticsReadAttemptLimit = 3;
     private const int MaximumMcuVersionReadAttempts = 3;
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
         new(null, null, null, null);
@@ -304,6 +307,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly Dictionary<DeviceSubsystem, PendingWriteConfirmation>
         pendingWriteConfirmations = [];
     private ServiceStatusSnapshot? status;
+    private int rz090581CapabilityDiagnosticsReadAttempts;
+    private Rz090581CapabilityDiagnostics? rz090581CapabilityDiagnostics;
     private int mcuVersionReadAttempts;
     private LightingSettings? lastOwnedLightingSettings;
     private FanControlSettings? lastOwnedFanControlSettings;
@@ -653,6 +658,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public ServiceStatusSnapshot GetStatus() => Volatile.Read(ref status)
         ?? throw new InvalidOperationException("The service runtime is not initialized.");
+
+    public Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() =>
+        Volatile.Read(ref rz090581CapabilityDiagnostics);
 
     public async Task ActivateUserAsync(
         SecurityIdentifier userSid,
@@ -6981,6 +6989,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FirmwareVersions? firmware = await ReadFirmwareVersionsAsync(
             device,
             cancellationToken);
+        await ReadRz090581CapabilityDiagnosticsAsync(
+            device,
+            firmware,
+            cancellationToken).ConfigureAwait(false);
         FanRpmReadings? fans = null;
         FanTemperatureReadings temperatures = default;
         if (includeLiveReadings)
@@ -7426,6 +7438,55 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         catch
         {
             return current;
+        }
+    }
+
+    private async Task ReadRz090581CapabilityDiagnosticsAsync(
+        IBladeDevice device,
+        FirmwareVersions? firmware,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(
+                firmware?.ModelNumber,
+                RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                firmware?.BiosVersion,
+                TargetBladeDevice.BiosVersion,
+                StringComparison.Ordinal)
+            || deviceProvider.FirmwareCompatibility
+                != FirmwareCompatibilityStatus.Tested)
+        {
+            return;
+        }
+
+        if (Volatile.Read(ref rz090581CapabilityDiagnostics) is not null
+            || rz090581CapabilityDiagnosticsReadAttempts
+                >= Rz090581CapabilityDiagnosticsReadAttemptLimit)
+        {
+            return;
+        }
+
+        rz090581CapabilityDiagnosticsReadAttempts++;
+        try
+        {
+            Rz090581CapabilityDiagnostics? observed =
+                await device.ReadRz090581CapabilityDiagnosticsAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (observed is not null)
+            {
+                Volatile.Write(ref rz090581CapabilityDiagnostics, observed);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            rz090581CapabilityDiagnosticsReadAttempts--;
+            throw;
+        }
+        catch
+        {
+            return;
         }
     }
 

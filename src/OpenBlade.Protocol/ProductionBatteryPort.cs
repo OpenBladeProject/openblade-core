@@ -72,6 +72,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     private readonly TemporaryFullChargeCommandClient temporaryCommands;
     private readonly AdapterPowerCommandClient adapterPowerCommands;
     private readonly McuVersionCommandClient mcuVersionCommands;
+    private readonly Rz090581CapabilityDiagnosticsCommandClient
+        rz090581CapabilityDiagnosticsCommands;
     private readonly StartupAnimationCommandClient startupAnimationCommands;
     private readonly FunctionKeyPrimaryCommandClient functionKeyPrimaryCommands;
     private readonly GamingModeCommandClient gamingModeCommands;
@@ -195,6 +197,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         temporaryCommands = new TemporaryFullChargeCommandClient(session, exchangeTimeout);
         adapterPowerCommands = new AdapterPowerCommandClient(session, exchangeTimeout);
         mcuVersionCommands = new McuVersionCommandClient(session, exchangeTimeout);
+        rz090581CapabilityDiagnosticsCommands =
+            new Rz090581CapabilityDiagnosticsCommandClient(session, exchangeTimeout);
         startupAnimationCommands = new StartupAnimationCommandClient(
             session,
             exchangeTimeout);
@@ -228,6 +232,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         readEvidence.SupportsFunctionKeyPrimaryQuery;
 
     public bool SupportsGamingModeQuery => readEvidence.SupportsGamingModeQuery;
+
+    public bool SupportsRz090581CapabilityDiagnosticsQuery =>
+        readEvidence.SupportsRz090581CapabilityDiagnosticsQuery;
 
     public async Task<ConfirmedBatteryState> QueryProtectionAsync(
         CancellationToken cancellationToken)
@@ -356,6 +363,38 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             HidSessionResult<string?> result = await mcuVersionCommands.QueryAsync(
                 transactionId,
                 cancellationToken).ConfigureAwait(false);
+            if (result.Failure is not null)
+            {
+                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+            }
+
+            return result.Value;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<Rz090581CapabilityDiagnostics?>
+        QueryRz090581CapabilityDiagnosticsAsync(
+            CancellationToken cancellationToken)
+    {
+        if (!readEvidence.SupportsRz090581CapabilityDiagnosticsQuery)
+        {
+            ThrowIfClosingOrDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+            return null;
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureUsable();
+            HidSessionResult<Rz090581CapabilityDiagnostics?> result =
+                await rz090581CapabilityDiagnosticsCommands.QueryAsync(
+                    () => TransactionIdAssignment.Valid(AllocateTransactionForRead()),
+                    cancellationToken).ConfigureAwait(false);
             if (result.Failure is not null)
             {
                 ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);

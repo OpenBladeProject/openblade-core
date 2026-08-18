@@ -122,7 +122,6 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             TrustedFixtureHashRegistry.Production);
         return CreateWindows(
             catalog,
-            ProductionBatteryReadEvidence.Production,
             compatibilityPolicy,
             admitGpuOverclock: true);
     }
@@ -130,7 +129,6 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     public static IProductionBatteryPortFactory CreateWindowsReadOnly() =>
         CreateWindows(
             DeviceCommandCatalog.Empty,
-            ProductionBatteryReadEvidence.Production,
             compatibilityPolicy: null,
             admitGpuOverclock: false);
 
@@ -140,7 +138,6 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return CreateWindows(
             DeviceCommandCatalog.Empty,
-            ProductionBatteryReadEvidence.Production,
             compatibilityPolicy,
             admitGpuOverclock: false);
     }
@@ -221,7 +218,6 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 
     private static IProductionBatteryPortFactory CreateWindows(
         DeviceCommandCatalog catalog,
-        ProductionBatteryReadEvidence readEvidence,
         FirmwareCompatibilityPolicy? compatibilityPolicy,
         bool admitGpuOverclock)
     {
@@ -244,6 +240,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             native,
             ControllerExclusivityPolicy.Advisory);
         HostIdentityReadResult exactIdentity = hostIdentity.ReadExactIdentity();
+        ProductionBatteryReadEvidence admittedReadEvidence =
+            GetRz090581ProductionBatteryReadEvidence(exactIdentity);
         GpuOverclockCapabilities? gpuOverclockCapabilities = admitGpuOverclock
             ? GetRz090581GpuOverclockCapabilities(exactIdentity)
             : null;
@@ -251,7 +249,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             GetRz090581AdmittedAdapterPowerStates(exactIdentity);
         return new ProductionBatteryFactory(
             catalog,
-            readEvidence,
+            admittedReadEvidence,
             static () => new ValidationRunContext(),
             settleDelay => new ValidationActorFactory(
                 opener,
@@ -268,6 +266,23 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             admittedAdapterPowerStates: admittedAdapterPowerStates,
             gpuOverclockCapabilities: gpuOverclockCapabilities);
     }
+
+    internal static ProductionBatteryReadEvidence
+        GetRz090581ProductionBatteryReadEvidence(
+            HostIdentityReadResult exactIdentity) => exactIdentity is
+            {
+                Evidence:
+                {
+                    Manufacturer: "Razer",
+                    ProductName: "Blade 16 - RZ09-0581",
+                    Sku: "RZ09-05819EN4",
+                    BiosVersion: TargetBladeDevice.BiosVersion,
+                },
+                Failure: null,
+                FirmwareCompatibility: HostFirmwareCompatibility.Tested,
+            }
+            ? ProductionBatteryReadEvidence.Rz090581Bios301
+            : ProductionBatteryReadEvidence.Production;
 
     internal static GpuOverclockCapabilities? GetRz090581GpuOverclockCapabilities(
         HostIdentityReadResult exactIdentity) => exactIdentity is

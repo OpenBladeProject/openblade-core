@@ -160,6 +160,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.True(evidence.SupportsTemporaryFullChargeQuery);
         Assert.True(evidence.SupportsAdapterPowerQuery);
         Assert.True(evidence.SupportsMcuVersionQuery);
+        Assert.False(evidence.SupportsRz090581CapabilityDiagnosticsQuery);
         Assert.True(evidence.SupportsStartupAnimationQuery);
         Assert.True(evidence.SupportsFunctionKeyPrimaryQuery);
         Assert.True(evidence.SupportsGamingModeQuery);

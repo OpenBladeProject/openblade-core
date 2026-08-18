@@ -283,6 +283,54 @@ public sealed class DiagnosticArchiveProviderTests
     }
 
     [Fact]
+    public async Task CreateAsync_ExportsCachedRz090581CapabilityDiagnosticsWithoutHardwareIo()
+    {
+        var diagnostics = new Rz090581CapabilityDiagnostics(
+            0x01,
+            0x00,
+            [0x01, 0x02]);
+        var runtime = new SnapshotOnlyRuntime(
+            CreateStatus() with
+            {
+                Firmware = FirmwareVersions.Unavailable() with
+                {
+                    ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+                },
+            },
+            diagnostics);
+        var provider = new DiagnosticArchiveProvider(
+            runtime,
+            new DiagnosticHistory(),
+            new FixedMetadataSource());
+
+        DiagnosticArchive result = await provider.CreateAsync(
+            liveReadingsEnabled: false,
+            CancellationToken.None);
+
+        using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
+        using JsonDocument configuration = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "configuration.json"));
+        Assert.Equal(
+            "0x01",
+            configuration.RootElement
+                .GetProperty("capability.rz09-0581.skuHardwareConfigurationRaw")
+                .GetString());
+        Assert.Equal(
+            "0x00",
+            configuration.RootElement
+                .GetProperty("capability.rz09-0581.miniLedPanelResolutionRaw")
+                .GetString());
+        Assert.Equal(
+            "0x01, 0x02",
+            configuration.RootElement
+                .GetProperty("capability.rz09-0581.thermalFanIds")
+                .GetString());
+        Assert.Equal(1, runtime.StatusReads);
+        Assert.Equal(1, runtime.CapabilityDiagnosticReads);
+        Assert.Equal(0, runtime.HardwareOrMutationCalls);
+    }
+
+    [Fact]
     public async Task CreateAsync_RejectsArchiveLargerThanThirtyTwoKiB()
     {
         byte[] randomBytes = new byte[50_000];
@@ -361,15 +409,24 @@ public sealed class DiagnosticArchiveProviderTests
             DateTimeOffset.Parse("2026-07-15T12:34:56Z"));
     }
 
-    private sealed class SnapshotOnlyRuntime(ServiceStatusSnapshot status) : IServiceControlRuntime
+    private sealed class SnapshotOnlyRuntime(
+        ServiceStatusSnapshot status,
+        Rz090581CapabilityDiagnostics? capabilityDiagnostics = null) : IServiceControlRuntime
     {
         public int StatusReads { get; private set; }
+        public int CapabilityDiagnosticReads { get; private set; }
         public int HardwareOrMutationCalls { get; private set; }
 
         public ServiceStatusSnapshot GetStatus()
         {
             StatusReads++;
             return status;
+        }
+
+        public Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics()
+        {
+            CapabilityDiagnosticReads++;
+            return capabilityDiagnostics;
         }
 
         public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token) => Unexpected();

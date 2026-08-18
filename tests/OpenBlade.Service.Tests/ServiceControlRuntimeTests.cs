@@ -1336,6 +1336,173 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task FirstVerifiedObservation_ReadsRz090581CapabilityDiagnosticsOnce()
+    {
+        TestContext context = CreateRz090581Bios301Context();
+        var expected = new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+        context.Device.Rz090581CapabilityDiagnostics = expected;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Rz090581CapabilityDiagnostics? actual =
+            context.Runtime.GetCachedRz090581CapabilityDiagnostics();
+        Assert.NotNull(actual);
+        Assert.Equal(expected.SkuHardwareConfigurationRaw, actual.SkuHardwareConfigurationRaw);
+        Assert.Equal(expected.MiniLedPanelResolutionRaw, actual.MiniLedPanelResolutionRaw);
+        Assert.Equal(expected.ThermalFanIds, actual.ThermalFanIds);
+        Assert.Equal(1, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_UsesFreshlyTestedFirmwareCompatibility()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            firmwareVersions: FirmwareVersions.Unavailable() with
+            {
+                BiosVersion = TargetBladeDevice.BiosVersion,
+                ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            });
+        var expected = new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+        context.Device.Rz090581CapabilityDiagnostics = expected;
+        context.Provider.ReportUnknownFirmwareCompatibility = true;
+        context.Provider.AfterTryGet = () =>
+            context.Provider.ReportUnknownFirmwareCompatibility = false;
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(configuration, PowerSource.PluggedIn);
+        Assert.Equal(
+            FirmwareCompatibilityStatus.Unknown,
+            context.Runtime.GetStatus().FirmwareCompatibility);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            FirmwareCompatibilityStatus.Tested,
+            context.Runtime.GetStatus().FirmwareCompatibility);
+        Assert.Equal(expected, context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(1, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task VerifiedObservations_RetryRz090581DiagnosticsAfterFailureAndStopOnSuccess()
+    {
+        TestContext context = CreateRz090581Bios301Context();
+        var expected = new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+        context.Device.Rz090581CapabilityDiagnosticsFailures.Enqueue(
+            new IOException("synthetic diagnostic read failure"));
+        context.Device.Rz090581CapabilityDiagnostics = expected;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.NotNull(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(2, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task VerifiedObservations_BoundPersistentRz090581DiagnosticFailures()
+    {
+        TestContext context = CreateRz090581Bios301Context();
+        context.Device.Rz090581CapabilityDiagnosticsFailure =
+            new IOException("persistent synthetic diagnostic read failure");
+
+        for (int observation = 0; observation < 5; observation++)
+        {
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(3, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task RequestedCancellation_DoesNotConsumeRz090581DiagnosticRetryBudget()
+    {
+        TestContext context = CreateRz090581Bios301Context();
+        using var cancellation = new CancellationTokenSource();
+        context.Device.BeforeRz090581CapabilityDiagnosticsRead = cancellation.Cancel;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.ObserveAsync(cancellation.Token));
+
+        context.Device.BeforeRz090581CapabilityDiagnosticsRead = null;
+        context.Device.Rz090581CapabilityDiagnosticsFailure =
+            new IOException("persistent synthetic diagnostic read failure");
+        for (int observation = 0; observation < 4; observation++)
+        {
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(4, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task CanceledNullRz090581DiagnosticCompletion_PreservesAllLaterAttempts()
+    {
+        TestContext context = CreateRz090581Bios301Context();
+        using var cancellation = new CancellationTokenSource();
+        context.Device.AfterRz090581CapabilityDiagnosticsRead = cancellation.Cancel;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.ObserveAsync(cancellation.Token));
+
+        context.Device.AfterRz090581CapabilityDiagnosticsRead = null;
+        context.Device.Rz090581CapabilityDiagnosticsFailure =
+            new IOException("persistent synthetic diagnostic read failure");
+        for (int observation = 0; observation < 4; observation++)
+        {
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(4, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_SkipsRz090581DiagnosticsForBios400()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: FirmwareVersions.Unavailable() with
+            {
+                BiosVersion = "4.00",
+                ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            });
+        context.Device.Rz090581CapabilityDiagnostics =
+            new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(0, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_SkipsRz090581DiagnosticsForOtherModel()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: FirmwareVersions.Unavailable() with
+            {
+                ModelNumber = RazerBladeModelCatalog.Rz090528ModelNumber,
+            });
+        context.Device.Rz090581CapabilityDiagnostics =
+            new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(0, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
     public async Task VerifiedObservation_RetriesMcuReadAfterTransientFailure()
     {
         var firmware = new FirmwareVersions(
@@ -10443,6 +10610,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         return context;
     }
 
+    private TestContext CreateRz090581Bios301Context() => CreateContext(
+        providerAvailable: true,
+        firmwareVersions: FirmwareVersions.Unavailable() with
+        {
+            BiosVersion = "3.01",
+            ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+        });
+
     private TestContext CreateContext(
         bool providerAvailable,
         IReadOnlyList<string>? conflicts = null,
@@ -11120,6 +11295,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int McuVersionReadCalls { get; private set; }
 
+        public int Rz090581CapabilityDiagnosticsReadCalls { get; private set; }
+
         public AdapterPowerState AdapterPowerState { get; set; } =
             AdapterPowerState.FullPower280W;
 
@@ -11130,6 +11307,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Exception? AdapterPowerFailure { get; set; }
 
         public string? McuVersion { get; set; }
+
+        public Rz090581CapabilityDiagnostics? Rz090581CapabilityDiagnostics { get; set; }
+
+        public Queue<Exception> Rz090581CapabilityDiagnosticsFailures { get; } = new();
+
+        public Exception? Rz090581CapabilityDiagnosticsFailure { get; set; }
+
+        public Action? BeforeRz090581CapabilityDiagnosticsRead { get; set; }
+
+        public Action? AfterRz090581CapabilityDiagnosticsRead { get; set; }
 
         public Queue<Exception> McuVersionFailures { get; } = new();
 
@@ -11324,6 +11511,23 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
             TotalCalls++;
             return Task.FromResult<string?>(version);
+        }
+
+        public Task<Rz090581CapabilityDiagnostics?>
+            ReadRz090581CapabilityDiagnosticsAsync(
+                CancellationToken cancellationToken)
+        {
+            Rz090581CapabilityDiagnosticsReadCalls++;
+            BeforeRz090581CapabilityDiagnosticsRead?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Rz090581CapabilityDiagnosticsFailures.TryDequeue(out Exception? failure)
+                || (failure = Rz090581CapabilityDiagnosticsFailure) is not null)
+            {
+                return Task.FromException<Rz090581CapabilityDiagnostics?>(failure);
+            }
+
+            AfterRz090581CapabilityDiagnosticsRead?.Invoke();
+            return Task.FromResult(Rz090581CapabilityDiagnostics);
         }
 
         public Task EnsureDriverModeAsync(CancellationToken cancellationToken)
