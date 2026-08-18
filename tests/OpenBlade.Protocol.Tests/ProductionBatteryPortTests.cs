@@ -848,6 +848,39 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(7, session.Commands.Count);
     }
 
+    [Fact]
+    public async Task LifecycleValidation_UsesObservedOnlyPadlessPathWithoutBroadeningSetter()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x12, 0x11]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]));
+        await using var port = CreateHyperBoostPort(
+            session,
+            new StubHyperBoostEligibility(CoolingPadConnectionState.Absent),
+            padlessAccess: DeviceFeatureAccess.ObservedOnly,
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
+            allowPadlessHyperBoostLifecycleValidation: true);
+
+        await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(enabled: true, default));
+        Assert.Equal(2, session.Commands.Count);
+
+        await ((IPadlessHyperBoostLifecycleValidationPort)port)
+            .EnablePadlessHyperBoostLifecycleValidationAsync(default);
+
+        Assert.Equal(9, session.Commands.Count);
+        Assert.Equal(DeviceFeatureAccess.ObservedOnly,
+            port.Capabilities.HyperBoostWithoutCoolingPadAccess);
+    }
+
     [Theory]
     [InlineData(CoolingPadConnectionState.Absent)]
     [InlineData(CoolingPadConnectionState.Ambiguous)]
@@ -1913,7 +1946,8 @@ public sealed class ProductionBatteryPortTests
         DeviceCommandCatalog? catalog = null,
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         DeviceFeatureAccess? padlessAccess = null,
-        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null) => new(
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null,
+        bool allowPadlessHyperBoostLifecycleValidation = false) => new(
             session,
             catalog ?? DeviceCommandCatalog.Empty,
             NoTemporaryReadEvidence(),
@@ -1928,7 +1962,9 @@ public sealed class ProductionBatteryPortTests
                     DeviceFeatureAccess.ObservedOnly),
             hyperBoostCatalog: HyperBoostCatalog(),
             hyperBoostEligibility: eligibility,
-            admittedAdapterPowerStates: admittedAdapterPowerStates);
+            admittedAdapterPowerStates: admittedAdapterPowerStates,
+            allowPadlessHyperBoostLifecycleValidation:
+                allowPadlessHyperBoostLifecycleValidation);
 
     private static DeviceCommandCatalog Catalog(params CapturedCommandFixture[] fixtures) =>
         DeviceCommandCatalog.Create(CapturedFixtureFile.TargetDevice, fixtures);

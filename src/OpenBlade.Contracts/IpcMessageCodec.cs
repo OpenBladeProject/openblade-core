@@ -148,6 +148,12 @@ public static class IpcMessageCodec
                 set.Value is null
                 || set.Value.IsWellFormed(),
             SetHyperBoostRequest => true,
+            ValidatePadlessHyperBoostLifecycleRequest validate =>
+                Enum.IsDefined(validate.Scenario)
+                && validate.ValidationRunId != Guid.Empty
+                && IsHex(validate.ExpectedSourceRevision, 40)
+                && IsHex(validate.ExpectedServiceAssemblySha256, 64)
+                && IsHex(validate.ExpectedAdmissionManifestSha256, 64),
             SetCoolingPadFanIntentRequest set => set.Intent?.IsWellFormed == true,
             SetCoolingDemandLeaseRequest set =>
                 set.LeaseId != Guid.Empty
@@ -202,6 +208,11 @@ public static class IpcMessageCodec
             throw new InvalidDataException("IPC request body is invalid.");
         }
     }
+
+    private static bool IsHex(string? value, int length) =>
+        value is not null
+        && value.Length == length
+        && value.All(Uri.IsHexDigit);
 
     private static void ValidateServerFrame(ServiceServerFrame? frame)
     {

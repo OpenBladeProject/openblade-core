@@ -80,7 +80,7 @@ internal sealed record ReviewedHyperBoostThermalPlan
         ReadOnlySpan<byte> utf8Json,
         string expectedSha256)
     {
-        if (!IsSha256(expectedSha256))
+        if (!IsSha256ForReviewedPlan(expectedSha256))
         {
             throw new UnvalidatedCommandException(
                 "The reviewed HyperBoost thermal-plan hash is malformed.");
@@ -130,6 +130,12 @@ internal sealed record ReviewedHyperBoostThermalPlan
         return Parse(buffer.ToArray(), TrustedPadAbsentNoLoadSha256);
     }
 
+    internal static ReviewedHyperBoostThermalPlan LoadTrustedPadAbsentExternalLoad() =>
+        throw new UnvalidatedCommandException(
+            "No reviewed external HyperBoost workload plan is embedded. " +
+            "A workload name, executable SHA-256, bounds, and executor contract " +
+            "must be reviewed before this validation route can run.");
+
     private bool IsWellFormed()
     {
         return !string.IsNullOrWhiteSpace(PlanId)
@@ -148,13 +154,22 @@ internal sealed record ReviewedHyperBoostThermalPlan
             && Enum.IsDefined(GpuSensorPolicy)
             && MinimumFan1Rpm is null or >= 0
             && MinimumFan2Rpm is null or >= 0
-            // A reviewed external workload needs its own trusted executor and
-            // lifecycle contract. The first admitted phase is no-load dwell only.
-            && WorkloadKind == HyperBoostValidationWorkloadKind.SustainedNoLoadDwell
-            && string.IsNullOrWhiteSpace(WorkloadName)
-            && WorkloadSha256 is null;
+            && WorkloadContractIsWellFormed();
     }
 
-    private static bool IsSha256(string? value) =>
+    private bool WorkloadContractIsWellFormed() => WorkloadKind switch
+    {
+        HyperBoostValidationWorkloadKind.SustainedNoLoadDwell =>
+            string.IsNullOrWhiteSpace(WorkloadName)
+            && WorkloadSha256 is null,
+        HyperBoostValidationWorkloadKind.ExternalReviewedLoad =>
+            WorkloadName is { Length: > 0 and <= 128 }
+            && Path.GetFileName(WorkloadName) == WorkloadName
+            && WorkloadName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            && IsSha256ForReviewedPlan(WorkloadSha256),
+        _ => false,
+    };
+
+    internal static bool IsSha256ForReviewedPlan(string? value) =>
         value is not null && Sha256Pattern.IsMatch(value);
 }

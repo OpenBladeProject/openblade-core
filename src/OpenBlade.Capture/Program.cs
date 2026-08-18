@@ -1896,8 +1896,8 @@ if (args.Length > 0 && args[0].Equals(
         GpuClockOffsetValidationEnvironment.IsSynapseInactive();
     bool openBladeServiceInactive =
         GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
-    ReviewedHyperBoostThermalPlan plan =
-        ReviewedHyperBoostThermalPlan.LoadTrustedPadAbsentNoLoad();
+    ReviewedHyperBoostAdapterTransitionPlan plan =
+        ReviewedHyperBoostAdapterTransitionPlan.LoadTrusted();
     Console.WriteLine("Target=RZ09-0581 1532:02E0 BIOS 4.00");
     Console.WriteLine("RequiredPad=physically absent; USB and external power disconnected");
     Console.WriteLine(
@@ -1929,6 +1929,88 @@ if (args.Length > 0 && args[0].Equals(
             .CreateWindowsRz090581Bios400PadAbsentHyperBoostAdapterTransitionValidation(
                 plan);
     var command = new PadAbsentHyperBoostAdapterTransitionValidationCommand(
+        plan,
+        physicalPresence.Observe,
+        runner.RunAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-rz09-0581-02e0-bios-4.00-hyperboost-pad-absent-reviewed-load",
+    StringComparison.OrdinalIgnoreCase))
+{
+    ReviewedHyperBoostThermalPlan plan;
+    try
+    {
+        plan = ReviewedHyperBoostThermalPlan.LoadTrustedPadAbsentExternalLoad();
+    }
+    catch (UnvalidatedCommandException exception)
+    {
+        Console.WriteLine($"TrustedPlanAvailable=False Reason={exception.Message}");
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    if (args.Length != 5
+        || !args[3].Equals("--workload-pid", StringComparison.Ordinal)
+        || !int.TryParse(args[4], out int workloadPid)
+        || workloadPid <= 0)
+    {
+        Console.WriteLine(
+            "Usage: OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-" +
+            "hyperboost-pad-absent-reviewed-load --confirm-target " +
+            PadAbsentHyperBoostSustainedValidationCommand
+                .ReviewedLoadTargetConfirmation + " --workload-pid <pid>");
+        return 1;
+    }
+
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactDevice =
+        GpuClockOffsetValidationEnvironment.HasOneExactRz090581ProtocolCollection();
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 1532:02E0 BIOS 4.00");
+    Console.WriteLine("RequiredPad=physically absent; USB and external power disconnected");
+    Console.WriteLine(
+        $"Action={plan.DurationSeconds}-second monitored exact-hash external workload, then exact Balanced restoration");
+    Console.WriteLine($"Plan={plan.PlanId}");
+    Console.WriteLine($"PlanSha256={plan.SourceSha256}");
+    Console.WriteLine($"Workload={plan.WorkloadName}");
+    Console.WriteLine($"WorkloadSha256={plan.WorkloadSha256}");
+    Console.WriteLine("WorkloadOwnership=ExternallyLaunchedAndOperatorOwned");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine("PadlessProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactDevice={exactDevice}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactDevice
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    ICoolingPadPhysicalPresenceSource physicalPresence =
+        WindowsHidEnumerator.CreateCoolingPadPhysicalPresenceSource();
+    using var temperatureSource = new SafeWindowsFanTemperatureSource();
+    var telemetrySource = new HyperBoostThermalTelemetrySource(temperatureSource);
+    var workloadSource = new ExternallyLaunchedHyperBoostWorkloadSource(workloadPid);
+    IPerformanceFanSetterValidationRunner runner =
+        BatteryValidationFactory
+            .CreateWindowsRz090581Bios400PadAbsentHyperBoostReviewedLoadValidation(
+                plan,
+                telemetrySource,
+                workloadSource);
+    var command = new PadAbsentHyperBoostSustainedValidationCommand(
         plan,
         physicalPresence.Observe,
         runner.RunAsync,
@@ -2740,6 +2822,11 @@ Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-hyperboost-pad-absent-sustained " +
     "--confirm-target " +
     PadAbsentHyperBoostSustainedValidationCommand.ExactTargetConfirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-hyperboost-pad-absent-reviewed-load " +
+    "--confirm-target " +
+    PadAbsentHyperBoostSustainedValidationCommand.ReviewedLoadTargetConfirmation +
+    " --workload-pid <pid> (unavailable until a reviewed exact-hash plan is embedded)");
 Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-hyperboost-pad-absent-adapter-transition " +
     "--confirm-target " +

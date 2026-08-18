@@ -296,8 +296,7 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         var runner = Runner(
             session,
             safetyGate: new ScriptedSafetyGate(SafeGateResult),
-            sustainedPlan: Plan(),
-            adapterTransitionValidation: true);
+            adapterTransitionPlan: AdapterPlan());
 
         PerformanceFanSetterValidationResult result = await runner.RunAsync(
             _ =>
@@ -309,7 +308,8 @@ public sealed class PerformanceFanSetterValidationRunnerTests
                 Assert.Equal(
                     2,
                     session.Commands.Count(command => command.CommandId == 0x02));
-                return Task.FromResult(true);
+                return Task.FromResult(
+                    HyperBoostAdapterTransitionAuthorization.PadAbsentConfirmed);
             },
             default);
 
@@ -345,9 +345,9 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         PerformanceFanSetterValidationResult result = await Runner(
             session,
             safetyGate: new ScriptedSafetyGate(safety),
-            sustainedPlan: Plan(),
-            adapterTransitionValidation: true).RunAsync(
-                _ => Task.FromResult(true),
+            adapterTransitionPlan: AdapterPlan()).RunAsync(
+                _ => Task.FromResult(
+                    HyperBoostAdapterTransitionAuthorization.PadAbsentConfirmed),
                 default);
 
         Assert.True(result.Success);
@@ -373,9 +373,9 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         PerformanceFanSetterValidationResult result = await Runner(
             session,
             safetyGate: new ScriptedSafetyGate(SafeGateResult),
-            sustainedPlan: Plan(),
-            adapterTransitionValidation: true).RunAsync(
-                _ => Task.FromResult(true),
+            adapterTransitionPlan: AdapterPlan()).RunAsync(
+                _ => Task.FromResult(
+                    HyperBoostAdapterTransitionAuthorization.PadAbsentConfirmed),
                 default);
 
         Assert.Equal(expectedSuccess, result.Success);
@@ -398,9 +398,9 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         PerformanceFanSetterValidationResult result = await Runner(
             session,
             safetyGate: new ScriptedSafetyGate(SafeGateResult),
-            sustainedPlan: Plan(),
-            adapterTransitionValidation: true).RunAsync(
-                _ => Task.FromResult(true),
+            adapterTransitionPlan: AdapterPlan()).RunAsync(
+                _ => Task.FromResult(
+                    HyperBoostAdapterTransitionAuthorization.PadAbsentConfirmed),
                 default);
 
         Assert.Equal(
@@ -419,14 +419,37 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         PerformanceFanSetterValidationResult result = await Runner(
             session,
             safetyGate: new ScriptedSafetyGate(SafeGateResult),
-            sustainedPlan: Plan(),
-            adapterTransitionValidation: true).RunAsync(
-                _ => Task.FromResult(false),
+            adapterTransitionPlan: AdapterPlan()).RunAsync(
+                _ => Task.FromResult(
+                    HyperBoostAdapterTransitionAuthorization.Rejected),
                 default);
 
         Assert.Equal(
             HyperBoostAdapterTransitionValidationFailure.TransitionNotConfirmed,
             result.AdapterTransitionValidation!.Failure);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x8C);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+    }
+
+    [Fact]
+    public async Task RunAsync_FreshPadPresenceVetoRestoresWithoutAdapterQuery()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            adapterTransitionPlan: AdapterPlan()).RunAsync(
+                _ => Task.FromResult(
+                    HyperBoostAdapterTransitionAuthorization.CoolingPadPresent),
+                default);
+
+        Assert.Equal(
+            HyperBoostAdapterTransitionValidationFailure.CoolingPadPresent,
+            result.AdapterTransitionValidation!.Failure);
+        Assert.False(result.AdapterTransitionValidation
+            .TransitionTimePadAbsentConfirmed);
         Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x8C);
         Assert.True(result.Restored);
         Assert.False(result.ManualRecoveryRequired);
@@ -441,8 +464,7 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         PerformanceFanSetterValidationResult result = await Runner(
             session,
             safetyGate: new ScriptedSafetyGate(SafeGateResult),
-            sustainedPlan: Plan(),
-            adapterTransitionValidation: true).RunAsync(
+            adapterTransitionPlan: AdapterPlan()).RunAsync(
                 token =>
                 {
                     cancellation.Cancel();
@@ -947,7 +969,8 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         IPerformanceFanValidationSafetyGate? safetyGate = null,
         ReviewedHyperBoostThermalPlan? sustainedPlan = null,
         IHyperBoostThermalTelemetrySource? thermalTelemetrySource = null,
-        bool adapterTransitionValidation = false) => new(
+        IHyperBoostExternalWorkloadSource? externalWorkloadSource = null,
+        ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan = null) => new(
         static () => new ValidationRunContext(),
         new ActorFactory(new ValidationActor(
             session,
@@ -963,7 +986,8 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         safetyGate: safetyGate,
         sustainedPlan: sustainedPlan,
         thermalTelemetrySource: thermalTelemetrySource,
-        adapterTransitionValidation: adapterTransitionValidation);
+        externalWorkloadSource: externalWorkloadSource,
+        adapterTransitionPlan: adapterTransitionPlan);
 
     private static readonly PerformanceFanValidationSafetyGateResult SafeGateResult =
         new(
@@ -1001,6 +1025,9 @@ public sealed class PerformanceFanSetterValidationRunnerTests
             bytes,
             Convert.ToHexString(SHA256.HashData(bytes)));
     }
+
+    private static ReviewedHyperBoostAdapterTransitionPlan AdapterPlan() =>
+        ReviewedHyperBoostAdapterTransitionPlan.LoadTrusted();
 
     private sealed class ScriptedSafetyGate(
         PerformanceFanValidationSafetyGateResult first,

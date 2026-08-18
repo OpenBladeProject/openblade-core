@@ -63,6 +63,13 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "HyperBoost control is unavailable."));
 
+    Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
+        ValidatePadlessHyperBoostLifecycleRequest request,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Pad-less HyperBoost lifecycle validation is unavailable."));
+
     Task<ControlOperationResult> SetCoolingPadFanIntentAsync(
         CoolingPadFanIntent intent,
         CancellationToken token) => Task.FromResult(
@@ -388,6 +395,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool ownsHyperBoost;
     private PerformancePreset? ownedHyperBoostBaseMode;
     private bool ownedHyperBoostRequiresCoolingPad;
+    private readonly HashSet<Guid> padlessHyperBoostLifecycleValidationRuns = [];
     private long hyperBoostOwnershipGeneration;
     private LightingSettings? pendingLightingRestore;
     private bool pendingLightingRestoreFromLifecycle;
@@ -3014,11 +3022,39 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token) => SetHyperBoostCoreAsync(
             enabled,
             expectedOwnershipGeneration: null,
+            lifecycleValidation: null,
             token);
+
+    public Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
+        ValidatePadlessHyperBoostLifecycleRequest request,
+        CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        PadlessHyperBoostLifecycleValidationBuildIdentity build =
+            PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent();
+        if (!build.Matches(
+                request.ExpectedSourceRevision,
+                request.ExpectedServiceAssemblySha256,
+                request.ExpectedAdmissionManifestSha256)
+            || !HyperBoostWithoutCoolingPadEvidenceGates.Current
+                .LifecycleValidationReady)
+        {
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Pad-less HyperBoost lifecycle validation is unavailable until the exact validation build and every non-lifecycle evidence gate are confirmed."));
+        }
+
+        return SetHyperBoostCoreAsync(
+            enabled: true,
+            expectedOwnershipGeneration: null,
+            request,
+            token);
+    }
 
     private async Task<ControlOperationResult> SetHyperBoostCoreAsync(
         bool enabled,
         long? expectedOwnershipGeneration,
+        ValidatePadlessHyperBoostLifecycleRequest? lifecycleValidation,
         CancellationToken token)
     {
         EnsureInitialized();
@@ -3111,9 +3147,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 Connection: CoolingPadConnectionState.PresentExact,
             } && (savedPadAuto || canHandbackOwnedPadControl);
-            bool padAbsentEligibility = current.Capabilities
+            bool padAbsentAccessAdmitted = current.Capabilities
                     ?.HyperBoostWithoutCoolingPadAccess
                 == DeviceFeatureAccess.ReadWrite
+                || lifecycleValidation is not null
+                    && current.Capabilities?.HyperBoostWithoutCoolingPadAccess
+                        == DeviceFeatureAccess.ObservedOnly;
+            bool padAbsentEligibility = padAbsentAccessAdmitted
                 && current.CoolingPad is
                 {
                     Connection: CoolingPadConnectionState.Absent,
@@ -3230,6 +3270,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "HyperBoost control is unavailable right now.");
             }
 
+            if (lifecycleValidation is not null
+                && (!padlessHyperBoostLifecycleValidationRuns.Add(
+                        lifecycleValidation.ValidationRunId)
+                    || device is not IPadlessHyperBoostLifecycleValidationDevice))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "This lifecycle validation run was already used or the exact validation-only device path is unavailable.");
+            }
+
             writeBaseline = current;
             ownedDisableAttempt = !enabled && ownsHyperBoost;
             if (enabled || ownedDisableAttempt)
@@ -3249,8 +3299,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .ConfigureAwait(false);
                 ownershipJournalPrepared = true;
             }
-            await device.SetHyperBoostAsync(enabled, requestedBaseMode, token)
-                .ConfigureAwait(false);
+            if (lifecycleValidation is not null)
+            {
+                await ((IPadlessHyperBoostLifecycleValidationDevice)device)
+                    .EnablePadlessHyperBoostLifecycleValidationAsync(token)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await device.SetHyperBoostAsync(enabled, requestedBaseMode, token)
+                    .ConfigureAwait(false);
+            }
             setterCompleted = true;
             ConfirmedDeviceState readback = await device.ReadStateAsync(token)
                 .ConfigureAwait(false);
@@ -4299,10 +4358,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 IsFresh: true,
                 OpaqueFanObservation: 0,
             };
+            bool padAbsenceMeetsHyperBoostSafety = observation is
+            {
+                Connection: CoolingPadConnectionState.Absent,
+                Failure: CoolingPadObservationFailure.None,
+                IsFresh: true,
+            };
             restoreOwnedHyperBoost = ownsHyperBoost
-                && ownedHyperBoostRequiresCoolingPad
                 && current.ConfirmedState?.HyperBoostActive == true
-                && !exactPadMeetsHyperBoostSafety;
+                && (ownedHyperBoostRequiresCoolingPad
+                    ? !exactPadMeetsHyperBoostSafety
+                    : !padAbsenceMeetsHyperBoostSafety);
             if (!exactPadAvailable)
             {
                 await TryInvalidateCoolingPadFanConnectionAsync(
@@ -4329,7 +4395,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             string message = fanRuntime.Access == DeviceFeatureAccess.ReadWrite
                 ? fanRuntime.Reason
                 : hyperBoostMayBeActive
-                ? "HyperBoost is active or awaiting confirmation; OpenBlade suppresses host cooling demand and requires saved pad Auto intent."
+                ? "HyperBoost is active or awaiting confirmation; OpenBlade suppresses host cooling demand while the thermal ownership state is unresolved."
                 : lastCoolingPadSmartCurveFailSafe
                     ? "Cooling-pad Smart Curve computed maximum demand because a required temperature was unavailable or unsafe. The demand was not written."
                     : observation.Failure switch
@@ -6547,6 +6613,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ControlOperationResult result = await SetHyperBoostCoreAsync(
                     enabled: false,
                     expectedOwnershipGeneration,
+                    lifecycleValidation: null,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (result.Status != ControlOperationStatus.Applied)

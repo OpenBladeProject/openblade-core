@@ -78,6 +78,14 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             Enabled: true),
+        new ValidatePadlessHyperBoostLifecycleRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            PadlessHyperBoostLifecycleScenario.LowPower,
+            Guid.NewGuid(),
+            new string('A', 40),
+            new string('B', 64),
+            new string('C', 64)),
         new SetCoolingPadFanIntentRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),

@@ -11,9 +11,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
   `RZ09-0581` on BIOS 4.00. The bounded commands validate an immediate
   apply/readback/restore cycle, a 60-second no-load thermal dwell, and an
   adapter transition from an admitted full-power class while continuously
-  checking physical pad absence. They accept the reviewed 280 W OEM and
-  330 W SlimQ full-power classifications, never retry an indeterminate write,
-  and do not enable padless production control.
+  checking physical pad absence. A fail-closed reviewed-load route is ready to
+  verify an externally launched executable by filename and SHA-256 without
+  starting or stopping it once its exact plan is reviewed and embedded. An
+  exact validation-marked Service build can arm the
+  installed low-power and crash-recovery checks through a separate
+  administrator-only request. Normal builds and the Tray remain observed-only.
+  The validators accept the reviewed 280 W OEM and 330 W SlimQ full-power
+  classifications, never retry an indeterminate write, and do not enable
+  padless production control.
 - Added the fail-closed production plumbing for pad-less HyperBoost on the exact
   `RZ09-0581`: a separate capability, defense-in-depth physical-absence checks,
   Balanced-only routing, admitted full-power adapter checks, and durable

@@ -8,6 +8,29 @@ namespace OpenBlade.Service.Tests;
 public sealed class ControlRequestHandlerTests
 {
     [Fact]
+    public async Task HandleAsync_NormalServiceBuildRejectsLifecycleValidationRequest()
+    {
+        var runtime = new RecordingRuntime();
+        var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());
+        var request = new ValidatePadlessHyperBoostLifecycleRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            PadlessHyperBoostLifecycleScenario.LowPower,
+            Guid.NewGuid(),
+            new string('A', 40),
+            new string('B', 64),
+            new string('C', 64));
+
+        ServiceResponse response = await handler.HandleAsync(
+            request,
+            CancellationToken.None);
+
+        Assert.False(response.Success);
+        Assert.Contains("validation-marked", response.Error, StringComparison.Ordinal);
+        Assert.Empty(runtime.Calls);
+    }
+
+    [Fact]
     public async Task HandleAsync_DispatchesEveryClosedRequestToExactlyOneRuntimeMethod()
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();

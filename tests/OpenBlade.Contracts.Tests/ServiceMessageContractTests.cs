@@ -27,6 +27,8 @@ public sealed class ServiceMessageContractTests
             (typeof(UpdateProfilesRequest), "updateProfiles"),
             (typeof(SetPerformanceOverrideRequest), "setPerformanceOverride"),
             (typeof(SetHyperBoostRequest), "setHyperBoost"),
+            (typeof(ValidatePadlessHyperBoostLifecycleRequest),
+                "validatePadlessHyperBoostLifecycle"),
             (typeof(SetCoolingPadFanIntentRequest), "setCoolingPadFanIntent"),
             (typeof(SetCoolingDemandLeaseRequest), "setCoolingDemandLease"),
             (typeof(ReleaseCoolingDemandLeaseRequest), "releaseCoolingDemandLease"),

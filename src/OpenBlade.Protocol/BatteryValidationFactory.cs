@@ -20,6 +20,14 @@ public static class BatteryValidationFactory
             : ProductionBatteryFactory.CreateWindows();
 
     internal static IProductionBatteryPortFactory
+        CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation() =>
+        WindowsHostIdentitySource.IsExactRz090528WindowsHost()
+            ? throw new UnvalidatedCommandException(
+                "Pad-less HyperBoost lifecycle validation is unavailable on this model.")
+            : ProductionBatteryFactory
+                .CreateWindowsForPadlessHyperBoostLifecycleValidation();
+
+    internal static IProductionBatteryPortFactory
         CreateWindowsProductionBatteryForService(
             FirmwareCompatibilityPolicy compatibilityPolicy)
     {
@@ -1067,7 +1075,8 @@ public static class BatteryValidationFactory
             CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
                 sustainedPlan: null,
                 thermalTelemetrySource: null,
-                adapterTransitionValidation: false);
+                externalWorkloadSource: null,
+                adapterTransitionPlan: null);
 
     internal static IPerformanceFanSetterValidationRunner
         CreateWindowsRz090581Bios400PadAbsentHyperBoostSustainedValidation(
@@ -1078,23 +1087,40 @@ public static class BatteryValidationFactory
                     ?? throw new ArgumentNullException(nameof(sustainedPlan)),
                 thermalTelemetrySource
                     ?? throw new ArgumentNullException(nameof(thermalTelemetrySource)),
-                adapterTransitionValidation: false);
+                externalWorkloadSource: null,
+                adapterTransitionPlan: null);
+
+    internal static IPerformanceFanSetterValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostReviewedLoadValidation(
+            ReviewedHyperBoostThermalPlan sustainedPlan,
+            IHyperBoostThermalTelemetrySource thermalTelemetrySource,
+            IHyperBoostExternalWorkloadSource externalWorkloadSource) =>
+            CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+                sustainedPlan
+                    ?? throw new ArgumentNullException(nameof(sustainedPlan)),
+                thermalTelemetrySource
+                    ?? throw new ArgumentNullException(nameof(thermalTelemetrySource)),
+                externalWorkloadSource
+                    ?? throw new ArgumentNullException(nameof(externalWorkloadSource)),
+                adapterTransitionPlan: null);
 
     internal static IHyperBoostAdapterTransitionValidationRunner
         CreateWindowsRz090581Bios400PadAbsentHyperBoostAdapterTransitionValidation(
-            ReviewedHyperBoostThermalPlan sustainedPlan) =>
+            ReviewedHyperBoostAdapterTransitionPlan adapterTransitionPlan) =>
             (IHyperBoostAdapterTransitionValidationRunner)
                 CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
-                    sustainedPlan
-                        ?? throw new ArgumentNullException(nameof(sustainedPlan)),
+                    sustainedPlan: null,
                     thermalTelemetrySource: null,
-                    adapterTransitionValidation: true);
+                    externalWorkloadSource: null,
+                    adapterTransitionPlan
+                        ?? throw new ArgumentNullException(nameof(adapterTransitionPlan)));
 
     private static IPerformanceFanSetterValidationRunner
         CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
             ReviewedHyperBoostThermalPlan? sustainedPlan,
             IHyperBoostThermalTelemetrySource? thermalTelemetrySource,
-            bool adapterTransitionValidation)
+            IHyperBoostExternalWorkloadSource? externalWorkloadSource,
+            ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -1140,7 +1166,8 @@ public static class BatteryValidationFactory
             safetyGate: safetyGate,
             sustainedPlan: sustainedPlan,
             thermalTelemetrySource: thermalTelemetrySource,
-            adapterTransitionValidation: adapterTransitionValidation);
+            externalWorkloadSource: externalWorkloadSource,
+            adapterTransitionPlan: adapterTransitionPlan);
     }
 
     public static IProtectionOffValidationRunFactory CreateWindowsProtectionOffValidation()

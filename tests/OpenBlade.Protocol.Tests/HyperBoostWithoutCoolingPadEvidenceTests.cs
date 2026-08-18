@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
@@ -30,11 +31,14 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.True(manifest.Transition.IndeterminateRetryForbidden);
         Assert.True(manifest.Transition.PhysicalPadVidPidPresenceVetoRequired);
         Assert.Equal(
-            "2798260D75AF394A650DA9E3B09D1047E006FB344A5A1DB0529AFEDA260F34EB",
+            "B1673380EC86030642D0E5F007E55EE12594B89C035C6A216C4503B5010026AB",
             manifest.Evidence.ImmediateAnnotationSha256);
         Assert.Equal(
             "589A94BCE7050BA43195BBFE5FAC4E8EDF337D481705047C668460ACAB675D2B",
             manifest.Evidence.SustainedNoLoadPlanSha256);
+        Assert.Equal(
+            "95E2333A19118480E6D8193933B7548587BF5C40D151C99BFE81E06D421C7537",
+            manifest.Evidence.AdapterTransitionPlanSha256);
         Assert.Equal(2, manifest.SchemaVersion);
         Assert.True(manifest.Gates.ExactDeviceAndFirmwareReviewed.Validated);
         Assert.NotNull(manifest.Gates.ExactDeviceAndFirmwareReviewed.Evidence);
@@ -42,6 +46,20 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.NotNull(manifest.Gates.SustainedNoLoadPlanReviewed.Evidence);
         Assert.False(manifest.Gates.CrashRecoveryValidated.Validated);
         Assert.Null(manifest.Gates.CrashRecoveryValidated.Evidence);
+    }
+
+    [Fact]
+    public void ImmediateEvidenceHash_MatchesPinnedCommittedArtifactBytes()
+    {
+        string path = Path.Combine(
+            AppContext.BaseDirectory,
+            "Evidence",
+            "2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json");
+
+        Assert.True(File.Exists(path), $"Pinned evidence was not copied: {path}");
+        Assert.Equal(
+            "B1673380EC86030642D0E5F007E55EE12594B89C035C6A216C4503B5010026AB",
+            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))));
     }
 
     [Fact]

@@ -2,7 +2,9 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-internal sealed class ProductionBatteryPort : IProductionBatteryPort
+internal sealed class ProductionBatteryPort :
+    IProductionBatteryPort,
+    IPadlessHyperBoostLifecycleValidationPort
 {
     internal const string Limit50Action = "battery-limit-50";
     internal const string Limit55Action = "battery-limit-55";
@@ -90,6 +92,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     private readonly IReadOnlySet<FanMode>? admittedFanModes;
     private readonly IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates;
     private readonly IHyperBoostEligibilitySource? hyperBoostEligibility;
+    private readonly bool allowPadlessHyperBoostLifecycleValidation;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object lifecycleSync = new();
     private readonly IAsyncDisposable ownedSession;
@@ -117,7 +120,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         DeviceFeatureAccess? coolingPadSupportAccess = null,
         DeviceCommandCatalog? hyperBoostCatalog = null,
-        IHyperBoostEligibilitySource? hyperBoostEligibility = null)
+        IHyperBoostEligibilitySource? hyperBoostEligibility = null,
+        bool allowPadlessHyperBoostLifecycleValidation = false)
         : this(
             session,
             session,
@@ -138,7 +142,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             hyperBoostBaseModes,
             coolingPadSupportAccess,
             hyperBoostCatalog,
-            hyperBoostEligibility)
+            hyperBoostEligibility,
+            allowPadlessHyperBoostLifecycleValidation)
     {
     }
 
@@ -162,7 +167,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         DeviceFeatureAccess? coolingPadSupportAccess = null,
         DeviceCommandCatalog? hyperBoostCatalog = null,
-        IHyperBoostEligibilitySource? hyperBoostEligibility = null)
+        IHyperBoostEligibilitySource? hyperBoostEligibility = null,
+        bool allowPadlessHyperBoostLifecycleValidation = false)
         : this(
             sharedCommandGate is null
                 ? actor.Session
@@ -185,7 +191,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             hyperBoostBaseModes,
             coolingPadSupportAccess,
             hyperBoostCatalog,
-            hyperBoostEligibility)
+            hyperBoostEligibility,
+            allowPadlessHyperBoostLifecycleValidation)
     {
     }
 
@@ -209,7 +216,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes,
         DeviceFeatureAccess? coolingPadSupportAccess,
         DeviceCommandCatalog? hyperBoostCatalog,
-        IHyperBoostEligibilitySource? hyperBoostEligibility)
+        IHyperBoostEligibilitySource? hyperBoostEligibility,
+        bool allowPadlessHyperBoostLifecycleValidation)
     {
         this.session = session ?? throw new ArgumentNullException(nameof(session));
         this.ownedSession = ownedSession ?? throw new ArgumentNullException(nameof(ownedSession));
@@ -236,6 +244,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             ? null
             : new HashSet<AdapterPowerState>(admittedAdapterPowerStates);
         this.hyperBoostEligibility = hyperBoostEligibility;
+        this.allowPadlessHyperBoostLifecycleValidation =
+            allowPadlessHyperBoostLifecycleValidation;
         if (hyperBoostBaseModes is not null
             && (hyperBoostAccess is null
                 || !Enum.IsDefined(hyperBoostBaseModes.Silent)
@@ -260,6 +270,18 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         {
             throw new UnvalidatedCommandException(
                 "HyperBoost without the cooling pad requires exact bounded evidence, writable Balanced admission, and access no broader than overall HyperBoost.");
+        }
+        if (allowPadlessHyperBoostLifecycleValidation
+            && (hyperBoostAccess != DeviceFeatureAccess.ReadWrite
+                || hyperBoostWithoutCoolingPadAccess
+                    != DeviceFeatureAccess.ObservedOnly
+                || hyperBoostBaseModes?.Balanced
+                    != DeviceFeatureAccess.ReadWrite
+                || this.hyperBoostEligibility is null
+                || !HasHyperBoostCommandSet(this.hyperBoostCatalog)))
+        {
+            throw new UnvalidatedCommandException(
+                "Developer pad-less lifecycle validation requires the exact admitted HyperBoost pair, Balanced restoration, observed-only production access, and an independent eligibility gate.");
         }
         if (hyperBoostAccess == DeviceFeatureAccess.ReadWrite
             && (!HasHyperBoostCommandSet(this.hyperBoostCatalog)
@@ -645,9 +667,31 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     public Task SetHyperBoostAsync(
         bool enabled,
         PerformancePreset baseMode,
+        CancellationToken cancellationToken) => SetHyperBoostCoreAsync(
+            enabled,
+            baseMode,
+            allowPadlessLifecycleValidation: false,
+            cancellationToken);
+
+    Task IPadlessHyperBoostLifecycleValidationPort
+        .EnablePadlessHyperBoostLifecycleValidationAsync(
+            CancellationToken cancellationToken) => SetHyperBoostCoreAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                allowPadlessLifecycleValidation: true,
+                cancellationToken);
+
+    private Task SetHyperBoostCoreAsync(
+        bool enabled,
+        PerformancePreset baseMode,
+        bool allowPadlessLifecycleValidation,
         CancellationToken cancellationToken)
     {
-        if (Capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite)
+        bool lifecycleValidation = enabled
+            && allowPadlessLifecycleValidation
+            && this.allowPadlessHyperBoostLifecycleValidation;
+        if (Capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
+            || allowPadlessLifecycleValidation && !lifecycleValidation)
         {
             return Task.FromException(Unavailable(
                 "HyperBoost control is not admitted for this exact device and firmware."));
@@ -685,7 +729,10 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             cancellationToken,
             commandCatalog: commandCatalog,
             validateEligibility: enabled
-                ? token => ValidateHyperBoostEligibilityAsync(baseMode, token)
+                ? token => ValidateHyperBoostEligibilityAsync(
+                    baseMode,
+                    lifecycleValidation,
+                    token)
                 : null);
     }
 
@@ -1621,6 +1668,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
 
     private async Task ValidateHyperBoostEligibilityAsync(
         PerformancePreset baseMode,
+        bool allowPadlessLifecycleValidation,
         CancellationToken cancellationToken)
     {
         CoolingPadConnectionState padState;
@@ -1637,8 +1685,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         bool padPresentEligibility = padState == CoolingPadConnectionState.PresentExact;
         bool padAbsentEligibility = padState == CoolingPadConnectionState.Absent
             && baseMode == PerformancePreset.Balanced
-            && Capabilities.HyperBoostWithoutCoolingPadAccess
-                == DeviceFeatureAccess.ReadWrite;
+            && (Capabilities.HyperBoostWithoutCoolingPadAccess
+                    == DeviceFeatureAccess.ReadWrite
+                || allowPadlessLifecycleValidation
+                    && this.allowPadlessHyperBoostLifecycleValidation
+                    && Capabilities.HyperBoostWithoutCoolingPadAccess
+                        == DeviceFeatureAccess.ObservedOnly);
         if (!padPresentEligibility && !padAbsentEligibility)
         {
             throw KnownNotApplied(

@@ -13587,6 +13587,102 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, padProvider.FreshObserveCount);
     }
 
+    [Theory]
+    [InlineData(
+        (int)CoolingPadConnectionState.Absent,
+        false,
+        (int)CoolingPadObservationFailure.None)]
+    [InlineData(
+        (int)CoolingPadConnectionState.Absent,
+        true,
+        (int)CoolingPadObservationFailure.Transport)]
+    [InlineData(
+        (int)CoolingPadConnectionState.PresentExact,
+        true,
+        (int)CoolingPadObservationFailure.None)]
+    [InlineData(
+        (int)CoolingPadConnectionState.Ambiguous,
+        true,
+        (int)CoolingPadObservationFailure.None)]
+    public async Task HyperBoostEnable_PadlessPathRejectsUnconfirmedFreshAbsence(
+        int freshConnectionValue,
+        bool fresh,
+        int freshFailureValue)
+    {
+        var observedAbsent = new CoolingPadObservationSnapshot(
+            CoolingPadConnectionState.Absent,
+            OpaqueFanObservation: null,
+            IsFresh: true,
+            CoolingPadObservationFailure.None);
+        var padProvider = new FixedVerifiedCoolingPadProvider(
+            observedAbsent,
+            DeviceFeatureAccess.ReadOnly,
+            new CoolingPadObservationSnapshot(
+                (CoolingPadConnectionState)freshConnectionValue,
+                OpaqueFanObservation: null,
+                fresh,
+                (CoolingPadObservationFailure)freshFailureValue));
+        TestContext context = await CreatePadlessHyperBoostReadyContextAsync(
+            padProvider);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.Equal(1, padProvider.FreshObserveCount);
+    }
+
+    [Theory]
+    [InlineData(
+        (int)CoolingPadConnectionState.Absent,
+        false,
+        (int)CoolingPadObservationFailure.None)]
+    [InlineData(
+        (int)CoolingPadConnectionState.PresentExact,
+        true,
+        (int)CoolingPadObservationFailure.None)]
+    [InlineData(
+        (int)CoolingPadConnectionState.Ambiguous,
+        true,
+        (int)CoolingPadObservationFailure.None)]
+    [InlineData(
+        (int)CoolingPadConnectionState.ObservationFailed,
+        false,
+        (int)CoolingPadObservationFailure.Discovery)]
+    public async Task MaintainCoolingPad_PadlessOwnedHyperBoostRestoresWhenAbsenceIsLost(
+        int connectionValue,
+        bool fresh,
+        int failureValue)
+    {
+        var padProvider = new MutableVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.Absent,
+                OpaqueFanObservation: null,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = await CreatePadlessHyperBoostReadyContextAsync(
+            padProvider);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        int writesAfterEnable = context.Device.HyperBoostSetCalls;
+        padProvider.Snapshot = new CoolingPadObservationSnapshot(
+            (CoolingPadConnectionState)connectionValue,
+            OpaqueFanObservation: null,
+            fresh,
+            (CoolingPadObservationFailure)failureValue);
+
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
+
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(writesAfterEnable + 1, context.Device.HyperBoostSetCalls);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+    }
+
     private TestContext CreateContext(
         bool providerAvailable,
         IReadOnlyList<string>? conflicts = null,
@@ -14011,6 +14107,32 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             (await context.Runtime.SetCoolingPadFanIntentAsync(
                 CoolingPadFanIntent.Default,
                 CancellationToken.None)).Status);
+        return context;
+    }
+
+    private async Task<TestContext> CreatePadlessHyperBoostReadyContextAsync(
+        IVerifiedCoolingPadProvider coolingPadProvider,
+        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            coolingPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            coolingPadProvider: coolingPadProvider,
+            hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+            HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainCoolingPadAsync(CancellationToken.None);
         return context;
     }
 

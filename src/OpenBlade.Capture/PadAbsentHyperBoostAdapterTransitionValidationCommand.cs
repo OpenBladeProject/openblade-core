@@ -29,9 +29,10 @@ internal sealed class PadAbsentHyperBoostAdapterTransitionValidationCommand
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
-    private readonly ReviewedHyperBoostThermalPlan plan;
+    private readonly ReviewedHyperBoostAdapterTransitionPlan plan;
     private readonly Func<CoolingPadPhysicalPresenceObservation> observePad;
-    private readonly Func<Func<CancellationToken, Task<bool>>, CancellationToken,
+    private readonly Func<Func<CancellationToken,
+        Task<HyperBoostAdapterTransitionAuthorization>>, CancellationToken,
         Task<PerformanceFanSetterValidationResult>> run;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private readonly TextReader input;
@@ -39,9 +40,10 @@ internal sealed class PadAbsentHyperBoostAdapterTransitionValidationCommand
     private readonly Func<Action, IDisposable> registerCancellation;
 
     internal PadAbsentHyperBoostAdapterTransitionValidationCommand(
-        ReviewedHyperBoostThermalPlan plan,
+        ReviewedHyperBoostAdapterTransitionPlan plan,
         Func<CoolingPadPhysicalPresenceObservation> observePad,
-        Func<Func<CancellationToken, Task<bool>>, CancellationToken,
+        Func<Func<CancellationToken,
+            Task<HyperBoostAdapterTransitionAuthorization>>, CancellationToken,
             Task<PerformanceFanSetterValidationResult>> run,
         TextReader input,
         TextWriter output,
@@ -144,7 +146,8 @@ internal sealed class PadAbsentHyperBoostAdapterTransitionValidationCommand
         }
     }
 
-    private async Task<bool> ConfirmTransitionAsync(CancellationToken cancellationToken)
+    private async Task<HyperBoostAdapterTransitionAuthorization>
+        ConfirmTransitionAsync(CancellationToken cancellationToken)
     {
         await output.WriteLineAsync(
             "Paired mode-7 readback is confirmed. Connect the reviewed 100 W USB-C " +
@@ -152,7 +155,20 @@ internal sealed class PadAbsentHyperBoostAdapterTransitionValidationCommand
             .ConfigureAwait(false);
         await output.WriteLineAsync(TransitionApproval).ConfigureAwait(false);
         string? approval = await input.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-        return string.Equals(approval, TransitionApproval, StringComparison.Ordinal);
+        if (!string.Equals(approval, TransitionApproval, StringComparison.Ordinal))
+        {
+            return HyperBoostAdapterTransitionAuthorization.Rejected;
+        }
+
+        return observePad() switch
+        {
+            CoolingPadPhysicalPresenceObservation.Absent =>
+                HyperBoostAdapterTransitionAuthorization.PadAbsentConfirmed,
+            CoolingPadPhysicalPresenceObservation.Present =>
+                HyperBoostAdapterTransitionAuthorization.CoolingPadPresent,
+            _ => HyperBoostAdapterTransitionAuthorization
+                .CoolingPadAbsenceObservationFailed,
+        };
     }
 
     private static bool IsSuccessfulResult(
@@ -217,7 +233,7 @@ internal sealed class PadAbsentHyperBoostAdapterTransitionValidationCommand
         SemanticResult Result)
     {
         internal static CaptureDocument From(
-            ReviewedHyperBoostThermalPlan plan,
+            ReviewedHyperBoostAdapterTransitionPlan plan,
             PerformanceFanSetterValidationResult result,
             bool postRestorationPadAbsent) => new(
                 SchemaVersion: 1,
@@ -237,6 +253,7 @@ internal sealed class PadAbsentHyperBoostAdapterTransitionValidationCommand
         bool InitialFullPowerAdapterConfirmed,
         bool PreApplyPadAbsenceConfirmed,
         bool TransitionPromptConfirmed,
+        bool TransitionTimePadAbsentConfirmed,
         bool FreshAdapterReadCompleted,
         AdapterPowerState InitialAdapterState,
         AdapterPowerState ObservedAdapterState,
@@ -260,6 +277,7 @@ internal sealed class PadAbsentHyperBoostAdapterTransitionValidationCommand
                 result.FullPowerAdapterConfirmed,
                 result.CoolingPadAbsentConfirmed,
                 transition?.TransitionPromptConfirmed == true,
+                transition?.TransitionTimePadAbsentConfirmed == true,
                 transition?.FreshAdapterReadCompleted == true,
                 transition?.InitialAdapterState ?? AdapterPowerState.Unknown,
                 transition?.ObservedAdapterState ?? AdapterPowerState.Unknown,

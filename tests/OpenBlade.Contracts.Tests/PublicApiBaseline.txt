@@ -1488,6 +1488,10 @@ type enum OpenBlade.Contracts.OverrideLifetime
   field System.Int32 value__
   field const OpenBlade.Contracts.OverrideLifetime Persistent = 1
   field const OpenBlade.Contracts.OverrideLifetime UntilPowerSourceChange = 0
+type enum OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario
+  field System.Int32 value__
+  field const OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario LowPower = 0
+  field const OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario UnexpectedExit = 1
 type sealed class OpenBlade.Contracts.PerformanceOverride
   interface System.IEquatable<OpenBlade.Contracts.PerformanceOverride>
   ctor (OpenBlade.Contracts.PerformancePreset Value, OpenBlade.Contracts.OverrideLifetime Lifetime, OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance = null)
@@ -2629,6 +2633,34 @@ type sealed class OpenBlade.Contracts.UpdateProfilesRequest
   method virtual OpenBlade.Contracts.UpdateProfilesRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.UpdateProfilesRequest other)
   property OpenBlade.Contracts.ProfileSet Profiles { get; init; }
+type sealed class OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario Scenario, System.Guid ValidationRunId, System.String ExpectedSourceRevision, System.String ExpectedServiceAssemblySha256, System.String ExpectedAdmissionManifestSha256)
+  method OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario get_Scenario()
+  method System.Guid get_ValidationRunId()
+  method System.String get_ExpectedAdmissionManifestSha256()
+  method System.String get_ExpectedServiceAssemblySha256()
+  method System.String get_ExpectedSourceRevision()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario Scenario, out System.Guid ValidationRunId, out System.String ExpectedSourceRevision, out System.String ExpectedServiceAssemblySha256, out System.String ExpectedAdmissionManifestSha256)
+  method System.Void set_ExpectedAdmissionManifestSha256(System.String value)
+  method System.Void set_ExpectedServiceAssemblySha256(System.String value)
+  method System.Void set_ExpectedSourceRevision(System.String value)
+  method System.Void set_Scenario(OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario value)
+  method System.Void set_ValidationRunId(System.Guid value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest left, OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest left, OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest right)
+  method virtual OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest other)
+  property OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario Scenario { get; init; }
+  property System.Guid ValidationRunId { get; init; }
+  property System.String ExpectedAdmissionManifestSha256 { get; init; }
+  property System.String ExpectedServiceAssemblySha256 { get; init; }
+  property System.String ExpectedSourceRevision { get; init; }
 type sealed class OpenBlade.Contracts.WaveLightingParameters
   base OpenBlade.Contracts.LightingEffectParameters
   interface System.IEquatable<OpenBlade.Contracts.WaveLightingParameters>

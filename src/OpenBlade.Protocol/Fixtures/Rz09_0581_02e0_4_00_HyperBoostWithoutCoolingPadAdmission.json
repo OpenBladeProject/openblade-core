@@ -26,16 +26,18 @@
   },
   "evidence": {
     "immediateAnnotation": "2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json",
-    "immediateAnnotationSha256": "2798260D75AF394A650DA9E3B09D1047E006FB344A5A1DB0529AFEDA260F34EB",
+    "immediateAnnotationSha256": "B1673380EC86030642D0E5F007E55EE12594B89C035C6A216C4503B5010026AB",
     "sustainedNoLoadPlan": "Rz09_0581_02e0_4_00_PadAbsentHyperBoostNoLoadPlan.json",
-    "sustainedNoLoadPlanSha256": "589A94BCE7050BA43195BBFE5FAC4E8EDF337D481705047C668460ACAB675D2B"
+    "sustainedNoLoadPlanSha256": "589A94BCE7050BA43195BBFE5FAC4E8EDF337D481705047C668460ACAB675D2B",
+    "adapterTransitionPlan": "Rz09_0581_02e0_4_00_PadAbsentHyperBoostAdapterTransitionPlan.json",
+    "adapterTransitionPlanSha256": "95E2333A19118480E6D8193933B7548587BF5C40D151C99BFE81E06D421C7537"
   },
   "gates": {
     "exactDeviceAndFirmwareReviewed": {
       "validated": true,
       "evidence": {
         "artifact": "captures/annotations/2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json",
-        "sha256": "2798260D75AF394A650DA9E3B09D1047E006FB344A5A1DB0529AFEDA260F34EB"
+        "sha256": "B1673380EC86030642D0E5F007E55EE12594B89C035C6A216C4503B5010026AB"
       }
     },
     "immediateNoLoadApplyReadbackRestoreValidated": {

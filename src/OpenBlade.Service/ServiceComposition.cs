@@ -163,7 +163,10 @@ internal static class ServiceComposition
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory() =>
         CreateProductionBatteryFactory(
-            BatteryValidationFactory.CreateWindowsProductionBatteryForService,
+            PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled
+                ? BatteryValidationFactory
+                    .CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation
+                : BatteryValidationFactory.CreateWindowsProductionBatteryForService,
             ProductionBatteryFactory.CreateWindowsReadOnly);
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(

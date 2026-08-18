@@ -13,6 +13,21 @@ internal interface IHyperBoostThermalTelemetrySource
         CancellationToken cancellationToken);
 }
 
+internal enum HyperBoostExternalWorkloadObservation
+{
+    RunningExact,
+    NotRunning,
+    IdentityMismatch,
+    ObservationFailed,
+}
+
+internal interface IHyperBoostExternalWorkloadSource
+{
+    ValueTask<HyperBoostExternalWorkloadObservation> ObserveAsync(
+        ReviewedHyperBoostThermalPlan plan,
+        CancellationToken cancellationToken);
+}
+
 internal enum HyperBoostSustainedValidationFailure
 {
     None,
@@ -30,6 +45,9 @@ internal enum HyperBoostSustainedValidationFailure
     FanRpmReadFailed,
     Fan1BelowMinimum,
     Fan2BelowMinimum,
+    ExternalWorkloadNotRunning,
+    ExternalWorkloadIdentityMismatch,
+    ExternalWorkloadObservationFailed,
     Canceled,
     UnexpectedFailure,
 }
@@ -53,6 +71,7 @@ internal sealed record HyperBoostSustainedValidationResult(
     bool FullPowerAdapterMaintained,
     bool HyperBoostStateMaintained,
     bool RequiredSensorsMaintained,
+    bool ExternalWorkloadMaintained,
     IReadOnlyList<HyperBoostThermalValidationSample> Samples,
     HyperBoostSustainedValidationFailure Failure)
 {
@@ -62,7 +81,16 @@ internal sealed record HyperBoostSustainedValidationResult(
         && ContinuousPadAbsenceConfirmed
         && FullPowerAdapterMaintained
         && HyperBoostStateMaintained
-        && RequiredSensorsMaintained;
+        && RequiredSensorsMaintained
+        && ExternalWorkloadMaintained;
+}
+
+internal enum HyperBoostAdapterTransitionAuthorization
+{
+    Rejected,
+    PadAbsentConfirmed,
+    CoolingPadPresent,
+    CoolingPadAbsenceObservationFailed,
 }
 
 internal enum HyperBoostAdapterTransitionValidationFailure
@@ -72,6 +100,8 @@ internal enum HyperBoostAdapterTransitionValidationFailure
     AdapterPowerReadFailed,
     AdapterPowerUnknown,
     ReviewedNonFullPowerNotObserved,
+    CoolingPadPresent,
+    CoolingPadAbsenceObservationFailed,
     Canceled,
     UnexpectedFailure,
 }
@@ -80,6 +110,7 @@ internal sealed record HyperBoostAdapterTransitionValidationResult(
     string PlanId,
     string PlanSha256,
     bool TransitionPromptConfirmed,
+    bool TransitionTimePadAbsentConfirmed,
     bool FreshAdapterReadCompleted,
     AdapterPowerState InitialAdapterState,
     AdapterPowerState ObservedAdapterState,
@@ -89,6 +120,7 @@ internal sealed record HyperBoostAdapterTransitionValidationResult(
     internal bool Success =>
         Failure == HyperBoostAdapterTransitionValidationFailure.None
         && TransitionPromptConfirmed
+        && TransitionTimePadAbsentConfirmed
         && FreshAdapterReadCompleted
         && HyperBoostValidationPower.IsAdmittedFullPower(InitialAdapterState)
         && ObservedAdapterState == AdapterPowerState.UsbCPower100W

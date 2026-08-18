@@ -40,7 +40,9 @@ internal sealed record HyperBoostWithoutCoolingPadAdmissionEvidence(
     string ImmediateAnnotation,
     string ImmediateAnnotationSha256,
     string SustainedNoLoadPlan,
-    string SustainedNoLoadPlanSha256);
+    string SustainedNoLoadPlanSha256,
+    string AdapterTransitionPlan,
+    string AdapterTransitionPlanSha256);
 
 internal sealed record HyperBoostWithoutCoolingPadAdmissionGates(
     ReviewedAdmissionGate ExactDeviceAndFirmwareReviewed,
@@ -71,15 +73,18 @@ internal readonly record struct HyperBoostWithoutCoolingPadEvidenceGates(
     bool CrashRecoveryValidated)
 {
     internal bool WriteAdmitted =>
+        LifecycleValidationReady
+        && LowPowerLifecycleValidated
+        && CrashRecoveryValidated;
+
+    internal bool LifecycleValidationReady =>
         ExactDeviceAndFirmwareReviewed
         && ImmediateNoLoadApplyReadbackRestoreValidated
         && SustainedNoLoadPlanReviewed
         && SustainedNoLoadExecutionValidated
         && PostRestorationAbsenceValidated
         && ReviewedLoadValidated
-        && AdapterTransitionValidated
-        && LowPowerLifecycleValidated
-        && CrashRecoveryValidated;
+        && AdapterTransitionValidated;
 
     internal static HyperBoostWithoutCoolingPadEvidenceGates Current =>
         HyperBoostWithoutCoolingPadAdmissionSource.ReadGates();
@@ -102,11 +107,15 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
     private const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json";
     private const string ExpectedSha256 =
-        "F8E7AFF60D4542E615E8F1F2332D044D9D541881C0546B88B07A8C2FDD57C8EF";
+        "4B6C23C5061EEE5A24BA75A740D893B1882070BA9EFE995BDDD7C49F54D69E83";
+
+    internal static string TrustedManifestSha256 => ExpectedSha256;
     private const string ImmediateAnnotationSha256 =
-        "2798260D75AF394A650DA9E3B09D1047E006FB344A5A1DB0529AFEDA260F34EB";
+        "B1673380EC86030642D0E5F007E55EE12594B89C035C6A216C4503B5010026AB";
     private const string SustainedNoLoadPlanSha256 =
         "589A94BCE7050BA43195BBFE5FAC4E8EDF337D481705047C668460ACAB675D2B";
+    private const string AdapterTransitionPlanSha256 =
+        "95E2333A19118480E6D8193933B7548587BF5C40D151C99BFE81E06D421C7537";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -212,6 +221,9 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
                     SustainedNoLoadPlan:
                         "Rz09_0581_02e0_4_00_PadAbsentHyperBoostNoLoadPlan.json",
                     SustainedNoLoadPlanSha256: SustainedNoLoadPlanSha256,
+                    AdapterTransitionPlan:
+                        "Rz09_0581_02e0_4_00_PadAbsentHyperBoostAdapterTransitionPlan.json",
+                    AdapterTransitionPlanSha256: AdapterTransitionPlanSha256,
                 },
                 Gates:
                 {

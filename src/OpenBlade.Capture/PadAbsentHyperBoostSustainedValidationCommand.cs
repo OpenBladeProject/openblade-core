@@ -9,6 +9,8 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
 {
     public const string ExactTargetConfirmation =
         "RZ09-0581:1532:02E0:4.00:PAD-ABSENT:SUSTAINED-NO-LOAD";
+    public const string ReviewedLoadTargetConfirmation =
+        "RZ09-0581:1532:02E0:4.00:PAD-ABSENT:REVIEWED-EXTERNAL-LOAD";
     public const int UsageExitCode = 1;
     public const int ValidationFailureExitCode = 2;
     public const int ApprovalRejectedExitCode = 3;
@@ -58,14 +60,32 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (arguments.Count != 2
-            || !arguments[0].Equals("--confirm-target", StringComparison.Ordinal)
-            || !arguments[1].Equals(ExactTargetConfirmation, StringComparison.Ordinal))
+        bool externalLoad = plan.WorkloadKind ==
+            HyperBoostValidationWorkloadKind.ExternalReviewedLoad;
+        string expectedTarget = externalLoad
+            ? ReviewedLoadTargetConfirmation
+            : ExactTargetConfirmation;
+        bool argumentsValid = arguments.Count == (externalLoad ? 4 : 2)
+            && arguments[0].Equals("--confirm-target", StringComparison.Ordinal)
+            && arguments[1].Equals(expectedTarget, StringComparison.Ordinal);
+        if (argumentsValid && externalLoad)
+        {
+            argumentsValid = arguments[2].Equals(
+                    "--workload-pid",
+                    StringComparison.Ordinal)
+                && int.TryParse(arguments[3], out int processId)
+                && processId > 0;
+        }
+        if (!argumentsValid)
         {
             await output.WriteLineAsync(
-                "Usage: OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-" +
-                "hyperboost-pad-absent-sustained --confirm-target " +
-                ExactTargetConfirmation).ConfigureAwait(false);
+                externalLoad
+                    ? "Usage: OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-" +
+                        "hyperboost-pad-absent-reviewed-load --confirm-target " +
+                        ReviewedLoadTargetConfirmation + " --workload-pid <pid>"
+                    : "Usage: OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-" +
+                        "hyperboost-pad-absent-sustained --confirm-target " +
+                        ExactTargetConfirmation).ConfigureAwait(false);
             return UsageExitCode;
         }
 
@@ -92,8 +112,12 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
             }
 
             await output.WriteLineAsync(
-                "WARNING: Developer-only pad-absent HyperBoost no-load dwell. " +
-                "Production support remains disabled.").ConfigureAwait(false);
+                externalLoad
+                    ? "WARNING: Developer-only pad-absent HyperBoost reviewed-load " +
+                        "validation. OpenBlade observes but never launches or stops " +
+                        "the exact-hash workload. Production support remains disabled."
+                    : "WARNING: Developer-only pad-absent HyperBoost no-load dwell. " +
+                        "Production support remains disabled.").ConfigureAwait(false);
             await output.WriteLineAsync(
                 $"Plan={plan.PlanId} SHA256={plan.SourceSha256}")
                 .ConfigureAwait(false);
@@ -104,7 +128,11 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
                 .ConfigureAwait(false);
             await output.WriteLineAsync(
                 "The cooling pad USB and external power must remain disconnected. " +
-                "Do not start a workload. Type this exact phrase while present:")
+                (externalLoad
+                    ? $"Keep the externally launched exact {plan.WorkloadName} process " +
+                        "running for the complete bounded validation. "
+                    : "Do not start a workload. ") +
+                "Type this exact phrase while present:")
                 .ConfigureAwait(false);
             await output.WriteLineAsync(InteractiveApproval).ConfigureAwait(false);
             string? approval = await input.ReadLineAsync(commandCancellation.Token)
@@ -146,7 +174,11 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
 
     internal static string BuildInteractiveApproval(
         ReviewedHyperBoostThermalPlan plan) =>
-        $"RZ09-0581:BIOS-4.00:PAD-PHYSICALLY-ABSENT:NO-LOAD:" +
+        $"RZ09-0581:BIOS-4.00:PAD-PHYSICALLY-ABSENT:" +
+        (plan.WorkloadKind == HyperBoostValidationWorkloadKind.ExternalReviewedLoad
+            ? $"EXTERNAL-LOAD-{plan.WorkloadName}:" +
+                $"WORKLOAD-SHA256-{plan.WorkloadSha256}:"
+            : "NO-LOAD:") +
         $"{plan.DurationSeconds}S:CPU-MAX-{plan.MaximumCpuTemperatureCelsius}C:" +
         $"GPU-MAX-{plan.MaximumGpuTemperatureCelsius}C:PLAN-{plan.PlanId}:" +
         $"SHA256-{plan.SourceSha256}:APPLY-MONITOR-RESTORE";
@@ -222,6 +254,9 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
         double MaximumCpuTemperatureCelsius,
         double MaximumGpuTemperatureCelsius,
         HyperBoostGpuSensorPolicy GpuSensorPolicy,
+        HyperBoostValidationWorkloadKind WorkloadKind,
+        string? WorkloadName,
+        string? WorkloadSha256,
         SemanticResult Result)
     {
         internal static CaptureDocument From(
@@ -240,6 +275,9 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
                 plan.MaximumCpuTemperatureCelsius,
                 plan.MaximumGpuTemperatureCelsius,
                 plan.GpuSensorPolicy,
+                plan.WorkloadKind,
+                plan.WorkloadName,
+                plan.WorkloadSha256,
                 SemanticResult.From(result));
     }
 
@@ -292,6 +330,7 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
         bool FullPowerAdapterMaintained,
         bool HyperBoostStateMaintained,
         bool RequiredSensorsMaintained,
+        bool ExternalWorkloadMaintained,
         HyperBoostSustainedValidationFailure Failure,
         IReadOnlyList<Sample> Samples)
     {
@@ -303,6 +342,7 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
                 result.FullPowerAdapterMaintained,
                 result.HyperBoostStateMaintained,
                 result.RequiredSensorsMaintained,
+                result.ExternalWorkloadMaintained,
                 result.Failure,
                 result.Samples.Select(Sample.From).ToArray());
     }

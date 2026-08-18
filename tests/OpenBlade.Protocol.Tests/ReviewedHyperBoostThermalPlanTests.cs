@@ -87,7 +87,7 @@ public sealed class ReviewedHyperBoostThermalPlanTests
     }
 
     [Fact]
-    public void Parse_RejectsExternalLoadUntilExecutorIsReviewed()
+    public void Parse_AcceptsBoundedExternalLoadContractButTrustedRouteFailsClosed()
     {
         byte[] json = Encoding.UTF8.GetBytes(
             Encoding.UTF8.GetString(Json())
@@ -105,8 +105,16 @@ public sealed class ReviewedHyperBoostThermalPlanTests
                     StringComparison.Ordinal));
         string hash = Convert.ToHexString(SHA256.HashData(json));
 
-        Assert.Throws<UnvalidatedCommandException>(() =>
-            ReviewedHyperBoostThermalPlan.Parse(json, hash));
+        ReviewedHyperBoostThermalPlan plan =
+            ReviewedHyperBoostThermalPlan.Parse(json, hash);
+
+        Assert.Equal(
+            HyperBoostValidationWorkloadKind.ExternalReviewedLoad,
+            plan.WorkloadKind);
+        Assert.Equal("reviewed-workload.exe", plan.WorkloadName);
+        Assert.Equal(new string('B', 64), plan.WorkloadSha256);
+        Assert.Throws<UnvalidatedCommandException>(
+            ReviewedHyperBoostThermalPlan.LoadTrustedPadAbsentExternalLoad);
     }
 
     private static byte[] Json() => Encoding.UTF8.GetBytes(

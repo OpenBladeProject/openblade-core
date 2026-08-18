@@ -363,7 +363,8 @@ public interface IPerformanceFanSetterValidationRunner
 internal interface IHyperBoostAdapterTransitionValidationRunner
 {
     Task<PerformanceFanSetterValidationResult> RunAsync(
-        Func<CancellationToken, Task<bool>> confirmTransition,
+        Func<CancellationToken, Task<HyperBoostAdapterTransitionAuthorization>>
+            authorizeTransition,
         CancellationToken cancellationToken);
 }
 
@@ -394,7 +395,8 @@ internal sealed class PerformanceFanSetterValidationRunner
     private readonly IPerformanceFanValidationSafetyGate? safetyGate;
     private readonly ReviewedHyperBoostThermalPlan? sustainedPlan;
     private readonly IHyperBoostThermalTelemetrySource? thermalTelemetrySource;
-    private readonly bool adapterTransitionValidation;
+    private readonly IHyperBoostExternalWorkloadSource? externalWorkloadSource;
+    private readonly ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan;
     private int started;
 
     internal PerformanceFanSetterValidationRunner(
@@ -410,7 +412,8 @@ internal sealed class PerformanceFanSetterValidationRunner
         IPerformanceFanValidationSafetyGate? safetyGate = null,
         ReviewedHyperBoostThermalPlan? sustainedPlan = null,
         IHyperBoostThermalTelemetrySource? thermalTelemetrySource = null,
-        bool adapterTransitionValidation = false)
+        IHyperBoostExternalWorkloadSource? externalWorkloadSource = null,
+        ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan = null)
     {
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.actorFactory = actorFactory ?? throw new ArgumentNullException(nameof(actorFactory));
@@ -443,14 +446,23 @@ internal sealed class PerformanceFanSetterValidationRunner
         this.fixedFanStateCheckEverySamples = fixedFanStateCheckEverySamples;
         this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
         this.safetyGate = safetyGate;
-        if (adapterTransitionValidation
-            ? sustainedPlan is null || thermalTelemetrySource is not null
-            : (sustainedPlan is null) != (thermalTelemetrySource is null))
+        if ((sustainedPlan is null) != (thermalTelemetrySource is null)
+            || sustainedPlan?.WorkloadKind ==
+                    HyperBoostValidationWorkloadKind.ExternalReviewedLoad
+                && externalWorkloadSource is null
+            || sustainedPlan?.WorkloadKind ==
+                    HyperBoostValidationWorkloadKind.SustainedNoLoadDwell
+                && externalWorkloadSource is not null
+            || sustainedPlan is null && externalWorkloadSource is not null
+            || adapterTransitionPlan is not null
+                && (sustainedPlan is not null
+                    || thermalTelemetrySource is not null
+                    || externalWorkloadSource is not null))
         {
             throw new ArgumentException(
-                adapterTransitionValidation
-                    ? "Adapter-transition validation requires a reviewed plan and no telemetry source."
-                    : "A sustained HyperBoost plan and telemetry source must be supplied together.");
+                "Sustained validation requires a matching thermal plan, telemetry source, " +
+                "and external-workload observer only for an external-load plan; adapter " +
+                "transition validation must use its own reviewed plan.");
         }
 
         if (sustainedPlan is not null && safetyGate is null)
@@ -461,26 +473,29 @@ internal sealed class PerformanceFanSetterValidationRunner
 
         this.sustainedPlan = sustainedPlan;
         this.thermalTelemetrySource = thermalTelemetrySource;
-        this.adapterTransitionValidation = adapterTransitionValidation;
+        this.externalWorkloadSource = externalWorkloadSource;
+        this.adapterTransitionPlan = adapterTransitionPlan;
     }
 
     public Task<PerformanceFanSetterValidationResult> RunAsync(
         PerformanceFanValidationTarget target,
         CancellationToken cancellationToken) => RunCoreAsync(
             target,
-            confirmTransition: null,
+            authorizeTransition: null,
             cancellationToken);
 
     public Task<PerformanceFanSetterValidationResult> RunAsync(
-        Func<CancellationToken, Task<bool>> confirmTransition,
+        Func<CancellationToken, Task<HyperBoostAdapterTransitionAuthorization>>
+            authorizeTransition,
         CancellationToken cancellationToken) => RunCoreAsync(
             PerformanceFanValidationTarget.HyperBoost,
-            confirmTransition ?? throw new ArgumentNullException(nameof(confirmTransition)),
+            authorizeTransition ?? throw new ArgumentNullException(nameof(authorizeTransition)),
             cancellationToken);
 
     private async Task<PerformanceFanSetterValidationResult> RunCoreAsync(
         PerformanceFanValidationTarget target,
-        Func<CancellationToken, Task<bool>>? confirmTransition,
+        Func<CancellationToken, Task<HyperBoostAdapterTransitionAuthorization>>?
+            authorizeTransition,
         CancellationToken cancellationToken)
     {
         if (!Enum.IsDefined(target) || Interlocked.Exchange(ref started, 1) != 0)
@@ -488,7 +503,7 @@ internal sealed class PerformanceFanSetterValidationRunner
             return Empty(target, PerformanceFanValidationFailure.OpenFailed);
         }
 
-        if (adapterTransitionValidation != (confirmTransition is not null)
+        if ((adapterTransitionPlan is not null) != (authorizeTransition is not null)
             || sustainedPlan is not null
             && target != PerformanceFanValidationTarget.HyperBoost)
         {
@@ -680,15 +695,15 @@ internal sealed class PerformanceFanSetterValidationRunner
                     state,
                     cancellationToken).ConfigureAwait(false);
             }
-            else if (confirmTransition is not null)
+            else if (authorizeTransition is not null)
             {
                 state.AdapterTransitionValidation =
                     await ValidateAdapterTransitionAsync(
                         context,
                         actor.Session,
-                        sustainedPlan!,
+                        adapterTransitionPlan!,
                         state.InitialAdapterPowerState,
-                        confirmTransition,
+                        authorizeTransition,
                         cancellationToken).ConfigureAwait(false);
                 if (!state.AdapterTransitionValidation.Success)
                 {
@@ -708,6 +723,7 @@ internal sealed class PerformanceFanSetterValidationRunner
                     actor.Session,
                     sustainedPlan,
                     thermalTelemetrySource,
+                    externalWorkloadSource,
                     cancellationToken).ConfigureAwait(false);
                 if (!state.SustainedValidation.Success)
                 {
@@ -760,7 +776,7 @@ internal sealed class PerformanceFanSetterValidationRunner
             }
             else if (sustainedPlan is not null
                 && safetyGate is not null
-                && confirmTransition is null)
+                && authorizeTransition is null)
             {
                 PerformanceFanValidationSafetyGateResult postRestorationSafety =
                     await safetyGate.ValidateAsync(
@@ -959,6 +975,7 @@ internal sealed class PerformanceFanSetterValidationRunner
             IRazerCommandSession session,
             ReviewedHyperBoostThermalPlan plan,
             IHyperBoostThermalTelemetrySource telemetrySource,
+            IHyperBoostExternalWorkloadSource? workloadSource,
             CancellationToken cancellationToken)
     {
         int plannedSampleCount = checked((int)(plan.Duration.Ticks /
@@ -970,6 +987,8 @@ internal sealed class PerformanceFanSetterValidationRunner
         bool fullPowerMaintained = true;
         bool hyperBoostMaintained = true;
         bool requiredSensorsMaintained = true;
+        bool externalWorkloadMaintained =
+            plan.WorkloadKind == HyperBoostValidationWorkloadKind.SustainedNoLoadDwell;
 
         HyperBoostSustainedValidationResult Result(
             HyperBoostSustainedValidationFailure failure) => new(
@@ -983,11 +1002,59 @@ internal sealed class PerformanceFanSetterValidationRunner
                 fullPowerMaintained,
                 hyperBoostMaintained,
                 requiredSensorsMaintained,
+                externalWorkloadMaintained,
                 samples.ToArray(),
                 failure);
 
+        async ValueTask<HyperBoostSustainedValidationFailure?> ObserveWorkloadAsync()
+        {
+            if (plan.WorkloadKind != HyperBoostValidationWorkloadKind.ExternalReviewedLoad)
+            {
+                return null;
+            }
+
+            HyperBoostExternalWorkloadObservation observation;
+            try
+            {
+                observation = await workloadSource!.ObserveAsync(plan, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return HyperBoostSustainedValidationFailure.Canceled;
+            }
+            catch
+            {
+                observation = HyperBoostExternalWorkloadObservation.ObservationFailed;
+            }
+
+            if (observation == HyperBoostExternalWorkloadObservation.RunningExact)
+            {
+                externalWorkloadMaintained = true;
+                return null;
+            }
+
+            externalWorkloadMaintained = false;
+            return observation switch
+            {
+                HyperBoostExternalWorkloadObservation.NotRunning =>
+                    HyperBoostSustainedValidationFailure.ExternalWorkloadNotRunning,
+                HyperBoostExternalWorkloadObservation.IdentityMismatch =>
+                    HyperBoostSustainedValidationFailure.ExternalWorkloadIdentityMismatch,
+                _ => HyperBoostSustainedValidationFailure
+                    .ExternalWorkloadObservationFailed,
+            };
+        }
+
         try
         {
+            HyperBoostSustainedValidationFailure? initialWorkloadFailure =
+                await ObserveWorkloadAsync().ConfigureAwait(false);
+            if (initialWorkloadFailure is { } initialFailure)
+            {
+                return Result(initialFailure);
+            }
+
             for (int sampleNumber = 1;
                  sampleNumber <= plannedSampleCount;
                  sampleNumber++)
@@ -996,6 +1063,13 @@ internal sealed class PerformanceFanSetterValidationRunner
                     plan.SampleInterval,
                     timeProvider,
                     cancellationToken).ConfigureAwait(false);
+
+                HyperBoostSustainedValidationFailure? workloadFailure =
+                    await ObserveWorkloadAsync().ConfigureAwait(false);
+                if (workloadFailure is { } failedWorkload)
+                {
+                    return Result(failedWorkload);
+                }
 
                 PerformanceFanValidationSafetyGateResult safety =
                     await safetyGate!.ValidateAsync(
@@ -1126,19 +1200,22 @@ internal sealed class PerformanceFanSetterValidationRunner
         ValidateAdapterTransitionAsync(
             ValidationRunContext context,
             IRazerCommandSession session,
-            ReviewedHyperBoostThermalPlan plan,
+            ReviewedHyperBoostAdapterTransitionPlan plan,
             OpenBlade.Contracts.AdapterPowerState initialAdapterState,
-            Func<CancellationToken, Task<bool>> confirmTransition,
+            Func<CancellationToken, Task<HyperBoostAdapterTransitionAuthorization>>
+                authorizeTransition,
             CancellationToken cancellationToken)
     {
         HyperBoostAdapterTransitionValidationResult Result(
             bool promptConfirmed,
+            bool padAbsentConfirmed,
             bool readCompleted,
             OpenBlade.Contracts.AdapterPowerState observed,
             HyperBoostAdapterTransitionValidationFailure failure) => new(
                 plan.PlanId,
                 plan.SourceSha256,
                 promptConfirmed,
+                padAbsentConfirmed,
                 readCompleted,
                 initialAdapterState,
                 observed,
@@ -1148,22 +1225,45 @@ internal sealed class PerformanceFanSetterValidationRunner
 
         try
         {
-            bool confirmed = await confirmTransition(cancellationToken)
-                .ConfigureAwait(false);
-            if (!confirmed)
+            HyperBoostAdapterTransitionAuthorization authorization =
+                await authorizeTransition(cancellationToken).ConfigureAwait(false);
+            if (authorization != HyperBoostAdapterTransitionAuthorization.PadAbsentConfirmed)
             {
                 return Result(
-                    promptConfirmed: false,
+                    promptConfirmed:
+                        authorization != HyperBoostAdapterTransitionAuthorization.Rejected,
+                    padAbsentConfirmed: false,
+                    readCompleted: false,
+                    OpenBlade.Contracts.AdapterPowerState.Unknown,
+                    authorization switch
+                    {
+                        HyperBoostAdapterTransitionAuthorization.CoolingPadPresent =>
+                            HyperBoostAdapterTransitionValidationFailure.CoolingPadPresent,
+                        HyperBoostAdapterTransitionAuthorization
+                            .CoolingPadAbsenceObservationFailed =>
+                            HyperBoostAdapterTransitionValidationFailure
+                                .CoolingPadAbsenceObservationFailed,
+                        _ => HyperBoostAdapterTransitionValidationFailure
+                            .TransitionNotConfirmed,
+                    });
+            }
+
+            if (!plan.InitialAdapterStates.Contains(initialAdapterState))
+            {
+                return Result(
+                    promptConfirmed: true,
+                    padAbsentConfirmed: true,
                     readCompleted: false,
                     OpenBlade.Contracts.AdapterPowerState.Unknown,
                     HyperBoostAdapterTransitionValidationFailure
-                        .TransitionNotConfirmed);
+                        .ReviewedNonFullPowerNotObserved);
             }
 
             if (!context.TryAllocateTransaction(out byte transactionId))
             {
                 return Result(
                     promptConfirmed: true,
+                    padAbsentConfirmed: true,
                     readCompleted: false,
                     OpenBlade.Contracts.AdapterPowerState.Unknown,
                     HyperBoostAdapterTransitionValidationFailure
@@ -1178,6 +1278,7 @@ internal sealed class PerformanceFanSetterValidationRunner
             {
                 return Result(
                     promptConfirmed: true,
+                    padAbsentConfirmed: true,
                     readCompleted: false,
                     OpenBlade.Contracts.AdapterPowerState.Unknown,
                     cancellationToken.IsCancellationRequested
@@ -1188,19 +1289,22 @@ internal sealed class PerformanceFanSetterValidationRunner
 
             return observation.Value switch
             {
-                OpenBlade.Contracts.AdapterPowerState.UsbCPower100W => Result(
+                var value when value == plan.DestinationAdapterState => Result(
                     promptConfirmed: true,
+                    padAbsentConfirmed: true,
                     readCompleted: true,
                     observation.Value,
                     HyperBoostAdapterTransitionValidationFailure.None),
                 OpenBlade.Contracts.AdapterPowerState.Unknown => Result(
                     promptConfirmed: true,
+                    padAbsentConfirmed: true,
                     readCompleted: true,
                     observation.Value,
                     HyperBoostAdapterTransitionValidationFailure
                         .AdapterPowerUnknown),
                 _ => Result(
                     promptConfirmed: true,
+                    padAbsentConfirmed: true,
                     readCompleted: true,
                     observation.Value,
                     HyperBoostAdapterTransitionValidationFailure
@@ -1211,6 +1315,7 @@ internal sealed class PerformanceFanSetterValidationRunner
         {
             return Result(
                 promptConfirmed: false,
+                padAbsentConfirmed: false,
                 readCompleted: false,
                 OpenBlade.Contracts.AdapterPowerState.Unknown,
                 HyperBoostAdapterTransitionValidationFailure.Canceled);
@@ -1219,6 +1324,7 @@ internal sealed class PerformanceFanSetterValidationRunner
         {
             return Result(
                 promptConfirmed: false,
+                padAbsentConfirmed: false,
                 readCompleted: false,
                 OpenBlade.Contracts.AdapterPowerState.Unknown,
                 HyperBoostAdapterTransitionValidationFailure.UnexpectedFailure);

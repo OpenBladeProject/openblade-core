@@ -96,6 +96,12 @@ public interface IProductionBatteryPort : IAsyncDisposable
         CancellationToken cancellationToken);
 }
 
+internal interface IPadlessHyperBoostLifecycleValidationPort
+{
+    Task EnablePadlessHyperBoostLifecycleValidationAsync(
+        CancellationToken cancellationToken);
+}
+
 public interface IProductionBatteryPortFactory
 {
     DeviceCapabilities Capabilities { get; }

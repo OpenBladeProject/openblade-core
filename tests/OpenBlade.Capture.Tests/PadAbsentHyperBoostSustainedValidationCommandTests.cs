@@ -203,6 +203,7 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommandTests
             FullPowerAdapterMaintained: true,
             HyperBoostStateMaintained: true,
             RequiredSensorsMaintained: true,
+            ExternalWorkloadMaintained: true,
             samples,
             HyperBoostSustainedValidationFailure.None);
         return new(

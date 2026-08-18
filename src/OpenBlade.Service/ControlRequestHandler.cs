@@ -78,6 +78,17 @@ public sealed class ControlRequestHandler
             return Failure(Guid.Empty, "IPC request ID is missing.");
         }
 
+        if (request is ValidatePadlessHyperBoostLifecycleRequest validation
+            && !PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Matches(
+                validation.ExpectedSourceRevision,
+                validation.ExpectedServiceAssemblySha256,
+                validation.ExpectedAdmissionManifestSha256))
+        {
+            return Failure(
+                request.RequestId,
+                "The installed service is not the exact validation-marked build requested by FirmwareSmoke.");
+        }
+
         ServiceRequestAccessDecision accessDecision = ServiceRequestAccessPolicy.Evaluate(
             request,
             client,
@@ -134,6 +145,11 @@ public sealed class ControlRequestHandler
             SetHyperBoostRequest set => Result(
                 request.RequestId,
                 await runtime.SetHyperBoostAsync(set.Enabled, cancellationToken)),
+            ValidatePadlessHyperBoostLifecycleRequest validate => Result(
+                request.RequestId,
+                await runtime.ValidatePadlessHyperBoostLifecycleAsync(
+                    validate,
+                    cancellationToken)),
             SetCoolingPadFanIntentRequest set => Result(
                 request.RequestId,
                 await runtime.SetCoolingPadFanIntentAsync(set.Intent, cancellationToken)),
