@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
@@ -10,7 +11,17 @@ internal sealed record LightingCadenceFrameSample(
     double SubmittedMilliseconds,
     double CompletedMilliseconds,
     double WriteDurationMilliseconds,
-    double LatenessMilliseconds);
+    double LatenessMilliseconds)
+{
+    public LightingCadenceWritePhaseSample? WritePhases { get; init; }
+}
+
+internal sealed record LightingCadenceWritePhaseSample(
+    double QueueWaitMilliseconds,
+    double ControllerGuardMilliseconds,
+    double? NativeSubmitToCompletionMilliseconds,
+    double? ManagedCompletionMilliseconds,
+    double ResidualMilliseconds);
 
 internal sealed record LightingCadenceMetricSummary(
     double? MinimumMilliseconds,
@@ -25,6 +36,14 @@ internal sealed record LightingCadenceProcessorUsage(
     int LogicalProcessorCount,
     double SingleLogicalProcessorPercent,
     double WholeMachineCapacityPercent);
+
+internal sealed record LightingCadenceWritePhaseSummary(
+    int CapturedSamples,
+    LightingCadenceMetricSummary QueueWait,
+    LightingCadenceMetricSummary ControllerGuard,
+    LightingCadenceMetricSummary NativeSubmitToCompletion,
+    LightingCadenceMetricSummary ManagedCompletion,
+    LightingCadenceMetricSummary Residual);
 
 internal sealed record LightingCadenceStageResult(
     int TargetFramesPerSecond,
@@ -41,7 +60,27 @@ internal sealed record LightingCadenceStageResult(
     bool TransportQualified,
     WriteSubmissionState? FailureSubmissionState,
     string? Failure,
-    IReadOnlyList<LightingCadenceFrameSample> Samples);
+    IReadOnlyList<LightingCadenceFrameSample> Samples)
+{
+    public LightingCadenceWritePhaseSummary? WritePhases { get; init; }
+}
+
+internal sealed class LightingCadenceWriteTimingCollector : IMatrixWriteTimingSink
+{
+    private readonly ConcurrentQueue<MatrixWritePhaseTiming> timings = new();
+
+    public void Record(MatrixWritePhaseTiming timing) => timings.Enqueue(timing);
+
+    internal void Clear()
+    {
+        while (timings.TryDequeue(out _))
+        {
+        }
+    }
+
+    internal MatrixWritePhaseTiming? Take() =>
+        timings.TryDequeue(out MatrixWritePhaseTiming timing) ? timing : null;
+}
 
 internal enum LightingCadencePattern
 {
@@ -66,18 +105,24 @@ internal sealed class LightingCadenceProbeRunner
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private readonly Func<TimeSpan> readProcessCpuTime;
     private readonly int logicalProcessorCount;
+    private readonly Action? clearWriteTimings;
+    private readonly Func<MatrixWritePhaseTiming?>? takeWriteTiming;
 
     internal LightingCadenceProbeRunner(
         TimeProvider timeProvider,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
         Func<TimeSpan>? readProcessCpuTime = null,
-        int? logicalProcessorCount = null)
+        int? logicalProcessorCount = null,
+        Action? clearWriteTimings = null,
+        Func<MatrixWritePhaseTiming?>? takeWriteTiming = null)
     {
         this.timeProvider = timeProvider
             ?? throw new ArgumentNullException(nameof(timeProvider));
         this.delay = delay ?? DelayPreciselyAsync;
         this.readProcessCpuTime = readProcessCpuTime ?? ReadCurrentProcessCpuTime;
         this.logicalProcessorCount = logicalProcessorCount ?? Environment.ProcessorCount;
+        this.clearWriteTimings = clearWriteTimings;
+        this.takeWriteTiming = takeWriteTiming;
         if (this.logicalProcessorCount <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(logicalProcessorCount));
@@ -116,6 +161,7 @@ internal sealed class LightingCadenceProbeRunner
         int warmupFrames = FrameCount(warmupDuration, targetFramesPerSecond);
         int measuredFrames = FrameCount(measurementDuration, targetFramesPerSecond);
         int totalFrames = checked(warmupFrames + measuredFrames);
+        clearWriteTimings?.Invoke();
         long startedTimestamp = timeProvider.GetTimestamp();
         var measuredSamples = new List<LightingCadenceFrameSample>(measuredFrames);
         int attemptedFrames = 0;
@@ -186,20 +232,27 @@ internal sealed class LightingCadenceProbeRunner
             }
 
             long completedTimestamp = timeProvider.GetTimestamp();
+            MatrixWritePhaseTiming? writeTiming = takeWriteTiming?.Invoke();
             TimeSpan completedAt = timeProvider.GetElapsedTime(
                 startedTimestamp,
                 completedTimestamp);
             if (measured)
             {
+                double writeDurationMilliseconds = timeProvider.GetElapsedTime(
+                    submittedTimestamp,
+                    completedTimestamp).TotalMilliseconds;
                 measuredSamples.Add(new LightingCadenceFrameSample(
                     frameIndex - warmupFrames,
                     scheduledAt.TotalMilliseconds,
                     submittedAt.TotalMilliseconds,
                     completedAt.TotalMilliseconds,
-                    timeProvider.GetElapsedTime(
-                        submittedTimestamp,
-                        completedTimestamp).TotalMilliseconds,
-                    Math.Max(0, (submittedAt - scheduledAt).TotalMilliseconds)));
+                    writeDurationMilliseconds,
+                    Math.Max(0, (submittedAt - scheduledAt).TotalMilliseconds))
+                {
+                    WritePhases = writeTiming is { } timing
+                        ? CreateWritePhaseSample(writeDurationMilliseconds, timing)
+                        : null,
+                });
             }
 
             frameIndex++;
@@ -425,7 +478,52 @@ internal sealed class LightingCadenceProbeRunner
             qualified,
             failureSubmissionState,
             failure,
-            samples);
+            samples)
+        {
+            WritePhases = CreateWritePhaseSummary(samples),
+        };
+    }
+
+    private static LightingCadenceWritePhaseSample CreateWritePhaseSample(
+        double writeDurationMilliseconds,
+        MatrixWritePhaseTiming timing)
+    {
+        double queueWait = timing.QueueWait.TotalMilliseconds;
+        double controllerGuard = timing.ControllerGuard.TotalMilliseconds;
+        double? native = timing.NativeSubmitToCompletion?.TotalMilliseconds;
+        double? managed = timing.ManagedCompletion?.TotalMilliseconds;
+        double attributed = queueWait
+            + controllerGuard
+            + (native ?? 0)
+            + (managed ?? 0);
+        return new(
+            queueWait,
+            controllerGuard,
+            native,
+            managed,
+            Math.Max(0, writeDurationMilliseconds - attributed));
+    }
+
+    private static LightingCadenceWritePhaseSummary? CreateWritePhaseSummary(
+        IReadOnlyList<LightingCadenceFrameSample> samples)
+    {
+        LightingCadenceWritePhaseSample[] phases = samples
+            .Select(sample => sample.WritePhases)
+            .OfType<LightingCadenceWritePhaseSample>()
+            .ToArray();
+        return phases.Length == 0
+            ? null
+            : new(
+                phases.Length,
+                Summarize(phases.Select(value => value.QueueWaitMilliseconds)),
+                Summarize(phases.Select(value => value.ControllerGuardMilliseconds)),
+                Summarize(phases
+                    .Where(value => value.NativeSubmitToCompletionMilliseconds is not null)
+                    .Select(value => value.NativeSubmitToCompletionMilliseconds!.Value)),
+                Summarize(phases
+                    .Where(value => value.ManagedCompletionMilliseconds is not null)
+                    .Select(value => value.ManagedCompletionMilliseconds!.Value)),
+                Summarize(phases.Select(value => value.ResidualMilliseconds)));
     }
 
     private static TimeSpan ReadCurrentProcessCpuTime()

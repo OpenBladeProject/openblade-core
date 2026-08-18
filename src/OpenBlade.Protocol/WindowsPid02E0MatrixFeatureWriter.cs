@@ -236,6 +236,17 @@ internal interface IPid02E0MatrixFeatureWriter : IAsyncDisposable
         CancellationToken cancellationToken);
 }
 
+internal readonly record struct MatrixWritePhaseTiming(
+    TimeSpan QueueWait,
+    TimeSpan ControllerGuard,
+    TimeSpan? NativeSubmitToCompletion,
+    TimeSpan? ManagedCompletion);
+
+internal interface IMatrixWriteTimingSink
+{
+    void Record(MatrixWritePhaseTiming timing);
+}
+
 internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureWriter
 {
     private const uint IoctlHidSetFeature = 0x000B0191;
@@ -249,6 +260,7 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
     private readonly ControllerExclusivityPolicy exclusivityPolicy;
     private readonly TimeProvider timeProvider;
     private readonly TimeSpan writeTimeout;
+    private readonly IMatrixWriteTimingSink? timingSink;
     private readonly Task worker;
     private RazerCommandSessionDisposition state = RazerCommandSessionDisposition.Healthy;
 
@@ -258,7 +270,8 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         IHardwareAccessGuard guard,
         TimeProvider timeProvider,
         TimeSpan writeTimeout,
-        ControllerExclusivityPolicy exclusivityPolicy)
+        ControllerExclusivityPolicy exclusivityPolicy,
+        IMatrixWriteTimingSink? timingSink = null)
     {
         ArgumentNullException.ThrowIfNull(handle);
         ArgumentNullException.ThrowIfNull(io);
@@ -271,6 +284,7 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         this.timeProvider = timeProvider;
         this.writeTimeout = writeTimeout;
         this.exclusivityPolicy = exclusivityPolicy;
+        this.timingSink = timingSink;
         worker = RunAsync();
     }
 
@@ -296,7 +310,10 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
             throw new InvalidOperationException("The matrix codec produced an invalid feature buffer.");
         }
 
-        var item = new WorkItem(buffer, cancellationToken);
+        var item = new WorkItem(
+            buffer,
+            cancellationToken,
+            timingSink is null ? 0 : timeProvider.GetTimestamp());
         lock (sync)
         {
             if (state != RazerCommandSessionDisposition.Healthy)
@@ -397,6 +414,9 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
 
     private async Task<HidSessionResult<HidUnit>> ExecuteClaimedAsync(WorkItem item)
     {
+        long claimedTimestamp = timingSink is null ? 0 : timeProvider.GetTimestamp();
+        long guardStartedTimestamp = claimedTimestamp;
+        long guardCompletedTimestamp = guardStartedTimestamp;
         using var deadline = new CancellationTokenSource(writeTimeout, timeProvider);
         HidSessionFailureKind? cancellation = ClassifyCancellation(
             item.CancellationToken,
@@ -408,6 +428,10 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
 
         if (exclusivityPolicy == ControllerExclusivityPolicy.Strict)
         {
+            if (timingSink is not null)
+            {
+                guardStartedTimestamp = timeProvider.GetTimestamp();
+            }
             HardwareAccessDecision access;
             try
             {
@@ -432,6 +456,10 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
                 return DiagnosticFailure(
                     HidSessionFailureKind.ConflictBlocked,
                     HidSessionFailurePhase.Guard);
+            }
+            if (timingSink is not null)
+            {
+                guardCompletedTimestamp = timeProvider.GetTimestamp();
             }
         }
 
@@ -507,7 +535,29 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
                 result.Completion);
         }
 
+        if (timingSink is not null)
+        {
+            RecordTiming(new MatrixWritePhaseTiming(
+                timeProvider.GetElapsedTime(item.EnqueuedTimestamp, claimedTimestamp),
+                timeProvider.GetElapsedTime(
+                    guardStartedTimestamp,
+                    guardCompletedTimestamp),
+                result.Timing?.SubmitToCompletion,
+                result.Timing?.CompletionToManagedReturn));
+        }
         return new(new HidUnit(), null);
+    }
+
+    private void RecordTiming(MatrixWritePhaseTiming timing)
+    {
+        try
+        {
+            timingSink?.Record(timing);
+        }
+        catch
+        {
+            // Developer-only timing observation must not affect a hardware write.
+        }
     }
 
     private void Poison()
@@ -588,15 +638,21 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         private CancellationTokenRegistration cancellationRegistration;
         private int itemState;
 
-        internal WorkItem(byte[] buffer, CancellationToken cancellationToken)
+        internal WorkItem(
+            byte[] buffer,
+            CancellationToken cancellationToken,
+            long enqueuedTimestamp)
         {
             Buffer = buffer;
             CancellationToken = cancellationToken;
+            EnqueuedTimestamp = enqueuedTimestamp;
         }
 
         internal byte[] Buffer { get; }
 
         internal CancellationToken CancellationToken { get; }
+
+        internal long EnqueuedTimestamp { get; }
 
         internal Task<HidSessionResult<HidUnit>> Task => completion.Task;
 

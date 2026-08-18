@@ -204,7 +204,12 @@ Static green baseline.
 This validates host-to-keyboard transport completion and records operator
 confirmation of visible stability. It does not measure the LEDs' exact optical
 refresh rate. Each stage also records the validator process's CPU time across
-the measured window. `singleLogicalProcessorPercent` treats one fully occupied
+the measured window. Developer-only phase timing splits each successful
+end-to-end write into queue wait, the strict competing-controller check, native
+submit-to-completion, managed completion handling, and residual host work. The
+existing end-to-end write and missed-frame thresholds remain authoritative;
+the phase split is diagnostic and does not relax qualification.
+`singleLogicalProcessorPercent` treats one fully occupied
 logical processor as 100%; `wholeMachineCapacityPercent` divides that value by
 the recorded logical-processor count, matching Task Manager's process-wide
 normalization. Near each deadline, the developer tool uses a process-local

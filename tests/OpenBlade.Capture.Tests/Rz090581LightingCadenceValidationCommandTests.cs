@@ -64,7 +64,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         string json = artifacts.Single(pair => pair.Key.EndsWith(".json")).Value;
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
-        Assert.Equal(3, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(4, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("tidal", root.GetProperty("pattern").GetString());
         Assert.True(root.GetProperty("transportQualified").GetBoolean());
         Assert.True(root.GetProperty("opticalValidationRequired").GetBoolean());
@@ -93,8 +93,17 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             .GetProperty("singleLogicalProcessorPercent").GetDouble());
         Assert.Equal(0.5, processorUsage
             .GetProperty("wholeMachineCapacityPercent").GetDouble());
+        JsonElement writePhases = root.GetProperty("stages")[0]
+            .GetProperty("transport")
+            .GetProperty("writePhases");
+        Assert.Equal(100, writePhases.GetProperty("capturedSamples").GetInt32());
+        Assert.Equal(0.4, writePhases
+            .GetProperty("controllerGuard")
+            .GetProperty("p99Milliseconds")
+            .GetDouble());
         string markdown = artifacts.Single(pair => pair.Key.EndsWith(".md")).Value;
         Assert.Contains("CPU (1 LP=100%)", markdown, StringComparison.Ordinal);
+        Assert.Contains("p99 guard", markdown, StringComparison.Ordinal);
         Assert.Contains("10.00%", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("serial", json, StringComparison.OrdinalIgnoreCase);
         Assert.False(markerRunnerCalled);
@@ -661,7 +670,16 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         true,
         null,
         null,
-        []);
+        [])
+    {
+        WritePhases = new LightingCadenceWritePhaseSummary(
+            100,
+            new(0.1, 0.1, 0.1, 0.1, 0.1),
+            new(0.4, 0.4, 0.4, 0.4, 0.4),
+            new(0.3, 0.3, 0.3, 0.3, 0.3),
+            new(0.1, 0.1, 0.1, 0.1, 0.1),
+            new(0.1, 0.1, 0.1, 0.1, 0.1)),
+    };
 
     private static LightingCadenceStageResult FailedStage(
         int rate,

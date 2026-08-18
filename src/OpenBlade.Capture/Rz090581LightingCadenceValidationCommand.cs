@@ -137,13 +137,18 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         TextReader input,
         TextWriter output)
     {
+        var timingCollector = new LightingCadenceWriteTimingCollector();
         IProductionLightingPortFactory factory =
-            ProductionLightingFactory.CreateWindowsForExactBuildValidation();
+            ProductionLightingFactory.CreateWindowsForExactBuildValidation(
+                timingCollector);
         var registry = new WindowsRegistryValueSource();
         var identity = new WindowsHostIdentitySource(
             registry,
             new RuntimeWindowsPlatformEvidenceSource(registry));
-        var runner = new LightingCadenceProbeRunner(TimeProvider.System);
+        var runner = new LightingCadenceProbeRunner(
+            TimeProvider.System,
+            clearWriteTimings: timingCollector.Clear,
+            takeWriteTiming: timingCollector.Take);
         return new(
             factory.OpenAsync,
             cancellationToken => BatteryValidationFactory
@@ -473,7 +478,7 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         failure ??= passed ? null : "hardwareGatesIncomplete";
         DateTimeOffset completedAtUtc = utcNow();
         var evidence = new Rz090581LightingCadenceEvidence(
-            SchemaVersion: 3,
+            SchemaVersion: 4,
             EvidenceKind: "rz090581LightingCadenceValidation",
             new DeviceIdentity(
                 TargetBladeDevice.Model,
@@ -722,8 +727,8 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         builder.AppendLine("- Optical validation: required; transport completion is not LED refresh proof");
         builder.AppendLine("- CPU: validator process only; 100% LP equals one fully occupied logical processor; machine capacity divides by the recorded logical-processor count");
         builder.AppendLine();
-        builder.AppendLine("| Target | Completed | Skipped | Achieved | p99 write | Max gap | CPU (1 LP=100%) | CPU (machine capacity) | Transport | Visual |");
-        builder.AppendLine("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: |");
+        builder.AppendLine("| Target | Completed | Skipped | Achieved | p99 write | p99 queue | p99 guard | p99 native | p99 managed | p99 residual | Max gap | CPU (1 LP=100%) | CPU (machine capacity) | Transport | Visual |");
+        builder.AppendLine("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: |");
         foreach (LightingCadenceStageEvidence stage in evidence.Stages)
         {
             LightingCadenceStageResult value = stage.Transport;
@@ -731,6 +736,11 @@ internal sealed class Rz090581LightingCadenceValidationCommand
                 $"| {value.TargetFramesPerSecond} Hz | {value.CompletedFrames}/{value.ScheduledFrames} | " +
                 $"{value.SkippedFrames} | {value.AchievedFramesPerSecond:F2} Hz | " +
                 $"{Format(value.WriteDuration.P99Milliseconds)} | " +
+                $"{Format(value.WritePhases?.QueueWait.P99Milliseconds)} | " +
+                $"{Format(value.WritePhases?.ControllerGuard.P99Milliseconds)} | " +
+                $"{Format(value.WritePhases?.NativeSubmitToCompletion.P99Milliseconds)} | " +
+                $"{Format(value.WritePhases?.ManagedCompletion.P99Milliseconds)} | " +
+                $"{Format(value.WritePhases?.Residual.P99Milliseconds)} | " +
                 $"{value.MaximumCompletionGapMilliseconds:F2} ms | " +
                 $"{FormatPercent(value.ProcessorUsage?.SingleLogicalProcessorPercent)} | " +
                 $"{FormatPercent(value.ProcessorUsage?.WholeMachineCapacityPercent)} | " +

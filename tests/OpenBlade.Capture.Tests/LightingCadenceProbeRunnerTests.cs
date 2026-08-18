@@ -175,6 +175,50 @@ public sealed class LightingCadenceProbeRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_RecordsOptInWritePhaseSamplesAndSummaries()
+    {
+        var time = new ManualTimeProvider();
+        int clearCalls = 0;
+        var runner = new LightingCadenceProbeRunner(
+            time,
+            (duration, _) =>
+            {
+                time.Advance(duration);
+                return Task.CompletedTask;
+            },
+            clearWriteTimings: () => clearCalls++,
+            takeWriteTiming: () => new MatrixWritePhaseTiming(
+                TimeSpan.FromMilliseconds(1),
+                TimeSpan.FromMilliseconds(2),
+                TimeSpan.FromMilliseconds(3),
+                TimeSpan.FromMilliseconds(1)));
+
+        LightingCadenceStageResult result = await runner.RunAsync(
+            30,
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(5),
+            (_, _) =>
+            {
+                time.Advance(TimeSpan.FromMilliseconds(10));
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(1, clearCalls);
+        LightingCadenceWritePhaseSample first = Assert.IsType<LightingCadenceWritePhaseSample>(
+            result.Samples[0].WritePhases);
+        Assert.Equal(1, first.QueueWaitMilliseconds);
+        Assert.Equal(2, first.ControllerGuardMilliseconds);
+        Assert.Equal(3, first.NativeSubmitToCompletionMilliseconds);
+        Assert.Equal(1, first.ManagedCompletionMilliseconds);
+        Assert.Equal(3, first.ResidualMilliseconds);
+        LightingCadenceWritePhaseSummary summary =
+            Assert.IsType<LightingCadenceWritePhaseSummary>(result.WritePhases);
+        Assert.Equal(result.CompletedFrames, summary.CapturedSamples);
+        Assert.Equal(3, summary.Residual.P99Milliseconds);
+    }
+
+    [Fact]
     public void CreateFrame_PreservesHolesAndEncodesGrayCounter()
     {
         AmbientLightingFrame frame0 = LightingCadenceProbeRunner.CreateFrame(
