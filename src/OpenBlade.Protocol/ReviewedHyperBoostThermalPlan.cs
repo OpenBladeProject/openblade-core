@@ -18,13 +18,24 @@ internal enum HyperBoostValidationWorkloadKind
     ExternalReviewedLoad,
 }
 
+internal enum HyperBoostWorkloadIdentityPolicy
+{
+    NotApplicable,
+    RuntimeExactExecutable,
+}
+
 internal sealed record ReviewedHyperBoostThermalPlan
 {
     internal const string TrustedPadAbsentNoLoadSha256 =
-        "589A94BCE7050BA43195BBFE5FAC4E8EDF337D481705047C668460ACAB675D2B";
+        "2E4837EA0E9B81814FC551954031B5C5BF60A8E3CF593EEA9443684B62B09F33";
+    internal const string TrustedPadAbsentExternalLoadSha256 =
+        "2D1BBA887F0DC952EEABB39BC3E670A2CE3DA338EC05E46646B1E9F64D780086";
     private const string TrustedPadAbsentNoLoadResource =
         "OpenBlade.Protocol.Fixtures." +
         "Rz09_0581_02e0_4_00_PadAbsentHyperBoostNoLoadPlan.json";
+    private const string TrustedPadAbsentExternalLoadResource =
+        "OpenBlade.Protocol.Fixtures." +
+        "Rz09_0581_02e0_4_00_PadAbsentHyperBoostExternalLoadPlan.json";
     // The validation context never reuses a transaction ID. The complete run
     // needs 14 fixed transactions plus five for each sustained sample, including
     // the four IDs reserved for exact Balanced restoration and readback.
@@ -61,6 +72,12 @@ internal sealed record ReviewedHyperBoostThermalPlan
     public int? MinimumFan2Rpm { get; init; }
 
     public required HyperBoostValidationWorkloadKind WorkloadKind { get; init; }
+
+    public required HyperBoostWorkloadIdentityPolicy WorkloadIdentityPolicy
+    {
+        get;
+        init;
+    }
 
     public string? WorkloadName { get; init; }
 
@@ -130,11 +147,51 @@ internal sealed record ReviewedHyperBoostThermalPlan
         return Parse(buffer.ToArray(), TrustedPadAbsentNoLoadSha256);
     }
 
-    internal static ReviewedHyperBoostThermalPlan LoadTrustedPadAbsentExternalLoad() =>
-        throw new UnvalidatedCommandException(
-            "No reviewed external HyperBoost workload plan is embedded. " +
-            "A workload name, executable SHA-256, bounds, and executor contract " +
-            "must be reviewed before this validation route can run.");
+    internal static ReviewedHyperBoostThermalPlan LoadTrustedPadAbsentExternalLoad()
+    {
+        using Stream? stream = Assembly.GetExecutingAssembly()
+            .GetManifestResourceStream(TrustedPadAbsentExternalLoadResource);
+        if (stream is null)
+        {
+            throw new UnvalidatedCommandException(
+                "The reviewed external HyperBoost workload plan is unavailable.");
+        }
+
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return Parse(buffer.ToArray(), TrustedPadAbsentExternalLoadSha256);
+    }
+
+    internal ReviewedHyperBoostThermalPlan BindRuntimeExactExecutable(
+        HyperBoostExternalWorkloadIdentity identity)
+    {
+        if (WorkloadKind != HyperBoostValidationWorkloadKind.ExternalReviewedLoad
+            || WorkloadIdentityPolicy
+                != HyperBoostWorkloadIdentityPolicy.RuntimeExactExecutable
+            || WorkloadName is not null
+            || WorkloadSha256 is not null
+            || !identity.IsWellFormed)
+        {
+            throw new UnvalidatedCommandException(
+                "The reviewed external-load plan cannot bind this workload identity.");
+        }
+
+        return this with
+        {
+            WorkloadName = identity.ExecutableName,
+            WorkloadSha256 = identity.ExecutableSha256,
+        };
+    }
+
+    [JsonIgnore]
+    internal bool HasBoundRuntimeExactExecutable =>
+        WorkloadKind == HyperBoostValidationWorkloadKind.ExternalReviewedLoad
+        && WorkloadIdentityPolicy
+            == HyperBoostWorkloadIdentityPolicy.RuntimeExactExecutable
+        && WorkloadName is { Length: > 0 and <= 128 }
+        && Path.GetFileName(WorkloadName) == WorkloadName
+        && WorkloadName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+        && IsSha256ForReviewedPlan(WorkloadSha256);
 
     private bool IsWellFormed()
     {
@@ -160,13 +217,14 @@ internal sealed record ReviewedHyperBoostThermalPlan
     private bool WorkloadContractIsWellFormed() => WorkloadKind switch
     {
         HyperBoostValidationWorkloadKind.SustainedNoLoadDwell =>
-            string.IsNullOrWhiteSpace(WorkloadName)
+            WorkloadIdentityPolicy == HyperBoostWorkloadIdentityPolicy.NotApplicable
+            && string.IsNullOrWhiteSpace(WorkloadName)
             && WorkloadSha256 is null,
         HyperBoostValidationWorkloadKind.ExternalReviewedLoad =>
-            WorkloadName is { Length: > 0 and <= 128 }
-            && Path.GetFileName(WorkloadName) == WorkloadName
-            && WorkloadName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            && IsSha256ForReviewedPlan(WorkloadSha256),
+            WorkloadIdentityPolicy
+                == HyperBoostWorkloadIdentityPolicy.RuntimeExactExecutable
+            && (WorkloadName is null && WorkloadSha256 is null
+                || HasBoundRuntimeExactExecutable),
         _ => false,
     };
 

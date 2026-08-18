@@ -26,6 +26,36 @@ public sealed class ReviewedHyperBoostThermalPlanTests
         Assert.Equal(
             HyperBoostValidationWorkloadKind.SustainedNoLoadDwell,
             plan.WorkloadKind);
+        Assert.Equal(
+            HyperBoostWorkloadIdentityPolicy.NotApplicable,
+            plan.WorkloadIdentityPolicy);
+    }
+
+    [Fact]
+    public void LoadTrustedPadAbsentExternalLoad_UsesPinnedRuntimeIdentityPlan()
+    {
+        ReviewedHyperBoostThermalPlan plan =
+            ReviewedHyperBoostThermalPlan.LoadTrustedPadAbsentExternalLoad();
+
+        Assert.Equal(
+            "rz09-0581-bios-4.00-pad-absent-external-load-v1",
+            plan.PlanId);
+        Assert.Equal(
+            ReviewedHyperBoostThermalPlan.TrustedPadAbsentExternalLoadSha256,
+            plan.SourceSha256);
+        Assert.Equal(TimeSpan.FromSeconds(60), plan.Duration);
+        Assert.Equal(TimeSpan.FromSeconds(2), plan.SampleInterval);
+        Assert.Equal(90, plan.MaximumCpuTemperatureCelsius);
+        Assert.Equal(85, plan.MaximumGpuTemperatureCelsius);
+        Assert.Equal(HyperBoostGpuSensorPolicy.Required, plan.GpuSensorPolicy);
+        Assert.Equal(2000, plan.MinimumFan1Rpm);
+        Assert.Equal(2000, plan.MinimumFan2Rpm);
+        Assert.Equal(
+            HyperBoostWorkloadIdentityPolicy.RuntimeExactExecutable,
+            plan.WorkloadIdentityPolicy);
+        Assert.Null(plan.WorkloadName);
+        Assert.Null(plan.WorkloadSha256);
+        Assert.False(plan.HasBoundRuntimeExactExecutable);
     }
 
     [Fact]
@@ -73,6 +103,9 @@ public sealed class ReviewedHyperBoostThermalPlanTests
     [InlineData("\"maximumCpuTemperatureCelsius\":90", "\"maximumCpuTemperatureCelsius\":116")]
     [InlineData("\"maximumGpuTemperatureCelsius\":85", "\"maximumGpuTemperatureCelsius\":126")]
     [InlineData("\"minimumFan1Rpm\":2000", "\"minimumFan1Rpm\":-1")]
+    [InlineData(
+        "\"workloadIdentityPolicy\":\"notApplicable\"",
+        "\"workloadIdentityPolicy\":\"runtimeExactExecutable\"")]
     public void Parse_RejectsStructurallyInvalidPlan(string oldValue, string newValue)
     {
         byte[] json = Encoding.UTF8.GetBytes(
@@ -87,38 +120,32 @@ public sealed class ReviewedHyperBoostThermalPlanTests
     }
 
     [Fact]
-    public void Parse_AcceptsBoundedExternalLoadContractButTrustedRouteFailsClosed()
+    public void BindRuntimeExactExecutable_RequiresExactRuntimeIdentity()
     {
-        byte[] json = Encoding.UTF8.GetBytes(
-            Encoding.UTF8.GetString(Json())
-                .Replace(
-                    "\"workloadKind\":\"sustainedNoLoadDwell\"",
-                    "\"workloadKind\":\"externalReviewedLoad\"",
-                    StringComparison.Ordinal)
-                .Replace(
-                    "\"workloadName\":null",
-                    "\"workloadName\":\"reviewed-workload.exe\"",
-                    StringComparison.Ordinal)
-                .Replace(
-                    "\"workloadSha256\":null",
-                    $"\"workloadSha256\":\"{new string('B', 64)}\"",
-                    StringComparison.Ordinal));
-        string hash = Convert.ToHexString(SHA256.HashData(json));
+        ReviewedHyperBoostThermalPlan template =
+            ReviewedHyperBoostThermalPlan.LoadTrustedPadAbsentExternalLoad();
+        var identity = new HyperBoostExternalWorkloadIdentity(
+            "reviewed-workload.exe",
+            new string('B', 64));
 
         ReviewedHyperBoostThermalPlan plan =
-            ReviewedHyperBoostThermalPlan.Parse(json, hash);
+            template.BindRuntimeExactExecutable(identity);
 
         Assert.Equal(
             HyperBoostValidationWorkloadKind.ExternalReviewedLoad,
             plan.WorkloadKind);
         Assert.Equal("reviewed-workload.exe", plan.WorkloadName);
         Assert.Equal(new string('B', 64), plan.WorkloadSha256);
-        Assert.Throws<UnvalidatedCommandException>(
-            ReviewedHyperBoostThermalPlan.LoadTrustedPadAbsentExternalLoad);
+        Assert.True(plan.HasBoundRuntimeExactExecutable);
+        Assert.Equal(template.SourceSha256, plan.SourceSha256);
+        Assert.Throws<UnvalidatedCommandException>(() =>
+            template.BindRuntimeExactExecutable(new(
+                "not-an-executable",
+                new string('B', 64))));
     }
 
     private static byte[] Json() => Encoding.UTF8.GetBytes(
         """
-        {"planId":"rz09-0581-pad-absent-sustained-v1","modelNumber":"RZ09-0581","biosVersion":"4.00","durationSeconds":60,"sampleIntervalMilliseconds":2000,"maximumCpuTemperatureCelsius":90,"maximumGpuTemperatureCelsius":85,"gpuSensorPolicy":"required","minimumFan1Rpm":2000,"minimumFan2Rpm":2000,"workloadKind":"sustainedNoLoadDwell","workloadName":null,"workloadSha256":null}
+        {"planId":"rz09-0581-pad-absent-sustained-v1","modelNumber":"RZ09-0581","biosVersion":"4.00","durationSeconds":60,"sampleIntervalMilliseconds":2000,"maximumCpuTemperatureCelsius":90,"maximumGpuTemperatureCelsius":85,"gpuSensorPolicy":"required","minimumFan1Rpm":2000,"minimumFan2Rpm":2000,"workloadKind":"sustainedNoLoadDwell","workloadIdentityPolicy":"notApplicable","workloadName":null,"workloadSha256":null}
         """);
 }

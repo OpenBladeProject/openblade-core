@@ -34,18 +34,37 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
             "B1673380EC86030642D0E5F007E55EE12594B89C035C6A216C4503B5010026AB",
             manifest.Evidence.ImmediateAnnotationSha256);
         Assert.Equal(
-            "589A94BCE7050BA43195BBFE5FAC4E8EDF337D481705047C668460ACAB675D2B",
+            "2E4837EA0E9B81814FC551954031B5C5BF60A8E3CF593EEA9443684B62B09F33",
             manifest.Evidence.SustainedNoLoadPlanSha256);
+        Assert.Equal(
+            "2D1BBA887F0DC952EEABB39BC3E670A2CE3DA338EC05E46646B1E9F64D780086",
+            manifest.Evidence.ReviewedLoadPlanSha256);
         Assert.Equal(
             "95E2333A19118480E6D8193933B7548587BF5C40D151C99BFE81E06D421C7537",
             manifest.Evidence.AdapterTransitionPlanSha256);
-        Assert.Equal(2, manifest.SchemaVersion);
+        Assert.Equal(3, manifest.SchemaVersion);
         Assert.True(manifest.Gates.ExactDeviceAndFirmwareReviewed.Validated);
         Assert.NotNull(manifest.Gates.ExactDeviceAndFirmwareReviewed.Evidence);
         Assert.True(manifest.Gates.SustainedNoLoadPlanReviewed.Validated);
         Assert.NotNull(manifest.Gates.SustainedNoLoadPlanReviewed.Evidence);
+        Assert.True(manifest.Gates.ReviewedLoadPlanReviewed.Validated);
+        Assert.NotNull(manifest.Gates.ReviewedLoadPlanReviewed.Evidence);
         Assert.False(manifest.Gates.CrashRecoveryValidated.Validated);
         Assert.Null(manifest.Gates.CrashRecoveryValidated.Evidence);
+    }
+
+    [Fact]
+    public void ReviewedLoadPlanHash_MatchesPinnedFixtureBytes()
+    {
+        string path = Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            "Rz09_0581_02e0_4_00_PadAbsentHyperBoostExternalLoadPlan.json");
+
+        Assert.True(File.Exists(path), $"Pinned plan was not copied: {path}");
+        Assert.Equal(
+            ReviewedHyperBoostThermalPlan.TrustedPadAbsentExternalLoadSha256,
+            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))));
     }
 
     [Fact]
@@ -73,6 +92,7 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.True(evidence.SustainedNoLoadPlanReviewed);
         Assert.False(evidence.SustainedNoLoadExecutionValidated);
         Assert.False(evidence.PostRestorationAbsenceValidated);
+        Assert.True(evidence.ReviewedLoadPlanReviewed);
         Assert.False(evidence.ReviewedLoadValidated);
         Assert.False(evidence.AdapterTransitionValidated);
         Assert.False(evidence.LowPowerLifecycleValidated);

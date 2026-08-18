@@ -41,6 +41,8 @@ internal sealed record HyperBoostWithoutCoolingPadAdmissionEvidence(
     string ImmediateAnnotationSha256,
     string SustainedNoLoadPlan,
     string SustainedNoLoadPlanSha256,
+    string ReviewedLoadPlan,
+    string ReviewedLoadPlanSha256,
     string AdapterTransitionPlan,
     string AdapterTransitionPlanSha256);
 
@@ -50,6 +52,7 @@ internal sealed record HyperBoostWithoutCoolingPadAdmissionGates(
     ReviewedAdmissionGate SustainedNoLoadPlanReviewed,
     ReviewedAdmissionGate SustainedNoLoadExecutionValidated,
     ReviewedAdmissionGate PostRestorationAbsenceValidated,
+    ReviewedAdmissionGate ReviewedLoadPlanReviewed,
     ReviewedAdmissionGate ReviewedLoadValidated,
     ReviewedAdmissionGate AdapterTransitionValidated,
     ReviewedAdmissionGate LowPowerLifecycleValidated,
@@ -67,6 +70,7 @@ internal readonly record struct HyperBoostWithoutCoolingPadEvidenceGates(
     bool SustainedNoLoadPlanReviewed,
     bool SustainedNoLoadExecutionValidated,
     bool PostRestorationAbsenceValidated,
+    bool ReviewedLoadPlanReviewed,
     bool ReviewedLoadValidated,
     bool AdapterTransitionValidated,
     bool LowPowerLifecycleValidated,
@@ -83,6 +87,7 @@ internal readonly record struct HyperBoostWithoutCoolingPadEvidenceGates(
         && SustainedNoLoadPlanReviewed
         && SustainedNoLoadExecutionValidated
         && PostRestorationAbsenceValidated
+        && ReviewedLoadPlanReviewed
         && ReviewedLoadValidated
         && AdapterTransitionValidated;
 
@@ -99,6 +104,7 @@ internal readonly record struct HyperBoostWithoutCoolingPadEvidenceGates(
         admitted,
         admitted,
         admitted,
+        admitted,
         admitted);
 }
 
@@ -107,13 +113,15 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
     private const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json";
     private const string ExpectedSha256 =
-        "4B6C23C5061EEE5A24BA75A740D893B1882070BA9EFE995BDDD7C49F54D69E83";
+        "4F88A900D46EB5B6173F7A3DA8832C3CFF7EB4D10F91844417ADB9B92A7DF7DB";
 
     internal static string TrustedManifestSha256 => ExpectedSha256;
     private const string ImmediateAnnotationSha256 =
         "B1673380EC86030642D0E5F007E55EE12594B89C035C6A216C4503B5010026AB";
     private const string SustainedNoLoadPlanSha256 =
-        "589A94BCE7050BA43195BBFE5FAC4E8EDF337D481705047C668460ACAB675D2B";
+        "2E4837EA0E9B81814FC551954031B5C5BF60A8E3CF593EEA9443684B62B09F33";
+    private const string ReviewedLoadPlanSha256 =
+        "2D1BBA887F0DC952EEABB39BC3E670A2CE3DA338EC05E46646B1E9F64D780086";
     private const string AdapterTransitionPlanSha256 =
         "95E2333A19118480E6D8193933B7548587BF5C40D151C99BFE81E06D421C7537";
 
@@ -133,6 +141,7 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
             gates.SustainedNoLoadPlanReviewed.Validated,
             gates.SustainedNoLoadExecutionValidated.Validated,
             gates.PostRestorationAbsenceValidated.Validated,
+            gates.ReviewedLoadPlanReviewed.Validated,
             gates.ReviewedLoadValidated.Validated,
             gates.AdapterTransitionValidated.Validated,
             gates.LowPowerLifecycleValidated.Validated,
@@ -185,7 +194,7 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
     {
         if (manifest is not
             {
-                SchemaVersion: 2,
+                SchemaVersion: 3,
                 EvidenceKind: "hyperBoostWithoutCoolingPadSemanticAdmission",
                 Host:
                 {
@@ -221,6 +230,9 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
                     SustainedNoLoadPlan:
                         "Rz09_0581_02e0_4_00_PadAbsentHyperBoostNoLoadPlan.json",
                     SustainedNoLoadPlanSha256: SustainedNoLoadPlanSha256,
+                    ReviewedLoadPlan:
+                        "Rz09_0581_02e0_4_00_PadAbsentHyperBoostExternalLoadPlan.json",
+                    ReviewedLoadPlanSha256: ReviewedLoadPlanSha256,
                     AdapterTransitionPlan:
                         "Rz09_0581_02e0_4_00_PadAbsentHyperBoostAdapterTransitionPlan.json",
                     AdapterTransitionPlanSha256: AdapterTransitionPlanSha256,
@@ -260,6 +272,15 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
                         Validated: false,
                         Evidence: null,
                     },
+                    ReviewedLoadPlanReviewed:
+                    {
+                        Validated: true,
+                        Evidence:
+                        {
+                            Artifact: "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_4_00_PadAbsentHyperBoostExternalLoadPlan.json",
+                            Sha256: ReviewedLoadPlanSha256,
+                        },
+                    },
                     ReviewedLoadValidated:
                     {
                         Validated: false,
@@ -293,6 +314,7 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
             manifest.Gates.SustainedNoLoadPlanReviewed,
             manifest.Gates.SustainedNoLoadExecutionValidated,
             manifest.Gates.PostRestorationAbsenceValidated,
+            manifest.Gates.ReviewedLoadPlanReviewed,
             manifest.Gates.ReviewedLoadValidated,
             manifest.Gates.AdapterTransitionValidated,
             manifest.Gates.LowPowerLifecycleValidated,

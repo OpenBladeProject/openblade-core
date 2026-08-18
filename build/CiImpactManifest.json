@@ -118,6 +118,10 @@
       "patterns": ["build/BuildIdentity.ps1"]
     },
     {
+      "test": "tests/Build.Tests/PadlessHyperBoostLifecycleValidationBuild.Tests.ps1",
+      "patterns": ["build/Build-PadlessHyperBoostLifecycleValidation.ps1", "src/OpenBlade.Service/OpenBlade.Service.csproj", "src/OpenBlade.Service/PadlessHyperBoostLifecycleValidationBuild.cs", "src/OpenBlade.Protocol/HyperBoostWithoutCoolingPadEvidence.cs", "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json"]
+    },
+    {
       "test": "tests/Build.Tests/CiBuildScope.Tests.ps1",
       "patterns": ["build/CiBuildScope.ps1", "build/CiImpactManifest.json", ".github/workflows/ci.yml", ".github/workflows/build.yml"]
     },

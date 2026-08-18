@@ -32,7 +32,7 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommandTests
         string serialized = ExtractJson(output.ToString());
         using JsonDocument document = JsonDocument.Parse(serialized);
         JsonElement root = document.RootElement;
-        Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(3, root.GetProperty("schemaVersion").GetInt32());
         Assert.False(root.GetProperty("productionAdmitted").GetBoolean());
         Assert.False(root.GetProperty("padlessProductionAdmitted").GetBoolean());
         Assert.Equal(plan.PlanId, root.GetProperty("planId").GetString());
@@ -100,6 +100,49 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommandTests
                 .GetProperty("success")
                 .GetBoolean());
         }
+    }
+
+    [Fact]
+    public async Task RunAsync_RuntimeBoundExternalLoadUsesExactIdentityApproval()
+    {
+        ReviewedHyperBoostThermalPlan plan =
+            ReviewedHyperBoostThermalPlan.LoadTrustedPadAbsentExternalLoad()
+                .BindRuntimeExactExecutable(new(
+                    "game-benchmark.exe",
+                    new string('A', 64)));
+        var output = new StringWriter();
+        var command = Create(
+            plan,
+            (_, _) => Task.FromResult(Success(plan)),
+            PadAbsentHyperBoostSustainedValidationCommand
+                .BuildInteractiveApproval(plan),
+            output);
+
+        int exitCode = await command.RunAsync(
+            [
+                "--confirm-target",
+                PadAbsentHyperBoostSustainedValidationCommand
+                    .ReviewedLoadTargetConfirmation,
+                "--workload-pid",
+                "42",
+            ],
+            default);
+
+        Assert.Equal(0, exitCode);
+        string text = output.ToString();
+        Assert.Contains("game-benchmark.exe", text, StringComparison.Ordinal);
+        Assert.Contains(new string('A', 64), text, StringComparison.Ordinal);
+        using JsonDocument document = JsonDocument.Parse(ExtractJson(text));
+        Assert.Equal(
+            "externalReviewedLoad",
+            document.RootElement.GetProperty("workloadKind").GetString());
+        Assert.Equal(
+            "runtimeExactExecutable",
+            document.RootElement.GetProperty("workloadIdentityPolicy").GetString());
+        Assert.Equal(
+            "game-benchmark.exe",
+            document.RootElement.GetProperty("workloadName").GetString());
+        Assert.False(document.RootElement.GetProperty("productionAdmitted").GetBoolean());
     }
 
     [Fact]

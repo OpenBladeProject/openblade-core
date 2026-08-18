@@ -449,7 +449,8 @@ internal sealed class PerformanceFanSetterValidationRunner
         if ((sustainedPlan is null) != (thermalTelemetrySource is null)
             || sustainedPlan?.WorkloadKind ==
                     HyperBoostValidationWorkloadKind.ExternalReviewedLoad
-                && externalWorkloadSource is null
+                && (externalWorkloadSource is null
+                    || !sustainedPlan.HasBoundRuntimeExactExecutable)
             || sustainedPlan?.WorkloadKind ==
                     HyperBoostValidationWorkloadKind.SustainedNoLoadDwell
                 && externalWorkloadSource is not null

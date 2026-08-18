@@ -450,6 +450,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             padlessHyperBoostEvidence.SustainedNoLoadExecutionValidated;
         result["performance.hyperBoost.withoutCoolingPad.gate.postRestoreAbsence"] =
             padlessHyperBoostEvidence.PostRestorationAbsenceValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.reviewedLoadPlan"] =
+            padlessHyperBoostEvidence.ReviewedLoadPlanReviewed;
         result["performance.hyperBoost.withoutCoolingPad.gate.reviewedLoad"] =
             padlessHyperBoostEvidence.ReviewedLoadValidated;
         result["performance.hyperBoost.withoutCoolingPad.gate.adapterTransition"] =

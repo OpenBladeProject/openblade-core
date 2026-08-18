@@ -141,7 +141,7 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
             {
                 await output.WriteLineAsync(JsonSerializer.Serialize(
                     new ApprovalDocument(
-                        SchemaVersion: 2,
+                        SchemaVersion: 3,
                         ProductionAdmitted: false,
                         PadlessProductionAdmitted: false,
                         PlanId: plan.PlanId,
@@ -210,7 +210,7 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
         CoolingPadPhysicalPresenceObservation? second) => output.WriteLineAsync(
         JsonSerializer.Serialize(
             new PreflightFailureDocument(
-                SchemaVersion: 2,
+                SchemaVersion: 3,
                 ProductionAdmitted: false,
                 PadlessProductionAdmitted: false,
                 PlanId: plan.PlanId,
@@ -255,6 +255,7 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
         double MaximumGpuTemperatureCelsius,
         HyperBoostGpuSensorPolicy GpuSensorPolicy,
         HyperBoostValidationWorkloadKind WorkloadKind,
+        HyperBoostWorkloadIdentityPolicy WorkloadIdentityPolicy,
         string? WorkloadName,
         string? WorkloadSha256,
         SemanticResult Result)
@@ -262,7 +263,7 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
         internal static CaptureDocument From(
             ReviewedHyperBoostThermalPlan plan,
             PerformanceFanSetterValidationResult result) => new(
-                SchemaVersion: 2,
+                SchemaVersion: 3,
                 ProductionAdmitted: false,
                 PadlessProductionAdmitted: false,
                 FirstAbsenceConfirmed: true,
@@ -276,6 +277,7 @@ public sealed class PadAbsentHyperBoostSustainedValidationCommand
                 plan.MaximumGpuTemperatureCelsius,
                 plan.GpuSensorPolicy,
                 plan.WorkloadKind,
+                plan.WorkloadIdentityPolicy,
                 plan.WorkloadName,
                 plan.WorkloadSha256,
                 SemanticResult.From(result));

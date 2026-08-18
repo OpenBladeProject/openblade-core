@@ -650,6 +650,55 @@ public sealed class PerformanceFanSetterValidationRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_ExternalLoadMaintainsExactRuntimeIdentity()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+        var workload = new ScriptedWorkloadSource(
+            HyperBoostExternalWorkloadObservation.RunningExact);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: ExternalPlan(),
+            thermalTelemetrySource: new ScriptedTelemetrySource(new(70, 60)),
+            externalWorkloadSource: workload).RunAsync(
+                PerformanceFanValidationTarget.HyperBoost,
+                default);
+
+        Assert.True(result.Success);
+        Assert.True(result.SustainedValidation!.ExternalWorkloadMaintained);
+        Assert.Equal(
+            result.SustainedValidation.PlannedSampleCount + 1,
+            workload.Calls);
+        Assert.True(result.Restored);
+    }
+
+    [Fact]
+    public async Task RunAsync_ExternalLoadIdentityLossFailsAndRestores()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+        var workload = new ScriptedWorkloadSource(
+            HyperBoostExternalWorkloadObservation.IdentityMismatch);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            sustainedPlan: ExternalPlan(),
+            thermalTelemetrySource: new ScriptedTelemetrySource(new(70, 60)),
+            externalWorkloadSource: workload).RunAsync(
+                PerformanceFanValidationTarget.HyperBoost,
+                default);
+
+        Assert.Equal(
+            HyperBoostSustainedValidationFailure.ExternalWorkloadIdentityMismatch,
+            result.SustainedValidation!.Failure);
+        Assert.False(result.SustainedValidation.ExternalWorkloadMaintained);
+        Assert.Single(workload.ObservedPlans);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+    }
+
+    [Fact]
     public async Task RunAsync_SustainedFanReadFailureFailsButRestores()
     {
         var session = new StatefulSession(
@@ -1016,6 +1065,7 @@ public sealed class PerformanceFanSetterValidationRunnerTests
               "minimumFan1Rpm": 1000,
               "minimumFan2Rpm": 1000,
               "workloadKind": "sustainedNoLoadDwell",
+              "workloadIdentityPolicy": "notApplicable",
               "workloadName": null,
               "workloadSha256": null
             }
@@ -1028,6 +1078,12 @@ public sealed class PerformanceFanSetterValidationRunnerTests
 
     private static ReviewedHyperBoostAdapterTransitionPlan AdapterPlan() =>
         ReviewedHyperBoostAdapterTransitionPlan.LoadTrusted();
+
+    private static ReviewedHyperBoostThermalPlan ExternalPlan() =>
+        ReviewedHyperBoostThermalPlan.LoadTrustedPadAbsentExternalLoad()
+            .BindRuntimeExactExecutable(new(
+                "reviewed-workload.exe",
+                new string('B', 64)));
 
     private sealed class ScriptedSafetyGate(
         PerformanceFanValidationSafetyGateResult first,
@@ -1065,6 +1121,24 @@ public sealed class PerformanceFanSetterValidationRunnerTests
             cancellationToken.ThrowIfCancellationRequested();
             int index = Math.Min(calls++, observations.Length - 1);
             return ValueTask.FromResult(observations[index]);
+        }
+    }
+
+    private sealed class ScriptedWorkloadSource(
+        HyperBoostExternalWorkloadObservation observation)
+        : IHyperBoostExternalWorkloadSource
+    {
+        internal List<ReviewedHyperBoostThermalPlan> ObservedPlans { get; } = [];
+
+        internal int Calls => ObservedPlans.Count;
+
+        public ValueTask<HyperBoostExternalWorkloadObservation> ObserveAsync(
+            ReviewedHyperBoostThermalPlan plan,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ObservedPlans.Add(plan);
+            return ValueTask.FromResult(observation);
         }
     }
 

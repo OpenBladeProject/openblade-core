@@ -1966,6 +1966,29 @@ if (args.Length > 0 && args[0].Equals(
         return 1;
     }
 
+    var workloadSource = new ExternallyLaunchedHyperBoostWorkloadSource(workloadPid);
+    HyperBoostExternalWorkloadIdentity? workloadIdentity =
+        workloadSource.CaptureIdentity();
+    if (workloadIdentity is not { } exactWorkload)
+    {
+        Console.WriteLine("WorkloadIdentityConfirmed=False");
+        Console.WriteLine("ValidationAttempted=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    try
+    {
+        plan = plan.BindRuntimeExactExecutable(exactWorkload);
+    }
+    catch (UnvalidatedCommandException exception)
+    {
+        Console.WriteLine($"WorkloadIdentityConfirmed=False Reason={exception.Message}");
+        Console.WriteLine("ValidationAttempted=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
     bool exactHost =
         GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
     bool exactDevice =
@@ -1982,6 +2005,7 @@ if (args.Length > 0 && args[0].Equals(
     Console.WriteLine($"PlanSha256={plan.SourceSha256}");
     Console.WriteLine($"Workload={plan.WorkloadName}");
     Console.WriteLine($"WorkloadSha256={plan.WorkloadSha256}");
+    Console.WriteLine("WorkloadIdentityConfirmed=True");
     Console.WriteLine("WorkloadOwnership=ExternallyLaunchedAndOperatorOwned");
     Console.WriteLine("ProductionAdmitted=False");
     Console.WriteLine("PadlessProductionAdmitted=False");
@@ -2003,7 +2027,6 @@ if (args.Length > 0 && args[0].Equals(
         WindowsHidEnumerator.CreateCoolingPadPhysicalPresenceSource();
     using var temperatureSource = new SafeWindowsFanTemperatureSource();
     var telemetrySource = new HyperBoostThermalTelemetrySource(temperatureSource);
-    var workloadSource = new ExternallyLaunchedHyperBoostWorkloadSource(workloadPid);
     IPerformanceFanSetterValidationRunner runner =
         BatteryValidationFactory
             .CreateWindowsRz090581Bios400PadAbsentHyperBoostReviewedLoadValidation(
@@ -2826,7 +2849,7 @@ Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-hyperboost-pad-absent-reviewed-load " +
     "--confirm-target " +
     PadAbsentHyperBoostSustainedValidationCommand.ReviewedLoadTargetConfirmation +
-    " --workload-pid <pid> (unavailable until a reviewed exact-hash plan is embedded)");
+    " --workload-pid <pid> (binds and continuously rechecks the running executable name and SHA-256)");
 Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-hyperboost-pad-absent-adapter-transition " +
     "--confirm-target " +

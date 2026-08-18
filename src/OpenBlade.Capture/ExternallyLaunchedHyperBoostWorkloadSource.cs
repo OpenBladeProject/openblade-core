@@ -6,7 +6,8 @@ namespace OpenBlade.Capture;
 
 /// <summary>
 /// Observes one operator-launched process. It never starts, stops, or selects a
-/// workload; the reviewed plan supplies the only accepted file name and hash.
+/// workload. The command binds the reviewed plan to the observed file name and
+/// hash before hardware access, and this source revalidates that exact identity.
 /// </summary>
 internal sealed class ExternallyLaunchedHyperBoostWorkloadSource(int processId)
     : IHyperBoostExternalWorkloadSource
@@ -29,45 +30,72 @@ internal sealed class ExternallyLaunchedHyperBoostWorkloadSource(int processId)
                 HyperBoostExternalWorkloadObservation.IdentityMismatch);
         }
 
+        HyperBoostExternalWorkloadObservation observed = ReadIdentity(
+            out HyperBoostExternalWorkloadIdentity identity);
+        if (observed != HyperBoostExternalWorkloadObservation.RunningExact)
+        {
+            return ValueTask.FromResult(observed);
+        }
+
+        return ValueTask.FromResult(
+            identity.ExecutableName.Equals(
+                plan.WorkloadName,
+                StringComparison.OrdinalIgnoreCase)
+            && identity.ExecutableSha256.Equals(
+                plan.WorkloadSha256,
+                StringComparison.Ordinal)
+                ? HyperBoostExternalWorkloadObservation.RunningExact
+                : HyperBoostExternalWorkloadObservation.IdentityMismatch);
+    }
+
+    internal HyperBoostExternalWorkloadIdentity? CaptureIdentity()
+    {
+        HyperBoostExternalWorkloadObservation observed = ReadIdentity(
+            out HyperBoostExternalWorkloadIdentity identity);
+        return observed == HyperBoostExternalWorkloadObservation.RunningExact
+            ? identity
+            : null;
+    }
+
+    private HyperBoostExternalWorkloadObservation ReadIdentity(
+        out HyperBoostExternalWorkloadIdentity identity)
+    {
+        identity = default;
         try
         {
             using Process process = Process.GetProcessById(processId);
             if (process.HasExited)
             {
-                return ValueTask.FromResult(
-                    HyperBoostExternalWorkloadObservation.NotRunning);
+                return HyperBoostExternalWorkloadObservation.NotRunning;
             }
 
             string? path = process.MainModule?.FileName;
-            if (string.IsNullOrWhiteSpace(path)
-                || !Path.GetFileName(path).Equals(
-                    plan.WorkloadName,
-                    StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(path))
             {
-                return ValueTask.FromResult(
-                    HyperBoostExternalWorkloadObservation.IdentityMismatch);
+                return HyperBoostExternalWorkloadObservation.ObservationFailed;
             }
 
-            string actual = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
-            return ValueTask.FromResult(actual.Equals(
-                plan.WorkloadSha256,
-                StringComparison.Ordinal)
-                    ? HyperBoostExternalWorkloadObservation.RunningExact
-                    : HyperBoostExternalWorkloadObservation.IdentityMismatch);
+            string executableName = Path.GetFileName(path);
+            string sha256 = Convert.ToHexString(
+                SHA256.HashData(File.ReadAllBytes(path)));
+            var observedIdentity = new HyperBoostExternalWorkloadIdentity(
+                executableName,
+                sha256);
+            if (!observedIdentity.IsWellFormed)
+            {
+                return HyperBoostExternalWorkloadObservation.IdentityMismatch;
+            }
+
+            identity = observedIdentity;
+            return HyperBoostExternalWorkloadObservation.RunningExact;
         }
         catch (ArgumentException)
         {
-            return ValueTask.FromResult(
-                HyperBoostExternalWorkloadObservation.NotRunning);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
+            return HyperBoostExternalWorkloadObservation.NotRunning;
         }
         catch
         {
-            return ValueTask.FromResult(
-                HyperBoostExternalWorkloadObservation.ObservationFailed);
+            return HyperBoostExternalWorkloadObservation.ObservationFailed;
         }
     }
 }

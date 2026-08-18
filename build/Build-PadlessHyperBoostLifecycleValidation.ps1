@@ -14,8 +14,28 @@ if (-not [string]::IsNullOrWhiteSpace((& git -C $repoRoot status --porcelain))) 
     throw 'The validation Service must be built from a clean exact commit.'
 }
 
-$resolvedOutput = [System.IO.Path]::GetFullPath($OutputDirectory)
-New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
+$resolvedRepoRoot = [System.IO.Path]::GetFullPath($repoRoot).TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar)
+$resolvedOutput = [System.IO.Path]::GetFullPath($OutputDirectory).TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar)
+$repoPrefix = $resolvedRepoRoot + [System.IO.Path]::DirectorySeparatorChar
+if ($resolvedOutput.Equals($resolvedRepoRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+    $resolvedOutput.StartsWith($repoPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw 'The validation output directory must be outside the source repository.'
+}
+if (Test-Path -LiteralPath $resolvedOutput) {
+    if (-not (Test-Path -LiteralPath $resolvedOutput -PathType Container)) {
+        throw 'The validation output path must be a directory.'
+    }
+    if (Get-ChildItem -LiteralPath $resolvedOutput -Force | Select-Object -First 1) {
+        throw 'The validation output directory must be empty.'
+    }
+}
+else {
+    New-Item -ItemType Directory -Path $resolvedOutput | Out-Null
+}
 & dotnet publish (Join-Path $repoRoot 'src\OpenBlade.Service\OpenBlade.Service.csproj') `
     -c Release `
     --no-restore `

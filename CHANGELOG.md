@@ -11,9 +11,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   `RZ09-0581` on BIOS 4.00. The bounded commands validate an immediate
   apply/readback/restore cycle, a 60-second no-load thermal dwell, and an
   adapter transition from an admitted full-power class while continuously
-  checking physical pad absence. A fail-closed reviewed-load route is ready to
-  verify an externally launched executable by filename and SHA-256 without
-  starting or stopping it once its exact plan is reviewed and embedded. An
+  checking physical pad absence. A hash-pinned reviewed-load plan binds an
+  already-running executable by PID, exact filename, and SHA-256 at runtime,
+  repeats that identity check on every sample, and never starts or stops it. An
   exact validation-marked Service build can arm the
   installed low-power and crash-recovery checks through a separate
   administrator-only request. Normal builds and the Tray remain observed-only.

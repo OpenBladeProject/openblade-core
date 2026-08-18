@@ -235,6 +235,11 @@ public sealed class DiagnosticArchiveProviderTests
                 .GetProperty(
                     "performance.hyperBoost.withoutCoolingPad.gate.sustainedPlan")
                 .GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty(
+                    "performance.hyperBoost.withoutCoolingPad.gate.reviewedLoadPlan")
+                .GetBoolean());
         Assert.False(
             capabilities.RootElement
                 .GetProperty(

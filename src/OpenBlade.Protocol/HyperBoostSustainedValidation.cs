@@ -21,6 +21,18 @@ internal enum HyperBoostExternalWorkloadObservation
     ObservationFailed,
 }
 
+internal readonly record struct HyperBoostExternalWorkloadIdentity(
+    string ExecutableName,
+    string ExecutableSha256)
+{
+    internal bool IsWellFormed =>
+        ExecutableName is { Length: > 0 and <= 128 }
+        && Path.GetFileName(ExecutableName) == ExecutableName
+        && ExecutableName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+        && ReviewedHyperBoostThermalPlan.IsSha256ForReviewedPlan(
+            ExecutableSha256);
+}
+
 internal interface IHyperBoostExternalWorkloadSource
 {
     ValueTask<HyperBoostExternalWorkloadObservation> ObserveAsync(

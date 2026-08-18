@@ -10,6 +10,7 @@
   "minimumFan1Rpm": null,
   "minimumFan2Rpm": null,
   "workloadKind": "sustainedNoLoadDwell",
+  "workloadIdentityPolicy": "notApplicable",
   "workloadName": null,
   "workloadSha256": null
 }
