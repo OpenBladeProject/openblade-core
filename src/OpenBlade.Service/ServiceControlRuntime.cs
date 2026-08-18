@@ -4369,6 +4369,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // Resume begins a new hardware-enumeration session. Restore the bounded
+            // MCU inventory budget without turning ordinary healthy observations
+            // into an unbounded retry loop.
+            mcuVersionReadAttempts = 0;
             bool gpuClockOffsetConfirmationInvalidated = false;
             if (deviceProvider is IGpuClockOffsetConfirmationInvalidator invalidator)
             {
@@ -7832,6 +7836,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         string message,
         bool deviceVerified = false)
     {
+        if (!deviceVerified)
+        {
+            // A confirmed loss of the verified device ends the current hardware
+            // session. A later re-verification receives a fresh bounded budget.
+            mcuVersionReadAttempts = 0;
+        }
+
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
         PublishIfChanged(current with

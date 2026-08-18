@@ -1386,6 +1386,68 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ReverifiedDevice_RestoresBoundedMcuReadBudget()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(3, context.Device.McuVersionReadCalls);
+
+        context.Provider.Available = false;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+
+        context.Provider.Available = true;
+        context.Device.McuVersion = "1.5.0.0";
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(4, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task Resume_RestoresBoundedMcuReadBudget()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(3, context.Device.McuVersionReadCalls);
+
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        context.Device.McuVersion = "1.5.0.0";
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(4, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
     public async Task CanceledMcuRead_NullCompletionDoesNotConsumeRetryBudget()
     {
         var firmware = new FirmwareVersions(
