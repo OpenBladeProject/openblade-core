@@ -41,6 +41,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Made production admission model-scoped by default for the exact supported
+  laptop and SKU. Validated BIOS versions remain provenance, while explicit
+  firmware-specific capability gates can still require exact versions.
+- Advanced service IPC from 46 to 47 for the model-scoped firmware
+  compatibility state.
 - Advanced the firmware-smoke snapshot schema from 7 to 8 for observed-only
   Thunderbolt and touchpad inventory metadata.
 - Expanded the RZ09-0581 BIOS 4.00 USB-C profile to exact 45 W, 60 W, 65 W,

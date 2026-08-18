@@ -17,7 +17,7 @@ internal sealed record SlimQ330WAdapterAdmissionHost(
     string Manufacturer,
     string Model,
     string Sku,
-    IReadOnlyList<string> AdmittedBiosVersions,
+    string FirmwareAdmission,
     int VendorId,
     int ProductId);
 
@@ -40,7 +40,7 @@ internal sealed record SlimQ330WAdapterAdmissionEvidence(
 
 internal sealed record SlimQ330WAdapterAdmissionGate(
     bool ExactReadbackValidated,
-    bool Bios301CompatibilityAdmissionApproved,
+    bool ModelScopedAdmissionApproved,
     bool ProductionPowerClassAdmitted);
 
 internal static class SlimQ330WAdapterAdmissionSource
@@ -48,7 +48,7 @@ internal static class SlimQ330WAdapterAdmissionSource
     private const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_SlimQ330WAdapterAdmission.json";
     private const string ExpectedSha256 =
-        "9A19B36FFA55FFE61A3F4EFE0D04AC2115E46315B1B45146906967779456125E";
+        "E5C3161C5F7EAFAC5329D5EA7AE2F02CBC9BDF1284A93F81B6CD5CF6B97EB1C7";
     private const string AnnotationSha256 =
         "6402DFA16478DDB80A6E7CE0442612E34215E4FC05DC400EA83EA2EDE3C148A6";
     private const string CaptureCommit =
@@ -64,7 +64,7 @@ internal static class SlimQ330WAdapterAdmissionSource
         ReadValidated().Gate is
         {
             ExactReadbackValidated: true,
-            Bios301CompatibilityAdmissionApproved: true,
+            ModelScopedAdmissionApproved: true,
             ProductionPowerClassAdmitted: true,
         };
 
@@ -111,13 +111,14 @@ internal static class SlimQ330WAdapterAdmissionSource
     {
         if (manifest is not
             {
-                SchemaVersion: 1,
+                SchemaVersion: 2,
                 EvidenceKind: "slimQ330WAdapterSemanticAdmission",
                 Host:
                 {
                     Manufacturer: "Razer",
                     Model: "Blade 16 - RZ09-0581",
                     Sku: "RZ09-05819EN4",
+                    FirmwareAdmission: "ModelScoped",
                     VendorId: 0x1532,
                     ProductId: 0x02E0,
                 },
@@ -144,7 +145,7 @@ internal static class SlimQ330WAdapterAdmissionSource
                 Gate:
                 {
                     ExactReadbackValidated: true,
-                    Bios301CompatibilityAdmissionApproved: true,
+                    ModelScopedAdmissionApproved: true,
                     ProductionPowerClassAdmitted: true,
                 },
             })
@@ -153,11 +154,6 @@ internal static class SlimQ330WAdapterAdmissionSource
                 "The embedded SlimQ 330 W adapter admission manifest is not the reviewed exact-device contract.");
         }
 
-        if (!manifest.Host.AdmittedBiosVersions.SequenceEqual(["3.01", "4.00"]))
-        {
-            throw Invalid(
-                "The embedded SlimQ 330 W adapter BIOS admission set is not the reviewed contract.");
-        }
     }
 
     private static UnvalidatedCommandException Invalid(string message) => new(message);

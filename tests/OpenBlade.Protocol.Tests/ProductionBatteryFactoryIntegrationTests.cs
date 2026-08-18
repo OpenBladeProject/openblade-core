@@ -9,22 +9,21 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(1);
 
     [Fact]
-    public void Rz090581CapabilityDiagnosticsAdmission_RequiresExactBios301Evidence()
+    public void Rz090581CapabilityDiagnosticsAdmission_RequiresExactModelEvidence()
     {
         ProductionBatteryReadEvidence admitted =
             ProductionBatteryFactory.GetRz090581ProductionBatteryReadEvidence(
                 ExactRz090581Identity("3.01"));
         Assert.True(admitted.SupportsRz090581CapabilityDiagnosticsQuery);
+        Assert.True(ProductionBatteryFactory.GetRz090581ProductionBatteryReadEvidence(
+            ExactRz090581Identity("99.99", HostFirmwareCompatibility.ModelScoped))
+            .SupportsRz090581CapabilityDiagnosticsQuery);
 
         HostIdentityReadResult[] rejected =
         [
-            ExactRz090581Identity("4.00"),
-            ExactRz090581Identity(
-                "99.99",
-                HostFirmwareCompatibility.UntestedAllowed),
             ExactRz090581Identity(
                 "3.01",
-                HostFirmwareCompatibility.UntestedAllowed),
+                HostFirmwareCompatibility.UntestedBlocked),
             new(
                 new HostIdentityEvidence(
                     "Razer",
@@ -61,7 +60,7 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         HostIdentityReadResult bios400 = ExactRz090581Identity("4.00");
         HostIdentityReadResult futureBios = ExactRz090581Identity(
             "99.99",
-            HostFirmwareCompatibility.UntestedAllowed);
+            HostFirmwareCompatibility.ModelScoped);
 
         GpuOverclockCapabilities policy = Assert.IsType<GpuOverclockCapabilities>(
             ProductionBatteryFactory.GetRz090581GpuOverclockCapabilities(bios301));
@@ -87,13 +86,7 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     [Fact]
     public void Rz090581AdapterAdmission_ScopesOptionalClassesToExactEvidence()
     {
-        AdapterPowerState[] bios301Expected =
-        [
-            AdapterPowerState.UsbCPower100W,
-            AdapterPowerState.FullPower280W,
-            AdapterPowerState.FullPower330W,
-        ];
-        AdapterPowerState[] bios400Expected =
+        AdapterPowerState[] modelScopedExpected =
         [
             AdapterPowerState.UsbCPower100W,
             AdapterPowerState.FullPower280W,
@@ -106,27 +99,19 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         ];
 
         Assert.Equal(
-            bios301Expected,
+            modelScopedExpected,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
                 ExactRz090581Identity("3.01")).Order().ToArray());
         Assert.Equal(
-            bios400Expected,
+            modelScopedExpected,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
                 ExactRz090581Identity("4.00")).Order().ToArray());
-        Assert.DoesNotContain(
-            AdapterPowerState.UsbCPower45W,
-            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
-                ExactRz090581Identity("3.01")));
-        Assert.DoesNotContain(
-            AdapterPowerState.UsbCPower65W,
-            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
-                ExactRz090581Identity("3.01")));
-        Assert.DoesNotContain(
-            AdapterPowerState.FullPower330W,
+        Assert.Equal(
+            modelScopedExpected,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
                 ExactRz090581Identity(
                     "99.99",
-                    HostFirmwareCompatibility.UntestedAllowed)));
+                    HostFirmwareCompatibility.ModelScoped)).Order().ToArray());
         Assert.DoesNotContain(
             AdapterPowerState.FullPower330W,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(new(

@@ -379,7 +379,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFortySixBatteryContracts_RoundTripExactShape()
+    public async Task VersionFortySevenBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
@@ -444,7 +444,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(46, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(47, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -717,7 +717,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFortySixStatus_AcceptsCompleteCapabilityCollections()
+    public async Task VersionFortySevenStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -726,7 +726,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(46, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(47, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

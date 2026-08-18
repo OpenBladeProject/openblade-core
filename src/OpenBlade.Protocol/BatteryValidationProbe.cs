@@ -31,6 +31,7 @@ public enum BatteryValidationFirmwareCompatibility
     Tested,
     UntestedBlocked,
     UntestedAllowed,
+    ModelScoped,
 }
 
 public sealed record BatteryValidationProbeResult(
@@ -400,6 +401,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 BatteryValidationFirmwareCompatibility.UntestedBlocked,
             HostFirmwareCompatibility.UntestedAllowed =>
                 BatteryValidationFirmwareCompatibility.UntestedAllowed,
+            HostFirmwareCompatibility.ModelScoped =>
+                BatteryValidationFirmwareCompatibility.ModelScoped,
             _ => BatteryValidationFirmwareCompatibility.Unknown,
         };
 }

@@ -44,7 +44,7 @@ internal sealed class ProductionBatteryReadEvidence
             ProductionBatteryQueryCapability.GamingMode,
         });
 
-    internal static ProductionBatteryReadEvidence Rz090581Bios301 { get; } = new(
+    internal static ProductionBatteryReadEvidence Rz090581ModelScoped { get; } = new(
         new HashSet<ProductionBatteryQueryCapability>
         {
             ProductionBatteryQueryCapability.TemporaryFullCharge,

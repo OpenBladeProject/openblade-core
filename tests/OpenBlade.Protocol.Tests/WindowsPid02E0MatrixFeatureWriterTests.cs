@@ -133,6 +133,29 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
     }
 
     [Fact]
+    public async Task Opener_AcceptsModelScopedFirmwareWithoutOverride()
+    {
+        var native = new ScriptedCandidateNative();
+        OpenedCandidateHandle candidate = native.Add("mi03", ExactMatrix);
+        var opener = new WindowsPid02E0MatrixFeatureOpener(
+            new ScriptedHost(ExactHost with
+            {
+                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "99.99" },
+                FirmwareCompatibility = HostFirmwareCompatibility.ModelScoped,
+            }),
+            new ScriptedGuard(),
+            native,
+            ControllerExclusivityPolicy.Strict);
+
+        HidSessionResult<OpenedHidHandle> result = opener.Open();
+
+        Assert.Null(result.Failure);
+        Assert.NotNull(result.Value);
+        await result.Value.DisposeAsync();
+        Assert.True(candidate.FileHandle.IsClosed);
+    }
+
+    [Fact]
     public void Opener_RejectsWrongModelBeforeGuardOrNativeCalls()
     {
         var native = new ScriptedCandidateNative();

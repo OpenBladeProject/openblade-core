@@ -153,12 +153,13 @@ public sealed class WindowsHostIdentitySourceTests
         registry.Values[$"{BiosKey}|BIOSVersion"] = "4.00";
         registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "4.00";
 
-        HostIdentityReadResult blocked = source.ReadExactIdentity();
+        HostIdentityReadResult modelScoped = source.ReadExactIdentity();
 
-        AssertIdentityBlocked(blocked);
+        Assert.Equal("4.00", modelScoped.Evidence?.BiosVersion);
+        Assert.Null(modelScoped.Failure);
         Assert.Equal(
-            HostFirmwareCompatibility.UntestedBlocked,
-            blocked.FirmwareCompatibility);
+            HostFirmwareCompatibility.ModelScoped,
+            modelScoped.FirmwareCompatibility);
     }
 
     [Fact]
@@ -168,9 +169,15 @@ public sealed class WindowsHostIdentitySourceTests
         registry.Values[$"{BiosKey}|BIOSVersion"] = "3.02";
         registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "3.02";
         var policy = new FirmwareCompatibilityPolicy();
+        var expected = new ExpectedHostIdentity(
+            "Razer",
+            "Blade 16 - RZ09-0581",
+            "RZ09-05819EN4",
+            ["3.01", "4.00"]);
         var source = new WindowsHostIdentitySource(
             registry,
             new FakeWindowsPlatformEvidenceSource(ExactPlatform),
+            expected,
             policy);
 
         HostIdentityReadResult blocked = source.ReadExactIdentity();
@@ -187,6 +194,20 @@ public sealed class WindowsHostIdentitySourceTests
         Assert.Equal(
             HostFirmwareCompatibility.UntestedAllowed,
             result.FirmwareCompatibility);
+    }
+
+    [Fact]
+    public void ReadExactIdentity_UnknownProductionBiosIsModelScopedWithoutOverride()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|BIOSVersion"] = "99.99";
+        registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "99.99";
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        Assert.Equal("99.99", result.Evidence?.BiosVersion);
+        Assert.Null(result.Failure);
+        Assert.Equal(HostFirmwareCompatibility.ModelScoped, result.FirmwareCompatibility);
     }
 
     [Fact]

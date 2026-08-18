@@ -1,14 +1,11 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "evidenceKind": "slimQ330WAdapterSemanticAdmission",
   "host": {
     "manufacturer": "Razer",
     "model": "Blade 16 - RZ09-0581",
     "sku": "RZ09-05819EN4",
-    "admittedBiosVersions": [
-      "3.01",
-      "4.00"
-    ],
+    "firmwareAdmission": "ModelScoped",
     "vendorId": 5426,
     "productId": 736
   },
@@ -31,7 +28,7 @@
   },
   "gate": {
     "exactReadbackValidated": true,
-    "bios301CompatibilityAdmissionApproved": true,
+    "modelScopedAdmissionApproved": true,
     "productionPowerClassAdmitted": true
   }
 }

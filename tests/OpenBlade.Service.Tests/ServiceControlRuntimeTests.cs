@@ -1466,7 +1466,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task FirstVerifiedObservation_SkipsRz090581DiagnosticsForBios400()
+    public async Task FirstVerifiedObservation_ReadsRz090581DiagnosticsForBios400()
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -1480,8 +1480,28 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
-        Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
-        Assert.Equal(0, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+        Assert.NotNull(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(1, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_ReadsDiagnosticsOnModelScopedFutureBios()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: FirmwareVersions.Unavailable() with
+            {
+                BiosVersion = "99.99",
+                ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            });
+        context.Provider.ReportModelScopedFirmwareCompatibility = true;
+        context.Device.Rz090581CapabilityDiagnostics =
+            new Rz090581CapabilityDiagnostics(0x01, 0x00, [0x01, 0x02]);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.NotNull(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
+        Assert.Equal(1, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
     }
 
     [Fact]
@@ -11115,6 +11135,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public FirmwareCompatibilityStatus FirmwareCompatibility =>
             ReportUnknownFirmwareCompatibility
                 ? FirmwareCompatibilityStatus.Unknown
+                : ReportModelScopedFirmwareCompatibility
+                ? FirmwareCompatibilityStatus.ModelScoped
                 : AvailableWhenUntestedFirmwareAllowed
                 ? AllowUntestedFirmware
                     ? FirmwareCompatibilityStatus.UntestedAllowed
@@ -11127,6 +11149,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             AvailableWhenUntestedFirmwareAllowed;
 
         public bool ReportUnknownFirmwareCompatibility { get; set; }
+
+        public bool ReportModelScopedFirmwareCompatibility { get; set; }
 
         public int TryGetCount { get; private set; }
 

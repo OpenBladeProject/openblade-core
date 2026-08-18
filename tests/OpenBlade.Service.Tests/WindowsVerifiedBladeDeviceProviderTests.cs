@@ -204,6 +204,30 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             provider.FirmwareCompatibility);
     }
 
+    [Fact]
+    public async Task ModelScopedFirmware_AllowsVerifiedDeviceAndOwnedRendererWithoutOverride()
+    {
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(
+                BatteryValidationProbeClassification.Ready,
+                BatteryValidationFirmwareCompatibility.ModelScoped),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            new FakeLightingFactory(new FakeLightingPort()));
+
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                77,
+                ReactiveLightingDuration.Medium),
+            default);
+
+        Assert.Equal(FirmwareCompatibilityStatus.ModelScoped, provider.FirmwareCompatibility);
+        Assert.False(provider.RequiresUntestedFirmwareOverride);
+        Assert.True(provider.TryGetOwnedKeyTriggeredLightingDevice(out _));
+    }
+
     [Theory]
     [InlineData(BatteryValidationProbeClassification.EnumerationFailed)]
     [InlineData(BatteryValidationProbeClassification.CandidateOpenFailed)]
