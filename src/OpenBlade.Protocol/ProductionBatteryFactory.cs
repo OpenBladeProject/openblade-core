@@ -318,6 +318,26 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             AdapterPowerState.FullPower280W,
         };
 
+        if (exactIdentity is
+            {
+                Evidence:
+                {
+                    Manufacturer: "Razer",
+                    ProductName: "Blade 16 - RZ09-0581",
+                    Sku: "RZ09-05819EN4",
+                    BiosVersion: "4.00",
+                },
+                Failure: null,
+                FirmwareCompatibility: HostFirmwareCompatibility.Tested,
+            })
+        {
+            states.Add(AdapterPowerState.UsbCPower45W);
+            states.Add(AdapterPowerState.UsbCPower60W);
+            states.Add(AdapterPowerState.UsbCPower65W);
+            states.Add(AdapterPowerState.UsbCPower80W);
+            states.Add(AdapterPowerState.UsbCPower90W);
+        }
+
         if (exactIdentity is not
             {
                 Evidence:

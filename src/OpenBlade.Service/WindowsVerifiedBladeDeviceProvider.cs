@@ -798,14 +798,6 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 throw new OperationCanceledException(cancellationToken);
             }
-            catch (ObjectDisposedException)
-            {
-                throw;
-            }
-            catch
-            {
-                return AdapterPowerState.Unknown;
-            }
             finally
             {
                 hardwareOperationGate.Release();

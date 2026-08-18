@@ -85,23 +85,42 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
-    public void Rz090581AdapterAdmission_Adds330WOnlyForExactAdmittedTarget()
+    public void Rz090581AdapterAdmission_ScopesOptionalClassesToExactEvidence()
     {
-        AdapterPowerState[] expected =
+        AdapterPowerState[] bios301Expected =
         [
             AdapterPowerState.UsbCPower100W,
             AdapterPowerState.FullPower280W,
             AdapterPowerState.FullPower330W,
         ];
+        AdapterPowerState[] bios400Expected =
+        [
+            AdapterPowerState.UsbCPower100W,
+            AdapterPowerState.FullPower280W,
+            AdapterPowerState.FullPower330W,
+            AdapterPowerState.UsbCPower45W,
+            AdapterPowerState.UsbCPower60W,
+            AdapterPowerState.UsbCPower65W,
+            AdapterPowerState.UsbCPower80W,
+            AdapterPowerState.UsbCPower90W,
+        ];
 
         Assert.Equal(
-            expected,
+            bios301Expected,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
                 ExactRz090581Identity("3.01")).Order().ToArray());
         Assert.Equal(
-            expected,
+            bios400Expected,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
                 ExactRz090581Identity("4.00")).Order().ToArray());
+        Assert.DoesNotContain(
+            AdapterPowerState.UsbCPower45W,
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+                ExactRz090581Identity("3.01")));
+        Assert.DoesNotContain(
+            AdapterPowerState.UsbCPower65W,
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+                ExactRz090581Identity("3.01")));
         Assert.DoesNotContain(
             AdapterPowerState.FullPower330W,
             ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
@@ -135,7 +154,15 @@ public sealed class ProductionBatteryFactoryIntegrationTests
                 static () => throw new UnvalidatedCommandException("invalid manifest"));
 
         Assert.Equal(
-            [AdapterPowerState.UsbCPower100W, AdapterPowerState.FullPower280W],
+            [
+                AdapterPowerState.UsbCPower100W,
+                AdapterPowerState.FullPower280W,
+                AdapterPowerState.UsbCPower45W,
+                AdapterPowerState.UsbCPower60W,
+                AdapterPowerState.UsbCPower65W,
+                AdapterPowerState.UsbCPower80W,
+                AdapterPowerState.UsbCPower90W,
+            ],
             states.Order().ToArray());
     }
 

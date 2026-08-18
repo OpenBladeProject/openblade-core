@@ -1314,7 +1314,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task FirstVerifiedObservation_ReadsMcuVersionOnceAndPreservesOtherFirmware()
+    public async Task FirstVerifiedObservation_StopsMcuReadsAfterSuccessAndPreservesOtherFirmware()
     {
         var firmware = new FirmwareVersions(
             "3.01",
@@ -1500,6 +1500,147 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Null(context.Runtime.GetCachedRz090581CapabilityDiagnostics());
         Assert.Equal(0, context.Device.Rz090581CapabilityDiagnosticsReadCalls);
+    }
+
+    [Fact]
+    public async Task VerifiedObservation_RetriesMcuReadAfterTransientFailure()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+        context.Device.McuVersionFailures.Enqueue(
+            new TimeoutException("firmware query timed out"));
+        context.Device.McuVersion = " 1.5.0.0 ";
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(firmware, context.Runtime.GetStatus().Firmware);
+        Assert.Equal(1, context.Device.McuVersionReadCalls);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(2, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task VerifiedObservation_StopsMcuReadsAfterBoundedFailures()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(firmware, context.Runtime.GetStatus().Firmware);
+        Assert.Equal(3, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task ReverifiedDevice_RestoresBoundedMcuReadBudget()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(3, context.Device.McuVersionReadCalls);
+
+        context.Provider.Available = false;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+
+        context.Provider.Available = true;
+        context.Device.McuVersion = "1.5.0.0";
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(4, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task Resume_RestoresBoundedMcuReadBudget()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(3, context.Device.McuVersionReadCalls);
+
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        context.Device.McuVersion = "1.5.0.0";
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(4, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task CanceledMcuRead_NullCompletionDoesNotConsumeRetryBudget()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+        using var cancellation = new CancellationTokenSource();
+        context.Device.AfterMcuVersionRead = cancellation.Cancel;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            context.Runtime.ObserveAsync(cancellation.Token));
+
+        context.Device.AfterMcuVersionRead = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.McuVersion = "1.5.0.0";
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(4, context.Device.McuVersionReadCalls);
     }
 
     [Fact]
@@ -9687,14 +9828,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal("Failed", failedRecord.Status);
     }
 
-    [Fact]
-    public async Task Observation_ClassifiesUsbCPdOnlyAfterTwoAgreeingAdapterReads()
+    [Theory]
+    [InlineData(AdapterPowerState.UsbCPower45W)]
+    [InlineData(AdapterPowerState.UsbCPower60W)]
+    [InlineData(AdapterPowerState.UsbCPower65W)]
+    [InlineData(AdapterPowerState.UsbCPower80W)]
+    [InlineData(AdapterPowerState.UsbCPower90W)]
+    [InlineData(AdapterPowerState.UsbCPower100W)]
+    public async Task Observation_ClassifiesUsbCPdOnlyAfterTwoAgreeingAdapterReads(
+        AdapterPowerState usbCPowerState)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
             initialPowerSource: PowerSource.ExternalUnknown);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
-        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        context.Device.AdapterPowerState = usbCPowerState;
         context.Device.ConfirmedState = new ConfirmedDeviceState(
             PerformancePreset.Balanced,
             FanMode.Automatic,
@@ -9710,6 +9858,33 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
         Assert.False(status.WritesBlocked);
         Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task Observation_KeepsWindowsExternalPowerUnresolvedForBatteryReplies()
+    {
+        TestContext context = CreateWritableContext();
+        var temporaryOverride = new ManualOverride<PerformancePreset>(
+            PerformancePreset.Silent,
+            OverrideLifetime.UntilPowerSourceChange);
+        ControlOperationResult applied = await context.Runtime.SetPerformanceOverrideAsync(
+            temporaryOverride,
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        int setterCallsBeforeObservation = context.Device.TotalSetterCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Battery;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.PluggedIn, status.ActivePowerSource);
+        Assert.Equal(2, context.Device.AdapterPowerReadCalls);
+        Assert.True(status.WritesBlocked);
+        Assert.Equal(temporaryOverride.Value, status.PerformanceOverride?.Value);
+        Assert.Equal(temporaryOverride.Lifetime, status.PerformanceOverride?.Lifetime);
+        Assert.Equal(setterCallsBeforeObservation, context.Device.TotalSetterCalls);
     }
 
     [Fact]
@@ -9933,6 +10108,85 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             refreshed.Message,
             StringComparison.OrdinalIgnoreCase);
         Assert.Equal(5, context.Device.AdapterPowerReadCalls);
+    }
+
+    [Fact]
+    public async Task UsbCPd_TransientAccessFailureAndUnknownReplyRecoverWithinBound()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            context.Runtime.GetStatus().Profiles.UsbC.Lighting);
+        context.Device.AdapterPowerFailures.Enqueue(
+            new IOException("temporary adapter access failure"));
+        context.Device.AdapterPowerStates.Enqueue(AdapterPowerState.UsbCPower100W);
+        context.Device.AdapterPowerStates.Enqueue(AdapterPowerState.Unknown);
+        context.Device.AdapterPowerStates.Enqueue(AdapterPowerState.UsbCPower100W);
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.UsbC, status.ActivePowerSource);
+        Assert.False(status.WritesBlocked);
+        Assert.Equal(4, context.Device.AdapterPowerReadCalls);
+        DiagnosticCommandResult diagnostic = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(
+                "classification recovered",
+                StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains("1 device-access failures", diagnostic.Detail);
+        Assert.Contains("1 unknown replies", diagnostic.Detail);
+        Assert.Equal("Stored", diagnostic.Status);
+    }
+
+    [Fact]
+    public async Task ExternalPower_FailureModesRemainBlockedAndDeduplicateByMode()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerFailure = new IOException(
+            "persistent adapter access failure");
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        context.Device.AdapterPowerFailure = null;
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.ExternalUnknown, status.ActivePowerSource);
+        Assert.True(status.WritesBlocked);
+        Assert.Equal(20, context.Device.AdapterPowerReadCalls);
+        DiagnosticCommandResult[] diagnostics = context.History.Snapshot().CommandResults
+            .Where(result => result.Detail?.Contains(
+                "Power adapter classification remained",
+                StringComparison.OrdinalIgnoreCase) == true)
+            .ToArray();
+        Assert.Equal(2, diagnostics.Length);
+        DiagnosticCommandResult accessFailure = Assert.Single(
+            diagnostics,
+            result => result.Detail?.Contains(
+                "5 device-access failures",
+                StringComparison.OrdinalIgnoreCase) == true);
+        DiagnosticCommandResult unknownReplies = Assert.Single(
+            diagnostics,
+            result => result.Detail?.Contains(
+                "classification remained unknown",
+                StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal("Blocked", accessFailure.Status);
+        Assert.Equal("Blocked", unknownReplies.Status);
     }
 
     [Fact]
@@ -11048,6 +11302,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Queue<AdapterPowerState> AdapterPowerStates { get; } = new();
 
+        public Queue<Exception?> AdapterPowerFailures { get; } = new();
+
         public Exception? AdapterPowerFailure { get; set; }
 
         public string? McuVersion { get; set; }
@@ -11061,6 +11317,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Action? BeforeRz090581CapabilityDiagnosticsRead { get; set; }
 
         public Action? AfterRz090581CapabilityDiagnosticsRead { get; set; }
+
+        public Queue<Exception> McuVersionFailures { get; } = new();
+
+        public Action? AfterMcuVersionRead { get; set; }
 
         public int TotalSetterCalls => PerformanceSetCalls
             + FanSetCalls
@@ -11216,6 +11476,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             TotalCalls++;
             AdapterPowerReadCalls++;
+            if (AdapterPowerFailures.TryDequeue(out Exception? scriptedFailure)
+                && scriptedFailure is not null)
+            {
+                return Task.FromException<AdapterPowerState>(scriptedFailure);
+            }
+
             if (AdapterPowerFailure is not null)
             {
                 return Task.FromException<AdapterPowerState>(AdapterPowerFailure);
@@ -11230,14 +11496,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Task<string?> ReadMcuVersionAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (McuVersion is null)
+            McuVersionReadCalls++;
+            if (McuVersionFailures.TryDequeue(out Exception? failure))
+            {
+                return Task.FromException<string?>(failure);
+            }
+
+            string? version = McuVersion;
+            AfterMcuVersionRead?.Invoke();
+            if (version is null)
             {
                 return Task.FromResult<string?>(null);
             }
 
             TotalCalls++;
-            McuVersionReadCalls++;
-            return Task.FromResult<string?>(McuVersion);
+            return Task.FromResult<string?>(version);
         }
 
         public Task<Rz090581CapabilityDiagnostics?>

@@ -1034,7 +1034,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : latestStatus?.DeviceVerified == false
                 ? UnavailableLaptopReason
                 : ActivePowerSource == PowerSource.ExternalUnknown
-                    ? TrayText.Get("Checking power source")
+                    ? PowerSourcePresentation.Label(ActivePowerSource)
                     : CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus)
                         ? TrayText.Get("Ready")
                         : TrayText.Get("Controls unavailable");
@@ -1045,14 +1045,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && (CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus));
 
     public bool IsReadinessChecking => IsConnected
-        && (IsCheckingLaptopConnection(latestStatus)
-            || latestStatus?.DeviceVerified == true
-            && ActivePowerSource == PowerSource.ExternalUnknown);
+        && IsCheckingLaptopConnection(latestStatus);
 
     public bool IsReadinessWarning => IsConnected
         && (IsFirmwareAdmissionBlocked
             || latestStatus?.DeviceVerified == true
-                && ActivePowerSource != PowerSource.ExternalUnknown
                 && !IsCheckingLaptopConnection(latestStatus)
                 && !IsRetainedPowerSourceRecheck(latestStatus)
                 && !CanControlHardware);
@@ -1646,14 +1643,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string TroubleshootingPowerSourceStatus => !IsConnected
         ? TrayText.Get("Unavailable")
-        : ActivePowerSource switch
-        {
-            PowerSource.PluggedIn => "AC",
-            PowerSource.UsbC => "USB-C",
-            PowerSource.Battery => TrayText.Get("Battery"),
-            PowerSource.ExternalUnknown => TrayText.Get("Checking power source"),
-            _ => TrayText.Get("Unavailable"),
-        };
+        : PowerSourcePresentation.TroubleshootingLabel(ActivePowerSource);
 
     public string TroubleshootingControlsStatus => IsConnected
         ? ControlAccessStatus
@@ -4582,14 +4572,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         PerformanceOverride = status.PerformanceOverride;
         FanOverride = status.FanOverride;
         LightingOverride = status.LightingOverride;
-        ActivePowerSourceLabel = status.ActivePowerSource switch
-        {
-            PowerSource.PluggedIn => TrayText.Get("AC profile"),
-            PowerSource.Battery => TrayText.Get("Battery profile"),
-            PowerSource.UsbC => TrayText.Get("USB-C profile"),
-            PowerSource.ExternalUnknown => TrayText.Get("Checking power source"),
-            _ => TrayText.Get("Power source unavailable"),
-        };
+        ActivePowerSourceLabel = PowerSourcePresentation.ProfileLabel(
+            status.ActivePowerSource);
     }
 
     private void ApplySourcePresentation(
@@ -8843,7 +8827,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         if (status.ActivePowerSource == PowerSource.ExternalUnknown)
         {
-            return TrayText.Get("Checking power source");
+            return PowerSourcePresentation.Label(status.ActivePowerSource);
         }
 
         if (IsRetainedPowerSourceRecheck(status))
