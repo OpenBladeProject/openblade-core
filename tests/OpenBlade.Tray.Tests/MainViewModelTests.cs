@@ -3105,7 +3105,7 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.SetLightingCommand.CanExecute(
             ProfileDefaults.CreateSafeDefaults().UsbC.Lighting));
         Assert.False(viewModel.ClearManualOverridesCommand.CanExecute(null));
-        Assert.Equal("Checking power source", viewModel.ActivePowerSourceLabel);
+        Assert.Equal("External power (unclassified)", viewModel.ActivePowerSourceLabel);
         Assert.Equal("Save to profile", viewModel.SaveToActiveProfileLabel);
 
         viewModel.BatteryPerformanceOption = viewModel.AvailableBatteryPerformanceOptions
@@ -6385,18 +6385,26 @@ public sealed class MainViewModelTests
             nameof(MainViewModel.TroubleshootingKeyboardDriverModeStatus),
             driverStatusChanges);
 
+        viewModel.TrayHoverLabelMode = TrayHoverLabelMode.ActiveProfile;
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
             Revision = 5,
             ActivePowerSource = PowerSource.ExternalUnknown,
         });
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "Checking power source"
+            viewModel.ControlAccessStatus == "External power (unclassified)"
             && viewModel.ActivePowerSource == PowerSource.ExternalUnknown);
-        Assert.Equal("Checking power source", viewModel.ProfileStateLabel);
-        Assert.True(viewModel.IsReadinessChecking);
+        Assert.Equal("External power (unclassified)", viewModel.ProfileStateLabel);
+        Assert.Equal("External power (unclassified)", viewModel.ActivePowerSourceLabel);
+        Assert.Equal(
+            "OpenBlade · External power (unclassified) · Balanced",
+            viewModel.TrayHoverLabelText);
+        Assert.False(viewModel.IsReadinessChecking);
         Assert.False(viewModel.IsReadinessReady);
-        Assert.Equal("Checking power source", viewModel.TroubleshootingPowerSourceStatus);
+        Assert.True(viewModel.IsReadinessWarning);
+        Assert.Equal(
+            "External power (unclassified)",
+            viewModel.TroubleshootingPowerSourceStatus);
         Assert.False(viewModel.CanControlHardware);
 
         client.PublishReconnecting();
