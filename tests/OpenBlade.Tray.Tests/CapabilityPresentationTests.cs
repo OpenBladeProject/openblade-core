@@ -39,7 +39,20 @@ public sealed class CapabilityPresentationTests
             "FirmwareVersionsSection");
         Assert.Single(versionsSection.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "Latest");
+            && Attribute(element, "Text") == "Published by Razer");
+        XElement publishedOnlyNotice = Assert.Single(
+            versionsSection.Descendants(),
+            element => Attribute(element, "Text")?.StartsWith(
+                "Published only:",
+                StringComparison.Ordinal) == true);
+        Assert.Contains(
+            "cannot read the installed Thunderbolt 5 or touchpad firmware versions",
+            Attribute(publishedOnlyNotice, "Text"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ShowsPublishedOnlyFirmwareNotice",
+            Attribute(publishedOnlyNotice, "Visibility"),
+            StringComparison.Ordinal);
         Assert.Equal(2, document.Descendants().Count(element =>
             Attribute(element, "Text") == "Checks at startup when due."));
         Assert.DoesNotContain(

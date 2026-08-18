@@ -1289,9 +1289,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockLaptopPerformance3.Text" xml:space="preserve">
     <value>[!! Láptóp pérfórmáncé ~~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockLatest.Text" xml:space="preserve">
-    <value>[!! Látést ~~~ !!]</value>
-  </data>
   <data name="MainWindow_TextBlockLatestRelease.Text" xml:space="preserve">
     <value>[!! Látést réléásé ~~~~~ !!]</value>
   </data>
@@ -1402,6 +1399,12 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockProfiles2.Text" xml:space="preserve">
     <value>[!! Prófílés ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockPublishedByRazer.Text" xml:space="preserve">
+    <value>[!! Públíshéd bý Razer ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockPublishedOnlyFirmwareNotice.Text" xml:space="preserve">
+    <value>[!! Públíshéd ónlý: OpenBlade cánnót réád thé ínstálléd Thúndérbólt 5 ór tóúchpád fírmwáré vérsíóns, só thésé válúés áré nót cómpáréd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockQuickControls.Text" xml:space="preserve">
     <value>[!! Qúíck cóntróls ~~~~~ !!]</value>
@@ -1614,6 +1617,9 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Úsé Windows fór kéýbóárd éffécts ánd bríghtnéss. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockVBIOS.Text" xml:space="preserve">
+    <value>[!! VBÍÓS ~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockVBIOS2.Text" xml:space="preserve">
     <value>[!! VBÍÓS ~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockVersions.Text" xml:space="preserve">

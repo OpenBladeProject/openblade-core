@@ -318,6 +318,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
 
         Assert.True(viewModel.ShowsThunderboltFirmware);
         Assert.True(viewModel.ShowsTouchpadFirmware);
+        Assert.True(viewModel.ShowsPublishedOnlyFirmwareNotice);
         Assert.Equal("Unavailable", viewModel.InstalledThunderboltVersion);
         Assert.Equal("Unavailable", viewModel.InstalledTouchpadVersion);
         Assert.Equal("69.1", viewModel.PublishedThunderboltVersion);
@@ -350,6 +351,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
 
         Assert.False(viewModel.ShowsThunderboltFirmware);
         Assert.False(viewModel.ShowsTouchpadFirmware);
+        Assert.False(viewModel.ShowsPublishedOnlyFirmwareNotice);
         Assert.Equal("Not listed", viewModel.PublishedThunderboltVersion);
         Assert.Equal("Not listed", viewModel.PublishedTouchpadVersion);
         Assert.False(viewModel.IsUpdateAvailable);

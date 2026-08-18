@@ -59,8 +59,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   and removes through the cached installed bundle without registering the incoming
   one, with guidance to use its Windows Installed apps entry when profile removal
   is also wanted.
-- Advanced the combined service IPC contract to version 45 so incompatible
-  version-44 peers are no longer accepted as wire-compatible.
+- Advanced the combined service IPC contract to version 46 so peers without
+  the expanded firmware inventory are no longer accepted as wire-compatible.
 - Rejected imported lighting sequences for a different keyboard layout before
   opening the lighting device or changing its state.
 - Kept the Lab features row aligned with neighboring Settings rows when showing

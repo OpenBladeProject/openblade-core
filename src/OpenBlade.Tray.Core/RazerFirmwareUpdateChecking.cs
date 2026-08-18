@@ -544,6 +544,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     public bool ShowsTouchpadFirmware => supportPage?.PublishesTouchpadFirmware == true;
 
+    public bool ShowsPublishedOnlyFirmwareNotice =>
+        ShowsThunderboltFirmware || ShowsTouchpadFirmware;
+
     public bool IsChecking
     {
         get => isChecking;
@@ -641,6 +644,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
         Notify(nameof(IsSupported));
         Notify(nameof(ShowsThunderboltFirmware));
         Notify(nameof(ShowsTouchpadFirmware));
+        Notify(nameof(ShowsPublishedOnlyFirmwareNotice));
         Notify(nameof(OfficialSupportUri));
         Notify(nameof(InstalledBiosVersion));
         Notify(nameof(InstalledEcVersion));
