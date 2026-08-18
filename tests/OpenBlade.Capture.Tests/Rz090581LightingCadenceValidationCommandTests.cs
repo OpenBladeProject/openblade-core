@@ -64,7 +64,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         string json = artifacts.Single(pair => pair.Key.EndsWith(".json")).Value;
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
-        Assert.Equal(4, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(5, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("tidal", root.GetProperty("pattern").GetString());
         Assert.True(root.GetProperty("transportQualified").GetBoolean());
         Assert.True(root.GetProperty("opticalValidationRequired").GetBoolean());
@@ -101,8 +101,18 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             .GetProperty("controllerGuard")
             .GetProperty("p99Milliseconds")
             .GetDouble());
+        JsonElement transport = root.GetProperty("stages")[0]
+            .GetProperty("transport");
+        Assert.True(transport
+            .GetProperty("qualificationExcludesControllerGuard")
+            .GetBoolean());
+        Assert.Equal(0.6, transport
+            .GetProperty("qualificationWriteDuration")
+            .GetProperty("p99Milliseconds")
+            .GetDouble());
         string markdown = artifacts.Single(pair => pair.Key.EndsWith(".md")).Value;
         Assert.Contains("CPU (1 LP=100%)", markdown, StringComparison.Ordinal);
+        Assert.Contains("p99 qualified", markdown, StringComparison.Ordinal);
         Assert.Contains("p99 guard", markdown, StringComparison.Ordinal);
         Assert.Contains("10.00%", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("serial", json, StringComparison.OrdinalIgnoreCase);
@@ -679,6 +689,8 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             new(0.3, 0.3, 0.3, 0.3, 0.3),
             new(0.1, 0.1, 0.1, 0.1, 0.1),
             new(0.1, 0.1, 0.1, 0.1, 0.1)),
+        QualificationWriteDuration = new(0.6, 0.6, 0.6, 0.6, 0.6),
+        QualificationExcludesControllerGuard = true,
     };
 
     private static LightingCadenceStageResult FailedStage(

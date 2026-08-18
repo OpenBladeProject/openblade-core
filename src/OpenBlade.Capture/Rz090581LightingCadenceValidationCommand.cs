@@ -478,7 +478,7 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         failure ??= passed ? null : "hardwareGatesIncomplete";
         DateTimeOffset completedAtUtc = utcNow();
         var evidence = new Rz090581LightingCadenceEvidence(
-            SchemaVersion: 4,
+            SchemaVersion: 5,
             EvidenceKind: "rz090581LightingCadenceValidation",
             new DeviceIdentity(
                 TargetBladeDevice.Model,
@@ -725,16 +725,18 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         builder.AppendLine(
             $"- Lighting recovery reason: {evidence.LightingRecoveryReason ?? "none"}");
         builder.AppendLine("- Optical validation: required; transport completion is not LED refresh proof");
+        builder.AppendLine("- Qualification: the p99 frame-budget gate excludes only the strict controller guard when every completed frame has phase evidence; completion, achieved rate, and maximum gap remain end-to-end gates");
         builder.AppendLine("- CPU: validator process only; 100% LP equals one fully occupied logical processor; machine capacity divides by the recorded logical-processor count");
         builder.AppendLine();
-        builder.AppendLine("| Target | Completed | Skipped | Achieved | p99 write | p99 queue | p99 guard | p99 native | p99 managed | p99 residual | Max gap | CPU (1 LP=100%) | CPU (machine capacity) | Transport | Visual |");
-        builder.AppendLine("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: |");
+        builder.AppendLine("| Target | Completed | Skipped | Achieved | p99 qualified | p99 end-to-end | p99 queue | p99 guard | p99 native | p99 managed | p99 residual | Max gap | CPU (1 LP=100%) | CPU (machine capacity) | Transport | Visual |");
+        builder.AppendLine("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: |");
         foreach (LightingCadenceStageEvidence stage in evidence.Stages)
         {
             LightingCadenceStageResult value = stage.Transport;
             builder.AppendLine(
                 $"| {value.TargetFramesPerSecond} Hz | {value.CompletedFrames}/{value.ScheduledFrames} | " +
                 $"{value.SkippedFrames} | {value.AchievedFramesPerSecond:F2} Hz | " +
+                $"{Format(value.QualificationWriteDuration?.P99Milliseconds)} | " +
                 $"{Format(value.WriteDuration.P99Milliseconds)} | " +
                 $"{Format(value.WritePhases?.QueueWait.P99Milliseconds)} | " +
                 $"{Format(value.WritePhases?.ControllerGuard.P99Milliseconds)} | " +

@@ -41,6 +41,10 @@ public sealed class LightingCadenceProbeRunnerTests
         Assert.All(
             result.Samples,
             sample => Assert.Equal(5, sample.WriteDurationMilliseconds, precision: 6));
+        Assert.False(result.QualificationExcludesControllerGuard);
+        Assert.Equal(
+            result.WriteDuration,
+            result.QualificationWriteDuration);
     }
 
     [Fact]
@@ -216,6 +220,53 @@ public sealed class LightingCadenceProbeRunnerTests
             Assert.IsType<LightingCadenceWritePhaseSummary>(result.WritePhases);
         Assert.Equal(result.CompletedFrames, summary.CapturedSamples);
         Assert.Equal(3, summary.Residual.P99Milliseconds);
+        Assert.True(result.QualificationExcludesControllerGuard);
+        Assert.Equal(8, result.QualificationWriteDuration?.P99Milliseconds);
+    }
+
+    [Fact]
+    public async Task RunAsync_ExcludesGuardOnlyFromP99FrameBudgetGate()
+    {
+        var time = new ManualTimeProvider();
+        bool lastWriteWasLong = false;
+        int writes = 0;
+        var runner = new LightingCadenceProbeRunner(
+            time,
+            (duration, _) =>
+            {
+                time.Advance(duration);
+                return Task.CompletedTask;
+            },
+            clearWriteTimings: () => { },
+            takeWriteTiming: () => new MatrixWritePhaseTiming(
+                TimeSpan.Zero,
+                lastWriteWasLong
+                    ? TimeSpan.FromMilliseconds(18)
+                    : TimeSpan.FromMilliseconds(2),
+                TimeSpan.FromMilliseconds(1),
+                TimeSpan.Zero));
+
+        LightingCadenceStageResult result = await runner.RunAsync(
+            60,
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(5),
+            (_, _) =>
+            {
+                writes++;
+                lastWriteWasLong = writes % 50 == 0;
+                time.Advance(TimeSpan.FromMilliseconds(
+                    lastWriteWasLong ? 20 : 5));
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.True(result.QualificationExcludesControllerGuard);
+        Assert.True(
+            result.WriteDuration.P99Milliseconds > result.FrameBudgetMilliseconds);
+        Assert.Equal(3, result.QualificationWriteDuration?.P99Milliseconds);
+        Assert.Equal(300, result.CompletedFrames);
+        Assert.Equal(0, result.SkippedFrames);
+        Assert.True(result.TransportQualified);
     }
 
     [Fact]

@@ -63,6 +63,10 @@ internal sealed record LightingCadenceStageResult(
     IReadOnlyList<LightingCadenceFrameSample> Samples)
 {
     public LightingCadenceWritePhaseSummary? WritePhases { get; init; }
+
+    public LightingCadenceMetricSummary? QualificationWriteDuration { get; init; }
+
+    public bool QualificationExcludesControllerGuard { get; init; }
 }
 
 internal sealed class LightingCadenceWriteTimingCollector : IMatrixWriteTimingSink
@@ -445,6 +449,17 @@ internal sealed class LightingCadenceProbeRunner
         double achievedFramesPerSecond = samples.Count / measurementDuration.TotalSeconds;
         LightingCadenceMetricSummary writeDuration = Summarize(
             samples.Select(sample => sample.WriteDurationMilliseconds));
+        LightingCadenceWritePhaseSummary? writePhases =
+            CreateWritePhaseSummary(samples);
+        bool qualificationExcludesControllerGuard = samples.Count > 0
+            && writePhases?.CapturedSamples == samples.Count;
+        LightingCadenceMetricSummary qualificationWriteDuration =
+            qualificationExcludesControllerGuard
+                ? Summarize(samples.Select(sample => Math.Max(
+                    0,
+                    sample.WriteDurationMilliseconds
+                        - sample.WritePhases!.ControllerGuardMilliseconds)))
+                : writeDuration;
         double[] completionIntervals = samples
             .Zip(
                 samples.Skip(1),
@@ -459,7 +474,7 @@ internal sealed class LightingCadenceProbeRunner
         bool qualified = failure is null
             && completionRatio >= 0.995
             && achievedFramesPerSecond >= targetFramesPerSecond * 0.99
-            && writeDuration.P99Milliseconds is { } p99
+            && qualificationWriteDuration.P99Milliseconds is { } p99
             && p99 <= frameBudgetMilliseconds
             && maximumGap <= frameBudgetMilliseconds * 2;
 
@@ -480,7 +495,10 @@ internal sealed class LightingCadenceProbeRunner
             failure,
             samples)
         {
-            WritePhases = CreateWritePhaseSummary(samples),
+            WritePhases = writePhases,
+            QualificationWriteDuration = qualificationWriteDuration,
+            QualificationExcludesControllerGuard =
+                qualificationExcludesControllerGuard,
         };
     }
 

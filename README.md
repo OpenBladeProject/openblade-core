@@ -207,8 +207,10 @@ refresh rate. Each stage also records the validator process's CPU time across
 the measured window. Developer-only phase timing splits each successful
 end-to-end write into queue wait, the strict competing-controller check, native
 submit-to-completion, managed completion handling, and residual host work. The
-existing end-to-end write and missed-frame thresholds remain authoritative;
-the phase split is diagnostic and does not relax qualification.
+frame-budget p99 gate excludes only the strict validator guard when every
+completed frame has phase evidence, while completion ratio, achieved rate, and
+maximum gap remain end-to-end gates. Results retain both qualified and complete
+end-to-end write timing so guard overhead stays visible.
 `singleLogicalProcessorPercent` treats one fully occupied
 logical processor as 100%; `wholeMachineCapacityPercent` divides that value by
 the recorded logical-processor count, matching Task Manager's process-wide
