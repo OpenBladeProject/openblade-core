@@ -19,11 +19,18 @@ public sealed class AdapterPowerProtocolTests
     }
 
     [Theory]
+    [InlineData("0211", AdapterPowerState.UsbCPower45W)]
+    [InlineData("0311", AdapterPowerState.UsbCPower60W)]
+    [InlineData("0411", AdapterPowerState.UsbCPower65W)]
+    [InlineData("0511", AdapterPowerState.UsbCPower80W)]
+    [InlineData("0611", AdapterPowerState.UsbCPower90W)]
     [InlineData("0711", AdapterPowerState.UsbCPower100W)]
     [InlineData("1111", AdapterPowerState.FullPower280W)]
     [InlineData("1211", AdapterPowerState.FullPower330W)]
     [InlineData("0000", AdapterPowerState.Unknown)]
     [InlineData("0710", AdapterPowerState.Unknown)]
+    [InlineData("0111", AdapterPowerState.Unknown)]
+    [InlineData("0811", AdapterPowerState.Unknown)]
     [InlineData("1110", AdapterPowerState.Unknown)]
     [InlineData("FFFF", AdapterPowerState.Unknown)]
     public void TryDecodeQuery_MapsOnlyValidatedLevels(
