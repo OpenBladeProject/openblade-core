@@ -26,7 +26,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
-        PendingDisposalRegistry? pendingDisposals = null)
+        PendingDisposalRegistry? pendingDisposals = null,
+        bool matrixWriteTimingEnabled = false)
     {
         this.admitted = admitted;
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
@@ -40,10 +41,13 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         this.exchangeTimeout = exchangeTimeout;
         this.cleanupDrainTimeout = cleanupDrainTimeout;
         this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
+        MatrixWriteTimingEnabled = matrixWriteTimingEnabled;
         Capabilities = ProductionLightingPort.CreateCapabilities(admitted);
     }
 
     public DeviceCapabilities Capabilities { get; }
+
+    internal bool MatrixWriteTimingEnabled { get; }
 
     public static IProductionLightingPortFactory CreateWindows()
         => CreateWindowsCore(compatibilityPolicy: null);
@@ -293,7 +297,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout,
-            PendingDisposalRegistry.Shared);
+            PendingDisposalRegistry.Shared,
+            matrixWriteTimingEnabled: timingSink is not null);
     }
 
     private async Task DisposeActorBoundedAsync(ValidationActor actor) =>

@@ -193,6 +193,9 @@ dotnet run --project src\OpenBlade.Capture -- `
   --output .\lighting-cadence-results
 ```
 
+`--rates 30,45,60` is an exact, ordered confirmation of the fixed validation
+plan; subsets, reordering, and other rates are rejected before hardware opens.
+
 Choose `marker` for a Spectrum base with a 12-bit per-frame counter suitable
 for high-speed video, or `tidal` for the captured five-second green/blue Tidal
 motion used for direct operator comparison across the three rates.
@@ -208,9 +211,14 @@ the measured window. Developer-only phase timing splits each successful
 end-to-end write into queue wait, the strict competing-controller check, native
 submit-to-completion, managed completion handling, and residual host work. The
 frame-budget p99 gate excludes only the strict validator guard when every
-completed frame has phase evidence, while completion ratio, achieved rate, and
-maximum gap remain end-to-end gates. Results retain both qualified and complete
-end-to-end write timing so guard overhead stays visible.
+completed frame has exactly one aligned, nonnegative phase attribution.
+Completion ratio and maximum gap are independent end-to-end gates; achieved
+rate and skipped-frame count remain end-to-end diagnostics reflected in
+completion. Any missing, extra, or over-attributed phase timing disables guard
+subtraction and falls back to complete end-to-end write timing.
+The validator retains strict per-write controller checks throughout each stage;
+it does not switch to the production Advisory policy during measurement.
+
 `singleLogicalProcessorPercent` treats one fully occupied
 logical processor as 100%; `wholeMachineCapacityPercent` divides that value by
 the recorded logical-processor count, matching Task Manager's process-wide

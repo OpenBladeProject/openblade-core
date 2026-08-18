@@ -182,6 +182,7 @@ public sealed class LightingCadenceProbeRunnerTests
     public async Task RunAsync_RecordsOptInWritePhaseSamplesAndSummaries()
     {
         var time = new ManualTimeProvider();
+        var timings = new BatchTimingSource();
         int clearCalls = 0;
         var runner = new LightingCadenceProbeRunner(
             time,
@@ -191,11 +192,7 @@ public sealed class LightingCadenceProbeRunnerTests
                 return Task.CompletedTask;
             },
             clearWriteTimings: () => clearCalls++,
-            takeWriteTiming: () => new MatrixWritePhaseTiming(
-                TimeSpan.FromMilliseconds(1),
-                TimeSpan.FromMilliseconds(2),
-                TimeSpan.FromMilliseconds(3),
-                TimeSpan.FromMilliseconds(1)));
+            takeWriteTimings: timings.TakeAll);
 
         LightingCadenceStageResult result = await runner.RunAsync(
             30,
@@ -204,6 +201,11 @@ public sealed class LightingCadenceProbeRunnerTests
             (_, _) =>
             {
                 time.Advance(TimeSpan.FromMilliseconds(10));
+                timings.Record(new MatrixWritePhaseTiming(
+                    TimeSpan.FromMilliseconds(1),
+                    TimeSpan.FromMilliseconds(2),
+                    TimeSpan.FromMilliseconds(3),
+                    TimeSpan.FromMilliseconds(1)));
                 return Task.CompletedTask;
             },
             CancellationToken.None);
@@ -219,6 +221,7 @@ public sealed class LightingCadenceProbeRunnerTests
         LightingCadenceWritePhaseSummary summary =
             Assert.IsType<LightingCadenceWritePhaseSummary>(result.WritePhases);
         Assert.Equal(result.CompletedFrames, summary.CapturedSamples);
+        Assert.Equal(0, summary.AlignmentFailures);
         Assert.Equal(3, summary.Residual.P99Milliseconds);
         Assert.True(result.QualificationExcludesControllerGuard);
         Assert.Equal(8, result.QualificationWriteDuration?.P99Milliseconds);
@@ -228,7 +231,7 @@ public sealed class LightingCadenceProbeRunnerTests
     public async Task RunAsync_ExcludesGuardOnlyFromP99FrameBudgetGate()
     {
         var time = new ManualTimeProvider();
-        bool lastWriteWasLong = false;
+        var timings = new BatchTimingSource();
         int writes = 0;
         var runner = new LightingCadenceProbeRunner(
             time,
@@ -238,13 +241,7 @@ public sealed class LightingCadenceProbeRunnerTests
                 return Task.CompletedTask;
             },
             clearWriteTimings: () => { },
-            takeWriteTiming: () => new MatrixWritePhaseTiming(
-                TimeSpan.Zero,
-                lastWriteWasLong
-                    ? TimeSpan.FromMilliseconds(18)
-                    : TimeSpan.FromMilliseconds(2),
-                TimeSpan.FromMilliseconds(1),
-                TimeSpan.Zero));
+            takeWriteTimings: timings.TakeAll);
 
         LightingCadenceStageResult result = await runner.RunAsync(
             60,
@@ -253,9 +250,16 @@ public sealed class LightingCadenceProbeRunnerTests
             (_, _) =>
             {
                 writes++;
-                lastWriteWasLong = writes % 50 == 0;
+                bool lastWriteWasLong = writes % 50 == 0;
                 time.Advance(TimeSpan.FromMilliseconds(
                     lastWriteWasLong ? 20 : 5));
+                timings.Record(new MatrixWritePhaseTiming(
+                    TimeSpan.Zero,
+                    lastWriteWasLong
+                        ? TimeSpan.FromMilliseconds(18)
+                        : TimeSpan.FromMilliseconds(2),
+                    TimeSpan.FromMilliseconds(1),
+                    TimeSpan.Zero));
                 return Task.CompletedTask;
             },
             CancellationToken.None);
@@ -267,6 +271,122 @@ public sealed class LightingCadenceProbeRunnerTests
         Assert.Equal(300, result.CompletedFrames);
         Assert.Equal(0, result.SkippedFrames);
         Assert.True(result.TransportQualified);
+    }
+
+    [Fact]
+    public async Task RunAsync_ExtraTimingDisablesGuardExclusionAndFallsBackToEndToEnd()
+    {
+        var time = new ManualTimeProvider();
+        var timings = new BatchTimingSource();
+        int writes = 0;
+        var runner = new LightingCadenceProbeRunner(
+            time,
+            (duration, _) =>
+            {
+                time.Advance(duration);
+                return Task.CompletedTask;
+            },
+            clearWriteTimings: () => { },
+            takeWriteTimings: timings.TakeAll);
+
+        LightingCadenceStageResult result = await runner.RunAsync(
+            60,
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(5),
+            (_, _) =>
+            {
+                writes++;
+                bool lastWriteWasLong = writes % 50 == 0;
+                time.Advance(TimeSpan.FromMilliseconds(
+                    lastWriteWasLong ? 20 : 5));
+                var timing = new MatrixWritePhaseTiming(
+                    TimeSpan.Zero,
+                    lastWriteWasLong
+                        ? TimeSpan.FromMilliseconds(18)
+                        : TimeSpan.FromMilliseconds(2),
+                    TimeSpan.FromMilliseconds(1),
+                    TimeSpan.Zero);
+                timings.Record(writes == 50 ? [timing, timing] : [timing]);
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        LightingCadenceWritePhaseSummary summary =
+            Assert.IsType<LightingCadenceWritePhaseSummary>(result.WritePhases);
+        Assert.Equal(1, summary.AlignmentFailures);
+        Assert.Equal(result.CompletedFrames - 1, summary.CapturedSamples);
+        Assert.False(result.QualificationExcludesControllerGuard);
+        Assert.Equal(result.WriteDuration, result.QualificationWriteDuration);
+        Assert.False(result.TransportQualified);
+    }
+
+    [Fact]
+    public async Task RunAsync_OverAttributedTimingDisablesGuardExclusion()
+    {
+        var time = new ManualTimeProvider();
+        var timings = new BatchTimingSource();
+        var runner = new LightingCadenceProbeRunner(
+            time,
+            (duration, _) =>
+            {
+                time.Advance(duration);
+                return Task.CompletedTask;
+            },
+            clearWriteTimings: () => { },
+            takeWriteTimings: timings.TakeAll);
+
+        LightingCadenceStageResult result = await runner.RunAsync(
+            30,
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(5),
+            (_, _) =>
+            {
+                time.Advance(TimeSpan.FromMilliseconds(5));
+                timings.Record(new MatrixWritePhaseTiming(
+                    TimeSpan.FromMilliseconds(1),
+                    TimeSpan.FromMilliseconds(2),
+                    TimeSpan.FromMilliseconds(2),
+                    TimeSpan.FromMilliseconds(1)));
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        LightingCadenceWritePhaseSummary summary =
+            Assert.IsType<LightingCadenceWritePhaseSummary>(result.WritePhases);
+        Assert.Equal(result.CompletedFrames, summary.AlignmentFailures);
+        Assert.Equal(0, summary.CapturedSamples);
+        Assert.False(result.QualificationExcludesControllerGuard);
+        Assert.Equal(result.WriteDuration, result.QualificationWriteDuration);
+    }
+
+    [Fact]
+    public async Task RunAsync_MaximumGapRemainsIndependentEndToEndGate()
+    {
+        var time = new ManualTimeProvider();
+        int writes = 0;
+        var runner = new LightingCadenceProbeRunner(
+            time,
+            (duration, _) =>
+            {
+                time.Advance(duration);
+                return Task.CompletedTask;
+            });
+
+        LightingCadenceStageResult result = await runner.RunAsync(
+            30,
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(60),
+            (_, _) =>
+            {
+                writes++;
+                time.Advance(TimeSpan.FromMilliseconds(writes == 900 ? 70 : 1));
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.True(result.CompletedFrames / (double)result.ScheduledFrames >= 0.995);
+        Assert.True(result.MaximumCompletionGapMilliseconds > result.FrameBudgetMilliseconds * 2);
+        Assert.False(result.TransportQualified);
     }
 
     [Fact]
@@ -357,6 +477,21 @@ public sealed class LightingCadenceProbeRunnerTests
             TimeSpan.Zero,
             TimeSpan.Zero,
             logicalProcessorCount: 12));
+    }
+
+    private sealed class BatchTimingSource
+    {
+        private readonly List<MatrixWritePhaseTiming> pending = [];
+
+        internal void Record(params MatrixWritePhaseTiming[] timings) =>
+            pending.AddRange(timings);
+
+        internal IReadOnlyList<MatrixWritePhaseTiming> TakeAll()
+        {
+            MatrixWritePhaseTiming[] drained = pending.ToArray();
+            pending.Clear();
+            return drained;
+        }
     }
 
     private sealed class ManualTimeProvider : TimeProvider

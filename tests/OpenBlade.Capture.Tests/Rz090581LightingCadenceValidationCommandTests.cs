@@ -64,7 +64,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         string json = artifacts.Single(pair => pair.Key.EndsWith(".json")).Value;
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
-        Assert.Equal(5, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(6, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("tidal", root.GetProperty("pattern").GetString());
         Assert.True(root.GetProperty("transportQualified").GetBoolean());
         Assert.True(root.GetProperty("opticalValidationRequired").GetBoolean());
@@ -97,6 +97,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             .GetProperty("transport")
             .GetProperty("writePhases");
         Assert.Equal(100, writePhases.GetProperty("capturedSamples").GetInt32());
+        Assert.Equal(0, writePhases.GetProperty("alignmentFailures").GetInt32());
         Assert.Equal(0.4, writePhases
             .GetProperty("controllerGuard")
             .GetProperty("p99Milliseconds")
@@ -114,6 +115,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         Assert.Contains("CPU (1 LP=100%)", markdown, StringComparison.Ordinal);
         Assert.Contains("p99 qualified", markdown, StringComparison.Ordinal);
         Assert.Contains("p99 guard", markdown, StringComparison.Ordinal);
+        Assert.Contains("Timing alignment failures", markdown, StringComparison.Ordinal);
         Assert.Contains("10.00%", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("serial", json, StringComparison.OrdinalIgnoreCase);
         Assert.False(markerRunnerCalled);
@@ -146,6 +148,38 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
             checkEnvironment: () => null);
         string[] arguments = ValidArguments();
         arguments[5] = "unknown";
+
+        int exitCode = await command.RunAsync(arguments, CancellationToken.None);
+
+        Assert.Equal(Rz090581LightingCadenceValidationCommand.UsageExitCode, exitCode);
+        Assert.False(opened);
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectsNoncanonicalRatesBeforeOpeningHardware()
+    {
+        bool opened = false;
+        var command = new Rz090581LightingCadenceValidationCommand(
+            _ =>
+            {
+                opened = true;
+                return Task.FromResult(
+                    new HidSessionResult<IProductionLightingPort>(new FakePort(), null));
+            },
+            _ => Task.FromResult(
+                new HidSessionResult<LightingBrightnessReading>(
+                    new LightingBrightnessReading(64),
+                    null)),
+            ExactIdentity,
+            (rate, _, _, _, _) => Task.FromResult(QualifiedStage(rate)),
+            new StringReader(string.Empty),
+            new StringWriter(),
+            BuildIdentity,
+            writeArtifact: (_, _, _) => Task.CompletedTask,
+            registerCancellation: _ => NoopDisposable.Instance,
+            checkEnvironment: () => null);
+        string[] arguments = ValidArguments();
+        arguments[3] = "30,60";
 
         int exitCode = await command.RunAsync(arguments, CancellationToken.None);
 
@@ -684,6 +718,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
     {
         WritePhases = new LightingCadenceWritePhaseSummary(
             100,
+            0,
             new(0.1, 0.1, 0.1, 0.1, 0.1),
             new(0.4, 0.4, 0.4, 0.4, 0.4),
             new(0.3, 0.3, 0.3, 0.3, 0.3),

@@ -111,7 +111,6 @@ public sealed class WindowsHidNativeContractTests
             "                native,\n" +
             "                TargetBladeDevice.MatrixFeatureReportByteLength)",
             lightingComposition);
-        Assert.Contains("captureTiming: true", lightingComposition);
         Assert.Contains(
             "new WindowsPid02E0MatrixFeatureWriter(\n" +
             "                            handle,\n" +
