@@ -1567,7 +1567,6 @@ type sealed class OpenBlade.Contracts.Rz090581CapabilityDiagnostics
   interface System.IEquatable<OpenBlade.Contracts.Rz090581CapabilityDiagnostics>
   ctor (System.Byte SkuHardwareConfigurationRaw, System.Byte MiniLedPanelResolutionRaw, System.Collections.Generic.IReadOnlyList<System.Byte> ThermalFanIds)
   method OpenBlade.Contracts.Rz090581CapabilityDiagnostics <Clone>$()
-  method System.Boolean get_IsWellFormed()
   method System.Byte get_MiniLedPanelResolutionRaw()
   method System.Byte get_SkuHardwareConfigurationRaw()
   method System.Collections.Generic.IReadOnlyList<System.Byte> get_ThermalFanIds()
@@ -1581,7 +1580,6 @@ type sealed class OpenBlade.Contracts.Rz090581CapabilityDiagnostics
   method static System.Boolean op_Equality(OpenBlade.Contracts.Rz090581CapabilityDiagnostics left, OpenBlade.Contracts.Rz090581CapabilityDiagnostics right)
   method static System.Boolean op_Inequality(OpenBlade.Contracts.Rz090581CapabilityDiagnostics left, OpenBlade.Contracts.Rz090581CapabilityDiagnostics right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.Rz090581CapabilityDiagnostics other)
-  property System.Boolean IsWellFormed { get; }
   property System.Byte MiniLedPanelResolutionRaw { get; init; }
   property System.Byte SkuHardwareConfigurationRaw { get; init; }
   property System.Collections.Generic.IReadOnlyList<System.Byte> ThermalFanIds { get; init; }

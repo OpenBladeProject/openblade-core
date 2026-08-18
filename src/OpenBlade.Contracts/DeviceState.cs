@@ -357,10 +357,7 @@ public sealed record FirmwareVersions(
 public sealed record Rz090581CapabilityDiagnostics(
     byte SkuHardwareConfigurationRaw,
     byte MiniLedPanelResolutionRaw,
-    IReadOnlyList<byte> ThermalFanIds)
-{
-    public bool IsWellFormed => ThermalFanIds is { Count: <= 79 };
-}
+    IReadOnlyList<byte> ThermalFanIds);
 
 public sealed record BatteryHealthStatus(
     int DesignCapacityMilliwattHours,
