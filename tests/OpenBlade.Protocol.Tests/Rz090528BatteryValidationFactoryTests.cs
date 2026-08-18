@@ -145,6 +145,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
             ]));
         Assert.True(productionFactory.AdmittedAdapterPowerStates!.SetEquals(
             [
+                AdapterPowerState.Battery,
                 AdapterPowerState.UsbCPower100W,
                 AdapterPowerState.FullPower280W,
             ]));

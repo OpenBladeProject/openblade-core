@@ -22,6 +22,7 @@ internal static class AdapterPowerProtocol
 
         state = (payload[0], payload[1]) switch
         {
+            (0x00, 0x11) => AdapterPowerState.Battery,
             (0x02, 0x11) => AdapterPowerState.UsbCPower45W,
             (0x03, 0x11) => AdapterPowerState.UsbCPower60W,
             (0x04, 0x11) => AdapterPowerState.UsbCPower65W,
