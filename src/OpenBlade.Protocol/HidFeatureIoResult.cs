@@ -10,7 +10,12 @@ internal enum HidFeatureTermination
 internal readonly record struct HidFeatureIoResult(
     NativeIoCompletion? Completion,
     bool WasSubmitted,
-    HidFeatureTermination Termination);
+    HidFeatureTermination Termination,
+    NativeIoTiming? Timing = null);
+
+internal readonly record struct NativeIoTiming(
+    TimeSpan SubmitToCompletion,
+    TimeSpan CompletionToManagedReturn);
 
 internal readonly record struct NativeIoCompletion(
     bool Succeeded,

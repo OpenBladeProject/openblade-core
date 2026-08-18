@@ -26,7 +26,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
-        PendingDisposalRegistry? pendingDisposals = null)
+        PendingDisposalRegistry? pendingDisposals = null,
+        bool matrixWriteTimingEnabled = false)
     {
         this.admitted = admitted;
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
@@ -40,10 +41,13 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         this.exchangeTimeout = exchangeTimeout;
         this.cleanupDrainTimeout = cleanupDrainTimeout;
         this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
+        MatrixWriteTimingEnabled = matrixWriteTimingEnabled;
         Capabilities = ProductionLightingPort.CreateCapabilities(admitted);
     }
 
     public DeviceCapabilities Capabilities { get; }
+
+    internal bool MatrixWriteTimingEnabled { get; }
 
     public static IProductionLightingPortFactory CreateWindows()
         => CreateWindowsCore(compatibilityPolicy: null);
@@ -88,13 +92,15 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     /// still requires an explicit exact-target confirmation before opening it.
     /// No raw report or matrix-buffer surface is exposed.
     /// </summary>
-    internal static IProductionLightingPortFactory CreateWindowsForExactBuildValidation()
+    internal static IProductionLightingPortFactory CreateWindowsForExactBuildValidation(
+        IMatrixWriteTimingSink? timingSink = null)
     {
         _ = ProductionLightingEvidenceSource.ReadValidatedOracle();
         return CreateWindows(
             admitted: true,
             ControllerExclusivityPolicy.Strict,
-            compatibilityPolicy: null);
+            compatibilityPolicy: null,
+            timingSink);
     }
 
     public async Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
@@ -219,7 +225,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     private static IProductionLightingPortFactory CreateWindows(
         bool admitted,
         ControllerExclusivityPolicy exclusivityPolicy,
-        FirmwareCompatibilityPolicy? compatibilityPolicy)
+        FirmwareCompatibilityPolicy? compatibilityPolicy,
+        IMatrixWriteTimingSink? timingSink = null)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -245,9 +252,15 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             native,
             exclusivityPolicy);
         var controlIo = new OverlappedFeatureOperation(native);
-        var matrixIo = new OverlappedFeatureOperation(
-            native,
-            TargetBladeDevice.MatrixFeatureReportByteLength);
+        IHidFeatureIo matrixIo = timingSink is null
+            ? new OverlappedFeatureOperation(
+                native,
+                TargetBladeDevice.MatrixFeatureReportByteLength)
+            : new OverlappedFeatureOperation(
+                native,
+                TargetBladeDevice.MatrixFeatureReportByteLength,
+                TimeProvider.System,
+                captureTiming: true);
 
         return new ProductionLightingFactory(
             admitted,
@@ -271,7 +284,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
                             guard,
                             TimeProvider.System,
                             DefaultExchangeTimeout,
-                            exclusivityPolicy),
+                            exclusivityPolicy,
+                            timingSink),
                         null)
                     : new HidSessionResult<IPid02E0MatrixFeatureWriter>(
                         null,
@@ -283,7 +297,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout,
-            PendingDisposalRegistry.Shared);
+            PendingDisposalRegistry.Shared,
+            matrixWriteTimingEnabled: timingSink is not null);
     }
 
     private async Task DisposeActorBoundedAsync(ValidationActor actor) =>
