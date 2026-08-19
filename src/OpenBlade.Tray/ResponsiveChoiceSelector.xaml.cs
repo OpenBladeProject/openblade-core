@@ -3,6 +3,7 @@ using System.Reflection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
 
 namespace OpenBlade.Tray;
@@ -144,6 +145,12 @@ public sealed partial class ResponsiveChoiceSelector
     {
         get => (double)GetValue(ExpandedWidthAllowanceProperty);
         set => SetValue(ExpandedWidthAllowanceProperty, value);
+    }
+
+    public void RestoreAuthoritativeSelection()
+    {
+        SynchronizeSelection(SelectedItem);
+        UpdatePresentationMode();
     }
 
     private static void OnItemsSourceChanged(
@@ -422,11 +429,14 @@ public sealed partial class ResponsiveChoiceSelector
             return;
         }
 
-        if (GetBindingExpression(SelectedItemProperty) is not null)
+        BindingExpression? bindingExpression = GetBindingExpression(SelectedItemProperty);
+        if (bindingExpression?.ParentBinding.Mode == BindingMode.OneWay)
         {
-            // Runtime bindings inside dashboard data templates are the source
-            // of truth. Replacing their dependency-property value here removes
-            // the binding, so let the owner accept the event and update it.
+            // Runtime one-way bindings are authoritative. The event deliberately
+            // runs while SelectedItem still exposes the accepted value; handlers
+            // consume the proposed value from the event and restore through
+            // RestoreAuthoritativeSelection instead of replacing the binding.
+            // x:Bind and runtime two-way bindings keep the direct-write path.
             SelectionChanged?.Invoke(
                 this,
                 new ResponsiveChoiceSelectionChangedEventArgs(selectedItem));

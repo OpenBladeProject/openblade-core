@@ -1166,11 +1166,19 @@ public partial class App : Microsoft.UI.Xaml.Application
                     Mode = Microsoft.UI.Xaml.Data.BindingMode.OneWay,
                 });
             int boundPublishedSelections = 0;
-            boundSelector.SelectionChanged += (_, args) =>
+            ResponsiveChoiceSelectorSmokeOption? boundSelectionDuringPublish = null;
+            var boundOwnerCompleted = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            boundSelector.SelectionChanged += async (_, args) =>
             {
                 boundPublishedSelections++;
+                boundSelectionDuringPublish = boundSelector.SelectedItem
+                    as ResponsiveChoiceSelectorSmokeOption;
+                await Task.Yield();
                 boundModel.Select(
                     args.SelectedItem as ResponsiveChoiceSelectorSmokeOption);
+                boundSelector.RestoreAuthoritativeSelection();
+                boundOwnerCompleted.TrySetResult(true);
             };
             var boundLoaded = new TaskCompletionSource<bool>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1190,11 +1198,20 @@ public partial class App : Microsoft.UI.Xaml.Application
             var boundExpanded = boundSelector.FindName("ExpandedSelector")
                 as Microsoft.UI.Xaml.Controls.SelectorBar
                 ?? throw new InvalidOperationException("Bound expanded selector was not created.");
+            RequireResponsiveSelector(
+                boundSelector.GetBindingExpression(
+                    ResponsiveChoiceSelector.SelectedItemProperty) is not null,
+                "The bound selector did not establish its runtime selection binding.");
             boundCompact.SelectedItem = acOptions[1];
+            await boundOwnerCompleted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await DrainDispatcherAsync(boundSelector.DispatcherQueue);
             RequireResponsiveSelector(
                 ReferenceEquals(boundModel.Selected, acOptions[1])
+                    && ReferenceEquals(boundSelectionDuringPublish, acOptions[0])
+                    && boundSelector.GetBindingExpression(
+                        ResponsiveChoiceSelector.SelectedItemProperty) is not null
                     && boundPublishedSelections == 1,
-                "A bound compact user selection did not reach its owner.");
+                "A bound compact user selection did not preserve its owner contract.");
             boundModel.SwitchOptions(boundBatteryOptions, boundBatteryOptions[0]);
             await DrainDispatcherAsync(boundSelector.DispatcherQueue);
             await DrainDispatcherAsync(boundSelector.DispatcherQueue);
