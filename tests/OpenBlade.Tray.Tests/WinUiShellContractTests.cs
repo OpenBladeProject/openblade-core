@@ -6,6 +6,27 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void FirmwareVersionsSectionHidesWhenEveryFirmwareRowIsHidden()
+    {
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XElement versionsSection = NamedElement(
+            document,
+            "Border",
+            "FirmwareVersionsSection");
+
+        Assert.Equal(
+            "{x:Bind FirmwareUpdateViewModel.ShowsFirmwareVersions, Mode=OneWay}",
+            Attribute(versionsSection, "Visibility"));
+
+        XElement footerSection = NamedElement(
+            document,
+            "Border",
+            "FirmwareFooterSection");
+        Assert.Null(Attribute(footerSection, "Visibility"));
+    }
+
+    [Fact]
     public void LocalizedPageHeadersKeepProfileActionsResponsiveAndOrdered()
     {
         XDocument document = XDocument.Parse(
