@@ -26,6 +26,7 @@ public sealed class FirmwareSmokeAssessmentTests
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
 
         Assert.Contains("AudioMeter", snapshot.Capabilities.LightingEffects);
+        Assert.Contains("Sequence", snapshot.Capabilities.LightingEffects);
         Assert.True(report.Succeeded);
         Assert.DoesNotContain(
             report.Checks,
@@ -760,6 +761,7 @@ public sealed class FirmwareSmokeAssessmentTests
                 "Off",
                 "Reactive",
                 "Ripple",
+                "Sequence",
                 "Spectrum",
                 "Starlight",
                 "Static",

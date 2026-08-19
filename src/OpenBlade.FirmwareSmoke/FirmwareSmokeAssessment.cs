@@ -30,6 +30,7 @@ public static class FirmwareSmokeAssessment
         "Off",
         "Reactive",
         "Ripple",
+        "Sequence",
         "Spectrum",
         "Starlight",
         "Static",
