@@ -425,6 +425,45 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
             CancellationToken.None)).Failure);
     }
 
+    [Fact]
+    public async Task Writer_RecordsOptInQueueGuardAndIoPhaseTiming()
+    {
+        var time = new ManualTimeProvider();
+        var sink = new TimingSink();
+        var guard = new ScriptedGuard(
+            new HardwareAccessDecision([], null),
+            () => time.Advance(TimeSpan.FromMilliseconds(2)));
+        var io = new ScriptedIo
+        {
+            DefaultResult = new HidFeatureIoResult(
+                new NativeIoCompletion(true, 0, 0),
+                true,
+                HidFeatureTermination.Completed,
+                new NativeIoTiming(
+                    TimeSpan.FromMilliseconds(3),
+                    TimeSpan.FromMilliseconds(4))),
+            OnExecute = () => time.Advance(TimeSpan.FromMilliseconds(7)),
+        };
+        var owned = CreateOwnedHandle();
+        await using var writer = CreateWriter(
+            owned.Handle,
+            io,
+            guard,
+            timeProvider: time,
+            timingSink: sink);
+
+        HidSessionResult<HidUnit> result = await writer.WriteAsync(
+            Report(1, MatrixRgb.Black),
+            CancellationToken.None);
+
+        Assert.Null(result.Failure);
+        MatrixWritePhaseTiming timing = Assert.Single(sink.Timings);
+        Assert.Equal(TimeSpan.Zero, timing.QueueWait);
+        Assert.Equal(TimeSpan.FromMilliseconds(2), timing.ControllerGuard);
+        Assert.Equal(TimeSpan.FromMilliseconds(3), timing.NativeSubmitToCompletion);
+        Assert.Equal(TimeSpan.FromMilliseconds(4), timing.ManagedCompletion);
+    }
+
     private static WindowsPid02E0MatrixFeatureOpener CreateOpener(
         ScriptedCandidateNative native) =>
         new(
@@ -437,14 +476,17 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         OpenedHidHandle handle,
         ScriptedIo io,
         ScriptedGuard? guard = null,
-        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict) =>
+        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict,
+        TimeProvider? timeProvider = null,
+        IMatrixWriteTimingSink? timingSink = null) =>
         new(
             handle,
             io,
             guard ?? new ScriptedGuard(),
-            TimeProvider.System,
+            timeProvider ?? TimeProvider.System,
             TimeSpan.FromSeconds(3),
-            policy);
+            policy,
+            timingSink);
 
     private static Pid02E0MatrixReport Report(byte transaction, MatrixRgb color) =>
         new(transaction, Pid02E0MatrixRenderers.RenderStatic(color));
@@ -479,15 +521,19 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
     private sealed class ScriptedGuard : IHardwareAccessGuard
     {
         private readonly HardwareAccessDecision decision;
+        private readonly Action? onCheck;
 
         internal ScriptedGuard()
             : this(new HardwareAccessDecision([], null))
         {
         }
 
-        internal ScriptedGuard(HardwareAccessDecision decision)
+        internal ScriptedGuard(
+            HardwareAccessDecision decision,
+            Action? onCheck = null)
         {
             this.decision = decision;
+            this.onCheck = onCheck;
         }
 
         internal int Calls { get; private set; }
@@ -495,6 +541,7 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         public HardwareAccessDecision Check()
         {
             Calls++;
+            onCheck?.Invoke();
             return decision;
         }
     }
@@ -511,6 +558,8 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         internal Task<HidFeatureIoResult>? FirstResult { get; init; }
 
         internal HidFeatureIoResult DefaultResult { get; init; } = Success();
+
+        internal Action? OnExecute { get; init; }
 
         internal int MaximumConcurrentCalls { get; private set; }
 
@@ -533,6 +582,7 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
             FirstCallObserved.TrySetResult();
             try
             {
+                OnExecute?.Invoke();
                 return index == 0 && FirstResult is not null
                     ? await FirstResult.ConfigureAwait(false)
                     : DefaultResult;
@@ -542,6 +592,24 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
                 Interlocked.Decrement(ref concurrentCalls);
             }
         }
+    }
+
+    private sealed class TimingSink : IMatrixWriteTimingSink
+    {
+        internal List<MatrixWritePhaseTiming> Timings { get; } = [];
+
+        public void Record(MatrixWritePhaseTiming timing) => Timings.Add(timing);
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => timestamp;
+
+        internal void Advance(TimeSpan duration) => timestamp += duration.Ticks;
     }
 
     private readonly record struct IoCall(uint ControlCode, byte[] Buffer);

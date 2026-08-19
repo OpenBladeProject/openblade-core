@@ -226,6 +226,8 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
     private readonly Action<OverlappedFeatureOperationCheckpoint> checkpoint;
     private readonly ICancellationRegistrationFactory registrationFactory;
     private readonly int featureReportLength;
+    private readonly TimeProvider timeProvider;
+    private readonly bool captureTiming;
 
     internal OverlappedFeatureOperation(IOverlappedFeatureNative native)
         : this(native, 91)
@@ -239,7 +241,24 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
             native,
             featureReportLength,
             static _ => { },
-            CancellationRegistrationFactory.Instance)
+            CancellationRegistrationFactory.Instance,
+            TimeProvider.System,
+            captureTiming: false)
+    {
+    }
+
+    internal OverlappedFeatureOperation(
+        IOverlappedFeatureNative native,
+        int featureReportLength,
+        TimeProvider timeProvider,
+        bool captureTiming)
+        : this(
+            native,
+            featureReportLength,
+            static _ => { },
+            CancellationRegistrationFactory.Instance,
+            timeProvider,
+            captureTiming)
     {
     }
 
@@ -263,10 +282,28 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
         int featureReportLength,
         Action<OverlappedFeatureOperationCheckpoint> checkpoint,
         ICancellationRegistrationFactory registrationFactory)
+        : this(
+            native,
+            featureReportLength,
+            checkpoint,
+            registrationFactory,
+            TimeProvider.System,
+            captureTiming: false)
+    {
+    }
+
+    private OverlappedFeatureOperation(
+        IOverlappedFeatureNative native,
+        int featureReportLength,
+        Action<OverlappedFeatureOperationCheckpoint> checkpoint,
+        ICancellationRegistrationFactory registrationFactory,
+        TimeProvider timeProvider,
+        bool captureTiming)
     {
         ArgumentNullException.ThrowIfNull(native);
         ArgumentNullException.ThrowIfNull(checkpoint);
         ArgumentNullException.ThrowIfNull(registrationFactory);
+        ArgumentNullException.ThrowIfNull(timeProvider);
         if (featureReportLength <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(featureReportLength));
@@ -276,6 +313,8 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
         this.checkpoint = checkpoint;
         this.registrationFactory = registrationFactory;
         this.featureReportLength = featureReportLength;
+        this.timeProvider = timeProvider;
+        this.captureTiming = captureTiming;
     }
 
     public Task<HidFeatureIoResult> ExecuteAsync(
@@ -295,6 +334,8 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
         }
 
         var operation = new NativeOperationToken(buffer, checkpoint);
+        long submitTimestamp = 0;
+        long nativeCompletionTimestamp = long.MinValue;
         IDisposable? callerRegistration = null;
         IDisposable? deadlineRegistration = null;
         var state = new NativeOperationState(() =>
@@ -361,12 +402,33 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
             }
             else
             {
-                NativeSubmissionResult submission = native.Submit(
-                    handle,
-                    controlCode,
-                    buffer,
-                    operation,
-                    state.RecordCompletion);
+                NativeSubmissionResult submission;
+                if (captureTiming)
+                {
+                    submitTimestamp = timeProvider.GetTimestamp();
+                    submission = native.Submit(
+                        handle,
+                        controlCode,
+                        buffer,
+                        operation,
+                        completion =>
+                        {
+                            Interlocked.CompareExchange(
+                                ref nativeCompletionTimestamp,
+                                timeProvider.GetTimestamp(),
+                                long.MinValue);
+                            state.RecordCompletion(completion);
+                        });
+                }
+                else
+                {
+                    submission = native.Submit(
+                        handle,
+                        controlCode,
+                        buffer,
+                        operation,
+                        state.RecordCompletion);
+                }
 
                 if (submission.Kind == NativeSubmissionKind.ImmediateFailure)
                 {
@@ -395,7 +457,34 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
             NotifyCheckpoint(OverlappedFeatureOperationCheckpoint.SubmissionLeaseReleased);
         }
 
-        return state.Completion;
+        return captureTiming
+            ? AttachTimingAsync(
+                state.Completion,
+                submitTimestamp,
+                () =>
+                {
+                    long timestamp = Interlocked.Read(ref nativeCompletionTimestamp);
+                    return timestamp == long.MinValue ? null : timestamp;
+                })
+            : state.Completion;
+    }
+
+    private async Task<HidFeatureIoResult> AttachTimingAsync(
+        Task<HidFeatureIoResult> completion,
+        long submitTimestamp,
+        Func<long?> readNativeCompletionTimestamp)
+    {
+        HidFeatureIoResult result = await completion.ConfigureAwait(false);
+        long managedReturnTimestamp = timeProvider.GetTimestamp();
+        long? nativeCompletedTimestamp = readNativeCompletionTimestamp();
+        return result.WasSubmitted && nativeCompletedTimestamp is { } completed
+            ? result with
+            {
+                Timing = new NativeIoTiming(
+                    timeProvider.GetElapsedTime(submitTimestamp, completed),
+                    timeProvider.GetElapsedTime(completed, managedReturnTimestamp)),
+            }
+            : result;
     }
 
     private void NotifyCheckpoint(OverlappedFeatureOperationCheckpoint value)

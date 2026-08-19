@@ -30,6 +30,7 @@ public sealed class ProductionLightingPortTests
         ProductionLightingOracleEvidence evidence =
             ProductionLightingEvidenceSource.ReadValidatedOracle();
         IProductionLightingPortFactory factory = ProductionLightingFactory.CreateWindows();
+        var windowsFactory = Assert.IsType<ProductionLightingFactory>(factory);
 
         Assert.Equal(TargetBladeDevice.Model, evidence.Device.Model);
         Assert.Equal("synapseOracleCapture", evidence.EvidenceKind);
@@ -79,6 +80,7 @@ public sealed class ProductionLightingPortTests
         Assert.Empty(factory.Capabilities.PerformancePresets);
         Assert.Empty(factory.Capabilities.FanModes);
         Assert.Empty(factory.Capabilities.ChargeLimits);
+        Assert.False(windowsFactory.MatrixWriteTimingEnabled);
         Assert.False(ProductionLightingEvidenceSource.HasCurrentExactBuildValidationArtifact(
             Path.Combine(Path.GetTempPath(), $"absent-{Guid.NewGuid():N}.json"),
             TestBuildIdentity()));
@@ -91,6 +93,23 @@ public sealed class ProductionLightingPortTests
             ProductionLightingFactory.CreateWindowsReadOnly();
 
         Assert.False(factory.Capabilities.SupportsKeyboardBrightness);
+        Assert.False(Assert.IsType<ProductionLightingFactory>(factory)
+            .MatrixWriteTimingEnabled);
+    }
+
+    [Fact]
+    public void ExactBuildValidation_EnablesMatrixTimingOnlyWhenSinkIsSupplied()
+    {
+        IProductionLightingPortFactory uninstrumented =
+            ProductionLightingFactory.CreateWindowsForExactBuildValidation();
+        IProductionLightingPortFactory instrumented =
+            ProductionLightingFactory.CreateWindowsForExactBuildValidation(
+                new NoopMatrixWriteTimingSink());
+
+        Assert.False(Assert.IsType<ProductionLightingFactory>(uninstrumented)
+            .MatrixWriteTimingEnabled);
+        Assert.True(Assert.IsType<ProductionLightingFactory>(instrumented)
+            .MatrixWriteTimingEnabled);
     }
 
     [Fact]
@@ -3148,6 +3167,13 @@ public sealed class ProductionLightingPortTests
             byte transactionId,
             BatteryValidationSetting setting,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class NoopMatrixWriteTimingSink : IMatrixWriteTimingSink
+    {
+        public void Record(MatrixWritePhaseTiming timing)
+        {
+        }
     }
 
     private sealed class TemporaryCommands : ITemporaryFullChargeCommandClient
