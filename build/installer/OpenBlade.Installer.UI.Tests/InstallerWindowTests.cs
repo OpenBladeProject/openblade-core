@@ -70,6 +70,20 @@ public sealed class InstallerWindowTests
         });
     }
 
+    [Theory]
+    [InlineData("zh-CN")]
+    [InlineData("ru-RU")]
+    public void SupportedCultureSuccessActionsExposeUniqueAccessKeys(string cultureName)
+    {
+        RunWithUiCulture(cultureName, () =>
+        {
+            InstallerWindow window = new(new OpenBladeBootstrapperApplication(), "1.2.3");
+            window.ShowSuccess(LaunchAction.Install, purgeProfiles: false);
+
+            AssertUniqueAccessKeys(window.LaunchButton, window.SuccessCloseButton);
+        });
+    }
+
     [Fact]
     public void WindowLoadsResourcesAndRendersEveryInteractiveState()
     {
