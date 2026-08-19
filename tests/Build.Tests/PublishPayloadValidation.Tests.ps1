@@ -474,6 +474,55 @@ try {
         -ExistingBundle $captureTool.ExistingBundle -ExpectedError 'must not include developer tool' `
         -CaseName 'A nested case-variant Capture developer tool'
 
+    $footprint = Join-Path $testRoot 'localized-footprint\OpenBlade'
+    $footprintPayload = Join-Path $footprint 'payload'
+    New-Item -ItemType Directory -Path $footprintPayload -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $footprint 'OpenBlade.Setup.exe') `
+        -Value 'single-file setup' -NoNewline
+    Set-Content -LiteralPath (
+        Join-Path $footprintPayload 'Microsoft.Windows.ApplicationModel.Resources.dll') `
+        -Value 'runtime resource loader' -NoNewline
+    foreach ($culture in @('zh-CN', 'ru-RU')) {
+        $cultureDirectory = Join-Path $footprintPayload $culture
+        New-Item -ItemType Directory -Path $cultureDirectory -Force | Out-Null
+        Set-Content -LiteralPath (
+            Join-Path $cultureDirectory 'OpenBlade.Tray.Core.resources.dll') `
+            -Value "$culture resources" -NoNewline
+    }
+    Assert-ProductionBundleFootprint -Bundle $footprint
+
+    Remove-Item -LiteralPath (
+        Join-Path $footprintPayload 'ru-RU\OpenBlade.Tray.Core.resources.dll')
+    $missingSatelliteRejected = $false
+    try {
+        Assert-ProductionBundleFootprint -Bundle $footprint
+    }
+    catch {
+        $missingSatelliteRejected = $_.Exception.Message -match (
+            'missing required localization satellite')
+    }
+    Assert-True $missingSatelliteRejected `
+        'Production footprint validation accepted a missing Russian satellite.'
+
+    Set-Content -LiteralPath (
+        Join-Path $footprintPayload 'ru-RU\OpenBlade.Tray.Core.resources.dll') `
+        -Value 'ru-RU resources' -NoNewline
+    $unexpectedCultureDirectory = Join-Path $footprintPayload 'de-DE'
+    New-Item -ItemType Directory -Path $unexpectedCultureDirectory -Force | Out-Null
+    Set-Content -LiteralPath (
+        Join-Path $unexpectedCultureDirectory 'OpenBlade.Tray.Core.resources.dll') `
+        -Value 'unexpected resources' -NoNewline
+    $unexpectedSatelliteRejected = $false
+    try {
+        Assert-ProductionBundleFootprint -Bundle $footprint
+    }
+    catch {
+        $unexpectedSatelliteRejected = $_.Exception.Message -match (
+            'development or unused component file')
+    }
+    Assert-True $unexpectedSatelliteRejected `
+        'Production footprint validation accepted an unsupported satellite culture.'
+
     $valid = New-TestBundlePair -PermittedRoot $permittedRoot -CaseName 'valid' -AssemblySources $assemblySources
     New-Item -ItemType Directory -Path $valid.ExistingBundle -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $valid.ExistingBundle 'sentinel.txt') -Value 'previous bundle' -NoNewline

@@ -128,17 +128,38 @@ function Assert-TranslationCatalog {
     param(
         [Parameter(Mandatory)]$Authoritative,
         [Parameter(Mandatory)]$Translation,
-        [Parameter(Mandatory)][string]$Name
+        [Parameter(Mandatory)][string]$Name,
+        [switch]$RequireComplete,
+        [switch]$PreserveAccessKeyCount
     )
 
+    if ($RequireComplete) {
+        $difference = @(Compare-Object @($Authoritative.Keys) @($Translation.Keys))
+        if ($difference.Count -ne 0) {
+            throw "$Name key mismatch: $($difference -join ', ')"
+        }
+    }
     foreach ($key in $Translation.Keys) {
         if (-not $Authoritative.Contains($key)) {
             throw "$Name contains orphan resource '$key'."
         }
-        $expected = @(Get-Placeholders ([string]$Authoritative[$key]))
-        $actual = @(Get-Placeholders ([string]$Translation[$key]))
-        if (@(Compare-Object $expected $actual).Count -ne 0) {
+        $authoritativeValue = [string]$Authoritative[$key]
+        $translationValue = [string]$Translation[$key]
+        $expectedPlaceholders = @(Get-Placeholders $authoritativeValue)
+        $actualPlaceholders = @(Get-Placeholders $translationValue)
+        if (@(Compare-Object $expectedPlaceholders $actualPlaceholders).Count -ne 0) {
             throw "$Name resource '$key' changed its format placeholders."
+        }
+        if ($authoritativeValue -notmatch '\p{L}' -and
+            $translationValue -cne $authoritativeValue) {
+            throw "$Name resource '$key' changed punctuation-only text."
+        }
+        if ($PreserveAccessKeyCount) {
+            $expectedAccessKeyCount = @(Get-AccessKeys $authoritativeValue).Count
+            $actualAccessKeyCount = @(Get-AccessKeys $translationValue).Count
+            if ($actualAccessKeyCount -ne $expectedAccessKeyCount) {
+                throw "$Name resource '$key' changed its access-key count."
+            }
         }
     }
 }
@@ -154,6 +175,16 @@ $installerPseudo = Read-ResourceCatalog $installerPseudoPath
 Assert-PseudoCatalog $trayEnglish $trayPseudo 'Tray'
 Assert-PseudoCatalog $installerEnglish $installerPseudo 'Installer'
 
+foreach ($translationPath in @(Get-ChildItem ([IO.Path]::GetDirectoryName(
+            $installerEnglishPath)) -Filter 'Resources.*.resx' -File |
+        Where-Object Name -ne 'Resources.qps-ploc.resx')) {
+    Assert-TranslationCatalog `
+        $installerEnglish `
+        (Read-ResourceCatalog $translationPath.FullName) `
+        "Installer translation $($translationPath.FullName)" `
+        -PreserveAccessKeyCount
+}
+
 $optionalCatalogs = @(
     @('Tray Core', 'src\OpenBlade.Tray.Core\Properties\Resources.resx', 'src\OpenBlade.Tray.Core\Properties\Resources.qps-ploc.resx'),
     @('Setup', 'src\OpenBlade.Setup\Properties\Resources.resx', 'src\OpenBlade.Setup\Properties\Resources.qps-ploc.resx'))
@@ -167,7 +198,8 @@ foreach ($catalog in $optionalCatalogs) {
         foreach ($translationPath in @(Get-ChildItem $directory `
                 -Filter 'Resources.*.resx' -File | Where-Object Name -ne 'Resources.qps-ploc.resx')) {
             Assert-TranslationCatalog $english (Read-ResourceCatalog $translationPath.FullName) `
-                "$($catalog[0]) translation $($translationPath.FullName)"
+                "$($catalog[0]) translation $($translationPath.FullName)" `
+                -PreserveAccessKeyCount
         }
     }
 }
@@ -260,7 +292,45 @@ foreach ($translationPath in @(Get-ChildItem (
         Where-Object Name -notin @('en-US', 'qps-ploc') |
         ForEach-Object { Join-Path $_.FullName 'Resources.resw' })) {
     Assert-TranslationCatalog $trayEnglish (Read-ResourceCatalog $translationPath) `
-        "Tray translation $translationPath"
+        "Tray translation $translationPath" `
+        -PreserveAccessKeyCount
+}
+
+$supportedTranslationCultures = @('zh-CN', 'ru-RU')
+foreach ($culture in $supportedTranslationCultures) {
+    $completeCatalogs = @(
+        [pscustomobject]@{
+            Name = 'Tray'
+            Authoritative = $trayEnglish
+            Path = "src\OpenBlade.Tray\Strings\$culture\Resources.resw"
+        }
+        [pscustomobject]@{
+            Name = 'Tray Core'
+            Authoritative = (Read-ResourceCatalog (Join-Path $Repository (
+                'src\OpenBlade.Tray.Core\Properties\Resources.resx')))
+            Path = "src\OpenBlade.Tray.Core\Properties\Resources.$culture.resx"
+        }
+        [pscustomobject]@{
+            Name = 'Installer'
+            Authoritative = $installerEnglish
+            Path = "build\installer\OpenBlade.Installer.UI\Properties\Resources.$culture.resx"
+        }
+        [pscustomobject]@{
+            Name = 'Setup'
+            Authoritative = (Read-ResourceCatalog (Join-Path $Repository (
+                'src\OpenBlade.Setup\Properties\Resources.resx')))
+            Path = "src\OpenBlade.Setup\Properties\Resources.$culture.resx"
+        }
+    )
+    foreach ($catalog in $completeCatalogs) {
+        $translationPath = Join-Path $Repository $catalog.Path
+        Assert-TranslationCatalog `
+            $catalog.Authoritative `
+            (Read-ResourceCatalog $translationPath) `
+            "$($catalog.Name) $culture translation" `
+            -RequireComplete `
+            -PreserveAccessKeyCount
+    }
 }
 
 $seenUids = @{}

@@ -390,8 +390,8 @@
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
     <value>Configure live readings, sign-in, and lighting ownership.</value>
   </data>
-  <data name="Configure theme, accent color, navigation, and tray text." xml:space="preserve">
-    <value>Configure theme, accent color, navigation, and tray text.</value>
+  <data name="Configure language, theme, accent color, navigation, and tray text." xml:space="preserve">
+    <value>Configure language, theme, accent color, navigation, and tray text.</value>
   </data>
   <data name="Connection, active settings, and the live readings you selected." xml:space="preserve">
     <value>Connection, active settings, and the live readings you selected.</value>
@@ -1283,5 +1283,8 @@
   </data>
   <data name="Fragment.Top" xml:space="preserve">
     <value>top</value>
+  </data>
+  <data name="Follow system" xml:space="preserve">
+    <value>Follow system</value>
   </data>
 </root>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="OpenBlade and its background service will be removed.&#xA;&#xA;Your saved profiles and preferences will be kept so they are available if you reinstall.&#xA;&#xA;Do you want to continue?" xml:space="preserve">
+    <value>将移除 OpenBlade 及其后台服务。&#xA;&#xA;系统会保留已保存的配置文件和偏好设置，以便您重新安装时继续使用。&#xA;&#xA;是否继续？</value>
+  </data>
+  <data name="Uninstall OpenBlade" xml:space="preserve">
+    <value>卸载 OpenBlade</value>
+  </data>
+  <data name="OpenBlade was removed. Your saved profiles and preferences were kept." xml:space="preserve">
+    <value>已移除 OpenBlade。已保留您保存的配置文件和偏好设置。</value>
+  </data>
+  <data name="OpenBlade uninstalled" xml:space="preserve">
+    <value>OpenBlade 已卸载</value>
+  </data>
+  <data name="OpenBlade could not be removed.&#xA;&#xA;{0}" xml:space="preserve">
+    <value>无法移除 OpenBlade。&#xA;&#xA;{0}</value>
+  </data>
+  <data name="OpenBlade uninstall failed" xml:space="preserve">
+    <value>OpenBlade 卸载失败</value>
+  </data>
+  <data name="Uninstall OpenBlade and keep saved profiles" xml:space="preserve">
+    <value>卸载 OpenBlade 并保留已保存的配置文件</value>
+  </data>
+</root>

@@ -390,8 +390,8 @@
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
     <value>[!! Cónfígúré lívé réádíngs, sígn-ín, ánd líghtíng ównérshíp. ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Configure theme, accent color, navigation, and tray text." xml:space="preserve">
-    <value>[!! Cónfígúré thémé, áccént cólór, návígátíón, ánd tráý téxt. ~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Configure language, theme, accent color, navigation, and tray text." xml:space="preserve">
+    <value>[!! Cónfígúré lángúágé, thémé, áccént cólór, návígátíón, ánd tráý téxt. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Connection, active settings, and the live readings you selected." xml:space="preserve">
     <value>[!! Cónnéctíón, áctívé séttíngs, ánd thé lívé réádíngs ýóú séléctéd. ~~~~~~~~~~~~~~~~~~~ !!]</value>
@@ -1283,5 +1283,8 @@
   </data>
   <data name="Fragment.Top" xml:space="preserve">
     <value>[!! tóp ~~ !!]</value>
+  </data>
+  <data name="Follow system" xml:space="preserve">
+    <value>[!! Fóllów sýstém ~~~~~ !!]</value>
   </data>
 </root>

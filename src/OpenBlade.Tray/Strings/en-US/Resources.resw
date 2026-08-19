@@ -22,7 +22,7 @@
     <value>Shut down completely</value>
   </data>
   <data name="App_ExitDialog_Text" xml:space="preserve">
-    <value>Choose whether keyboard lighting, hotkeys, profiles, and automation </value>
+    <value>Choose whether keyboard lighting, hotkeys, profiles, and automation should keep running in the background.</value>
   </data>
   <data name="App_ExitError_Heading" xml:space="preserve">
     <value>OpenBlade could not shut down</value>
@@ -1704,7 +1704,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Manual only</value>
   </data>
   <data name="MainWindow_UpdateConsent_Content" xml:space="preserve">
-    <value>OpenBlade can check GitHub for a new release once per day when </value>
+    <value>OpenBlade can check GitHub for a new release once per day when the tray starts. The check sends no hardware state, profiles, settings, or diagnostics. You can change this later in Settings.</value>
   </data>
   <data name="MainWindow_UpdateConsent_PrimaryButton" xml:space="preserve">
     <value>Use daily checks</value>
@@ -1885,5 +1885,14 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="TrayIconMenu_Open" xml:space="preserve">
     <value>Open</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorAppLanguage.AccessibleName" xml:space="preserve">
+    <value>App language</value>
+  </data>
+  <data name="MainWindow_TextBlockAppLanguage.Text" xml:space="preserve">
+    <value>App language</value>
+  </data>
+  <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
+    <value>Use your Windows display language, or choose a language. Restart OpenBlade to apply changes.</value>
   </data>
 </root>

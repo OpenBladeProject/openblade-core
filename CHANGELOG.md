@@ -7,6 +7,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added complete Simplified Chinese and Russian translations for the tray,
+  graphical installer, and native setup and uninstall experiences. Settings
+  now lets the tray follow the Windows UI language or use either translation,
+  with safe English fallback.
 - Added GPU-specific VBIOS update comparison for exact supported Blade models.
   OpenBlade now carries the installed NVIDIA adapter identity through service
   status and diagnostics, selects only the matching official Razer VBIOS
