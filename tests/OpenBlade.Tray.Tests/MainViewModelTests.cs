@@ -144,6 +144,9 @@ public sealed class MainViewModelTests
             ],
             viewModel.AvailableWindowsPowerModeOptions.Select(option => option.Description));
         Assert.Null(viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.Equal(
+            "Leaves the Windows setting unchanged whenever Balanced is selected.",
+            viewModel.SelectedWindowsPowerModeDescription);
 
         viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
 
@@ -211,6 +214,15 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.IsConnected);
 
         viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+        var draftNotifications = new ConcurrentQueue<(PowerSource Source, bool HasDraft)>();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.HasActiveProfileDraft))
+            {
+                draftNotifications.Enqueue(
+                    (viewModel.ActivePowerSource, viewModel.HasActiveProfileDraft));
+            }
+        };
         client.Publish(initial with
         {
             Revision = 2,
@@ -219,6 +231,14 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
 
         Assert.True(viewModel.HasThermalProfileDraft);
+        Assert.NotEmpty(draftNotifications);
+        Assert.All(
+            draftNotifications,
+            notification =>
+            {
+                Assert.Equal(PowerSource.UsbC, notification.Source);
+                Assert.True(notification.HasDraft);
+            });
         Assert.Equal(
             WindowsPowerMode.BestPerformance,
             viewModel.SelectedWindowsPowerModeOption.Value);
@@ -227,6 +247,70 @@ public sealed class MainViewModelTests
         Assert.Equal(
             WindowsPowerMode.BestPerformance,
             client.LastProfiles?.WindowsPowerModes.Balanced);
+    }
+
+    [Fact]
+    public async Task WindowsPowerMode_MaximumFansEditsDesiredPresetAssociation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        ProfileSet profiles = initial.Profiles with
+        {
+            WindowsPowerModes = initial.Profiles.WindowsPowerModes.WithPerformance(
+                PerformancePreset.Balanced,
+                WindowsPowerMode.BestPerformance),
+        };
+        client.Publish(initial with
+        {
+            Profiles = profiles,
+            ConfirmedState = initial.ConfirmedState! with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(PerformancePreset.Balanced, viewModel.SelectedPerformance);
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.True(viewModel.CanEditWindowsPowerMode);
+
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.Balanced);
+
+        Assert.True(viewModel.HasThermalProfileDraft);
+        Assert.Equal(
+            WindowsPowerMode.Balanced,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+    }
+
+    [Fact]
+    public async Task WindowsPowerMode_UnknownSourceStillShowsStoredAssociation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial with
+        {
+            ActivePowerSource = PowerSource.ExternalUnknown,
+            Profiles = initial.Profiles with
+            {
+                WindowsPowerModes = initial.Profiles.WindowsPowerModes.WithPerformance(
+                    PerformancePreset.Balanced,
+                    WindowsPowerMode.BestPerformance),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.Contains("Balanced", viewModel.SelectedWindowsPowerModeDescription);
+        Assert.False(viewModel.CanEditWindowsPowerMode);
     }
 
     [Fact]

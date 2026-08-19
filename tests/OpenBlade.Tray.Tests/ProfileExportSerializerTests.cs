@@ -169,7 +169,58 @@ public sealed class ProfileExportSerializerTests
             imported.WindowsPowerModes.BatterySaver);
         Assert.Equal(WindowsPowerMode.Balanced,
             imported.WindowsPowerModes.Balanced);
+        Assert.Null(imported.WindowsPowerModes.Silent);
         Assert.Null(imported.PluggedIn.WindowsPowerMode);
+    }
+
+    [Fact]
+    public void Deserialize_VersionNinePreservesAgreeingSamePresetAssociation()
+    {
+        JsonObject document = CreateVersionNineDocument();
+        JsonObject profiles = document["profiles"]!.AsObject();
+        profiles["pluggedIn"]!["windowsPowerMode"] = "balanced";
+        profiles["usbC"]!["windowsPowerMode"] = "balanced";
+
+        ProfileSet imported = ProfileExportSerializer.Deserialize(document.ToJsonString());
+
+        Assert.Equal(WindowsPowerMode.Balanced, imported.WindowsPowerModes.Balanced);
+    }
+
+    [Fact]
+    public void Deserialize_VersionNineConflictingSamePresetLeavesWindowsUnchanged()
+    {
+        JsonObject document = CreateVersionNineDocument();
+        JsonObject profiles = document["profiles"]!.AsObject();
+        profiles["pluggedIn"]!["windowsPowerMode"] = "bestPerformance";
+        profiles["usbC"]!["windowsPowerMode"] = "balanced";
+
+        ProfileSet imported = ProfileExportSerializer.Deserialize(document.ToJsonString());
+
+        Assert.Null(imported.WindowsPowerModes.Balanced);
+    }
+
+    [Fact]
+    public void Deserialize_VersionNineConfiguredAndNullSamePresetLeavesWindowsUnchanged()
+    {
+        JsonObject document = CreateVersionNineDocument();
+        JsonObject profiles = document["profiles"]!.AsObject();
+        profiles["pluggedIn"]!["windowsPowerMode"] = "bestPerformance";
+
+        ProfileSet imported = ProfileExportSerializer.Deserialize(document.ToJsonString());
+
+        Assert.Null(imported.WindowsPowerModes.Balanced);
+    }
+
+    [Fact]
+    public void Deserialize_VersionNineRejectsNumericLegacyWindowsPowerMode()
+    {
+        JsonObject document = CreateVersionNineDocument();
+        document["profiles"]!["pluggedIn"]!["windowsPowerMode"] = 999;
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            ProfileExportSerializer.Deserialize(document.ToJsonString()));
+
+        Assert.Contains("not a valid OpenBlade profile export", exception.Message);
     }
 
     [Fact]
@@ -185,6 +236,17 @@ public sealed class ProfileExportSerializerTests
             ProfileExportSerializer.Deserialize(document.ToJsonString()));
 
         Assert.Contains("missing Windows power mode associations", exception.Message);
+    }
+
+    private static JsonObject CreateVersionNineDocument()
+    {
+        JsonObject document = JsonNode.Parse(ProfileExportSerializer.Serialize(
+            ProfileDefaults.CreateSafeDefaults(),
+            "0.14.2",
+            DateTimeOffset.UtcNow))!.AsObject();
+        document["schemaVersion"] = 9;
+        document["profiles"]!.AsObject().Remove("windowsPowerModes");
+        return document;
     }
 
     [Fact]

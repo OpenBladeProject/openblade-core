@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Collections.Frozen;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace OpenBlade.Contracts;
 
@@ -106,7 +107,7 @@ public static class IpcMessageCodec
         await stream.ReadExactlyAsync(payload, cancellationToken).ConfigureAwait(false);
         try
         {
-            ValidateRequiredWindowsPowerModesPayload<T>(payload);
+            ValidatePayloadVersion(payload);
             return JsonSerializer.Deserialize<T>(payload, SerializerOptions)
                 ?? throw new InvalidDataException("IPC message body is invalid.");
         }
@@ -145,7 +146,8 @@ public static class IpcMessageCodec
             SubscribeStatusRequest => true,
             ExportDiagnosticsRequest => true,
             UpdateProfilesRequest update => update.Profiles is not null
-                && ValidWindowsPowerModes(update.Profiles.WindowsPowerModes),
+                && ValidWindowsPowerModes(update.Profiles.WindowsPowerModes)
+                && LegacyWindowsPowerModesAreClear(update.Profiles),
             SetPerformanceOverrideRequest set =>
                 set.Value is null
                 || set.Value.IsWellFormed(),
@@ -362,6 +364,11 @@ public static class IpcMessageCodec
             throw InvalidStatus("Windows power mode associations are malformed");
         }
 
+        if (!LegacyWindowsPowerModesAreClear(status.Profiles))
+        {
+            throw InvalidStatus("legacy Windows power mode fields are not allowed");
+        }
+
         if (status.DesiredState is null)
         {
             throw InvalidStatus("desired state is missing");
@@ -539,52 +546,44 @@ public static class IpcMessageCodec
             associations.ForPerformance(performance) is not { } mode
             || Enum.IsDefined(mode));
 
-    private static void ValidateRequiredWindowsPowerModesPayload<T>(byte[] payload)
+    private static bool LegacyWindowsPowerModesAreClear(ProfileSet profiles) =>
+        profiles.PluggedIn?.WindowsPowerMode is null
+        && profiles.Battery?.WindowsPowerMode is null
+        && profiles.UsbC?.WindowsPowerMode is null;
+
+    private static void ValidatePayloadVersion(ReadOnlySpan<byte> payload)
     {
-        using JsonDocument document = JsonDocument.Parse(payload);
-        JsonElement root = document.RootElement;
-        if (root.ValueKind != JsonValueKind.Object)
-        {
-            return;
-        }
-        if (typeof(T) == typeof(ServiceRequest)
-            && root.TryGetProperty("operation", out JsonElement operation)
-            && operation.ValueKind == JsonValueKind.String
-            && operation.ValueEquals("updateProfiles"))
-        {
-            RequireWindowsPowerModes(root);
-            return;
-        }
-
-        if (typeof(T) != typeof(ServiceServerFrame)
-            || !root.TryGetProperty("frame", out JsonElement frame)
-            || frame.ValueKind != JsonValueKind.String)
+        var reader = new Utf8JsonReader(payload);
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
         {
             return;
         }
 
-        if (frame.ValueEquals("statusEvent")
-            && root.TryGetProperty("status", out JsonElement eventStatus)
-            && eventStatus.ValueKind == JsonValueKind.Object)
+        while (reader.Read())
         {
-            RequireWindowsPowerModes(eventStatus);
-        }
-        else if (frame.ValueEquals("response")
-            && root.TryGetProperty("status", out JsonElement responseStatus)
-            && responseStatus.ValueKind == JsonValueKind.Object)
-        {
-            RequireWindowsPowerModes(responseStatus);
-        }
-    }
+            if (reader.TokenType == JsonTokenType.EndObject)
+            {
+                return;
+            }
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                return;
+            }
 
-    private static void RequireWindowsPowerModes(JsonElement containingObject)
-    {
-        if (!containingObject.TryGetProperty("profiles", out JsonElement profiles)
-            || profiles.ValueKind != JsonValueKind.Object
-            || !profiles.TryGetProperty("windowsPowerModes", out _))
-        {
-            throw new InvalidDataException(
-                "IPC message body is missing Windows power mode associations.");
+            string? propertyName = reader.GetString();
+            if (!reader.Read())
+            {
+                return;
+            }
+            if (string.Equals(propertyName, "version", StringComparison.OrdinalIgnoreCase)
+                && reader.TokenType == JsonTokenType.Number
+                && reader.TryGetInt32(out int version))
+            {
+                ValidateVersion(version);
+                return;
+            }
+
+            reader.Skip();
         }
     }
 
@@ -609,10 +608,26 @@ public static class IpcMessageCodec
 
     private static JsonSerializerOptions CreateSerializerOptions()
     {
+        var resolver = new DefaultJsonTypeInfoResolver();
+        resolver.Modifiers.Add(static typeInfo =>
+        {
+            if (typeInfo.Type != typeof(ProfileSet))
+            {
+                return;
+            }
+
+            JsonPropertyInfo windowsPowerModes = typeInfo.Properties.Single(property =>
+                string.Equals(
+                    property.Name,
+                    "windowsPowerModes",
+                    StringComparison.OrdinalIgnoreCase));
+            windowsPowerModes.IsRequired = true;
+        });
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
             RespectRequiredConstructorParameters = true,
             UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+            TypeInfoResolver = resolver,
         };
         options.Converters.Add(new BatteryPolicyJsonConverter());
         options.Converters.Add(new ReadOnlySetJsonConverterFactory());

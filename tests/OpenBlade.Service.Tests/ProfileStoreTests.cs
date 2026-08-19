@@ -127,6 +127,7 @@ public sealed class ProfileStoreTests : IDisposable
         Assert.Equal(
             WindowsPowerMode.Balanced,
             result.Profiles.WindowsPowerModes.Balanced);
+        Assert.Null(result.Profiles.WindowsPowerModes.Silent);
         Assert.Null(result.Profiles.PluggedIn.WindowsPowerMode);
         Assert.Null(result.Profiles.Battery.WindowsPowerMode);
         Assert.Null(result.Profiles.UsbC.WindowsPowerMode);
@@ -166,6 +167,91 @@ public sealed class ProfileStoreTests : IDisposable
 
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.Null(result.Profiles.WindowsPowerModes.Balanced);
+    }
+
+    [Fact]
+    public async Task Load_Schema14AgreeingSamePresetPreservesAssociation()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet agreeing = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                WindowsPowerMode = WindowsPowerMode.Balanced,
+            },
+            UsbC = defaults.UsbC with
+            {
+                WindowsPowerMode = WindowsPowerMode.Balanced,
+            },
+        };
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(
+                new ProfileDocument(
+                    ProfileStore.LegacyWindowsPowerModeSchemaVersion,
+                    agreeing),
+                ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Equal(
+            WindowsPowerMode.Balanced,
+            result.Profiles.WindowsPowerModes.Balanced);
+    }
+
+    [Fact]
+    public async Task Load_Schema14ConfiguredAndNullSamePresetLeavesWindowsUnchanged()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet mixed = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                WindowsPowerMode = WindowsPowerMode.BestPerformance,
+            },
+        };
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(
+                new ProfileDocument(
+                    ProfileStore.LegacyWindowsPowerModeSchemaVersion,
+                    mixed),
+                ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Null(result.Profiles.WindowsPowerModes.Balanced);
+    }
+
+    [Fact]
+    public void ReadDocument_Schema14RejectsUndefinedLegacyWindowsPowerModeBeforeMigration()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet malformed = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                WindowsPowerMode = (WindowsPowerMode)999,
+            },
+        };
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(
+                ProfileStore.LegacyWindowsPowerModeSchemaVersion,
+                malformed),
+            ProfileStore.SerializerOptions);
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            new ProfileStore("unused").ReadDocument(json));
+
+        Assert.Contains("legacy plugged-in Windows power mode is undefined", exception.Message);
     }
 
     [Fact]

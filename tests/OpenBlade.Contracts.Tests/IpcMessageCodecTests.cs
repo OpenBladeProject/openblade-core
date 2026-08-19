@@ -525,6 +525,94 @@ public sealed class IpcMessageCodecTests
                 CancellationToken.None));
     }
 
+    [Fact]
+    public async Task ReadRequestAsync_AcceptsRequiredAssociationWithWebJsonCasing()
+    {
+        var request = new UpdateProfilesRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            ProfileDefaults.CreateSafeDefaults());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(encoded, request, CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        RenameProperty(root, "version", "Version");
+        RenameProperty(root, "profiles", "Profiles");
+        RenameProperty(
+            Assert.IsType<JsonObject>(root["Profiles"]),
+            "windowsPowerModes",
+            "WindowsPowerModes");
+
+        UpdateProfilesRequest decoded = Assert.IsType<UpdateProfilesRequest>(
+            await IpcMessageCodec.ReadRequestAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Equal(request.Profiles, decoded.Profiles);
+    }
+
+    [Fact]
+    public async Task ReadRequestAsync_VersionMismatchWinsOverMissingAssociation()
+    {
+        var request = new UpdateProfilesRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            ProfileDefaults.CreateSafeDefaults());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(encoded, request, CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        root["version"] = OpenBladeIpc.ProtocolVersion - 1;
+        Assert.IsType<JsonObject>(root["profiles"]).Remove("windowsPowerModes");
+
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Equal("IPC protocol version is unsupported.", exception.Message);
+    }
+
+    [Fact]
+    public async Task WriteRequestAsync_RejectsLegacyWindowsPowerModeField()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                WindowsPowerMode = WindowsPowerMode.BestPerformance,
+            },
+        };
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(
+                new MemoryStream(),
+                new UpdateProfilesRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid(),
+                    profiles),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadRequestAsync_RejectsLegacyWindowsPowerModeField()
+    {
+        var request = new UpdateProfilesRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            ProfileDefaults.CreateSafeDefaults());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(encoded, request, CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        JsonObject profiles = Assert.IsType<JsonObject>(root["profiles"]);
+        Assert.IsType<JsonObject>(profiles["pluggedIn"])["windowsPowerMode"] =
+            "bestPerformance";
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -562,6 +650,99 @@ public sealed class IpcMessageCodecTests
         JsonObject status = Assert.IsType<JsonObject>(root["status"]);
         Assert.True(Assert.IsType<JsonObject>(status["profiles"])
             .Remove("windowsPowerModes"));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_AcceptsRequiredAssociationWithWebJsonCasing()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        RenameProperty(root, "version", "Version");
+        RenameProperty(root, "status", "Status");
+        JsonObject status = Assert.IsType<JsonObject>(root["Status"]);
+        RenameProperty(status, "profiles", "Profiles");
+        RenameProperty(
+            Assert.IsType<JsonObject>(status["Profiles"]),
+            "windowsPowerModes",
+            "WindowsPowerModes");
+
+        ServiceStatusEvent decoded = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Equal(CreateStatus().Profiles, decoded.Status.Profiles);
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_VersionMismatchWinsOverMissingAssociation()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        root["version"] = OpenBladeIpc.ProtocolVersion - 1;
+        JsonObject status = Assert.IsType<JsonObject>(root["status"]);
+        Assert.IsType<JsonObject>(status["profiles"]).Remove("windowsPowerModes");
+
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Equal("IPC protocol version is unsupported.", exception.Message);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsLegacyWindowsPowerModeField()
+    {
+        ServiceStatusSnapshot status = CreateStatus();
+        status = status with
+        {
+            Profiles = status.Profiles with
+            {
+                UsbC = status.Profiles.UsbC with
+                {
+                    WindowsPowerMode = WindowsPowerMode.Balanced,
+                },
+            },
+        };
+
+        await AssertStatusWriteRejectedAsync(status);
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsLegacyWindowsPowerModeField()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        JsonObject status = Assert.IsType<JsonObject>(root["status"]);
+        JsonObject profiles = Assert.IsType<JsonObject>(status["profiles"]);
+        Assert.IsType<JsonObject>(profiles["usbC"])["windowsPowerMode"] = "balanced";
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadServerFrameAsync(
@@ -1853,6 +2034,13 @@ public sealed class IpcMessageCodecTests
             framedBytes,
             sizeof(int),
             payloadLength)));
+    }
+
+    private static void RenameProperty(JsonObject owner, string oldName, string newName)
+    {
+        JsonNode? value = owner[oldName]?.DeepClone();
+        Assert.True(owner.Remove(oldName));
+        owner[newName] = value;
     }
 
     private static async Task<ServiceRequest> RoundTripRequestAsync(ServiceRequest request)

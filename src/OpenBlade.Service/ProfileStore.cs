@@ -156,6 +156,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
             }
             else if (schemaVersion < PerformanceWindowsPowerModeProfileSchemaVersion)
             {
+                ValidateLegacyWindowsPowerModes(profiles);
                 profiles = MigrateLegacyWindowsPowerModes(profiles);
             }
             else
@@ -320,6 +321,23 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         {
             WindowsPowerModes = associations,
         };
+    }
+
+    private static void ValidateLegacyWindowsPowerModes(ProfileSet profiles)
+    {
+        foreach ((string name, PowerProfile profile) in new[]
+        {
+            ("plugged-in", profiles.PluggedIn),
+            ("battery", profiles.Battery),
+            ("USB-C", profiles.UsbC),
+        })
+        {
+            if (profile.WindowsPowerMode is { } mode && !Enum.IsDefined(mode))
+            {
+                throw new InvalidDataException(
+                    $"The legacy {name} Windows power mode is undefined.");
+            }
+        }
     }
 
     private static ProfileSet ClearLegacyWindowsPowerModes(ProfileSet profiles) => profiles with

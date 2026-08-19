@@ -944,22 +944,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
 
+            // Update the backing state before draft notifications so every
+            // dependent property observes one coherent power-source snapshot.
+            activePowerSource = value;
+
             if (value is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
                 && activeProfileDraftSource is { } draftSource
                 && draftSource != value)
             {
                 WindowsPowerModeAssociations? windowsPowerModes =
                     activeProfileDraftWindowsPowerModes;
-                ClearActiveProfileDraft();
+                ClearActiveProfileDraftCore();
                 if (windowsPowerModes is not null)
                 {
                     activeProfileDraftSource = value;
                     activeProfileDraftWindowsPowerModes = windowsPowerModes;
-                    NotifyActiveProfileDraft();
                 }
+                NotifyActiveProfileDraft();
             }
 
-            SetField(ref activePowerSource, value);
+            Notify(nameof(ActivePowerSource));
             if (value is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
             {
                 SelectedProfileComparisonOption = ComparisonOptions.First(option => option.Source == value);
@@ -1731,18 +1735,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         get
         {
-            WindowsPowerMode? selected = HasConfirmedPowerSource
-                ? PresentedWindowsPowerModes.ForPerformance(SelectedPerformance)
-                : null;
+            WindowsPowerMode? selected =
+                PresentedWindowsPowerModes.ForPerformance(SelectedPerformance);
             return WindowsPowerModeOptions.First(option => option.Value == selected);
         }
     }
 
     public string SelectedWindowsPowerModeDescription =>
-        TrayText.Format(
-            "Used whenever {0} is selected. {1}",
-            PerformancePresetPresentation.Label(SelectedPerformance),
-            SelectedWindowsPowerModeOption.Description);
+        SelectedWindowsPowerModeOption.Value is null
+            ? TrayText.Format(
+                "Leaves the Windows setting unchanged whenever {0} is selected.",
+                PerformancePresetPresentation.Label(SelectedPerformance))
+            : TrayText.Format(
+                "Used whenever {0} is selected. {1}",
+                PerformancePresetPresentation.Label(SelectedPerformance),
+                SelectedWindowsPowerModeOption.Description);
 
     public bool CanEditWindowsPowerMode =>
         CanMutate && HasConfirmedPowerSource;
@@ -7235,6 +7242,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return;
         }
 
+        ClearActiveProfileDraftCore();
+        NotifyActiveProfileDraft();
+    }
+
+    private void ClearActiveProfileDraftCore()
+    {
         activeProfileDraftSource = null;
         activeProfileDraftPerformance = null;
         activeProfileDraftCustomPerformance = null;
@@ -7249,7 +7262,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         activeProfileDraftWindowsPowerModes = null;
         activeProfileOriginalDisplay = null;
         activeProfileOriginalLaptopBehavior = null;
-        NotifyActiveProfileDraft();
     }
 
     private void ClearActiveProfileDraft(ProfileDraftGroup group)

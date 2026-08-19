@@ -76,6 +76,8 @@ public sealed class WindowsPowerModeAutomationCoordinator : IAsyncDisposable
 
         lock (sync)
         {
+            // FixedMaximum reports no firmware performance preset. Keep the
+            // association stored, then reconcile when a preset is confirmed again.
             if (status.ControlAccess != SessionControlAccess.Active
                 || !status.DeviceVerified
                 || status.UnconfirmedWrites.Contains(DeviceSubsystem.Performance)

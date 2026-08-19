@@ -216,6 +216,82 @@ public sealed class WindowsPowerModeAutomationCoordinatorTests
     }
 
     [Fact]
+    public async Task UnverifiedDevice_DoesNotChangeWindowsMode()
+    {
+        var controller = new FakeController();
+        await using var coordinator = new WindowsPowerModeAutomationCoordinator(controller);
+
+        WindowsPowerModeAutomationObservation observation = coordinator.Observe(Status(
+            PowerSource.PluggedIn,
+            Profiles(PerformancePreset.Performance, WindowsPowerMode.BestPerformance),
+            PerformancePreset.Performance,
+            deviceVerified: false));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(WindowsPowerModeAutomationObservation.IgnoredUnavailable, observation);
+        Assert.Empty(controller.Requests);
+    }
+
+    [Fact]
+    public async Task MaximumFans_WaitsForNextConfirmedPerformancePreset()
+    {
+        var controller = new FakeController();
+        await using var coordinator = new WindowsPowerModeAutomationCoordinator(controller);
+        ProfileSet profiles = Profiles(
+            PerformancePreset.Balanced,
+            WindowsPowerMode.Balanced) with
+        {
+            WindowsPowerModes = WindowsPowerModeAssociations.LeaveUnchanged
+                .WithPerformance(PerformancePreset.Balanced, WindowsPowerMode.Balanced)
+                .WithPerformance(
+                    PerformancePreset.Performance,
+                    WindowsPowerMode.BestPerformance),
+        };
+        ServiceStatusSnapshot initial = Status(
+            PowerSource.PluggedIn,
+            profiles,
+            PerformancePreset.Balanced);
+        coordinator.Observe(initial);
+        await coordinator.WhenIdleAsync();
+
+        ServiceStatusSnapshot maximum = initial with
+        {
+            Revision = 2,
+            ConfirmedState = initial.ConfirmedState! with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            },
+            DesiredState = initial.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Performance,
+                    SettingValueSource.PowerProfile),
+            },
+        };
+        WindowsPowerModeAutomationObservation unavailable = coordinator.Observe(maximum);
+        await coordinator.WhenIdleAsync();
+
+        WindowsPowerModeAutomationObservation reconciled = coordinator.Observe(maximum with
+        {
+            Revision = 3,
+            ConfirmedState = maximum.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Performance,
+                Fans = FanMode.Automatic,
+            },
+        });
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(WindowsPowerModeAutomationObservation.IgnoredUnavailable, unavailable);
+        Assert.Equal(WindowsPowerModeAutomationObservation.ApplyScheduled, reconciled);
+        Assert.Equal(2, controller.Requests.Count);
+        Assert.Equal(
+            (PowerSource.PluggedIn, WindowsPowerMode.BestPerformance),
+            controller.Requests[1]);
+    }
+
+    [Fact]
     public async Task DesiredPerformanceWithoutConfirmedReadback_DoesNotRetargetWindows()
     {
         var controller = new FakeController();
@@ -304,9 +380,10 @@ public sealed class WindowsPowerModeAutomationCoordinatorTests
         ProfileSet profiles,
         PerformancePreset? confirmedPerformance,
         long revision = 1,
-        SessionControlAccess controlAccess = SessionControlAccess.Active) => new(
+        SessionControlAccess controlAccess = SessionControlAccess.Active,
+        bool deviceVerified = true) => new(
         Revision: revision,
-        DeviceVerified: true,
+        DeviceVerified: deviceVerified,
         WritesBlocked: false,
         PotentialControllers: [],
         ControllerDetectionWarning: null,

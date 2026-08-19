@@ -45,7 +45,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   of an AC, USB-C, or battery profile. Dashboard changes, saved-profile
   transitions, and Fn+P now update Windows only after the laptop preset is
   confirmed. Profile schema 15, export schema 10, and service IPC 47 migrate
-  unambiguous existing associations and leave conflicts unchanged.
+  unambiguous existing associations and leave conflicts unchanged. Because
+  AC and USB-C commonly shared one laptop preset but different Windows-mode
+  choices, existing associations may need to be set again after upgrading.
 - Advanced the firmware-smoke snapshot schema from 7 to 8 for observed-only
   Thunderbolt and touchpad inventory metadata.
 - Expanded the RZ09-0581 BIOS 4.00 USB-C profile to exact 45 W, 60 W, 65 W,

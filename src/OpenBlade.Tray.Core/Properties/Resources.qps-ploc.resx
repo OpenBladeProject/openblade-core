@@ -657,6 +657,9 @@
   <data name="Used whenever {0} is selected. {1}" xml:space="preserve">
     <value>[!! Úséd whénévér {0} ís séléctéd. {1} ~~~~~ !!]</value>
   </data>
+  <data name="Leaves the Windows setting unchanged whenever {0} is selected." xml:space="preserve">
+    <value>[!! Léávés thé Windows séttíng únchángéd whénévér {0} ís séléctéd. ~~~~~~~~~ !!]</value>
+  </data>
   <data name="Keyboard" xml:space="preserve">
     <value>[!! Kéýbóárd ~~~ !!]</value>
   </data>
