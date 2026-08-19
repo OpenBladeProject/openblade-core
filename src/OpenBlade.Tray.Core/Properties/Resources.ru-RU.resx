@@ -390,8 +390,8 @@
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
     <value>Настройте показания в реальном времени, запуск при входе и управление подсветкой.</value>
   </data>
-  <data name="Configure theme, accent color, navigation, and tray text." xml:space="preserve">
-    <value>Настройте тему, цвет акцента, навигацию и текст значка в области уведомлений.</value>
+  <data name="Configure language, theme, accent color, navigation, and tray text." xml:space="preserve">
+    <value>Настройте язык, тему, цвет акцента, навигацию и текст значка в области уведомлений.</value>
   </data>
   <data name="Connection, active settings, and the live readings you selected." xml:space="preserve">
     <value>Подключение, активные параметры и выбранные вами показания в реальном времени.</value>
@@ -1283,5 +1283,17 @@
   </data>
   <data name="Fragment.Top" xml:space="preserve">
     <value>сверху</value>
+  </data>
+  <data name="Follow system" xml:space="preserve">
+    <value>Следовать системным настройкам</value>
+  </data>
+  <data name="English" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="Simplified Chinese" xml:space="preserve">
+    <value>Упрощённый китайский</value>
+  </data>
+  <data name="Russian" xml:space="preserve">
+    <value>Русский</value>
   </data>
 </root>

@@ -390,8 +390,8 @@
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
     <value>配置实时读数、登录和灯光所有权。</value>
   </data>
-  <data name="Configure theme, accent color, navigation, and tray text." xml:space="preserve">
-    <value>配置主题、强调色、导航和托盘文本。</value>
+  <data name="Configure language, theme, accent color, navigation, and tray text." xml:space="preserve">
+    <value>配置语言、主题、强调色、导航和托盘文本。</value>
   </data>
   <data name="Connection, active settings, and the live readings you selected." xml:space="preserve">
     <value>连接、活动设置以及您选择的实时读数。</value>
@@ -1283,5 +1283,17 @@
   </data>
   <data name="Fragment.Top" xml:space="preserve">
     <value>上</value>
+  </data>
+  <data name="Follow system" xml:space="preserve">
+    <value>跟随系统</value>
+  </data>
+  <data name="English" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="Simplified Chinese" xml:space="preserve">
+    <value>简体中文</value>
+  </data>
+  <data name="Russian" xml:space="preserve">
+    <value>俄语</value>
   </data>
 </root>

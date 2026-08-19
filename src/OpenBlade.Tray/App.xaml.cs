@@ -68,7 +68,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     static App()
     {
-        ApplyLocalizationEnvironmentOverride();
+        ApplyLocalizationPreference();
     }
 
     public bool ExitRequested => exitLifecycle?.ExitRequested == true;
@@ -344,9 +344,15 @@ public partial class App : Microsoft.UI.Xaml.Application
         Environment.Exit(0);
     }
 
-    private static void ApplyLocalizationEnvironmentOverride()
+    private static void ApplyLocalizationPreference()
     {
         string? language = RequestedLocalizationLanguage();
+        if (string.IsNullOrWhiteSpace(language))
+        {
+            UiLanguagePreference preference =
+                UiPreferenceStore.CreateDefault().LoadLanguagePreference();
+            language = UiLanguagePreferencePolicy.ResolveCultureName(preference);
+        }
         if (string.IsNullOrWhiteSpace(language))
         {
             return;
@@ -406,6 +412,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 "lighting",
                 "display",
                 "settings",
+                "settings-appearance",
                 "about",
             };
             string? requestedPage = Environment.GetEnvironmentVariable(
@@ -428,8 +435,22 @@ public partial class App : Microsoft.UI.Xaml.Application
                     StringComparison.Ordinal));
             foreach (string destination in destinations)
             {
-                snapshotMainWindow.SelectLocalizationSnapshotPage(destination);
+                string navigationDestination = string.Equals(
+                    destination,
+                    "settings-appearance",
+                    StringComparison.Ordinal)
+                    ? "settings"
+                    : destination;
+                snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination);
                 await WaitForSnapshotLayoutAsync();
+                if (string.Equals(
+                    destination,
+                    "settings-appearance",
+                    StringComparison.Ordinal))
+                {
+                    snapshotMainWindow.ShowLocalizationSnapshotSettingsAppearance();
+                    await WaitForSnapshotLayoutAsync();
+                }
                 await SaveSnapshotAsync(
                     snapshotMainWindow.Content,
                     Path.Combine(resolvedDirectory, $"main-{destination}.png"));

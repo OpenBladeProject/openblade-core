@@ -1886,4 +1886,13 @@ OpenBlade did not retry any stop request.</value>
   <data name="TrayIconMenu_Open" xml:space="preserve">
     <value>Open</value>
   </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorAppLanguage.AccessibleName" xml:space="preserve">
+    <value>App language</value>
+  </data>
+  <data name="MainWindow_TextBlockAppLanguage.Text" xml:space="preserve">
+    <value>App language</value>
+  </data>
+  <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
+    <value>Use your Windows display language, or choose a language. Restart OpenBlade to apply changes.</value>
+  </data>
 </root>

@@ -1886,4 +1886,13 @@ OpenBlade не повторяла запросы на остановку.</value
   <data name="TrayIconMenu_Open" xml:space="preserve">
     <value>Открыть</value>
   </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorAppLanguage.AccessibleName" xml:space="preserve">
+    <value>Язык приложения</value>
+  </data>
+  <data name="MainWindow_TextBlockAppLanguage.Text" xml:space="preserve">
+    <value>Язык приложения</value>
+  </data>
+  <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
+    <value>Используйте язык интерфейса Windows или выберите язык. Перезапустите OpenBlade, чтобы применить изменения.</value>
+  </data>
 </root>

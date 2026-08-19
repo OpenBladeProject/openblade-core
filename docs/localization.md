@@ -20,10 +20,17 @@ Production supports these Windows UI cultures:
 - Simplified Chinese (China): `zh-CN`
 - Russian (Russia): `ru-RU`
 
-The tray, Tray.Core presentation, graphical installer, and native setup choose
-the current Windows UI culture automatically. OpenBlade does not persist a
-separate language preference. If a culture or individual resource cannot be
-resolved, the user-facing text falls back to the authoritative en-US value.
+Settings > Appearance > App language offers `Follow system`, English,
+Simplified Chinese, and Russian. `Follow system` is the default and uses the current Windows UI
+culture. An explicit choice is stored for the current user and applies to the
+tray and Tray.Core the next time the tray starts; existing WinUI resources and
+already-created presentation strings are not switched in place. Number, date,
+and regional formatting continue to use the Windows regional culture.
+
+The graphical installer and native setup remain independent processes and
+always follow the Windows UI culture. If a culture or individual resource
+cannot be resolved, user-facing text falls back to the authoritative en-US
+value.
 
 The en-US catalogs are authoritative. The English text left beside an `x:Uid`
 in WinUI XAML is a design-time fallback and must match the catalog. The

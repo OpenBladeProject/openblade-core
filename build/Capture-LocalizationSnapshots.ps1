@@ -72,6 +72,7 @@ try {
             'lighting',
             'display',
             'settings',
+            'settings-appearance',
             'about',
             'tray-dashboard')) {
         $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $trayPage

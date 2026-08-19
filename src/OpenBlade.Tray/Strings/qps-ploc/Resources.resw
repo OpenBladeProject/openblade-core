@@ -1886,4 +1886,13 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="TrayIconMenu_Open" xml:space="preserve">
     <value>[!! Ópén ~~ !!]</value>
   </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorAppLanguage.AccessibleName" xml:space="preserve">
+    <value>[!! Ápp lángúágé ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockAppLanguage.Text" xml:space="preserve">
+    <value>[!! Ápp lángúágé ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
+    <value>[!! Úsé ýóúr Windows díspláý lángúágé, ór chóósé á lángúágé. Réstárt OpenBlade tó ápplý chángés. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

@@ -7649,6 +7649,27 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task LanguagePreference_OffersSystemChineseAndRussianChoices()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+        var changed = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        viewModel.SelectedLanguageOption = viewModel.LanguageSelectionOptions.Single(option =>
+            option.Preference == UiLanguagePreference.Russian);
+
+        Assert.Equal(UiLanguagePreference.Russian, viewModel.LanguagePreference);
+        Assert.Equal("Russian", viewModel.SelectedLanguageOption.Label);
+        Assert.Equal(
+            Enum.GetValues<UiLanguagePreference>(),
+            viewModel.LanguageSelectionOptions.Select(option => option.Preference));
+        Assert.Contains(nameof(MainViewModel.LanguagePreference), changed);
+        Assert.Contains(nameof(MainViewModel.SelectedLanguageOption), changed);
+    }
+
+    [Fact]
     public async Task ExportDiagnosticsCommand_IsConnectedOnlyAndWorksDuringReadOnlyConflict()
     {
         var client = new FakeServiceClient();
