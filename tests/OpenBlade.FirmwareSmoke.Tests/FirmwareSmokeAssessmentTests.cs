@@ -840,7 +840,7 @@ public sealed class FirmwareSmokeAssessmentTests
             HyperBoostAccess: DeviceFeatureAccess.ReadWrite.ToString(),
             CoolingPadSupportAccess: DeviceFeatureAccess.ObservedOnly.ToString(),
             HyperBoostWithoutCoolingPadAccess:
-                DeviceFeatureAccess.ObservedOnly.ToString())
+                DeviceFeatureAccess.ReadWrite.ToString())
         {
             HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
                 DeviceFeatureAccess.ObservedOnly,

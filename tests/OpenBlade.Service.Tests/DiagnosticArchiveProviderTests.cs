@@ -22,9 +22,9 @@ public sealed class DiagnosticArchiveProviderTests
             {
                 SupportsKeyboardBrightness = true,
                 SupportsPlaybackMuteIndicator = true,
-                HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
                 HyperBoostWithoutCoolingPadAccess =
-                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
                 HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
                     DeviceFeatureAccess.ObservedOnly,
                     DeviceFeatureAccess.ObservedOnly,
@@ -147,10 +147,10 @@ public sealed class DiagnosticArchiveProviderTests
             DeviceFeatureAccess.ObservedOnly.ToString(),
             configuration.RootElement.GetProperty("capability.lampArrayLightingAccess").GetString());
         Assert.Equal(
-            DeviceFeatureAccess.ObservedOnly.ToString(),
+            DeviceFeatureAccess.ReadWrite.ToString(),
             configuration.RootElement.GetProperty("capability.hyperBoostAccess").GetString());
         Assert.Equal(
-            DeviceFeatureAccess.ObservedOnly.ToString(),
+            DeviceFeatureAccess.ReadWrite.ToString(),
             configuration.RootElement
                 .GetProperty("capability.hyperBoostWithoutCoolingPadAccess")
                 .GetString());
@@ -208,15 +208,15 @@ public sealed class DiagnosticArchiveProviderTests
             capabilities.RootElement.GetProperty("lighting.lampArray.write").GetBoolean());
         Assert.True(
             capabilities.RootElement.GetProperty("performance.hyperBoost.observed").GetBoolean());
-        Assert.False(
+        Assert.True(
             capabilities.RootElement.GetProperty("performance.hyperBoost.read").GetBoolean());
-        Assert.False(
+        Assert.True(
             capabilities.RootElement.GetProperty("performance.hyperBoost.write").GetBoolean());
         Assert.True(
             capabilities.RootElement
                 .GetProperty("performance.hyperBoost.withoutCoolingPad.observed")
                 .GetBoolean());
-        Assert.False(
+        Assert.True(
             capabilities.RootElement
                 .GetProperty("performance.hyperBoost.withoutCoolingPad.write")
                 .GetBoolean());
@@ -260,7 +260,7 @@ public sealed class DiagnosticArchiveProviderTests
                 .GetProperty(
                     "performance.hyperBoost.withoutCoolingPad.gate.adapterTransition")
                 .GetBoolean());
-        Assert.False(
+        Assert.True(
             capabilities.RootElement
                 .GetProperty(
                     "performance.hyperBoost.withoutCoolingPad.gate.lowPowerLifecycle")

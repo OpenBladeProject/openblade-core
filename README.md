@@ -46,13 +46,12 @@ through Balanced. Direct Quiet and Performance transitions are implemented but
 remain observed-only pending their dedicated hardware validations. HyperBoost
 on the `RZ09-0528` is also observed-only.
 
-Pad-less HyperBoost is represented separately on the exact `RZ09-0581` and
-remains observed-only. The complete production route is implemented behind a
-reviewed evidence manifest. Exact-head immediate, 60-second no-load,
-Steel Nomad load, and full-power-to-USB-C transition validations have passed;
-installed unexpected-exit recovery has also passed. The installed low-power
-run failed because the Service did not observe the required sleep/resume
-boundary, so write access stays closed.
+Pad-less HyperBoost is read/write on the exact `RZ09-0581` from the same
+Balanced and Automatic-fan baseline with an admitted 280 W or 330 W full-power
+adapter. Its reviewed evidence covers immediate restoration, sustained no-load
+and Steel Nomad operation, adapter transition, Modern Standby recovery, and
+unexpected-exit recovery. Physical pad absence is checked independently before
+the write and throughout validations that require continuous absence.
 
 On the `RZ09-0581`, OpenBlade discovers the exact `1532:0F43` cooling pad
 and can store Auto, Fixed, or Smart Fan Curve intent. Fixed plans cover 500 to

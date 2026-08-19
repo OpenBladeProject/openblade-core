@@ -53,6 +53,10 @@
       Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-low-power-negative.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
+      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-low-power-recovery.json"
+      Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-low-power-recovery.json"
+      CopyToOutputDirectory="PreserveNewest" />
+    <None
       Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json"
       Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json"
       CopyToOutputDirectory="PreserveNewest" />

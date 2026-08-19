@@ -24,22 +24,25 @@ All notable changes to OpenBlade are documented in this file. The project follow
   repeats that identity check on every sample, and never starts or stops it. An
   exact validation-marked Service build can arm the
   installed low-power and crash-recovery checks through a separate
-  administrator-only request. Normal builds and the Tray remain observed-only.
+  administrator-only request.
   The validators accept the reviewed 280 W OEM and 330 W SlimQ full-power
-  classifications, never retry an indeterminate write, and do not enable
-  padless production control.
+  classifications and never retry an indeterminate write.
 - Recorded successful exact-device padless HyperBoost validation for the
   immediate transition, 60-second no-load dwell, 60-second Steel Nomad load,
   and FullPower330W-to-USB-C100W transition. Each run confirmed paired mode 7,
   exact Balanced restoration, and post-restoration pad absence. Installed
   unexpected-exit recovery also passed with one journal-backed restoration.
-  The installed sleep/resume run did not trigger Service low-power recovery,
-  so production write access remains closed on that failed gate.
+  After adding the Modern Standby display-off fallback, installed sleep/resume
+  recovery passed with one exact Balanced restoration and no retry. The
+  reviewed manifest now admits pad-less production control for this exact
+  host, baseline, and adapter set.
 - Added the fail-closed production plumbing for pad-less HyperBoost on the exact
   `RZ09-0581`: a separate capability, defense-in-depth physical-absence checks,
   Balanced-only routing, admitted full-power adapter checks, and durable
-  ownership-path recovery. The embedded evidence manifest keeps access
-  observed-only until every remaining hardware and lifecycle gate is reviewed.
+  ownership-path recovery. Every embedded evidence gate is now reviewed, so
+  the separate capability advertises read/write access on the exact admitted
+  host while all identity, absence, controller, readback, and restoration
+  checks remain fail-closed.
 - Added confirmed HyperBoost control for the exact `RZ09-0581`. The
   currently admitted transition starts directly from confirmed Balanced
   performance with Automatic laptop fans and requires the exact Razer Laptop

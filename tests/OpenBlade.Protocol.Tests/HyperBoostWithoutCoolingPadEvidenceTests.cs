@@ -61,8 +61,8 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.NotNull(manifest.Gates.ReviewedLoadValidated.Evidence);
         Assert.True(manifest.Gates.AdapterTransitionValidated.Validated);
         Assert.NotNull(manifest.Gates.AdapterTransitionValidated.Evidence);
-        Assert.False(manifest.Gates.LowPowerLifecycleValidated.Validated);
-        Assert.Null(manifest.Gates.LowPowerLifecycleValidated.Evidence);
+        Assert.True(manifest.Gates.LowPowerLifecycleValidated.Validated);
+        Assert.NotNull(manifest.Gates.LowPowerLifecycleValidated.Evidence);
         Assert.True(manifest.Gates.CrashRecoveryValidated.Validated);
         Assert.NotNull(manifest.Gates.CrashRecoveryValidated.Evidence);
     }
@@ -112,6 +112,9 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         "2026-08-19-rz09-0581-hyperboost-padless-low-power-negative.json",
         "8871085E3825A7CFF8549CB844C5DD620FC67E8DF50F7990AF63B59B24F1A984")]
     [InlineData(
+        "2026-08-19-rz09-0581-hyperboost-padless-low-power-recovery.json",
+        "7C074F286C2B99D2DE7BAABDA2B0356D14A1B5BB3657C3C165589402BEDF1A91")]
+    [InlineData(
         "2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json",
         "D202CB0BDF516FD9E3B4393FD6FDE28A7916F5909C884FA44829051686652207")]
     public void CurrentValidationEvidenceHash_MatchesPinnedCommittedArtifactBytes(
@@ -127,7 +130,7 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
     }
 
     [Fact]
-    public void CurrentEvidence_UnlocksLifecycleValidationButNotProductionWrites()
+    public void CurrentEvidence_AdmitsProductionWrites()
     {
         HyperBoostWithoutCoolingPadEvidenceGates evidence =
             HyperBoostWithoutCoolingPadEvidenceGates.Current;
@@ -140,10 +143,10 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.True(evidence.ReviewedLoadPlanReviewed);
         Assert.True(evidence.ReviewedLoadValidated);
         Assert.True(evidence.AdapterTransitionValidated);
-        Assert.False(evidence.LowPowerLifecycleValidated);
+        Assert.True(evidence.LowPowerLifecycleValidated);
         Assert.True(evidence.CrashRecoveryValidated);
         Assert.True(evidence.LifecycleValidationReady);
-        Assert.False(evidence.WriteAdmitted);
+        Assert.True(evidence.WriteAdmitted);
     }
 
     [Theory]
