@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 46;
+    public const int ProtocolVersion = 47;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -106,6 +106,7 @@ public static class IpcMessageCodec
         await stream.ReadExactlyAsync(payload, cancellationToken).ConfigureAwait(false);
         try
         {
+            ValidateRequiredWindowsPowerModesPayload<T>(payload);
             return JsonSerializer.Deserialize<T>(payload, SerializerOptions)
                 ?? throw new InvalidDataException("IPC message body is invalid.");
         }
@@ -143,7 +144,8 @@ public static class IpcMessageCodec
                 (observe.RequestedLiveReadings & ~LiveReadingSensors.All) == 0,
             SubscribeStatusRequest => true,
             ExportDiagnosticsRequest => true,
-            UpdateProfilesRequest update => update.Profiles is not null,
+            UpdateProfilesRequest update => update.Profiles is not null
+                && ValidWindowsPowerModes(update.Profiles.WindowsPowerModes),
             SetPerformanceOverrideRequest set =>
                 set.Value is null
                 || set.Value.IsWellFormed(),
@@ -355,6 +357,11 @@ public static class IpcMessageCodec
             throw InvalidStatus("profile set is missing");
         }
 
+        if (!ValidWindowsPowerModes(status.Profiles.WindowsPowerModes))
+        {
+            throw InvalidStatus("Windows power mode associations are malformed");
+        }
+
         if (status.DesiredState is null)
         {
             throw InvalidStatus("desired state is missing");
@@ -524,6 +531,62 @@ public static class IpcMessageCodec
         && LightingSettingsValidation.IsWellFormed(profiles.Battery.Lighting)
         && profiles.UsbC is not null
         && LightingSettingsValidation.IsWellFormed(profiles.UsbC.Lighting);
+
+    private static bool ValidWindowsPowerModes(
+        WindowsPowerModeAssociations? associations) =>
+        associations is not null
+        && Enum.GetValues<PerformancePreset>().All(performance =>
+            associations.ForPerformance(performance) is not { } mode
+            || Enum.IsDefined(mode));
+
+    private static void ValidateRequiredWindowsPowerModesPayload<T>(byte[] payload)
+    {
+        using JsonDocument document = JsonDocument.Parse(payload);
+        JsonElement root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+        if (typeof(T) == typeof(ServiceRequest)
+            && root.TryGetProperty("operation", out JsonElement operation)
+            && operation.ValueKind == JsonValueKind.String
+            && operation.ValueEquals("updateProfiles"))
+        {
+            RequireWindowsPowerModes(root);
+            return;
+        }
+
+        if (typeof(T) != typeof(ServiceServerFrame)
+            || !root.TryGetProperty("frame", out JsonElement frame)
+            || frame.ValueKind != JsonValueKind.String)
+        {
+            return;
+        }
+
+        if (frame.ValueEquals("statusEvent")
+            && root.TryGetProperty("status", out JsonElement eventStatus)
+            && eventStatus.ValueKind == JsonValueKind.Object)
+        {
+            RequireWindowsPowerModes(eventStatus);
+        }
+        else if (frame.ValueEquals("response")
+            && root.TryGetProperty("status", out JsonElement responseStatus)
+            && responseStatus.ValueKind == JsonValueKind.Object)
+        {
+            RequireWindowsPowerModes(responseStatus);
+        }
+    }
+
+    private static void RequireWindowsPowerModes(JsonElement containingObject)
+    {
+        if (!containingObject.TryGetProperty("profiles", out JsonElement profiles)
+            || profiles.ValueKind != JsonValueKind.Object
+            || !profiles.TryGetProperty("windowsPowerModes", out _))
+        {
+            throw new InvalidDataException(
+                "IPC message body is missing Windows power mode associations.");
+        }
+    }
 
     private static bool ValidLiveReadings(LiveReadings readings) =>
         readings.BatteryPowerFlowMilliwatts is null

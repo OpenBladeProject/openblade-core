@@ -27,6 +27,10 @@ public sealed class ProfileDefaultsTests
         Assert.Null(profiles.PluggedIn.WindowsPowerMode);
         Assert.Null(profiles.Battery.WindowsPowerMode);
         Assert.Null(profiles.UsbC.WindowsPowerMode);
+        Assert.All(
+            Enum.GetValues<PerformancePreset>(),
+            performance => Assert.Null(
+                profiles.WindowsPowerModes.ForPerformance(performance)));
         Assert.Equal(80, profiles.BatteryPolicy.ChargeLimitPercent);
     }
 

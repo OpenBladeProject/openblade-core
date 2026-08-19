@@ -29,7 +29,6 @@ public sealed class ProfileStoreTests : IDisposable
                 GpuClockTuning = new GpuClockTuningSettings(
                     Enabled: true,
                     new GpuClockOffsetSettings(125, 500)),
-                WindowsPowerMode = WindowsPowerMode.BestPerformance,
                 LaptopBehavior = new LaptopBehaviorProfileSettings(
                     StartupAnimationEnabled: true,
                     FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
@@ -40,6 +39,9 @@ public sealed class ProfileStoreTests : IDisposable
                         BlockAltTab: true),
                 },
             },
+            WindowsPowerModes = defaults.WindowsPowerModes.WithPerformance(
+                PerformancePreset.Custom,
+                WindowsPowerMode.BestPerformance),
         };
 
         await store.SaveAsync(expected, CancellationToken.None);
@@ -74,6 +76,9 @@ public sealed class ProfileStoreTests : IDisposable
 
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.Null(result.Profiles.PluggedIn.WindowsPowerMode);
+        Assert.Equal(
+            WindowsPowerModeAssociations.LeaveUnchanged,
+            result.Profiles.WindowsPowerModes);
         Assert.True(result.Profiles.PluggedIn.BatteryProtectionEnabled);
         Assert.Contains(
             $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
@@ -82,7 +87,7 @@ public sealed class ProfileStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Load_Schema12PreservesConfiguredWindowsPowerModes()
+    public async Task Load_Schema12MigratesDistinctPresetAssociations()
     {
         Directory.CreateDirectory(storeDirectory);
         string path = Path.Combine(storeDirectory, "profiles.json");
@@ -91,6 +96,7 @@ public sealed class ProfileStoreTests : IDisposable
         {
             PluggedIn = defaults.PluggedIn with
             {
+                Performance = PerformancePreset.Performance,
                 WindowsPowerMode = WindowsPowerMode.BestPerformance,
             },
             Battery = defaults.Battery with
@@ -112,16 +118,71 @@ public sealed class ProfileStoreTests : IDisposable
             CancellationToken.None);
 
         Assert.False(result.RecoveredFromInvalidFile);
-        Assert.Equal(WindowsPowerMode.BestPerformance,
-            result.Profiles.PluggedIn.WindowsPowerMode);
-        Assert.Equal(WindowsPowerMode.BestPowerEfficiency,
-            result.Profiles.Battery.WindowsPowerMode);
-        Assert.Equal(WindowsPowerMode.Balanced,
-            result.Profiles.UsbC.WindowsPowerMode);
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            result.Profiles.WindowsPowerModes.Performance);
+        Assert.Equal(
+            WindowsPowerMode.BestPowerEfficiency,
+            result.Profiles.WindowsPowerModes.BatterySaver);
+        Assert.Equal(
+            WindowsPowerMode.Balanced,
+            result.Profiles.WindowsPowerModes.Balanced);
+        Assert.Null(result.Profiles.PluggedIn.WindowsPowerMode);
+        Assert.Null(result.Profiles.Battery.WindowsPowerMode);
+        Assert.Null(result.Profiles.UsbC.WindowsPowerMode);
         Assert.Contains(
             $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
             await File.ReadAllTextAsync(path),
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Load_Schema14ConflictingSamePresetLeavesWindowsUnchanged()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet conflicting = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                WindowsPowerMode = WindowsPowerMode.BestPerformance,
+            },
+            UsbC = defaults.UsbC with
+            {
+                WindowsPowerMode = WindowsPowerMode.Balanced,
+            },
+        };
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(
+                new ProfileDocument(
+                    ProfileStore.LegacyWindowsPowerModeSchemaVersion,
+                    conflicting),
+                ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Null(result.Profiles.WindowsPowerModes.Balanced);
+    }
+
+    [Fact]
+    public void ReadDocument_CurrentSchemaRejectsMissingWindowsPowerModes()
+    {
+        JsonObject document = JsonSerializer.SerializeToNode(
+            new ProfileDocument(
+                ProfileStore.CurrentSchemaVersion,
+                ProfileDefaults.CreateSafeDefaults()),
+            ProfileStore.SerializerOptions)!.AsObject();
+        document["profiles"]!.AsObject().Remove("windowsPowerModes");
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            new ProfileStore("unused").ReadDocument(
+                JsonSerializer.SerializeToUtf8Bytes(document)));
+
+        Assert.Contains("missing Windows power mode associations", exception.Message);
     }
 
     [Fact]

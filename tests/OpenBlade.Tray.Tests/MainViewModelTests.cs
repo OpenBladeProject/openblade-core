@@ -109,10 +109,10 @@ public sealed class MainViewModelTests
             Revision = 2,
             Profiles = initial.Profiles with
             {
-                PluggedIn = initial.Profiles.PluggedIn with
-                {
-                    WindowsPowerMode = WindowsPowerMode.Balanced,
-                },
+                WindowsPowerModes = initial.Profiles.WindowsPowerModes
+                    .WithPerformance(
+                        PerformancePreset.Balanced,
+                        WindowsPowerMode.Balanced),
             },
         });
         await WaitUntilAsync(() =>
@@ -151,19 +151,82 @@ public sealed class MainViewModelTests
         Assert.Equal(
             WindowsPowerMode.BestPerformance,
             viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.Contains("Balanced", viewModel.SelectedWindowsPowerModeDescription);
         Assert.Equal("Leave unchanged", viewModel.PluggedInProfilePresentation.WindowsPowerMode.Text);
         Assert.True(viewModel.PluggedInProfilePresentation.WindowsPowerMode.IsPending);
         Assert.Equal(
             "Best performance",
             viewModel.PluggedInProfilePresentation.WindowsPowerMode.PendingText);
+        Assert.True(viewModel.UsbCProfilePresentation.WindowsPowerMode.IsPending);
+        Assert.Equal(
+            "Best performance",
+            viewModel.UsbCProfilePresentation.WindowsPowerMode.PendingText);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand)
             .ExecuteAsync(null);
 
         Assert.Equal(
             WindowsPowerMode.BestPerformance,
-            client.LastProfiles?.PluggedIn.WindowsPowerMode);
+            client.LastProfiles?.WindowsPowerModes.Balanced);
+        Assert.Null(client.LastProfiles?.PluggedIn.WindowsPowerMode);
         Assert.False(viewModel.HasThermalProfileDraft);
+    }
+
+    [Fact]
+    public async Task WindowsPowerMode_DraftFollowsLaptopPresetAndKeepsOtherAssociations()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.Balanced);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(
+            WindowsPowerMode.Balanced,
+            client.LastProfiles?.WindowsPowerModes.Balanced);
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            client.LastProfiles?.WindowsPowerModes.Performance);
+    }
+
+    [Fact]
+    public async Task WindowsPowerMode_DraftSurvivesPowerSourceTransition()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+        client.Publish(initial with
+        {
+            Revision = 2,
+            ActivePowerSource = PowerSource.UsbC,
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+
+        Assert.True(viewModel.HasThermalProfileDraft);
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand)
+            .ExecuteAsync(null);
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            client.LastProfiles?.WindowsPowerModes.Balanced);
     }
 
     [Fact]
