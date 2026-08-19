@@ -384,9 +384,12 @@ public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
 public sealed class FirmwareUpdateAvailableEventArgs(
     string signature,
     string summary,
-    Uri officialSupportUri) : EventArgs
+    Uri officialSupportUri,
+    string? legacySignature = null) : EventArgs
 {
     public string Signature { get; } = signature;
+
+    public string? LegacySignature { get; } = legacySignature;
 
     public string Summary { get; } = summary;
 
@@ -837,6 +840,13 @@ public sealed class FirmwareUpdateAssistantViewModel :
                 page.PublishesTouchpadFirmware
                     ? versions.TouchpadStatus
                     : RazerPublishedFirmwareVersionStatus.NotListed;
+            RazerPublishedFirmwareVersions applicableVersions = versions with
+            {
+                ThunderboltVersion = thunderboltVersion,
+                ThunderboltStatus = thunderboltStatus,
+                TouchpadVersion = touchpadVersion,
+                TouchpadStatus = touchpadStatus,
+            };
             PublishedThunderboltVersion = PublishedValue(
                 thunderboltVersion,
                 thunderboltStatus);
@@ -855,7 +865,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
             cachedVbiosStatus = vbios.Status;
             cachedThunderboltStatus = thunderboltStatus;
             cachedTouchpadStatus = touchpadStatus;
-            PresentUpdateAvailability(page, versions, vbios);
+            PresentUpdateAvailability(page, applicableVersions, vbios);
             lastSuccessfulCheckAt = timeProvider.GetUtcNow();
             retryAfter = null;
             Notify(nameof(LastSuccessfulCheckAt));
@@ -1013,14 +1023,17 @@ public sealed class FirmwareUpdateAssistantViewModel :
             return;
         }
 
-        string signature = string.Join(
+        string legacySignature = string.Join(
             '|',
             page.ModelNumber,
             $"bios={NormalizeCachedVersion(published.BiosVersion) ?? "-"}",
             $"ec={NormalizeCachedVersion(published.EcVersion) ?? "-"}",
             $"mcu={NormalizeCachedVersion(published.McuVersion) ?? "-"}",
             $"vbios={NormalizeCachedVersion(vbios.Version) ?? "-"}",
-            $"vbiosGpu={NormalizeVbiosGpuName(vbios.GpuName) ?? "-"}",
+            $"vbiosGpu={NormalizeVbiosGpuName(vbios.GpuName) ?? "-"}");
+        string signature = string.Join(
+            '|',
+            legacySignature,
             $"thunderbolt={NormalizeCachedVersion(published.ThunderboltVersion) ?? "-"}",
             $"touchpad={NormalizeCachedVersion(published.TouchpadVersion) ?? "-"}");
         UpdateAvailable?.Invoke(
@@ -1028,7 +1041,8 @@ public sealed class FirmwareUpdateAssistantViewModel :
             new FirmwareUpdateAvailableEventArgs(
                 signature,
                 UpdateAvailableSummary,
-                page.OfficialPageUri));
+                page.OfficialPageUri,
+                legacySignature));
     }
 
     private static void AddNewerComponent(

@@ -1318,12 +1318,27 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         object? sender,
         FirmwareUpdateAvailableEventArgs args)
     {
-        if (!IsNotificationEnabled(NotificationCategory.FirmwareUpdates)
-            || string.Equals(
+        if (!IsNotificationEnabled(NotificationCategory.FirmwareUpdates))
+        {
+            return;
+        }
+
+        if (string.Equals(
                 lastNotifiedFirmwareSignature,
                 args.Signature,
                 StringComparison.Ordinal))
         {
+            return;
+        }
+
+        if (args.LegacySignature is not null
+            && string.Equals(
+                lastNotifiedFirmwareSignature,
+                args.LegacySignature,
+                StringComparison.Ordinal))
+        {
+            lastNotifiedFirmwareSignature = args.Signature;
+            QueuePreferenceSave();
             return;
         }
 

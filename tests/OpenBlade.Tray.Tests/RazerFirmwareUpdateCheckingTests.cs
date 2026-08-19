@@ -429,6 +429,29 @@ public sealed class RazerFirmwareUpdateCheckingTests
     }
 
     [Fact]
+    public async Task ViewModel_ExcludesUnpublishedFirmwareFromUpdateSignature()
+    {
+        FirmwareUpdateAvailableEventArgs first =
+            await GetRz090528UpdateAsync("69.1", "1.07");
+        FirmwareUpdateAvailableEventArgs second =
+            await GetRz090528UpdateAsync("70.0", "1.08");
+
+        Assert.Equal(first.Signature, second.Signature);
+        Assert.Equal(first.LegacySignature, second.LegacySignature);
+        Assert.EndsWith(
+            "|thunderbolt=-|touchpad=-",
+            first.Signature,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            $"{RazerBladeModelCatalog.Rz090528ModelNumber}"
+                + "|bios=2.03|ec=1.09|mcu=1.09|vbios=-|vbiosGpu=-",
+            first.LegacySignature);
+        Assert.Equal(
+            "Newer BIOS 2.03 firmware is available from Razer.",
+            first.Summary);
+    }
+
+    [Fact]
     public async Task ViewModel_SelectsAndComparesOnlyTheInstalledGpuVbios()
     {
         await using var viewModel = new FirmwareUpdateAssistantViewModel(
@@ -868,6 +891,33 @@ public sealed class RazerFirmwareUpdateCheckingTests
             new FixedTimeProvider(Now));
         UpdateModel(viewModel);
         return viewModel;
+    }
+
+    private static async Task<FirmwareUpdateAvailableEventArgs> GetRz090528UpdateAsync(
+        string thunderboltVersion,
+        string touchpadVersion)
+    {
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            new StubClient(new(
+                "2.03",
+                "1.09",
+                "1.09",
+                ThunderboltVersion: thunderboltVersion,
+                ThunderboltStatus: RazerPublishedFirmwareVersionStatus.Listed,
+                TouchpadVersion: touchpadVersion,
+                TouchpadStatus: RazerPublishedFirmwareVersionStatus.Listed)));
+        viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "2.02",
+            "1.09",
+            "1.9.0.0",
+            "Unavailable",
+            RazerBladeModelCatalog.Rz090528ModelNumber));
+        FirmwareUpdateAvailableEventArgs? update = null;
+        viewModel.UpdateAvailable += (_, args) => update = args;
+
+        await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
+
+        return Assert.IsType<FirmwareUpdateAvailableEventArgs>(update);
     }
 
     private static void UpdateModel(FirmwareUpdateAssistantViewModel viewModel) =>
