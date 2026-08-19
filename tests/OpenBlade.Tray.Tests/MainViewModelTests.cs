@@ -6976,6 +6976,24 @@ public sealed class MainViewModelTests
         client.Publish(stable with
         {
             Revision = stable.Revision + 2,
+            FirmwareCompatibility = FirmwareCompatibilityStatus.ModelScoped,
+            Firmware = stable.Firmware! with { BiosVersion = "99.99" },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.DashboardTestedPlatformWarningMessage.Contains(
+                "BIOS 99.99",
+                StringComparison.Ordinal));
+
+        Assert.True(viewModel.IsConnected);
+        Assert.False(viewModel.HasIncompatibleFirmware);
+        Assert.Equal(
+            "Untested platform configuration",
+            viewModel.PlatformCompatibilityWarningTitle);
+        Assert.NotEqual("Incompatible firmware", viewModel.PerformanceSourceLabel);
+
+        client.Publish(stable with
+        {
+            Revision = stable.Revision + 3,
             DeviceVerified = false,
             WritesBlocked = true,
             FirmwareCompatibility = FirmwareCompatibilityStatus.UntestedBlocked,
@@ -7012,7 +7030,7 @@ public sealed class MainViewModelTests
 
         client.Publish(stable with
         {
-            Revision = stable.Revision + 3,
+            Revision = stable.Revision + 4,
             DeviceVerified = false,
             WritesBlocked = true,
             AllowUntestedFirmware = true,
@@ -7032,7 +7050,7 @@ public sealed class MainViewModelTests
 
         client.Publish(stable with
         {
-            Revision = stable.Revision + 4,
+            Revision = stable.Revision + 5,
             DeviceVerified = false,
             FirmwareCompatibility = FirmwareCompatibilityStatus.Unknown,
             Firmware = stable.Firmware! with { ModelNumber = "RZ09-9999ABC" },
@@ -7047,7 +7065,7 @@ public sealed class MainViewModelTests
 
         client.Publish(stable with
         {
-            Revision = stable.Revision + 5,
+            Revision = stable.Revision + 6,
             Firmware = new FirmwareVersions(
                 "2.02",
                 "1.09",

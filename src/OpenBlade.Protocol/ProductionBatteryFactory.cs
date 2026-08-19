@@ -269,19 +269,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 
     internal static ProductionBatteryReadEvidence
         GetRz090581ProductionBatteryReadEvidence(
-            HostIdentityReadResult exactIdentity) => exactIdentity is
-            {
-                Evidence:
-                {
-                    Manufacturer: "Razer",
-                    ProductName: "Blade 16 - RZ09-0581",
-                    Sku: "RZ09-05819EN4",
-                    BiosVersion: TargetBladeDevice.BiosVersion,
-                },
-                Failure: null,
-                FirmwareCompatibility: HostFirmwareCompatibility.Tested,
-            }
-            ? ProductionBatteryReadEvidence.Rz090581Bios301
+            HostIdentityReadResult exactIdentity) =>
+        IsExactModelScopedRz090581Identity(exactIdentity)
+            ? ProductionBatteryReadEvidence.Rz090581ModelScoped
             : ProductionBatteryReadEvidence.Production;
 
     internal static GpuOverclockCapabilities? GetRz090581GpuOverclockCapabilities(
@@ -290,7 +280,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             Evidence: not null,
             Failure: null,
             FirmwareCompatibility: HostFirmwareCompatibility.Tested
-                or HostFirmwareCompatibility.UntestedAllowed,
+                or HostFirmwareCompatibility.UntestedAllowed
+                or HostFirmwareCompatibility.ModelScoped,
         }
             // These are the Synapse-visible policy-envelope bounds observed on
             // the exact RZ09-0581. GPU tuning is performed through NVIDIA's API,
@@ -318,45 +309,17 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             AdapterPowerState.FullPower280W,
         };
 
-        if (exactIdentity is
-            {
-                Evidence:
-                {
-                    Manufacturer: "Razer",
-                    ProductName: "Blade 16 - RZ09-0581",
-                    Sku: "RZ09-05819EN4",
-                    BiosVersion: "4.00",
-                },
-                Failure: null,
-                FirmwareCompatibility: HostFirmwareCompatibility.Tested,
-            })
-        {
-            states.Add(AdapterPowerState.UsbCPower45W);
-            states.Add(AdapterPowerState.UsbCPower60W);
-            states.Add(AdapterPowerState.UsbCPower65W);
-            states.Add(AdapterPowerState.UsbCPower80W);
-            states.Add(AdapterPowerState.UsbCPower90W);
-        }
-
-        if (exactIdentity is not
-            {
-                Evidence:
-                {
-                    Manufacturer: "Razer",
-                    ProductName: "Blade 16 - RZ09-0581",
-                    Sku: "RZ09-05819EN4",
-                    BiosVersion: "3.01" or "4.00",
-                },
-                Failure: null,
-                FirmwareCompatibility: HostFirmwareCompatibility.Tested,
-            })
+        if (!IsExactModelScopedRz090581Identity(exactIdentity))
         {
             return states;
         }
 
-        // Keep this explicit BIOS set even though Tested currently implies it.
-        // Adding a general supported BIOS must not silently widen this adapter
-        // admission before its own policy is reviewed.
+        states.Add(AdapterPowerState.UsbCPower45W);
+        states.Add(AdapterPowerState.UsbCPower60W);
+        states.Add(AdapterPowerState.UsbCPower65W);
+        states.Add(AdapterPowerState.UsbCPower80W);
+        states.Add(AdapterPowerState.UsbCPower90W);
+
         try
         {
             if ((isSlimQAdmissionApproved ?? SlimQ330WAdapterAdmissionSource.IsAdmitted)())
@@ -372,6 +335,22 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 
         return states;
     }
+
+    private static bool IsExactModelScopedRz090581Identity(
+        HostIdentityReadResult exactIdentity) => exactIdentity is
+        {
+            Evidence:
+            {
+                Manufacturer: "Razer",
+                ProductName: "Blade 16 - RZ09-0581",
+                Sku: "RZ09-05819EN4",
+                BiosVersion: { Length: > 0 },
+            },
+            Failure: null,
+            FirmwareCompatibility: HostFirmwareCompatibility.Tested
+                or HostFirmwareCompatibility.ModelScoped
+                or HostFirmwareCompatibility.UntestedAllowed,
+        };
 
     private static HidSessionResult<IProductionBatteryPort> Failure(
         HidSessionFailureKind failure) => new(null, failure);

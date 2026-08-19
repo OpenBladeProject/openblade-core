@@ -18,6 +18,13 @@ internal enum HostFirmwareCompatibility
     Tested,
     UntestedBlocked,
     UntestedAllowed,
+    ModelScoped,
+}
+
+internal enum FirmwareAdmissionScope
+{
+    ExactVersions,
+    ModelScoped,
 }
 
 internal readonly record struct WindowsPlatformEvidence(
@@ -30,7 +37,8 @@ internal readonly record struct ExpectedHostIdentity(
     string Manufacturer,
     string ProductName,
     string Sku,
-    IReadOnlyList<string> BiosVersions);
+    IReadOnlyList<string> ValidatedBiosVersions,
+    FirmwareAdmissionScope FirmwareAdmission = FirmwareAdmissionScope.ExactVersions);
 
 internal interface IRegistryValueSource
 {
@@ -87,12 +95,14 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
         "Razer",
         "Blade 16 - RZ09-0581",
         "RZ09-05819EN4",
-        TargetBladeDevice.SupportedBiosVersions);
+        TargetBladeDevice.ValidatedBiosVersions,
+        FirmwareAdmissionScope.ModelScoped);
     internal static readonly ExpectedHostIdentity Rz090528Identity = new(
         "Razer",
         "Blade 16 - RZ09-0528",
         "RZ09-05289EN4",
-        Array.AsReadOnly(new[] { "2.02" }));
+        Array.AsReadOnly(new[] { "2.02" }),
+        FirmwareAdmissionScope.ModelScoped);
     private readonly IRegistryValueSource registry;
     private readonly IWindowsPlatformEvidenceSource platform;
     private readonly ExpectedHostIdentity expected;
@@ -124,9 +134,10 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
         if (string.IsNullOrWhiteSpace(expected.Manufacturer)
             || string.IsNullOrWhiteSpace(expected.ProductName)
             || string.IsNullOrWhiteSpace(expected.Sku)
-            || expected.BiosVersions is null
-            || expected.BiosVersions.Count == 0
-            || expected.BiosVersions.Any(string.IsNullOrWhiteSpace))
+            || expected.ValidatedBiosVersions is null
+            || expected.ValidatedBiosVersions.Count == 0
+            || expected.ValidatedBiosVersions.Any(string.IsNullOrWhiteSpace)
+            || !Enum.IsDefined(expected.FirmwareAdmission))
         {
             throw new ArgumentException("Expected host identity must be complete.", nameof(expected));
         }
@@ -154,10 +165,12 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
             return new(null, HidSessionFailureKind.IdentityBlocked);
         }
 
-        bool testedFirmware = expected.BiosVersions.Contains(
+        bool testedFirmware = expected.ValidatedBiosVersions.Contains(
             biosVersion,
             StringComparer.Ordinal);
-        if (!testedFirmware && compatibilityPolicy?.AllowUntestedFirmware != true)
+        if (!testedFirmware
+            && expected.FirmwareAdmission == FirmwareAdmissionScope.ExactVersions
+            && compatibilityPolicy?.AllowUntestedFirmware != true)
         {
             return new(
                 null,
@@ -170,7 +183,9 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
             null,
             testedFirmware
                 ? HostFirmwareCompatibility.Tested
-                : HostFirmwareCompatibility.UntestedAllowed);
+                : expected.FirmwareAdmission == FirmwareAdmissionScope.ModelScoped
+                    ? HostFirmwareCompatibility.ModelScoped
+                    : HostFirmwareCompatibility.UntestedAllowed);
     }
 
     internal static bool IsExactRz090528WindowsHost() =>

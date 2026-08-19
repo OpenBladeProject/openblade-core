@@ -234,6 +234,7 @@ public enum FirmwareCompatibilityStatus
     Tested,
     UntestedBlocked,
     UntestedAllowed,
+    ModelScoped,
 }
 
 public enum DisplayBrightnessHidAvailability

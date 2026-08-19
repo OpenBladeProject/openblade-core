@@ -122,7 +122,7 @@ internal sealed class WindowsRzAmdOverclockProbe : IConnectedCpuPowerServiceProb
             || !WindowsHostIdentitySource.IsExactRz090528WindowsHost())
         {
             throw new PlatformNotSupportedException(
-                "The read-only CPU power probe is restricted to the exact RZ09-0528 BIOS 2.02 Windows host.");
+                "The read-only CPU power probe is restricted to the exact supported RZ09-0528 Windows host.");
         }
         if (requireSynapseInactiveBeforeLoad)
         {

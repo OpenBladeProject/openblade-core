@@ -14,6 +14,7 @@ type static class OpenBlade.Protocol.BatteryValidationFactory
   method static OpenBlade.Protocol.ITemporaryFullChargeValidationRunFactory CreateWindowsTemporaryFullChargeValidation()
 type enum OpenBlade.Protocol.BatteryValidationFirmwareCompatibility
   field System.Int32 value__
+  field const OpenBlade.Protocol.BatteryValidationFirmwareCompatibility ModelScoped = 4
   field const OpenBlade.Protocol.BatteryValidationFirmwareCompatibility Tested = 1
   field const OpenBlade.Protocol.BatteryValidationFirmwareCompatibility Unknown = 0
   field const OpenBlade.Protocol.BatteryValidationFirmwareCompatibility UntestedAllowed = 3
