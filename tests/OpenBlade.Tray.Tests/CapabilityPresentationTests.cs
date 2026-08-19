@@ -1324,17 +1324,17 @@ public sealed class CapabilityPresentationTests
         XElement startService = NamedElement(document, "Button", "StartOpenBladeButton");
         Assert.Contains(troubleshooting.Descendants(), element => ReferenceEquals(element, startService));
         Assert.Equal("OnStartOpenBlade", Attribute(startService, "Click"));
-        Assert.Equal("Start OpenBlade", Attribute(startService, "AutomationProperties.Name"));
+        Assert.Equal("Start service", Attribute(startService, "AutomationProperties.Name"));
         Assert.Contains(startService.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "Start OpenBlade");
+            && Attribute(element, "Text") == "Start service");
         XElement startProgress = NamedElement(
             document,
             "ProgressRing",
             "StartOpenBladeProgressRing");
         Assert.Contains(startService.Descendants(), element => ReferenceEquals(element, startProgress));
         Assert.Equal("False", Attribute(startProgress, "IsActive"));
-        Assert.Equal("0", Attribute(startProgress, "Opacity"));
+        Assert.Equal("Collapsed", Attribute(startProgress, "Visibility"));
         Assert.Equal("Polite", Attribute(startService, "AutomationProperties.LiveSetting"));
         Assert.Contains(
             "ViewModel.IsServiceUnavailable",
@@ -1388,6 +1388,8 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(troubleshooting.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") is "Versions" or "Laptop" or "Firmware");
+        Assert.DoesNotContain(troubleshooting.Descendants(), element =>
+            element.Name.LocalName == "Ellipse");
         XElement settingsPage = NamedElement(document, "ScrollViewer", "SettingsPage");
         XElement aboutPage = NamedElement(document, "ScrollViewer", "AboutPage");
         XElement settingsUpdates = NamedElement(

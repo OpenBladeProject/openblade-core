@@ -190,11 +190,6 @@
                 <Setter Property="TextWrapping" Value="Wrap" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
-            <Style x:Key="TroubleshootingStatusDotStyle" TargetType="Ellipse">
-                <Setter Property="Width" Value="8" />
-                <Setter Property="Height" Value="8" />
-                <Setter Property="VerticalAlignment" Value="Center" />
-            </Style>
             <Style x:Key="CardTitleStyle"
                    TargetType="TextBlock"
                    BasedOn="{StaticResource BodyStrongTextBlockStyle}" />
@@ -4454,30 +4449,24 @@
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                             <TextBlock x:Uid="MainWindow_TextBlockOpenBladeService" Text="OpenBlade service" Style="{StaticResource TroubleshootingLabelStyle}" />
                                             <Grid Grid.Column="1">
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                                <Grid VerticalAlignment="Center">
-                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
-                                                             Fill="{ThemeResource SystemFillColorCriticalBrush}"
-                                                             Margin="0,0,7,0"
-                                                             Visibility="{x:Bind ViewModel.IsServiceUnavailable, Mode=OneWay}" />
-                                                </Grid>
-                                                <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TroubleshootingServiceStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
-                                                <Button x:Uid="MainWindow_StartOpenBladeButtonText" x:Name="StartOpenBladeButton"
-                                                        Grid.Column="2"
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <TextBlock Text="{x:Bind ViewModel.TroubleshootingServiceStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
+                                                <Button x:Uid="MainWindow_StartServiceButtonText" x:Name="StartOpenBladeButton"
+                                                        Grid.Column="1"
                                                         Margin="12,0,0,0"
                                                         VerticalAlignment="Center"
                                                         Visibility="{x:Bind ViewModel.IsServiceUnavailable, Mode=OneWay}"
                                                         Click="OnStartOpenBlade"
                                                         AutomationProperties.LiveSetting="Polite"
-                                                        AutomationProperties.Name="Start OpenBlade">
+                                                        AutomationProperties.Name="Start service">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <ProgressRing x:Name="StartOpenBladeProgressRing"
                                                                       Width="14"
                                                                       Height="14"
                                                                       IsActive="False"
-                                                                      Opacity="0"
+                                                                      Visibility="Collapsed"
                                                                       AutomationProperties.AccessibilityView="Raw" />
-                                                        <TextBlock x:Uid="MainWindow_TextBlockStartOpenBlade" Text="Start OpenBlade" />
+                                                        <TextBlock x:Uid="MainWindow_TextBlockStartService" Text="Start service" />
                                                     </StackPanel>
                                                 </Button>
                                             </Grid>
@@ -4494,14 +4483,6 @@
                                                                   Margin="0,0,7,0"
                                                                   IsActive="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}"
                                                                   Visibility="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}" />
-                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
-                                                             Fill="{ThemeResource SystemFillColorCautionBrush}"
-                                                             Margin="0,0,7,0"
-                                                             Visibility="{x:Bind ViewModel.IsReadinessWarning, Mode=OneWay}" />
-                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
-                                                             Fill="{ThemeResource SystemFillColorCriticalBrush}"
-                                                             Margin="0,0,7,0"
-                                                             Visibility="{x:Bind ViewModel.IsReadinessError, Mode=OneWay}" />
                                                 </Grid>
                                                 <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TroubleshootingControlsStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                             </Grid>

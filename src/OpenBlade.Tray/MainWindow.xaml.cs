@@ -3666,8 +3666,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             Title = LocalizedResources.Get("MainWindow_Shutdown_Title", "Shut down OpenBlade?"),
             Content = LocalizedResources.Get(
                 "MainWindow_Shutdown_Content",
-                "This stops the app, display helper, and hardware service. "
-                    + "Reopen OpenBlade and use Start OpenBlade in troubleshooting to turn it back on."),
+                "This stops the app, display helper, and hardware service. Reopen OpenBlade and use Start service in troubleshooting to turn it back on."),
             PrimaryButtonText = LocalizedResources.Get("MainWindow_Shutdown_PrimaryButton", "Shut down"),
             CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
             DefaultButton = ContentDialogButton.Close,
@@ -3742,10 +3741,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         AutomationProperties.SetName(
             StartOpenBladeButton,
             isStarting
-                ? LocalizedResources.Get("MainWindow_Start_Starting", "Starting OpenBlade")
-                : LocalizedResources.Get("MainWindow_Start_Button", "Start OpenBlade"));
+                ? LocalizedResources.Get("MainWindow_Start_Starting", "Starting service")
+                : LocalizedResources.Get("MainWindow_Start_Button", "Start service"));
         StartOpenBladeProgressRing.IsActive = isStarting;
-        StartOpenBladeProgressRing.Opacity = isStarting ? 1 : 0;
+        StartOpenBladeProgressRing.Visibility = isStarting
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private async void OnExportProfiles(object sender, RoutedEventArgs args)
