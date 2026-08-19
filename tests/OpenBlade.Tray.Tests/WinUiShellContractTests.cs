@@ -620,6 +620,10 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.HasIncompatibleFirmware, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.AllowUntestedFirmware, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);

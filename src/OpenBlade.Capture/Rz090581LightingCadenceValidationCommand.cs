@@ -199,7 +199,7 @@ internal sealed class Rz090581LightingCadenceValidationCommand
         if (host is null
             || identityResult.Failure is not null
             || !IsExactHost(host.Value)
-            || !TargetBladeDevice.IsSupportedBiosVersion(host.Value.BiosVersion)
+            || !TargetBladeDevice.IsValidatedBiosVersion(host.Value.BiosVersion)
             || !options.Confirmation.Equals(
                 ExactTargetConfirmation(host.Value.BiosVersion),
                 StringComparison.Ordinal))

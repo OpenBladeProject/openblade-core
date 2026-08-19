@@ -149,6 +149,9 @@ public sealed class WindowsHostIdentitySourceTests
                 "2.02"),
             result.Evidence);
         Assert.Null(result.Failure);
+        Assert.Equal(
+            HostFirmwareCompatibility.Tested,
+            result.FirmwareCompatibility);
 
         registry.Values[$"{BiosKey}|BIOSVersion"] = "4.00";
         registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "4.00";

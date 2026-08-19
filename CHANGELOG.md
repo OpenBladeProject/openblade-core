@@ -43,7 +43,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Made production admission model-scoped by default for the exact supported
   laptop and SKU. Validated BIOS versions remain provenance, while explicit
-  firmware-specific capability gates can still require exact versions.
+  firmware-specific capability gates can still require exact versions. On the
+  RZ09-0581 this intentionally makes the already-admitted 45 W, 60 W, 65 W,
+  80 W, 90 W, OEM 280 W, and manifest-backed SlimQ 330 W adapter classes
+  available across same-model firmware; their captured BIOS versions remain
+  evidence provenance rather than runtime restrictions.
 - Advanced service IPC from 46 to 47 for the model-scoped firmware
   compatibility state.
 - Advanced the firmware-smoke snapshot schema from 7 to 8 for observed-only

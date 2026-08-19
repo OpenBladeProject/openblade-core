@@ -20,7 +20,7 @@
   },
   "evidence": {
     "captureCommit": "7cb784d93de51bb8ef3fc6ac0a97fc80010d7b19",
-    "validatedBiosVersion": "4.00",
+    "captureBiosVersion": "4.00",
     "annotation": "captures/annotations/2026-08-12-rz09-0581-slimq-330w-production-admission.json",
     "annotationSha256": "6402DFA16478DDB80A6E7CE0442612E34215E4FC05DC400EA83EA2EDE3C148A6",
     "identicalReadCount": 10,
