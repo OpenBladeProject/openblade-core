@@ -1880,9 +1880,6 @@ OpenBlade did not retry any stop request.</value>
   <data name="TrayDashboardWindow_WindowTitle" xml:space="preserve">
     <value>OpenBlade quick controls</value>
   </data>
-  <data name="TrayIconMenu_DoubleClick" xml:space="preserve">
-    <value>Double-click</value>
-  </data>
   <data name="TrayIconMenu_Exit" xml:space="preserve">
     <value>Exit</value>
   </data>
