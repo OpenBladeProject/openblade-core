@@ -1,0 +1,1889 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="App_ExitDialog_Heading" xml:space="preserve">
+    <value>Выйти из OpenBlade?</value>
+  </data>
+  <data name="App_ExitDialog_KeepRunning" xml:space="preserve">
+    <value>Оставить фоновые функции включёнными</value>
+  </data>
+  <data name="App_ExitDialog_ShutDown" xml:space="preserve">
+    <value>Завершить работу полностью</value>
+  </data>
+  <data name="App_ExitDialog_Text" xml:space="preserve">
+    <value>Выберите, должны ли подсветка клавиатуры, горячие клавиши, профили и автоматизация продолжать работать в фоновом режиме.</value>
+  </data>
+  <data name="App_ExitError_Heading" xml:space="preserve">
+    <value>Не удалось завершить работу OpenBlade</value>
+  </data>
+  <data name="App_ExitError_Text" xml:space="preserve">
+    <value>Не удалось завершить работу OpenBlade: {0}</value>
+  </data>
+  <data name="App_PerformanceNotification_ChangedBody" xml:space="preserve">
+    <value>Режим производительности изменён.</value>
+  </data>
+  <data name="App_PerformanceNotification_ChangedTitle" xml:space="preserve">
+    <value>Режим производительности изменён</value>
+  </data>
+  <data name="App_PerformanceNotification_CurrentMode" xml:space="preserve">
+    <value>Текущий режим: {0}</value>
+  </data>
+  <data name="App_PerformanceNotification_FailedBody" xml:space="preserve">
+    <value>OpenBlade не удалось применить выбранный режим.</value>
+  </data>
+  <data name="App_PerformanceNotification_FailedTitle" xml:space="preserve">
+    <value>Не удалось изменить режим производительности</value>
+  </data>
+  <data name="Common_Cancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="Common_Close" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="Common_Done" xml:space="preserve">
+    <value>Готово</value>
+  </data>
+  <data name="Common_ErrorWithDetails" xml:space="preserve">
+    <value>{0}</value>
+  </data>
+  <data name="Common_Import" xml:space="preserve">
+    <value>Импортировать</value>
+  </data>
+  <data name="Common_Save" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="Common_Working" xml:space="preserve">
+    <value>Выполняется…</value>
+  </data>
+  <data name="DiagnosticArchivePicker_Title" xml:space="preserve">
+    <value>Экспорт диагностики OpenBlade</value>
+  </data>
+  <data name="DiagnosticArchivePicker_ZipArchives" xml:space="preserve">
+    <value>ZIP-архивы</value>
+  </data>
+  <data name="DisplayBrightnessOsd_WindowTitle" xml:space="preserve">
+    <value>Яркость OpenBlade</value>
+  </data>
+  <data name="InstalledComponentVersion_Unavailable" xml:space="preserve">
+    <value>Недоступно</value>
+  </data>
+  <data name="MainWindow_AboutNavigationItemText.Content" xml:space="preserve">
+    <value>О программе</value>
+  </data>
+  <data name="MainWindow_AboutTestedPlatformWarningText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Предупреждение о совместимости версии системы</value>
+  </data>
+  <data name="MainWindow_Accent_Custom" xml:space="preserve">
+    <value>Пользовательский</value>
+  </data>
+  <data name="MainWindow_Accent_CustomSummary" xml:space="preserve">
+    <value>Пользовательский ({0})</value>
+  </data>
+  <data name="MainWindow_Accent_OpenBladeGreen" xml:space="preserve">
+    <value>Зелёный OpenBlade</value>
+  </data>
+  <data name="MainWindow_Accent_OpenBladeGreenSummary" xml:space="preserve">
+    <value>Зелёный OpenBlade (#47E10C)</value>
+  </data>
+  <data name="MainWindow_Accent_Windows" xml:space="preserve">
+    <value>Акцентный цвет Windows</value>
+  </data>
+  <data name="MainWindow_AccentPicker_PrimaryButton" xml:space="preserve">
+    <value>Использовать цвет</value>
+  </data>
+  <data name="MainWindow_AccentPicker_Title" xml:space="preserve">
+    <value>Выберите акцентный цвет</value>
+  </data>
+  <data name="MainWindow_AddTrayDashboardControlButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Добавить элемент управления панели в области уведомлений</value>
+  </data>
+  <data name="MainWindow_AddTrayDashboardSliderButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Добавить регулировку панели в области уведомлений</value>
+  </data>
+  <data name="MainWindow_AttentionIndicatorText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Показать сведения о предупреждении</value>
+  </data>
+  <data name="MainWindow_BatteryProtectionToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Защита аккумулятора</value>
+  </data>
+  <data name="MainWindow_BorderNotificationPreferences.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Параметры уведомлений</value>
+  </data>
+  <data name="MainWindow_ButtonBackToSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Назад к параметрам</value>
+  </data>
+  <data name="MainWindow_ButtonCheckCurrentState.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Проверить текущее состояние</value>
+  </data>
+  <data name="MainWindow_ButtonCheckForUpdates.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Проверить официальные версии прошивки Razer</value>
+  </data>
+  <data name="MainWindow_ButtonCheckForUpdates.Content" xml:space="preserve">
+    <value>Проверить обновления</value>
+  </data>
+  <data name="MainWindow_ButtonCheckNow.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Проверить обновления OpenBlade на GitHub</value>
+  </data>
+  <data name="MainWindow_ButtonCheckNow.Content" xml:space="preserve">
+    <value>Проверить сейчас</value>
+  </data>
+  <data name="MainWindow_ButtonChooseColor.Content" xml:space="preserve">
+    <value>Выбрать цвет</value>
+  </data>
+  <data name="MainWindow_ButtonChooseKeyboardColor.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Выбрать цвет клавиатуры</value>
+  </data>
+  <data name="MainWindow_ButtonChooseSecondKeyboardColor.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Выбрать второй цвет клавиатуры</value>
+  </data>
+  <data name="MainWindow_ButtonCloseGPUApps.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Закрыть приложения, использующие GPU NVIDIA</value>
+  </data>
+  <data name="MainWindow_ButtonCloseGPUApps.Content" xml:space="preserve">
+    <value>Закрыть приложения GPU</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Настроить панель мониторинга</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize.Content" xml:space="preserve">
+    <value>Настроить</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize2.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Настроить страницу ноутбука</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize2.Content" xml:space="preserve">
+    <value>Настроить</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize3.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Настроить страницу подсветки</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize3.Content" xml:space="preserve">
+    <value>Настроить</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize4.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Настроить страницу дисплея</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize4.Content" xml:space="preserve">
+    <value>Настроить</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize5.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Настроить страницу параметров</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize5.Content" xml:space="preserve">
+    <value>Настроить</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize6.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Настроить панель в области уведомлений</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize6.Content" xml:space="preserve">
+    <value>Настроить</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize7.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Настроить страницу «О программе»</value>
+  </data>
+  <data name="MainWindow_ButtonCustomize7.Content" xml:space="preserve">
+    <value>Настроить</value>
+  </data>
+  <data name="MainWindow_ButtonExportDiagnostics.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Экспортировать диагностику</value>
+  </data>
+  <data name="MainWindow_ButtonExportDiagnostics.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Экспортировать диагностику</value>
+  </data>
+  <data name="MainWindow_ButtonExportProfiles.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Экспортировать профили в JSON</value>
+  </data>
+  <data name="MainWindow_ButtonExportProfiles.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Экспортировать сохранённые профили в формате JSON</value>
+  </data>
+  <data name="MainWindow_ButtonExportProfiles.Content" xml:space="preserve">
+    <value>Экспортировать профили</value>
+  </data>
+  <data name="MainWindow_ButtonImportKeyboardLightingPreset.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Импортировать предустановку подсветки клавиатуры</value>
+  </data>
+  <data name="MainWindow_ButtonImportKeyboardLightingPreset.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Импортировать предустановку подсветки клавиатуры</value>
+  </data>
+  <data name="MainWindow_ButtonImportProfiles.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Импортировать профили из JSON</value>
+  </data>
+  <data name="MainWindow_ButtonImportProfiles.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Импортировать сохранённые профили из JSON</value>
+  </data>
+  <data name="MainWindow_ButtonImportProfiles.Content" xml:space="preserve">
+    <value>Импортировать профили</value>
+  </data>
+  <data name="MainWindow_ButtonReapplyOpenBladeSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Повторно применить параметры OpenBlade</value>
+  </data>
+  <data name="MainWindow_ButtonReset.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Сбросить панель в области уведомлений</value>
+  </data>
+  <data name="MainWindow_ButtonReset.Content" xml:space="preserve">
+    <value>Сбросить</value>
+  </data>
+  <data name="MainWindow_ButtonResetToDefault.Content" xml:space="preserve">
+    <value>Восстановить значения по умолчанию</value>
+  </data>
+  <data name="MainWindow_ButtonShutDownOpenBlade.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Завершить работу OpenBlade</value>
+  </data>
+  <data name="MainWindow_ButtonUseProfileSettings.Content" xml:space="preserve">
+    <value>Использовать параметры профиля</value>
+  </data>
+  <data name="MainWindow_ButtonUseProfileSettings2.Content" xml:space="preserve">
+    <value>Использовать параметры профиля</value>
+  </data>
+  <data name="MainWindow_ButtonUseProfileSettings3.Content" xml:space="preserve">
+    <value>Использовать параметры профиля</value>
+  </data>
+  <data name="MainWindow_ButtonUseProfileSettings4.Content" xml:space="preserve">
+    <value>Использовать параметры профиля</value>
+  </data>
+  <data name="MainWindow_ComboBoxProfileToReview.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Профиль для просмотра</value>
+  </data>
+  <data name="MainWindow_CustomizeDashboard_AutomationName" xml:space="preserve">
+    <value>Карточки панели мониторинга</value>
+  </data>
+  <data name="MainWindow_CustomizeDashboard_Instructions" xml:space="preserve">
+    <value>Отметьте карточки для отображения. Перетащите их в нужном порядке.</value>
+  </data>
+  <data name="MainWindow_CustomizeDashboard_Title" xml:space="preserve">
+    <value>Настройка панели мониторинга</value>
+  </data>
+  <data name="MainWindow_CustomizePage_AutomationName" xml:space="preserve">
+    <value>Разделы страницы «{0}»</value>
+  </data>
+  <data name="MainWindow_CustomizePage_Instructions" xml:space="preserve">
+    <value>Отметьте разделы для отображения. Перетащите их в нужном порядке.</value>
+  </data>
+  <data name="MainWindow_CustomizePage_Title" xml:space="preserve">
+    <value>Настройка раздела «{0}»</value>
+  </data>
+  <data name="MainWindow_DashboardAudioMeterColorBoostSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Усиление цвета аудиоиндикатора</value>
+  </data>
+  <data name="MainWindow_DashboardAudioMeterDecaySliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Сглаживание тихих изменений аудиоиндикатора</value>
+  </data>
+  <data name="MainWindow_DashboardChargeLimitSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Предел заряда</value>
+  </data>
+  <data name="MainWindow_DashboardCustomCpuSelectorText.AccessibleName" xml:space="preserve">
+    <value>Пользовательский уровень CPU</value>
+  </data>
+  <data name="MainWindow_DashboardCustomGpuSelectorText.AccessibleName" xml:space="preserve">
+    <value>Пользовательский уровень GPU</value>
+  </data>
+  <data name="MainWindow_DashboardFanModeSelectorText.AccessibleName" xml:space="preserve">
+    <value>Режим вентиляторов</value>
+  </data>
+  <data name="MainWindow_DashboardLightingBrightnessSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Яркость подсветки клавиатуры</value>
+  </data>
+  <data name="MainWindow_DashboardPerformanceSelectorText.AccessibleName" xml:space="preserve">
+    <value>Производительность ноутбука</value>
+  </data>
+  <data name="MainWindow_DisplayColorProfilePickerText.AccessibleName" xml:space="preserve">
+    <value>Цветовой профиль дисплея</value>
+  </data>
+  <data name="MainWindow_DisplayHdrToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Использовать HDR</value>
+  </data>
+  <data name="MainWindow_DisplayNavigationItemText.Content" xml:space="preserve">
+    <value>Дисплей</value>
+  </data>
+  <data name="MainWindow_DisplayRefreshRatePickerText.AccessibleName" xml:space="preserve">
+    <value>Частота обновления дисплея</value>
+  </data>
+  <data name="MainWindow_ExpanderCPUCurve.Header" xml:space="preserve">
+    <value>Кривая CPU</value>
+  </data>
+  <data name="MainWindow_ExpanderGPUCurve.Header" xml:space="preserve">
+    <value>Кривая GPU</value>
+  </data>
+  <data name="MainWindow_FirmwareOverride_CheckBox" xml:space="preserve">
+    <value>Игнорировать несовпадение прошивки и всё равно запустить</value>
+  </data>
+  <data name="MainWindow_FirmwareOverride_Warning" xml:space="preserve">
+    <value>Принудительное управление может отправить записанные команды прошивке, для которой они не были проверены. Точная проверка идентификаторов ноутбука и USB по-прежнему обязательна.</value>
+  </data>
+  <data name="MainWindow_FixedFanSpeedSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Фиксированная скорость вентиляторов</value>
+  </data>
+  <data name="MainWindow_FunctionKeyPrimarySelectorText.AccessibleName" xml:space="preserve">
+    <value>Настроить поведение функциональных клавиш</value>
+  </data>
+  <data name="MainWindow_GamingModeToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Игровой режим</value>
+  </data>
+  <data name="MainWindow_GpuApps_AfterCloseUnavailable" xml:space="preserve">
+    <value>Не удалось проверить активность GPU после закрытия приложений.</value>
+  </data>
+  <data name="MainWindow_GpuApps_AfterForceUnavailable" xml:space="preserve">
+    <value>Не удалось проверить активность GPU после принудительного закрытия приложений.</value>
+  </data>
+  <data name="MainWindow_GpuApps_AppItem" xml:space="preserve">
+    <value>- {0} (PID {1})</value>
+  </data>
+  <data name="MainWindow_GpuApps_AppItemWithReason" xml:space="preserve">
+    <value>- {0} (PID {1}): {2}</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseButton" xml:space="preserve">
+    <value>Закрыть приложения</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseConfirmationIntro" xml:space="preserve">
+    <value>OpenBlade попросит эти приложения завершить работу. Сначала сохраните свою работу.
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_CloseConfirmationTitle" xml:space="preserve">
+    <value>Закрыть приложения, использующие GPU NVIDIA?</value>
+  </data>
+  <data name="MainWindow_GpuApps_ClosedBody" xml:space="preserve">
+    <value>Выбранные приложения освободили используемые ими движки GPU NVIDIA. Переход GPU в спящий режим может занять некоторое время.</value>
+  </data>
+  <data name="MainWindow_GpuApps_ClosedTitle" xml:space="preserve">
+    <value>Приложения GPU закрыты</value>
+  </data>
+  <data name="MainWindow_GpuApps_CountersUnavailable" xml:space="preserve">
+    <value>Счётчики активности GPU Windows недоступны.</value>
+  </data>
+  <data name="MainWindow_GpuApps_FailureItem" xml:space="preserve">
+    <value>- PID {0}: {1}</value>
+  </data>
+  <data name="MainWindow_GpuApps_FailuresHeading" xml:space="preserve">
+    <value>
+
+Обнаруженные ошибки:
+{0}</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceButton" xml:space="preserve">
+    <value>Закрыть принудительно</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceClosedBody" xml:space="preserve">
+    <value>Выбранные приложения были принудительно закрыты. Переход GPU в спящий режим может занять некоторое время.</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceClosedTitle" xml:space="preserve">
+    <value>Приложения GPU принудительно закрыты</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceConfirmationIntro" xml:space="preserve">
+    <value>Эти приложения не закрылись. Принудительное закрытие может привести к потере несохранённой работы.
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_ForceConfirmationTitle" xml:space="preserve">
+    <value>Принудительно закрыть оставшиеся приложения?</value>
+  </data>
+  <data name="MainWindow_GpuApps_KeepRunningButton" xml:space="preserve">
+    <value>Оставить запущенными</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneSafeToClose" xml:space="preserve">
+    <value>Нет приложений, использующих GPU, которые можно безопасно закрыть.
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneToCloseTitle" xml:space="preserve">
+    <value>Нет приложений GPU для закрытия</value>
+  </data>
+  <data name="MainWindow_GpuApps_NoneUsingGpu" xml:space="preserve">
+    <value>Ни одно приложение текущего пользователя не удерживает движок GPU NVIDIA.</value>
+  </data>
+  <data name="MainWindow_GpuApps_NotCloseableHeading" xml:space="preserve">
+    <value>
+
+Нельзя закрыть:
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_SessionAgentFailure" xml:space="preserve">
+    <value>Агенту сеанса не удалось выполнить операцию с приложением GPU: {0}</value>
+  </data>
+  <data name="MainWindow_GpuApps_StillRunningTitle" xml:space="preserve">
+    <value>Приложения GPU всё ещё работают</value>
+  </data>
+  <data name="MainWindow_GpuApps_SurvivorsHeading" xml:space="preserve">
+    <value>Некоторые приложения не удалось закрыть:
+
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_UnavailableTitle" xml:space="preserve">
+    <value>Активность GPU недоступна</value>
+  </data>
+  <data name="MainWindow_GpuClockTuningToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Настройка GPU</value>
+  </data>
+  <data name="MainWindow_GpuCoreClockOffsetSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Смещение частоты ядра GPU</value>
+  </data>
+  <data name="MainWindow_GpuMemoryClockOffsetSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Смещение частоты памяти GPU</value>
+  </data>
+  <data name="MainWindow_HomeNavigationItemText.Content" xml:space="preserve">
+    <value>Панель мониторинга</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenDocumentation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Открыть документацию</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenDocumentation.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Открыть документацию</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenGitHubIssues.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Открыть задачи GitHub</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenGitHubIssues.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Открыть задачи GitHub</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenOfficialRazerFirmwareSupportPage.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Открыть официальную страницу поддержки прошивок Razer</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenOfficialRazerFirmwareSupportPage.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Открыть официальную страницу поддержки прошивок Razer</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenReleaseNotes.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Открыть примечания к выпуску</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenReleaseNotes.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Открыть примечания к выпуску</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenSourceCode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Открыть исходный код</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonOpenSourceCode.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Открыть исходный код</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonViewRelease.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Просмотреть доступный выпуск OpenBlade</value>
+  </data>
+  <data name="MainWindow_HyperlinkButtonViewRelease.Content" xml:space="preserve">
+    <value>Просмотреть выпуск</value>
+  </data>
+  <data name="MainWindow_ImageOpenBladeAppIcon.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Значок приложения OpenBlade</value>
+  </data>
+  <data name="MainWindow_InfoBadgeDashboardHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>На панели мониторинга есть несохранённые изменения</value>
+  </data>
+  <data name="MainWindow_InfoBadgeDisplayHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>В параметрах дисплея есть несохранённые изменения</value>
+  </data>
+  <data name="MainWindow_InfoBadgeLaptopHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>В параметрах ноутбука есть несохранённые изменения</value>
+  </data>
+  <data name="MainWindow_InfoBadgeLightingHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>В параметрах подсветки есть несохранённые изменения</value>
+  </data>
+  <data name="MainWindow_InfoBadgeProfilesHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>В профилях есть несохранённые изменения</value>
+  </data>
+  <data name="MainWindow_ItemsControlTrayDashboardStatusItems.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Элементы состояния панели в области уведомлений</value>
+  </data>
+  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>О функциях Lab</value>
+  </data>
+  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>О функциях Lab</value>
+  </data>
+  <data name="MainWindow_LabFeaturesToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Включить экспериментальные функции Lab</value>
+  </data>
+  <data name="MainWindow_LaptopLogoModeSelectorText.AccessibleName" xml:space="preserve">
+    <value>Подсветка логотипа ноутбука</value>
+  </data>
+  <data name="MainWindow_LaptopNavigationItemText.Content" xml:space="preserve">
+    <value>Ноутбук</value>
+  </data>
+  <data name="MainWindow_LightingDisplayOffToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Выключать подсветку клавиатуры вместе с дисплеем</value>
+  </data>
+  <data name="MainWindow_LightingEffectPickerText.AccessibleName" xml:space="preserve">
+    <value>Эффект подсветки клавиатуры</value>
+  </data>
+  <data name="MainWindow_LightingEffectPickerText.PlaceholderText" xml:space="preserve">
+    <value>Текущий эффект недоступен</value>
+  </data>
+  <data name="MainWindow_LightingIdleTimeoutNumberBoxText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Тайм-аут бездействия подсветки клавиатуры в минутах</value>
+  </data>
+  <data name="MainWindow_LightingIdleTimeoutToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Выключать подсветку клавиатуры после бездействия</value>
+  </data>
+  <data name="MainWindow_LightingImport_Brightness" xml:space="preserve">
+    <value>Яркость {0}%</value>
+  </data>
+  <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
+    <value>В {0} используется эффект {1} с параметром {2}. При импорте он применяется через OpenBlade и сохраняется как несохранённое изменение активного профиля питания.</value>
+  </data>
+  <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
+    <value>Импортировать подсветку клавиатуры?</value>
+  </data>
+  <data name="MainWindow_LightingImport_ControlUnavailable" xml:space="preserve">
+    <value>Управление подсветкой стало недоступно до завершения импорта предустановки.</value>
+  </data>
+  <data name="MainWindow_LightingImport_EffectUnavailable" xml:space="preserve">
+    <value>Эффект {0} сейчас недоступен на этом ноутбуке.</value>
+  </data>
+  <data name="MainWindow_LightingImport_FailedTitle" xml:space="preserve">
+    <value>Не удалось импортировать подсветку клавиатуры</value>
+  </data>
+  <data name="MainWindow_LightingImport_FileTooLarge" xml:space="preserve">
+    <value>Размер выбранного файла подсветки не может превышать {0}.</value>
+  </data>
+  <data name="MainWindow_LightingImport_ImportApplyButton" xml:space="preserve">
+    <value>Импортировать и применить</value>
+  </data>
+  <data name="MainWindow_LightingImport_Off" xml:space="preserve">
+    <value>выкл.</value>
+  </data>
+  <data name="MainWindow_LightingImport_PickerTitle" xml:space="preserve">
+    <value>Импорт подсветки клавиатуры OpenBlade</value>
+  </data>
+  <data name="MainWindow_LightingImport_Warning" xml:space="preserve">
+    <value>
+
+{0}</value>
+  </data>
+  <data name="MainWindow_LightingNavigationItemText.Content" xml:space="preserve">
+    <value>Подсветка</value>
+  </data>
+  <data name="MainWindow_LightingRefreshRateToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Использовать подсветку клавиатуры 60 Гц</value>
+  </data>
+  <data name="MainWindow_LightingUnavailableInfoBarText.Title" xml:space="preserve">
+    <value>Элементы управления подсветкой недоступны</value>
+  </data>
+  <data name="MainWindow_ListViewActiveTrayDashboardAdjustments.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Активные регулировки панели в области уведомлений</value>
+  </data>
+  <data name="MainWindow_ListViewActiveTrayDashboardControls.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Активные элементы управления панели в области уведомлений</value>
+  </data>
+  <data name="MainWindow_ListViewNavigationMenuPages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Страницы меню навигации</value>
+  </data>
+  <data name="MainWindow_ListViewTaskbarHoverLabelContents.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Содержимое подсказки при наведении на панель задач</value>
+  </data>
+  <data name="MainWindow_MainNavigationText.Header" xml:space="preserve">
+    <value>False</value>
+  </data>
+  <data name="MainWindow_NavigationMenuExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Порядок меню навигации</value>
+  </data>
+  <data name="MainWindow_Notification_AppUpdateBody" xml:space="preserve">
+    <value>OpenBlade {0} готов к скачиванию.</value>
+  </data>
+  <data name="MainWindow_Notification_AppUpdateTitle" xml:space="preserve">
+    <value>Доступно обновление OpenBlade</value>
+  </data>
+  <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
+    <value>Обнаружен контроллер Razer</value>
+  </data>
+  <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
+    <value>Доступно обновление прошивки Razer</value>
+  </data>
+  <data name="MainWindow_Notification_OperationFailedTitle" xml:space="preserve">
+    <value>Операция OpenBlade завершилась ошибкой</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileAc" xml:space="preserve">
+    <value>Профиль питания от сети</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileActive" xml:space="preserve">
+    <value>активный профиль питания</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileBattery" xml:space="preserve">
+    <value>Профиль питания от аккумулятора</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileChangedBody" xml:space="preserve">
+    <value>OpenBlade теперь использует {0}.</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileChangedTitle" xml:space="preserve">
+    <value>Профиль питания изменён</value>
+  </data>
+  <data name="MainWindow_Notification_ProfileUsbC" xml:space="preserve">
+    <value>Профиль USB-C</value>
+  </data>
+  <data name="MainWindow_OfficialFirmwareUpdatesCardText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Помощник по официальным обновлениям прошивки Razer</value>
+  </data>
+  <data name="MainWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Ошибка операции</value>
+  </data>
+  <data name="MainWindow_ProfileExport_FailedBody" xml:space="preserve">
+    <value>OpenBlade не удалось сохранить выбранный файл JSON.</value>
+  </data>
+  <data name="MainWindow_ProfileExport_FailedTitle" xml:space="preserve">
+    <value>Не удалось экспортировать профили</value>
+  </data>
+  <data name="MainWindow_ProfileExport_Title" xml:space="preserve">
+    <value>Экспорт профилей OpenBlade</value>
+  </data>
+  <data name="MainWindow_ProfileImport_ConfirmBody" xml:space="preserve">
+    <value>Это заменит сохранённые профили питания от сети, USB-C, аккумулятора и защиты аккумулятора. Текущие параметры оборудования не изменятся, пока вы не примените или не переключите профиль.</value>
+  </data>
+  <data name="MainWindow_ProfileImport_ConfirmTitle" xml:space="preserve">
+    <value>Импортировать профили?</value>
+  </data>
+  <data name="MainWindow_ProfileImport_FailedTitle" xml:space="preserve">
+    <value>Не удалось импортировать профили</value>
+  </data>
+  <data name="MainWindow_ProfileImport_PickerTitle" xml:space="preserve">
+    <value>Импорт профилей OpenBlade</value>
+  </data>
+  <data name="MainWindow_ProfileImport_UnavailableSettings" xml:space="preserve">
+    <value>Импортированные профили содержат параметры, недоступные на этом ноутбуке.</value>
+  </data>
+  <data name="MainWindow_ProfilePicker_JsonFiles" xml:space="preserve">
+    <value>Файлы JSON</value>
+  </data>
+  <data name="MainWindow_ProfileStateBadgeText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Открыть сведения об устранении неполадок</value>
+  </data>
+  <data name="MainWindow_ProfileStateBadgeText.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Просмотреть состояние устройства</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingBatteryProtection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Применение защиты аккумулятора</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingChargeLimit.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Применение предела заряда</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingDisplaySetting.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Применение параметра дисплея</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingFanMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Применение режима вентиляторов</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingLighting.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Применение подсветки</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingPowerMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Применение режима питания</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingTemporaryFullCharge.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Применение временной полной зарядки</value>
+  </data>
+  <data name="MainWindow_ProgressRingCheckingGitHubForUpdates.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Проверка обновлений на GitHub</value>
+  </data>
+  <data name="MainWindow_ProgressRingCheckingRazerForFirmwareVersions.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Проверка версий прошивки Razer</value>
+  </data>
+  <data name="MainWindow_ProgressRingReadingOrApplyingFunctionKeyBehavior.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Чтение или применение поведения функциональных клавиш</value>
+  </data>
+  <data name="MainWindow_ProgressRingReadingOrApplyingGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Чтение или применение игрового режима</value>
+  </data>
+  <data name="MainWindow_ProgressRingReadingOrApplyingStartupAnimation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Чтение или применение анимации запуска</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorAmbientAwarenessScreenRegion.AccessibleName" xml:space="preserve">
+    <value>Область экрана Ambient Awareness</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorAppAccentColor.AccessibleName" xml:space="preserve">
+    <value>Акцентный цвет приложения</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorAppTheme.AccessibleName" xml:space="preserve">
+    <value>Тема приложения</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorBreathingColorMode.AccessibleName" xml:space="preserve">
+    <value>Цветовой режим «Дыхание»</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorFirmwareUpdateCheckInterval.AccessibleName" xml:space="preserve">
+    <value>Интервал проверки обновлений прошивки</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorLightingDirection.AccessibleName" xml:space="preserve">
+    <value>Направление подсветки</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorLiveReadingsRefreshInterval.AccessibleName" xml:space="preserve">
+    <value>Интервал обновления показаний в реальном времени</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorReactiveLightingDuration.AccessibleName" xml:space="preserve">
+    <value>Длительность реактивной подсветки</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorStarlightColorMode.AccessibleName" xml:space="preserve">
+    <value>Цветовой режим «Звёздный свет»</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorStarlightLightingDuration.AccessibleName" xml:space="preserve">
+    <value>Длительность подсветки «Звёздный свет»</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorUpdateChannel.AccessibleName" xml:space="preserve">
+    <value>Канал обновлений</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorUpdateCheckInterval.AccessibleName" xml:space="preserve">
+    <value>Интервал проверки обновлений</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorWheelRotationDirection.AccessibleName" xml:space="preserve">
+    <value>Направление вращения эффекта «Колесо»</value>
+  </data>
+  <data name="MainWindow_SettingsNavigationItemText.Content" xml:space="preserve">
+    <value>Параметры</value>
+  </data>
+  <data name="MainWindow_Shutdown_Content" xml:space="preserve">
+    <value>Это остановит приложение, помощник дисплея и службу оборудования. Чтобы снова включить их, откройте OpenBlade и выберите «Запустить службу» в разделе устранения неполадок.</value>
+  </data>
+  <data name="MainWindow_Shutdown_FailedTitle" xml:space="preserve">
+    <value>Не удалось завершить работу OpenBlade</value>
+  </data>
+  <data name="MainWindow_Shutdown_PrimaryButton" xml:space="preserve">
+    <value>Завершить работу</value>
+  </data>
+  <data name="MainWindow_Shutdown_Title" xml:space="preserve">
+    <value>Завершить работу OpenBlade?</value>
+  </data>
+  <data name="MainWindow_Start_AlreadyRunningBody" xml:space="preserve">
+    <value>Приложение в области уведомлений переподключится автоматически. Это может занять несколько секунд.</value>
+  </data>
+  <data name="MainWindow_Start_AlreadyRunningTitle" xml:space="preserve">
+    <value>Служба OpenBlade уже запущена</value>
+  </data>
+  <data name="MainWindow_Start_Button" xml:space="preserve">
+    <value>Запустить службу</value>
+  </data>
+  <data name="MainWindow_Start_FailedTitle" xml:space="preserve">
+    <value>Не удалось запустить OpenBlade</value>
+  </data>
+  <data name="MainWindow_Start_Starting" xml:space="preserve">
+    <value>Запуск службы</value>
+  </data>
+  <data name="MainWindow_StartMinimizedToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Запускать OpenBlade свёрнутым</value>
+  </data>
+  <data name="MainWindow_StartServiceButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Запустить службу</value>
+  </data>
+  <data name="MainWindow_StartupAnimationToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Анимация запуска</value>
+  </data>
+  <data name="MainWindow_StopRazer_AutomationName" xml:space="preserve">
+    <value>Остановить службы Razer</value>
+  </data>
+  <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
+    <value>Windows не предоставила права администратора. OpenBlade не повторяла запрос.</value>
+  </data>
+  <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
+    <value>Остановка служб Razer отменена</value>
+  </data>
+  <data name="MainWindow_StopRazer_Checking" xml:space="preserve">
+    <value>Проверка…</value>
+  </data>
+  <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
+    <value>Сейчас активны следующие известные службы контроллеров:
+
+{0}
+
+После подтверждения OpenBlade заново проверит тот же проверенный список разрешённых служб и остановит все активные совпадения. Это не удаляет ПО Razer и не отключает запуск служб. ПО Razer может снова запустить службы, а зависящие от них функции до этого момента могут не работать.</value>
+  </data>
+  <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
+    <value>Остановить службы Razer?</value>
+  </data>
+  <data name="MainWindow_StopRazer_FailedTitle" xml:space="preserve">
+    <value>OpenBlade не удалось остановить службы Razer</value>
+  </data>
+  <data name="MainWindow_StopRazer_IndeterminateNote" xml:space="preserve">
+    <value>
+
+Результат работы помощника был неопределённым, но повторное чтение подтверждает, что службы остановлены или больше не установлены.</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoneBody" xml:space="preserve">
+    <value>OpenBlade не обнаружила активных служб контроллеров Synapse или Chroma в проверенном списке разрешённых служб.</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoneTitle" xml:space="preserve">
+    <value>Известные службы контроллеров Razer не запущены</value>
+  </data>
+  <data name="MainWindow_StopRazer_NoRetryNote" xml:space="preserve">
+    <value>
+
+OpenBlade не повторяла запросы на остановку.</value>
+  </data>
+  <data name="MainWindow_StopRazer_PartialTitle" xml:space="preserve">
+    <value>Не удалось подтвердить остановку некоторых служб Razer</value>
+  </data>
+  <data name="MainWindow_StopRazer_RemainingHeading" xml:space="preserve">
+    <value>Всё ещё активны или ожидают завершения:
+</value>
+  </data>
+  <data name="MainWindow_StopRazer_StopButton" xml:space="preserve">
+    <value>Остановить службы</value>
+  </data>
+  <data name="MainWindow_StopRazer_StoppedHeading" xml:space="preserve">
+    <value>Остановлены или больше не установлены:
+</value>
+  </data>
+  <data name="MainWindow_StopRazer_Stopping" xml:space="preserve">
+    <value>Остановка…</value>
+  </data>
+  <data name="MainWindow_StopRazer_SucceededTitle" xml:space="preserve">
+    <value>Службы Razer остановлены</value>
+  </data>
+  <data name="MainWindow_StopRazer_UnconfirmedBody" xml:space="preserve">
+    <value>Запрос с повышенными правами завершён, но OpenBlade не удалось прочитать итоговое состояние службы. {0}</value>
+  </data>
+  <data name="MainWindow_StopRazer_UnconfirmedTitle" xml:space="preserve">
+    <value>Состояние служб Razer не подтверждено</value>
+  </data>
+  <data name="MainWindow_StopRazer_WorkingAutomationName" xml:space="preserve">
+    <value>Работа со службами Razer</value>
+  </data>
+  <data name="MainWindow_StopRazerServicesButtonLabelText.Text" xml:space="preserve">
+    <value>Остановить службы</value>
+  </data>
+  <data name="MainWindow_StopRazerServicesButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Остановить службы Razer</value>
+  </data>
+  <data name="MainWindow_TaskbarHoverLabelExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Параметры подсказки при наведении на панель задач</value>
+  </data>
+  <data name="MainWindow_TestedPlatformWarningBadgeText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Просмотреть непроверенные версии системы</value>
+  </data>
+  <data name="MainWindow_TextBlockAbout.Text" xml:space="preserve">
+    <value>О программе</value>
+  </data>
+  <data name="MainWindow_TextBlockAC.Text" xml:space="preserve">
+    <value>AC</value>
+  </data>
+  <data name="MainWindow_TextBlockActive.Text" xml:space="preserve">
+    <value>Активен</value>
+  </data>
+  <data name="MainWindow_TextBlockActive2.Text" xml:space="preserve">
+    <value>Активен</value>
+  </data>
+  <data name="MainWindow_TextBlockActive3.Text" xml:space="preserve">
+    <value>Активен</value>
+  </data>
+  <data name="MainWindow_TextBlockActive4.Text" xml:space="preserve">
+    <value>Активен</value>
+  </data>
+  <data name="MainWindow_TextBlockActiveACUSBCOrBatteryProfile.Text" xml:space="preserve">
+    <value>Активный профиль питания от сети, USB-C или аккумулятора.</value>
+  </data>
+  <data name="MainWindow_TextBlockAddAdjustment.Text" xml:space="preserve">
+    <value>Добавить регулировку</value>
+  </data>
+  <data name="MainWindow_TextBlockAddControl.Text" xml:space="preserve">
+    <value>Добавить элемент управления</value>
+  </data>
+  <data name="MainWindow_TextBlockAdjustments.Text" xml:space="preserve">
+    <value>Регулировки</value>
+  </data>
+  <data name="MainWindow_TextBlockAdjustTheKeyboardLightingLevel.Text" xml:space="preserve">
+    <value>Отрегулируйте уровень подсветки клавиатуры.</value>
+  </data>
+  <data name="MainWindow_TextBlockAfterInactivity.Text" xml:space="preserve">
+    <value>После бездействия</value>
+  </data>
+  <data name="MainWindow_TextBlockAppAccentColor.Text" xml:space="preserve">
+    <value>Акцентный цвет приложения</value>
+  </data>
+  <data name="MainWindow_TextBlockAppearance.Text" xml:space="preserve">
+    <value>Внешний вид</value>
+  </data>
+  <data name="MainWindow_TextBlockApplyNVIDIAClockOffsetsIndependentlyOfPower.Text" xml:space="preserve">
+    <value>Применять смещения частот NVIDIA независимо от режима питания</value>
+  </data>
+  <data name="MainWindow_TextBlockAppsUsingTheNVIDIAGPU.Text" xml:space="preserve">
+    <value>Приложения, использующие GPU NVIDIA</value>
+  </data>
+  <data name="MainWindow_TextBlockAppTheme.Text" xml:space="preserve">
+    <value>Тема приложения</value>
+  </data>
+  <data name="MainWindow_TextBlockAppUpdates.Text" xml:space="preserve">
+    <value>Обновления приложения</value>
+  </data>
+  <data name="MainWindow_TextBlockBattery.Text" xml:space="preserve">
+    <value>Аккумулятор</value>
+  </data>
+  <data name="MainWindow_TextBlockBattery2.Text" xml:space="preserve">
+    <value>Аккумулятор</value>
+  </data>
+  <data name="MainWindow_TextBlockBattery3.Text" xml:space="preserve">
+    <value>Аккумулятор</value>
+  </data>
+  <data name="MainWindow_TextBlockBatteryHealth.Text" xml:space="preserve">
+    <value>Состояние аккумулятора</value>
+  </data>
+  <data name="MainWindow_TextBlockBatteryProtection.Text" xml:space="preserve">
+    <value>Защита аккумулятора</value>
+  </data>
+  <data name="MainWindow_TextBlockBatteryProtection2.Text" xml:space="preserve">
+    <value>Защита аккумулятора</value>
+  </data>
+  <data name="MainWindow_TextBlockBatteryProtection3.Text" xml:space="preserve">
+    <value>Защита аккумулятора</value>
+  </data>
+  <data name="MainWindow_TextBlockBehavior.Text" xml:space="preserve">
+    <value>Поведение</value>
+  </data>
+  <data name="MainWindow_TextBlockBIOS.Text" xml:space="preserve">
+    <value>BIOS</value>
+  </data>
+  <data name="MainWindow_TextBlockBIOS2.Text" xml:space="preserve">
+    <value>BIOS</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockAltTab.Text" xml:space="preserve">
+    <value>Блокировать Alt+Tab</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockAltTab2.Text" xml:space="preserve">
+    <value>Блокировать Alt+Tab</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockAltTab3.Text" xml:space="preserve">
+    <value>Блокировать Alt+Tab</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockTheWindowsKey.Text" xml:space="preserve">
+    <value>Блокировать клавишу Windows</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockWindowsKey.Text" xml:space="preserve">
+    <value>Блокировать клавишу Windows</value>
+  </data>
+  <data name="MainWindow_TextBlockBlockWindowsKey2.Text" xml:space="preserve">
+    <value>Блокировать клавишу Windows</value>
+  </data>
+  <data name="MainWindow_TextBlockBreathingColors.Text" xml:space="preserve">
+    <value>Цвета эффекта «Дыхание»</value>
+  </data>
+  <data name="MainWindow_TextBlockBrightness.Text" xml:space="preserve">
+    <value>Яркость</value>
+  </data>
+  <data name="MainWindow_TextBlockBrightness2.Text" xml:space="preserve">
+    <value>Яркость</value>
+  </data>
+  <data name="MainWindow_TextBlockBuiltInDisplay.Text" xml:space="preserve">
+    <value>Встроенный дисплей</value>
+  </data>
+  <data name="MainWindow_TextBlockBypassOnlyTheTestedFirmwareCheckFor.Text" xml:space="preserve">
+    <value>Обойти только проверку протестированной прошивки для точно поддерживаемой модели Razer Blade. Остальные проверки безопасности оборудования останутся включёнными.</value>
+  </data>
+  <data name="MainWindow_TextBlockChangesPending.Text" xml:space="preserve">
+    <value>Ожидают изменения</value>
+  </data>
+  <data name="MainWindow_TextBlockChangesPending2.Text" xml:space="preserve">
+    <value>Ожидают изменения</value>
+  </data>
+  <data name="MainWindow_TextBlockChangesPending3.Text" xml:space="preserve">
+    <value>Ожидают изменения</value>
+  </data>
+  <data name="MainWindow_TextBlockChargeLimit.Text" xml:space="preserve">
+    <value>Предел заряда</value>
+  </data>
+  <data name="MainWindow_TextBlockChargeLimit2.Text" xml:space="preserve">
+    <value>Предел заряда</value>
+  </data>
+  <data name="MainWindow_TextBlockChargeLimit3.Text" xml:space="preserve">
+    <value>Предел заряда</value>
+  </data>
+  <data name="MainWindow_TextBlockCheckCurrentState.Text" xml:space="preserve">
+    <value>Проверить текущее состояние</value>
+  </data>
+  <data name="MainWindow_TextBlockCheckInterval.Text" xml:space="preserve">
+    <value>Интервал проверки</value>
+  </data>
+  <data name="MainWindow_TextBlockCheckInterval2.Text" xml:space="preserve">
+    <value>Интервал проверки</value>
+  </data>
+  <data name="MainWindow_TextBlockCheckItemsToIncludeDragThemInto.Text" xml:space="preserve">
+    <value>Отметьте элементы для включения. Перетащите их в нужном порядке.</value>
+  </data>
+  <data name="MainWindow_TextBlockChecksAtStartupWhenDue.Text" xml:space="preserve">
+    <value>Проверяет при запуске, когда наступает срок.</value>
+  </data>
+  <data name="MainWindow_TextBlockChecksAtStartupWhenDue2.Text" xml:space="preserve">
+    <value>Проверяет при запуске, когда наступает срок.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseANewColorPairForEach.Text" xml:space="preserve">
+    <value>Выбирать новую пару цветов для каждого цикла Tidal.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseARefreshRateReportedByWindows.Text" xml:space="preserve">
+    <value>Выберите частоту обновления, сообщаемую Windows, или используйте динамическую частоту обновления.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseFrom1To60Minutes.Text" xml:space="preserve">
+    <value>Выберите от 1 до 60 минут.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseHowLongEachRandomKeyFades.Text" xml:space="preserve">
+    <value>Выберите длительность появления и затухания каждой случайной клавиши.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseHowLongPressedKeysRemainLit.Text" xml:space="preserve">
+    <value>Выберите, как долго нажатые клавиши остаются подсвеченными.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
+    <value>Выберите, как часто OpenBlade обновляет температуру, скорость вентиляторов и чистую мощность аккумулятора, пока окно открыто или указатель наведён на значок в области уведомлений.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
+    <value>Выберите элементы управления и сведения в реальном времени, отображаемые при нажатии значка в области уведомлений.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseTheEffectSSecondColor.Text" xml:space="preserve">
+    <value>Выберите второй цвет эффекта.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseTheLightingModeForTheRazer.Text" xml:space="preserve">
+    <value>Выберите режим подсветки логотипа Razer на крышке.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseTheOrderOfPagesInThe.Text" xml:space="preserve">
+    <value>Выберите порядок страниц в левом меню.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseUpToThreeLiveReadingsShown.Text" xml:space="preserve">
+    <value>Выберите до трёх показаний в реальном времени для нижней части всплывающего окна.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseUpToTwoSlidersForThe.Text" xml:space="preserve">
+    <value>Выберите до двух ползунков для закреплённой средней части всплывающего окна.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseWhetherToShowTheAppName.Text" xml:space="preserve">
+    <value>Выберите, показывать ли имя приложения, профиль и сведения в реальном времени при наведении на значок в области уведомлений.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseWhichLiveReadingsAppearInThe.Text" xml:space="preserve">
+    <value>Выберите показания в реальном времени для сводки панели мониторинга.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseWhichPartOfTheDisplayColors.Text" xml:space="preserve">
+    <value>Выберите область дисплея, цвета которой будут использоваться для клавиатуры.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseWhichWayTheEffectMoves.Text" xml:space="preserve">
+    <value>Выберите направление движения эффекта.</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseWhichWayTheWheelEffectRotates.Text" xml:space="preserve">
+    <value>Выберите направление вращения эффекта «Колесо».</value>
+  </data>
+  <data name="MainWindow_TextBlockCloseCurrentUserAppsSoTheDiscrete.Text" xml:space="preserve">
+    <value>Закройте приложения текущего пользователя, чтобы дискретный GPU мог перейти в спящий режим.</value>
+  </data>
+  <data name="MainWindow_TextBlockColor.Text" xml:space="preserve">
+    <value>Цвет</value>
+  </data>
+  <data name="MainWindow_TextBlockColorBoost.Text" xml:space="preserve">
+    <value>Усиление цвета</value>
+  </data>
+  <data name="MainWindow_TextBlockColorProfile.Text" xml:space="preserve">
+    <value>Цветовой профиль</value>
+  </data>
+  <data name="MainWindow_TextBlockColorProfile2.Text" xml:space="preserve">
+    <value>Цветовой профиль</value>
+  </data>
+  <data name="MainWindow_TextBlockColorProfile3.Text" xml:space="preserve">
+    <value>Цветовой профиль</value>
+  </data>
+  <data name="MainWindow_TextBlockConfirmedFnPResults.Text" xml:space="preserve">
+    <value>Подтверждённые результаты Fn+P.</value>
+  </data>
+  <data name="MainWindow_TextBlockControllerAdvisories.Text" xml:space="preserve">
+    <value>Предупреждения о контроллерах</value>
+  </data>
+  <data name="MainWindow_TextBlockCPU.Text" xml:space="preserve">
+    <value>CPU</value>
+  </data>
+  <data name="MainWindow_TextBlockCurrentLabFeatures.Text" xml:space="preserve">
+    <value>Текущие функции Lab</value>
+  </data>
+  <data name="MainWindow_TextBlockCustomColor.Text" xml:space="preserve">
+    <value>Пользовательский цвет</value>
+  </data>
+  <data name="MainWindow_TextBlockCustomizeTrayDashboard.Text" xml:space="preserve">
+    <value>Настроить панель в области уведомлений</value>
+  </data>
+  <data name="MainWindow_TextBlockDashboard.Text" xml:space="preserve">
+    <value>Панель мониторинга</value>
+  </data>
+  <data name="MainWindow_TextBlockDetectedLaptop.Text" xml:space="preserve">
+    <value>Обнаруженный ноутбук</value>
+  </data>
+  <data name="MainWindow_TextBlockDeviceInformation.Text" xml:space="preserve">
+    <value>Сведения об устройстве</value>
+  </data>
+  <data name="MainWindow_TextBlockDirection.Text" xml:space="preserve">
+    <value>Направление</value>
+  </data>
+  <data name="MainWindow_TextBlockDisplay.Text" xml:space="preserve">
+    <value>Дисплей</value>
+  </data>
+  <data name="MainWindow_TextBlockDisplay2.Text" xml:space="preserve">
+    <value>Дисплей</value>
+  </data>
+  <data name="MainWindow_TextBlockDisplayBrightnessDriverStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Состояние драйвера яркости дисплея</value>
+  </data>
+  <data name="MainWindow_TextBlockDisplayTurnsOff.Text" xml:space="preserve">
+    <value>Дисплей выключается</value>
+  </data>
+  <data name="MainWindow_TextBlockDisplayTurnsOff2.Text" xml:space="preserve">
+    <value>Дисплей выключается</value>
+  </data>
+  <data name="MainWindow_TextBlockDocumentation.Text" xml:space="preserve">
+    <value>Документация</value>
+  </data>
+  <data name="MainWindow_TextBlockDragActiveItemsToReorderThemChanges.Text" xml:space="preserve">
+    <value>Перетащите активные элементы, чтобы изменить их порядок. Изменения сразу появятся во всплывающем окне области уведомлений рядом с этим окном.</value>
+  </data>
+  <data name="MainWindow_TextBlockDragPagesIntoTheOrderYouWant.Text" xml:space="preserve">
+    <value>Перетащите страницы в нужном порядке. Панель мониторинга останется первой, а страница «О программе» — последней.</value>
+  </data>
+  <data name="MainWindow_TextBlockEC.Text" xml:space="preserve">
+    <value>EC</value>
+  </data>
+  <data name="MainWindow_TextBlockEC2.Text" xml:space="preserve">
+    <value>EC</value>
+  </data>
+  <data name="MainWindow_TextBlockEffect.Text" xml:space="preserve">
+    <value>Эффект</value>
+  </data>
+  <data name="MainWindow_TextBlockEffect2.Text" xml:space="preserve">
+    <value>Эффект</value>
+  </data>
+  <data name="MainWindow_TextBlockExportDiagnostics.Text" xml:space="preserve">
+    <value>Экспорт диагностики</value>
+  </data>
+  <data name="MainWindow_TextBlockFailedControlOperationsDetailsStayVisible.Text" xml:space="preserve">
+    <value>Неудачные операции управления. Сведения остаются видимыми.</value>
+  </data>
+  <data name="MainWindow_TextBlockFans.Text" xml:space="preserve">
+    <value>Вентиляторы</value>
+  </data>
+  <data name="MainWindow_TextBlockFans2.Text" xml:space="preserve">
+    <value>Вентиляторы</value>
+  </data>
+  <data name="MainWindow_TextBlockFans3.Text" xml:space="preserve">
+    <value>Вентиляторы</value>
+  </data>
+  <data name="MainWindow_TextBlockFans4.Text" xml:space="preserve">
+    <value>Вентиляторы</value>
+  </data>
+  <data name="MainWindow_TextBlockFanSpeed.Text" xml:space="preserve">
+    <value>Скорость вентиляторов</value>
+  </data>
+  <data name="MainWindow_TextBlockFirmware.Text" xml:space="preserve">
+    <value>Прошивка</value>
+  </data>
+  <data name="MainWindow_TextBlockFirmwareUpdates.Text" xml:space="preserve">
+    <value>Обновления прошивки</value>
+  </data>
+  <data name="MainWindow_TextBlockFollowWindowsOrAlwaysUseLightOr.Text" xml:space="preserve">
+    <value>Следовать настройке Windows или всегда использовать светлую либо тёмную тему.</value>
+  </data>
+  <data name="MainWindow_TextBlockForceRunOnIncompatibleFirmware.Text" xml:space="preserve">
+    <value>Принудительно запускать с несовместимой прошивкой</value>
+  </data>
+  <data name="MainWindow_TextBlockFunctionKeyBehavior.Text" xml:space="preserve">
+    <value>Поведение функциональных клавиш</value>
+  </data>
+  <data name="MainWindow_TextBlockFunctionKeys.Text" xml:space="preserve">
+    <value>Функциональные клавиши</value>
+  </data>
+  <data name="MainWindow_TextBlockFunctionKeys2.Text" xml:space="preserve">
+    <value>Функциональные клавиши</value>
+  </data>
+  <data name="MainWindow_TextBlockGamingMode.Text" xml:space="preserve">
+    <value>Игровой режим</value>
+  </data>
+  <data name="MainWindow_TextBlockGamingMode2.Text" xml:space="preserve">
+    <value>Игровой режим</value>
+  </data>
+  <data name="MainWindow_TextBlockGamingMode3.Text" xml:space="preserve">
+    <value>Игровой режим</value>
+  </data>
+  <data name="MainWindow_TextBlockGPU.Text" xml:space="preserve">
+    <value>GPU</value>
+  </data>
+  <data name="MainWindow_TextBlockGPUCoreClockOffset.Text" xml:space="preserve">
+    <value>Смещение частоты ядра GPU</value>
+  </data>
+  <data name="MainWindow_TextBlockGPUMemoryClockOffset.Text" xml:space="preserve">
+    <value>Смещение частоты памяти GPU</value>
+  </data>
+  <data name="MainWindow_TextBlockGPUTuning.Text" xml:space="preserve">
+    <value>Настройка GPU</value>
+  </data>
+  <data name="MainWindow_TextBlockGPUTuning2.Text" xml:space="preserve">
+    <value>Настройка GPU</value>
+  </data>
+  <data name="MainWindow_TextBlockGPUTuning3.Text" xml:space="preserve">
+    <value>Настройка GPU</value>
+  </data>
+  <data name="MainWindow_TextBlockHDR.Text" xml:space="preserve">
+    <value>HDR</value>
+  </data>
+  <data name="MainWindow_TextBlockHDR2.Text" xml:space="preserve">
+    <value>HDR</value>
+  </data>
+  <data name="MainWindow_TextBlockImportOblightAndRazerChromaFiles.Text" xml:space="preserve">
+    <value>Импортируйте файлы .oblight и Razer .chroma.</value>
+  </data>
+  <data name="MainWindow_TextBlockImportPreset.Text" xml:space="preserve">
+    <value>Импорт предустановки</value>
+  </data>
+  <data name="MainWindow_TextBlockInactivityTimeout.Text" xml:space="preserve">
+    <value>Тайм-аут бездействия</value>
+  </data>
+  <data name="MainWindow_TextBlockInactivityTimeout2.Text" xml:space="preserve">
+    <value>Тайм-аут бездействия</value>
+  </data>
+  <data name="MainWindow_TextBlockInactivityTimeout3.Text" xml:space="preserve">
+    <value>Тайм-аут бездействия</value>
+  </data>
+  <data name="MainWindow_TextBlockIncreaseHowStronglyAudioLevelsDriveThe.Text" xml:space="preserve">
+    <value>Увеличьте влияние уровня звука на цвета клавиатуры.</value>
+  </data>
+  <data name="MainWindow_TextBlockIndependentOpenSourceProjectNotAffiliatedWith.Text" xml:space="preserve">
+    <value>Независимый проект с открытым исходным кодом, не связанный с Razer.</value>
+  </data>
+  <data name="MainWindow_TextBlockInstalled.Text" xml:space="preserve">
+    <value>Установлено</value>
+  </data>
+  <data name="MainWindow_TextBlockKeepsTheKeyboardLitForUpTo.Text" xml:space="preserve">
+    <value>Сохраняет подсветку клавиатуры в течение выбранного времени, когда звук становится тише или приостанавливается. На громкие звуки подсветка по-прежнему реагирует сразу.</value>
+  </data>
+  <data name="MainWindow_TextBlockKeyboard.Text" xml:space="preserve">
+    <value>Клавиатура</value>
+  </data>
+  <data name="MainWindow_TextBlockKeyboard2.Text" xml:space="preserve">
+    <value>Клавиатура</value>
+  </data>
+  <data name="MainWindow_TextBlockKeyboardDriverMode.Text" xml:space="preserve">
+    <value>Режим драйвера клавиатуры</value>
+  </data>
+  <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
+    <value>Подсветка клавиатуры</value>
+  </data>
+  <data name="MainWindow_TextBlockKeyboardLightingPresetImport.Text" xml:space="preserve">
+    <value>Импорт предустановки подсветки клавиатуры</value>
+  </data>
+  <data name="MainWindow_TextBlockLabFeatures.Text" xml:space="preserve">
+    <value>Функции Lab</value>
+  </data>
+  <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
+    <value>Функции Lab могут быть изменены или удалены.</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
+    <value>Ноутбук</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopBehavior.Text" xml:space="preserve">
+    <value>Поведение ноутбука</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopBehavior2.Text" xml:space="preserve">
+    <value>Доступ к управлению</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopLidLogo.Text" xml:space="preserve">
+    <value>Логотип на крышке ноутбука</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopLidLogo2.Text" xml:space="preserve">
+    <value>Логотип на крышке ноутбука</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopLogo.Text" xml:space="preserve">
+    <value>Логотип ноутбука</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopPerformance.Text" xml:space="preserve">
+    <value>Производительность ноутбука</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopPerformance2.Text" xml:space="preserve">
+    <value>Производительность ноутбука</value>
+  </data>
+  <data name="MainWindow_TextBlockLaptopPerformance3.Text" xml:space="preserve">
+    <value>Производительность ноутбука</value>
+  </data>
+  <data name="MainWindow_TextBlockLatestRelease.Text" xml:space="preserve">
+    <value>Последний выпуск</value>
+  </data>
+  <data name="MainWindow_TextBlockLighting.Text" xml:space="preserve">
+    <value>Подсветка</value>
+  </data>
+  <data name="MainWindow_TextBlockLightingBrightness.Text" xml:space="preserve">
+    <value>Яркость подсветки</value>
+  </data>
+  <data name="MainWindow_TextBlockLightingColor.Text" xml:space="preserve">
+    <value>Цвет подсветки</value>
+  </data>
+  <data name="MainWindow_TextBlockLightingEffect.Text" xml:space="preserve">
+    <value>Эффект подсветки</value>
+  </data>
+  <data name="MainWindow_TextBlockLightweightControlsForRazerBladeLaptops.Text" xml:space="preserve">
+    <value>Лёгкое управление ноутбуками Razer Blade</value>
+  </data>
+  <data name="MainWindow_TextBlockLiveReadings.Text" xml:space="preserve">
+    <value>Показания в реальном времени</value>
+  </data>
+  <data name="MainWindow_TextBlockLoadAnOpenBladeOrRazerChromaKeyboard.Text" xml:space="preserve">
+    <value>Загрузите файл подсветки клавиатуры OpenBlade или Razer Chroma.</value>
+  </data>
+  <data name="MainWindow_TextBlockMCU.Text" xml:space="preserve">
+    <value>MCU</value>
+  </data>
+  <data name="MainWindow_TextBlockMCU2.Text" xml:space="preserve">
+    <value>MCU</value>
+  </data>
+  <data name="MainWindow_TextBlockMode.Text" xml:space="preserve">
+    <value>Режим</value>
+  </data>
+  <data name="MainWindow_TextBlockNavigationMenu.Text" xml:space="preserve">
+    <value>Меню навигации</value>
+  </data>
+  <data name="MainWindow_TextBlockNewOpenBladeReleases.Text" xml:space="preserve">
+    <value>Новые выпуски OpenBlade.</value>
+  </data>
+  <data name="MainWindow_TextBlockNewRazerBIOSECOrMCUFirmware.Text" xml:space="preserve">
+    <value>Новые прошивки BIOS, EC или MCU от Razer.</value>
+  </data>
+  <data name="MainWindow_TextBlockNewRazerControllersAdvisoriesStayVisible.Text" xml:space="preserve">
+    <value>Новые контроллеры Razer. Предупреждения остаются видимыми.</value>
+  </data>
+  <data name="MainWindow_TextBlockNotifications.Text" xml:space="preserve">
+    <value>Уведомления</value>
+  </data>
+  <data name="MainWindow_TextBlockOfficialFirmware.Text" xml:space="preserve">
+    <value>Официальная прошивка</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenBladeApp.Text" xml:space="preserve">
+    <value>Приложение OpenBlade</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenBladeService.Text" xml:space="preserve">
+    <value>Служба OpenBlade</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenBladeServiceVersion.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Версия службы OpenBlade</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenBladeSessionAgentVersion.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Версия агента сеанса OpenBlade</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenBladeUsesTheLaptopFirmwareTemperatureAnd.Text" xml:space="preserve">
+    <value>OpenBlade использует температуру из прошивки ноутбука и температуру GPU NVIDIA. Если какое-либо показание недоступно, используется максимальная скорость вентиляторов.</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenGitHubIssuesToReportABug.Text" xml:space="preserve">
+    <value>Откройте GitHub Issues, чтобы сообщить об ошибке или предложить улучшение.</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenInTheNotificationAreaWithoutShowing.Text" xml:space="preserve">
+    <value>Открывать в области уведомлений, не показывая окно.</value>
+  </data>
+  <data name="MainWindow_TextBlockOpenOfficialRazerPage.Text" xml:space="preserve">
+    <value>Открыть официальную страницу Razer</value>
+  </data>
+  <data name="MainWindow_TextBlockOperationFailures.Text" xml:space="preserve">
+    <value>Ошибки операций</value>
+  </data>
+  <data name="MainWindow_TextBlockOtherRazerSoftwareRunning.Text" xml:space="preserve">
+    <value>Запущено другое ПО Razer</value>
+  </data>
+  <data name="MainWindow_TextBlockOverrideExternalLightingChanges.Text" xml:space="preserve">
+    <value>Переопределять внешние изменения подсветки</value>
+  </data>
+  <data name="MainWindow_TextBlockPerformance.Text" xml:space="preserve">
+    <value>Производительность</value>
+  </data>
+  <data name="MainWindow_TextBlockPerformanceChanges.Text" xml:space="preserve">
+    <value>Изменения производительности</value>
+  </data>
+  <data name="MainWindow_TextBlockPlatform.Text" xml:space="preserve">
+    <value>Платформа</value>
+  </data>
+  <data name="MainWindow_TextBlockPowerAndCooling.Text" xml:space="preserve">
+    <value>Питание и охлаждение</value>
+  </data>
+  <data name="MainWindow_TextBlockPowerProfileChanges.Text" xml:space="preserve">
+    <value>Изменения профиля питания</value>
+  </data>
+  <data name="MainWindow_TextBlockPowerSource.Text" xml:space="preserve">
+    <value>Источник питания</value>
+  </data>
+  <data name="MainWindow_TextBlockPreview.Text" xml:space="preserve">
+    <value>Предпросмотр</value>
+  </data>
+  <data name="MainWindow_TextBlockProfiles.Text" xml:space="preserve">
+    <value>Профили</value>
+  </data>
+  <data name="MainWindow_TextBlockProfiles2.Text" xml:space="preserve">
+    <value>Профили</value>
+  </data>
+  <data name="MainWindow_TextBlockPublishedByRazer.Text" xml:space="preserve">
+    <value>Опубликовано Razer</value>
+  </data>
+  <data name="MainWindow_TextBlockPublishedOnlyFirmwareNotice.Text" xml:space="preserve">
+    <value>Только опубликованные версии: OpenBlade не может прочитать установленные версии прошивки Thunderbolt 5 или сенсорной панели, поэтому эти значения не сравниваются.</value>
+  </data>
+  <data name="MainWindow_TextBlockQuickControls.Text" xml:space="preserve">
+    <value>Быстрое управление</value>
+  </data>
+  <data name="MainWindow_TextBlockRandomColors.Text" xml:space="preserve">
+    <value>Случайные цвета</value>
+  </data>
+  <data name="MainWindow_TextBlockRazerBrightnessDriver.Text" xml:space="preserve">
+    <value>Драйвер яркости Razer</value>
+  </data>
+  <data name="MainWindow_TextBlockReactiveDuration.Text" xml:space="preserve">
+    <value>Длительность реакции</value>
+  </data>
+  <data name="MainWindow_TextBlockReadSetupUsageAndCompatibilityInformation.Text" xml:space="preserve">
+    <value>Ознакомьтесь со сведениями об установке, использовании и совместимости.</value>
+  </data>
+  <data name="MainWindow_TextBlockReapplyOpenBladeSettings.Text" xml:space="preserve">
+    <value>Повторно применить параметры OpenBlade</value>
+  </data>
+  <data name="MainWindow_TextBlockRecentError.Text" xml:space="preserve">
+    <value>Последняя ошибка</value>
+  </data>
+  <data name="MainWindow_TextBlockRefreshRate.Text" xml:space="preserve">
+    <value>Частота обновления</value>
+  </data>
+  <data name="MainWindow_TextBlockRefreshRate2.Text" xml:space="preserve">
+    <value>Частота обновления</value>
+  </data>
+  <data name="MainWindow_TextBlockRefreshRate3.Text" xml:space="preserve">
+    <value>Частота обновления</value>
+  </data>
+  <data name="MainWindow_TextBlockReleaseNotes.Text" xml:space="preserve">
+    <value>Примечания к выпуску</value>
+  </data>
+  <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
+    <value>Более плавно отрисовывать поддерживаемые эффекты на допущенных клавиатурах.</value>
+  </data>
+  <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
+    <value>Сообщить о проблеме</value>
+  </data>
+  <data name="MainWindow_TextBlockRotation.Text" xml:space="preserve">
+    <value>Вращение</value>
+  </data>
+  <data name="MainWindow_TextBlockSaveLogsAndSystemDetailsWithSensitive.Text" xml:space="preserve">
+    <value>Сохранить журналы и сведения о системе с удалённой конфиденциальной информацией.</value>
+  </data>
+  <data name="MainWindow_TextBlockScreenRegion.Text" xml:space="preserve">
+    <value>Область экрана</value>
+  </data>
+  <data name="MainWindow_TextBlockSecondColor.Text" xml:space="preserve">
+    <value>Второй цвет</value>
+  </data>
+  <data name="MainWindow_TextBlockSeeWhatChangedInEachOpenBladeBuild.Text" xml:space="preserve">
+    <value>Посмотрите, что изменилось в каждой сборке OpenBlade.</value>
+  </data>
+  <data name="MainWindow_TextBlockService.Text" xml:space="preserve">
+    <value>Служба</value>
+  </data>
+  <data name="MainWindow_TextBlockServiceAndDeviceStatus.Text" xml:space="preserve">
+    <value>Состояние службы и устройства</value>
+  </data>
+  <data name="MainWindow_TextBlockSessionAgent.Text" xml:space="preserve">
+    <value>Агент сеанса</value>
+  </data>
+  <data name="MainWindow_TextBlockSetting.Text" xml:space="preserve">
+    <value>Параметр</value>
+  </data>
+  <data name="MainWindow_TextBlockSettings.Text" xml:space="preserve">
+    <value>Параметры</value>
+  </data>
+  <data name="MainWindow_TextBlockShortcutKeys.Text" xml:space="preserve">
+    <value>Сочетания клавиш</value>
+  </data>
+  <data name="MainWindow_TextBlockShowAWiderRangeOfColorsAnd.Text" xml:space="preserve">
+    <value>Показывать более широкий диапазон цветов и яркости в поддерживаемом содержимом.</value>
+  </data>
+  <data name="MainWindow_TextBlockShownOnDashboard.Text" xml:space="preserve">
+    <value>Отображается на панели мониторинга</value>
+  </data>
+  <data name="MainWindow_TextBlockShutdown.Text" xml:space="preserve">
+    <value>Завершение работы</value>
+  </data>
+  <data name="MainWindow_TextBlockShutDown2.Text" xml:space="preserve">
+    <value>Завершить работу</value>
+  </data>
+  <data name="MainWindow_TextBlockShutDownOpenBlade.Text" xml:space="preserve">
+    <value>Завершить работу OpenBlade</value>
+  </data>
+  <data name="MainWindow_TextBlockSixtyHzKeyboardLighting.Text" xml:space="preserve">
+    <value>Подсветка клавиатуры 60 Гц</value>
+  </data>
+  <data name="MainWindow_TextBlockSixtyHzLighting.Text" xml:space="preserve">
+    <value>Подсветка 60 Гц</value>
+  </data>
+  <data name="MainWindow_TextBlockSmoothQuietChanges.Text" xml:space="preserve">
+    <value>Сглаживать тихие изменения</value>
+  </data>
+  <data name="MainWindow_TextBlockSourceCode.Text" xml:space="preserve">
+    <value>Исходный код</value>
+  </data>
+  <data name="MainWindow_TextBlockStableOffersNormalReleasesNightlyOffersThe.Text" xml:space="preserve">
+    <value>Канал Stable предлагает обычные выпуски. Канал Nightly предлагает новейшую автоматическую тестовую сборку.</value>
+  </data>
+  <data name="MainWindow_TextBlockStarlightColors.Text" xml:space="preserve">
+    <value>Цвета эффекта «Звёздный свет»</value>
+  </data>
+  <data name="MainWindow_TextBlockStarlightDuration.Text" xml:space="preserve">
+    <value>Длительность эффекта «Звёздный свет»</value>
+  </data>
+  <data name="MainWindow_TextBlockStartAtSignIn.Text" xml:space="preserve">
+    <value>Запускать при входе</value>
+  </data>
+  <data name="MainWindow_TextBlockStartMinimized.Text" xml:space="preserve">
+    <value>Запускать свёрнутым</value>
+  </data>
+  <data name="MainWindow_TextBlockStartService.Text" xml:space="preserve">
+    <value>Запустить службу</value>
+  </data>
+  <data name="MainWindow_TextBlockStartup.Text" xml:space="preserve">
+    <value>Запуск</value>
+  </data>
+  <data name="MainWindow_TextBlockStartupAnimation.Text" xml:space="preserve">
+    <value>Анимация запуска</value>
+  </data>
+  <data name="MainWindow_TextBlockStartupAnimation2.Text" xml:space="preserve">
+    <value>Анимация запуска</value>
+  </data>
+  <data name="MainWindow_TextBlockStartupAnimation3.Text" xml:space="preserve">
+    <value>Анимация запуска</value>
+  </data>
+  <data name="MainWindow_TextBlockStatusRow.Text" xml:space="preserve">
+    <value>Строка состояния</value>
+  </data>
+  <data name="MainWindow_TextBlockStopTheAppDisplayHelperAndHardware.Text" xml:space="preserve">
+    <value>Остановить приложение, помощник дисплея и службу оборудования. OpenBlade можно снова запустить из раздела устранения неполадок.</value>
+  </data>
+  <data name="MainWindow_TextBlockSupport.Text" xml:space="preserve">
+    <value>Поддержка</value>
+  </data>
+  <data name="MainWindow_TextBlockSwitchOffKeyboardLightingUntilTheDisplay.Text" xml:space="preserve">
+    <value>Выключать подсветку клавиатуры, пока дисплей снова не включится.</value>
+  </data>
+  <data name="MainWindow_TextBlockSwitchOffKeyboardLightingWhenYouHave.Text" xml:space="preserve">
+    <value>Выключать подсветку клавиатуры, когда ноутбук не используется.</value>
+  </data>
+  <data name="MainWindow_TextBlockSwitchOffLighting.Text" xml:space="preserve">
+    <value>Выключать подсветку</value>
+  </data>
+  <data name="MainWindow_TextBlockTaskbarHoverLabel.Text" xml:space="preserve">
+    <value>Подсказка при наведении на панель задач</value>
+  </data>
+  <data name="MainWindow_TextBlockTemporaryFullCharge.Text" xml:space="preserve">
+    <value>Временная полная зарядка</value>
+  </data>
+  <data name="MainWindow_TextBlockTheFirstSixControlsRemainVisibleAny.Text" xml:space="preserve">
+    <value>Первые шесть элементов управления остаются видимыми. Дополнительные элементы прокручиваются во всплывающем окне.</value>
+  </data>
+  <data name="MainWindow_TextBlockTheseAreTheSettingsSavedInEach.Text" xml:space="preserve">
+    <value>Здесь показаны параметры, сохранённые в каждом профиле. Точка отмечает значение с ожидающим изменением; наведите на неё, чтобы просмотреть новое значение.</value>
+  </data>
+  <data name="MainWindow_TextBlockThunderboltFirmware.Text" xml:space="preserve">
+    <value>Thunderbolt 5</value>
+  </data>
+  <data name="MainWindow_TextBlockTouchpadFirmware.Text" xml:space="preserve">
+    <value>Сенсорная панель</value>
+  </data>
+  <data name="MainWindow_TextBlockTrayDashboard.Text" xml:space="preserve">
+    <value>Панель в области уведомлений</value>
+  </data>
+  <data name="MainWindow_TextBlockTroubleshooting.Text" xml:space="preserve">
+    <value>Устранение неполадок</value>
+  </data>
+  <data name="MainWindow_TextBlockTurnOnExperimentalFeatures.Text" xml:space="preserve">
+    <value>Включить экспериментальные функции.</value>
+  </data>
+  <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
+    <value>Не сохранено</value>
+  </data>
+  <data name="MainWindow_TextBlockUpdateChannel.Text" xml:space="preserve">
+    <value>Канал обновлений</value>
+  </data>
+  <data name="MainWindow_TextBlockUpdates.Text" xml:space="preserve">
+    <value>Обновления</value>
+  </data>
+  <data name="MainWindow_TextBlockUSBC.Text" xml:space="preserve">
+    <value>USB-C</value>
+  </data>
+  <data name="MainWindow_TextBlockUSBDevice.Text" xml:space="preserve">
+    <value>USB-устройство</value>
+  </data>
+  <data name="MainWindow_TextBlockUseCustomizeToAddTheCardsYou.Text" xml:space="preserve">
+    <value>Используйте «Настроить», чтобы добавить сюда нужные карточки.</value>
+  </data>
+  <data name="MainWindow_TextBlockUseHDR.Text" xml:space="preserve">
+    <value>Использовать HDR</value>
+  </data>
+  <data name="MainWindow_TextBlockUseOneColorAlternateBetweenTwoOr.Text" xml:space="preserve">
+    <value>Использовать один цвет, чередовать два или выбирать случайные цвета.</value>
+  </data>
+  <data name="MainWindow_TextBlockUseOneColorAlternateBetweenTwoOr2.Text" xml:space="preserve">
+    <value>Использовать один цвет, чередовать два или выбирать случайные цвета.</value>
+  </data>
+  <data name="MainWindow_TextBlockUseOpenBladeGreenTheWindowsAccentOr.Text" xml:space="preserve">
+    <value>Использовать зелёный OpenBlade, акцентный цвет Windows или выбранный вами цвет.</value>
+  </data>
+  <data name="MainWindow_TextBlockUseTheHotterSensorForBothFans.Text" xml:space="preserve">
+    <value>Использовать более горячий датчик для обоих вентиляторов</value>
+  </data>
+  <data name="MainWindow_TextBlockUseWindowsForKeyboardEffectsAndBrightness.Text" xml:space="preserve">
+    <value>Использовать Windows для управления эффектами и яркостью клавиатуры.</value>
+  </data>
+  <data name="MainWindow_TextBlockVBIOS.Text" xml:space="preserve">
+    <value>VBIOS</value>
+  </data>
+  <data name="MainWindow_TextBlockVBIOS2.Text" xml:space="preserve">
+    <value>VBIOS</value>
+  </data>
+  <data name="MainWindow_TextBlockVersions.Text" xml:space="preserve">
+    <value>Версии</value>
+  </data>
+  <data name="MainWindow_TextBlockViewAndContributeToOpenBladeOnGitHub.Text" xml:space="preserve">
+    <value>Просматривайте OpenBlade и участвуйте в разработке на GitHub.</value>
+  </data>
+  <data name="MainWindow_TextBlockViewFirmwareDownloadsAndReleaseDetailsOn.Text" xml:space="preserve">
+    <value>Просмотрите загрузки прошивок и сведения о выпусках на сайте Razer.</value>
+  </data>
+  <data name="MainWindow_TextBlockViewLiveConnectionAndControlDetails.Text" xml:space="preserve">
+    <value>Просмотрите сведения о подключении и управлении в реальном времени.</value>
+  </data>
+  <data name="MainWindow_TextBlockWhenOffOpenBladeYieldsKeyboardLightingTo.Text" xml:space="preserve">
+    <value>Когда параметр выключен, OpenBlade передаёт управление подсветкой клавиатуры Synapse. Включите его, чтобы повторно применять последний эффект OpenBlade после внешнего изменения.</value>
+  </data>
+  <data name="MainWindow_TextBlockWhenTheDisplayTurnsOff.Text" xml:space="preserve">
+    <value>Когда дисплей выключается</value>
+  </data>
+  <data name="MainWindow_TextBlockWindows11X64.Text" xml:space="preserve">
+    <value>Windows 11 x64</value>
+  </data>
+  <data name="MainWindow_TextBlockWindowsDynamicLighting.Text" xml:space="preserve">
+    <value>Динамическое освещение Windows</value>
+  </data>
+  <data name="MainWindow_TextBlockWindowsPowerMode.Text" xml:space="preserve">
+    <value>Режим питания Windows</value>
+  </data>
+  <data name="MainWindow_TextBlockWindowsPowerMode2.Text" xml:space="preserve">
+    <value>Режим питания Windows</value>
+  </data>
+  <data name="MainWindow_TextBlockWindowsPowerMode3.Text" xml:space="preserve">
+    <value>Режим питания Windows</value>
+  </data>
+  <data name="MainWindow_TextBlockYourDashboardIsEmpty.Text" xml:space="preserve">
+    <value>Панель мониторинга пуста</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchAlwaysOverrideExternalLightingChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Всегда переопределять внешние изменения подсветки</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchBlockAltTabInGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Блокировать Alt+Tab в игровом режиме</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchBlockTheWindowsKeyInGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Блокировать клавишу Windows в игровом режиме</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchForceRunOnIncompatibleFirmware.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Принудительно запускать с несовместимой прошивкой</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeOperationFails.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уведомлять об ошибке операции OpenBlade</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeUpdateIsAvailable.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уведомлять о доступном обновлении OpenBlade</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenAnotherRazerControllerIsDetected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уведомлять об обнаружении другого контроллера Razer</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenARazerFirmwareUpdateIs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уведомлять о доступном обновлении прошивки Razer</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenTheActivePowerProfileChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уведомлять об изменении активного профиля питания</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchNotifyWhenThePerformanceModeChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уведомлять об изменении режима производительности</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchRandomTidalColors.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Случайные цвета Tidal</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchStartOpenBladeWhenISignIn.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Запускать OpenBlade при входе в систему</value>
+  </data>
+  <data name="MainWindow_TrayDashboard_Count" xml:space="preserve">
+    <value>{0} из {1}</value>
+  </data>
+  <data name="MainWindow_TroubleshootingExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Сведения об устранении неполадок</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_CloseButton" xml:space="preserve">
+    <value>Только вручную</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_Content" xml:space="preserve">
+    <value>OpenBlade может раз в день проверять наличие нового выпуска на GitHub при запуске приложения в области уведомлений. При проверке не отправляются сведения о состоянии оборудования, профили, параметры или диагностические данные. Этот параметр можно изменить позже в разделе «Параметры».</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_PrimaryButton" xml:space="preserve">
+    <value>Использовать ежедневные проверки</value>
+  </data>
+  <data name="MainWindow_UpdateConsent_Title" xml:space="preserve">
+    <value>Проверять обновления OpenBlade?</value>
+  </data>
+  <data name="MainWindow_WindowsDynamicLightingToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Разрешить динамическому освещению Windows управлять клавиатурой</value>
+  </data>
+  <data name="MainWindow_WindowsPowerModeSelectorText.AccessibleName" xml:space="preserve">
+    <value>Режим питания Windows</value>
+  </data>
+  <data name="Navigation_About" xml:space="preserve">
+    <value>О программе</value>
+  </data>
+  <data name="Navigation_Display" xml:space="preserve">
+    <value>Дисплей</value>
+  </data>
+  <data name="Navigation_Laptop" xml:space="preserve">
+    <value>Ноутбук</value>
+  </data>
+  <data name="Navigation_Lighting" xml:space="preserve">
+    <value>Подсветка</value>
+  </data>
+  <data name="Navigation_Profiles" xml:space="preserve">
+    <value>Профили</value>
+  </data>
+  <data name="Navigation_Settings" xml:space="preserve">
+    <value>Параметры</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_AppPath" xml:space="preserve">
+    <value>Путь к приложению или файлу</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Shortcut" xml:space="preserve">
+    <value>Сочетание клавиш</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Text" xml:space="preserve">
+    <value>Текст</value>
+  </data>
+  <data name="SpecialKey_ValueLabel_Website" xml:space="preserve">
+    <value>Веб-сайт</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Shortcut" xml:space="preserve">
+    <value>Например: Ctrl+Shift+M</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Text" xml:space="preserve">
+    <value>Текст для ввода</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Fans" xml:space="preserve">
+    <value>Вентиляторы</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_GamingMode" xml:space="preserve">
+    <value>Игровой режим</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Lighting" xml:space="preserve">
+    <value>Подсветка</value>
+  </data>
+  <data name="TrayDashboard_DetailTitle_Performance" xml:space="preserve">
+    <value>Производительность</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonBackToQuickControls.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Назад к быстрому управлению</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonChooseFanMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Выбрать режим вентиляторов</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonChooseLightingEffect.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Выбрать эффект подсветки</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonChoosePerformanceMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Выбрать режим производительности</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonConfigureGamingModeKeys.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Настроить клавиши игрового режима</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonCycleFanMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Переключить режим вентиляторов</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonCycleFunctionRowMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Переключить режим ряда функциональных клавиш</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonCycleLightingEffect.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Переключить эффект подсветки</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonCyclePerformanceMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Переключить режим производительности</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleBatteryProtection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Переключить защиту аккумулятора</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleChargeLimit.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Переключить предел заряда</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleChargeLimit.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Переключить предел заряда</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Переключить игровой режим</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGPUClockTuning.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Переключить настройку частот GPU</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGPUClockTuning.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Переключить настройку частот GPU</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGPUClockTuning2.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Переключить настройку частот GPU</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGPUClockTuning2.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Переключить настройку частот GPU</value>
+  </data>
+  <data name="TrayDashboardWindow_ButtonToggleGPUTuning.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Переключить настройку GPU</value>
+  </data>
+  <data name="TrayDashboardWindow_ChargeLimitSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Предел заряда</value>
+  </data>
+  <data name="TrayDashboardWindow_FansDetailText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Варианты режима вентиляторов</value>
+  </data>
+  <data name="TrayDashboardWindow_GpuCoreClockSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Смещение частоты ядра GPU</value>
+  </data>
+  <data name="TrayDashboardWindow_GpuMemoryClockSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Смещение частоты памяти GPU</value>
+  </data>
+  <data name="TrayDashboardWindow_LightingDetailText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Варианты эффекта подсветки</value>
+  </data>
+  <data name="TrayDashboardWindow_PerformanceDetailText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Варианты производительности</value>
+  </data>
+  <data name="TrayDashboardWindow_SliderKeyboardBrightness.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Яркость клавиатуры</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockBatteryProtection.Text" xml:space="preserve">
+    <value>Защита аккумулятора</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockBlockAltTab.Text" xml:space="preserve">
+    <value>Блокировать Alt+Tab</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockBlockWindowsKey.Text" xml:space="preserve">
+    <value>Блокировать клавишу Windows</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockC.Text" xml:space="preserve">
+    <value>C</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockChooseWhichKeysWindowsBlocksWhileGaming.Text" xml:space="preserve">
+    <value>Выберите клавиши, которые Windows будет блокировать при включённом игровом режиме.</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockFans.Text" xml:space="preserve">
+    <value>Вентиляторы</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockFunctionRow.Text" xml:space="preserve">
+    <value>Ряд функциональных клавиш</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockGamingMode.Text" xml:space="preserve">
+    <value>Игровой режим</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockGPUTuning.Text" xml:space="preserve">
+    <value>Настройка GPU</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockLighting.Text" xml:space="preserve">
+    <value>Подсветка</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockM.Text" xml:space="preserve">
+    <value>M</value>
+  </data>
+  <data name="TrayDashboardWindow_TextBlockPerformance.Text" xml:space="preserve">
+    <value>Производительность</value>
+  </data>
+  <data name="TrayDashboardWindow_WindowTitle" xml:space="preserve">
+    <value>Быстрое управление OpenBlade</value>
+  </data>
+  <data name="TrayIconMenu_Exit" xml:space="preserve">
+    <value>Выход</value>
+  </data>
+  <data name="TrayIconMenu_Open" xml:space="preserve">
+    <value>Открыть</value>
+  </data>
+</root>

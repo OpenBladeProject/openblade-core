@@ -1,14 +1,17 @@
 [CmdletBinding()]
 param(
-    [string]$OutputDirectory = 'artifacts\localization\issue-12',
+    [string]$OutputDirectory = 'artifacts\localization\issue-233',
     [ValidateSet('Debug', 'Release')]
-    [string]$Configuration = 'Debug'
+    [string]$Configuration = 'Debug',
+    [ValidateSet('qps-ploc', 'zh-CN', 'ru-RU')]
+    [string]$Culture = 'qps-ploc'
 )
 
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
-$resolvedOutput = [IO.Path]::GetFullPath((Join-Path $repository $OutputDirectory))
+$resolvedOutput = [IO.Path]::GetFullPath((
+    Join-Path (Join-Path $repository $OutputDirectory) $Culture))
 $trayOutput = Join-Path $resolvedOutput 'tray'
 $installerOutput = Join-Path $resolvedOutput 'installer'
 [IO.Directory]::CreateDirectory($trayOutput) | Out-Null
@@ -30,10 +33,12 @@ if ($LASTEXITCODE -ne 0) { throw 'The tray snapshot build failed.' }
 
 $previousSnapshotDirectory = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR
 $previousPseudo = $env:OPENBLADE_PSEUDO_LOCALIZATION
+$previousLanguage = $env:OPENBLADE_LOCALIZATION_LANGUAGE
 $previousSnapshotState = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE
 $previousSnapshotPage = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE
 try {
-    $env:OPENBLADE_PSEUDO_LOCALIZATION = '1'
+    $env:OPENBLADE_PSEUDO_LOCALIZATION = if ($Culture -eq 'qps-ploc') { '1' } else { $null }
+    $env:OPENBLADE_LOCALIZATION_LANGUAGE = $Culture
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR = $installerOutput
     $installerStates = @(
         'install',
@@ -48,7 +53,7 @@ try {
         dotnet test (Join-Path $repository (
             'build\installer\OpenBlade.Installer.UI.Tests\OpenBlade.Installer.UI.Tests.csproj')) `
             -c $Configuration -p:NuGetAudit=false --no-restore `
-            --filter 'FullyQualifiedName~PseudoLocalizationSnapshotsRenderEveryCriticalInstallerState'
+            --filter 'FullyQualifiedName~LocalizationSnapshotsRenderEveryCriticalInstallerState'
         if ($LASTEXITCODE -ne 0) {
             throw "The installer '$installerState' snapshot render failed."
         }
@@ -90,6 +95,7 @@ try {
 finally {
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR = $previousSnapshotDirectory
     $env:OPENBLADE_PSEUDO_LOCALIZATION = $previousPseudo
+    $env:OPENBLADE_LOCALIZATION_LANGUAGE = $previousLanguage
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE = $previousSnapshotState
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $previousSnapshotPage
 }
@@ -116,7 +122,7 @@ $manifest = [ordered]@{
     sourceRevision = (git -C $repository rev-parse HEAD).Trim()
     workingTreeDiff = (git -C $repository diff --stat)
     generatedAtUtc = [DateTime]::UtcNow.ToString('O')
-    culture = 'qps-ploc'
+    culture = $Culture
     operatingSystem = [Environment]::OSVersion.VersionString
     appliedDpi = $appliedDpi
     appTheme = if ($null -eq $lightTheme) { 'unknown' }

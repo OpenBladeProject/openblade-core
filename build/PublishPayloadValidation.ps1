@@ -359,7 +359,20 @@ function Assert-ProductionBundleFootprint {
         throw 'OpenBlade bundle must not pre-copy Setup into the payload; elevated setup installs its verified executable transactionally.'
     }
 
+    $supportedSatelliteCultures = @('zh-CN', 'ru-RU')
+    $requiredSatellitePaths = @($supportedSatelliteCultures | ForEach-Object {
+        Join-Path $_ 'OpenBlade.Tray.Core.resources.dll'
+    })
+    foreach ($requiredSatellitePath in $requiredSatellitePaths) {
+        $requiredPath = Join-Path $payload $requiredSatellitePath
+        if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+            throw "OpenBlade production payload is missing required localization satellite: $requiredPath"
+        }
+    }
+
     $productionFiles = @(Get-ChildItem -LiteralPath $payload -File -Recurse -ErrorAction Stop)
+    $payloadPrefix = $payload.TrimEnd([IO.Path]::DirectorySeparatorChar) `
+        + [IO.Path]::DirectorySeparatorChar
     $forbiddenFileNames = @(
         'appsettings.Development.json',
         'DirectML.dll',
@@ -372,7 +385,11 @@ function Assert-ProductionBundleFootprint {
                 -and -not [string]::Equals(
                     $_.DirectoryName,
                     $payload,
-                    [StringComparison]::OrdinalIgnoreCase)) `
+                    [StringComparison]::OrdinalIgnoreCase) `
+                -and -not [Linq.Enumerable]::Contains(
+                    [string[]]$requiredSatellitePaths,
+                    [string]$_.FullName.Substring($payloadPrefix.Length),
+                    [StringComparer]::OrdinalIgnoreCase)) `
             -or [Linq.Enumerable]::Contains(
                 [string[]]$forbiddenFileNames,
                 [string]$_.Name,

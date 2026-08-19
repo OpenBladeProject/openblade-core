@@ -306,15 +306,16 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         else if (!string.IsNullOrWhiteSpace(localizationLanguage))
         {
-            AssertEnglishResourceFallback();
+            AssertRequestedResourcesLoaded(localizationLanguage);
         }
         File.WriteAllText(smokeReportPath, "enable visual styles");
         System.Windows.Forms.Application.EnableVisualStyles();
         File.WriteAllText(smokeReportPath, "construct main window");
         var smokeMainWindow = new MainWindow();
-        if (pseudoLocalizationRequested)
+        if (pseudoLocalizationRequested ||
+            !string.IsNullOrWhiteSpace(localizationLanguage))
         {
-            AssertPseudoXamlApplied(smokeMainWindow);
+            AssertLocalizedXamlApplied(smokeMainWindow);
         }
         File.WriteAllText(smokeReportPath, "construct dashboard window");
         var smokeDashboardWindow = new TrayDashboardWindow(
@@ -384,11 +385,16 @@ public partial class App : Microsoft.UI.Xaml.Application
             }
             else if (!string.IsNullOrWhiteSpace(localizationLanguage))
             {
-                AssertEnglishResourceFallback();
+                AssertRequestedResourcesLoaded(localizationLanguage);
             }
 
             System.Windows.Forms.Application.EnableVisualStyles();
             snapshotMainWindow = MainWindow.CreateLocalizationSnapshot();
+            if (pseudoLocalizationRequested ||
+                !string.IsNullOrWhiteSpace(localizationLanguage))
+            {
+                AssertLocalizedXamlApplied(snapshotMainWindow);
+            }
             snapshotMainWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 820));
             snapshotMainWindow.Activate();
             await WaitForSnapshotLayoutAsync();
@@ -465,7 +471,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 reportPath,
                 pseudoLocalizationRequested
                     ? "completed qps-ploc"
-                    : "completed en-US");
+                    : $"completed {localizationLanguage ?? "en-US"}");
             Environment.Exit(0);
         }
         catch (Exception exception)
@@ -531,19 +537,49 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 
-    private static void AssertEnglishResourceFallback()
+    private static void AssertRequestedResourcesLoaded(string language)
     {
-        string knownResource = LocalizedResources.Get(
-            "MainWindow_ButtonCheckNow.Content",
-            "Check now");
-        if (!string.Equals(knownResource, "Check now", StringComparison.Ordinal))
+        const string visibleResourceKey = "MainWindow_ButtonCheckNow.Content";
+        string visibleText = LocalizedResources.Get(visibleResourceKey, "Check now");
+        string accessibleName = LocalizedResources.Get(
+            "MainWindow_ButtonCheckNow.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
+            "Check GitHub for OpenBlade updates");
+        string? resolvedLanguage = LocalizedResources.GetResolvedLanguage(
+            visibleResourceKey);
+        bool supported = string.Equals(language, "zh-CN", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(language, "ru-RU", StringComparison.OrdinalIgnoreCase);
+        if (supported)
+        {
+            if (string.Equals(visibleText, "Check now", StringComparison.Ordinal)
+                || string.Equals(
+                    accessibleName,
+                    "Check GitHub for OpenBlade updates",
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    resolvedLanguage,
+                    language,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"The supported '{language}' resource context did not load known visible "
+                        + "and accessibility resources. "
+                        + $"Visible='{visibleText}', accessible='{accessibleName}', "
+                        + $"override='{ApplicationLanguages.PrimaryLanguageOverride}', "
+                        + $"candidate='{resolvedLanguage ?? "<none>"}'.");
+            }
+        }
+        else if (!string.Equals(visibleText, "Check now", StringComparison.Ordinal)
+            || !string.Equals(
+                accessibleName,
+                "Check GitHub for OpenBlade updates",
+                StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                "An unsupported localization language did not fall back to en-US.");
+                $"Unsupported localization language '{language}' did not fall back to en-US.");
         }
     }
 
-    private static void AssertPseudoXamlApplied(MainWindow mainWindow)
+    private static void AssertLocalizedXamlApplied(MainWindow mainWindow)
     {
         string expectedContent = LocalizedResources.Get(
             "MainWindow_ButtonCheckNow.Content",
@@ -554,7 +590,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (!mainWindow.HasLocalizedCheckNowButton(expectedContent, expectedAccessibleName))
         {
             throw new InvalidOperationException(
-                "Compiled x:Uid resources did not apply qps-ploc visible and accessibility text. "
+                "Compiled x:Uid resources did not apply the resolved visible and accessibility text. "
                     + $"Expected content='{expectedContent}', accessible='{expectedAccessibleName}'. "
                     + "The named Settings-page button retained a different value.");
         }
@@ -1535,8 +1571,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 "Exit OpenBlade?"),
             Text = LocalizedResources.Get(
                 "App_ExitDialog_Text",
-                "Choose whether keyboard lighting, hotkeys, profiles, and automation "
-                    + "should keep running in the background."),
+                "Choose whether keyboard lighting, hotkeys, profiles, and automation should keep running in the background."),
             AllowCancel = true,
             DefaultButton = TaskDialogButton.Cancel,
             Buttons =

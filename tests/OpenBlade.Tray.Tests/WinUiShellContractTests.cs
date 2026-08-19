@@ -1113,7 +1113,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("'--property:PublishTrimmed=false'", publish, StringComparison.Ordinal);
         Assert.Contains("'--property:DebugType=None'", publish, StringComparison.Ordinal);
         Assert.Contains("'--property:DebugSymbols=false'", publish, StringComparison.Ordinal);
-        Assert.Contains("'--property:SatelliteResourceLanguages=en-US'", publish, StringComparison.Ordinal);
+        Assert.Contains(
+            "'--property:SatelliteResourceLanguages=en-US%3Bzh-CN%3Bru-RU'",
+            publish,
+            StringComparison.Ordinal);
         Assert.Contains("'--property:PublishSingleFile=true'", publish, StringComparison.Ordinal);
         Assert.Contains("'--property:EnableCompressionInSingleFile=true'", publish, StringComparison.Ordinal);
         Assert.Contains(
@@ -1974,6 +1977,14 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain(
             "Application.Current.Resources[",
             window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "[ValidateSet('qps-ploc', 'zh-CN', 'ru-RU')]",
+            capture,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$env:OPENBLADE_LOCALIZATION_LANGUAGE = $Culture",
+            capture,
             StringComparison.Ordinal);
         int activate = app.IndexOf("snapshotMainWindow.Activate()", StringComparison.Ordinal);
         int initialLayoutDrain = app.IndexOf(

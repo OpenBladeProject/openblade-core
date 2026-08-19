@@ -31,6 +31,18 @@ if ([regex]::Matches(
         '--property:OpenBladeIncludePseudoLocalization=false').Count -ne 2) {
     throw 'Production publish must suppress pseudo localization for product and installer UI payloads.'
 }
+if ($publishSource.IndexOf(
+        '--property:SatelliteResourceLanguages=en-US%3Bzh-CN%3Bru-RU',
+        [StringComparison]::Ordinal) -lt 0) {
+    throw 'Production publish must retain every supported managed localization satellite.'
+}
+$affectedCiSource = [IO.File]::ReadAllText((
+    Join-Path $repository 'build\Run-AffectedCi.ps1'))
+if ($affectedCiSource.IndexOf(
+        '--property:SatelliteResourceLanguages=en-US%3Bzh-CN%3Bru-RU',
+        [StringComparison]::Ordinal) -lt 0) {
+    throw 'Affected component publishing must retain every supported localization satellite.'
+}
 
 function Get-FixtureRelativePath {
     param([string]$Root, [string]$Path)
@@ -115,6 +127,8 @@ function New-LocalizationFixture {
             'build\installer\OpenBlade.Installer.UI\OpenBladeBootstrapperApplication.cs',
             'build\installer\OpenBlade.Installer.UI\Properties\Resources.resx',
             'build\installer\OpenBlade.Installer.UI\Properties\Resources.qps-ploc.resx',
+            'build\installer\OpenBlade.Installer.UI\Properties\Resources.zh-CN.resx',
+            'build\installer\OpenBlade.Installer.UI\Properties\Resources.ru-RU.resx',
             'build\installer\Bundle.en-US.wxl',
             'build\installer\Bundle.wxs',
             'build\Extract-InstallerLocalization.ps1',
@@ -124,9 +138,13 @@ function New-LocalizationFixture {
             'src\OpenBlade.Tray.Core\DashboardCards.cs',
             'src\OpenBlade.Tray.Core\Properties\Resources.resx',
             'src\OpenBlade.Tray.Core\Properties\Resources.qps-ploc.resx',
+            'src\OpenBlade.Tray.Core\Properties\Resources.zh-CN.resx',
+            'src\OpenBlade.Tray.Core\Properties\Resources.ru-RU.resx',
             'src\OpenBlade.Setup\UninstallUserInterface.cs',
             'src\OpenBlade.Setup\Properties\Resources.resx',
-            'src\OpenBlade.Setup\Properties\Resources.qps-ploc.resx')) {
+            'src\OpenBlade.Setup\Properties\Resources.qps-ploc.resx',
+            'src\OpenBlade.Setup\Properties\Resources.zh-CN.resx',
+            'src\OpenBlade.Setup\Properties\Resources.ru-RU.resx')) {
         $source = Join-Path $repository $relative
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { continue }
         $destination = Join-Path $fixture $relative
@@ -176,11 +194,17 @@ Assert-ValidatorFails -Expected 'missing en-US resource' -Mutate {
     $key = [string]@($document.root.data)[0].name
     [void]$document.root.RemoveChild(@($document.root.data)[0])
     $document.Save($path)
-    $pseudoPath = Join-Path $fixture 'src\OpenBlade.Tray\Strings\qps-ploc\Resources.resw'
-    [xml]$pseudoDocument = [IO.File]::ReadAllText($pseudoPath, $utf8)
-    $pseudoNode = @($pseudoDocument.root.data | Where-Object name -eq $key)[0]
-    [void]$pseudoDocument.root.RemoveChild($pseudoNode)
-    $pseudoDocument.Save($pseudoPath)
+    foreach ($culture in @('qps-ploc', 'zh-CN', 'ru-RU')) {
+        $translationPath = Join-Path $fixture (
+            "src\OpenBlade.Tray\Strings\$culture\Resources.resw")
+        [xml]$translationDocument = [IO.File]::ReadAllText(
+            $translationPath,
+            $utf8)
+        $translationNode = @($translationDocument.root.data |
+            Where-Object name -eq $key)[0]
+        [void]$translationDocument.root.RemoveChild($translationNode)
+        $translationDocument.Save($translationPath)
+    }
 }
 Assert-ValidatorFails -Expected 'missing en-US resource' -Mutate {
     param($fixture)
@@ -208,7 +232,9 @@ Assert-ValidatorFails -Expected 'missing managed resource' -Mutate {
     param($fixture)
     foreach ($relative in @(
             'src\OpenBlade.Tray.Core\Properties\Resources.resx',
-            'src\OpenBlade.Tray.Core\Properties\Resources.qps-ploc.resx')) {
+            'src\OpenBlade.Tray.Core\Properties\Resources.qps-ploc.resx',
+            'src\OpenBlade.Tray.Core\Properties\Resources.zh-CN.resx',
+            'src\OpenBlade.Tray.Core\Properties\Resources.ru-RU.resx')) {
         $path = Join-Path $fixture $relative
         [xml]$document = [IO.File]::ReadAllText($path, $utf8)
         $entry = @($document.root.data |
@@ -277,6 +303,14 @@ Assert-ValidatorFails -Expected 'changed its access key' -Mutate {
         1)
     $document.Save($path)
 }
+Assert-ValidatorFails -Expected 'zh-CN translation key mismatch' -Mutate {
+    param($fixture)
+    $path = Join-Path $fixture `
+        'src\OpenBlade.Tray.Core\Properties\Resources.zh-CN.resx'
+    [xml]$document = [IO.File]::ReadAllText($path, $utf8)
+    [void]$document.root.RemoveChild(@($document.root.data)[0])
+    $document.Save($path)
+}
 
 $pseudoFixture = New-LocalizationFixture
 try {
@@ -296,14 +330,23 @@ try {
         $catalogs[1][1],
         $catalogs[2][1],
         $catalogs[3][1])
+    $translationCatalogs = @(
+        'src\OpenBlade.Tray\Strings\zh-CN\Resources.resw',
+        'src\OpenBlade.Tray\Strings\ru-RU\Resources.resw',
+        'build\installer\OpenBlade.Installer.UI\Properties\Resources.zh-CN.resx',
+        'build\installer\OpenBlade.Installer.UI\Properties\Resources.ru-RU.resx',
+        'src\OpenBlade.Tray.Core\Properties\Resources.zh-CN.resx',
+        'src\OpenBlade.Tray.Core\Properties\Resources.ru-RU.resx',
+        'src\OpenBlade.Setup\Properties\Resources.zh-CN.resx',
+        'src\OpenBlade.Setup\Properties\Resources.ru-RU.resx')
     $expectedHashes = @{}
-    foreach ($relativePath in $generatedCatalogs) {
+    foreach ($relativePath in @($generatedCatalogs) + $translationCatalogs) {
         $expectedHashes[$relativePath] = Get-FileSha256 (
             Join-Path $pseudoFixture $relativePath)
     }
 
     & (Join-Path $pseudoFixture 'build\Update-LocalizationResources.ps1')
-    foreach ($relativePath in $generatedCatalogs) {
+    foreach ($relativePath in @($generatedCatalogs) + $translationCatalogs) {
         $actualHash = Get-FileSha256 (Join-Path $pseudoFixture $relativePath)
         if ($actualHash -cne $expectedHashes[$relativePath]) {
             throw "Regenerated catalog '$relativePath' changed bytes unexpectedly."

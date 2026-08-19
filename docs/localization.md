@@ -14,6 +14,17 @@ OpenBlade keeps its source language in four resource catalogs:
 Tray.Core remains independent of WinUI by using ordinary managed resources.
 Protocol values, persisted values, diagnostics, and logs stay language neutral.
 
+Production supports these Windows UI cultures:
+
+- English (United States): `en-US`
+- Simplified Chinese (China): `zh-CN`
+- Russian (Russia): `ru-RU`
+
+The tray, Tray.Core presentation, graphical installer, and native setup choose
+the current Windows UI culture automatically. OpenBlade does not persist a
+separate language preference. If a culture or individual resource cannot be
+resolved, the user-facing text falls back to the authoritative en-US value.
+
 The en-US catalogs are authoritative. The English text left beside an `x:Uid`
 in WinUI XAML is a design-time fallback and must match the catalog. The
 localization validator checks that copy so the two cannot drift.
@@ -110,6 +121,10 @@ cannot inherit retained render state from the preceding image:
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
     -File build\Capture-LocalizationSnapshots.ps1
 ```
+
+Pass `-Culture qps-ploc`, `-Culture zh-CN`, or `-Culture ru-RU` to capture one
+catalog. Each culture is written to its own directory beneath the requested
+output root.
 
 Review these tray surfaces at minimum width and at 100, 150, and 200 percent
 text scaling:

@@ -22,7 +22,7 @@
     <value>[!! Shút dówn cómplétélý ~~~~~~~ !!]</value>
   </data>
   <data name="App_ExitDialog_Text" xml:space="preserve">
-    <value>[!! Chóósé whéthér kéýbóárd líghtíng, hótkéýs, prófílés, ánd áútómátíón  ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Chóósé whéthér kéýbóárd líghtíng, hótkéýs, prófílés, ánd áútómátíón shóúld kéép rúnníng ín thé báckgróúnd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="App_ExitError_Heading" xml:space="preserve">
     <value>[!! OpenBlade cóúld nót shút dówn ~~~~~~ !!]</value>
@@ -1704,7 +1704,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Mánúál ónlý ~~~~ !!]</value>
   </data>
   <data name="MainWindow_UpdateConsent_Content" xml:space="preserve">
-    <value>[!! OpenBlade cán chéck GitHub fór á néw réléásé óncé pér dáý whén  ~~~~~~~~~~~~~ !!]</value>
+    <value>[!! OpenBlade cán chéck GitHub fór á néw réléásé óncé pér dáý whén thé tráý stárts. Thé chéck sénds nó hárdwáré státé, prófílés, séttíngs, ór díágnóstícs. Ýóú cán chángé thís látér ín Séttíngs. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_UpdateConsent_PrimaryButton" xml:space="preserve">
     <value>[!! Úsé dáílý chécks ~~~~~ !!]</value>

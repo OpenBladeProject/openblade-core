@@ -1493,9 +1493,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "Check for OpenBlade updates?"),
             Content = LocalizedResources.Get(
                 "MainWindow_UpdateConsent_Content",
-                "OpenBlade can check GitHub for a new release once per day when "
-                    + "the tray starts. The check sends no hardware state, profiles, "
-                    + "settings, or diagnostics. You can change this later in Settings."),
+                "OpenBlade can check GitHub for a new release once per day when the tray starts. The check sends no hardware state, profiles, settings, or diagnostics. You can change this later in Settings."),
             PrimaryButtonText = LocalizedResources.Get(
                 "MainWindow_UpdateConsent_PrimaryButton",
                 "Use daily checks"),

@@ -22,7 +22,7 @@
     <value>Shut down completely</value>
   </data>
   <data name="App_ExitDialog_Text" xml:space="preserve">
-    <value>Choose whether keyboard lighting, hotkeys, profiles, and automation </value>
+    <value>Choose whether keyboard lighting, hotkeys, profiles, and automation should keep running in the background.</value>
   </data>
   <data name="App_ExitError_Heading" xml:space="preserve">
     <value>OpenBlade could not shut down</value>
@@ -1704,7 +1704,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Manual only</value>
   </data>
   <data name="MainWindow_UpdateConsent_Content" xml:space="preserve">
-    <value>OpenBlade can check GitHub for a new release once per day when </value>
+    <value>OpenBlade can check GitHub for a new release once per day when the tray starts. The check sends no hardware state, profiles, settings, or diagnostics. You can change this later in Settings.</value>
   </data>
   <data name="MainWindow_UpdateConsent_PrimaryButton" xml:space="preserve">
     <value>Use daily checks</value>
