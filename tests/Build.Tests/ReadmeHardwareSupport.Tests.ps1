@@ -18,10 +18,19 @@ function Assert-UsbIdentity {
     }
 
     $cells = $row[0].Split('|')
-    $actual = $cells[$cells.Length - 2].Trim()
+    if ($cells.Length -ne 4) {
+        throw "README hardware-support row for $Model must contain only laptop and USB identity."
+    }
+
+    $actual = $cells[2].Trim()
     if ($actual -cne $Expected) {
         throw "README USB identity for $Model must be '$Expected'; received '$actual'."
     }
+}
+
+$header = @($readme | Where-Object { $_ -eq '| Laptop | USB identity |' })
+if ($header.Count -ne 1) {
+    throw 'README hardware support must use the brief laptop and USB identity table.'
 }
 
 Assert-UsbIdentity -Model 'RZ09-0581' -Expected '`1532:02E0`'

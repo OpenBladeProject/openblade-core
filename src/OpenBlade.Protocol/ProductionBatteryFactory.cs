@@ -557,20 +557,16 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             AdapterPowerState.FullPower280W,
         };
 
-        if (IsExactModelScopedRz090581Identity(exactIdentity))
-        {
-            states.Add(AdapterPowerState.UsbCPower45W);
-            states.Add(AdapterPowerState.UsbCPower60W);
-            states.Add(AdapterPowerState.UsbCPower65W);
-            states.Add(AdapterPowerState.UsbCPower80W);
-            states.Add(AdapterPowerState.UsbCPower90W);
-        }
-
         if (!IsExactModelScopedRz090581Identity(exactIdentity))
         {
             return states;
         }
 
+        states.Add(AdapterPowerState.UsbCPower45W);
+        states.Add(AdapterPowerState.UsbCPower60W);
+        states.Add(AdapterPowerState.UsbCPower65W);
+        states.Add(AdapterPowerState.UsbCPower80W);
+        states.Add(AdapterPowerState.UsbCPower90W);
         try
         {
             if ((isSlimQAdmissionApproved ?? SlimQ330WAdapterAdmissionSource.IsAdmitted)())
@@ -595,14 +591,13 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 Manufacturer: "Razer",
                 ProductName: "Blade 16 - RZ09-0581",
                 Sku: "RZ09-05819EN4",
-                BiosVersion: not null,
+                BiosVersion: { Length: > 0 },
             },
             Failure: null,
             FirmwareCompatibility: HostFirmwareCompatibility.Tested
                 or HostFirmwareCompatibility.ModelScoped
                 or HostFirmwareCompatibility.UntestedAllowed,
-        }
-        && !string.IsNullOrWhiteSpace(exactIdentity.Evidence.Value.BiosVersion);
+        };
 
     private static HidSessionResult<IProductionBatteryPort> Failure(
         HidSessionFailureKind failure) => new(null, failure);
