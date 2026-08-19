@@ -422,6 +422,21 @@ public sealed partial class ResponsiveChoiceSelector
             return;
         }
 
+        if (GetBindingExpression(SelectedItemProperty) is not null)
+        {
+            // Runtime bindings inside dashboard data templates are the source
+            // of truth. Replacing their dependency-property value here removes
+            // the binding, so let the owner accept the event and update it.
+            SelectionChanged?.Invoke(
+                this,
+                new ResponsiveChoiceSelectionChangedEventArgs(selectedItem));
+            if (!OptionsEqual(selectedItem, SelectedItem))
+            {
+                SynchronizeSelection(SelectedItem);
+            }
+            return;
+        }
+
         SetValue(SelectedItemProperty, selectedItem);
         SelectionChanged?.Invoke(
             this,

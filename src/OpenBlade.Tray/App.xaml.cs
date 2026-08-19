@@ -988,8 +988,9 @@ public partial class App : Microsoft.UI.Xaml.Application
                     originalOptions[1]),
                 "An options refresh replaced the authoritative anchor.");
             RequireResponsiveSelector(
-                ReferenceEquals(compact.SelectedItem, replacementOptions[1]),
-                "The compact selector did not reuse the equivalent replacement option.");
+                ReferenceEquals(compact.SelectedItem, replacementOptions[1])
+                    && ReferenceEquals(compact.SelectionBoxItem, replacementOptions[1]),
+                "The compact selector did not render the equivalent replacement option.");
             RequireResponsiveSelector(
                 ReferenceEquals(expanded.SelectedItem?.Tag, replacementOptions[1]),
                 "The expanded selector did not reuse the equivalent replacement option.");
@@ -1045,6 +1046,43 @@ public partial class App : Microsoft.UI.Xaml.Application
                 publishedSelections == 0,
                 "A deferred compact null escaped as a user selection.");
 
+            File.WriteAllText(smokeReportPath, "switch responsive selector power source");
+            ResponsiveChoiceSelectorSmokeOption[] batteryOptions =
+            [
+                new("battery-saver", "Battery Saver"),
+                new("battery-balanced", "Battery Balanced"),
+            ];
+            selector.ExpandedMinWindowWidth = 2000;
+            selector.SelectedItem = null;
+            selector.ItemsSource = batteryOptions;
+            selector.SelectedItem = batteryOptions[0];
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            RequireResponsiveSelector(
+                ReferenceEquals(selector.SelectedItem, batteryOptions[0])
+                    && ReferenceEquals(
+                        StableComboBoxSelection.GetAnchor(compact),
+                        batteryOptions[0])
+                    && ReferenceEquals(compact.SelectedItem, batteryOptions[0])
+                    && ReferenceEquals(compact.SelectionBoxItem, batteryOptions[0])
+                    && ReferenceEquals(expanded.SelectedItem?.Tag, batteryOptions[0])
+                    && compact.Visibility == Visibility.Visible
+                    && expanded.Visibility == Visibility.Collapsed
+                    && publishedSelections == 0,
+                "A power-source option swap did not restore the compact selection anchor.");
+            selector.ExpandedMinWindowWidth = 0;
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            RequireResponsiveSelector(
+                compact.Visibility == Visibility.Collapsed
+                    && expanded.Visibility == Visibility.Visible
+                    && ReferenceEquals(expanded.SelectedItem?.Tag, batteryOptions[0])
+                    && publishedSelections == 0,
+                "A power-source option swap did not restore the expanded presentation.");
+            selector.ItemsSource = replacementOptions;
+            selector.SelectedItem = replacementOptions[1];
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+
             File.WriteAllText(smokeReportPath, "clear authoritative selection");
             selector.SelectedItem = null;
             await DrainDispatcherAsync(selector.DispatcherQueue);
@@ -1090,6 +1128,101 @@ public partial class App : Microsoft.UI.Xaml.Application
                     && expanded.Visibility == Visibility.Visible
                     && ReferenceEquals(expanded.SelectedItem?.Tag, replacementOptions[2]),
                 "The expanded presentation did not retain selection.");
+
+            File.WriteAllText(smokeReportPath, "switch bound responsive selector power source");
+            ResponsiveChoiceSelectorSmokeOption[] acOptions =
+            [
+                new("balanced", "Balanced"),
+                new("performance", "Performance"),
+            ];
+            ResponsiveChoiceSelectorSmokeOption[] boundBatteryOptions =
+            [
+                new("battery-saver", "Battery Saver"),
+                new("battery-balanced", "Battery Balanced"),
+            ];
+            var boundModel = new ResponsiveChoiceSelectorSmokeModel(
+                acOptions,
+                acOptions[0]);
+            var boundSelector = new ResponsiveChoiceSelector
+            {
+                DisplayMemberPath = nameof(ResponsiveChoiceSelectorSmokeOption.Label),
+                ExpandedMinWindowWidth = 2000,
+                ExpandedWidthAllowance = 0,
+            };
+            boundSelector.SetBinding(
+                ResponsiveChoiceSelector.ItemsSourceProperty,
+                new Microsoft.UI.Xaml.Data.Binding
+                {
+                    Source = boundModel,
+                    Path = new PropertyPath(nameof(ResponsiveChoiceSelectorSmokeModel.Options)),
+                    Mode = Microsoft.UI.Xaml.Data.BindingMode.OneWay,
+                });
+            boundSelector.SetBinding(
+                ResponsiveChoiceSelector.SelectedItemProperty,
+                new Microsoft.UI.Xaml.Data.Binding
+                {
+                    Source = boundModel,
+                    Path = new PropertyPath(nameof(ResponsiveChoiceSelectorSmokeModel.Selected)),
+                    Mode = Microsoft.UI.Xaml.Data.BindingMode.OneWay,
+                });
+            int boundPublishedSelections = 0;
+            boundSelector.SelectionChanged += (_, args) =>
+            {
+                boundPublishedSelections++;
+                boundModel.Select(
+                    args.SelectedItem as ResponsiveChoiceSelectorSmokeOption);
+            };
+            var boundLoaded = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            boundSelector.Loaded += (_, _) => boundLoaded.TrySetResult(true);
+            var boundWindow = new Microsoft.UI.Xaml.Window
+            {
+                Content = boundSelector,
+            };
+            boundWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1200, 600));
+            boundWindow.Activate();
+            await boundLoaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await DrainDispatcherAsync(boundSelector.DispatcherQueue);
+            await DrainDispatcherAsync(boundSelector.DispatcherQueue);
+            var boundCompact = boundSelector.FindName("CompactSelector")
+                as Microsoft.UI.Xaml.Controls.ComboBox
+                ?? throw new InvalidOperationException("Bound compact selector was not created.");
+            var boundExpanded = boundSelector.FindName("ExpandedSelector")
+                as Microsoft.UI.Xaml.Controls.SelectorBar
+                ?? throw new InvalidOperationException("Bound expanded selector was not created.");
+            boundCompact.SelectedItem = acOptions[1];
+            RequireResponsiveSelector(
+                ReferenceEquals(boundModel.Selected, acOptions[1])
+                    && boundPublishedSelections == 1,
+                "A bound compact user selection did not reach its owner.");
+            boundModel.SwitchOptions(boundBatteryOptions, boundBatteryOptions[0]);
+            await DrainDispatcherAsync(boundSelector.DispatcherQueue);
+            await DrainDispatcherAsync(boundSelector.DispatcherQueue);
+            RequireResponsiveSelector(
+                ReferenceEquals(boundSelector.SelectedItem, boundBatteryOptions[0])
+                    && ReferenceEquals(
+                        StableComboBoxSelection.GetAnchor(boundCompact),
+                        boundBatteryOptions[0])
+                    && ReferenceEquals(boundCompact.SelectedItem, boundBatteryOptions[0])
+                    && ReferenceEquals(boundCompact.SelectionBoxItem, boundBatteryOptions[0])
+                    && ReferenceEquals(boundExpanded.SelectedItem?.Tag, boundBatteryOptions[0])
+                    && boundPublishedSelections == 1,
+                "A bound power-source option swap did not restore the compact selection: "
+                    + $"model={boundModel.Selected?.Key}, "
+                    + $"control={(boundSelector.SelectedItem as ResponsiveChoiceSelectorSmokeOption)?.Key}, "
+                    + $"anchor={(StableComboBoxSelection.GetAnchor(boundCompact) as ResponsiveChoiceSelectorSmokeOption)?.Key}, "
+                    + $"compact={(boundCompact.SelectedItem as ResponsiveChoiceSelectorSmokeOption)?.Key}, "
+                    + $"selectionBox={(boundCompact.SelectionBoxItem as ResponsiveChoiceSelectorSmokeOption)?.Key}, "
+                    + $"expanded={(boundExpanded.SelectedItem?.Tag as ResponsiveChoiceSelectorSmokeOption)?.Key}, "
+                    + $"published={boundPublishedSelections}.");
+            boundSelector.ExpandedMinWindowWidth = 0;
+            await DrainDispatcherAsync(boundSelector.DispatcherQueue);
+            RequireResponsiveSelector(
+                boundCompact.Visibility == Visibility.Collapsed
+                    && boundExpanded.Visibility == Visibility.Visible
+                    && ReferenceEquals(boundExpanded.SelectedItem?.Tag, boundBatteryOptions[0]),
+                "A bound power-source option swap did not restore the expanded presentation.");
+            boundWindow.Close();
 
             File.WriteAllText(smokeReportPath, "validate width-only presentation");
             selector.ItemsSource = new[] { replacementOptions[2] };
@@ -1263,6 +1396,39 @@ public partial class App : Microsoft.UI.Xaml.Application
     }
 
     private sealed record ResponsiveChoiceSelectorSmokeOption(string Key, string Label);
+
+    private sealed class ResponsiveChoiceSelectorSmokeModel(
+        IReadOnlyList<ResponsiveChoiceSelectorSmokeOption> options,
+        ResponsiveChoiceSelectorSmokeOption? selected)
+        : System.ComponentModel.INotifyPropertyChanged
+    {
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
+        public IReadOnlyList<ResponsiveChoiceSelectorSmokeOption> Options { get; private set; } =
+            options;
+
+        public ResponsiveChoiceSelectorSmokeOption? Selected { get; private set; } = selected;
+
+        public void Select(ResponsiveChoiceSelectorSmokeOption? option)
+        {
+            Selected = option;
+            PropertyChanged?.Invoke(
+                this,
+                new System.ComponentModel.PropertyChangedEventArgs(nameof(Selected)));
+        }
+
+        public void SwitchOptions(
+            IReadOnlyList<ResponsiveChoiceSelectorSmokeOption> replacement,
+            ResponsiveChoiceSelectorSmokeOption selectedOption)
+        {
+            Select(null);
+            Options = replacement;
+            PropertyChanged?.Invoke(
+                this,
+                new System.ComponentModel.PropertyChangedEventArgs(nameof(Options)));
+            Select(selectedOption);
+        }
+    }
 
     private MainWindow CreateMainWindow(IStartupRegistration startupRegistration)
     {
