@@ -2646,10 +2646,11 @@ public sealed class WinUiShellContractTests
         Assert.Contains("SystemInformation.DoubleClickTime", trayHost, StringComparison.Ordinal);
         Assert.Contains("System.Drawing.Point cursorPosition = Cursor.Position", trayHost, StringComparison.Ordinal);
         Assert.Contains("TrayIconMenu_Open", trayHost, StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "TrayIconMenu_DoubleClick",
             trayHost,
             StringComparison.Ordinal);
+        Assert.DoesNotContain("ShortcutKeyDisplayString", trayHost, StringComparison.Ordinal);
         Assert.Contains("TrayIconMenu_Exit", trayHost, StringComparison.Ordinal);
         Assert.Contains("new TrayDashboardWindow(", app, StringComparison.Ordinal);
         Assert.Contains("WindowNative.GetWindowHandle(mainWindow)", app, StringComparison.Ordinal);

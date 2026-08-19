@@ -1880,9 +1880,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="TrayDashboardWindow_WindowTitle" xml:space="preserve">
     <value>[!! OpenBlade qúíck cóntróls ~~~~~ !!]</value>
   </data>
-  <data name="TrayIconMenu_DoubleClick" xml:space="preserve">
-    <value>[!! Dóúblé-clíck ~~~~ !!]</value>
-  </data>
   <data name="TrayIconMenu_Exit" xml:space="preserve">
     <value>[!! Éxít ~~ !!]</value>
   </data>

@@ -54,6 +54,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Removed the redundant **Double-click** hint from the tray context menu while
+  preserving double-click activation of the main window.
 - Added typed decoding for the capture-backed RZ09-0528 `0011` no-adapter
   response while keeping Windows Offline authoritative for battery power and
   excluding that response from other Blade models.
