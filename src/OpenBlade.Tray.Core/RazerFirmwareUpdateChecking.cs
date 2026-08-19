@@ -539,13 +539,25 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     public bool IsSupported => supportPage is not null;
 
+    public bool ShowsBiosFirmware =>
+        HasReadableFirmwareValue(installedFirmware?.BiosVersion);
+
+    public bool ShowsEcFirmware =>
+        HasReadableFirmwareValue(installedFirmware?.EcVersion);
+
+    public bool ShowsMcuFirmware =>
+        HasReadableFirmwareValue(installedFirmware?.McuVersion);
+
+    public bool ShowsVbiosFirmware =>
+        HasReadableFirmwareValue(installedFirmware?.VbiosVersion);
+
     public bool ShowsThunderboltFirmware =>
-        supportPage?.PublishesThunderboltFirmware == true;
+        supportPage?.PublishesThunderboltFirmware == true
+        && HasReadableFirmwareValue(installedFirmware?.ThunderboltFirmwareVersion);
 
-    public bool ShowsTouchpadFirmware => supportPage?.PublishesTouchpadFirmware == true;
-
-    public bool ShowsPublishedOnlyFirmwareNotice =>
-        ShowsThunderboltFirmware || ShowsTouchpadFirmware;
+    public bool ShowsTouchpadFirmware =>
+        supportPage?.PublishesTouchpadFirmware == true
+        && HasReadableFirmwareValue(installedFirmware?.TouchpadFirmwareVersion);
 
     public bool IsChecking
     {
@@ -642,9 +654,12 @@ public sealed class FirmwareUpdateAssistantViewModel :
         installedFirmware = firmware;
         supportPage = nextPage;
         Notify(nameof(IsSupported));
+        Notify(nameof(ShowsBiosFirmware));
+        Notify(nameof(ShowsEcFirmware));
+        Notify(nameof(ShowsMcuFirmware));
+        Notify(nameof(ShowsVbiosFirmware));
         Notify(nameof(ShowsThunderboltFirmware));
         Notify(nameof(ShowsTouchpadFirmware));
-        Notify(nameof(ShowsPublishedOnlyFirmwareNotice));
         Notify(nameof(OfficialSupportUri));
         Notify(nameof(InstalledBiosVersion));
         Notify(nameof(InstalledEcVersion));
@@ -1257,10 +1272,13 @@ public sealed class FirmwareUpdateAssistantViewModel :
     }
 
     private static string FirmwareValue(string? value) =>
-        string.IsNullOrWhiteSpace(value)
-            || string.Equals(value.Trim(), "Unavailable", StringComparison.OrdinalIgnoreCase)
+        !HasReadableFirmwareValue(value)
             ? TrayText.Get("Unavailable")
-            : value.Trim();
+            : value!.Trim();
+
+    private static bool HasReadableFirmwareValue(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && !string.Equals(value.Trim(), "Unavailable", StringComparison.OrdinalIgnoreCase);
 
     private static string PublishedValue(
         string? value,

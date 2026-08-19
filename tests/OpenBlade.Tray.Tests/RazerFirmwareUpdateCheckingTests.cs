@@ -299,7 +299,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
     }
 
     [Fact]
-    public async Task ViewModel_ShowsRz090581PublishedOnlyFirmwareWithoutComparingIt()
+    public async Task ViewModel_HidesRz090581PublishedOnlyFirmwareWithoutComparingIt()
     {
         await using var viewModel = new FirmwareUpdateAssistantViewModel(
             new StubClient(new(
@@ -316,15 +316,51 @@ public sealed class RazerFirmwareUpdateCheckingTests
 
         await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
 
-        Assert.True(viewModel.ShowsThunderboltFirmware);
-        Assert.True(viewModel.ShowsTouchpadFirmware);
-        Assert.True(viewModel.ShowsPublishedOnlyFirmwareNotice);
+        Assert.False(viewModel.ShowsThunderboltFirmware);
+        Assert.False(viewModel.ShowsTouchpadFirmware);
         Assert.Equal("Unavailable", viewModel.InstalledThunderboltVersion);
         Assert.Equal("Unavailable", viewModel.InstalledTouchpadVersion);
         Assert.Equal("69.1", viewModel.PublishedThunderboltVersion);
         Assert.Equal("1.07", viewModel.PublishedTouchpadVersion);
         Assert.False(viewModel.IsUpdateAvailable);
         Assert.Null(update);
+    }
+
+    [Fact]
+    public async Task ViewModel_ShowsOnlyFirmwareWithReadableInstalledValues()
+    {
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            new StubClient(new("3.01", "1.04", "1.06")));
+        viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "Unavailable",
+            " ",
+            "Unavailable",
+            "Unavailable",
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber));
+
+        Assert.False(viewModel.ShowsBiosFirmware);
+        Assert.False(viewModel.ShowsEcFirmware);
+        Assert.False(viewModel.ShowsMcuFirmware);
+        Assert.False(viewModel.ShowsVbiosFirmware);
+        Assert.False(viewModel.ShowsThunderboltFirmware);
+        Assert.False(viewModel.ShowsTouchpadFirmware);
+
+        viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "1.6.0.0",
+            "95.04.5C.40.A9",
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            "69.1",
+            "1.07"));
+
+        Assert.True(viewModel.ShowsBiosFirmware);
+        Assert.True(viewModel.ShowsEcFirmware);
+        Assert.True(viewModel.ShowsMcuFirmware);
+        Assert.True(viewModel.ShowsVbiosFirmware);
+        Assert.True(viewModel.ShowsThunderboltFirmware);
+        Assert.True(viewModel.ShowsTouchpadFirmware);
     }
 
     [Fact]
@@ -351,7 +387,6 @@ public sealed class RazerFirmwareUpdateCheckingTests
 
         Assert.False(viewModel.ShowsThunderboltFirmware);
         Assert.False(viewModel.ShowsTouchpadFirmware);
-        Assert.False(viewModel.ShowsPublishedOnlyFirmwareNotice);
         Assert.Equal("Not listed", viewModel.PublishedThunderboltVersion);
         Assert.Equal("Not listed", viewModel.PublishedTouchpadVersion);
         Assert.False(viewModel.IsUpdateAvailable);

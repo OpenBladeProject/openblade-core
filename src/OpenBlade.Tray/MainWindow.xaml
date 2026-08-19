@@ -4165,13 +4165,12 @@
                                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                         BorderThickness="0,0,0,1"
                                         Padding="16,14">
-                                    <Grid ColumnSpacing="24" RowSpacing="8">
+                                    <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="2*" />
                                             <ColumnDefinition Width="3*" />
                                         </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
@@ -4189,8 +4188,10 @@
                                             <TextBlock x:Uid="MainWindow_TextBlockInstalled" Text="Installed" Style="{StaticResource SecondaryTextStyle}" />
                                             <TextBlock x:Uid="MainWindow_TextBlockPublishedByRazer" Grid.Column="1" Text="Published by Razer" Style="{StaticResource SecondaryTextStyle}" />
                                         </Grid>
-                                        <TextBlock x:Uid="MainWindow_TextBlockBIOS2" Grid.Row="1" Text="BIOS" Style="{StaticResource CardTitleStyle}" />
-                                        <Grid Grid.Row="1" Grid.Column="1" ColumnSpacing="24">
+                                        <TextBlock x:Uid="MainWindow_TextBlockBIOS2" Grid.Row="1" Margin="0,8,0,0" Text="BIOS" Style="{StaticResource CardTitleStyle}"
+                                                   Visibility="{x:Bind FirmwareUpdateViewModel.ShowsBiosFirmware, Mode=OneWay}" />
+                                        <Grid Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" ColumnSpacing="24"
+                                              Visibility="{x:Bind FirmwareUpdateViewModel.ShowsBiosFirmware, Mode=OneWay}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="*" />
@@ -4201,8 +4202,10 @@
                                                        Text="{x:Bind FirmwareUpdateViewModel.PublishedBiosVersion, Mode=OneWay}"
                                                        TextWrapping="Wrap" />
                                         </Grid>
-                                        <TextBlock x:Uid="MainWindow_TextBlockEC2" Grid.Row="2" Text="EC" Style="{StaticResource CardTitleStyle}" />
-                                        <Grid Grid.Row="2" Grid.Column="1" ColumnSpacing="24">
+                                        <TextBlock x:Uid="MainWindow_TextBlockEC2" Grid.Row="2" Margin="0,8,0,0" Text="EC" Style="{StaticResource CardTitleStyle}"
+                                                   Visibility="{x:Bind FirmwareUpdateViewModel.ShowsEcFirmware, Mode=OneWay}" />
+                                        <Grid Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" ColumnSpacing="24"
+                                              Visibility="{x:Bind FirmwareUpdateViewModel.ShowsEcFirmware, Mode=OneWay}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="*" />
@@ -4213,8 +4216,10 @@
                                                        Text="{x:Bind FirmwareUpdateViewModel.PublishedEcVersion, Mode=OneWay}"
                                                        TextWrapping="Wrap" />
                                         </Grid>
-                                        <TextBlock x:Uid="MainWindow_TextBlockMCU2" Grid.Row="3" Text="MCU" Style="{StaticResource CardTitleStyle}" />
-                                        <Grid Grid.Row="3" Grid.Column="1" ColumnSpacing="24">
+                                        <TextBlock x:Uid="MainWindow_TextBlockMCU2" Grid.Row="3" Margin="0,8,0,0" Text="MCU" Style="{StaticResource CardTitleStyle}"
+                                                   Visibility="{x:Bind FirmwareUpdateViewModel.ShowsMcuFirmware, Mode=OneWay}" />
+                                        <Grid Grid.Row="3" Grid.Column="1" Margin="0,8,0,0" ColumnSpacing="24"
+                                              Visibility="{x:Bind FirmwareUpdateViewModel.ShowsMcuFirmware, Mode=OneWay}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="*" />
@@ -4225,8 +4230,10 @@
                                                        Text="{x:Bind FirmwareUpdateViewModel.PublishedMcuVersion, Mode=OneWay}"
                                                        TextWrapping="Wrap" />
                                         </Grid>
-                                        <TextBlock x:Uid="MainWindow_TextBlockVBIOS2" Grid.Row="4" Text="VBIOS" Style="{StaticResource CardTitleStyle}" />
-                                        <Grid Grid.Row="4" Grid.Column="1" ColumnSpacing="24">
+                                        <TextBlock x:Uid="MainWindow_TextBlockVBIOS2" Grid.Row="4" Margin="0,8,0,0" Text="VBIOS" Style="{StaticResource CardTitleStyle}"
+                                                   Visibility="{x:Bind FirmwareUpdateViewModel.ShowsVbiosFirmware, Mode=OneWay}" />
+                                        <Grid Grid.Row="4" Grid.Column="1" Margin="0,8,0,0" ColumnSpacing="24"
+                                              Visibility="{x:Bind FirmwareUpdateViewModel.ShowsVbiosFirmware, Mode=OneWay}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="*" />
@@ -4237,9 +4244,9 @@
                                                        Text="{x:Bind FirmwareUpdateViewModel.PublishedVbiosVersion, Mode=OneWay}"
                                                        TextWrapping="Wrap" />
                                         </Grid>
-                                        <TextBlock x:Uid="MainWindow_TextBlockThunderboltFirmware" Grid.Row="5" Text="Thunderbolt 5" Style="{StaticResource CardTitleStyle}"
+                                        <TextBlock x:Uid="MainWindow_TextBlockThunderboltFirmware" Grid.Row="5" Margin="0,8,0,0" Text="Thunderbolt 5" Style="{StaticResource CardTitleStyle}"
                                                    Visibility="{x:Bind FirmwareUpdateViewModel.ShowsThunderboltFirmware, Mode=OneWay}" />
-                                        <Grid Grid.Row="5" Grid.Column="1" ColumnSpacing="24"
+                                        <Grid Grid.Row="5" Grid.Column="1" Margin="0,8,0,0" ColumnSpacing="24"
                                               Visibility="{x:Bind FirmwareUpdateViewModel.ShowsThunderboltFirmware, Mode=OneWay}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -4251,9 +4258,9 @@
                                                        Text="{x:Bind FirmwareUpdateViewModel.PublishedThunderboltVersion, Mode=OneWay}"
                                                        TextWrapping="Wrap" />
                                         </Grid>
-                                        <TextBlock x:Uid="MainWindow_TextBlockTouchpadFirmware" Grid.Row="6" Text="Touchpad" Style="{StaticResource CardTitleStyle}"
+                                        <TextBlock x:Uid="MainWindow_TextBlockTouchpadFirmware" Grid.Row="6" Margin="0,8,0,0" Text="Touchpad" Style="{StaticResource CardTitleStyle}"
                                                    Visibility="{x:Bind FirmwareUpdateViewModel.ShowsTouchpadFirmware, Mode=OneWay}" />
-                                        <Grid Grid.Row="6" Grid.Column="1" ColumnSpacing="24"
+                                        <Grid Grid.Row="6" Grid.Column="1" Margin="0,8,0,0" ColumnSpacing="24"
                                               Visibility="{x:Bind FirmwareUpdateViewModel.ShowsTouchpadFirmware, Mode=OneWay}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -4265,14 +4272,6 @@
                                                        Text="{x:Bind FirmwareUpdateViewModel.PublishedTouchpadVersion, Mode=OneWay}"
                                                        TextWrapping="Wrap" />
                                         </Grid>
-                                        <TextBlock x:Uid="MainWindow_TextBlockPublishedOnlyFirmwareNotice"
-                                                   Grid.Row="7"
-                                                   Grid.ColumnSpan="2"
-                                                   Margin="0,4,0,0"
-                                                   Text="Published only: OpenBlade cannot read the installed Thunderbolt 5 or touchpad firmware versions, so these values are not compared."
-                                                   TextWrapping="Wrap"
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   Visibility="{x:Bind FirmwareUpdateViewModel.ShowsPublishedOnlyFirmwareNotice, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
 

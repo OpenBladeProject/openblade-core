@@ -45,6 +45,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- The firmware comparison table now omits items whose installed version is
+  unavailable instead of showing non-actionable rows and a disclaimer.
 - Advanced the firmware-smoke snapshot schema from 7 to 8 for observed-only
   Thunderbolt and touchpad inventory metadata.
 - Expanded the RZ09-0581 BIOS 4.00 USB-C profile to exact 45 W, 60 W, 65 W,

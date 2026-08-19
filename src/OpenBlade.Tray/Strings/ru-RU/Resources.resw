@@ -1403,9 +1403,6 @@ OpenBlade не повторяла запросы на остановку.</value
   <data name="MainWindow_TextBlockPublishedByRazer.Text" xml:space="preserve">
     <value>Опубликовано Razer</value>
   </data>
-  <data name="MainWindow_TextBlockPublishedOnlyFirmwareNotice.Text" xml:space="preserve">
-    <value>Только опубликованные версии: OpenBlade не может прочитать установленные версии прошивки Thunderbolt 5 или сенсорной панели, поэтому эти значения не сравниваются.</value>
-  </data>
   <data name="MainWindow_TextBlockQuickControls.Text" xml:space="preserve">
     <value>Быстрое управление</value>
   </data>

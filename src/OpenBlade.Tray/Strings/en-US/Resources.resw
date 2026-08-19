@@ -1403,9 +1403,6 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockPublishedByRazer.Text" xml:space="preserve">
     <value>Published by Razer</value>
   </data>
-  <data name="MainWindow_TextBlockPublishedOnlyFirmwareNotice.Text" xml:space="preserve">
-    <value>Published only: OpenBlade cannot read the installed Thunderbolt 5 or touchpad firmware versions, so these values are not compared.</value>
-  </data>
   <data name="MainWindow_TextBlockQuickControls.Text" xml:space="preserve">
     <value>Quick controls</value>
   </data>
