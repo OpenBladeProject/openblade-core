@@ -299,7 +299,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
     }
 
     [Fact]
-    public async Task ViewModel_HidesRz090581PublishedOnlyFirmwareWithoutComparingIt()
+    public async Task ViewModel_HidesRz090581FirmwareWhenInstalledReadbackIsUnavailable()
     {
         await using var viewModel = new FirmwareUpdateAssistantViewModel(
             new StubClient(new(
@@ -324,6 +324,42 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.Equal("1.07", viewModel.PublishedTouchpadVersion);
         Assert.False(viewModel.IsUpdateAvailable);
         Assert.Null(update);
+    }
+
+    [Fact]
+    public async Task ViewModel_ComparesReadableThunderboltAndTouchpadFirmware()
+    {
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            new StubClient(new(
+                "3.01",
+                "1.04",
+                "1.06",
+                ThunderboltVersion: "69.2",
+                ThunderboltStatus: RazerPublishedFirmwareVersionStatus.Listed,
+                TouchpadVersion: "1.08",
+                TouchpadStatus: RazerPublishedFirmwareVersionStatus.Listed)));
+        viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "1.6.0.0",
+            "Unavailable",
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber,
+            ThunderboltFirmwareVersion: "69.1",
+            TouchpadFirmwareVersion: "1.07",
+            ThunderboltFirmwareAccess: DeviceFeatureAccess.ReadOnly,
+            TouchpadFirmwareAccess: DeviceFeatureAccess.ReadOnly));
+        FirmwareUpdateAvailableEventArgs? update = null;
+        viewModel.UpdateAvailable += (_, args) => update = args;
+
+        await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
+
+        Assert.True(viewModel.ShowsThunderboltFirmware);
+        Assert.True(viewModel.ShowsTouchpadFirmware);
+        Assert.Contains("Thunderbolt 5 69.2", viewModel.UpdateAvailableSummary);
+        Assert.Contains("Touchpad 1.08", viewModel.UpdateAvailableSummary);
+        Assert.NotNull(update);
+        Assert.Contains("thunderbolt=69.2", update.Signature);
+        Assert.Contains("touchpad=1.08", update.Signature);
     }
 
     [Fact]

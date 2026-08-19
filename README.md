@@ -35,10 +35,10 @@ exact laptop and firmware.
 | Razer Blade 16 (2025), `RZ09-0528` | `1532:02C6` | `2.02` | `1.09` | `1.09` |
 
 - Firmware update inventory also selects the exact published RZ09-0528 VBIOS
-  for the installed RTX 5080 or RTX 5090 GPU. On RZ09-0581 it displays Razer's
-  published Thunderbolt 5 `69.1` and touchpad `1.07` versions as
-  `ObservedOnly`; their installed versions remain unavailable, so OpenBlade
-  does not compare them or report an update.
+  for the installed RTX 5080 or RTX 5090 GPU. On RZ09-0581 it reads the exact
+  Windows USB4 root-router and PixArt Precision Touchpad identities, compares
+  their installed firmware with Razer's published versions, and fails closed
+  on other models or when an identity or version is unavailable or ambiguous.
 - Unlisted controls and Blade models remain unsupported without equivalent
   capture and restoration evidence
 

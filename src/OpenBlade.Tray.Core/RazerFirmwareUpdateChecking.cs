@@ -991,6 +991,16 @@ public sealed class FirmwareUpdateAssistantViewModel :
             newerComponents,
             installedFirmware?.VbiosVersion,
             vbios.Version);
+        AddNewerComponent(
+            newerComponents,
+            "Thunderbolt 5",
+            installedFirmware?.ThunderboltFirmwareVersion,
+            published.ThunderboltVersion);
+        AddNewerComponent(
+            newerComponents,
+            "Touchpad",
+            installedFirmware?.TouchpadFirmwareVersion,
+            published.TouchpadVersion);
 
         IsUpdateAvailable = newerComponents.Count > 0;
         UpdateAvailableSummary = IsUpdateAvailable
@@ -1010,7 +1020,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
             $"ec={NormalizeCachedVersion(published.EcVersion) ?? "-"}",
             $"mcu={NormalizeCachedVersion(published.McuVersion) ?? "-"}",
             $"vbios={NormalizeCachedVersion(vbios.Version) ?? "-"}",
-            $"vbiosGpu={NormalizeVbiosGpuName(vbios.GpuName) ?? "-"}");
+            $"vbiosGpu={NormalizeVbiosGpuName(vbios.GpuName) ?? "-"}",
+            $"thunderbolt={NormalizeCachedVersion(published.ThunderboltVersion) ?? "-"}",
+            $"touchpad={NormalizeCachedVersion(published.TouchpadVersion) ?? "-"}");
         UpdateAvailable?.Invoke(
             this,
             new FirmwareUpdateAvailableEventArgs(

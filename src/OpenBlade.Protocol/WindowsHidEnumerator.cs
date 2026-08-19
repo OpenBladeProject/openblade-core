@@ -6,7 +6,8 @@ internal sealed record HidInterfaceInfo(
     ushort ProductId,
     ushort UsagePage,
     ushort Usage,
-    ushort FeatureReportByteLength);
+    ushort FeatureReportByteLength,
+    ushort VersionNumber = 0);
 
 internal static class WindowsHidEnumerator
 {
@@ -92,7 +93,8 @@ internal static class WindowsHidEnumerator
                         identity.ProductId,
                         identity.UsagePage,
                         identity.Usage,
-                        identity.FeatureReportByteLength));
+                        identity.FeatureReportByteLength,
+                        identity.VersionNumber));
                 }
                 catch (Exception)
                 {

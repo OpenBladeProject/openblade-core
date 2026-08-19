@@ -165,7 +165,8 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
                 attributes.ProductId,
                 caps.UsagePage,
                 caps.Usage,
-                caps.FeatureReportByteLength);
+                caps.FeatureReportByteLength,
+                attributes.VersionNumber);
         }
         finally
         {

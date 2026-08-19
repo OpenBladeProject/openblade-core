@@ -15,9 +15,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   OpenBlade now carries the installed NVIDIA adapter identity through service
   status and diagnostics, selects only the matching official Razer VBIOS
   release, and declines comparison when either side cannot be identified.
-- Added exact-RZ09-0581 published Thunderbolt 5 and touchpad versions to the
-  firmware inventory as observed-only fields. Their installed versions remain
-  unavailable, so they never produce an update comparison or notification.
+- Added model-scoped RZ09-0581 Thunderbolt 5 and touchpad firmware comparison.
+  The service reads the exact Windows USB4 root-router property and PixArt
+  Precision Touchpad HID descriptor, fails closed on other models or ambiguous
+  identities, and reports updates only from trustworthy installed versions.
 - Added exact-RZ09-0581 BIOS 3.01 read-only diagnostics for the captured Synapse
   SKU hardware-configuration byte, Mini-LED panel-resolution byte, and thermal
   fan ID list. The raw values remain in the service's diagnostic cache and
