@@ -55,7 +55,8 @@ internal sealed class ValidationActorFactory : IValidationActorFactory
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         ControllerExclusivityPolicy exclusivityPolicy,
-        TimeSpan featureReportSettleDelay = default)
+        TimeSpan featureReportSettleDelay = default,
+        byte featureReportId = 0)
         : this(
             opener.Open,
             (handle, lease) => new WindowsRazerHidSession(
@@ -65,7 +66,8 @@ internal sealed class ValidationActorFactory : IValidationActorFactory
                 timeProvider,
                 lease,
                 exclusivityPolicy,
-                featureReportSettleDelay),
+                featureReportSettleDelay,
+                featureReportId),
             exchangeTimeout)
     {
         ArgumentNullException.ThrowIfNull(opener);

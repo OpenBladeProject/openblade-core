@@ -197,6 +197,7 @@ type sealed class OpenBlade.Contracts.ConfirmedDeviceState
   method OpenBlade.Contracts.CustomPerformanceSettings get_CustomPerformance()
   method OpenBlade.Contracts.GpuClockOffsetCapabilities get_GpuClockOffsets()
   method OpenBlade.Contracts.LightingSettings get_Lighting()
+  method System.Boolean get_HyperBoostActive()
   method System.Nullable<OpenBlade.Contracts.FanMode> get_Fans()
   method System.Nullable<OpenBlade.Contracts.LogoLightingMode> get_LogoLighting()
   method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_Performance()
@@ -205,6 +206,7 @@ type sealed class OpenBlade.Contracts.ConfirmedDeviceState
   method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceSettings value)
   method System.Void set_Fans(System.Nullable<OpenBlade.Contracts.FanMode> value)
   method System.Void set_GpuClockOffsets(OpenBlade.Contracts.GpuClockOffsetCapabilities value)
+  method System.Void set_HyperBoostActive(System.Boolean value)
   method System.Void set_Lighting(OpenBlade.Contracts.LightingSettings value)
   method System.Void set_LogoLighting(System.Nullable<OpenBlade.Contracts.LogoLightingMode> value)
   method System.Void set_Performance(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
@@ -218,6 +220,7 @@ type sealed class OpenBlade.Contracts.ConfirmedDeviceState
   property OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance { get; init; }
   property OpenBlade.Contracts.GpuClockOffsetCapabilities GpuClockOffsets { get; init; }
   property OpenBlade.Contracts.LightingSettings Lighting { get; init; }
+  property System.Boolean HyperBoostActive { get; init; }
   property System.Nullable<OpenBlade.Contracts.FanMode> Fans { get; init; }
   property System.Nullable<OpenBlade.Contracts.LogoLightingMode> LogoLighting { get; init; }
   property System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance { get; init; }
@@ -267,6 +270,13 @@ type enum OpenBlade.Contracts.ControlResultStatus
   field const OpenBlade.Contracts.ControlResultStatus Blocked = 2
   field const OpenBlade.Contracts.ControlResultStatus Failed = 3
   field const OpenBlade.Contracts.ControlResultStatus Unchanged = 1
+type enum OpenBlade.Contracts.CoolingPadConnectionState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadConnectionState Absent = 1
+  field const OpenBlade.Contracts.CoolingPadConnectionState Ambiguous = 3
+  field const OpenBlade.Contracts.CoolingPadConnectionState ObservationFailed = 4
+  field const OpenBlade.Contracts.CoolingPadConnectionState PresentExact = 2
+  field const OpenBlade.Contracts.CoolingPadConnectionState Unavailable = 0
 type sealed class OpenBlade.Contracts.CpuPowerLimitCapabilities
   interface System.IEquatable<OpenBlade.Contracts.CpuPowerLimitCapabilities>
   ctor (OpenBlade.Contracts.DeviceNumericRange Watts, OpenBlade.Contracts.DeviceFeatureAccess Access)
@@ -442,6 +452,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.DeviceCapabilities <Clone>$()
   method OpenBlade.Contracts.FanSpeedRange get_FanSpeedRange()
   method OpenBlade.Contracts.GpuOverclockCapabilities get_GpuOverclock()
+  method OpenBlade.Contracts.HyperBoostBaseModeCapabilities get_HyperBoostBaseModes()
   method OpenBlade.Contracts.SpecialKeySlotSet get_WritableSpecialKeySlots()
   method System.Boolean get_SupportsBatteryProtectionOff()
   method System.Boolean get_SupportsKeyboardBrightness()
@@ -456,6 +467,8 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> get_OneShotLaptopControls()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> get_PerformancePresets()
   method System.Collections.Generic.IReadOnlySet<System.Int32> get_ChargeLimits()
+  method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_HyperBoostAccess()
+  method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_HyperBoostWithoutCoolingPadAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_LampArrayLightingAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_SpecialKeyBindingsAccess()
   method System.String get_KeyboardLightingLayoutId()
@@ -467,6 +480,9 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_FanModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> value)
   method System.Void set_FanSpeedRange(OpenBlade.Contracts.FanSpeedRange value)
   method System.Void set_GpuOverclock(OpenBlade.Contracts.GpuOverclockCapabilities value)
+  method System.Void set_HyperBoostAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
+  method System.Void set_HyperBoostBaseModes(OpenBlade.Contracts.HyperBoostBaseModeCapabilities value)
+  method System.Void set_HyperBoostWithoutCoolingPadAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_KeyboardLightingLayoutId(System.String value)
   method System.Void set_LampArrayLightingAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_LightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
@@ -495,6 +511,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property OpenBlade.Contracts.CustomPerformanceCapabilities CustomPerformance { get; init; }
   property OpenBlade.Contracts.FanSpeedRange FanSpeedRange { get; init; }
   property OpenBlade.Contracts.GpuOverclockCapabilities GpuOverclock { get; init; }
+  property OpenBlade.Contracts.HyperBoostBaseModeCapabilities HyperBoostBaseModes { get; init; }
   property OpenBlade.Contracts.SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
@@ -509,6 +526,8 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> OneShotLaptopControls { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets { get; init; }
   property System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits { get; init; }
+  property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> HyperBoostAccess { get; init; }
+  property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> HyperBoostWithoutCoolingPadAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> LampArrayLightingAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> SpecialKeyBindingsAccess { get; init; }
   property System.String KeyboardLightingLayoutId { get; init; }
@@ -891,6 +910,27 @@ type sealed class OpenBlade.Contracts.GpuOverclockCapabilities
   property OpenBlade.Contracts.DeviceNumericRange MemoryOffsetMegahertz { get; init; }
   property System.Boolean IsWellFormed { get; }
   property System.Boolean SupportsEnableDisable { get; init; }
+type sealed class OpenBlade.Contracts.HyperBoostBaseModeCapabilities
+  interface System.IEquatable<OpenBlade.Contracts.HyperBoostBaseModeCapabilities>
+  ctor (OpenBlade.Contracts.DeviceFeatureAccess Silent, OpenBlade.Contracts.DeviceFeatureAccess Balanced, OpenBlade.Contracts.DeviceFeatureAccess Performance)
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Balanced()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Performance()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Silent()
+  method OpenBlade.Contracts.HyperBoostBaseModeCapabilities <Clone>$()
+  method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> AccessFor(OpenBlade.Contracts.PerformancePreset preset)
+  method System.Void Deconstruct(out OpenBlade.Contracts.DeviceFeatureAccess Silent, out OpenBlade.Contracts.DeviceFeatureAccess Balanced, out OpenBlade.Contracts.DeviceFeatureAccess Performance)
+  method System.Void set_Balanced(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_Performance(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_Silent(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.HyperBoostBaseModeCapabilities left, OpenBlade.Contracts.HyperBoostBaseModeCapabilities right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.HyperBoostBaseModeCapabilities left, OpenBlade.Contracts.HyperBoostBaseModeCapabilities right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.HyperBoostBaseModeCapabilities other)
+  property OpenBlade.Contracts.DeviceFeatureAccess Balanced { get; init; }
+  property OpenBlade.Contracts.DeviceFeatureAccess Performance { get; init; }
+  property OpenBlade.Contracts.DeviceFeatureAccess Silent { get; init; }
 type static class OpenBlade.Contracts.IpcMessageCodec
   method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceRequest request, System.Threading.CancellationToken token)
   method static System.Threading.Tasks.Task WriteServerFrameAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceServerFrame frame, System.Threading.CancellationToken token)
@@ -1223,7 +1263,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 48
+  field const System.Int32 ProtocolVersion = 49
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1233,6 +1273,15 @@ type enum OpenBlade.Contracts.OverrideLifetime
   field System.Int32 value__
   field const OpenBlade.Contracts.OverrideLifetime Persistent = 1
   field const OpenBlade.Contracts.OverrideLifetime UntilPowerSourceChange = 0
+type enum OpenBlade.Contracts.PadlessHyperBoostEligibilityState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.PadlessHyperBoostEligibilityState CoolingPadAbsent = 1
+  field const OpenBlade.Contracts.PadlessHyperBoostEligibilityState CoolingPadPresent = 2
+  field const OpenBlade.Contracts.PadlessHyperBoostEligibilityState Unknown = 0
+type enum OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario
+  field System.Int32 value__
+  field const OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario LowPower = 0
+  field const OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario UnexpectedExit = 1
 type sealed class OpenBlade.Contracts.PerformanceOverride
   interface System.IEquatable<OpenBlade.Contracts.PerformanceOverride>
   ctor (OpenBlade.Contracts.PerformancePreset Value, OpenBlade.Contracts.OverrideLifetime Lifetime, OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance = null)
@@ -1730,6 +1779,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method OpenBlade.Contracts.LiveReadings get_LiveReadings()
   method OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> get_FanOverride()
   method OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.LightingSettings> get_LightingOverride()
+  method OpenBlade.Contracts.PadlessHyperBoostEligibilityState get_PadlessHyperBoostEligibility()
   method OpenBlade.Contracts.PerformanceOverride get_PerformanceOverride()
   method OpenBlade.Contracts.PerformanceShortcutPreview get_PerformanceShortcutPreview()
   method OpenBlade.Contracts.PowerSource get_ActivePowerSource()
@@ -1784,6 +1834,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_LightingSuppressions(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> value)
   method System.Void set_LiveReadings(OpenBlade.Contracts.LiveReadings value)
   method System.Void set_Message(System.String value)
+  method System.Void set_PadlessHyperBoostEligibility(OpenBlade.Contracts.PadlessHyperBoostEligibilityState value)
   method System.Void set_PerformanceOverride(OpenBlade.Contracts.PerformanceOverride value)
   method System.Void set_PerformanceShortcutPreview(OpenBlade.Contracts.PerformanceShortcutPreview value)
   method System.Void set_PotentialControllers(System.Collections.Generic.IReadOnlyList<System.String> value)
@@ -1814,6 +1865,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.LiveReadings LiveReadings { get; init; }
   property OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> FanOverride { get; init; }
   property OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.LightingSettings> LightingOverride { get; init; }
+  property OpenBlade.Contracts.PadlessHyperBoostEligibilityState PadlessHyperBoostEligibility { get; init; }
   property OpenBlade.Contracts.PerformanceOverride PerformanceOverride { get; init; }
   property OpenBlade.Contracts.PerformanceShortcutPreview PerformanceShortcutPreview { get; init; }
   property OpenBlade.Contracts.PowerSource ActivePowerSource { get; init; }
@@ -1958,6 +2010,22 @@ type sealed class OpenBlade.Contracts.SetFullChargeOverrideRequest
   method static System.Boolean op_Inequality(OpenBlade.Contracts.SetFullChargeOverrideRequest left, OpenBlade.Contracts.SetFullChargeOverrideRequest right)
   method virtual OpenBlade.Contracts.SetFullChargeOverrideRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetFullChargeOverrideRequest other)
+  property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Contracts.SetHyperBoostRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetHyperBoostRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Boolean Enabled)
+  method System.Boolean get_Enabled()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Boolean Enabled)
+  method System.Void set_Enabled(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetHyperBoostRequest left, OpenBlade.Contracts.SetHyperBoostRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetHyperBoostRequest left, OpenBlade.Contracts.SetHyperBoostRequest right)
+  method virtual OpenBlade.Contracts.SetHyperBoostRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetHyperBoostRequest other)
   property System.Boolean Enabled { get; init; }
 type sealed class OpenBlade.Contracts.SetKeyboardLightingControlModeRequest
   base OpenBlade.Contracts.ServiceRequest
@@ -2269,6 +2337,34 @@ type sealed class OpenBlade.Contracts.UpdateProfilesRequest
   method virtual OpenBlade.Contracts.UpdateProfilesRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.UpdateProfilesRequest other)
   property OpenBlade.Contracts.ProfileSet Profiles { get; init; }
+type sealed class OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario Scenario, System.Guid ValidationRunId, System.String ExpectedSourceRevision, System.String ExpectedServiceAssemblySha256, System.String ExpectedAdmissionManifestSha256)
+  method OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario get_Scenario()
+  method System.Guid get_ValidationRunId()
+  method System.String get_ExpectedAdmissionManifestSha256()
+  method System.String get_ExpectedServiceAssemblySha256()
+  method System.String get_ExpectedSourceRevision()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario Scenario, out System.Guid ValidationRunId, out System.String ExpectedSourceRevision, out System.String ExpectedServiceAssemblySha256, out System.String ExpectedAdmissionManifestSha256)
+  method System.Void set_ExpectedAdmissionManifestSha256(System.String value)
+  method System.Void set_ExpectedServiceAssemblySha256(System.String value)
+  method System.Void set_ExpectedSourceRevision(System.String value)
+  method System.Void set_Scenario(OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario value)
+  method System.Void set_ValidationRunId(System.Guid value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest left, OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest left, OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest right)
+  method virtual OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ValidatePadlessHyperBoostLifecycleRequest other)
+  property OpenBlade.Contracts.PadlessHyperBoostLifecycleScenario Scenario { get; init; }
+  property System.Guid ValidationRunId { get; init; }
+  property System.String ExpectedAdmissionManifestSha256 { get; init; }
+  property System.String ExpectedServiceAssemblySha256 { get; init; }
+  property System.String ExpectedSourceRevision { get; init; }
 type sealed class OpenBlade.Contracts.WaveLightingParameters
   base OpenBlade.Contracts.LightingEffectParameters
   interface System.IEquatable<OpenBlade.Contracts.WaveLightingParameters>

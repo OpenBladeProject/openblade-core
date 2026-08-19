@@ -30,6 +30,7 @@ public static class FirmwareSmokeAssessment
         "Off",
         "Reactive",
         "Ripple",
+        "Sequence",
         "Spectrum",
         "Starlight",
         "Static",
@@ -183,6 +184,16 @@ public static class FirmwareSmokeAssessment
             "post-update");
     }
 
+    internal static FirmwareSmokeReport CompareUnchangedInstalledGeneration(
+        FirmwareSmokeSnapshot baseline,
+        FirmwareSmokeSnapshot current) =>
+        CompareSnapshots(
+            baseline,
+            current,
+            new HashSet<FirmwareComponent>(),
+            new HashSet<FirmwareComponent>(),
+            "installed-generation");
+
     public static FirmwareSmokeReport CompareRehearsal(
         FirmwareSmokeSnapshot baseline,
         FirmwareSmokeSnapshot current,
@@ -302,10 +313,16 @@ public static class FirmwareSmokeAssessment
             Value(current.Controls.KeyboardDriverModeActive)));
         checks.Add(Check(
             "state.lighting-renderer",
-            "Lighting renderer is active and not faulted",
-            current.Controls.LightingRendererOwnership is not "None" and not "Faulted",
-            "An active, non-faulted renderer",
-            current.Controls.LightingRendererOwnership));
+            "Lighting renderer state matches the desired effect and is not faulted",
+            string.Equals(
+                current.Controls.DesiredLightingEffect,
+                "Off",
+                StringComparison.Ordinal)
+                ? current.Controls.LightingRendererOwnership == "None"
+                : current.Controls.LightingRendererOwnership is not "None" and not "Faulted",
+            "None for Off; otherwise an active, non-faulted renderer",
+            $"{current.Controls.DesiredLightingEffect ?? "Unavailable"}/" +
+                current.Controls.LightingRendererOwnership));
         checks.Add(Check(
             "runtime.components",
             "Installed OpenBlade component versions match the baseline",
@@ -443,6 +460,13 @@ public static class FirmwareSmokeAssessment
     {
         FirmwareSmokeCapabilityExpectation expected = ExpectedCapabilities(
             snapshot.TargetModel);
+        string expectedHyperBoostAccess = ExpectedHyperBoostAccess(
+            snapshot.TargetModel,
+            snapshot.Firmware.Bios);
+        string expectedHyperBoostWithoutCoolingPadAccess =
+            ExpectedHyperBoostWithoutCoolingPadAccess(snapshot.TargetModel);
+        HyperBoostBaseModeCapabilities? expectedHyperBoostBaseModes =
+            ExpectedHyperBoostBaseModes(snapshot.TargetModel, snapshot.Firmware.Bios);
         var checks = new List<FirmwareSmokeCheck>
         {
             Check(
@@ -567,6 +591,32 @@ public static class FirmwareSmokeAssessment
                     StringComparison.Ordinal),
                 expected.LampArrayLightingAccess,
                 snapshot.Capabilities.LampArrayLightingAccess ?? "Unavailable"),
+            Check(
+                "capabilities.hyper-boost",
+                "HyperBoost access matches captured model and firmware evidence",
+                string.Equals(
+                    snapshot.Capabilities.HyperBoostAccess ?? "Unavailable",
+                    expectedHyperBoostAccess,
+                    StringComparison.Ordinal),
+                expectedHyperBoostAccess,
+                snapshot.Capabilities.HyperBoostAccess ?? "Unavailable"),
+            Check(
+                "capabilities.hyper-boost-without-cooling-pad",
+                "Pad-less HyperBoost access matches reviewed evidence",
+                string.Equals(
+                    snapshot.Capabilities.HyperBoostWithoutCoolingPadAccess
+                        ?? "Unavailable",
+                    expectedHyperBoostWithoutCoolingPadAccess,
+                    StringComparison.Ordinal),
+                expectedHyperBoostWithoutCoolingPadAccess,
+                snapshot.Capabilities.HyperBoostWithoutCoolingPadAccess
+                    ?? "Unavailable"),
+            Check(
+                "capabilities.hyper-boost-base-modes",
+                "HyperBoost base-mode access matches direct-transition evidence",
+                snapshot.Capabilities.HyperBoostBaseModes == expectedHyperBoostBaseModes,
+                HyperBoostBaseModeSummary(expectedHyperBoostBaseModes),
+                HyperBoostBaseModeSummary(snapshot.Capabilities.HyperBoostBaseModes)),
             Check(
                 "readback.performance",
                 "Performance readback is available",
@@ -740,6 +790,10 @@ public static class FirmwareSmokeAssessment
         $"SpecialKeys={capabilities.SpecialKeyBindingsAccess ?? "Unavailable"}; " +
         $"WritableSpecialKeySlots={capabilities.WritableSpecialKeySlots ?? "Unavailable"}; " +
         $"LampArray={capabilities.LampArrayLightingAccess ?? "Unavailable"}; " +
+        $"HyperBoost={capabilities.HyperBoostAccess ?? "Unavailable"}; " +
+        $"HyperBoostWithoutCoolingPad=" +
+        $"{capabilities.HyperBoostWithoutCoolingPadAccess ?? "Unavailable"}; " +
+        $"HyperBoostBases={HyperBoostBaseModeSummary(capabilities.HyperBoostBaseModes)}; " +
         $"ChargeLimits={capabilities.ChargeLimits.Count}; " +
         $"Logo={capabilities.LogoLightingModes.Count}; " +
         $"Laptop={capabilities.OneShotLaptopControls.Count}; " +
@@ -769,6 +823,15 @@ public static class FirmwareSmokeAssessment
             left.LampArrayLightingAccess,
             right.LampArrayLightingAccess,
             StringComparison.Ordinal)
+        && string.Equals(
+            left.HyperBoostAccess,
+            right.HyperBoostAccess,
+            StringComparison.Ordinal)
+        && string.Equals(
+            left.HyperBoostWithoutCoolingPadAccess,
+            right.HyperBoostWithoutCoolingPadAccess,
+            StringComparison.Ordinal)
+        && left.HyperBoostBaseModes == right.HyperBoostBaseModes
         && left.ChargeLimits.SequenceEqual(right.ChargeLimits)
         && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
         && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge
@@ -809,6 +872,40 @@ public static class FirmwareSmokeAssessment
                 SpecialKeySlotSet.None.ToString(),
                 "Unavailable"),
         };
+
+    private static string ExpectedHyperBoostAccess(
+        string modelNumber,
+        string biosVersion) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber switch
+        {
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber =>
+                DeviceFeatureAccess.ReadWrite.ToString(),
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber or
+            RazerBladeModelCatalog.Rz090528ModelNumber =>
+                DeviceFeatureAccess.ObservedOnly.ToString(),
+            _ => "Unavailable",
+        };
+
+    private static string ExpectedHyperBoostWithoutCoolingPadAccess(
+        string modelNumber) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
+            == RazerBladeModelCatalog.OpenBladeTargetModelNumber
+                ? DeviceFeatureAccess.ReadWrite.ToString()
+                : "Unavailable";
+
+    private static HyperBoostBaseModeCapabilities? ExpectedHyperBoostBaseModes(
+        string modelNumber,
+        string biosVersion) =>
+        RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
+            == RazerBladeModelCatalog.OpenBladeTargetModelNumber
+                ? new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ObservedOnly)
+                : null;
+
+    private static string HyperBoostBaseModeSummary(
+        HyperBoostBaseModeCapabilities? capabilities) => capabilities is null
+            ? "Unavailable"
+            : $"Silent={capabilities.Silent},Balanced={capabilities.Balanced},Performance={capabilities.Performance}";
 
     private static string List<T>(IReadOnlyList<T> values) =>
         values.Count == 0 ? "None" : string.Join(", ", values);

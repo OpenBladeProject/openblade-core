@@ -6,6 +6,68 @@ namespace OpenBlade.FirmwareSmoke.Tests;
 public sealed class FirmwareSmokeAssessmentTests
 {
     [Fact]
+    public void CompareUnchangedInstalledGeneration_AcceptsGreenExactSnapshot()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");
+
+        FirmwareSmokeReport report =
+            FirmwareSmokeAssessment.CompareUnchangedInstalledGeneration(
+                snapshot,
+                snapshot);
+
+        Assert.True(report.Succeeded);
+    }
+
+    [Fact]
+    public void CompareUnchangedInstalledGeneration_AcceptsDisabledLightingRenderer()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0") with
+        {
+            Controls = CreateSnapshot("1.5.0.0").Controls with
+            {
+                DesiredLightingEffect = "Off",
+                LightingRendererOwnership = "None",
+            },
+        };
+
+        FirmwareSmokeReport report =
+            FirmwareSmokeAssessment.CompareUnchangedInstalledGeneration(
+                snapshot,
+                snapshot);
+
+        Assert.True(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "state.lighting-renderer").Outcome);
+    }
+
+    [Fact]
+    public void CompareUnchangedInstalledGeneration_RejectsMissingActiveRenderer()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0") with
+        {
+            Controls = CreateSnapshot("1.5.0.0").Controls with
+            {
+                DesiredLightingEffect = "Static",
+                LightingRendererOwnership = "None",
+            },
+        };
+
+        FirmwareSmokeReport report =
+            FirmwareSmokeAssessment.CompareUnchangedInstalledGeneration(
+                snapshot,
+                snapshot);
+
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "state.lighting-renderer").Outcome);
+    }
+
+    [Fact]
     public void HealthyBaselineHasNoFailures()
     {
         FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");
@@ -13,6 +75,7 @@ public sealed class FirmwareSmokeAssessmentTests
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
 
         Assert.Contains("AudioMeter", snapshot.Capabilities.LightingEffects);
+        Assert.Contains("Sequence", snapshot.Capabilities.LightingEffects);
         Assert.True(report.Succeeded);
         Assert.DoesNotContain(
             report.Checks,
@@ -31,6 +94,81 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Fact]
+    public void Rz090581Bios400RequiresReadWriteHyperBoostCapability()
+    {
+        FirmwareSmokeSnapshot admitted = CreateSnapshot("1.6.0.0") with
+        {
+            Firmware = new FirmwareIdentity("4.00", "1.04", "1.6.0.0", "98.3.5c.40.3d"),
+            Capabilities = CreateSnapshot("1.6.0.0").Capabilities with
+            {
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite.ToString(),
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ObservedOnly),
+            },
+        };
+
+        FirmwareSmokeReport admittedReport =
+            FirmwareSmokeAssessment.ValidateBaseline(admitted);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                admittedReport.Checks,
+                check => check.Id == "capabilities.hyper-boost").Outcome);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                admittedReport.Checks,
+                check => check.Id == "capabilities.hyper-boost-base-modes").Outcome);
+
+        FirmwareSmokeReport missingReport = FirmwareSmokeAssessment.ValidateBaseline(
+            admitted with
+            {
+                Capabilities = admitted.Capabilities with { HyperBoostAccess = null },
+            });
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(
+                missingReport.Checks,
+                check => check.Id == "capabilities.hyper-boost").Outcome);
+
+        FirmwareSmokeReport missingBaseModesReport =
+            FirmwareSmokeAssessment.ValidateBaseline(
+                admitted with
+                {
+                    Capabilities = admitted.Capabilities with
+                    {
+                        HyperBoostBaseModes = null,
+                    },
+                });
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(
+                missingBaseModesReport.Checks,
+                check => check.Id == "capabilities.hyper-boost-base-modes").Outcome);
+    }
+
+    [Fact]
+    public void Rz090581FirmwareUsesModelScopedHyperBoostCapability()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
+
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "capabilities.hyper-boost").Outcome);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "capabilities.hyper-boost-base-modes").Outcome);
+    }
+
+    [Fact]
     public void HealthyRz090528BaselineUsesItsExactCapabilityGate()
     {
         FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.9.0.0") with
@@ -39,6 +177,9 @@ public sealed class FirmwareSmokeAssessmentTests
             Firmware = new FirmwareIdentity("2.02", "1.09", "1.9.0.0", "Unavailable"),
             Capabilities = CreateSnapshot("1.9.0.0").Capabilities with
             {
+                HyperBoostAccess = DeviceFeatureAccess.ObservedOnly.ToString(),
+                HyperBoostWithoutCoolingPadAccess = null,
+                HyperBoostBaseModes = null,
                 PerformancePresets = ["Balanced", "Custom", "Performance", "Silent"],
                 LightingEffects =
                 [
@@ -601,6 +742,9 @@ public sealed class FirmwareSmokeAssessmentTests
                 expected.Capabilities.GpuOverclock,
                 actual.Capabilities.GpuOverclock);
             Assert.Equal(
+                expected.Capabilities.HyperBoostAccess,
+                actual.Capabilities.HyperBoostAccess);
+            Assert.Equal(
                 expected.Capabilities.ObservedPowerSourceBehaviors,
                 actual.Capabilities.ObservedPowerSourceBehaviors);
             Assert.Equal(expected.Controls, actual.Controls);
@@ -652,6 +796,7 @@ public sealed class FirmwareSmokeAssessmentTests
                 "Off",
                 "Reactive",
                 "Ripple",
+                "Sequence",
                 "Spectrum",
                 "Starlight",
                 "Static",
@@ -677,7 +822,16 @@ public sealed class FirmwareSmokeAssessmentTests
             CpuPowerLimit: null,
             CpuVoltageOptimizer: null,
             GpuOverclock: null,
-            ObservedPowerSourceBehaviors: []),
+            ObservedPowerSourceBehaviors: [],
+            HyperBoostAccess: DeviceFeatureAccess.ReadWrite.ToString(),
+            HyperBoostWithoutCoolingPadAccess:
+                DeviceFeatureAccess.ReadWrite.ToString())
+        {
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly),
+        },
         new FirmwareSmokeControlState(
             "Balanced",
             "Automatic",

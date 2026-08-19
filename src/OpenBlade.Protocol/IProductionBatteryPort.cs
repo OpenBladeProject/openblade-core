@@ -6,6 +6,8 @@ public readonly record struct ProductionPerformanceFanState(
     PerformancePreset? Performance,
     FanMode? Fans)
 {
+    public bool HyperBoostActive { get; init; }
+
     public CustomPerformanceSettings? CustomPerformance { get; init; }
 }
 
@@ -56,6 +58,16 @@ public interface IProductionBatteryPort : IAsyncDisposable
         PerformancePreset value,
         CancellationToken cancellationToken);
 
+    Task SetHyperBoostAsync(bool enabled, CancellationToken cancellationToken) =>
+        Task.FromException(new CapabilityUnavailableException(
+            "HyperBoost control is unavailable."));
+
+    Task SetHyperBoostAsync(
+        bool enabled,
+        PerformancePreset baseMode,
+        CancellationToken cancellationToken) =>
+        SetHyperBoostAsync(enabled, cancellationToken);
+
     Task SetCustomPerformanceAsync(
         CustomPerformanceSettings value,
         CancellationToken cancellationToken);
@@ -81,6 +93,12 @@ public interface IProductionBatteryPort : IAsyncDisposable
 
     Task ApplyOneShotLaptopControlAsync(
         ApplyOneShotLaptopControl value,
+        CancellationToken cancellationToken);
+}
+
+internal interface IPadlessHyperBoostLifecycleValidationPort
+{
+    Task EnablePadlessHyperBoostLifecycleValidationAsync(
         CancellationToken cancellationToken);
 }
 

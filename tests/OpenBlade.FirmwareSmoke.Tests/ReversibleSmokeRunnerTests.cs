@@ -26,10 +26,103 @@ public sealed class ReversibleSmokeRunnerTests
         IReadOnlyList<FirmwareSmokeCheck> checks =
             await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
 
-        Assert.Equal(7, checks.Count);
+        Assert.Equal(8, checks.Count);
         Assert.All(
             checks,
             check => Assert.Equal(FirmwareSmokeOutcome.Passed, check.Outcome));
+        Assert.Contains(checks, check => check.Id == "write.hyper-boost");
+        Assert.Equal(2, client.HyperBoostMutationCalls);
+        client.AssertOriginalState();
+    }
+
+    [Fact]
+    public async Task RunAsync_WritablePadlessHyperBoostRestoresBalancedDirectly()
+    {
+        const PerformancePreset baseMode = PerformancePreset.Balanced;
+        await using var client = new FakeFirmwareSmokeClient(baseMode);
+
+        IReadOnlyList<FirmwareSmokeCheck> checks =
+            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
+
+        Assert.All(
+            checks,
+            check => Assert.Equal(FirmwareSmokeOutcome.Passed, check.Outcome));
+        Assert.Equal([baseMode], client.HyperBoostEnableBases);
+        Assert.Equal([baseMode], client.HyperBoostRestoredBases);
+        client.AssertOriginalState();
+    }
+
+    [Fact]
+    public async Task RunAsync_AdmittedPadlessBalancedAppliesAndRestores()
+    {
+        await using var client = new FakeFirmwareSmokeClient(
+            padlessAdmitted: true,
+            coolingPadConnection: CoolingPadConnectionState.Absent);
+
+        IReadOnlyList<FirmwareSmokeCheck> checks =
+            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
+
+        Assert.All(
+            checks,
+            check => Assert.Equal(FirmwareSmokeOutcome.Passed, check.Outcome));
+        Assert.Equal(2, client.HyperBoostMutationCalls);
+        client.AssertOriginalState();
+    }
+
+    [Theory]
+    [InlineData((int)CoolingPadConnectionState.Ambiguous)]
+    [InlineData((int)CoolingPadConnectionState.ObservationFailed)]
+    public async Task RunAsync_PadlessRequiresConfirmedAbsence(int connectionValue)
+    {
+        await using var client = new FakeFirmwareSmokeClient(
+            padlessAdmitted: true,
+            coolingPadConnection: (CoolingPadConnectionState)connectionValue);
+
+        IReadOnlyList<FirmwareSmokeCheck> checks =
+            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
+
+        FirmwareSmokeCheck hyperBoost = Assert.Single(
+            checks,
+            check => check.Id == "write.hyper-boost");
+        Assert.Equal(FirmwareSmokeOutcome.Skipped, hyperBoost.Outcome);
+        Assert.Equal(0, client.HyperBoostMutationCalls);
+        client.AssertOriginalState();
+    }
+
+    [Fact]
+    public async Task RunAsync_PadlessRequiresReadWriteAdmission()
+    {
+        await using var client = new FakeFirmwareSmokeClient(
+            padlessAdmitted: false,
+            coolingPadConnection: CoolingPadConnectionState.Absent);
+
+        IReadOnlyList<FirmwareSmokeCheck> checks =
+            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
+
+        FirmwareSmokeCheck hyperBoost = Assert.Single(
+            checks,
+            check => check.Id == "write.hyper-boost");
+        Assert.Equal(FirmwareSmokeOutcome.Skipped, hyperBoost.Outcome);
+        Assert.Equal(0, client.HyperBoostMutationCalls);
+        client.AssertOriginalState();
+    }
+
+    [Fact]
+    public async Task RunAsync_PadlessRejectsNonBalancedBase()
+    {
+        await using var client = new FakeFirmwareSmokeClient(
+            PerformancePreset.Performance,
+            padlessAdmitted: true,
+            coolingPadConnection: CoolingPadConnectionState.Absent);
+
+        IReadOnlyList<FirmwareSmokeCheck> checks =
+            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
+
+        FirmwareSmokeCheck hyperBoost = Assert.Single(
+            checks,
+            check => check.Id == "write.hyper-boost");
+        Assert.Equal(FirmwareSmokeOutcome.Skipped, hyperBoost.Outcome);
+        Assert.Equal(0, client.HyperBoostMutationCalls);
         client.AssertOriginalState();
     }
 
@@ -54,6 +147,72 @@ public sealed class ReversibleSmokeRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_HyperBoostKnownNotAppliedIsNeverRetriedOrRestored()
+    {
+        await using var client = new FakeFirmwareSmokeClient
+        {
+            FailHyperBoostEnableKnownNotApplied = true,
+        };
+
+        IReadOnlyList<FirmwareSmokeCheck> checks =
+            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
+
+        Assert.Equal(2, checks.Count);
+        FirmwareSmokeCheck failure = checks[1];
+        Assert.Equal("write.hyper-boost", failure.Id);
+        Assert.Equal(FirmwareSmokeOutcome.Failed, failure.Outcome);
+        Assert.Contains("no retry", failure.Actual, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "no restoration write",
+            failure.Actual,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, client.HyperBoostMutationCalls);
+        client.AssertOriginalState();
+    }
+
+    [Fact]
+    public async Task RunAsync_HyperBoostFailureAfterApplyRestoresOnceFromReadback()
+    {
+        await using var client = new FakeFirmwareSmokeClient
+        {
+            FailHyperBoostEnableAfterApplying = true,
+        };
+
+        IReadOnlyList<FirmwareSmokeCheck> checks =
+            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
+
+        Assert.Equal(2, checks.Count);
+        FirmwareSmokeCheck failure = checks[1];
+        Assert.Equal("write.hyper-boost", failure.Id);
+        Assert.Equal(FirmwareSmokeOutcome.Failed, failure.Outcome);
+        Assert.Equal(2, client.HyperBoostMutationCalls);
+        client.AssertOriginalState();
+    }
+
+    [Fact]
+    public async Task RunAsync_HyperBoostRestoreFailureFailsDespiteExactReadback()
+    {
+        await using var client = new FakeFirmwareSmokeClient
+        {
+            FailHyperBoostRestore = true,
+        };
+
+        IReadOnlyList<FirmwareSmokeCheck> checks =
+            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
+
+        Assert.Equal(2, checks.Count);
+        FirmwareSmokeCheck failure = checks[1];
+        Assert.Equal("write.hyper-boost", failure.Id);
+        Assert.Equal(FirmwareSmokeOutcome.Failed, failure.Outcome);
+        Assert.Contains(
+            "did not confirm the exact Balanced baseline",
+            failure.Actual,
+            StringComparison.Ordinal);
+        Assert.Equal(2, client.HyperBoostMutationCalls);
+        client.AssertOriginalState();
+    }
+
+    [Fact]
     public async Task RunAsync_RetriesOneProvenPreWriteReadFailure()
     {
         await using var client = new FakeFirmwareSmokeClient
@@ -64,7 +223,7 @@ public sealed class ReversibleSmokeRunnerTests
         IReadOnlyList<FirmwareSmokeCheck> checks =
             await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
 
-        Assert.Equal(7, checks.Count);
+        Assert.Equal(8, checks.Count);
         Assert.All(
             checks,
             check => Assert.Equal(FirmwareSmokeOutcome.Passed, check.Outcome));
@@ -83,7 +242,7 @@ public sealed class ReversibleSmokeRunnerTests
         IReadOnlyList<FirmwareSmokeCheck> checks =
             await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
 
-        Assert.Equal(7, checks.Count);
+        Assert.Equal(8, checks.Count);
         Assert.All(
             checks,
             check => Assert.Equal(FirmwareSmokeOutcome.Passed, check.Outcome));
@@ -93,10 +252,17 @@ public sealed class ReversibleSmokeRunnerTests
     private sealed class FakeFirmwareSmokeClient : IFirmwareSmokeClient
     {
         private readonly ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        private readonly PerformancePreset originalPerformance;
         private ServiceStatusSnapshot status;
+        private PerformancePreset? hyperBoostRestoreBase;
 
-        public FakeFirmwareSmokeClient()
+        public FakeFirmwareSmokeClient(
+            PerformancePreset originalPerformance = PerformancePreset.Balanced,
+            bool padlessAdmitted = true,
+            CoolingPadConnectionState coolingPadConnection =
+                CoolingPadConnectionState.Absent)
         {
+            this.originalPerformance = originalPerformance;
             var capabilities = new DeviceCapabilities(
                 new HashSet<PerformancePreset>(Enum.GetValues<PerformancePreset>()),
                 new HashSet<FanMode>(Enum.GetValues<FanMode>()),
@@ -105,13 +271,25 @@ public sealed class ReversibleSmokeRunnerTests
                 SupportsBatteryProtectionOff: true,
                 SupportsTemporaryFullCharge: true)
             {
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+                HyperBoostWithoutCoolingPadAccess = padlessAdmitted
+                    ? DeviceFeatureAccess.ReadWrite
+                    : null,
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    originalPerformance == PerformancePreset.Silent
+                        ? DeviceFeatureAccess.ReadWrite
+                        : DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
+                    originalPerformance == PerformancePreset.Performance
+                        ? DeviceFeatureAccess.ReadWrite
+                        : DeviceFeatureAccess.ObservedOnly),
                 LogoLightingModes =
                     new HashSet<LogoLightingMode>(Enum.GetValues<LogoLightingMode>()),
                 OneShotLaptopControls =
                     new HashSet<OneShotLaptopControl>(Enum.GetValues<OneShotLaptopControl>()),
             };
             var confirmed = new ConfirmedDeviceState(
-                PerformancePreset.Balanced,
+                originalPerformance,
                 FanMode.Automatic,
                 new ConfirmedBatteryState(true, 80, false),
                 Lighting: null)
@@ -131,7 +309,7 @@ public sealed class ReversibleSmokeRunnerTests
                 profiles,
                 new DesiredDeviceState(
                     new ResolvedSetting<PerformancePreset>(
-                        PerformancePreset.Balanced,
+                        originalPerformance,
                         SettingValueSource.PowerProfile),
                     new ResolvedSetting<FanMode>(
                         FanMode.Automatic,
@@ -160,6 +338,13 @@ public sealed class ReversibleSmokeRunnerTests
                 GamingModeEnabled: false,
                 AlwaysOverrideExternalLightingChanges: false,
                 KeyboardDriverModeActive: true);
+            status = status with
+            {
+                PadlessHyperBoostEligibility = coolingPadConnection
+                    == CoolingPadConnectionState.Absent
+                        ? PadlessHyperBoostEligibilityState.CoolingPadAbsent
+                        : PadlessHyperBoostEligibilityState.CoolingPadPresent,
+            };
         }
 
         public bool FailFirstPerformanceApply { get; init; }
@@ -168,7 +353,19 @@ public sealed class ReversibleSmokeRunnerTests
 
         public bool IndeterminatePerformanceRestore { get; init; }
 
+        public bool FailHyperBoostEnableKnownNotApplied { get; init; }
+
+        public bool FailHyperBoostEnableAfterApplying { get; init; }
+
+        public bool FailHyperBoostRestore { get; init; }
+
         public int PerformanceMutationCalls { get; private set; }
+
+        public int HyperBoostMutationCalls { get; private set; }
+
+        public List<PerformancePreset> HyperBoostEnableBases { get; } = [];
+
+        public List<PerformancePreset> HyperBoostRestoredBases { get; } = [];
 
         public Task<ServiceStatusSnapshot> GetStatusAsync(
             CancellationToken cancellationToken) => Task.FromResult(status);
@@ -199,7 +396,7 @@ public sealed class ReversibleSmokeRunnerTests
                     "Performance could not be read before writing: Battery state query failed."));
             }
 
-            PerformancePreset selected = value?.Value ?? profiles.PluggedIn.Performance;
+            PerformancePreset selected = value?.Value ?? originalPerformance;
             status = status with
             {
                 ConfirmedState = status.ConfirmedState! with { Performance = selected },
@@ -211,6 +408,50 @@ public sealed class ReversibleSmokeRunnerTests
                 return Task.FromResult(new ControlOperationResult(
                     ControlOperationStatus.Failed,
                     "Performance write is indeterminate."));
+            }
+
+            return Applied();
+        }
+
+        public Task<ControlOperationResult> SetHyperBoostAsync(
+            bool enabled,
+            CancellationToken cancellationToken)
+        {
+            HyperBoostMutationCalls++;
+            if (enabled && FailHyperBoostEnableKnownNotApplied)
+            {
+                return Failed();
+            }
+
+            if (enabled)
+            {
+                hyperBoostRestoreBase = status.ConfirmedState?.Performance;
+                if (hyperBoostRestoreBase is { } enabledBase)
+                {
+                    HyperBoostEnableBases.Add(enabledBase);
+                }
+            }
+
+            status = status with
+            {
+                ConfirmedState = status.ConfirmedState! with
+                {
+                    HyperBoostActive = enabled,
+                    Performance = enabled
+                        ? null
+                        : hyperBoostRestoreBase,
+                    Fans = FanMode.Automatic,
+                },
+            };
+            if (enabled && FailHyperBoostEnableAfterApplying
+                || !enabled && FailHyperBoostRestore)
+            {
+                return Failed();
+            }
+
+            if (!enabled && status.ConfirmedState.Performance is { } restoredBase)
+            {
+                HyperBoostRestoredBases.Add(restoredBase);
             }
 
             return Applied();
@@ -289,8 +530,9 @@ public sealed class ReversibleSmokeRunnerTests
 
         public void AssertOriginalState()
         {
-            Assert.Equal(PerformancePreset.Balanced, status.ConfirmedState?.Performance);
+            Assert.Equal(originalPerformance, status.ConfirmedState?.Performance);
             Assert.Equal(FanMode.Automatic, status.ConfirmedState?.Fans);
+            Assert.False(status.ConfirmedState?.HyperBoostActive);
             Assert.Equal(80, status.ConfirmedState?.Battery?.ChargeLimitPercent);
             Assert.Equal(LightingRendererOwnershipState.Spectrum, status.LightingRendererOwnership);
             Assert.True(status.StartupAnimationEnabled);

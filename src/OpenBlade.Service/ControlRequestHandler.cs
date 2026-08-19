@@ -130,6 +130,14 @@ public sealed class ControlRequestHandler
                 await runtime.SetPerformanceConfigurationOverrideAsync(
                     set.Value,
                     cancellationToken)),
+            SetHyperBoostRequest set => Result(
+                request.RequestId,
+                await runtime.SetHyperBoostAsync(set.Enabled, cancellationToken)),
+            ValidatePadlessHyperBoostLifecycleRequest validate => Result(
+                request.RequestId,
+                await runtime.ValidatePadlessHyperBoostLifecycleAsync(
+                    validate,
+                    cancellationToken)),
             CyclePerformanceShortcutRequest cycle => Result(
                 request.RequestId,
                 await runtime.CyclePerformanceShortcutAsync(

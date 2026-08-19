@@ -22,6 +22,12 @@ public sealed class DiagnosticArchiveProviderTests
             {
                 SupportsKeyboardBrightness = true,
                 SupportsPlaybackMuteIndicator = true,
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+                HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ObservedOnly),
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
                 WritableSpecialKeySlots =
                     SpecialKeySlotSet.M3
@@ -138,6 +144,19 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             DeviceFeatureAccess.ObservedOnly.ToString(),
             configuration.RootElement.GetProperty("capability.lampArrayLightingAccess").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite.ToString(),
+            configuration.RootElement.GetProperty("capability.hyperBoostAccess").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite.ToString(),
+            configuration.RootElement
+                .GetProperty("capability.hyperBoostWithoutCoolingPadAccess")
+                .GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite.ToString(),
+            configuration.RootElement
+                .GetProperty("capability.hyperBoostBase.Balanced")
+                .GetString());
         using JsonDocument capabilities = JsonDocument.Parse(
             await ReadEntryAsync(archive, "capabilities.json"));
         Assert.True(
@@ -166,6 +185,24 @@ public sealed class DiagnosticArchiveProviderTests
             capabilities.RootElement.GetProperty("lighting.lampArray.observed").GetBoolean());
         Assert.False(
             capabilities.RootElement.GetProperty("lighting.lampArray.write").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("performance.hyperBoost.write").GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty("performance.hyperBoost.withoutCoolingPad.write")
+                .GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty("performance.hyperBoost.withoutCoolingPad.gate.immediateNoLoad")
+                .GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty("performance.hyperBoost.withoutCoolingPad.gate.lowPowerLifecycle")
+                .GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty("performance.hyperBoost.withoutCoolingPad.gate.crashRecovery")
+                .GetBoolean());
         Assert.DoesNotContain(
             configuration.RootElement.EnumerateObject(),
             property => property.Name.StartsWith("telemetry.", StringComparison.Ordinal));

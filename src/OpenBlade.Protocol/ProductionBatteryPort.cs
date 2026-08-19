@@ -2,7 +2,9 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-internal sealed class ProductionBatteryPort : IProductionBatteryPort
+internal sealed class ProductionBatteryPort :
+    IProductionBatteryPort,
+    IPadlessHyperBoostLifecycleValidationPort
 {
     internal const string Limit50Action = "battery-limit-50";
     internal const string Limit55Action = "battery-limit-55";
@@ -34,6 +36,14 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         "performance-battery-balanced-channel-1";
     internal const string PerformanceBatteryBalancedSecondAction =
         "performance-battery-balanced-channel-2";
+    internal const string HyperBoostEnableFirstAction =
+        "hyperboost-enable-channel-1";
+    internal const string HyperBoostEnableSecondAction =
+        "hyperboost-enable-channel-2";
+    internal const string HyperBoostRestoreFirstAction =
+        "hyperboost-restore-balanced-channel-1";
+    internal const string HyperBoostRestoreSecondAction =
+        "hyperboost-restore-balanced-channel-2";
     internal const string PerformanceCustomFirstAction =
         "performance-custom-channel-1";
     internal const string PerformanceCustomSecondAction =
@@ -65,6 +75,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
 
     private readonly IRazerCommandSession session;
     private readonly DeviceCommandCatalog catalog;
+    private readonly DeviceCommandCatalog hyperBoostCatalog;
     private readonly ProductionBatteryReadEvidence readEvidence;
     private readonly ValidationRunContext context;
     private readonly TimeSpan exchangeTimeout;
@@ -80,6 +91,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     private readonly FanSpeedRange fanSpeedRange;
     private readonly IReadOnlySet<FanMode>? admittedFanModes;
     private readonly IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates;
+    private readonly IHyperBoostEligibilitySource? hyperBoostEligibility;
+    private readonly bool allowPadlessHyperBoostLifecycleValidation;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object lifecycleSync = new();
     private readonly IAsyncDisposable ownedSession;
@@ -101,7 +114,13 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
-        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null)
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
+        DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
+        HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
+        DeviceCommandCatalog? hyperBoostCatalog = null,
+        IHyperBoostEligibilitySource? hyperBoostEligibility = null,
+        bool allowPadlessHyperBoostLifecycleValidation = false)
         : this(
             session,
             session,
@@ -116,7 +135,13 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             cpuPowerLimitCapabilities,
             cpuVoltageOptimizerCapabilities,
             gpuOverclockCapabilities,
-            observedPowerSourceBehaviors)
+            observedPowerSourceBehaviors,
+            hyperBoostAccess,
+            hyperBoostWithoutCoolingPadAccess,
+            hyperBoostBaseModes,
+            hyperBoostCatalog,
+            hyperBoostEligibility,
+            allowPadlessHyperBoostLifecycleValidation)
     {
     }
 
@@ -134,7 +159,13 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
         IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
-        SemaphoreSlim? sharedCommandGate = null)
+        SemaphoreSlim? sharedCommandGate = null,
+        DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
+        HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
+        DeviceCommandCatalog? hyperBoostCatalog = null,
+        IHyperBoostEligibilitySource? hyperBoostEligibility = null,
+        bool allowPadlessHyperBoostLifecycleValidation = false)
         : this(
             sharedCommandGate is null
                 ? actor.Session
@@ -151,7 +182,13 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             cpuPowerLimitCapabilities,
             cpuVoltageOptimizerCapabilities,
             gpuOverclockCapabilities,
-            observedPowerSourceBehaviors)
+            observedPowerSourceBehaviors,
+            hyperBoostAccess,
+            hyperBoostWithoutCoolingPadAccess,
+            hyperBoostBaseModes,
+            hyperBoostCatalog,
+            hyperBoostEligibility,
+            allowPadlessHyperBoostLifecycleValidation)
     {
     }
 
@@ -169,11 +206,20 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         CpuPowerLimitCapabilities? cpuPowerLimitCapabilities,
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities,
         GpuOverclockCapabilities? gpuOverclockCapabilities,
-        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors)
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors,
+        DeviceFeatureAccess? hyperBoostAccess,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess,
+        HyperBoostBaseModeCapabilities? hyperBoostBaseModes,
+        DeviceCommandCatalog? hyperBoostCatalog,
+        IHyperBoostEligibilitySource? hyperBoostEligibility,
+        bool allowPadlessHyperBoostLifecycleValidation)
     {
         this.session = session ?? throw new ArgumentNullException(nameof(session));
         this.ownedSession = ownedSession ?? throw new ArgumentNullException(nameof(ownedSession));
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        this.hyperBoostCatalog = hyperBoostAccess == DeviceFeatureAccess.ReadWrite
+            ? hyperBoostCatalog ?? DeviceCommandCatalog.Empty
+            : DeviceCommandCatalog.Empty;
         this.readEvidence = readEvidence ?? throw new ArgumentNullException(nameof(readEvidence));
         this.context = context ?? throw new ArgumentNullException(nameof(context));
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
@@ -192,6 +238,61 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         this.admittedAdapterPowerStates = admittedAdapterPowerStates is null
             ? null
             : new HashSet<AdapterPowerState>(admittedAdapterPowerStates);
+        this.hyperBoostEligibility = hyperBoostEligibility;
+        this.allowPadlessHyperBoostLifecycleValidation =
+            allowPadlessHyperBoostLifecycleValidation;
+        if (hyperBoostBaseModes is not null
+            && (hyperBoostAccess is null
+                || !Enum.IsDefined(hyperBoostBaseModes.Silent)
+                || !Enum.IsDefined(hyperBoostBaseModes.Balanced)
+                || !Enum.IsDefined(hyperBoostBaseModes.Performance)
+                || hyperBoostBaseModes.Silent > hyperBoostAccess
+                || hyperBoostBaseModes.Balanced > hyperBoostAccess
+                || hyperBoostBaseModes.Performance > hyperBoostAccess))
+        {
+            throw new ArgumentException(
+                "HyperBoost base-mode access must be defined and no broader than overall HyperBoost access.",
+                nameof(hyperBoostBaseModes));
+        }
+        if (hyperBoostWithoutCoolingPadAccess is not null
+            && (hyperBoostAccess is null
+                || hyperBoostWithoutCoolingPadAccess > hyperBoostAccess
+                || hyperBoostWithoutCoolingPadAccess is not
+                    (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
+                || hyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite
+                    && hyperBoostBaseModes?.Balanced
+                        != DeviceFeatureAccess.ReadWrite))
+        {
+            throw new UnvalidatedCommandException(
+                "HyperBoost without the cooling pad requires exact bounded evidence, writable Balanced admission, and access no broader than overall HyperBoost.");
+        }
+        if (allowPadlessHyperBoostLifecycleValidation
+            && (hyperBoostAccess != DeviceFeatureAccess.ReadWrite
+                || hyperBoostWithoutCoolingPadAccess is not
+                    (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
+                || hyperBoostBaseModes?.Balanced
+                    != DeviceFeatureAccess.ReadWrite
+                || this.hyperBoostEligibility is null
+                || !HasHyperBoostCommandSet(this.hyperBoostCatalog)))
+        {
+            throw new UnvalidatedCommandException(
+                "Developer pad-less lifecycle validation requires the exact admitted HyperBoost pair, Balanced restoration, pad-less evidence, and an independent eligibility gate.");
+        }
+        if (hyperBoostAccess == DeviceFeatureAccess.ReadWrite
+            && (!HasHyperBoostCommandSet(this.hyperBoostCatalog)
+                || this.hyperBoostEligibility is null))
+        {
+            throw new UnvalidatedCommandException(
+                "Writable HyperBoost requires the exact reversible command set and cooling-pad eligibility gate.");
+        }
+        if (hyperBoostBaseModes?.Silent == DeviceFeatureAccess.ReadWrite
+            && !HasPair(catalog, PerformanceSilentFirstAction, PerformanceSilentSecondAction)
+            || hyperBoostBaseModes?.Performance == DeviceFeatureAccess.ReadWrite
+                && !HasPair(catalog, PerformanceBoostFirstAction, PerformanceBoostSecondAction))
+        {
+            throw new UnvalidatedCommandException(
+                "A writable direct HyperBoost base mode requires its exact restoration pair.");
+        }
 
         batteryCommands = new BatteryCommandClient(session, exchangeTimeout);
         temporaryCommands = new TemporaryFullChargeCommandClient(session, exchangeTimeout);
@@ -215,7 +316,10 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             cpuPowerLimitCapabilities,
             cpuVoltageOptimizerCapabilities,
             gpuOverclockCapabilities,
-            observedPowerSourceBehaviors);
+            observedPowerSourceBehaviors,
+            hyperBoostAccess,
+            hyperBoostWithoutCoolingPadAccess,
+            hyperBoostBaseModes);
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -542,8 +646,100 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 applyMaximumTiming: false,
                 verifyFinalState: value is PerformancePreset.BatterySaver
                     or PerformancePreset.BatteryBalanced,
-                cancellationToken);
+                cancellationToken,
+                hyperBoostExitActions:
+                [
+                    HyperBoostRestoreFirstAction,
+                    HyperBoostRestoreSecondAction,
+                ],
+                hyperBoostExitCatalog: hyperBoostCatalog);
     }
+
+    public Task SetHyperBoostAsync(bool enabled, CancellationToken cancellationToken) =>
+        SetHyperBoostAsync(enabled, PerformancePreset.Balanced, cancellationToken);
+
+    public Task SetHyperBoostAsync(
+        bool enabled,
+        PerformancePreset baseMode,
+        CancellationToken cancellationToken) => SetHyperBoostCoreAsync(
+            enabled,
+            baseMode,
+            allowPadlessLifecycleValidation: false,
+            cancellationToken);
+
+    Task IPadlessHyperBoostLifecycleValidationPort
+        .EnablePadlessHyperBoostLifecycleValidationAsync(
+            CancellationToken cancellationToken) => SetHyperBoostCoreAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                allowPadlessLifecycleValidation: true,
+                cancellationToken);
+
+    private Task SetHyperBoostCoreAsync(
+        bool enabled,
+        PerformancePreset baseMode,
+        bool allowPadlessLifecycleValidation,
+        CancellationToken cancellationToken)
+    {
+        bool lifecycleValidation = enabled
+            && allowPadlessLifecycleValidation
+            && this.allowPadlessHyperBoostLifecycleValidation;
+        if (Capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
+            || allowPadlessLifecycleValidation && !lifecycleValidation)
+        {
+            return Task.FromException(Unavailable(
+                "HyperBoost control is not admitted for this exact device and firmware."));
+        }
+
+        DeviceFeatureAccess? baseAccess = Capabilities.HyperBoostBaseModes
+            ?.AccessFor(baseMode)
+            ?? (baseMode == PerformancePreset.Balanced
+                ? Capabilities.HyperBoostAccess
+                : null);
+        if (baseAccess != DeviceFeatureAccess.ReadWrite)
+        {
+            return Task.FromException(Unavailable(
+                $"Direct HyperBoost from '{baseMode}' is not admitted for this exact device and firmware."));
+        }
+
+        (IReadOnlyList<string> actions, DeviceCommandCatalog commandCatalog) = enabled
+            ? ([HyperBoostEnableFirstAction, HyperBoostEnableSecondAction], hyperBoostCatalog)
+            : RestoreHyperBoostTarget(baseMode);
+        return ExecuteThermalSettersAsync(
+            actions,
+            state => state.HyperBoostActive == enabled
+                && state.Fans == FanMode.Automatic
+                && (enabled || state.Performance == baseMode),
+            enabled
+                ? state => !state.HyperBoostActive
+                    && state.Performance == baseMode
+                    && state.Fans == FanMode.Automatic
+                : state => state.HyperBoostActive && state.Fans == FanMode.Automatic,
+            enabled
+                ? $"HyperBoost requires confirmed {baseMode} performance with admitted direct-transition evidence and Automatic fans."
+                : $"Only a confirmed HyperBoost state can be restored directly to {baseMode}.",
+            applyMaximumTiming: false,
+            verifyFinalState: true,
+            cancellationToken,
+            commandCatalog: commandCatalog,
+            validateEligibility: enabled
+                ? token => ValidateHyperBoostEligibilityAsync(
+                    baseMode,
+                    lifecycleValidation,
+                    token)
+                : null);
+    }
+
+    private (IReadOnlyList<string> Actions, DeviceCommandCatalog Catalog)
+        RestoreHyperBoostTarget(PerformancePreset baseMode) => baseMode switch
+        {
+            PerformancePreset.Silent =>
+                ([PerformanceSilentFirstAction, PerformanceSilentSecondAction], catalog),
+            PerformancePreset.Performance =>
+                ([PerformanceBoostFirstAction, PerformanceBoostSecondAction], catalog),
+            _ =>
+                ([HyperBoostRestoreFirstAction, HyperBoostRestoreSecondAction], hyperBoostCatalog),
+        };
 
     public Task SetCustomPerformanceAsync(
         CustomPerformanceSettings value,
@@ -578,11 +774,18 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             state => state.Performance == PerformancePreset.Custom
                 && state.Fans == FanMode.Automatic
                 && state.CustomPerformance == value,
-            state => state.Fans == FanMode.Automatic,
+            state => !state.HyperBoostActive
+                && state.Fans == FanMode.Automatic,
             "Custom performance requires confirmed Automatic fans.",
             applyMaximumTiming: false,
             verifyFinalState: true,
-            cancellationToken);
+            cancellationToken,
+            hyperBoostExitActions:
+            [
+                HyperBoostRestoreFirstAction,
+                HyperBoostRestoreSecondAction,
+            ],
+            hyperBoostExitCatalog: hyperBoostCatalog);
     }
 
     public Task SetFanModeAsync(
@@ -615,11 +818,11 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 $"Fan mode '{value}' is not admitted for production use."))
             : ExecuteThermalSettersAsync(
                 actions,
-                state => state.Fans == value,
+                state => state.Fans == value && !state.HyperBoostActive,
                 value == FanMode.Maximum
                     ? state => state.Performance == PerformancePreset.Balanced
                         && state.Fans == FanMode.Automatic
-                    : _ => true,
+                    : state => !state.HyperBoostActive,
                 value == FanMode.Maximum
                     ? "Maximum fan mode requires confirmed Balanced performance and Automatic fans."
                     : "Automatic fan mode could not be safely applied.",
@@ -948,7 +1151,10 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
-        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null)
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
+        DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
+        HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null)
     {
         var limits = new HashSet<int>();
         foreach ((int percent, string action) in ChargeLimitActions)
@@ -1078,6 +1284,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             CpuPowerLimit = cpuPowerLimitCapabilities,
             CpuVoltageOptimizer = cpuVoltageOptimizerCapabilities,
             GpuOverclock = gpuOverclockCapabilities,
+            HyperBoostAccess = hyperBoostAccess,
+            HyperBoostWithoutCoolingPadAccess = hyperBoostWithoutCoolingPadAccess,
+            HyperBoostBaseModes = hyperBoostBaseModes,
             ObservedPowerSourceBehaviors = observedPowerSourceBehaviors is null
                 ? []
                 : [.. observedPowerSourceBehaviors],
@@ -1090,6 +1299,23 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         string secondAction) =>
         catalog.TryGet(firstAction, out _)
         && catalog.TryGet(secondAction, out _);
+
+    internal static bool HasHyperBoostCommandSet(DeviceCommandCatalog catalog) =>
+        HasPair(catalog, HyperBoostEnableFirstAction, HyperBoostEnableSecondAction)
+        && HasPair(catalog, HyperBoostRestoreFirstAction, HyperBoostRestoreSecondAction);
+
+    internal static bool HasPerformancePair(
+        DeviceCommandCatalog catalog,
+        PerformancePreset preset) => preset switch
+        {
+            PerformancePreset.Silent =>
+                HasPair(catalog, PerformanceSilentFirstAction, PerformanceSilentSecondAction),
+            PerformancePreset.Balanced =>
+                HasPair(catalog, PerformanceBalancedFirstAction, PerformanceBalancedSecondAction),
+            PerformancePreset.Performance =>
+                HasPair(catalog, PerformanceBoostFirstAction, PerformanceBoostSecondAction),
+            _ => false,
+        };
 
     private static bool HasOneShotPair(
         DeviceCommandCatalog catalog,
@@ -1229,18 +1455,23 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         string preconditionFailure,
         bool applyMaximumTiming,
         bool verifyFinalState,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DeviceCommandCatalog? commandCatalog = null,
+        Func<CancellationToken, Task>? validateEligibility = null,
+        IReadOnlyList<string>? hyperBoostExitActions = null,
+        DeviceCommandCatalog? hyperBoostExitCatalog = null)
     {
         if (cancellationToken.IsCancellationRequested)
         {
             throw KnownNotApplied("The thermal write was canceled before submission.");
         }
 
+        DeviceCommandCatalog admittedCatalog = commandCatalog ?? catalog;
         var commands = new RazerCommandDefinition[actions.Count];
         for (int index = 0; index < actions.Count; index++)
         {
             string action = actions[index];
-            if (!catalog.TryGet(action, out RazerCommandDefinition? command)
+            if (!admittedCatalog.TryGet(action, out RazerCommandDefinition? command)
                 || command is null)
             {
                 throw Unavailable(
@@ -1260,6 +1491,61 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             ProductionPerformanceFanState current = await MapThermalStateAsync(
                 currentMode,
                 cancellationToken).ConfigureAwait(false);
+            bool exitedHyperBoost = false;
+            if (current.HyperBoostActive && hyperBoostExitActions is not null)
+            {
+                if (hyperBoostExitCatalog is null)
+                {
+                    throw KnownNotApplied(
+                        "HyperBoost cannot be exited without the exact admitted restoration pair.");
+                }
+
+                var exitCommands = new RazerCommandDefinition[hyperBoostExitActions.Count];
+                for (int index = 0; index < hyperBoostExitActions.Count; index++)
+                {
+                    string action = hyperBoostExitActions[index];
+                    if (!hyperBoostExitCatalog.TryGet(
+                            action,
+                            out RazerCommandDefinition? command)
+                        || command is null)
+                    {
+                        throw KnownNotApplied(
+                            "HyperBoost cannot be exited without the exact admitted restoration pair.");
+                    }
+
+                    exitCommands[index] = command;
+                }
+
+                foreach (RazerCommandDefinition command in exitCommands)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    submitted = true;
+                    HidSessionResult<ReadOnlyMemory<byte>> result =
+                        await ExecuteThermalCommandAsync(command, cancellationToken)
+                            .ConfigureAwait(false);
+                    if (result.Failure is not null
+                        || !result.Value.Span.SequenceEqual(command.Payload.AsSpan()))
+                    {
+                        poisoned = true;
+                        throw Indeterminate(
+                            "The HyperBoost restoration outcome is indeterminate.");
+                    }
+                }
+
+                current = await QueryPerformanceFanStateCoreAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (current.HyperBoostActive
+                    || current.Performance != PerformancePreset.Balanced
+                    || current.Fans != FanMode.Automatic)
+                {
+                    poisoned = true;
+                    throw Indeterminate(
+                        "HyperBoost restoration did not confirm Balanced performance and Automatic fans.");
+                }
+
+                exitedHyperBoost = true;
+            }
+
             if (alreadyMatches(current))
             {
                 return;
@@ -1270,21 +1556,19 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 throw KnownNotApplied(preconditionFailure);
             }
 
+            if (validateEligibility is not null)
+            {
+                await validateEligibility(cancellationToken).ConfigureAwait(false);
+            }
+
             for (int index = 0; index < commands.Length; index++)
             {
                 RazerCommandDefinition command = commands[index];
                 cancellationToken.ThrowIfCancellationRequested();
                 submitted = true;
-                HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
-                    new RazerCommandSpec(
-                        command.CommandClass,
-                        command.CommandId,
-                        command.Payload.ToArray(),
-                        command.Payload.Length,
-                        payload => payload.Span.SequenceEqual(command.Payload.AsSpan())),
-                    AllocateTransaction,
-                    exchangeTimeout,
-                    cancellationToken).ConfigureAwait(false);
+                HidSessionResult<ReadOnlyMemory<byte>> result =
+                    await ExecuteThermalCommandAsync(command, cancellationToken)
+                        .ConfigureAwait(false);
 
                 if (result.Failure is not null
                     || !result.Value.Span.SequenceEqual(command.Payload.AsSpan()))
@@ -1302,7 +1586,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 }
             }
 
-            if (verifyFinalState)
+            if (verifyFinalState || exitedHyperBoost)
             {
                 ProductionPerformanceFanState final =
                     await QueryPerformanceFanStateCoreAsync(cancellationToken)
@@ -1361,6 +1645,70 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         }
     }
 
+    private Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteThermalCommandAsync(
+        RazerCommandDefinition command,
+        CancellationToken cancellationToken) => session.ExecuteAsync(
+            new RazerCommandSpec(
+                command.CommandClass,
+                command.CommandId,
+                command.Payload.ToArray(),
+                command.Payload.Length,
+                payload => payload.Span.SequenceEqual(command.Payload.AsSpan())),
+            AllocateTransaction,
+            exchangeTimeout,
+            cancellationToken);
+
+    private async Task ValidateHyperBoostEligibilityAsync(
+        PerformancePreset baseMode,
+        bool allowPadlessLifecycleValidation,
+        CancellationToken cancellationToken)
+    {
+        CoolingPadConnectionState padState;
+        try
+        {
+            padState = hyperBoostEligibility?.ObserveCoolingPad()
+                ?? CoolingPadConnectionState.ObservationFailed;
+        }
+        catch
+        {
+            padState = CoolingPadConnectionState.ObservationFailed;
+        }
+
+        bool padPresentEligibility = padState == CoolingPadConnectionState.PresentExact;
+        bool padAbsentEligibility = padState == CoolingPadConnectionState.Absent
+            && baseMode == PerformancePreset.Balanced
+            && (Capabilities.HyperBoostWithoutCoolingPadAccess
+                    == DeviceFeatureAccess.ReadWrite
+                || allowPadlessLifecycleValidation
+                    && this.allowPadlessHyperBoostLifecycleValidation
+                    && Capabilities.HyperBoostWithoutCoolingPadAccess
+                        == DeviceFeatureAccess.ObservedOnly);
+        if (!padPresentEligibility && !padAbsentEligibility)
+        {
+            throw KnownNotApplied(
+                "HyperBoost requires either the exact Razer Laptop Cooling Pad or separately admitted pad-absent evidence.");
+        }
+
+        byte transactionId = AllocateTransactionForRead();
+        HidSessionResult<AdapterPowerState> adapter =
+            await adapterPowerCommands.QueryAsync(transactionId, cancellationToken)
+                .ConfigureAwait(false);
+        if (adapter.Failure is not null)
+        {
+            ThrowReadFailure(adapter.Failure.Value, adapter.Diagnostic, cancellationToken);
+        }
+
+        bool adapterEligible = padAbsentEligibility
+            ? HyperBoostValidationPower.IsAdmittedFullPower(adapter.Value)
+                && admittedAdapterPowerStates?.Contains(adapter.Value) == true
+            : adapter.Value == AdapterPowerState.FullPower280W;
+        if (!adapterEligible)
+        {
+            throw KnownNotApplied(
+                "HyperBoost requires a confirmed admitted full-power adapter.");
+        }
+    }
+
     private async Task<ProductionPerformanceFanState> QueryPerformanceFanStateCoreAsync(
         CancellationToken cancellationToken)
     {
@@ -1412,6 +1760,10 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 PerformancePreset.BatteryBalanced,
                 FanMode.Automatic),
             ThermalModeState.FixedMaximum => new(null, FanMode.Maximum),
+            ThermalModeState.HyperBoostObserved => new(null, FanMode.Automatic)
+            {
+                HyperBoostActive = true,
+            },
             _ => throw new RazerProtocolException(
                 "Thermal query returned an undefined state.",
                 HidProtocolValidationFailure.PayloadValidator),

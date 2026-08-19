@@ -10630,6 +10630,77 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         return context;
     }
 
+    [Fact]
+    public async Task PadlessHyperBoost_EnablesFromBalancedWhenAbsenceIsFresh()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly),
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(
+            PadlessHyperBoostEligibilityState.CoolingPadAbsent,
+            context.Runtime.GetStatus().PadlessHyperBoostEligibility);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_BlocksWhenCoolingPadIsPresent()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.PresentExact));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly),
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.Equal(
+            PadlessHyperBoostEligibilityState.CoolingPadPresent,
+            context.Runtime.GetStatus().PadlessHyperBoostEligibility);
+    }
+
     private TestContext CreateRz090581Bios301Context() => CreateContext(
         providerAvailable: true,
         firmwareVersions: FirmwareVersions.Unavailable() with
@@ -10658,7 +10729,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         LowPowerGate? lowPowerGate = null,
         TimeProvider? timeProvider = null,
         IUserConfigurationRepository? userConfigurationRepository = null,
-        IDisplayBrightnessHidController? displayBrightnessHidController = null)
+        IDisplayBrightnessHidController? displayBrightnessHidController = null,
+        ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -10738,7 +10810,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 ?? new FixedFanTemperatureSource(default),
             timeProvider: timeProvider,
             userConfigurationRepository: userConfigurationRepository,
-            displayBrightnessHidController: displayBrightnessHidController);
+            displayBrightnessHidController: displayBrightnessHidController,
+            hyperBoostPadDiscoverySource: hyperBoostPadDiscoverySource);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -10904,6 +10977,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         CountingProvider Provider,
         CountingBladeDevice Device,
         DiagnosticHistory History);
+
+    private sealed class FixedCoolingPadDiscoverySource(
+        CoolingPadConnectionState state) : ICoolingPadDiscoverySource
+    {
+        public CoolingPadConnectionState Observe() => state;
+    }
 
     private sealed class RecordingDisplayBrightnessHidController(
         params ControlOperationResult[] results)
@@ -11276,6 +11355,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int PerformanceSetCalls { get; private set; }
 
+        public int HyperBoostSetCalls { get; private set; }
+
         public List<PerformancePreset> PerformanceWrites { get; } = [];
 
         public int FanSetCalls { get; private set; }
@@ -11347,6 +11428,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Action? AfterMcuVersionRead { get; set; }
 
         public int TotalSetterCalls => PerformanceSetCalls
+            + HyperBoostSetCalls
             + FanSetCalls
             + BatterySetCalls
             + LightingSetCalls;
@@ -11600,6 +11682,30 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             }
 
             AfterSetter?.Invoke(DeviceSubsystem.Performance);
+            return Task.CompletedTask;
+        }
+
+        public Task SetHyperBoostAsync(
+            bool enabled,
+            PerformancePreset baseMode,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TotalCalls++;
+            HyperBoostSetCalls++;
+            ConfirmedState = enabled
+                ? ConfirmedState with
+                {
+                    Performance = null,
+                    Fans = FanMode.Automatic,
+                    HyperBoostActive = true,
+                }
+                : ConfirmedState with
+                {
+                    Performance = baseMode,
+                    Fans = FanMode.Automatic,
+                    HyperBoostActive = false,
+                };
             return Task.CompletedTask;
         }
 

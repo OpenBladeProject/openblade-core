@@ -317,6 +317,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     private sealed class SerializedBladeDevice :
         IBladeDevice,
         IGpuClockOffsetManagementDevice,
+        IPadlessHyperBoostLifecycleValidationDevice,
         IDisposable
     {
         private const int MaximumBatteryReadAttempts = 3;
@@ -688,6 +689,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         battery,
                         lightingRead.State)
                     {
+                        HyperBoostActive = performanceFan.HyperBoostActive,
                         CustomPerformance = customPerformance,
                         GpuClockOffsets = gpuOffsets,
                         LogoLighting = logo,
@@ -1171,6 +1173,35 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 cancellationToken,
                 PreflightGpuClockOffsets,
                 CompleteGpuClockOffsets).ConfigureAwait(false);
+        }
+
+        public Task SetHyperBoostAsync(
+            bool enabled,
+            PerformancePreset baseMode,
+            CancellationToken cancellationToken) =>
+            ExecuteProductionWriteAsync(
+                port => port.SetHyperBoostAsync(
+                    enabled,
+                    baseMode,
+                    cancellationToken),
+                cancellationToken);
+
+        public Task EnablePadlessHyperBoostLifecycleValidationAsync(
+            CancellationToken cancellationToken)
+        {
+            if (!PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled)
+            {
+                return RejectProductionWrite(
+                    "Pad-less HyperBoost lifecycle validation requires a validation-marked service build.");
+            }
+
+            return ExecuteProductionWriteAsync(
+                port => port is IPadlessHyperBoostLifecycleValidationPort validationPort
+                    ? validationPort.EnablePadlessHyperBoostLifecycleValidationAsync(
+                        cancellationToken)
+                    : Task.FromException(new CapabilityUnavailableException(
+                        "The exact validation-only pad-less HyperBoost port is unavailable.")),
+                cancellationToken);
         }
 
         public async Task SetGpuClockOffsetsAsync(

@@ -1,0 +1,16 @@
+{
+  "planId": "rz09-0581-bios-4.00-pad-absent-external-load-v1",
+  "modelNumber": "RZ09-0581",
+  "biosVersion": "4.00",
+  "durationSeconds": 60,
+  "sampleIntervalMilliseconds": 2000,
+  "maximumCpuTemperatureCelsius": 90,
+  "maximumGpuTemperatureCelsius": 85,
+  "gpuSensorPolicy": "required",
+  "minimumFan1Rpm": 2000,
+  "minimumFan2Rpm": 2000,
+  "workloadKind": "externalReviewedLoad",
+  "workloadIdentityPolicy": "runtimeExactExecutable",
+  "workloadName": null,
+  "workloadSha256": null
+}
