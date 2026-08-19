@@ -121,26 +121,6 @@ public sealed class ServiceLifecycleRefreshLoop
                             }
                             break;
                         case ServiceLifecycleTrigger.DisplayOff:
-                            if (lowPowerGate.IsActive)
-                            {
-                                logger.LogInformation(
-                                    "Skipping display lighting suppression transition while the low-power gate is active.");
-                            }
-                            else
-                            {
-                                // Display-off is not proof that Modern Standby sleep began. It is
-                                // nevertheless the conservative boundary for ending only an
-                                // OpenBlade-owned HyperBoost session, because this exact host did not
-                                // deliver a suspend callback before entering Modern Standby. Do not
-                                // release unrelated ownership or treat this as full low-power entry.
-                                await runtime.PrepareOwnedHyperBoostForDisplayOffAsync(
-                                    stoppingToken);
-                                await runtime.SetLightingSuppressionAsync(
-                                    OpenBlade.Contracts.LightingSuppressionReason.DisplayOff,
-                                    suppressed: true,
-                                    stoppingToken);
-                            }
-                            break;
                         case ServiceLifecycleTrigger.DisplayOn:
                             if (lowPowerGate.IsActive)
                             {
@@ -151,7 +131,7 @@ public sealed class ServiceLifecycleRefreshLoop
                             {
                                 await runtime.SetLightingSuppressionAsync(
                                     OpenBlade.Contracts.LightingSuppressionReason.DisplayOff,
-                                    suppressed: false,
+                                    suppressed: trigger == ServiceLifecycleTrigger.DisplayOff,
                                     stoppingToken);
                             }
                             break;

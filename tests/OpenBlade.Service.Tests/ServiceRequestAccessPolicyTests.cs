@@ -116,40 +116,6 @@ public sealed class ServiceRequestAccessPolicyTests
     }
 
     [Fact]
-    public void PadlessLifecycleValidation_RequiresActiveLocalAdministrator()
-    {
-        var request = new ValidatePadlessHyperBoostLifecycleRequest(
-            OpenBladeIpc.ProtocolVersion,
-            Guid.NewGuid(),
-            PadlessHyperBoostLifecycleScenario.LowPower,
-            Guid.NewGuid(),
-            new string('A', 40),
-            new string('B', 64),
-            new string('C', 64));
-        var authority = new FixedSessionAuthority(4);
-
-        Assert.Null(ServiceRequestAccessPolicy.GetRejection(
-            request,
-            Client(sessionId: 4, administrator: true),
-            authority));
-        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
-            request,
-            Client(sessionId: 4, administrator: false),
-            authority));
-        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
-            request,
-            Client(sessionId: 3, administrator: true),
-            authority));
-        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
-            request,
-            Client(sessionId: 4, administrator: true) with
-            {
-                LogonKind = ServiceClientLogonKind.RemoteInteractive,
-            },
-            authority));
-    }
-
-    [Fact]
     public void FirmwareCompatibilityOverride_AllowsActiveStandardUserOnly()
     {
         var request = new SetFirmwareCompatibilityOverrideRequest(

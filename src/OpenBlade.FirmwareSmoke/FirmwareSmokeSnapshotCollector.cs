@@ -5,7 +5,7 @@ namespace OpenBlade.FirmwareSmoke;
 
 public sealed class FirmwareSmokeSnapshotCollector(IFirmwareSmokeClient client)
 {
-    public const int CurrentSchemaVersion = 11;
+    public const int CurrentSchemaVersion = 10;
     private const int MaximumObservationAttempts = 5;
 
     public async Task<FirmwareSmokeSnapshot> CaptureAsync(
@@ -106,8 +106,7 @@ public sealed class FirmwareSmokeSnapshotCollector(IFirmwareSmokeClient client)
                 capabilities.GpuOverclock,
                 capabilities.ObservedPowerSourceBehaviors,
                 capabilities.HyperBoostAccess?.ToString(),
-                capabilities.CoolingPadSupportAccess?.ToString(),
-                capabilities.HyperBoostWithoutCoolingPadAccess?.ToString())
+                capabilities.CoolingPadSupportAccess?.ToString())
             {
                 HyperBoostBaseModes = capabilities.HyperBoostBaseModes,
             },

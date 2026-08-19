@@ -583,7 +583,6 @@ type enum OpenBlade.Protocol.PerformanceFanValidationFailure
   field const OpenBlade.Protocol.PerformanceFanValidationFailure RestorationPairMismatch = 15
   field const OpenBlade.Protocol.PerformanceFanValidationFailure RestorationReadFailed = 14
   field const OpenBlade.Protocol.PerformanceFanValidationFailure RestoreWriteIndeterminate = 13
-  field const OpenBlade.Protocol.PerformanceFanValidationFailure SustainedValidationFailed = 22
   field const OpenBlade.Protocol.PerformanceFanValidationFailure TargetAlreadyActive = 8
   field const OpenBlade.Protocol.PerformanceFanValidationFailure WrongTarget = 1
 type enum OpenBlade.Protocol.PerformanceFanValidationTarget

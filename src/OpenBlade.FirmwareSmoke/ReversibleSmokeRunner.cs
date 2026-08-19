@@ -76,17 +76,12 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
             Connection: CoolingPadConnectionState.PresentExact,
             DesiredFanIntent.Mode: CoolingPadFanMode.Automatic,
         };
-        bool padAbsentAdmitted =
-            baseMode == PerformancePreset.Balanced
-            && capabilities.HyperBoostWithoutCoolingPadAccess
-                == DeviceFeatureAccess.ReadWrite
-            && original.CoolingPad?.Connection == CoolingPadConnectionState.Absent;
-        if (!padPresent && !padAbsentAdmitted)
+        if (!padPresent)
         {
             return Skipped(
                 id,
                 description,
-                "An exact pad with saved Auto intent or admitted pad-less Balanced support with confirmed pad absence is required.");
+                "An exact pad with saved Auto intent is required.");
         }
 
         string application = "Not attempted";

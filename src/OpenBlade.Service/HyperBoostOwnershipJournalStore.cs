@@ -14,17 +14,8 @@ internal enum HyperBoostOwnershipJournalState
 internal sealed record HyperBoostOwnershipJournal(
     HyperBoostOwnershipJournalState State,
     PerformancePreset BaseMode,
-    bool RequiresCoolingPad,
     DateTimeOffset UpdatedAtUtc)
 {
-    internal HyperBoostOwnershipJournal(
-        HyperBoostOwnershipJournalState state,
-        PerformancePreset baseMode,
-        DateTimeOffset updatedAtUtc)
-        : this(state, baseMode, RequiresCoolingPad: true, updatedAtUtc)
-    {
-    }
-
     internal bool IsWellFormed =>
         Enum.IsDefined(State)
         && BaseMode is PerformancePreset.Silent
@@ -46,8 +37,7 @@ internal sealed record HyperBoostOwnershipJournalDocument(
     int SchemaVersion,
     HyperBoostOwnershipJournalState State,
     PerformancePreset BaseMode,
-    DateTimeOffset UpdatedAtUtc,
-    bool? RequiresCoolingPad = null);
+    DateTimeOffset UpdatedAtUtc);
 
 internal interface IHyperBoostOwnershipJournalStore
     : IServiceOwnershipJournalCleaner
@@ -93,7 +83,7 @@ internal sealed class UnavailableHyperBoostOwnershipJournalStore
 
 internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJournalStore
 {
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 1;
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
         {
@@ -132,19 +122,13 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     JsonSerializer.Deserialize<HyperBoostOwnershipJournalDocument>(
                         json,
                         SerializerOptions);
-                bool recognizedSchema = document is
-                { SchemaVersion: 1, RequiresCoolingPad: null }
-                    or { SchemaVersion: CurrentSchemaVersion, RequiresCoolingPad: not null };
                 var journal = document is null
                     ? null
                     : new HyperBoostOwnershipJournal(
                         document.State,
                         document.BaseMode,
-                        document.SchemaVersion == 1
-                            ? true
-                            : document.RequiresCoolingPad!.Value,
                         document.UpdatedAtUtc);
-                return !recognizedSchema
+                return document is not { SchemaVersion: CurrentSchemaVersion }
                     || journal is not { IsWellFormed: true }
                     ? new HyperBoostOwnershipJournalLoadResult(null, true)
                     : new HyperBoostOwnershipJournalLoadResult(journal, false);
@@ -185,8 +169,7 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     CurrentSchemaVersion,
                     journal.State,
                     journal.BaseMode,
-                    journal.UpdatedAtUtc,
-                    journal.RequiresCoolingPad),
+                    journal.UpdatedAtUtc),
                 SerializerOptions);
             await AtomicFile.WriteAsync(path, json, cancellationToken)
                 .ConfigureAwait(false);

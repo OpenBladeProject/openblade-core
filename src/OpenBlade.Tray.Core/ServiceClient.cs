@@ -112,23 +112,6 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 enabled),
             token);
 
-    public Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
-        PadlessHyperBoostLifecycleScenario scenario,
-        Guid validationRunId,
-        string expectedSourceRevision,
-        string expectedServiceAssemblySha256,
-        string expectedAdmissionManifestSha256,
-        CancellationToken token) => SendMutationAsync(
-            new ValidatePadlessHyperBoostLifecycleRequest(
-                OpenBladeIpc.ProtocolVersion,
-                Guid.NewGuid(),
-                scenario,
-                validationRunId,
-                expectedSourceRevision,
-                expectedServiceAssemblySha256,
-                expectedAdmissionManifestSha256),
-            token);
-
     public Task<ControlOperationResult> SetCoolingPadFanIntentAsync(
         CoolingPadFanIntent intent,
         CancellationToken token) => SendMutationAsync(

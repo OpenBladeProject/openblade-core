@@ -20,7 +20,6 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(UpdateProfilesRequest), "updateProfiles")]
 [JsonDerivedType(typeof(SetPerformanceOverrideRequest), "setPerformanceOverride")]
 [JsonDerivedType(typeof(SetHyperBoostRequest), "setHyperBoost")]
-[JsonDerivedType(typeof(ValidatePadlessHyperBoostLifecycleRequest), "validatePadlessHyperBoostLifecycle")]
 [JsonDerivedType(typeof(SetCoolingPadFanIntentRequest), "setCoolingPadFanIntent")]
 [JsonDerivedType(typeof(SetCoolingDemandLeaseRequest), "setCoolingDemandLease")]
 [JsonDerivedType(typeof(ReleaseCoolingDemandLeaseRequest), "releaseCoolingDemandLease")]
@@ -99,22 +98,6 @@ public sealed record SetHyperBoostRequest(
     int Version,
     Guid RequestId,
     bool Enabled)
-    : ServiceRequest(Version, RequestId);
-
-public enum PadlessHyperBoostLifecycleScenario
-{
-    LowPower,
-    UnexpectedExit,
-}
-
-public sealed record ValidatePadlessHyperBoostLifecycleRequest(
-    int Version,
-    Guid RequestId,
-    PadlessHyperBoostLifecycleScenario Scenario,
-    Guid ValidationRunId,
-    string ExpectedSourceRevision,
-    string ExpectedServiceAssemblySha256,
-    string ExpectedAdmissionManifestSha256)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetCoolingPadFanIntentRequest(

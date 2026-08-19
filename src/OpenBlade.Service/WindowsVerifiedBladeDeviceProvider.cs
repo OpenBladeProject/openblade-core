@@ -317,7 +317,6 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     private sealed class SerializedBladeDevice :
         IBladeDevice,
         IGpuClockOffsetManagementDevice,
-        IPadlessHyperBoostLifecycleValidationDevice,
         IDisposable
     {
         private const int MaximumBatteryReadAttempts = 3;
@@ -1066,26 +1065,6 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
             await ExecuteProductionWriteAsync(
                 port => port.SetHyperBoostAsync(enabled, baseMode, cancellationToken),
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        public async Task EnablePadlessHyperBoostLifecycleValidationAsync(
-            CancellationToken cancellationToken)
-        {
-            if (!PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled)
-            {
-                await RejectProductionWrite(
-                    "Pad-less HyperBoost lifecycle validation requires a validation-marked service build.")
-                    .ConfigureAwait(false);
-                return;
-            }
-
-            await ExecuteProductionWriteAsync(
-                port => port is IPadlessHyperBoostLifecycleValidationPort validationPort
-                    ? validationPort.EnablePadlessHyperBoostLifecycleValidationAsync(
-                        cancellationToken)
-                    : Task.FromException(new CapabilityUnavailableException(
-                        "The exact validation-only pad-less HyperBoost port is unavailable.")),
                 cancellationToken).ConfigureAwait(false);
         }
 

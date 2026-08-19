@@ -50,32 +50,6 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
         Assert.True(File.Exists(path));
     }
 
-    [Fact]
-    public async Task Load_SchemaOneDefaultsToPadRequired()
-    {
-        Directory.CreateDirectory(directory);
-        string path = Path.Combine(directory, "hyperboost-ownership.json");
-        await File.WriteAllTextAsync(
-            path,
-            """
-            {
-              "schemaVersion": 1,
-              "state": 1,
-              "baseMode": 1,
-              "updatedAtUtc": "2026-08-11T12:00:00Z"
-            }
-            """,
-            CancellationToken.None);
-        var store = new HyperBoostOwnershipJournalStore(path);
-
-        HyperBoostOwnershipJournalLoadResult loaded =
-            await store.LoadAsync(CancellationToken.None);
-
-        Assert.False(loaded.Invalid);
-        Assert.True(Assert.IsType<HyperBoostOwnershipJournal>(loaded.Journal)
-            .RequiresCoolingPad);
-    }
-
     [Theory]
     [InlineData(0, 1, "2026-08-11T12:00:00Z")]
     [InlineData(1, 99, "2026-08-11T12:00:00Z")]

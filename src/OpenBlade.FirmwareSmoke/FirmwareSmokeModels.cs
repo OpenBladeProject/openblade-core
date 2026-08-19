@@ -50,8 +50,7 @@ public sealed record FirmwareSmokeCapabilities(
     GpuOverclockCapabilities? GpuOverclock,
     IReadOnlyList<PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors,
     string? HyperBoostAccess = null,
-    string? CoolingPadSupportAccess = null,
-    string? HyperBoostWithoutCoolingPadAccess = null)
+    string? CoolingPadSupportAccess = null)
 {
     public HyperBoostBaseModeCapabilities? HyperBoostBaseModes { get; init; }
 }

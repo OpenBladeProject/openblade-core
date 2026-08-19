@@ -479,7 +479,6 @@ foreach ($requiredText in @(
         'VerifyPrivacyPolicy',
         'BuildChannel',
         'BuildRevision',
-        '--property:OpenBladePadlessHyperBoostLifecycleValidation=false',
         'Write-OpenBladeNightlyArtifactMetadata',
         'upgradeProbeVersion',
         'upgrade-probe-validation')) {

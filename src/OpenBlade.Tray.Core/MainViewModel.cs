@@ -2608,23 +2608,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 {
                     Connection: CoolingPadConnectionState.PresentExact,
                     DesiredFanIntent.Mode: CoolingPadFanMode.Automatic,
-                }
-                    || Capabilities.HyperBoostWithoutCoolingPadAccess
-                            == DeviceFeatureAccess.ReadWrite
-                        && SelectedPerformance == PerformancePreset.Balanced
-                        && CoolingPadStatus?.Connection
-                            == CoolingPadConnectionState.Absent));
+                }));
 
     public string HyperBoostDescription => IsHyperBoostWritable
         ? HyperBoostActive
-            ? "Active. OpenBlade will restore the owned base mode when HyperBoost is turned off. Keep the cooling pad set to Auto if this session used pad-present eligibility; the current connection does not identify the original path."
-            : Capabilities.HyperBoostWithoutCoolingPadAccess
-                == DeviceFeatureAccess.ReadWrite
-                ? "HyperBoost can start directly from Balanced with either the exact cooling pad set to Auto or the separately admitted pad-less path. Automatic laptop fans and an admitted full-power adapter are required."
-                : Capabilities.HyperBoostWithoutCoolingPadAccess
-                    == DeviceFeatureAccess.ObservedOnly
-                    ? "Pad-less HyperBoost is detected but remains unvalidated and unavailable. The admitted path still requires the exact cooling pad set to Auto, Automatic laptop fans, and the full-power adapter."
-                    : "The cooling pad unlocks HyperBoost as an additional mode. Direct Quiet and Performance transitions are implemented but remain ObservedOnly and unvalidated; only Balanced is admitted. Before enabling it, select Auto intent for the supported pad; a fresh opaque-zero compatibility observation, Automatic laptop fans, and the full-power adapter are also required. The opaque value can occur during Fixed control and does not confirm active mode."
+            ? "Active. Keep the cooling pad set to Auto while HyperBoost is on."
+            : "The cooling pad unlocks HyperBoost as an additional mode. Direct Quiet and Performance transitions are implemented but remain ObservedOnly and unvalidated; only Balanced is admitted. Before enabling it, select Auto intent for the supported pad; a fresh opaque-zero compatibility observation, Automatic laptop fans, and the full-power adapter are also required. The opaque value can occur during Fixed control and does not confirm active mode."
         : "Detected on this laptop, but OpenBlade cannot safely change it with the current evidence.";
 
     public CoolingPadStatus? CoolingPadStatus
@@ -9593,7 +9582,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         || capabilities.SupportsBatteryProtectionOff
         || capabilities.SupportsTemporaryFullCharge
         || capabilities.HyperBoostAccess is not null
-        || capabilities.HyperBoostWithoutCoolingPadAccess is not null
         || capabilities.CoolingPadSupportAccess is not null
         || capabilities.LogoLightingModes.Count > 0
         || capabilities.OneShotLaptopControls.Count > 0;

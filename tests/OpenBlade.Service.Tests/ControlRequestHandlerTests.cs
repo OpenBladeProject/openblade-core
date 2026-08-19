@@ -8,63 +8,6 @@ namespace OpenBlade.Service.Tests;
 public sealed class ControlRequestHandlerTests
 {
     [Fact]
-    public async Task HandleAsync_DelegatesLifecycleBuildValidationToRuntime()
-    {
-        var runtime = new RecordingRuntime();
-        var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());
-        var request = new ValidatePadlessHyperBoostLifecycleRequest(
-            OpenBladeIpc.ProtocolVersion,
-            Guid.NewGuid(),
-            PadlessHyperBoostLifecycleScenario.LowPower,
-            Guid.NewGuid(),
-            new string('A', 40),
-            new string('B', 64),
-            new string('C', 64));
-
-        ServiceResponse response = await handler.HandleAsync(
-            request,
-            CancellationToken.None);
-
-        Assert.True(response.Success);
-        Assert.Equal(ControlOperationStatus.Blocked, response.Result?.Status);
-        Assert.Contains("unavailable", response.Result?.Message, StringComparison.Ordinal);
-        Assert.Empty(runtime.Calls);
-    }
-
-    [Fact]
-    public async Task HandleAsync_RejectsLifecycleValidationBeforeRuntimeBuildInspection()
-    {
-        var runtime = new RecordingRuntime();
-        var handler = new ControlRequestHandler(
-            runtime,
-            new ThrowingArchiveProvider(),
-            NullServiceShutdownSignal.Instance,
-            new FixedSessionAuthority(4));
-        var client = new ServiceClientContext(
-            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
-            SessionId: 4,
-            IsAdministrator: false,
-            ServiceClientLogonKind.Interactive);
-        var request = new ValidatePadlessHyperBoostLifecycleRequest(
-            OpenBladeIpc.ProtocolVersion,
-            Guid.NewGuid(),
-            PadlessHyperBoostLifecycleScenario.LowPower,
-            Guid.NewGuid(),
-            new string('A', 40),
-            new string('B', 64),
-            new string('C', 64));
-
-        ServiceResponse response = await handler.HandleAsync(
-            request,
-            client,
-            CancellationToken.None);
-
-        Assert.False(response.Success);
-        Assert.Contains("administrator", response.Error, StringComparison.OrdinalIgnoreCase);
-        Assert.Empty(runtime.Calls);
-    }
-
-    [Fact]
     public async Task HandleAsync_DispatchesEveryClosedRequestToExactlyOneRuntimeMethod()
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();

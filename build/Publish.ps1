@@ -124,8 +124,7 @@ $publishArguments = @(
     '--configuration', $Configuration,
     '--runtime', 'win-x64',
     '--self-contained', 'true',
-    '--property:PublishTrimmed=false',
-    '--property:OpenBladePadlessHyperBoostLifecycleValidation=false'
+    '--property:PublishTrimmed=false'
 )
 if ($buildIdentity.Channel -eq 'Nightly') {
     $publishArguments += @(

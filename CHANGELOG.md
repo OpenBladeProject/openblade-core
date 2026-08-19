@@ -5,52 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
-### Fixed
-
-- End OpenBlade-owned HyperBoost whenever the display turns off on the exact
-  admitted host. Display-off is explicitly a conservative safety boundary, not
-  proof that Modern Standby sleep began; the path does not release unrelated
-  ownership, change externally owned or indeterminate HyperBoost, or re-enable
-  the mode after display-on.
-
 ### Added
 
-- Added USB-C and Battery boundary validation for padless HyperBoost. On the
-  exact laptop, firmware exited mode 7 to Battery Saver Automatic for the full
-  Battery observation but retained mode 7 for the full USB-C 100 W observation.
-  OpenBlade now relies on the confirmed firmware Battery exit and preserves an
-  owned HyperBoost session across external-power transitions, including USB-C,
-  without issuing a redundant thermal write. Initial activation still requires
-  an admitted full-power adapter.
-- Added developer-only padless HyperBoost validation for the exact
-  `RZ09-0581` on BIOS 4.00. The bounded commands validate an immediate
-  apply/readback/restore cycle, a 60-second no-load thermal dwell, and an
-  adapter transition from an admitted full-power class while continuously
-  checking physical pad absence. A hash-pinned reviewed-load plan binds an
-  already-running executable by PID, exact filename, and SHA-256 at runtime,
-  repeats that identity check on every sample, and never starts or stops it. An
-  exact validation-marked Service build can arm the
-  installed low-power and crash-recovery checks through a separate
-  administrator-only request.
-  The validators accept the reviewed 280 W OEM and 330 W SlimQ full-power
-  classifications and never retry an indeterminate write.
-- Recorded successful exact-device padless HyperBoost validation for the
-  immediate transition, 60-second no-load dwell, 60-second Steel Nomad load,
-  and FullPower330W-to-USB-C100W transition. Each run confirmed paired mode 7,
-  exact Balanced restoration, and post-restoration pad absence. Installed
-  unexpected-exit recovery also passed with one journal-backed restoration.
-  After adding the conservative display-off safety boundary, installed
-  sleep/resume
-  recovery passed with one exact Balanced restoration and no retry. The
-  reviewed manifest now admits pad-less production control for this exact
-  host, baseline, and adapter set.
-- Added the fail-closed production plumbing for pad-less HyperBoost on the exact
-  `RZ09-0581`: a separate capability, defense-in-depth physical-absence checks,
-  Balanced-only routing, admitted full-power adapter checks, and durable
-  ownership-path recovery. Every embedded evidence gate is now reviewed, so
-  the separate capability advertises read/write access on the exact admitted
-  host while all identity, absence, controller, readback, and restoration
-  checks remain fail-closed.
 - Added confirmed HyperBoost control for the exact `RZ09-0581`. The
   currently admitted transition starts directly from confirmed Balanced
   performance with Automatic laptop fans and requires the exact Razer Laptop
@@ -108,10 +64,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Advanced service IPC from 48 to 49, the FirmwareSmoke snapshot schema from
-  10 to 11, and the HyperBoost ownership-journal schema from 1 to 2 for the
-  separate pad-less capability and durable activation-path provenance.
-
 - Bound satisfied HyperBoost, cooling-pad fan, and whole-strip lighting
   admission gates to reviewed artifacts and hashes. Incomplete gates remain
   closed and cannot increase hardware access without matching evidence.
@@ -141,10 +93,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Allowed the HyperBoost lifecycle verifier to distinguish the expected
-  post-crash `Fans` drift marker from an installed-generation mismatch while
-  retaining exact build, state, journal, boundary, and exactly-once recovery
-  checks.
 - Restored only OpenBlade-owned HyperBoost to its confirmed starting base
   before low power or shutdown, left externally observed mode 7 unchanged, and
   latched indeterminate outcomes without retry. Keyboard and fan cleanup still

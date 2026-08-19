@@ -21,35 +21,16 @@ internal sealed class InactiveGpuActivitySource : IGpuActivitySource
 /// </summary>
 internal sealed class WindowsGpuActivitySource : IGpuActivitySource, IDisposable
 {
-    private readonly WindowsNvidiaGpuActivityReader? reader;
-    private readonly Func<WindowsGpuActivitySnapshot> read;
-
-    internal WindowsGpuActivitySource()
-        : this(new WindowsNvidiaGpuActivityReader())
-    {
-    }
-
-    private WindowsGpuActivitySource(WindowsNvidiaGpuActivityReader reader)
-    {
-        this.reader = reader;
-        read = reader.Read;
-        _ = read();
-    }
-
-    internal WindowsGpuActivitySource(Func<WindowsGpuActivitySnapshot> read)
-    {
-        this.read = read ?? throw new ArgumentNullException(nameof(read));
-        _ = read();
-    }
+    private readonly WindowsNvidiaGpuActivityReader reader = new();
 
     public bool IsActive()
     {
-        WindowsGpuActivitySnapshot snapshot = read();
+        WindowsGpuActivitySnapshot snapshot = reader.Read();
         return snapshot.Processes.Any(process => process.IsActive);
     }
 
     public void Dispose()
     {
-        reader?.Dispose();
+        reader.Dispose();
     }
 }

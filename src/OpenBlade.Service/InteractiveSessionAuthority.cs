@@ -76,18 +76,6 @@ public static class ServiceRequestAccessPolicy
                     : "This operation requires an administrator.");
         }
 
-        if (request is ValidatePadlessHyperBoostLifecycleRequest)
-        {
-            SessionControlAccess validationAccess = GetAccess(client, authority);
-            return new ServiceRequestAccessDecision(
-                validationAccess,
-                !client.IsAdministrator
-                    ? "Pad-less HyperBoost lifecycle validation requires a local administrator."
-                    : validationAccess != SessionControlAccess.Active
-                        ? "Pad-less HyperBoost lifecycle validation requires the active local interactive session."
-                        : null);
-        }
-
         SessionControlAccess access = GetAccess(client, authority);
         if (request is GetStatusRequest or SubscribeStatusRequest)
         {

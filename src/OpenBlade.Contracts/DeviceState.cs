@@ -199,8 +199,6 @@ public sealed record DeviceCapabilities(
 
     public DeviceFeatureAccess? HyperBoostAccess { get; init; }
 
-    public DeviceFeatureAccess? HyperBoostWithoutCoolingPadAccess { get; init; }
-
     public HyperBoostBaseModeCapabilities? HyperBoostBaseModes { get; init; }
 
     /// <summary>
@@ -248,10 +246,6 @@ public sealed record DeviceCapabilities(
         && (CpuVoltageOptimizer is null || CpuVoltageOptimizer.IsWellFormed)
         && (GpuOverclock is null || GpuOverclock.IsWellFormed)
         && (HyperBoostAccess is null || Enum.IsDefined(HyperBoostAccess.Value))
-        && (HyperBoostWithoutCoolingPadAccess is null
-            || HyperBoostAccess is not null
-                && Enum.IsDefined(HyperBoostWithoutCoolingPadAccess.Value)
-                && HyperBoostWithoutCoolingPadAccess.Value <= HyperBoostAccess.Value)
         && (HyperBoostBaseModes is null
             || HyperBoostAccess is not null
                 && HyperBoostBaseModes.IsWellFormed

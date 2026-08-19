@@ -55,79 +55,6 @@ public sealed class ReversibleSmokeRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_AdmittedPadlessBalancedAppliesAndRestores()
-    {
-        await using var client = new FakeFirmwareSmokeClient(
-            padlessAdmitted: true,
-            coolingPadConnection: CoolingPadConnectionState.Absent);
-
-        IReadOnlyList<FirmwareSmokeCheck> checks =
-            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
-
-        Assert.All(
-            checks,
-            check => Assert.Equal(FirmwareSmokeOutcome.Passed, check.Outcome));
-        Assert.Equal(2, client.HyperBoostMutationCalls);
-        client.AssertOriginalState();
-    }
-
-    [Theory]
-    [InlineData((int)CoolingPadConnectionState.Ambiguous)]
-    [InlineData((int)CoolingPadConnectionState.ObservationFailed)]
-    public async Task RunAsync_PadlessRequiresConfirmedAbsence(int connectionValue)
-    {
-        await using var client = new FakeFirmwareSmokeClient(
-            padlessAdmitted: true,
-            coolingPadConnection: (CoolingPadConnectionState)connectionValue);
-
-        IReadOnlyList<FirmwareSmokeCheck> checks =
-            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
-
-        FirmwareSmokeCheck hyperBoost = Assert.Single(
-            checks,
-            check => check.Id == "write.hyper-boost");
-        Assert.Equal(FirmwareSmokeOutcome.Skipped, hyperBoost.Outcome);
-        Assert.Equal(0, client.HyperBoostMutationCalls);
-        client.AssertOriginalState();
-    }
-
-    [Fact]
-    public async Task RunAsync_PadlessRequiresReadWriteAdmission()
-    {
-        await using var client = new FakeFirmwareSmokeClient(
-            coolingPadConnection: CoolingPadConnectionState.Absent);
-
-        IReadOnlyList<FirmwareSmokeCheck> checks =
-            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
-
-        FirmwareSmokeCheck hyperBoost = Assert.Single(
-            checks,
-            check => check.Id == "write.hyper-boost");
-        Assert.Equal(FirmwareSmokeOutcome.Skipped, hyperBoost.Outcome);
-        Assert.Equal(0, client.HyperBoostMutationCalls);
-        client.AssertOriginalState();
-    }
-
-    [Fact]
-    public async Task RunAsync_PadlessRejectsNonBalancedBase()
-    {
-        await using var client = new FakeFirmwareSmokeClient(
-            PerformancePreset.Performance,
-            padlessAdmitted: true,
-            coolingPadConnection: CoolingPadConnectionState.Absent);
-
-        IReadOnlyList<FirmwareSmokeCheck> checks =
-            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
-
-        FirmwareSmokeCheck hyperBoost = Assert.Single(
-            checks,
-            check => check.Id == "write.hyper-boost");
-        Assert.Equal(FirmwareSmokeOutcome.Skipped, hyperBoost.Outcome);
-        Assert.Equal(0, client.HyperBoostMutationCalls);
-        client.AssertOriginalState();
-    }
-
-    [Fact]
     public async Task RunAsync_StillRestoresAfterApplicationFailure()
     {
         await using var client = new FakeFirmwareSmokeClient
@@ -258,10 +185,7 @@ public sealed class ReversibleSmokeRunnerTests
         private PerformancePreset? hyperBoostRestoreBase;
 
         public FakeFirmwareSmokeClient(
-            PerformancePreset originalPerformance = PerformancePreset.Balanced,
-            bool padlessAdmitted = false,
-            CoolingPadConnectionState coolingPadConnection =
-                CoolingPadConnectionState.PresentExact)
+            PerformancePreset originalPerformance = PerformancePreset.Balanced)
         {
             this.originalPerformance = originalPerformance;
             var capabilities = new DeviceCapabilities(
@@ -273,9 +197,6 @@ public sealed class ReversibleSmokeRunnerTests
                 SupportsTemporaryFullCharge: true)
             {
                 HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
-                HyperBoostWithoutCoolingPadAccess = padlessAdmitted
-                    ? DeviceFeatureAccess.ReadWrite
-                    : null,
                 HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
                     originalPerformance == PerformancePreset.Silent
                         ? DeviceFeatureAccess.ReadWrite
@@ -343,7 +264,7 @@ public sealed class ReversibleSmokeRunnerTests
             status = status with
             {
                 CoolingPad = new CoolingPadStatus(
-                    coolingPadConnection,
+                    CoolingPadConnectionState.PresentExact,
                     new CoolingPadCapabilities(
                         DeviceFeatureAccess.ReadOnly,
                         DeviceFeatureAccess.ObservedOnly,
@@ -361,9 +282,7 @@ public sealed class ReversibleSmokeRunnerTests
                     ActiveDemandLeases: 0,
                     LightingSyncEnabled: false,
                     CoolingPadLightingSyncState.Unavailable,
-                    coolingPadConnection == CoolingPadConnectionState.Absent
-                        ? "Pad absence confirmed"
-                        : "Cooling-pad state observed"),
+                    "Exact pad observed"),
             };
         }
 

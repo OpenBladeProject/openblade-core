@@ -57,9 +57,9 @@ public sealed class PadPresentHyperBoostSafetyGateTests
     }
 
     [Theory]
-    [InlineData(CoolingPadConnectionState.Absent, 5)]
-    [InlineData(CoolingPadConnectionState.Ambiguous, 6)]
-    [InlineData(CoolingPadConnectionState.ObservationFailed, 7)]
+    [InlineData(CoolingPadConnectionState.Absent, 3)]
+    [InlineData(CoolingPadConnectionState.Ambiguous, 4)]
+    [InlineData(CoolingPadConnectionState.ObservationFailed, 5)]
     public async Task ValidateAsync_FailsClosedUnlessOneExactPadIsPresent(
         CoolingPadConnectionState connection,
         int expectedFailureValue)

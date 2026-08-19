@@ -134,11 +134,6 @@ public sealed class ControlRequestHandler
             SetHyperBoostRequest set => Result(
                 request.RequestId,
                 await runtime.SetHyperBoostAsync(set.Enabled, cancellationToken)),
-            ValidatePadlessHyperBoostLifecycleRequest validate => Result(
-                request.RequestId,
-                await runtime.ValidatePadlessHyperBoostLifecycleAsync(
-                    validate,
-                    cancellationToken)),
             SetCoolingPadFanIntentRequest set => Result(
                 request.RequestId,
                 await runtime.SetCoolingPadFanIntentAsync(set.Intent, cancellationToken)),

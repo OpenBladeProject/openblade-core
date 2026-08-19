@@ -7,15 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\..\src\OpenBlade.Protocol\Fixtures\Rz09_0581_02e0_4_00_PadAbsentHyperBoostAdapterTransitionPlan.json"
-          Link="Fixtures\Rz09_0581_02e0_4_00_PadAbsentHyperBoostAdapterTransitionPlan.json"
-          CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\src\OpenBlade.Protocol\Fixtures\Rz09_0581_02e0_4_00_HyperBoostPowerSourceBoundaryPlan.json"
-          Link="Fixtures\Rz09_0581_02e0_4_00_HyperBoostPowerSourceBoundaryPlan.json"
-          CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\src\OpenBlade.Protocol\Fixtures\Rz09_0581_02e0_4_00_PadAbsentHyperBoostExternalLoadPlan.json"
-          Link="Fixtures\Rz09_0581_02e0_4_00_PadAbsentHyperBoostExternalLoadPlan.json"
-          CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
@@ -31,38 +22,6 @@
     <Compile Include="..\OpenBlade.Testing\AsyncTest.cs" Link="AsyncTest.cs" />
     <Compile Include="..\OpenBlade.Testing\PublicApiSurface.cs" Link="PublicApiSurface.cs" />
     <None Include="PublicApiBaseline.txt" CopyToOutputDirectory="PreserveNewest" />
-    <None
-      Include="..\..\captures\annotations\2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json"
-      Link="Evidence\2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json"
-      CopyToOutputDirectory="PreserveNewest" />
-    <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-immediate.json"
-      Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-immediate.json"
-      CopyToOutputDirectory="PreserveNewest" />
-    <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-sustained-no-load.json"
-      Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-sustained-no-load.json"
-      CopyToOutputDirectory="PreserveNewest" />
-    <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-steel-nomad.json"
-      Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-steel-nomad.json"
-      CopyToOutputDirectory="PreserveNewest" />
-    <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-adapter-transition.json"
-      Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-adapter-transition.json"
-      CopyToOutputDirectory="PreserveNewest" />
-    <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-low-power-negative.json"
-      Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-low-power-negative.json"
-      CopyToOutputDirectory="PreserveNewest" />
-    <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-low-power-recovery.json"
-      Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-low-power-recovery.json"
-      CopyToOutputDirectory="PreserveNewest" />
-    <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json"
-      Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json"
-      CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
