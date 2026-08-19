@@ -20,7 +20,7 @@ internal sealed record GpuClockOffsetValidationPlan(
     GpuClockOffsetValidationSettings? RequiredBaseline = null)
 {
     internal static GpuClockOffsetValidationPlan Rz090528 { get; } = new(
-        "RZ09-0528 1532:02C6 BIOS 2.02",
+        "RZ09-0528 1532:02C6",
         "NVIDIA GeForce RTX 5090 Laptop GPU",
         CoreMinimumMegahertz: -1000,
         CoreMaximumMegahertz: 400,

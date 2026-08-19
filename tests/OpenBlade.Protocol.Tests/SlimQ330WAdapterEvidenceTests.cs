@@ -22,7 +22,7 @@ public sealed class SlimQ330WAdapterEvidenceTests
         Assert.Equal("FullPower330W", manifest.Adapter.MappedState);
         Assert.Equal(10, manifest.Evidence.IdenticalReadCount);
         Assert.Equal(4, manifest.Evidence.PowerOnlineSampleCount);
-        Assert.Equal("4.00", manifest.Evidence.ValidatedBiosVersion);
+        Assert.Equal("4.00", manifest.Evidence.CaptureBiosVersion);
         Assert.Equal(
             "7cb784d93de51bb8ef3fc6ac0a97fc80010d7b19",
             manifest.Evidence.CaptureCommit);

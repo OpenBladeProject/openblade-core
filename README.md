@@ -196,6 +196,55 @@ dotnet run --project src\OpenBlade.Capture -- query-fan-rpm
 dotnet run --project src\OpenBlade.Capture -- validate path\to\fixtures.json
 ```
 
+The RZ09-0581 cadence validator measures whether the admitted `1532:02E0`
+matrix transport can sustain progressive 30, 45, and 60 Hz writes. Stop the
+OpenBlade service first, substitute the laptop's admitted BIOS version, and
+choose a directory for the sanitized timestamped JSON and Markdown results:
+
+```powershell
+dotnet run --project src\OpenBlade.Capture -- `
+  validate-rz09-0581-lighting-cadence `
+  --confirm-target RZ09-0581:1532:02E0:4.00:000C:0001:375 `
+  --rates 30,45,60 --pattern tidal --brightness 100 --seconds 15 `
+  --output .\lighting-cadence-results
+```
+
+`--rates 30,45,60` is an exact, ordered confirmation of the fixed validation
+plan; subsets, reordering, and other rates are rejected before hardware opens.
+
+Choose `marker` for a Spectrum base with a 12-bit per-frame counter suitable
+for high-speed video, or `tidal` for the captured five-second green/blue Tidal
+motion used for direct operator comparison across the three rates.
+
+The run replaces the current keyboard effect. That unknown pre-test effect
+cannot be read or restored; a healthy run finishes at the explicitly confirmed
+Static green baseline.
+
+This validates host-to-keyboard transport completion and records operator
+confirmation of visible stability. It does not measure the LEDs' exact optical
+refresh rate. Each stage also records the validator process's CPU time across
+the measured window. Developer-only phase timing splits each successful
+end-to-end write into queue wait, the strict competing-controller check, native
+submit-to-completion, managed completion handling, and residual host work. The
+frame-budget p99 gate excludes only the strict validator guard when every
+completed frame has exactly one aligned, nonnegative phase attribution.
+Completion ratio and maximum gap are independent end-to-end gates; achieved
+rate and skipped-frame count remain end-to-end diagnostics reflected in
+completion. Any missing, extra, or over-attributed phase timing disables guard
+subtraction and falls back to complete end-to-end write timing.
+The validator retains strict per-write controller checks throughout each stage;
+it does not switch to the production Advisory policy during measurement.
+
+`singleLogicalProcessorPercent` treats one fully occupied
+logical processor as 100%; `wholeMachineCapacityPercent` divides that value by
+the recorded logical-processor count, matching Task Manager's process-wide
+normalization. Near each deadline, the developer tool uses a process-local
+precision wait instead of changing the Windows timer period, so its CPU result
+measures the validator's intentional spin-wait cost rather than the installed
+service's `Task.Delay` scheduler. If a write outcome is indeterminate, the
+validator stops without retrying or restoring lighting and reports that manual
+recovery is required.
+
 The installed-product firmware workflow starts with a read-only baseline:
 
 ```powershell

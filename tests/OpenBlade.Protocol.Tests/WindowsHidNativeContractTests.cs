@@ -108,8 +108,8 @@ public sealed class WindowsHidNativeContractTests
 
         Assert.Contains(
             "new OverlappedFeatureOperation(\n" +
-            "            native,\n" +
-            "            TargetBladeDevice.MatrixFeatureReportByteLength)",
+            "                native,\n" +
+            "                TargetBladeDevice.MatrixFeatureReportByteLength)",
             lightingComposition);
         Assert.Contains(
             "new WindowsPid02E0MatrixFeatureWriter(\n" +

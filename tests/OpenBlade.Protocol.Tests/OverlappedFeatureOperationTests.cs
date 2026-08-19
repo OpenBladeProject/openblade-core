@@ -584,6 +584,40 @@ public sealed class OverlappedFeatureOperationTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_CapturesNativeAndManagedCompletionTimingWhenEnabled()
+    {
+        var time = new ManualTimeProvider();
+        var native = new ScriptedNative
+        {
+            OnSubmit = submission =>
+            {
+                time.Advance(TimeSpan.FromMilliseconds(2));
+                submission.Complete(SuccessfulCompletion);
+                time.Advance(TimeSpan.FromMilliseconds(1));
+                submission.Complete(new NativeIoCompletion(false, 0, 87));
+                time.Advance(TimeSpan.FromMilliseconds(2));
+                return new NativeSubmissionResult(NativeSubmissionKind.Submitted, 0);
+            },
+        };
+        var operation = new OverlappedFeatureOperation(
+            native,
+            91,
+            time,
+            captureTiming: true);
+
+        HidFeatureIoResult result = await operation.ExecuteAsync(
+            CreateHandle(),
+            1,
+            new byte[91],
+            CancellationToken.None,
+            CancellationToken.None);
+
+        NativeIoTiming timing = Assert.IsType<NativeIoTiming>(result.Timing);
+        Assert.Equal(TimeSpan.FromMilliseconds(2), timing.SubmitToCompletion);
+        Assert.Equal(TimeSpan.FromMilliseconds(3), timing.CompletionToManagedReturn);
+    }
+
+    [Fact]
     public async Task FinalizerDisposesRegistrationsThenOverlappedThenPinBeforeCompletionSettles()
     {
         var checkpoints = new ConcurrentQueue<string>();
@@ -639,6 +673,17 @@ public sealed class OverlappedFeatureOperationTests
         public bool BoundDisposed { get; private set; }
 
         public bool FileDisposed { get; private set; }
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => timestamp;
+
+        internal void Advance(TimeSpan duration) => timestamp += duration.Ticks;
     }
 
     private sealed class ScriptedRegistrationFactory : ICancellationRegistrationFactory

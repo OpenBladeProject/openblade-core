@@ -32,7 +32,7 @@ internal sealed record SlimQ330WAdapterAdmissionAdapter(
 
 internal sealed record SlimQ330WAdapterAdmissionEvidence(
     string CaptureCommit,
-    string ValidatedBiosVersion,
+    string CaptureBiosVersion,
     string Annotation,
     string AnnotationSha256,
     int IdenticalReadCount,
@@ -48,7 +48,7 @@ internal static class SlimQ330WAdapterAdmissionSource
     private const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_SlimQ330WAdapterAdmission.json";
     private const string ExpectedSha256 =
-        "E5C3161C5F7EAFAC5329D5EA7AE2F02CBC9BDF1284A93F81B6CD5CF6B97EB1C7";
+        "1CD2FC199BB647E93D76A8820C0D81166007F3B0E9D6C566A15EB57552261CD4";
     private const string AnnotationSha256 =
         "6402DFA16478DDB80A6E7CE0442612E34215E4FC05DC400EA83EA2EDE3C148A6";
     private const string CaptureCommit =
@@ -135,7 +135,7 @@ internal static class SlimQ330WAdapterAdmissionSource
                 Evidence:
                 {
                     CaptureCommit: CaptureCommit,
-                    ValidatedBiosVersion: "4.00",
+                    CaptureBiosVersion: "4.00",
                     Annotation:
                         "captures/annotations/2026-08-12-rz09-0581-slimq-330w-production-admission.json",
                     AnnotationSha256: AnnotationSha256,
@@ -153,7 +153,6 @@ internal static class SlimQ330WAdapterAdmissionSource
             throw Invalid(
                 "The embedded SlimQ 330 W adapter admission manifest is not the reviewed exact-device contract.");
         }
-
     }
 
     private static UnvalidatedCommandException Invalid(string message) => new(message);
