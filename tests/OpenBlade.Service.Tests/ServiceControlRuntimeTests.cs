@@ -13763,6 +13763,92 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, padProvider.FreshObserveCount);
     }
 
+    [Fact]
+    public async Task PowerSourceTransition_UsbCPreservesOwnedHyperBoostWithoutThermalWrite()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        var padProvider = new FixedVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.Absent,
+                OpaqueFanObservation: null,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = await CreatePadlessHyperBoostReadyContextAsync(
+            padProvider,
+            journal);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+        int performanceWrites = context.Device.PerformanceSetCalls;
+        int fanWrites = context.Device.FanSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.UsbC, status.ActivePowerSource);
+        Assert.True(status.ConfirmedState?.HyperBoostActive);
+        Assert.Equal(hyperBoostWrites, context.Device.HyperBoostSetCalls);
+        Assert.Equal(performanceWrites, context.Device.PerformanceSetCalls);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.OwnedConfirmed,
+            journal.Journal?.State);
+        Assert.Empty(status.UnconfirmedWrites);
+    }
+
+    [Fact]
+    public async Task PowerSourceTransition_BatteryFirmwareExitRelinquishesOwnershipWithoutDisable()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        var padProvider = new FixedVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.Absent,
+                OpaqueFanObservation: null,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = await CreatePadlessHyperBoostReadyContextAsync(
+            padProvider,
+            journal);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+        int performanceWrites = context.Device.PerformanceSetCalls;
+        int fanWrites = context.Device.FanSetCalls;
+        journal.Events.Clear();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.BatterySaver,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            context.Device.ConfirmedState.Lighting)
+        {
+            HyperBoostActive = false,
+        };
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        context.Device.AdapterPowerState = AdapterPowerState.Battery;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.Battery, status.ActivePowerSource);
+        Assert.False(status.ConfirmedState?.HyperBoostActive);
+        Assert.Equal(PerformancePreset.BatterySaver, status.ConfirmedState?.Performance);
+        Assert.Equal(hyperBoostWrites, context.Device.HyperBoostSetCalls);
+        Assert.Equal(performanceWrites, context.Device.PerformanceSetCalls);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+        Assert.Equal(
+            ["write:Relinquished:Balanced", "clear"],
+            journal.Events);
+        Assert.Null(journal.Journal);
+    }
+
     [Theory]
     [InlineData(
         (int)CoolingPadConnectionState.Absent,

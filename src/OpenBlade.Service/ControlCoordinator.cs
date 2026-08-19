@@ -934,6 +934,9 @@ public sealed class ControlCoordinator
                 transition.Provisional[subsystem] =
                     subsystem == DeviceSubsystem.Lighting && lightingReadUnavailable
                         ? AutomaticReadUnavailable(pending.Name)
+                        : initial.HyperBoostActive
+                            && IsThermalSubsystem(subsystem)
+                            ? PreservedForHyperBoost(pending.Name)
                         : ExternalChangePreserved(pending.Name);
                 continue;
             }
@@ -1741,6 +1744,11 @@ public sealed class ControlCoordinator
         ControlResultStatus.Blocked,
         $"Automatic {name.ToLowerInvariant()} profile application is paused because " +
         "the setting changed outside OpenBlade.");
+
+    private static ControlResult PreservedForHyperBoost(string name) => new(
+        ControlResultStatus.Blocked,
+        $"Automatic {name.ToLowerInvariant()} profile application was deferred " +
+        "because HyperBoost remains active while firmware owns the power-source transition.");
 
     private static ControlResult AutomaticReadUnavailable(string name) => new(
         ControlResultStatus.Blocked,

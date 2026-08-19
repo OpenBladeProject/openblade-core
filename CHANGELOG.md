@@ -15,12 +15,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Added developer-only USB-C and battery boundary tests for padless HyperBoost.
-  They activate mode 7 once on admitted full power, observe paired firmware
-  state without an OpenBlade disable, require consecutive non-HyperBoost
-  automatic readback, and reconnect full power before any one-shot cleanup.
-  The tests record whether firmware ended HyperBoost autonomously and do not
-  change production transition policy.
+- Added USB-C and Battery boundary validation for padless HyperBoost. On the
+  exact laptop, firmware exited mode 7 to Battery Saver Automatic for the full
+  Battery observation but retained mode 7 for the full USB-C 100 W observation.
+  OpenBlade now relies on the confirmed firmware Battery exit and preserves an
+  owned HyperBoost session across external-power transitions, including USB-C,
+  without issuing a redundant thermal write. Initial activation still requires
+  an admitted full-power adapter.
 - Added developer-only padless HyperBoost validation for the exact
   `RZ09-0581` on BIOS 4.00. The bounded commands validate an immediate
   apply/readback/restore cycle, a 60-second no-load thermal dwell, and an

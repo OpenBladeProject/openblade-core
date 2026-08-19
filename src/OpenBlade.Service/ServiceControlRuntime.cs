@@ -8636,6 +8636,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 preserveObservedExternalChanges
                     ? GetCoupledAutomaticWriteExclusions()
                     : GetPendingWriteExclusions());
+            if (confirmed.HyperBoostActive)
+            {
+                // Hardware evidence confirms that firmware exits mode 7 when
+                // external power is removed, while mode 7 may remain active on
+                // USB-C. Preserve the active firmware state across every
+                // external-power profile transition instead of issuing a
+                // redundant thermal write. A later confirmed Battery sample
+                // relinquishes ownership through the ordinary readback path.
+                exclusions.Add(DeviceSubsystem.Performance);
+                exclusions.Add(DeviceSubsystem.Fans);
+            }
             if (!preferences.AlwaysOverrideExternalLightingChanges
                 && ControllerMayOwnLighting(current))
             {
@@ -8743,6 +8754,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool preserveLiveReadings,
         CancellationToken token)
     {
+        bool hyperBoostJournalRetired = true;
+        if (confirmed is { HyperBoostActive: false })
+        {
+            hyperBoostJournalRetired =
+                await RetireInactiveHyperBoostJournalIfPresentAsync(
+                        "A firmware-confirmed Battery exit relinquished HyperBoost ownership, but its journal could not be retired.")
+                    .ConfigureAwait(false);
+            if (ownsHyperBoost || ownedHyperBoostBaseMode is not null)
+            {
+                hyperBoostOwnershipGeneration++;
+            }
+            ownsHyperBoost = false;
+            ownedHyperBoostBaseMode = null;
+            ownedHyperBoostRequiresCoolingPad = false;
+        }
+
         IReadOnlySet<DeviceSubsystem> confirmationUnavailable =
             outcome.ConfirmationUnavailable ?? new HashSet<DeviceSubsystem>();
         foreach (DeviceSubsystem subsystem in DeviceSubsystemOrder.Default)
@@ -8801,6 +8828,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             message = $"{message} {laptopBehaviorMessage}";
             history.RecordSummary(ControlOperationStatus.Failed, laptopBehaviorMessage);
         }
+        if (!hyperBoostJournalRetired)
+        {
+            message = $"{message} HyperBoost is inactive, but its ownership journal could not be retired; control writes remain blocked.";
+        }
         if (!preserveLiveReadings)
         {
             PublishIfChanged(GetStatus() with { LiveReadings = null });
@@ -8814,7 +8845,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? GetStatus().DeviceVerified
                 : !outcome.DeviceAccessFailed,
             writesBlocked: outcome.DeviceAccessFailed
-                || HasPendingWriteConfirmations());
+                || HasPendingWriteConfirmations()
+                || !hyperBoostJournalRetired);
     }
 
     private async Task<string?> ApplyProfileLaptopBehaviorAsync(
