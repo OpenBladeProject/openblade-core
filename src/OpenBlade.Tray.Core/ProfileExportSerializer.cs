@@ -182,6 +182,7 @@ public static class ProfileExportSerializer
     {
         using JsonDocument document = JsonDocument.Parse(json);
         if (!document.RootElement.TryGetProperty("profiles", out JsonElement profiles)
+            || profiles.ValueKind != JsonValueKind.Object
             || !profiles.TryGetProperty("windowsPowerModes", out _))
         {
             throw new InvalidDataException(

@@ -272,6 +272,29 @@ public sealed class ProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Load_CurrentSchemaNullProfilesRecoversSafeDefaults()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        await File.WriteAllTextAsync(
+            path,
+            $$"""
+            {"schemaVersion": {{ProfileStore.CurrentSchemaVersion}}, "profiles": null}
+            """);
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.True(result.RecoveredFromInvalidFile);
+        Assert.Equal(ProfileDefaults.CreateSafeDefaults(), result.Profiles);
+
+        ProfileLoadResult reloaded = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+        Assert.False(reloaded.RecoveredFromInvalidFile);
+        Assert.Equal(ProfileDefaults.CreateSafeDefaults(), reloaded.Profiles);
+    }
+
+    [Fact]
     public async Task Load_PreviousSchemaDoesNotInventGpuClockOffsets()
     {
         Directory.CreateDirectory(storeDirectory);
@@ -753,6 +776,43 @@ public sealed class ProfileStoreTests : IDisposable
             $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
             await File.ReadAllTextAsync(path));
         Assert.DoesNotContain("\"display\": null", await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
+    public async Task Load_SchemaOneClearsUnexpectedLegacyWindowsPowerMode()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var legacy = new LegacyProfileDocument(
+            ProfileStore.LegacySchemaVersion,
+            new LegacyProfileSet(
+                defaults.PluggedIn with
+                {
+                    WindowsPowerMode = WindowsPowerMode.BestPerformance,
+                },
+                defaults.Battery with
+                {
+                    WindowsPowerMode = WindowsPowerMode.BestPowerEfficiency,
+                },
+                defaults.BatteryPolicy));
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(legacy, ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Null(result.Profiles.PluggedIn.WindowsPowerMode);
+        Assert.Null(result.Profiles.Battery.WindowsPowerMode);
+        Assert.Equal(
+            WindowsPowerModeAssociations.LeaveUnchanged,
+            result.Profiles.WindowsPowerModes);
+        Assert.DoesNotContain(
+            "\"windowsPowerMode\":",
+            await File.ReadAllTextAsync(path),
+            StringComparison.Ordinal);
     }
 
     public void Dispose()

@@ -103,13 +103,15 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
     {
         BatteryConfigurationStore.RejectDuplicateMembers(json);
         using JsonDocument parsed = JsonDocument.Parse(json.ToArray());
-        if (!parsed.RootElement.TryGetProperty("schemaVersion", out JsonElement versionElement)
+        if (parsed.RootElement.ValueKind != JsonValueKind.Object
+            || !parsed.RootElement.TryGetProperty("schemaVersion", out JsonElement versionElement)
             || !versionElement.TryGetInt32(out schemaVersion))
         {
             throw new InvalidDataException("The profile schema version is unsupported.");
         }
         if (schemaVersion == CurrentSchemaVersion
             && (!parsed.RootElement.TryGetProperty("profiles", out JsonElement profilesElement)
+                || profilesElement.ValueKind != JsonValueKind.Object
                 || !profilesElement.TryGetProperty("windowsPowerModes", out _)))
         {
             throw new InvalidDataException(
@@ -184,10 +186,14 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
                     BatteryProtectionEnabled = legacyBatteryProtectionDefault,
                 },
                 document.Profiles.BatteryPolicy);
-            profiles = NormalizeLegacyBatteryProfile(
-                migratedProfiles,
-                out _,
-                legacyBatteryProtectionDefault);
+            profiles = ClearLegacyWindowsPowerModes(
+                NormalizeLegacyBatteryProfile(
+                    migratedProfiles,
+                    out _,
+                    legacyBatteryProtectionDefault)) with
+            {
+                WindowsPowerModes = WindowsPowerModeAssociations.LeaveUnchanged,
+            };
             migrated = true;
         }
         else

@@ -238,6 +238,27 @@ public sealed class ProfileExportSerializerTests
         Assert.Contains("missing Windows power mode associations", exception.Message);
     }
 
+    [Theory]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("\"invalid\"")]
+    public void Deserialize_VersionTenRejectsNonObjectProfiles(string profilesJson)
+    {
+        string json = $$"""
+            {
+              "schemaVersion": 10,
+              "applicationVersion": "0.16.0",
+              "exportedAtUtc": "2026-08-20T00:00:00+00:00",
+              "profiles": {{profilesJson}}
+            }
+            """;
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            ProfileExportSerializer.Deserialize(json));
+
+        Assert.Contains("missing Windows power mode associations", exception.Message);
+    }
+
     private static JsonObject CreateVersionNineDocument()
     {
         JsonObject document = JsonNode.Parse(ProfileExportSerializer.Serialize(

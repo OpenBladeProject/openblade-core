@@ -66,6 +66,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept malformed current-schema profile files on the safe recovery and import
+  error paths, and cleared stray legacy Windows power modes before publishing
+  migrated schema 1 profiles.
 - Removed the redundant **Double-click** hint from the tray context menu while
   preserving double-click activation of the main window.
 - Removed redundant troubleshooting status dots, clarified the service-start
