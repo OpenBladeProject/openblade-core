@@ -126,6 +126,27 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
+    public void Rz090581PadlessHyperBoostAccess_IsModelScopedButEvidenceGated()
+    {
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            ProductionBatteryFactory.GetRz090581HyperBoostWithoutCoolingPadAccess(
+                ExactRz090581Identity("3.01")));
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            ProductionBatteryFactory.GetRz090581HyperBoostWithoutCoolingPadAccess(
+                ExactRz090581Identity(
+                    "99.99",
+                    HostFirmwareCompatibility.ModelScoped),
+                writesAdmitted: true));
+        Assert.Null(
+            ProductionBatteryFactory.GetRz090581HyperBoostWithoutCoolingPadAccess(
+                new HostIdentityReadResult(
+                    null,
+                    HidSessionFailureKind.IdentityBlocked)));
+    }
+
+    [Fact]
     public void Rz090581HyperBoostBaseModes_AdmitOnlyValidatedBalancedTransition()
     {
         HyperBoostBaseModeCapabilities capabilities =

@@ -48,7 +48,13 @@ internal static class ServiceComposition
         services.AddSingleton<FirmwareCompatibilityPolicy>();
         services.AddSingleton<IProductionBatteryPortFactory>(provider =>
             CreateProductionBatteryFactory(
-                provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+                PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled,
+                BatteryValidationFactory
+                    .CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation,
+                () => BatteryValidationFactory.CreateWindowsProductionBatteryForService(
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>()),
+                () => ProductionBatteryFactory.CreateWindowsReadOnly(
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>())));
         services.AddSingleton<IProductionCoolingPadPortFactory>(_ =>
             ProductionCoolingPadFactory.CreateWindows());
         services.AddSingleton<WindowsVerifiedCoolingPadProvider>(provider =>
@@ -163,7 +169,10 @@ internal static class ServiceComposition
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory() =>
         CreateProductionBatteryFactory(
-            BatteryValidationFactory.CreateWindowsProductionBatteryForService,
+            PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled
+                ? BatteryValidationFactory
+                    .CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation
+                : BatteryValidationFactory.CreateWindowsProductionBatteryForService,
             ProductionBatteryFactory.CreateWindowsReadOnly);
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(
@@ -194,6 +203,30 @@ internal static class ServiceComposition
         catch (JsonException)
         {
             return createReadOnly();
+        }
+    }
+
+    internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(
+        bool validationBuildEnabled,
+        Func<IProductionBatteryPortFactory> createValidation,
+        Func<IProductionBatteryPortFactory> createAdmitted,
+        Func<IProductionBatteryPortFactory> createReadOnly)
+    {
+        ArgumentNullException.ThrowIfNull(createValidation);
+        ArgumentNullException.ThrowIfNull(createAdmitted);
+        if (!validationBuildEnabled)
+        {
+            return CreateProductionBatteryFactory(createAdmitted, createReadOnly);
+        }
+
+        try
+        {
+            return createValidation();
+        }
+        catch (Exception exception) when (exception is
+            UnvalidatedCommandException or JsonException)
+        {
+            return CreateProductionBatteryFactory(createAdmitted, createReadOnly);
         }
     }
 

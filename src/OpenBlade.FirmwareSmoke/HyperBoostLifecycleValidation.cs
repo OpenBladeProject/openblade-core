@@ -13,6 +13,26 @@ internal enum HyperBoostLifecycleScenario
     UnexpectedExit,
 }
 
+internal sealed record PadlessHyperBoostLifecycleValidationBuildManifest(
+    int SchemaVersion,
+    Guid ValidationRunId,
+    string SourceRevision,
+    string ServiceAssemblySha256,
+    string AdmissionManifestSha256)
+{
+    internal bool IsWellFormed =>
+        SchemaVersion == 1
+        && ValidationRunId != Guid.Empty
+        && IsHex(SourceRevision, 40)
+        && IsHex(ServiceAssemblySha256, 64)
+        && IsHex(AdmissionManifestSha256, 64);
+
+    private static bool IsHex(string? value, int length) =>
+        value is not null
+        && value.Length == length
+        && value.All(Uri.IsHexDigit);
+}
+
 internal sealed record HyperBoostLifecycleServiceProcess(
     int ProcessId,
     long StartUtcTicks);
@@ -161,6 +181,18 @@ internal sealed class HyperBoostLifecycleValidationRunner
         FirmwareSmokeSnapshot baseline,
         HyperBoostLifecycleScenario scenario,
         string markerPath,
+        CancellationToken cancellationToken) => await ArmAsync(
+            baseline,
+            scenario,
+            markerPath,
+            validationBuild: null,
+            cancellationToken).ConfigureAwait(false);
+
+    internal async Task<HyperBoostLifecycleArmResult> ArmAsync(
+        FirmwareSmokeSnapshot baseline,
+        HyperBoostLifecycleScenario scenario,
+        string markerPath,
+        PadlessHyperBoostLifecycleValidationBuildManifest? validationBuild,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(baseline);
@@ -190,8 +222,10 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 status,
                 serviceProcess,
                 greenInstalledGeneration,
+                validationBuild,
                 out PerformancePreset baseMode,
                 out bool requiresCoolingPad,
+                out bool useValidationRequest,
                 out string failure))
         {
             return ArmFailure(failure);
@@ -205,10 +239,21 @@ internal sealed class HyperBoostLifecycleValidationRunner
         try
         {
             applyAttempted = true;
-            ControlOperationResult applied = await client.SetHyperBoostAsync(
-                    enabled: true,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            ControlOperationResult applied = useValidationRequest
+                ? await client.ValidatePadlessHyperBoostLifecycleAsync(
+                        scenario == HyperBoostLifecycleScenario.LowPower
+                            ? PadlessHyperBoostLifecycleScenario.LowPower
+                            : PadlessHyperBoostLifecycleScenario.UnexpectedExit,
+                        validationBuild!.ValidationRunId,
+                        validationBuild.SourceRevision,
+                        validationBuild.ServiceAssemblySha256,
+                        validationBuild.AdmissionManifestSha256,
+                        cancellationToken)
+                    .ConfigureAwait(false)
+                : await client.SetHyperBoostAsync(
+                        enabled: true,
+                        cancellationToken)
+                    .ConfigureAwait(false);
             hyperBoostConfirmed = IsAccepted(applied)
                 && await WaitForStateAsync(
                         candidate => candidate.ConfirmedState is
@@ -419,23 +464,28 @@ internal sealed class HyperBoostLifecycleValidationRunner
 
         IReadOnlyList<HyperBoostLifecycleDiagnosticResult> diagnostics =
             await readDiagnostics(cancellationToken).ConfigureAwait(false);
-        string boundary = scenario == HyperBoostLifecycleScenario.LowPower
-            ? "before low power"
-            : "before unexpected-exit recovery";
+        string[] boundaries = scenario == HyperBoostLifecycleScenario.LowPower
+            ? [
+                "before low power",
+                "before display-off safety boundary",
+            ]
+            : ["before unexpected-exit recovery"];
         int attempts = diagnostics.Count(entry =>
             entry.Timestamp >= marker.ArmedAtUtc
             && entry.Subsystem == "Service"
             && entry.Action == "Reconcile"
-            && entry.Detail?.Contains(
-                $"Attempting to restore OpenBlade-owned HyperBoost to {PerformanceLabel(marker.BaseMode)} {boundary}.",
-                StringComparison.Ordinal) == true);
+            && boundaries.Any(boundary =>
+                entry.Detail?.Contains(
+                    $"Attempting to restore OpenBlade-owned HyperBoost to {PerformanceLabel(marker.BaseMode)} {boundary}.",
+                    StringComparison.Ordinal) == true));
         int completions = diagnostics.Count(entry =>
             entry.Timestamp >= marker.ArmedAtUtc
             && entry.Subsystem == "Service"
             && entry.Action == "Reconcile"
-            && entry.Detail?.Contains(
-                $"OpenBlade-owned HyperBoost was restored to {PerformanceLabel(marker.BaseMode)} {boundary}.",
-                StringComparison.Ordinal) == true);
+            && boundaries.Any(boundary =>
+                entry.Detail?.Contains(
+                    $"OpenBlade-owned HyperBoost was restored to {PerformanceLabel(marker.BaseMode)} {boundary}.",
+                    StringComparison.Ordinal) == true));
         bool success = exactGeneration
             && processBoundary
             && exactFinal
@@ -544,12 +594,15 @@ internal sealed class HyperBoostLifecycleValidationRunner
         ServiceStatusSnapshot status,
         HyperBoostLifecycleServiceProcess? serviceProcess,
         bool greenInstalledGeneration,
+        PadlessHyperBoostLifecycleValidationBuildManifest? validationBuild,
         out PerformancePreset baseMode,
         out bool requiresCoolingPad,
+        out bool useValidationRequest,
         out string failure)
     {
         baseMode = status.ConfirmedState?.Performance ?? PerformancePreset.Balanced;
         requiresCoolingPad = false;
+        useValidationRequest = false;
         failure = string.Empty;
         if (!greenInstalledGeneration
             || serviceProcess is null
@@ -580,28 +633,65 @@ internal sealed class HyperBoostLifecycleValidationRunner
         }
 
         baseMode = confirmedBase;
-        requiresCoolingPad = status.CoolingPad is
+        bool padPresent = status.CoolingPad is
         {
             Connection: CoolingPadConnectionState.PresentExact,
             DesiredFanIntent.Mode: CoolingPadFanMode.Automatic,
         };
-        if (!requiresCoolingPad)
+        bool padAbsentAdmitted =
+            confirmedBase == PerformancePreset.Balanced
+            && (status.Capabilities.HyperBoostWithoutCoolingPadAccess
+                    == DeviceFeatureAccess.ReadWrite
+                || validationBuild?.IsWellFormed == true
+                    && status.Capabilities.HyperBoostWithoutCoolingPadAccess
+                        == DeviceFeatureAccess.ObservedOnly)
+            && status.CoolingPad?.Connection == CoolingPadConnectionState.Absent;
+        if (!padPresent && !padAbsentAdmitted)
         {
             failure =
-                "Installed-service lifecycle validation requires the exact cooling pad with saved Auto intent.";
+                "Installed-service lifecycle validation requires the exact cooling pad with saved Auto intent or admitted pad-less Balanced support with confirmed pad absence.";
             return false;
         }
 
+        requiresCoolingPad = padPresent;
+        useValidationRequest = !padPresent
+            && status.Capabilities.HyperBoostWithoutCoolingPadAccess
+                != DeviceFeatureAccess.ReadWrite;
         return true;
     }
 
     internal static bool ValidateInstalledGeneration(
         FirmwareSmokeSnapshot baseline,
-        FirmwareSmokeSnapshot current) =>
-        FirmwareSmokeAssessment.CompareUnchangedInstalledGeneration(
+        FirmwareSmokeSnapshot current)
+    {
+        FirmwareSmokeReport report =
+            FirmwareSmokeAssessment.CompareUnchangedInstalledGeneration(
                 baseline,
-                current)
-            .Succeeded;
+                current);
+        if (report.Succeeded)
+        {
+            return true;
+        }
+
+        // Restoring an owned HyperBoost session can legitimately latch the fan
+        // channel as externally changed when the restarted service first
+        // observes firmware Automatic. The lifecycle verifier independently
+        // requires the exact restored base/fan pair, a retired ownership
+        // journal, and one matching recovery attempt/completion. Permit only
+        // that expected diagnostic while retaining every generation, identity,
+        // capability, and health comparison in the report.
+        return current.ExternalChanges.Count == 1
+            && string.Equals(
+                current.ExternalChanges[0],
+                DeviceSubsystem.Fans.ToString(),
+                StringComparison.Ordinal)
+            && report.Checks
+                .Where(check => check.Outcome == FirmwareSmokeOutcome.Failed)
+                .All(check => string.Equals(
+                    check.Id,
+                    "device.external-changes",
+                    StringComparison.Ordinal));
+    }
 
     private static bool IsExactRestoredState(
         ServiceStatusSnapshot status,
@@ -716,7 +806,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 _ => null,
             };
             var parsedBase = (PerformancePreset)baseMode;
-            bool valid = schemaVersion == 1
+            bool valid = schemaVersion == 2
                 && stateName is not null
                 && parsedBase is PerformancePreset.Silent
                     or PerformancePreset.Balanced

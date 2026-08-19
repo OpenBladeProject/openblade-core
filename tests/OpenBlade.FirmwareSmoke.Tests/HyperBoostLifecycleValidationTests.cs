@@ -77,6 +77,155 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.Equal(1, client.EnableCalls);
     }
 
+    [Theory]
+    [InlineData((int)HyperBoostLifecycleScenario.LowPower)]
+    [InlineData((int)HyperBoostLifecycleScenario.UnexpectedExit)]
+    public async Task ArmAsync_AdmittedPadlessBalancedCreatesPadlessMarker(
+        int scenarioValue)
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient(
+            padlessAdmitted: true,
+            coolingPadConnection: CoolingPadConnectionState.Absent);
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_007, 123_464),
+            () => OwnedJournal(requiresCoolingPad: false));
+        string markerPath = Path.Combine(directory, $"padless-{scenarioValue}.json");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            (HyperBoostLifecycleScenario)scenarioValue,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        HyperBoostLifecycleMarker marker =
+            Assert.IsType<HyperBoostLifecycleMarker>(result.Marker);
+        Assert.False(marker.RequiresCoolingPad);
+        Assert.Equal(PerformancePreset.Balanced, marker.BaseMode);
+        Assert.Equal(1, client.EnableCalls);
+        Assert.Equal(0, client.DisableCalls);
+    }
+
+    [Fact]
+    public async Task ArmAsync_ObservedOnlyPadlessUsesValidationBuildRequest()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient(
+            padlessObservedOnly: true,
+            coolingPadConnection: CoolingPadConnectionState.Absent);
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_011, 123_468),
+            () => OwnedJournal(requiresCoolingPad: false));
+        var validationBuild = new PadlessHyperBoostLifecycleValidationBuildManifest(
+            1,
+            Guid.NewGuid(),
+            new string('A', 40),
+            new string('B', 64),
+            new string('C', 64));
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            Path.Combine(directory, "validation-build.json"),
+            validationBuild,
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, client.EnableCalls);
+        Assert.Equal(1, client.ValidationEnableCalls);
+        Assert.False(Assert.IsType<HyperBoostLifecycleMarker>(result.Marker)
+            .RequiresCoolingPad);
+    }
+
+    [Theory]
+    [InlineData((int)CoolingPadConnectionState.Ambiguous)]
+    [InlineData((int)CoolingPadConnectionState.ObservationFailed)]
+    public async Task ArmAsync_PadlessRequiresConfirmedAbsence(int connectionValue)
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient(
+            padlessAdmitted: true,
+            coolingPadConnection: (CoolingPadConnectionState)connectionValue);
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_008, 123_465),
+            () => OwnedJournal(requiresCoolingPad: false));
+        string markerPath = Path.Combine(directory, $"blocked-{connectionValue}.json");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, client.EnableCalls);
+        Assert.False(File.Exists(markerPath));
+    }
+
+    [Fact]
+    public async Task ArmAsync_PadlessRequiresReadWriteAdmission()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient(
+            coolingPadConnection: CoolingPadConnectionState.Absent);
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_010, 123_467),
+            () => OwnedJournal(requiresCoolingPad: false));
+        string markerPath = Path.Combine(directory, "blocked-observed-only.json");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, client.EnableCalls);
+        Assert.False(File.Exists(markerPath));
+    }
+
+    [Fact]
+    public async Task ArmAsync_PadlessRejectsNonBalancedBase()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient(
+            PerformancePreset.Performance,
+            padlessAdmitted: true,
+            coolingPadConnection: CoolingPadConnectionState.Absent);
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_009, 123_466),
+            () => OwnedJournal(
+                PerformancePreset.Performance,
+                requiresCoolingPad: false));
+        string markerPath = Path.Combine(directory, "blocked-performance.json");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, client.EnableCalls);
+        Assert.False(File.Exists(markerPath));
+    }
+
     [Fact]
     public async Task ArmAsync_MissingOwnedJournalRestoresOnceAndDoesNotCreateMarker()
     {
@@ -179,6 +328,46 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
     }
 
     [Fact]
+    public async Task VerifyAsync_LowPowerAcceptsModernStandbyDisplayOffFallback()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient();
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleServiceProcess process = new(42_013, 123_468);
+        HyperBoostLifecycleJournalObservation journal = OwnedJournal();
+        IReadOnlyList<HyperBoostLifecycleDiagnosticResult> diagnostics = [];
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => process,
+            () => journal,
+            () => diagnostics);
+        string markerPath = Path.Combine(directory, "low-power-display-off.json");
+        HyperBoostLifecycleArmResult armed = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+        Assert.True(armed.Success);
+        client.RestoreWithoutClientWrite();
+        journal = HyperBoostLifecycleJournalObservation.Missing;
+        diagnostics = RecoveryDiagnostics(
+            armed.Marker!.ArmedAtUtc,
+            "before display-off safety boundary");
+
+        HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(1, result.RecoveryAttemptsObserved);
+        Assert.Equal(1, result.RecoveryCompletionsObserved);
+        Assert.Equal(0, client.DisableCalls);
+    }
+
+    [Fact]
     public async Task VerifyAsync_UnexpectedExitRequiresReplacementProcessAndExactlyOnce()
     {
         Directory.CreateDirectory(directory);
@@ -263,6 +452,79 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.Equal(0, client.DisableCalls);
     }
 
+    [Fact]
+    public async Task VerifyAsync_LowPowerRejectsSuspendAndDisplayOffDuplicateRecovery()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient();
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleServiceProcess process = new(42_014, 123_469);
+        HyperBoostLifecycleJournalObservation journal = OwnedJournal();
+        IReadOnlyList<HyperBoostLifecycleDiagnosticResult> diagnostics = [];
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => process,
+            () => journal,
+            () => diagnostics);
+        string markerPath = Path.Combine(directory, "duplicate-boundaries.json");
+        HyperBoostLifecycleArmResult armed = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+        client.RestoreWithoutClientWrite();
+        journal = HyperBoostLifecycleJournalObservation.Missing;
+        diagnostics = RecoveryDiagnostics(
+            armed.Marker!.ArmedAtUtc,
+            "before low power").Concat(
+                RecoveryDiagnostics(
+                    armed.Marker.ArmedAtUtc.AddMilliseconds(3),
+                    "before display-off safety boundary"))
+            .ToArray();
+
+        HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(2, result.RecoveryAttemptsObserved);
+        Assert.Equal(2, result.RecoveryCompletionsObserved);
+        Assert.Equal(0, client.DisableCalls);
+    }
+
+    [Fact]
+    public void ValidateInstalledGeneration_AllowsExpectedFanRecoveryDiagnostic()
+    {
+        FirmwareSmokeSnapshot baseline =
+            FirmwareSmokeAssessmentTests.CreateSnapshot("1.5.0.0");
+        FirmwareSmokeSnapshot current = baseline with
+        {
+            ExternalChanges = [DeviceSubsystem.Fans.ToString()],
+        };
+
+        Assert.True(HyperBoostLifecycleValidationRunner.ValidateInstalledGeneration(
+            baseline,
+            current));
+    }
+
+    [Fact]
+    public void ValidateInstalledGeneration_RejectsOtherExternalChange()
+    {
+        FirmwareSmokeSnapshot baseline =
+            FirmwareSmokeAssessmentTests.CreateSnapshot("1.5.0.0");
+        FirmwareSmokeSnapshot current = baseline with
+        {
+            ExternalChanges = [DeviceSubsystem.Performance.ToString()],
+        };
+
+        Assert.False(HyperBoostLifecycleValidationRunner.ValidateInstalledGeneration(
+            baseline,
+            current));
+    }
+
     [Theory]
     [InlineData("low-power", (int)HyperBoostLifecycleScenario.LowPower)]
     [InlineData("crash", (int)HyperBoostLifecycleScenario.UnexpectedExit)]
@@ -316,12 +578,13 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 TimeSpan.Zero)));
 
     private static HyperBoostLifecycleJournalObservation OwnedJournal(
-        PerformancePreset baseMode = PerformancePreset.Balanced) => new(
+        PerformancePreset baseMode = PerformancePreset.Balanced,
+        bool requiresCoolingPad = true) => new(
         true,
         true,
         "OwnedConfirmed",
         baseMode,
-        RequiresCoolingPad: true,
+        RequiresCoolingPad: requiresCoolingPad,
         new string('A', 64));
 
     private static IReadOnlyList<HyperBoostLifecycleDiagnosticResult>
@@ -410,12 +673,21 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         private readonly PerformancePreset baseMode;
 
         internal FakeClient(
-            PerformancePreset baseMode = PerformancePreset.Balanced)
+            PerformancePreset baseMode = PerformancePreset.Balanced,
+            bool padlessAdmitted = false,
+            bool padlessObservedOnly = false,
+            CoolingPadConnectionState coolingPadConnection =
+                CoolingPadConnectionState.PresentExact)
         {
             this.baseMode = baseMode;
             DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
             {
                 HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+                HyperBoostWithoutCoolingPadAccess = padlessAdmitted
+                    ? DeviceFeatureAccess.ReadWrite
+                    : padlessObservedOnly
+                        ? DeviceFeatureAccess.ObservedOnly
+                        : null,
                 HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
                     DeviceFeatureAccess.ReadWrite,
                     DeviceFeatureAccess.ReadWrite,
@@ -465,7 +737,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 KeyboardDriverModeActive: true)
             {
                 CoolingPad = new CoolingPadStatus(
-                    CoolingPadConnectionState.PresentExact,
+                    coolingPadConnection,
                     new CoolingPadCapabilities(
                         DeviceFeatureAccess.ReadOnly,
                         DeviceFeatureAccess.ObservedOnly,
@@ -483,7 +755,9 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                     ActiveDemandLeases: 0,
                     LightingSyncEnabled: false,
                     CoolingPadLightingSyncState.Unavailable,
-                    "Exact pad"),
+                    coolingPadConnection == CoolingPadConnectionState.Absent
+                        ? "Pad absence confirmed"
+                        : "Cooling-pad state observed"),
             };
         }
 
@@ -492,6 +766,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         internal int EnableCalls { get; private set; }
 
         internal int DisableCalls { get; private set; }
+
+        internal int ValidationEnableCalls { get; private set; }
 
         internal bool ThrowAfterEnable { get; init; }
 
@@ -540,6 +816,34 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             return Task.FromResult(new ControlOperationResult(
                 ControlOperationStatus.Applied,
                 "Applied"));
+        }
+
+        public Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
+            PadlessHyperBoostLifecycleScenario scenario,
+            Guid validationRunId,
+            string expectedSourceRevision,
+            string expectedServiceAssemblySha256,
+            string expectedAdmissionManifestSha256,
+            CancellationToken cancellationToken)
+        {
+            Assert.True(Enum.IsDefined(scenario));
+            Assert.NotEqual(Guid.Empty, validationRunId);
+            Assert.Equal(40, expectedSourceRevision.Length);
+            Assert.Equal(64, expectedServiceAssemblySha256.Length);
+            Assert.Equal(64, expectedAdmissionManifestSha256.Length);
+            ValidationEnableCalls++;
+            Status = Status with
+            {
+                ConfirmedState = Status.ConfirmedState! with
+                {
+                    HyperBoostActive = true,
+                    Performance = null,
+                    Fans = FanMode.Automatic,
+                },
+            };
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Validation applied"));
         }
 
         public Task<DiagnosticArchive> ExportDiagnosticsAsync(

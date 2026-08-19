@@ -78,6 +78,14 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             Enabled: true),
+        new ValidatePadlessHyperBoostLifecycleRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            PadlessHyperBoostLifecycleScenario.LowPower,
+            Guid.NewGuid(),
+            new string('A', 40),
+            new string('B', 64),
+            new string('C', 64)),
         new SetCoolingPadFanIntentRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -423,6 +431,7 @@ public sealed class IpcMessageCodecTests
             SupportsTemporaryFullCharge: false)
         {
             HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ObservedOnly,
             HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
                 DeviceFeatureAccess.ObservedOnly,
                 DeviceFeatureAccess.ReadWrite,
@@ -487,7 +496,7 @@ public sealed class IpcMessageCodecTests
             FirmwareCompatibility = FirmwareCompatibilityStatus.ModelScoped,
         };
 
-        Assert.Equal(48, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(49, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -505,6 +514,9 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(
             DeviceFeatureAccess.ReadWrite,
             roundTrip.Capabilities.HyperBoostAccess);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            roundTrip.Capabilities.HyperBoostWithoutCoolingPadAccess);
         Assert.Equal(
             FirmwareCompatibilityStatus.ModelScoped,
             roundTrip.FirmwareCompatibility);
@@ -848,7 +860,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(48, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(49, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -907,6 +919,38 @@ public sealed class IpcMessageCodecTests
                 new MemoryStream(),
                 frame,
                 CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsInvalidPadlessHyperBoostAccess()
+    {
+        foreach (DeviceCapabilities capabilities in new[]
+        {
+            DeviceCapabilities.Unavailable() with
+            {
+                HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ObservedOnly,
+            },
+            DeviceCapabilities.SafeTargetDefaults() with
+            {
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+                HyperBoostWithoutCoolingPadAccess = (DeviceFeatureAccess)999,
+            },
+            DeviceCapabilities.SafeTargetDefaults() with
+            {
+                HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+                HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+            },
+        })
+        {
+            ServiceServerFrame frame = new ServiceStatusEvent(
+                OpenBladeIpc.ProtocolVersion,
+                CreateStatus() with { Capabilities = capabilities });
+            await Assert.ThrowsAsync<InvalidDataException>(() =>
+                IpcMessageCodec.WriteServerFrameAsync(
+                    new MemoryStream(),
+                    frame,
+                    CancellationToken.None));
+        }
     }
 
     [Fact]

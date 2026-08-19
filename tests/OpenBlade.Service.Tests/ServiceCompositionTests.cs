@@ -30,6 +30,64 @@ public sealed class ServiceCompositionTests
                 () => new StubProductionBatteryFactory(DeviceCapabilities.Unavailable())));
     }
 
+    [Theory]
+    [InlineData(true, "validation")]
+    [InlineData(false, "admitted")]
+    public void ProductionBatteryFactorySelectsValidationPathOnlyForValidationBuild(
+        bool validationBuildEnabled,
+        string expected)
+    {
+        string? selected = null;
+        var factory = new StubProductionBatteryFactory(DeviceCapabilities.Unavailable());
+
+        IProductionBatteryPortFactory result =
+            ServiceComposition.CreateProductionBatteryFactory(
+                validationBuildEnabled,
+                () => Select("validation"),
+                () => Select("admitted"),
+                () => Select("read-only"));
+
+        Assert.Same(factory, result);
+        Assert.Equal(expected, selected);
+
+        IProductionBatteryPortFactory Select(string value)
+        {
+            selected = value;
+            return factory;
+        }
+    }
+
+    [Fact]
+    public void ValidationFactoryFailureFallsBackToAdmittedFactoryBeforeReadOnly()
+    {
+        var admitted = new StubProductionBatteryFactory(DeviceCapabilities.SafeTargetDefaults());
+        var readOnly = new StubProductionBatteryFactory(DeviceCapabilities.Unavailable());
+
+        IProductionBatteryPortFactory selected =
+            ServiceComposition.CreateProductionBatteryFactory(
+                validationBuildEnabled: true,
+                () => throw new UnvalidatedCommandException("validation unavailable"),
+                () => admitted,
+                () => readOnly);
+
+        Assert.Same(admitted, selected);
+    }
+
+    [Fact]
+    public void ValidationAndAdmissionFailureFallsBackToReadOnlyFactory()
+    {
+        var readOnly = new StubProductionBatteryFactory(DeviceCapabilities.Unavailable());
+
+        IProductionBatteryPortFactory selected =
+            ServiceComposition.CreateProductionBatteryFactory(
+                validationBuildEnabled: true,
+                () => throw new UnvalidatedCommandException("validation unavailable"),
+                () => throw new UnvalidatedCommandException("admission unavailable"),
+                () => readOnly);
+
+        Assert.Same(readOnly, selected);
+    }
+
     [Fact]
     public void ProductionLightingFactoryFallbackCatchesAdmissionFailureOnly()
     {

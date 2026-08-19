@@ -280,11 +280,27 @@ public static class FirmwareSmokeProgram
 
         string markerPath = ReadOption(args, "--marker")
             ?? throw new ArgumentException("--marker <private-marker.json> is required.");
+        PadlessHyperBoostLifecycleValidationBuildManifest? validationBuild = null;
+        string? validationBuildPath = ReadOption(args, "--validation-build-manifest");
+        if (validationBuildPath is not null)
+        {
+            validationBuild = await FirmwareSmokeFiles.ReadJsonAsync<
+                    PadlessHyperBoostLifecycleValidationBuildManifest>(
+                    validationBuildPath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!validationBuild.IsWellFormed)
+            {
+                throw new InvalidDataException(
+                    "The pad-less HyperBoost lifecycle validation-build manifest is malformed.");
+            }
+        }
         var runner = new HyperBoostLifecycleValidationRunner(client, collector);
         HyperBoostLifecycleArmResult result = await runner.ArmAsync(
                 baseline,
                 scenario,
                 markerPath,
+                validationBuild,
                 cancellationToken)
             .ConfigureAwait(false);
         Directory.CreateDirectory(outputDirectory);

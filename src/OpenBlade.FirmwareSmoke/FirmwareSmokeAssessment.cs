@@ -30,6 +30,7 @@ public static class FirmwareSmokeAssessment
         "Off",
         "Reactive",
         "Ripple",
+        "Sequence",
         "Spectrum",
         "Starlight",
         "Static",
@@ -312,10 +313,16 @@ public static class FirmwareSmokeAssessment
             Value(current.Controls.KeyboardDriverModeActive)));
         checks.Add(Check(
             "state.lighting-renderer",
-            "Lighting renderer is active and not faulted",
-            current.Controls.LightingRendererOwnership is not "None" and not "Faulted",
-            "An active, non-faulted renderer",
-            current.Controls.LightingRendererOwnership));
+            "Lighting renderer state matches the desired effect and is not faulted",
+            string.Equals(
+                current.Controls.DesiredLightingEffect,
+                "Off",
+                StringComparison.Ordinal)
+                ? current.Controls.LightingRendererOwnership == "None"
+                : current.Controls.LightingRendererOwnership is not "None" and not "Faulted",
+            "None for Off; otherwise an active, non-faulted renderer",
+            $"{current.Controls.DesiredLightingEffect ?? "Unavailable"}/" +
+                current.Controls.LightingRendererOwnership));
         checks.Add(Check(
             "runtime.components",
             "Installed OpenBlade component versions match the baseline",
@@ -456,6 +463,8 @@ public static class FirmwareSmokeAssessment
         string expectedHyperBoostAccess = ExpectedHyperBoostAccess(
             snapshot.TargetModel,
             snapshot.Firmware.Bios);
+        string expectedHyperBoostWithoutCoolingPadAccess =
+            ExpectedHyperBoostWithoutCoolingPadAccess(snapshot.TargetModel);
         string expectedCoolingPadSupportAccess = ExpectedCoolingPadSupportAccess(
             snapshot.TargetModel);
         HyperBoostBaseModeCapabilities? expectedHyperBoostBaseModes =
@@ -593,6 +602,17 @@ public static class FirmwareSmokeAssessment
                     StringComparison.Ordinal),
                 expectedHyperBoostAccess,
                 snapshot.Capabilities.HyperBoostAccess ?? "Unavailable"),
+            Check(
+                "capabilities.hyper-boost-without-cooling-pad",
+                "Pad-less HyperBoost access matches reviewed evidence",
+                string.Equals(
+                    snapshot.Capabilities.HyperBoostWithoutCoolingPadAccess
+                        ?? "Unavailable",
+                    expectedHyperBoostWithoutCoolingPadAccess,
+                    StringComparison.Ordinal),
+                expectedHyperBoostWithoutCoolingPadAccess,
+                snapshot.Capabilities.HyperBoostWithoutCoolingPadAccess
+                    ?? "Unavailable"),
             Check(
                 "capabilities.hyper-boost-base-modes",
                 "HyperBoost base-mode access matches direct-transition evidence",
@@ -782,6 +802,8 @@ public static class FirmwareSmokeAssessment
         $"WritableSpecialKeySlots={capabilities.WritableSpecialKeySlots ?? "Unavailable"}; " +
         $"LampArray={capabilities.LampArrayLightingAccess ?? "Unavailable"}; " +
         $"HyperBoost={capabilities.HyperBoostAccess ?? "Unavailable"}; " +
+        $"HyperBoostWithoutCoolingPad=" +
+        $"{capabilities.HyperBoostWithoutCoolingPadAccess ?? "Unavailable"}; " +
         $"HyperBoostBases={HyperBoostBaseModeSummary(capabilities.HyperBoostBaseModes)}; " +
         $"CoolingPadSupport={capabilities.CoolingPadSupportAccess ?? "Unavailable"}; " +
         $"ChargeLimits={capabilities.ChargeLimits.Count}; " +
@@ -816,6 +838,10 @@ public static class FirmwareSmokeAssessment
         && string.Equals(
             left.HyperBoostAccess,
             right.HyperBoostAccess,
+            StringComparison.Ordinal)
+        && string.Equals(
+            left.HyperBoostWithoutCoolingPadAccess,
+            right.HyperBoostWithoutCoolingPadAccess,
             StringComparison.Ordinal)
         && left.HyperBoostBaseModes == right.HyperBoostBaseModes
         && string.Equals(
@@ -879,6 +905,12 @@ public static class FirmwareSmokeAssessment
         RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
             == RazerBladeModelCatalog.OpenBladeTargetModelNumber
                 ? DeviceFeatureAccess.ObservedOnly.ToString()
+                : "Unavailable";
+
+    private static string ExpectedHyperBoostWithoutCoolingPadAccess(
+        string modelNumber) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
+            == RazerBladeModelCatalog.OpenBladeTargetModelNumber
+                ? DeviceFeatureAccess.ReadWrite.ToString()
                 : "Unavailable";
 
     private static HyperBoostBaseModeCapabilities? ExpectedHyperBoostBaseModes(
