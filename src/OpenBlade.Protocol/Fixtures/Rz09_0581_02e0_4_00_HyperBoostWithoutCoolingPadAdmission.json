@@ -43,8 +43,11 @@
       }
     },
     "immediateNoLoadApplyReadbackRestoreValidated": {
-      "validated": false,
-      "evidence": null
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-immediate.json",
+        "sha256": "E64A2EB77C254704E3752641EB16BDA9E27BCB0C126167A21071A808F9F5C32A"
+      }
     },
     "sustainedNoLoadPlanReviewed": {
       "validated": true,
@@ -54,12 +57,18 @@
       }
     },
     "sustainedNoLoadExecutionValidated": {
-      "validated": false,
-      "evidence": null
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-sustained-no-load.json",
+        "sha256": "40E6E6EE1F9EBAC212F72BDF883A5F1CEA065FCECE7916E95DFFE77FCE3EFA61"
+      }
     },
     "postRestorationAbsenceValidated": {
-      "validated": false,
-      "evidence": null
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-immediate.json",
+        "sha256": "E64A2EB77C254704E3752641EB16BDA9E27BCB0C126167A21071A808F9F5C32A"
+      }
     },
     "reviewedLoadPlanReviewed": {
       "validated": true,
@@ -69,12 +78,18 @@
       }
     },
     "reviewedLoadValidated": {
-      "validated": false,
-      "evidence": null
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-steel-nomad.json",
+        "sha256": "4818729C2E46F7E3B3C308552C3A5E049A441F49B21DF7B45DD88545B81BB00C"
+      }
     },
     "adapterTransitionValidated": {
-      "validated": false,
-      "evidence": null
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-adapter-transition.json",
+        "sha256": "2BB2912F64E7B6DD1619821F9BD6253CE22C39ACD73AD42CEFA9D70C7DB42874"
+      }
     },
     "lowPowerLifecycleValidated": {
       "validated": false,

@@ -113,7 +113,7 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
     private const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json";
     private const string ExpectedSha256 =
-        "4F88A900D46EB5B6173F7A3DA8832C3CFF7EB4D10F91844417ADB9B92A7DF7DB";
+        "E4A09B7D6C9BB55BD8C49D6EF42D63C625FF89209F6653B2532C273C5C9BB15B";
 
     internal static string TrustedManifestSha256 => ExpectedSha256;
     private const string ImmediateAnnotationSha256 =
@@ -124,6 +124,14 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
         "2D1BBA887F0DC952EEABB39BC3E670A2CE3DA338EC05E46646B1E9F64D780086";
     private const string AdapterTransitionPlanSha256 =
         "95E2333A19118480E6D8193933B7548587BF5C40D151C99BFE81E06D421C7537";
+    private const string ExactHeadImmediateAnnotationSha256 =
+        "E64A2EB77C254704E3752641EB16BDA9E27BCB0C126167A21071A808F9F5C32A";
+    private const string SustainedNoLoadAnnotationSha256 =
+        "40E6E6EE1F9EBAC212F72BDF883A5F1CEA065FCECE7916E95DFFE77FCE3EFA61";
+    private const string ReviewedLoadAnnotationSha256 =
+        "4818729C2E46F7E3B3C308552C3A5E049A441F49B21DF7B45DD88545B81BB00C";
+    private const string AdapterTransitionAnnotationSha256 =
+        "2BB2912F64E7B6DD1619821F9BD6253CE22C39ACD73AD42CEFA9D70C7DB42874";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -250,8 +258,12 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
                     },
                     ImmediateNoLoadApplyReadbackRestoreValidated:
                     {
-                        Validated: false,
-                        Evidence: null,
+                        Validated: true,
+                        Evidence:
+                        {
+                            Artifact: "captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-immediate.json",
+                            Sha256: ExactHeadImmediateAnnotationSha256,
+                        },
                     },
                     SustainedNoLoadPlanReviewed:
                     {
@@ -264,13 +276,21 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
                     },
                     SustainedNoLoadExecutionValidated:
                     {
-                        Validated: false,
-                        Evidence: null,
+                        Validated: true,
+                        Evidence:
+                        {
+                            Artifact: "captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-sustained-no-load.json",
+                            Sha256: SustainedNoLoadAnnotationSha256,
+                        },
                     },
                     PostRestorationAbsenceValidated:
                     {
-                        Validated: false,
-                        Evidence: null,
+                        Validated: true,
+                        Evidence:
+                        {
+                            Artifact: "captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-immediate.json",
+                            Sha256: ExactHeadImmediateAnnotationSha256,
+                        },
                     },
                     ReviewedLoadPlanReviewed:
                     {
@@ -283,13 +303,21 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
                     },
                     ReviewedLoadValidated:
                     {
-                        Validated: false,
-                        Evidence: null,
+                        Validated: true,
+                        Evidence:
+                        {
+                            Artifact: "captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-steel-nomad.json",
+                            Sha256: ReviewedLoadAnnotationSha256,
+                        },
                     },
                     AdapterTransitionValidated:
                     {
-                        Validated: false,
-                        Evidence: null,
+                        Validated: true,
+                        Evidence:
+                        {
+                            Artifact: "captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-adapter-transition.json",
+                            Sha256: AdapterTransitionAnnotationSha256,
+                        },
                     },
                     LowPowerLifecycleValidated:
                     {

@@ -45,10 +45,24 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.Equal(3, manifest.SchemaVersion);
         Assert.True(manifest.Gates.ExactDeviceAndFirmwareReviewed.Validated);
         Assert.NotNull(manifest.Gates.ExactDeviceAndFirmwareReviewed.Evidence);
+        Assert.True(
+            manifest.Gates.ImmediateNoLoadApplyReadbackRestoreValidated.Validated);
+        Assert.NotNull(
+            manifest.Gates.ImmediateNoLoadApplyReadbackRestoreValidated.Evidence);
         Assert.True(manifest.Gates.SustainedNoLoadPlanReviewed.Validated);
         Assert.NotNull(manifest.Gates.SustainedNoLoadPlanReviewed.Evidence);
+        Assert.True(manifest.Gates.SustainedNoLoadExecutionValidated.Validated);
+        Assert.NotNull(manifest.Gates.SustainedNoLoadExecutionValidated.Evidence);
+        Assert.True(manifest.Gates.PostRestorationAbsenceValidated.Validated);
+        Assert.NotNull(manifest.Gates.PostRestorationAbsenceValidated.Evidence);
         Assert.True(manifest.Gates.ReviewedLoadPlanReviewed.Validated);
         Assert.NotNull(manifest.Gates.ReviewedLoadPlanReviewed.Evidence);
+        Assert.True(manifest.Gates.ReviewedLoadValidated.Validated);
+        Assert.NotNull(manifest.Gates.ReviewedLoadValidated.Evidence);
+        Assert.True(manifest.Gates.AdapterTransitionValidated.Validated);
+        Assert.NotNull(manifest.Gates.AdapterTransitionValidated.Evidence);
+        Assert.False(manifest.Gates.LowPowerLifecycleValidated.Validated);
+        Assert.Null(manifest.Gates.LowPowerLifecycleValidated.Evidence);
         Assert.False(manifest.Gates.CrashRecoveryValidated.Validated);
         Assert.Null(manifest.Gates.CrashRecoveryValidated.Evidence);
     }
@@ -81,22 +95,48 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
             Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))));
     }
 
+    [Theory]
+    [InlineData(
+        "2026-08-19-rz09-0581-hyperboost-padless-immediate.json",
+        "E64A2EB77C254704E3752641EB16BDA9E27BCB0C126167A21071A808F9F5C32A")]
+    [InlineData(
+        "2026-08-19-rz09-0581-hyperboost-padless-sustained-no-load.json",
+        "40E6E6EE1F9EBAC212F72BDF883A5F1CEA065FCECE7916E95DFFE77FCE3EFA61")]
+    [InlineData(
+        "2026-08-19-rz09-0581-hyperboost-padless-steel-nomad.json",
+        "4818729C2E46F7E3B3C308552C3A5E049A441F49B21DF7B45DD88545B81BB00C")]
+    [InlineData(
+        "2026-08-19-rz09-0581-hyperboost-padless-adapter-transition.json",
+        "2BB2912F64E7B6DD1619821F9BD6253CE22C39ACD73AD42CEFA9D70C7DB42874")]
+    public void CurrentValidationEvidenceHash_MatchesPinnedCommittedArtifactBytes(
+        string fileName,
+        string expectedSha256)
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Evidence", fileName);
+
+        Assert.True(File.Exists(path), $"Pinned evidence was not copied: {path}");
+        Assert.Equal(
+            expectedSha256,
+            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))));
+    }
+
     [Fact]
-    public void CurrentEvidence_RecordsHistoricalResultWithoutAdmittingCurrentHead()
+    public void CurrentEvidence_UnlocksLifecycleValidationButNotProductionWrites()
     {
         HyperBoostWithoutCoolingPadEvidenceGates evidence =
             HyperBoostWithoutCoolingPadEvidenceGates.Current;
 
         Assert.True(evidence.ExactDeviceAndFirmwareReviewed);
-        Assert.False(evidence.ImmediateNoLoadApplyReadbackRestoreValidated);
+        Assert.True(evidence.ImmediateNoLoadApplyReadbackRestoreValidated);
         Assert.True(evidence.SustainedNoLoadPlanReviewed);
-        Assert.False(evidence.SustainedNoLoadExecutionValidated);
-        Assert.False(evidence.PostRestorationAbsenceValidated);
+        Assert.True(evidence.SustainedNoLoadExecutionValidated);
+        Assert.True(evidence.PostRestorationAbsenceValidated);
         Assert.True(evidence.ReviewedLoadPlanReviewed);
-        Assert.False(evidence.ReviewedLoadValidated);
-        Assert.False(evidence.AdapterTransitionValidated);
+        Assert.True(evidence.ReviewedLoadValidated);
+        Assert.True(evidence.AdapterTransitionValidated);
         Assert.False(evidence.LowPowerLifecycleValidated);
         Assert.False(evidence.CrashRecoveryValidated);
+        Assert.True(evidence.LifecycleValidationReady);
         Assert.False(evidence.WriteAdmitted);
     }
 

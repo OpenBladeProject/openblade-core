@@ -20,6 +20,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
   The validators accept the reviewed 280 W OEM and 330 W SlimQ full-power
   classifications, never retry an indeterminate write, and do not enable
   padless production control.
+- Recorded successful exact-device padless HyperBoost validation for the
+  immediate transition, 60-second no-load dwell, 60-second Steel Nomad load,
+  and FullPower330W-to-USB-C100W transition. Each run confirmed paired mode 7,
+  exact Balanced restoration, and post-restoration pad absence. Production
+  write access remains closed pending installed low-power and crash-recovery
+  validation.
 - Added the fail-closed production plumbing for pad-less HyperBoost on the exact
   `RZ09-0581`: a separate capability, defense-in-depth physical-absence checks,
   Balanced-only routing, admitted full-power adapter checks, and durable
