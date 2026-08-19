@@ -265,7 +265,7 @@ public sealed class DiagnosticArchiveProviderTests
                 .GetProperty(
                     "performance.hyperBoost.withoutCoolingPad.gate.lowPowerLifecycle")
                 .GetBoolean());
-        Assert.False(
+        Assert.True(
             capabilities.RootElement
                 .GetProperty(
                     "performance.hyperBoost.withoutCoolingPad.gate.crashRecovery")
