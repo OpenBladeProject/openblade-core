@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Platform;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -123,6 +124,22 @@ public sealed class FanCurveCalculatorTests
         Assert.Equal(52, readings.GpuCelsius);
         Assert.False(readings.GpuInactive);
         Assert.Equal(1, gpuReads);
+    }
+
+    [Fact]
+    public void WindowsGpuActivitySourcePrimesTheCounterBeforeItsFirstDecision()
+    {
+        var snapshots = new Queue<WindowsGpuActivitySnapshot>(
+        [
+            new(IsAvailable: true, Processes: []),
+            new(
+                IsAvailable: true,
+                Processes: [new(ProcessId: 42, UtilizationPercent: 99)]),
+        ]);
+        using var source = new WindowsGpuActivitySource(snapshots.Dequeue);
+
+        Assert.True(source.IsActive());
+        Assert.Empty(snapshots);
     }
 
     [Theory]
