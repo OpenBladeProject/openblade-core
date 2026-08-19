@@ -30,6 +30,33 @@ public sealed class ServiceCompositionTests
                 () => new StubProductionBatteryFactory(DeviceCapabilities.Unavailable())));
     }
 
+    [Theory]
+    [InlineData(true, "validation")]
+    [InlineData(false, "admitted")]
+    public void ProductionBatteryFactorySelectsValidationPathOnlyForValidationBuild(
+        bool validationBuildEnabled,
+        string expected)
+    {
+        string? selected = null;
+        var factory = new StubProductionBatteryFactory(DeviceCapabilities.Unavailable());
+
+        IProductionBatteryPortFactory result =
+            ServiceComposition.CreateProductionBatteryFactory(
+                validationBuildEnabled,
+                () => Select("validation"),
+                () => Select("admitted"),
+                () => Select("read-only"));
+
+        Assert.Same(factory, result);
+        Assert.Equal(expected, selected);
+
+        IProductionBatteryPortFactory Select(string value)
+        {
+            selected = value;
+            return factory;
+        }
+    }
+
     [Fact]
     public void ProductionLightingFactoryFallbackCatchesAdmissionFailureOnly()
     {

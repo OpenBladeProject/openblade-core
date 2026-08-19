@@ -48,7 +48,13 @@ internal static class ServiceComposition
         services.AddSingleton<FirmwareCompatibilityPolicy>();
         services.AddSingleton<IProductionBatteryPortFactory>(provider =>
             CreateProductionBatteryFactory(
-                provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+                PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled,
+                BatteryValidationFactory
+                    .CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation,
+                () => BatteryValidationFactory.CreateWindowsProductionBatteryForService(
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>()),
+                () => ProductionBatteryFactory.CreateWindowsReadOnly(
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>())));
         services.AddSingleton<IProductionCoolingPadPortFactory>(_ =>
             ProductionCoolingPadFactory.CreateWindows());
         services.AddSingleton<WindowsVerifiedCoolingPadProvider>(provider =>
@@ -198,6 +204,19 @@ internal static class ServiceComposition
         {
             return createReadOnly();
         }
+    }
+
+    internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(
+        bool validationBuildEnabled,
+        Func<IProductionBatteryPortFactory> createValidation,
+        Func<IProductionBatteryPortFactory> createAdmitted,
+        Func<IProductionBatteryPortFactory> createReadOnly)
+    {
+        ArgumentNullException.ThrowIfNull(createValidation);
+        ArgumentNullException.ThrowIfNull(createAdmitted);
+        return CreateProductionBatteryFactory(
+            validationBuildEnabled ? createValidation : createAdmitted,
+            createReadOnly);
     }
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory() =>

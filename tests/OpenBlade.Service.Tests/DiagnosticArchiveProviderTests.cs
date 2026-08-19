@@ -225,7 +225,7 @@ public sealed class DiagnosticArchiveProviderTests
                 .GetProperty(
                     "performance.hyperBoost.withoutCoolingPad.gate.exactDeviceFirmware")
                 .GetBoolean());
-        Assert.False(
+        Assert.True(
             capabilities.RootElement
                 .GetProperty(
                     "performance.hyperBoost.withoutCoolingPad.gate.immediateNoLoad")
@@ -238,12 +238,37 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.True(
             capabilities.RootElement
                 .GetProperty(
+                    "performance.hyperBoost.withoutCoolingPad.gate.sustainedExecution")
+                .GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty(
+                    "performance.hyperBoost.withoutCoolingPad.gate.postRestoreAbsence")
+                .GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty(
                     "performance.hyperBoost.withoutCoolingPad.gate.reviewedLoadPlan")
+                .GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty(
+                    "performance.hyperBoost.withoutCoolingPad.gate.reviewedLoad")
+                .GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty(
+                    "performance.hyperBoost.withoutCoolingPad.gate.adapterTransition")
                 .GetBoolean());
         Assert.False(
             capabilities.RootElement
                 .GetProperty(
-                    "performance.hyperBoost.withoutCoolingPad.gate.reviewedLoad")
+                    "performance.hyperBoost.withoutCoolingPad.gate.lowPowerLifecycle")
+                .GetBoolean());
+        Assert.False(
+            capabilities.RootElement
+                .GetProperty(
+                    "performance.hyperBoost.withoutCoolingPad.gate.crashRecovery")
                 .GetBoolean());
         Assert.True(
             capabilities.RootElement
