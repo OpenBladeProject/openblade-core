@@ -412,6 +412,36 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.Equal(0, client.DisableCalls);
     }
 
+    [Fact]
+    public void ValidateInstalledGeneration_AllowsExpectedFanRecoveryDiagnostic()
+    {
+        FirmwareSmokeSnapshot baseline =
+            FirmwareSmokeAssessmentTests.CreateSnapshot("1.5.0.0");
+        FirmwareSmokeSnapshot current = baseline with
+        {
+            ExternalChanges = [DeviceSubsystem.Fans.ToString()],
+        };
+
+        Assert.True(HyperBoostLifecycleValidationRunner.ValidateInstalledGeneration(
+            baseline,
+            current));
+    }
+
+    [Fact]
+    public void ValidateInstalledGeneration_RejectsOtherExternalChange()
+    {
+        FirmwareSmokeSnapshot baseline =
+            FirmwareSmokeAssessmentTests.CreateSnapshot("1.5.0.0");
+        FirmwareSmokeSnapshot current = baseline with
+        {
+            ExternalChanges = [DeviceSubsystem.Performance.ToString()],
+        };
+
+        Assert.False(HyperBoostLifecycleValidationRunner.ValidateInstalledGeneration(
+            baseline,
+            current));
+    }
+
     [Theory]
     [InlineData("low-power", (int)HyperBoostLifecycleScenario.LowPower)]
     [InlineData("crash", (int)HyperBoostLifecycleScenario.UnexpectedExit)]

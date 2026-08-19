@@ -657,11 +657,36 @@ internal sealed class HyperBoostLifecycleValidationRunner
 
     internal static bool ValidateInstalledGeneration(
         FirmwareSmokeSnapshot baseline,
-        FirmwareSmokeSnapshot current) =>
-        FirmwareSmokeAssessment.CompareUnchangedInstalledGeneration(
+        FirmwareSmokeSnapshot current)
+    {
+        FirmwareSmokeReport report =
+            FirmwareSmokeAssessment.CompareUnchangedInstalledGeneration(
                 baseline,
-                current)
-            .Succeeded;
+                current);
+        if (report.Succeeded)
+        {
+            return true;
+        }
+
+        // Restoring an owned HyperBoost session can legitimately latch the fan
+        // channel as externally changed when the restarted service first
+        // observes firmware Automatic. The lifecycle verifier independently
+        // requires the exact restored base/fan pair, a retired ownership
+        // journal, and one matching recovery attempt/completion. Permit only
+        // that expected diagnostic while retaining every generation, identity,
+        // capability, and health comparison in the report.
+        return current.ExternalChanges.Count == 1
+            && string.Equals(
+                current.ExternalChanges[0],
+                DeviceSubsystem.Fans.ToString(),
+                StringComparison.Ordinal)
+            && report.Checks
+                .Where(check => check.Outcome == FirmwareSmokeOutcome.Failed)
+                .All(check => string.Equals(
+                    check.Id,
+                    "device.external-changes",
+                    StringComparison.Ordinal));
+    }
 
     private static bool IsExactRestoredState(
         ServiceStatusSnapshot status,
