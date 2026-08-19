@@ -481,6 +481,224 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         Assert.False(result.ManualRecoveryRequired);
     }
 
+    public static TheoryData<
+        AdapterPowerState,
+        string,
+        string,
+        int> FirmwareAutoExitCases => new()
+    {
+        {
+            AdapterPowerState.UsbCPower100W,
+            "01010000",
+            "01020000",
+            (int)ThermalModeState.BalancedAutomatic
+        },
+        {
+            AdapterPowerState.Battery,
+            "01010600",
+            "01020600",
+            (int)ThermalModeState.BatteryBalancedAutomatic
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(FirmwareAutoExitCases))]
+    public async Task RunAsync_PowerSourceBoundaryConfirmsFirmwareExitWithoutDisableWrite(
+        AdapterPowerState destination,
+        string exitFirst,
+        string exitSecond,
+        int expectedExitStateValue)
+    {
+        PowerSourceBoundaryStep[] observations =
+        [
+            new(destination, "01010700", "01020700"),
+            .. Enumerable.Range(0, 19).Select(_ =>
+                new PowerSourceBoundaryStep(destination, exitFirst, exitSecond)),
+            new(AdapterPowerState.FullPower280W, "01010000", "01020000"),
+        ];
+        var session = new PowerSourceBoundarySession(observations);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            powerSourceBoundaryPlan: PowerSourceBoundaryPlan()).RunAsync(
+                destination,
+                _ => Task.FromResult(PadAbsentAuthorization),
+                _ => Task.FromResult(PadAbsentAuthorization),
+                default);
+
+        Assert.True(result.Success);
+        HyperBoostPowerSourceBoundaryValidationResult boundary =
+            Assert.IsType<HyperBoostPowerSourceBoundaryValidationResult>(
+                result.PowerSourceBoundaryValidation);
+        Assert.True(boundary.ObservationSucceeded);
+        Assert.True(boundary.FirmwareAutoExitConfirmed);
+        Assert.Equal((ThermalModeState)expectedExitStateValue,
+            boundary.FirmwareExitState);
+        Assert.True(boundary.DestinationAdapterObserved);
+        Assert.True(boundary.DestinationAdapterMaintained);
+        Assert.True(boundary.CompletedFullObservation);
+        Assert.False(boundary.HyperBoostReappearedAfterExit);
+        Assert.False(boundary.OpenBladeDisableIssuedDuringObservation);
+        Assert.True(boundary.FullPowerReconnectConfirmed);
+        Assert.True(boundary.BaselineReturnedWithoutCleanupWrite);
+        Assert.Equal(0, boundary.OpenBladeCleanupWriteCount);
+        Assert.False(result.RestoreAttempted);
+        Assert.True(result.Restored);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x02));
+        Assert.Equal(20, boundary.Samples.Count);
+    }
+
+    [Fact]
+    public async Task RunAsync_PowerSourceBoundaryRestoresOnceOnlyAfterFullPowerReconnect()
+    {
+        PowerSourceBoundaryStep[] observations = Enumerable.Range(0, 20)
+            .Select(_ => new PowerSourceBoundaryStep(
+                AdapterPowerState.Battery,
+                "01010700",
+                "01020700"))
+            .Append(new(
+                AdapterPowerState.FullPower330W,
+                "01010700",
+                "01020700"))
+            .ToArray();
+        var session = new PowerSourceBoundarySession(observations);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            powerSourceBoundaryPlan: PowerSourceBoundaryPlan()).RunAsync(
+                AdapterPowerState.Battery,
+                _ => Task.FromResult(PadAbsentAuthorization),
+                _ => Task.FromResult(PadAbsentAuthorization),
+                default);
+
+        Assert.False(result.Success);
+        Assert.Equal(
+            PerformanceFanValidationFailure.SustainedValidationFailed,
+            result.Failure);
+        HyperBoostPowerSourceBoundaryValidationResult boundary =
+            Assert.IsType<HyperBoostPowerSourceBoundaryValidationResult>(
+                result.PowerSourceBoundaryValidation);
+        Assert.Equal(
+            HyperBoostPowerSourceBoundaryValidationFailure.HyperBoostDidNotExit,
+            boundary.Failure);
+        Assert.False(boundary.FirmwareAutoExitConfirmed);
+        Assert.Equal(2, boundary.OpenBladeCleanupWriteCount);
+        Assert.True(result.RestoreAttempted);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+
+        int lastAdapterQuery = session.Commands.FindLastIndex(
+            command => command.CommandId == 0x8C);
+        int firstCleanupWrite = session.Commands.FindIndex(
+            lastAdapterQuery + 1,
+            command => command.CommandId == 0x02);
+        Assert.True(firstCleanupWrite > lastAdapterQuery);
+        Assert.Equal(4, session.Commands.Count(command => command.CommandId == 0x02));
+    }
+
+    [Fact]
+    public async Task RunAsync_PowerSourceBoundaryNeverCleansUpBeforeFullPowerReconnect()
+    {
+        PowerSourceBoundaryStep[] observations = Enumerable.Range(0, 21)
+            .Select(_ => new PowerSourceBoundaryStep(
+                AdapterPowerState.UsbCPower100W,
+                "01010000",
+                "01020000"))
+            .ToArray();
+        var session = new PowerSourceBoundarySession(observations);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            powerSourceBoundaryPlan: PowerSourceBoundaryPlan()).RunAsync(
+                AdapterPowerState.UsbCPower100W,
+                _ => Task.FromResult(PadAbsentAuthorization),
+                _ => Task.FromResult(PadAbsentAuthorization),
+                default);
+
+        Assert.False(result.Success);
+        Assert.Equal(
+            HyperBoostPowerSourceBoundaryValidationFailure.FullPowerReconnectRequired,
+            result.PowerSourceBoundaryValidation!.Failure);
+        Assert.False(result.PowerSourceBoundaryValidation.FullPowerReconnectConfirmed);
+        Assert.Equal(0, result.PowerSourceBoundaryValidation.OpenBladeCleanupWriteCount);
+        Assert.False(result.RestoreAttempted);
+        Assert.False(result.Restored);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x02));
+    }
+
+    [Fact]
+    public async Task RunAsync_PowerSourceBoundaryRejectsTransientFirmwareExit()
+    {
+        PowerSourceBoundaryStep[] observations =
+        [
+            new(AdapterPowerState.Battery, "01010600", "01020600"),
+            new(AdapterPowerState.Battery, "01010600", "01020600"),
+            new(AdapterPowerState.Battery, "01010600", "01020600"),
+            new(AdapterPowerState.Battery, "01010700", "01020700"),
+            new(AdapterPowerState.FullPower280W, "01010000", "01020000"),
+        ];
+        var session = new PowerSourceBoundarySession(observations);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            powerSourceBoundaryPlan: PowerSourceBoundaryPlan()).RunAsync(
+                AdapterPowerState.Battery,
+                _ => Task.FromResult(PadAbsentAuthorization),
+                _ => Task.FromResult(PadAbsentAuthorization),
+                default);
+
+        Assert.False(result.Success);
+        HyperBoostPowerSourceBoundaryValidationResult boundary =
+            Assert.IsType<HyperBoostPowerSourceBoundaryValidationResult>(
+                result.PowerSourceBoundaryValidation);
+        Assert.Equal(
+            HyperBoostPowerSourceBoundaryValidationFailure
+                .HyperBoostReappearedAfterExit,
+            boundary.Failure);
+        Assert.True(boundary.HyperBoostReappearedAfterExit);
+        Assert.False(boundary.CompletedFullObservation);
+        Assert.Equal(0, boundary.OpenBladeCleanupWriteCount);
+        Assert.True(result.Restored);
+    }
+
+    [Fact]
+    public async Task RunAsync_PowerSourceBoundaryRejectedReconnectPerformsNoCleanupWrite()
+    {
+        PowerSourceBoundaryStep[] observations = Enumerable.Range(0, 20)
+            .Select(_ => new PowerSourceBoundaryStep(
+                AdapterPowerState.UsbCPower100W,
+                "01010000",
+                "01020000"))
+            .ToArray();
+        var session = new PowerSourceBoundarySession(observations);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            safetyGate: new ScriptedSafetyGate(SafeGateResult),
+            powerSourceBoundaryPlan: PowerSourceBoundaryPlan()).RunAsync(
+                AdapterPowerState.UsbCPower100W,
+                _ => Task.FromResult(PadAbsentAuthorization),
+                _ => Task.FromResult(new HyperBoostPowerSourceBoundaryAuthorization(
+                    Confirmed: false,
+                    CoolingPadPhysicalPresenceObservation.Absent)),
+                default);
+
+        Assert.False(result.Success);
+        Assert.Equal(
+            HyperBoostPowerSourceBoundaryValidationFailure.ReconnectNotConfirmed,
+            result.PowerSourceBoundaryValidation!.Failure);
+        Assert.False(result.PowerSourceBoundaryValidation.FullPowerReconnectConfirmed);
+        Assert.Equal(0, result.PowerSourceBoundaryValidation.OpenBladeCleanupWriteCount);
+        Assert.False(result.RestoreAttempted);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x02));
+    }
+
     [Fact]
     public async Task RunAsync_PostRestorationPadObservationFailsValidationAfterSafeRestore()
     {
@@ -1019,13 +1237,16 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         ReviewedHyperBoostThermalPlan? sustainedPlan = null,
         IHyperBoostThermalTelemetrySource? thermalTelemetrySource = null,
         IHyperBoostExternalWorkloadSource? externalWorkloadSource = null,
-        ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan = null) => new(
+        ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan = null,
+        ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan = null) => new(
         static () => new ValidationRunContext(),
         new ActorFactory(new ValidationActor(
             session,
             new UnsupportedBatteryCommands(),
             new UnsupportedTemporaryCommands())),
-        sustainedPlan is null ? TimeProvider.System : new ImmediateTimeProvider(),
+        sustainedPlan is null && powerSourceBoundaryPlan is null
+            ? TimeProvider.System
+            : new ImmediateTimeProvider(),
         TimeSpan.FromSeconds(3),
         TimeSpan.FromSeconds(5),
         new PendingDisposalRegistry(),
@@ -1036,7 +1257,8 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         sustainedPlan: sustainedPlan,
         thermalTelemetrySource: thermalTelemetrySource,
         externalWorkloadSource: externalWorkloadSource,
-        adapterTransitionPlan: adapterTransitionPlan);
+        adapterTransitionPlan: adapterTransitionPlan,
+        powerSourceBoundaryPlan: powerSourceBoundaryPlan);
 
     private static readonly PerformanceFanValidationSafetyGateResult SafeGateResult =
         new(
@@ -1078,6 +1300,14 @@ public sealed class PerformanceFanSetterValidationRunnerTests
 
     private static ReviewedHyperBoostAdapterTransitionPlan AdapterPlan() =>
         ReviewedHyperBoostAdapterTransitionPlan.LoadTrusted();
+
+    private static ReviewedHyperBoostPowerSourceBoundaryPlan PowerSourceBoundaryPlan() =>
+        ReviewedHyperBoostPowerSourceBoundaryPlan.LoadTrusted();
+
+    private static readonly HyperBoostPowerSourceBoundaryAuthorization
+        PadAbsentAuthorization = new(
+            Confirmed: true,
+            CoolingPadPhysicalPresenceObservation.Absent);
 
     private static ReviewedHyperBoostThermalPlan ExternalPlan() =>
         ReviewedHyperBoostThermalPlan.LoadTrustedPadAbsentExternalLoad()
@@ -1331,6 +1561,91 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         private static Task<HidSessionResult<ReadOnlyMemory<byte>>> Failure(
             HidSessionFailureKind failure) =>
             Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, failure));
+    }
+
+    private sealed record PowerSourceBoundaryStep(
+        AdapterPowerState AdapterState,
+        string FirstThermalHex,
+        string SecondThermalHex);
+
+    private sealed class PowerSourceBoundarySession(
+        params PowerSourceBoundaryStep[] steps) : IRazerCommandSession
+    {
+        private readonly PowerSourceBoundaryStep[] steps = steps.Length > 0
+            ? steps
+            : throw new ArgumentException("At least one boundary step is required.", nameof(steps));
+        private readonly byte[][] state =
+            [Convert.FromHexString("01010000"), Convert.FromHexString("01020000")];
+        private int nextStep;
+
+        internal List<RazerCommandSpec> Commands { get; } = [];
+
+        public RazerCommandSessionDisposition Disposition { get; private set; } =
+            RazerCommandSessionDisposition.Healthy;
+
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            _ = assignTransactionId();
+            Commands.Add(command);
+            if (command.CommandId == 0x8C)
+            {
+                PowerSourceBoundaryStep step =
+                    steps[Math.Min(nextStep++, steps.Length - 1)];
+                state[0] = Convert.FromHexString(step.FirstThermalHex);
+                state[1] = Convert.FromHexString(step.SecondThermalHex);
+                byte[] adapter = step.AdapterState switch
+                {
+                    AdapterPowerState.Battery => [0x00, 0x11],
+                    AdapterPowerState.UsbCPower100W => [0x07, 0x11],
+                    AdapterPowerState.FullPower280W => [0x11, 0x11],
+                    AdapterPowerState.FullPower330W => [0x12, 0x11],
+                    _ => [0x00, 0x00],
+                };
+                return Success(adapter);
+            }
+
+            if (command.CommandId == 0x82)
+            {
+                int index = command.Arguments.Span[1] - 1;
+                byte[] response = state[index].ToArray();
+                return command.PayloadValidator is null
+                    || command.PayloadValidator(response)
+                        ? Success(response)
+                        : Failure(HidSessionFailureKind.ProtocolFailure);
+            }
+
+            byte[] payload = command.Arguments.ToArray();
+            if (command.PayloadValidator is not null
+                && !command.PayloadValidator(payload))
+            {
+                return Failure(HidSessionFailureKind.ProtocolFailure);
+            }
+
+            if (command.CommandId == 0x02)
+            {
+                state[payload[1] - 1] = payload.ToArray();
+            }
+
+            return Success(payload);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposition = RazerCommandSessionDisposition.FullyDisposed;
+            return ValueTask.CompletedTask;
+        }
+
+        private static Task<HidSessionResult<ReadOnlyMemory<byte>>> Success(
+            byte[] payload) => Task.FromResult(
+                new HidSessionResult<ReadOnlyMemory<byte>>(payload, null));
+
+        private static Task<HidSessionResult<ReadOnlyMemory<byte>>> Failure(
+            HidSessionFailureKind failure) => Task.FromResult(
+                new HidSessionResult<ReadOnlyMemory<byte>>(default, failure));
     }
 
     private sealed class UnsupportedBatteryCommands : IBatteryCommandClient

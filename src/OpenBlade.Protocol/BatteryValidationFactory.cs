@@ -1076,7 +1076,8 @@ public static class BatteryValidationFactory
                 sustainedPlan: null,
                 thermalTelemetrySource: null,
                 externalWorkloadSource: null,
-                adapterTransitionPlan: null);
+                adapterTransitionPlan: null,
+                powerSourceBoundaryPlan: null);
 
     internal static IPerformanceFanSetterValidationRunner
         CreateWindowsRz090581Bios400PadAbsentHyperBoostSustainedValidation(
@@ -1088,7 +1089,8 @@ public static class BatteryValidationFactory
                 thermalTelemetrySource
                     ?? throw new ArgumentNullException(nameof(thermalTelemetrySource)),
                 externalWorkloadSource: null,
-                adapterTransitionPlan: null);
+                adapterTransitionPlan: null,
+                powerSourceBoundaryPlan: null);
 
     internal static IPerformanceFanSetterValidationRunner
         CreateWindowsRz090581Bios400PadAbsentHyperBoostReviewedLoadValidation(
@@ -1102,7 +1104,8 @@ public static class BatteryValidationFactory
                     ?? throw new ArgumentNullException(nameof(thermalTelemetrySource)),
                 externalWorkloadSource
                     ?? throw new ArgumentNullException(nameof(externalWorkloadSource)),
-                adapterTransitionPlan: null);
+                adapterTransitionPlan: null,
+                powerSourceBoundaryPlan: null);
 
     internal static IHyperBoostAdapterTransitionValidationRunner
         CreateWindowsRz090581Bios400PadAbsentHyperBoostAdapterTransitionValidation(
@@ -1113,14 +1116,29 @@ public static class BatteryValidationFactory
                     thermalTelemetrySource: null,
                     externalWorkloadSource: null,
                     adapterTransitionPlan
-                        ?? throw new ArgumentNullException(nameof(adapterTransitionPlan)));
+                        ?? throw new ArgumentNullException(nameof(adapterTransitionPlan)),
+                    powerSourceBoundaryPlan: null);
+
+    internal static IHyperBoostPowerSourceBoundaryValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostPowerSourceBoundaryValidation(
+            ReviewedHyperBoostPowerSourceBoundaryPlan powerSourceBoundaryPlan) =>
+            (IHyperBoostPowerSourceBoundaryValidationRunner)
+                CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+                    sustainedPlan: null,
+                    thermalTelemetrySource: null,
+                    externalWorkloadSource: null,
+                    adapterTransitionPlan: null,
+                    powerSourceBoundaryPlan
+                        ?? throw new ArgumentNullException(
+                            nameof(powerSourceBoundaryPlan)));
 
     private static IPerformanceFanSetterValidationRunner
         CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
             ReviewedHyperBoostThermalPlan? sustainedPlan,
             IHyperBoostThermalTelemetrySource? thermalTelemetrySource,
             IHyperBoostExternalWorkloadSource? externalWorkloadSource,
-            ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan)
+            ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan,
+            ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -1167,7 +1185,8 @@ public static class BatteryValidationFactory
             sustainedPlan: sustainedPlan,
             thermalTelemetrySource: thermalTelemetrySource,
             externalWorkloadSource: externalWorkloadSource,
-            adapterTransitionPlan: adapterTransitionPlan);
+            adapterTransitionPlan: adapterTransitionPlan,
+            powerSourceBoundaryPlan: powerSourceBoundaryPlan);
     }
 
     public static IProtectionOffValidationRunFactory CreateWindowsProtectionOffValidation()

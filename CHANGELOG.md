@@ -15,6 +15,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added developer-only USB-C and battery boundary tests for padless HyperBoost.
+  They activate mode 7 once on admitted full power, observe paired firmware
+  state without an OpenBlade disable, require consecutive non-HyperBoost
+  automatic readback, and reconnect full power before any one-shot cleanup.
+  The tests record whether firmware ended HyperBoost autonomously and do not
+  change production transition policy.
 - Added developer-only padless HyperBoost validation for the exact
   `RZ09-0581` on BIOS 4.00. The bounded commands validate an immediate
   apply/readback/restore cycle, a 60-second no-load thermal dwell, and an

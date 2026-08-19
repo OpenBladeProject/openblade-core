@@ -33,6 +33,9 @@
       Include="Fixtures\Rz09_0581_02e0_4_00_PadAbsentHyperBoostAdapterTransitionPlan.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_PadAbsentHyperBoostAdapterTransitionPlan.json" />
     <EmbeddedResource
+      Include="Fixtures\Rz09_0581_02e0_4_00_HyperBoostPowerSourceBoundaryPlan.json"
+      LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_HyperBoostPowerSourceBoundaryPlan.json" />
+    <EmbeddedResource
       Include="Fixtures\Rz09_0581_02e0_4_00_HyperBoostBaseModesAdmission.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_HyperBoostBaseModesAdmission.json" />
     <EmbeddedResource
