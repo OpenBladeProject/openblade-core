@@ -559,6 +559,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("StartOpenBladeProgressRing.IsActive", window, StringComparison.Ordinal);
         Assert.Contains("StartOpenBladeProgressRing.Visibility", window, StringComparison.Ordinal);
         Assert.DoesNotContain("StartOpenBladeProgressRing.Opacity", window, StringComparison.Ordinal);
+        Assert.Contains("StartOpenBladeButtonLabel.Opacity", window, StringComparison.Ordinal);
         Assert.Contains("MainWindow_Start_Starting", window, StringComparison.Ordinal);
         Assert.Contains("MainWindow_Start_Button", window, StringComparison.Ordinal);
         Assert.Contains("SessionAgentLauncher.TryStopSibling()", app, StringComparison.Ordinal);

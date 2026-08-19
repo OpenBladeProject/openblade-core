@@ -1325,16 +1325,24 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(troubleshooting.Descendants(), element => ReferenceEquals(element, startService));
         Assert.Equal("OnStartOpenBlade", Attribute(startService, "Click"));
         Assert.Equal("Start service", Attribute(startService, "AutomationProperties.Name"));
-        Assert.Contains(startService.Descendants(), element =>
-            element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "Start service");
+        XElement startLabel = NamedElement(
+            document,
+            "TextBlock",
+            "StartOpenBladeButtonLabel");
+        Assert.Contains(startService.Descendants(), element => ReferenceEquals(element, startLabel));
+        Assert.Equal("Start service", Attribute(startLabel, "Text"));
+        Assert.Equal("1", Attribute(startLabel, "Opacity"));
         XElement startProgress = NamedElement(
             document,
             "ProgressRing",
             "StartOpenBladeProgressRing");
         Assert.Contains(startService.Descendants(), element => ReferenceEquals(element, startProgress));
+        Assert.Same(startLabel.Parent, startProgress.Parent);
+        Assert.Equal("Grid", startProgress.Parent?.Name.LocalName);
         Assert.Equal("False", Attribute(startProgress, "IsActive"));
         Assert.Equal("Collapsed", Attribute(startProgress, "Visibility"));
+        Assert.Equal("Center", Attribute(startProgress, "HorizontalAlignment"));
+        Assert.Equal("Center", Attribute(startProgress, "VerticalAlignment"));
         Assert.Equal("Polite", Attribute(startService, "AutomationProperties.LiveSetting"));
         Assert.Contains(
             "ViewModel.IsServiceUnavailable",

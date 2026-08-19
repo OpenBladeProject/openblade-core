@@ -3747,6 +3747,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         StartOpenBladeProgressRing.Visibility = isStarting
             ? Visibility.Visible
             : Visibility.Collapsed;
+        StartOpenBladeButtonLabel.Opacity = isStarting ? 0 : 1;
     }
 
     private async void OnExportProfiles(object sender, RoutedEventArgs args)

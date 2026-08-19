@@ -4459,15 +4459,20 @@
                                                         Click="OnStartOpenBlade"
                                                         AutomationProperties.LiveSetting="Polite"
                                                         AutomationProperties.Name="Start service">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <Grid>
+                                                        <TextBlock x:Uid="MainWindow_TextBlockStartService"
+                                                                   x:Name="StartOpenBladeButtonLabel"
+                                                                   Text="Start service"
+                                                                   Opacity="1" />
                                                         <ProgressRing x:Name="StartOpenBladeProgressRing"
                                                                       Width="14"
                                                                       Height="14"
                                                                       IsActive="False"
                                                                       Visibility="Collapsed"
+                                                                      HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"
                                                                       AutomationProperties.AccessibilityView="Raw" />
-                                                        <TextBlock x:Uid="MainWindow_TextBlockStartService" Text="Start service" />
-                                                    </StackPanel>
+                                                    </Grid>
                                                 </Button>
                                             </Grid>
                                         </Grid>
